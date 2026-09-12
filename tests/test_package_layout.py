@@ -1,4 +1,4 @@
-"""Regression checks for the website-first layout and retained data paths."""
+"""Regression checks for the website-first layout and standalone data paths."""
 
 import importlib.util
 import os
@@ -17,6 +17,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PackageLayoutTests(unittest.TestCase):
+    def test_standalone_layout_has_no_legacy_nodes_directory(self):
+        self.assertFalse((ROOT / "nodes").exists())
+        self.assertTrue((ROOT / "config/config.json").is_file())
+        self.assertTrue((ROOT / "config/config.example.json").is_file())
+
     def test_shared_import_does_not_load_comfy_adapters_or_server(self):
         result = subprocess.run(
             [sys.executable, "-c", (
@@ -32,12 +37,12 @@ class PackageLayoutTests(unittest.TestCase):
         self.assertEqual(result.stdout, "")
         self.assertEqual(result.stderr, "")
 
-    def test_legacy_data_defaults_without_comfyui(self):
+    def test_standalone_data_defaults_without_comfyui(self):
         with patch.dict(os.environ, {}, clear=True), patch.dict(sys.modules, {"folder_paths": None}):
-            self.assertEqual(config.resolve_config_path(), ROOT / "nodes/goated_prompter/config.json")
+            self.assertEqual(config.resolve_config_path(), ROOT / "config/config.json")
             self.assertEqual(
                 presets.resolve_user_director_directory(),
-                ROOT / "nodes/goated_prompter/user_data/directors",
+                ROOT / "data/directors",
             )
 
     def test_comfyui_and_environment_path_precedence(self):
