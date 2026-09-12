@@ -1,0 +1,20 @@
+[project]
+name = "goated-prompter"
+version = "1.0.1"
+description = "Goated Prompter for ComfyUI."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "TODO: choose license before publication" }
+dependencies = []
+
+[tool.comfy]
+PublisherId = "TODO_PUBLISHER_ID"
+DisplayName = "Goated Prompter"
+Icon = ""
+
+[tool.setuptools]
+py-modules = []
+
+[tool.setuptools.packages.find]
+include = ["nodes*"]
+exclude = ["tests*", "docs*", "assets*"]

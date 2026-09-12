@@ -1,0 +1,20 @@
+__pycache__/
+*.py[cod]
+.venv/
+frontend/node_modules/
+frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
+nodes/goated_prompter/user_data/
+/data/
+
+# Private local configuration and evaluation artifacts (history cleanup)
+/config/config.json
+/data/
+node_modules/
+/quality-artifacts/
+/tests/eval/*.md
+!/tests/eval/README.md
+/tests/eval/*.json
+/tests/evaluation/*RESULTS*.md
+/tests/evaluation/*results*.json

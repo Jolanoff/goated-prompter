@@ -1,0 +1,3 @@
+# Goated Prompter requires no extra pip packages beyond ComfyUI's runtime.
+# The optional local backend requires a separate llama.cpp llama-server executable.
+# The standalone React app's Python dependencies are in requirements-local.txt.
