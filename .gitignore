@@ -5,7 +5,6 @@ frontend/node_modules/
 frontend/dist/
 frontend/test-results/
 frontend/playwright-report/
-nodes/goated_prompter/user_data/
 /data/
 
 # Private local configuration and evaluation artifacts (history cleanup)

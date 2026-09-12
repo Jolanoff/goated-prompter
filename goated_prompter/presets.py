@@ -10,7 +10,7 @@ import tempfile
 import threading
 import unicodedata
 
-from .config import LEGACY_DATA_DIRECTORY
+from .config import PROJECT_ROOT
 
 
 USER_DIRECTOR_DIR_ENV = "GOATED_PROMPTER_USER_DIR"
@@ -318,7 +318,7 @@ def resolve_user_director_directory():
             return Path(getter()).resolve() / "GoatedPrompter" / "directors"
     except (ImportError, AttributeError, OSError):
         pass
-    return (LEGACY_DATA_DIRECTORY / "user_data" / "directors").resolve()
+    return PROJECT_ROOT / "data" / "directors"
 
 
 def recommended_director_for_mode(mode):

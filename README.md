@@ -34,7 +34,7 @@ The models directory, retention preference, and chosen engine are persisted on t
 
 Prompt Builder values also autosave to the `builder` object in `settings.json`: idea, mode, target, creativity, prompt length, Director, Director behavior, workflow rules, all reference-source selections, current generated output, and output lock. The interface shows Saving, Saved, or a retryable error. Wait for Saved before closing the browser to guarantee the latest edits have reached disk; generation flushes pending edits first. Reopening restores the last saved builder draft, including a locked output if enabled. Image bytes and filenames are not saved.
 
-Configure the llama-server executable in `nodes/goated_prompter/config.json`, or point `GOATED_PROMPTER_CONFIG` at your own configuration. The frontend uses the node's existing runtime defaults rather than exposing manual GGUF paths, context/token budgets, and GPU-layer overrides. The header reports the local API connection, not GPU readiness or a ComfyUI connection. An OpenAI-compatible backend still sends generation inputs to whichever endpoint you configure and does not require local model discovery.
+Configure the llama-server executable in `config/config.json`, or point `GOATED_PROMPTER_CONFIG` at your own configuration. The frontend uses the node's existing runtime defaults rather than exposing manual GGUF paths, context/token budgets, and GPU-layer overrides. The header reports the local API connection, not GPU readiness or a ComfyUI connection. An OpenAI-compatible backend still sends generation inputs to whichever endpoint you configure and does not require local model discovery.
 
 ### Behavior
 
@@ -97,7 +97,8 @@ This package is prepared for future GitHub, ComfyUI Registry, and ComfyUI-Manage
 - `goated_prompter/comfy_node.py`: optional ComfyUI node adapter. The website also reads its existing `INPUT_TYPES` schema so input defaults stay identical.
 - `goated_prompter/comfy_routes.py`: optional ComfyUI HTTP routes, registered explicitly by the repository-root `__init__.py` entry point.
 - `comfyui_web/`: ComfyUI canvas extension, separate from the website. Internal JavaScript nesting is retained for ComfyUI imports.
-- `nodes/goated_prompter/`: legacy data location only, retaining `config.json`, `config.example.json`, and fallback `user_data/directors/`. These paths are anchored to the project root, not the relocated Python package or current working directory. No configuration or user data is moved by this cleanup.
+- `config/`: standalone `config.json` and `config.example.json`.
+- `data/directors/`: standalone user Directors and their `.overrides/`, excluded from version control. Configuration and data defaults are anchored to the project root, not the current working directory.
 - `data/`: unchanged website settings and prompt storage.
 
 Run the website from this checkout with `python local_app.py`; Python package discovery includes `goated_prompter`, not the legacy data directory. A Python-only package install is not a bundled website distribution.
@@ -118,9 +119,9 @@ Manager/Registry installation is planned for a later phase after clean-install v
 ## Workflow Compatibility
 The internal node ID remains `GoatedPrompter`. This structural cleanup does not change node identifiers, widget fields, sockets, frontend state, or saved workflows; no node replacement or reconnection is required.
 
-Shared backend code lives in `goated_prompter/`; local configuration stays in `nodes/goated_prompter/`. The ComfyUI frontend is `comfyui_web/goated_prompter/goated_prompter.js`, with drawing helpers in `comfyui_web/shared/ui_shared.js`. ComfyUI API routes still use `/goated-prompter/v1/`; the website retains its `/api` endpoints.
+Shared backend code lives in `goated_prompter/`; standalone configuration lives in `config/`. The ComfyUI frontend is `comfyui_web/goated_prompter/goated_prompter.js`, with drawing helpers in `comfyui_web/shared/ui_shared.js`. ComfyUI API routes still use `/goated-prompter/v1/`; the website retains its `/api` endpoints.
 
-Configuration is loaded from `GOATED_PROMPTER_CONFIG` when set, otherwise from `ComfyUI/user/GoatedPrompter/config.json` when present, then from `nodes/goated_prompter/config.json`. User Directors default to `ComfyUI/user/GoatedPrompter/directors` when ComfyUI provides a user directory, otherwise to `nodes/goated_prompter/user_data/directors`; override this with `GOATED_PROMPTER_USER_DIR`. This precedence and all existing paths are unchanged. Existing user files are not migrated automatically. Set `GOATED_PROMPTER_DEBUG_PROMPTS=1` only when full prompt diagnostics are needed.
+Configuration is loaded from `GOATED_PROMPTER_CONFIG` when set, otherwise from `ComfyUI/user/GoatedPrompter/config.json` when present, then from `config/config.json`. User Directors default to `ComfyUI/user/GoatedPrompter/directors` when ComfyUI provides a user directory, otherwise to `data/directors`; override this with `GOATED_PROMPTER_USER_DIR`. Environment and ComfyUI user-directory precedence is unchanged. When upgrading an older checkout, move its `nodes/goated_prompter/config.json` to `config/config.json` and its `nodes/goated_prompter/user_data/directors/` (including `.overrides/`) to `data/directors/`, preserving your files without overwriting destination conflicts. Runtime loading does not migrate files automatically. Set `GOATED_PROMPTER_DEBUG_PROMPTS=1` only when full prompt diagnostics are needed.
 
 ## Dependencies
 No extra pip packages are currently required beyond a normal ComfyUI runtime. See `requirements.txt`.
@@ -229,7 +230,7 @@ Mode-specific grounding is applied for Archviz, Image Edit, Photography, Video, 
 
 1. Install a current official llama.cpp build containing `llama-server`.
 2. Place the matching model and mmproj files together under `ComfyUI/models/LLM/Qwen3.5-9B/`.
-3. In `nodes/goated_prompter/`, copy `config.example.json` to `config.json` if no configuration exists, and configure `llama_server` only if it is not already on `PATH`.
+3. In `config/`, copy `config.example.json` to `config.json` if no configuration exists, and configure `llama_server` only if it is not already on `PATH`.
 4. Select Default, Uncensored, or Custom in the node. Model/mmproj paths are discovered from the folder pair.
 5. Restart ComfyUI so the updated node and route load.
 6. Add `Goated Prompter`, optionally connect an IMAGE, enter direction, and queue the graph.
