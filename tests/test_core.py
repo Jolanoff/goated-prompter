@@ -14,7 +14,7 @@ from unittest.mock import Mock, call, patch
 # Load core without running the node package's ComfyUI route registration.
 PACKAGE = "_goated_core_tests"
 package = ModuleType(PACKAGE)
-package.__path__ = [str(Path(__file__).resolve().parents[1] / "nodes" / "goated_prompter")]
+package.__path__ = [str(Path(__file__).resolve().parents[1] / "goated_prompter")]
 sys.modules[PACKAGE] = package
 core = importlib.import_module(f"{PACKAGE}.core")
 image_utils = importlib.import_module(f"{PACKAGE}.image_utils")
@@ -340,14 +340,14 @@ class LinkedCoreTests(unittest.TestCase):
                              [image.data_url for image in images.values()])
             for index, (_field, label) in enumerate(reference_map.REFERENCE_IMAGE_SLOTS):
                 self.assertIn(label.upper(), parts[index * 2]["text"])
-        nodes = importlib.import_module(f"{PACKAGE}.nodes")
+        nodes = importlib.import_module(f"{PACKAGE}.comfy_node")
         schema = nodes.GoatedPrompter.INPUT_TYPES()
         self.assertEqual(reference_map.REFERENCE_SOURCE_NAMES[:4], ("Auto", "Image 1", "Image 2", "Blend"))
         self.assertEqual(list(schema["optional"]), ["image", "image_2", "image_3", "image_4", "linked_references"])
         self.assertFalse(schema["optional"]["linked_references"][1]["default"])
 
     def test_node_appended_kwargs_reach_request_without_cached_shortcut(self):
-        nodes = importlib.import_module(f"{PACKAGE}.nodes")
+        nodes = importlib.import_module(f"{PACKAGE}.comfy_node")
         required = nodes.GoatedPrompter.INPUT_TYPES()["required"]
         values = {key: specification[1]["default"] for key, specification in required.items()}
         values.update(idea="portrait", generated_prompt="stale cached result", image_3=object(),

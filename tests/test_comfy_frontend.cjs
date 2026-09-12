@@ -4,7 +4,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 const test = require("node:test");
 
-const source = fs.readFileSync(path.join(__dirname, "../web/goated_prompter/goated_prompter.js"), "utf8")
+const source = fs.readFileSync(path.join(__dirname, "../comfyui_web/goated_prompter/goated_prompter.js"), "utf8")
   .replace(/^import\s[\s\S]*?;\r?\n/gm, "");
 
 function fixture() {

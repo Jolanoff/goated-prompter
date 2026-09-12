@@ -100,7 +100,7 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(discover.call_args.args[1])
 
     async def test_director_updates_reset_and_generation_authority(self):
-        from nodes.goated_prompter import presets as library
+        from goated_prompter import presets as library
         source = Path(library.__file__).read_bytes()
         created = await self.client.post("/api/presets", json={"name": "My Director", "instructions": "Original"})
         original = await created.json()

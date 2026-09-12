@@ -5,7 +5,7 @@ const vm = require("node:vm");
 const test = require("node:test");
 
 const context = vm.createContext({});
-const source = fs.readFileSync(path.join(__dirname, "../web/shared/ui_shared.js"), "utf8");
+const source = fs.readFileSync(path.join(__dirname, "../comfyui_web/shared/ui_shared.js"), "utf8");
 vm.runInContext(source.replace(/^export /gm, ""), context);
 
 test("ellipsis respects exact, short, and empty width budgets", () => {

@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from nodes.goated_prompter import presets
+from goated_prompter import presets
 
 
 class DirectorLibraryTests(unittest.TestCase):

@@ -10,6 +10,8 @@ import tempfile
 import threading
 import unicodedata
 
+from .config import LEGACY_DATA_DIRECTORY
+
 
 USER_DIRECTOR_DIR_ENV = "GOATED_PROMPTER_USER_DIR"
 _MUTATION_LOCK = threading.RLock()
@@ -316,7 +318,7 @@ def resolve_user_director_directory():
             return Path(getter()).resolve() / "GoatedPrompter" / "directors"
     except (ImportError, AttributeError, OSError):
         pass
-    return (Path(__file__).resolve().parent / "user_data" / "directors").resolve()
+    return (LEGACY_DATA_DIRECTORY / "user_data" / "directors").resolve()
 
 
 def recommended_director_for_mode(mode):
