@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, Mock, patch
 # Import backend modules without running ComfyUI node/route registration.
 PACKAGE = "_goated_backend_tests"
 package = ModuleType(PACKAGE)
-package.__path__ = [str(Path(__file__).resolve().parents[1] / "nodes" / "goated_prompter")]
+package.__path__ = [str(Path(__file__).resolve().parents[1] / "goated_prompter")]
 sys.modules[PACKAGE] = package
 backends = ModuleType(f"{PACKAGE}.backends")
 backends.__path__ = [str(Path(package.__path__[0]) / "backends")]

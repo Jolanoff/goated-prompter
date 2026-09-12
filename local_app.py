@@ -21,15 +21,15 @@ import uuid
 from aiohttp import web
 from PIL import Image, UnidentifiedImageError
 
-from nodes.goated_prompter.backends.base import GoatedPrompterError
-from nodes.goated_prompter.backends.llama_cpp_process import get_process_manager, _resolve_server_executable
-from nodes.goated_prompter.config import load_config
-from nodes.goated_prompter.core import GoatedPrompterRequest, GoatedPrompterService, _as_bool
-from nodes.goated_prompter.director_profiles import discover_director_profiles, resolve_director_config
-from nodes.goated_prompter.image_utils import EncodedImage
-from nodes.goated_prompter.nodes import GoatedPrompter
-from nodes.goated_prompter.reference_map import REFERENCE_ATTRIBUTES
-from nodes.goated_prompter.presets import (
+from goated_prompter.backends.base import GoatedPrompterError
+from goated_prompter.backends.llama_cpp_process import get_process_manager, _resolve_server_executable
+from goated_prompter.config import load_config
+from goated_prompter.core import GoatedPrompterRequest, GoatedPrompterService, _as_bool
+from goated_prompter.director_profiles import discover_director_profiles, resolve_director_config
+from goated_prompter.image_utils import EncodedImage
+from goated_prompter.comfy_node import GoatedPrompter
+from goated_prompter.reference_map import REFERENCE_ATTRIBUTES
+from goated_prompter.presets import (
     DEFAULT_DIRECTOR_PRESET, MODE_DIRECTOR_RECOMMENDATIONS, DirectorLibraryError, delete_user_director,
     list_director_presets, resolve_user_director_directory, save_user_director,
     get_director_preset, recommended_director_for_mode, update_director, reset_director,

@@ -1,7 +1,7 @@
 [project]
 name = "goated-prompter"
 version = "1.0.1"
-description = "Goated Prompter for ComfyUI."
+description = "Local prompt-generation website with a shared Python engine and optional ComfyUI integration."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "TODO: choose license before publication" }
@@ -16,5 +16,5 @@ Icon = ""
 py-modules = []
 
 [tool.setuptools.packages.find]
-include = ["nodes*"]
+include = ["goated_prompter*"]
 exclude = ["tests*", "docs*", "assets*"]

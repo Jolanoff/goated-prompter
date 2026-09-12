@@ -7,7 +7,9 @@ from pathlib import Path
 from .backends.base import BackendConfigurationError
 
 CONFIG_ENV_VAR = "GOATED_PROMPTER_CONFIG"
-DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "config.json"
+# Keep persisted configuration and Directors in their original location.
+LEGACY_DATA_DIRECTORY = Path(__file__).resolve().parents[1] / "nodes" / "goated_prompter"
+DEFAULT_CONFIG_PATH = LEGACY_DATA_DIRECTORY / "config.json"
 
 
 def _user_config_path():

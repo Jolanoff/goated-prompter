@@ -1,6 +1,6 @@
 # Goated Prompter
 
-Goated Prompter is a model-aware image and video prompt node for ComfyUI.
+Goated Prompter is a local website for model-aware image and video prompt generation, with an optional ComfyUI node using the same Python engine.
 
 ## Local React App
 
@@ -78,14 +78,29 @@ Open **http://127.0.0.1:5173**. Vite proxies `/api` to port 8190. Use the defaul
 
 ```powershell
 python -m unittest discover -s tests
-node --test tests/test_frontend.cjs tests/test_ui_shared.cjs
+node --test tests/test_comfy_frontend.cjs tests/test_ui_shared.cjs
 npm --prefix frontend test
 npm --prefix frontend run build
 ```
 
+If using pytest, run `python -m pytest tests -q --confcutdir=tests` to avoid collecting the repository-root ComfyUI entry point as a standalone test package.
+
 The Playwright tests start their own isolated mock backend and Vite server on ports 8190 and 5173; stop normal development servers first. Install a test browser once with `npm --prefix frontend exec -- playwright install chromium`, then run `npm --prefix frontend run test:e2e`. On Windows with Microsoft Edge already installed, use `$env:PLAYWRIGHT_CHANNEL = "msedge"` instead of downloading Chromium. The browser tests exercise desktop/mobile layouts, pause/resume, reload recovery, four reference slots, linked source controls, builder autosave and retries, text-only preview, exact locked output, JSON settings and prompt persistence, deletion, browser migration, and safe save retries. They do not validate real model quality or GPU inference.
 
 This package is prepared for future GitHub, ComfyUI Registry, and ComfyUI-Manager publication, but it has not been published and no Registry availability is claimed.
+
+## Architecture
+
+- `frontend/`: React/Vite website and its frontend tests.
+- `local_app.py`: standalone launcher, local HTTP API, and website data persistence.
+- `goated_prompter/`: shared generation engine, backends, model/mode adapters, configuration loading, and Directors. Importing the package does not register ComfyUI routes or load the node adapter.
+- `goated_prompter/comfy_node.py`: optional ComfyUI node adapter. The website also reads its existing `INPUT_TYPES` schema so input defaults stay identical.
+- `goated_prompter/comfy_routes.py`: optional ComfyUI HTTP routes, registered explicitly by the repository-root `__init__.py` entry point.
+- `comfyui_web/`: ComfyUI canvas extension, separate from the website. Internal JavaScript nesting is retained for ComfyUI imports.
+- `nodes/goated_prompter/`: legacy data location only, retaining `config.json`, `config.example.json`, and fallback `user_data/directors/`. These paths are anchored to the project root, not the relocated Python package or current working directory. No configuration or user data is moved by this cleanup.
+- `data/`: unchanged website settings and prompt storage.
+
+Run the website from this checkout with `python local_app.py`; Python package discovery includes `goated_prompter`, not the legacy data directory. A Python-only package install is not a bundled website distribution.
 
 ## Included Nodes
 - `GoatedPrompter` - Goated Prompter
@@ -101,11 +116,11 @@ Enable only one copy of this package to avoid duplicate node and route registrat
 Manager/Registry installation is planned for a later phase after clean-install validation and metadata finalization.
 
 ## Workflow Compatibility
-The internal node ID has changed to `GoatedPrompter`. Existing workflows must replace the previous node with `Goated Prompter` and reconnect its inputs and outputs. Widget fields and sockets retain their behavior, but frontend appearance and private state use new property names.
+The internal node ID remains `GoatedPrompter`. This structural cleanup does not change node identifiers, widget fields, sockets, frontend state, or saved workflows; no node replacement or reconnection is required.
 
-Backend code and local configuration live in `nodes/goated_prompter/`. The frontend is `web/goated_prompter/goated_prompter.js`, with drawing helpers in `web/shared/ui_shared.js`. API routes use `/goated-prompter/v1/`.
+Shared backend code lives in `goated_prompter/`; local configuration stays in `nodes/goated_prompter/`. The ComfyUI frontend is `comfyui_web/goated_prompter/goated_prompter.js`, with drawing helpers in `comfyui_web/shared/ui_shared.js`. ComfyUI API routes still use `/goated-prompter/v1/`; the website retains its `/api` endpoints.
 
-Configuration is loaded from `GOATED_PROMPTER_CONFIG` when set, otherwise from `ComfyUI/user/GoatedPrompter/config.json` when present, then from `nodes/goated_prompter/config.json`. User Directors default to `ComfyUI/user/GoatedPrompter/directors`; override this with `GOATED_PROMPTER_USER_DIR`. Existing user files are not migrated automatically. Set `GOATED_PROMPTER_DEBUG_PROMPTS=1` only when full prompt diagnostics are needed.
+Configuration is loaded from `GOATED_PROMPTER_CONFIG` when set, otherwise from `ComfyUI/user/GoatedPrompter/config.json` when present, then from `nodes/goated_prompter/config.json`. User Directors default to `ComfyUI/user/GoatedPrompter/directors` when ComfyUI provides a user directory, otherwise to `nodes/goated_prompter/user_data/directors`; override this with `GOATED_PROMPTER_USER_DIR`. This precedence and all existing paths are unchanged. Existing user files are not migrated automatically. Set `GOATED_PROMPTER_DEBUG_PROMPTS=1` only when full prompt diagnostics are needed.
 
 ## Dependencies
 No extra pip packages are currently required beyond a normal ComfyUI runtime. See `requirements.txt`.

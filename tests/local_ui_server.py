@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from aiohttp import web
 from local_app import create_app
-from nodes.goated_prompter.core import GoatedPrompterService
+from goated_prompter.core import GoatedPrompterService
 
 
 class DelayedMockService(GoatedPrompterService):
