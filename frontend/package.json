@@ -1,0 +1,24 @@
+{
+  "name": "goated-prompter-ui",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "test": "node --test src/*.test.js",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@fontsource-variable/dm-sans": "^5.2.0",
+    "@fontsource-variable/manrope": "^5.2.0",
+    "lucide-react": "^0.468.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.0",
+    "@vitejs/plugin-react": "^5.1.0",
+    "vite": "^7.3.0"
+  }
+}

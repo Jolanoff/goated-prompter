@@ -1,0 +1,31 @@
+{
+  "backend": "local_llama_cpp",
+  "vision": {
+    "max_image_dimension": 1344
+  },
+  "openai_compatible": {
+    "base_url": "http://127.0.0.1:1234/v1",
+    "model": "your-model-name",
+    "api_key_env": "GOATED_PROMPTER_API_KEY",
+    "temperature": 0.5,
+    "timeout": 90
+  },
+  "local_llama_cpp": {
+    "models_dir": "",
+    "model_path": "LLM/Qwen3.5-9B/Qwen3.5-9B-Q4_K_M.gguf",
+    "mmproj_path": "LLM/Qwen3.5-9B/mmproj-Qwen3.5-9B-BF16.gguf",
+    "llama_server": "C:/Tools/llama.cpp/llama-server.exe",
+    "host": "127.0.0.1",
+    "port": 8189,
+    "context_size": 8192,
+    "reasoning": "off",
+    "image_min_tokens": 1024,
+    "max_tokens": 768,
+    "gpu_layers": "auto",
+    "keep_model_loaded": false,
+    "startup_timeout": 180,
+    "timeout": 180,
+    "temperature": 0.3,
+    "alias": "goated-prompter-vlm"
+  }
+}
