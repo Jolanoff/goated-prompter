@@ -54,8 +54,11 @@ const MODE_DIRECTORS = {
   Custom: "General Director",
 };
 const LENGTHS = ["Short", "Medium", "Detailed", "Maximum Detail"];
-const REFERENCE_SOURCES = ["Auto", "Image 1", "Image 2", "Blend"];
-const REFERENCE_SOURCE_LABELS = { Auto: "AUTO", "Image 1": "IMG 1", "Image 2": "IMG 2", Blend: "BLEND" };
+const REFERENCE_SOURCES = ["Auto", "Image 1", "Image 2", "Blend", "Off", "Image 3", "Image 4"];
+const REFERENCE_SOURCE_LABELS = {
+  Auto: "AUTO", "Image 1": "IMG 1", "Image 2": "IMG 2", "Image 3": "IMG 3",
+  "Image 4": "IMG 4", Blend: "BLEND", Off: "OFF",
+};
 const REFERENCE_MAP_FIELDS = [
   ["reference_subject_source", "Subject"], ["reference_face_source", "Face / Identity"],
   ["reference_outfit_source", "Outfit"], ["reference_pose_source", "Pose"],

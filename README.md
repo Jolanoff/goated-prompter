@@ -1,165 +1,229 @@
 # Goated Prompter
 
-Goated Prompter is a local website for model-aware image and video prompt generation, with an optional ComfyUI node using the same Python engine.
+**Turn a rough idea and reference images into a prompt for your image or video model.**
 
-## Local React App
+Goated Prompter is a local web app with a React + Tailwind interface and a Python backend. It uses a language/vision model to write prompts, with controls for task, target model, creativity, detail, and which parts of your reference images to keep.
 
-The standalone frontend in `frontend/` uses React and Vite, with a dark, purple-accented layout inspired by the reference design. It uses the existing Python prompt pipeline. The original ComfyUI node and canvas interface remain available.
+ComfyUI is **not required** to use the website. The app produces prompt text that you can copy into your preferred generation tool.
 
-### Run Locally
+## Features
 
-Requires Python 3.10+ and Node.js 20.19+ or 22.12+ (a current Node LTS is recommended). From this project folder:
-
-```powershell
-python -m pip install -r requirements-local.txt
-npm --prefix frontend install
-npm --prefix frontend run build
-python local_app.py
-```
-
-Open **http://127.0.0.1:8190**. After the first build, only `python local_app.py` is needed. The server binds to loopback, serves the built frontend, and does not require ComfyUI to be running. Fonts and UI assets are bundled locally.
-
-Your existing backend configuration is reused; the app does not install or download an inference model. Open **Settings** in the sidebar, enter your **Models directory**, choose **Keep model loaded**, and click **Save settings**. The selected directory is scanned directly and recursively. Put each model GGUF and its matching `mmproj` GGUF in the same folder, for example:
-
-```text
-D:\ComfyUI\models\LLM\
-  Qwen3.5-9B\
-    Qwen3.5-9B-Q4_K_M.gguf
-    mmproj-Qwen3.5-9B-BF16.gguf
-```
-
-For this example, select `D:\ComfyUI\models\LLM` (or the individual `Qwen3.5-9B` folder). **Prompt engine** automatically lists the complete discovered profiles. Incomplete pairs are reported in Settings rather than appearing as usable engines. Choose an engine in the builder; that selection is saved automatically. Refresh models rescans the saved folder after you add files.
-
-The models directory, retention preference, and chosen engine are persisted on the server in **`data/settings.json`**, independently of browser storage, and survive app restarts. Model/runtime settings cannot be changed during an active or paused job. These settings affect only the standalone app, not the ComfyUI node configuration. Before settings are saved, the app uses the existing config/environment discovery defaults.
-
-Prompt Builder values also autosave to the `builder` object in `settings.json`: idea, mode, target, creativity, prompt length, Director, Director behavior, workflow rules, all reference-source selections, current generated output, and output lock. The interface shows Saving, Saved, or a retryable error. Wait for Saved before closing the browser to guarantee the latest edits have reached disk; generation flushes pending edits first. Reopening restores the last saved builder draft, including a locked output if enabled. Image bytes and filenames are not saved.
-
-Configure the llama-server executable in `config/config.json`, or point `GOATED_PROMPTER_CONFIG` at your own configuration. The frontend uses the node's existing runtime defaults rather than exposing manual GGUF paths, context/token budgets, and GPU-layer overrides. The header reports the local API connection, not GPU readiness or a ComfyUI connection. An OpenAI-compatible backend still sends generation inputs to whichever endpoint you configure and does not require local model discovery.
-
-### Behavior
-
-- Existing generation modes, target models, creativity options, prompt lengths, Director presets, workflow rules, and preservation controls come from the node's schema. Local prompt engines come from the saved models folder.
-- **Mode** defines the task; **Director** adds compatible specialist technique and style without changing that task; **Prompt length** controls descriptive density even when a Director prefers shorter or longer wording. Creativity and reference/preservation constraints still limit invention, and target-model output syntax remains required. These responsibilities apply to both grounded generation and text-only preview. Changing Mode does not replace the selected Director or clear its ComfyUI working copy.
-- Upload **at most four images**, in stable Image 1 through Image 4 slots. Removing one does not renumber the others. Uploads are processed in memory, not saved in a gallery, and must be re-uploaded after reloading the page.
-- **Preserve references** combines mapping and preservation into one control per attribute: **Off / Image 1 / Image 2 / Image 3 / Image 4 / Blend**. It covers subject, face/identity, outfit, pose, composition, camera, scene/environment, lighting, colors, mood/style, and materials. Off means no reference evidence or preservation for that attribute. An image selection strictly preserves that attribute from that source, independently of all other rows. Blend uses all uploaded images for the selected attribute and requires at least two. Missing restored sources are reported rather than silently reassigned.
-- Linked selections take priority over conflicting wording and Director defaults. For example, a selected mood/style source is not discarded merely because the idea includes "cinematic". To freely change a preserved attribute, switch that row Off. Only selected sources are analyzed, and the final compiler receives resolved attribute evidence instead of raw images. Existing ComfyUI workflows retain their legacy Auto/Preserve behavior.
-- **Generate prompt** uses the grounded pipeline for selected reference sources. Each click requests a fresh result unless output is locked. **Text-only preview** retains the canvas preview's behavior: it ignores images, reference mappings, and Preserve flags.
-- **Maximum Detail** uses its detailed backend instruction and requests at least 3072 final-output tokens instead of the normal default 768, subject to available context. The legacy Maximum label maps to the same option. Evidence analysis keeps its existing budget. This is capacity, not a guaranteed word count: unsupported details are not invented to fill it. Known context limits are checked using a coarse input estimate, and token-limit truncation is reported as an error rather than presented as a completed prompt.
-- **Maximum Detail Director** does not change the prompt-length setting or token budget. Select **Maximum Detail** under prompt length for the larger output capacity; **Short** still requests a compact result with that Director.
-- **Lock output** returns the exact current prompt without inference. Copy, edit, clear, and Director Save As/Delete remain available. Model refresh, unload, and the saved retention preference are in Settings.
-- **Pause / Resume** is cooperative, not cancellation or GPU process suspension. An active model call finishes before the next checkpoint pauses. The interface distinguishes Pause requested from Paused. Resume continues the same job without restarting completed stages. A paused model session may continue occupying VRAM. Refreshing the browser can recover an active job while the Python server remains running; restarting the server cannot recover inference state.
-- **Save Prompt / Delete** stores named prompt text in **`data/prompts.json`**, with its target label and save date. This is separate from Director presets. No database or account is needed. All browsers accessing this server share the saved collection; clearing browser site data no longer deletes saved prompts. Images and the full generation settings are not included in saved prompts.
-
-The app runs one generation at a time. It does not add accounts, templates, image generation, or a ComfyUI job queue.
-
-### Local Data
-
-Settings and prompts use human-readable JSON files in `data/`. Writes use a temporary file in the same directory followed by atomic replacement, so a failed write does not leave a partially written store. Invalid JSON is reported rather than silently discarded. To back up your setup and prompt library, back up `data/settings.json` and `data/prompts.json`. Stop the server before manually editing or restoring these files.
-
-Existing SQLite settings migrate automatically on startup when `settings.json` does not yet exist. The old `settings.sqlite3` is left untouched as a backup; it is not used for ongoing storage once JSON exists.
-
-Existing browser-saved prompts import automatically when you open the updated app from the browser and address where they were saved. The browser copy is removed only after the server confirms the exact imported records. Import failures retain the original browser data, and retries do not duplicate records. Open each previously used browser/address if you have separate old collections. Session storage is still used only for temporary generation-job recovery, not for settings or saved prompts.
-
-### Frontend Development
-
-Run the Python backend in one terminal and Vite in another:
-
-```powershell
-python local_app.py
-```
-
-```powershell
-npm --prefix frontend run dev
-```
-
-Open **http://127.0.0.1:5173**. Vite proxies `/api` to port 8190. Use the default development ports unless you also update the proxy and backend trusted origins.
-
-### Verification
-
-```powershell
-python -m unittest discover -s tests
-node --test tests/test_comfy_frontend.cjs tests/test_ui_shared.cjs
-npm --prefix frontend test
-npm --prefix frontend run build
-```
-
-If using pytest, run `python -m pytest tests -q --confcutdir=tests` to avoid collecting the repository-root ComfyUI entry point as a standalone test package.
-
-The Playwright tests start their own isolated mock backend and Vite server on ports 8190 and 5173; stop normal development servers first. Install a test browser once with `npm --prefix frontend exec -- playwright install chromium`, then run `npm --prefix frontend run test:e2e`. On Windows with Microsoft Edge already installed, use `$env:PLAYWRIGHT_CHANNEL = "msedge"` instead of downloading Chromium. The browser tests exercise desktop/mobile layouts, pause/resume, reload recovery, four reference slots, linked source controls, builder autosave and retries, text-only preview, exact locked output, JSON settings and prompt persistence, deletion, browser migration, and safe save retries. They do not validate real model quality or GPU inference.
-
-This package is prepared for future GitHub, ComfyUI Registry, and ComfyUI-Manager publication, but it has not been published and no Registry availability is claimed.
-
-## Architecture
-
-- `frontend/`: React/Vite website and its frontend tests.
-- `local_app.py`: standalone launcher, local HTTP API, and website data persistence.
-- `goated_prompter/`: shared generation engine, backends, model/mode adapters, configuration loading, and Directors. Importing the package does not register ComfyUI routes or load the node adapter.
-- `goated_prompter/comfy_node.py`: optional ComfyUI node adapter. The website also reads its existing `INPUT_TYPES` schema so input defaults stay identical.
-- `goated_prompter/comfy_routes.py`: optional ComfyUI HTTP routes, registered explicitly by the repository-root `__init__.py` entry point.
-- `comfyui_web/`: ComfyUI canvas extension, separate from the website. Internal JavaScript nesting is retained for ComfyUI imports.
-- `config/`: standalone `config.json` and `config.example.json`.
-- `data/directors/`: standalone user Directors and their `.overrides/`, excluded from version control. Configuration and data defaults are anchored to the project root, not the current working directory.
-- `data/`: unchanged website settings and prompt storage.
-
-Run the website from this checkout with `python local_app.py`; Python package discovery includes `goated_prompter`, not the legacy data directory. A Python-only package install is not a bundled website distribution.
-
-## Included Nodes
-- `GoatedPrompter` - Goated Prompter
+- **Text or image-guided prompts:** describe an idea, upload up to four reference images, or combine both.
+- **Independent reference controls:** keep a face from Image 1, a pose from Image 2, a scene from Image 3, and lighting from Image 4. Blend can combine an attribute from all uploaded images.
+- **Task-specific direction:** prompt enhancement, photography, architecture, characters, products, image editing, style transfer, dataset captions, and video shots.
+- **Target-aware output:** Generic, Krea 2, FLUX.2 Klein, Z-Image, Qwen Image, MiniMax, LTX 2.5, and Ideogram4. Target selection changes the writing instructions/output format; it does not download or run that image/video model.
+- **Reusable instruction presets:** choose a built-in preset, edit its instructions, or create your own.
+- **Local prompt library:** autosaved builder settings, named saved prompts, copy/edit controls, and exact output locking.
+- **Local inference through llama.cpp**, with an optional OpenAI-compatible endpoint.
+- **End generation** to cancel an active local llama.cpp job.
 
 ## Installation
 
-### Manual Installation
-Copy or clone this folder as `ComfyUI/custom_nodes/goated-prompter`, then restart ComfyUI.
+The walkthrough below uses **Windows PowerShell**. Download the app, llama.cpp, and the model separately; model weights are not included in this repository.
 
-Enable only one copy of this package to avoid duplicate node and route registrations. Restart ComfyUI and fully reload the browser after installation.
+### 1. Install prerequisites
 
-### ComfyUI Manager
-Manager/Registry installation is planned for a later phase after clean-install validation and metadata finalization.
+| Requirement | Download / notes |
+| --- | --- |
+| Python | [Python downloads](https://www.python.org/downloads/) — Python **3.10+**, with **3.12 recommended**. Enable **Add Python to PATH** on Windows. |
+| Node.js + npm | [Node.js downloads](https://nodejs.org/en/download) — use a current LTS release, **22.12+**. Node 20.19+ is also supported by this Vite version. |
+| Git | [Git downloads](https://git-scm.com/downloads) — optional if you download the repository ZIP instead. |
+| llama.cpp | A current build containing **`llama-server`**, with support for your chosen vision model. See step 3. |
 
-## Workflow Compatibility
-The internal node ID remains `GoatedPrompter`. This structural cleanup does not change node identifiers, widget fields, sockets, frontend state, or saved workflows; no node replacement or reconnection is required.
+**Hardware:** inference memory and speed depend on the model, quantization, context size, and llama.cpp backend. The example model files total about **6.6 GB on disk**; runtime RAM/VRAM use is higher. A supported GPU is recommended. This project does not currently publish a benchmarked minimum-VRAM requirement.
 
-Shared backend code lives in `goated_prompter/`; standalone configuration lives in `config/`. The ComfyUI frontend is `comfyui_web/goated_prompter/goated_prompter.js`, with drawing helpers in `comfyui_web/shared/ui_shared.js`. ComfyUI API routes still use `/goated-prompter/v1/`; the website retains its `/api` endpoints.
+### 2. Download Goated Prompter and install dependencies
 
-Configuration is loaded from `GOATED_PROMPTER_CONFIG` when set, otherwise from `ComfyUI/user/GoatedPrompter/config.json` when present, then from `config/config.json`. User Directors default to `ComfyUI/user/GoatedPrompter/directors` when ComfyUI provides a user directory, otherwise to `data/directors`; override this with `GOATED_PROMPTER_USER_DIR`. Environment and ComfyUI user-directory precedence is unchanged. When upgrading an older checkout, move its `nodes/goated_prompter/config.json` to `config/config.json` and its `nodes/goated_prompter/user_data/directors/` (including `.overrides/`) to `data/directors/`, preserving your files without overwriting destination conflicts. Runtime loading does not migrate files automatically. Set `GOATED_PROMPTER_DEBUG_PROMPTS=1` only when full prompt diagnostics are needed.
+```powershell
+git clone https://github.com/Jolanoff/goated-prompter.git
+cd goated-prompter
 
-## Dependencies
-No extra pip packages are currently required beyond a normal ComfyUI runtime. See `requirements.txt`.
-
-## Goated Prompter — Director AI iteration
-
-`Goated Prompter` turns a rough image or video idea into a model-aware prompt. It supports text-only direction and an optional normal ComfyUI `IMAGE` socket for grounded VLM generation. With no IMAGE, the Generate button stores a text-only result in the hidden `generated_prompt` widget and queueing emits it as a normal `STRING`. With IMAGE connected, queue execution always calls a vision-capable backend and deliberately ignores the cached text-only preview.
-
-The default installation has no globally imported LLM dependency and still loads safely. A `config.json` remains available for backend/runtime setup, but installed local model pairs can now be selected without editing model paths in that file.
-
-### Director AI profiles
-
-The compact `Director AI` control is independent of Mode, Target Model, and Creativity:
-
-- `Default` selects the discovered Qwen3.5-9B standard profile.
-- `Uncensored` selects the discovered Qwen3.5-9B HauhauCS aggressive profile.
-- `Custom` exposes discovered generic folders and manual overrides inside Advanced.
-
-Goated Prompter scans `ComfyUI/models/LLM` recursively. Each folder is treated as one profile: a non-`mmproj` GGUF is paired with an `mmproj` GGUF from the same folder. When several files exist, recommended quant names are preferred deterministically and the choice is reported as a warning. Incomplete folders remain visible under Custom but are marked as not vision-ready.
-
-`Refresh` in Advanced clears the discovery cache and rescans immediately; ComfyUI does not need to restart when model files are added. Recognized Qwen profiles apply the maintained defaults `reasoning=off`, `image_min_tokens=1024`, `max_tokens=768`, `context_size=8192`, `gpu_layers=auto`, `keep_model_loaded=false`, and loopback host binding.
-
-### Mock backend
-
-Use this configuration to verify UI interaction, instruction assembly, routing, and STRING output without an LLM or network access:
-
-```json
-{
-  "backend": "mock"
-}
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-local.txt
+npm --prefix frontend ci
+npm --prefix frontend run build
 ```
 
-The Mock backend deliberately returns `[Mock Goated Prompter]` followed by the source idea; it does not simulate prompt intelligence.
-The Mock backend is text-only. Connecting IMAGE while Mock is selected returns a clear capability error rather than silently ignoring the image.
+Alternatively, use **Code → Download ZIP** on [GitHub](https://github.com/Jolanoff/goated-prompter), extract it, open a terminal in the extracted folder, and run the commands starting with `python -m venv .venv`.
 
-### OpenAI-compatible backend
+The commands use the virtual environment's Python directly, so PowerShell activation is not required. Node.js builds the website; it is not needed to serve an already-built copy.
 
-Any server exposing an OpenAI-compatible `/chat/completions` endpoint can be configured without an extra Python dependency:
+### 3. Download llama.cpp
+
+1. Open the [official llama.cpp releases](https://github.com/ggml-org/llama.cpp/releases). Choose a current binary release; if a version page links to a nightly build for its assets, follow that link.
+2. Download a build matching your OS and hardware: for example, a Windows CUDA build for a compatible NVIDIA GPU, a supported Vulkan build, or a CPU build. Follow the release's driver/runtime requirements.
+3. Extract the **entire archive**, including its DLLs/shared libraries. If that release provides a separate required runtime archive, extract it as instructed by the release.
+4. Locate `llama-server.exe`. For this guide, assume it is at:
+
+   ```text
+   C:\Tools\llama.cpp\llama-server.exe
+   ```
+
+Check that it starts:
+
+```powershell
+& "C:\Tools\llama.cpp\llama-server.exe" --version
+```
+
+You do **not** need to start a separate llama.cpp server for this setup. Goated Prompter launches and manages its own server when you generate. Installing the `llama-cpp-python` package is not a substitute for this executable.
+
+### 4. Download a vision model and its matching projector
+
+A concrete starting option is **Qwen3.5-9B, Q4_K_M**, from [Unsloth's Qwen3.5-9B GGUF repository](https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/tree/main).
+
+Download these **two files from that same repository**:
+
+| File | Purpose |
+| --- | --- |
+| [Qwen3.5-9B-Q4_K_M.gguf](https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/blob/main/Qwen3.5-9B-Q4_K_M.gguf) | Main language-model weights, approximately 5.68 GB. |
+| [mmproj-BF16.gguf](https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/blob/main/mmproj-BF16.gguf) | Matching vision projector, approximately 922 MB. This lets the model process images. |
+
+Use the download button on each file page; you do not need to download every quantization. Keep the model and its matching projector in the **same folder**, and keep `mmproj` in the projector filename. The local engine selector currently requires a complete pair, even if you plan to start with text-only prompts.
+
+Example model folder:
+
+```text
+D:\AI\Models\
+└── Qwen3.5-9B\
+    ├── Qwen3.5-9B-Q4_K_M.gguf
+    └── mmproj-BF16.gguf
+```
+
+For additional models, give each model/projector pair its own subfolder. Use a model that your llama.cpp build actually supports for vision. The app detects filenames and pairs files within a folder; it cannot prove that weights and projectors from different downloads are compatible.
+
+### 5. Configure the executable and start the website
+
+Open **`config/config.json`** and set `local_llama_cpp.llama_server` to your actual executable path. Use forward slashes or escaped backslashes in JSON:
+
+```json
+"llama_server": "C:/Tools/llama.cpp/llama-server.exe"
+```
+
+Leave `"backend": "local_llama_cpp"` selected. If `config.json` is absent, copy `config/config.example.json` to `config/config.json` first. The example uses `llama-server` on PATH; an absolute path is usually easier on Windows. You do not need to hand-edit `model_path` or `mmproj_path` for an engine selected through the website.
+
+Start the app from the project folder:
+
+```powershell
+.\.venv\Scripts\python.exe local_app.py
+```
+
+Open **http://127.0.0.1:8190** and keep the terminal running.
+
+1. Open **Settings** in the sidebar.
+2. Set **Models directory** to `D:\AI\Models` for the layout above.
+3. Click **Save settings**, then **Refresh models** if needed. The saved directory is scanned directly and recursively; an `LLM` subfolder is not required.
+4. Return to **Prompt Builder** and choose the discovered **Prompt engine**.
+5. Enter an idea, start with **Medium** prompt length, and click **Generate prompt**.
+
+The first generation loads the model and can take longer. **Keep model loaded** retains it between generations; otherwise the app releases its owned server after the operation. **Unload model** is available in Settings.
+
+On later launches, you only need `.\.venv\Scripts\python.exe local_app.py` and the browser. After updating frontend source, run `npm --prefix frontend ci` and `npm --prefix frontend run build` again.
+
+<details>
+<summary>Linux / macOS command equivalents</summary>
+
+Use a llama.cpp build appropriate for your OS/GPU, and set `llama_server` to its executable path (for example `/opt/llama.cpp/build/bin/llama-server`) or to `llama-server` if it is on PATH.
+
+```sh
+git clone https://github.com/Jolanoff/goated-prompter.git
+cd goated-prompter
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements-local.txt
+npm --prefix frontend ci
+npm --prefix frontend run build
+.venv/bin/python local_app.py
+```
+
+Use your own absolute model directory in Settings. The browser workflow is the same; the release verification described below was performed on Windows.
+
+</details>
+
+## Using the controls
+
+| Control | What it does |
+| --- | --- |
+| **Prompt task** | Chooses the type of work: improve a prompt, describe a photograph, direct an edit, write a video shot, etc. |
+| **Instruction preset** | Adds reusable specialist instructions. Changing it does not change the task. |
+| **Target model** | Shapes the prompt for the image/video generator you will use afterward. |
+| **Creativity** | Controls how much new visual detail the writer may introduce. |
+| **Prompt length** | Controls descriptive density. Maximum Detail requests a larger output budget, not a guaranteed word count. |
+| **Prompt engine** | The language/vision model that actually writes the prompt. |
+| **Keep from reference images** | Selects the source for each attribute you want to preserve. |
+| **Workflow rules / notes** | Adds constraints for the current request. |
+
+### Four reference images
+
+Each attribute—subject, face/identity, outfit, pose, scene, composition, camera, lighting, colors, materials, and mood/style—has its own source:
+
+- **Off:** no reference evidence or preservation lock for that attribute.
+- **Image 1–4:** keep that attribute from the selected image.
+- **Blend:** use all uploaded images for that attribute; requires at least two images.
+
+Only selected source images are analyzed. Their evidence is combined by attribute before the final prompt is written. A selected source lock takes priority over conflicting request wording; switch the attribute **Off** when you want to change it freely.
+
+Slots keep their numbers when an image is removed. Removing a required image resets unavailable selections to **Off**. Images and filenames are not saved, so after reloading the page you must re-upload images and reselect their attributes.
+
+### Output and generation
+
+- **Text-only preview** ignores all reference images and preservation selections.
+- **Lock output** uses the exact current output without inference.
+- **End generation** cancels the local job. With the managed llama.cpp backend it stops the owned server, so the next job reloads the model. An external OpenAI-compatible request currently ends at its next checkpoint rather than aborting the remote computation immediately.
+- One generation runs at a time. Settings and preset editing are locked while a job is active.
+- **Save Prompt** adds named output text to the saved-prompt library. Instruction presets are a separate library.
+
+The app writes prompts; the quality and faithfulness of the generated description depend on your chosen model and inputs. It does not generate images or videos itself.
+
+## Project and data layout
+
+```text
+goated-prompter/
+├── local_app.py                 # Website launcher and local HTTP API
+├── requirements-local.txt      # Standalone Python dependencies
+├── config/
+│   ├── config.example.json     # Portable configuration template
+│   └── config.json             # Backend / llama-server configuration
+├── goated_prompter/
+│   ├── prompt_catalog.py       # Task, target, creativity, length and general prompts
+│   ├── presets.py              # Built-in instruction presets and library management
+│   ├── core.py                 # Prompt assembly and generation orchestration
+│   ├── reference_map.py        # Attribute-to-image source resolution
+│   ├── evidence.py             # Image analysis and resolved scene evidence
+│   └── backends/               # llama.cpp and OpenAI-compatible clients
+├── frontend/
+│   ├── src/                    # React UI, Tailwind utilities and presentation labels
+│   └── dist/                   # Generated by npm run build; not committed
+├── data/                       # Created as you save; not committed
+│   ├── settings.json           # Settings and autosaved builder draft
+│   ├── prompts.json            # Saved prompt collection
+│   └── directors/              # Custom instruction presets
+│       └── .overrides/         # Edits to built-in instruction presets
+├── tests/                      # Python and optional canvas tests
+└── comfyui_web/                # Optional ComfyUI integration assets
+```
+
+Keep downloaded models and llama.cpp outside this source tree, as in the installation examples. Back up **`data/` and your configuration** to preserve your setup. Wait for the builder's **Saved** status before closing; stop the server before manually editing its JSON stores.
+
+The website binds to loopback only. With the local backend, inference runs on your machine and UI assets/fonts are bundled locally. Configuring a remote OpenAI-compatible endpoint sends generation inputs, including selected images, to that endpoint.
+
+Existing SQLite settings and browser-saved prompt collections have migration paths. A browser collection is imported when you revisit its original browser/address; the original copy is retained if importing fails.
+
+## Troubleshooting
+
+| Symptom | Check |
+| --- | --- |
+| `python` or `npm` is not recognized | Install the prerequisites with PATH enabled, then open a new terminal. On Windows, `py -3.12 -m venv .venv` can be used if the Python launcher is installed. |
+| Website says to build `frontend/dist` | Run `npm --prefix frontend ci`, then `npm --prefix frontend run build`. |
+| No prompt engines appear | Save an existing **Models directory**; put a main `.gguf` and matching `mmproj*.gguf` in each model folder; refresh models. |
+| `llama_server executable was not found` | Set the full executable path in `config/config.json`, test it with `--version`, then restart Python. |
+| llama.cpp exits during startup | Run its `--version` check; verify DLLs/drivers, a current build, compatible GGUF/projector files, and available memory. |
+| Loading takes too long | The first request loads the model. Check `startup_timeout` in the config and your hardware. CPU inference can be much slower. |
+| Maximum Detail reports insufficient context or truncation | Try Medium/Detailed first; reduce long instructions or adjust runtime budgets. Maximum Detail requests at least 3072 final-output tokens and needs input/context headroom. |
+| Editing code has no visible effect | Python changes require a server restart. Port **8190** serves built frontend files; rebuild or use Vite on **5173** for live frontend editing. |
+| Reference selections disappeared after reload | Images are not persisted; re-upload them and set their sources again. |
+
+## Other backends
+
+For an existing OpenAI-compatible server, replace the configuration with your endpoint/model details:
 
 ```json
 {
@@ -169,80 +233,60 @@ Any server exposing an OpenAI-compatible `/chat/completions` endpoint can be con
     "model": "your-model-name",
     "api_key_env": "GOATED_PROMPTER_API_KEY",
     "temperature": 0.5,
-    "timeout": 90
-  }
-}
-```
-
-Set the key in the environment that launches ComfyUI when the endpoint requires one. For example, use `$env:GOATED_PROMPTER_API_KEY="..."` in PowerShell or `export GOATED_PROMPTER_API_KEY="..."` in a POSIX shell. Local endpoints that do not require authentication may leave the variable unset. A different config location can be selected with `GOATED_PROMPTER_CONFIG`.
-
-For IMAGE requests, Goated Prompter sends the user content as OpenAI-compatible `text` plus `image_url` content parts. The configured endpoint and selected model must actually support vision. The first image in a ComfyUI batch is converted to RGB PNG in memory, keeps its aspect ratio, and is reduced to a maximum edge of 1344 pixels by default. Adjust `vision.max_image_dimension` only when the VLM requires a different size.
-
-### Local llama.cpp VLM backend
-
-The optional `local_llama_cpp` backend launches the official `llama-server` executable directly with `shell=False`; it does not install or import a llama.cpp Python package. Current llama.cpp documents multimodal chat through `/v1/chat/completions`, using `--model` with a matching `--mmproj`. See the [official multimodal guide](https://github.com/ggml-org/llama.cpp/blob/master/docs/multimodal.md) and [server documentation](https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md).
-
-Recommended first model folder:
-
-```text
-ComfyUI/models/LLM/Qwen3.5-9B/
-  Qwen3.5-9B-Q4_K_M.gguf
-  mmproj-Qwen3.5-9B-BF16.gguf
-```
-
-Obtain a matching model/projector pair from the same trusted release. Goated Prompter requires both files, requires the projector filename to contain `mmproj`, and requires both to be in the same folder. It never guesses a projector from an unrelated model.
-
-Example configuration:
-
-```json
-{
-  "backend": "local_llama_cpp",
-  "vision": { "max_image_dimension": 1344 },
-  "local_llama_cpp": {
-    "model_path": "LLM/Qwen3.5-9B/Qwen3.5-9B-Q4_K_M.gguf",
-    "mmproj_path": "LLM/Qwen3.5-9B/mmproj-Qwen3.5-9B-BF16.gguf",
-    "llama_server": "C:/portable/llama.cpp/llama-server.exe",
-    "host": "127.0.0.1",
-    "port": 8189,
-    "context_size": 8192,
-    "reasoning": "off",
-    "image_min_tokens": 1024,
-    "max_tokens": 768,
-    "gpu_layers": "auto",
-    "keep_model_loaded": false,
-    "startup_timeout": 180,
     "timeout": 180
   }
 }
 ```
 
-For Default and Uncensored, discovered profile paths replace the example `model_path` and `mmproj_path` automatically. The explicit paths remain the legacy fallback and Custom/manual path. Paths are resolved relative to ComfyUI's real models directory through `folder_paths`. `models_dir` or `GOATED_PROMPTER_MODELS_DIR` can be used only when running outside a normal ComfyUI environment. `llama_server` may be an absolute/relative executable path or a command available on `PATH`.
+Set `GOATED_PROMPTER_API_KEY` in the environment if authentication is required. The endpoint and model must support vision for reference images. Local model discovery is not required for this backend. `{"backend": "mock"}` is available for text-only UI/assembly checks without an LLM; its output is intentionally just a marked mock result.
 
-The server binds to loopback only. Goated Prompter waits on llama.cpp's `/health` endpoint and sends the request only after the model is ready. With `keep_model_loaded: false` (default), the owned child is terminated after generation to release VRAM. With it enabled, the same owned server is reused. On ComfyUI/Python exit, all remaining children owned by Goated Prompter are cleaned up. Existing user-started llama.cpp processes are never reused or terminated; an occupied configured port produces an error.
+`GOATED_PROMPTER_CONFIG` selects an alternative config file. Configuration otherwise uses the ComfyUI user config when available, then `config/config.json`. `GOATED_PROMPTER_USER_DIR` overrides instruction-preset storage. `GOATED_PROMPTER_DEBUG_PROMPTS=1` enables full prompt diagnostics in the server console.
 
-### Multimodal execution and UI limitation
+## Development and verification
 
-Connected IMAGE tensors exist only during queued graph execution. The canvas Generate button therefore remains an honest text-only preview: when IMAGE is connected, its status explicitly says to queue the graph for image grounding. It does not inspect upstream graph state or fake VLM output. Queue-time execution has priority and always regenerates from IMAGE even if a text preview is cached.
+For live frontend edits, run the backend in one terminal and Vite in another, from the project root:
 
-Mode-specific grounding is applied for Archviz, Image Edit, Photography, Video, and Dataset Caption. The instruction separates observed image content from requested changes and protects visible content unless the mode or user explicitly requests modification.
+```powershell
+.\.venv\Scripts\python.exe local_app.py
+```
 
-### Manual local installation
+```powershell
+npm --prefix frontend run dev
+```
 
-1. Install a current official llama.cpp build containing `llama-server`.
-2. Place the matching model and mmproj files together under `ComfyUI/models/LLM/Qwen3.5-9B/`.
-3. In `config/`, copy `config.example.json` to `config.json` if no configuration exists, and configure `llama_server` only if it is not already on `PATH`.
-4. Select Default, Uncensored, or Custom in the node. Model/mmproj paths are discovered from the folder pair.
-5. Restart ComfyUI so the updated node and route load.
-6. Add `Goated Prompter`, optionally connect an IMAGE, enter direction, and queue the graph.
-7. Connect its `prompt` STRING output to the normal prompt-consuming node in the workflow.
+Open **http://127.0.0.1:5173**. Vite proxies `/api` to the backend on port 8190.
 
-## Versioning
-The optional Goated Prompter setup executable is versioned separately from this package release.
+Static prompt content is in **`goated_prompter/prompt_catalog.py`**. Restart Python after editing it. Keep saved option keys stable. For new tasks, add both the option and its adapter; Director recommended-mode validation also lives in `presets.py`. Website-only display names/order live in `frontend/src/App.jsx` and `frontend/src/presetPresentation.js`.
 
-Future versioning model:
-- PATCH: bugfixes that preserve workflows.
-- MINOR: backward-compatible features or new nodes.
-- MAJOR: breaking workflow/API changes.
+Run the checks from the project root:
 
-## License
-TODO: choose and add final license text before publication.
+```powershell
+npm --prefix frontend run build
+.\.venv\Scripts\python.exe -m unittest discover -s tests
+node --test tests/test_comfy_frontend.cjs tests/test_ui_shared.cjs
+npm --prefix frontend test
+```
+
+Building first also enables `tests/test_built_site.py`, which checks that Python serves the compiled assets and completes a mock generation with fresh temporary storage.
+
+Browser tests use a delayed mock backend and temporary settings, prompts, and preset storage. To make `python` resolve to your virtual environment for Playwright, activate it in the test terminal or put `.venv/Scripts` on that terminal's PATH. Install Chromium once using `npm --prefix frontend exec -- playwright install chromium`, then run:
+
+```powershell
+npm --prefix frontend run test:e2e -- --config e2e/isolated.config.js
+```
+
+On Windows with Edge installed, use `$env:PLAYWRIGHT_CHANNEL = "msedge"` before the test command instead of downloading Chromium. The isolated configuration uses ports **8191/5191** and refuses to reuse an existing server.
+
+Automated checks cover prompt assembly, reference mapping, API/storage behavior, and browser workflows. Mock tests do not measure real-model output quality, GPU compatibility, or performance. Report issues with your OS, Python/Node versions, llama.cpp build/backend, exact model/projector filenames, and the relevant error at [GitHub Issues](https://github.com/Jolanoff/goated-prompter/issues).
+
+## Optional ComfyUI integration
+
+The original node remains available under the stable ID `GoatedPrompter`. To use it, place one copy of this repository at `ComfyUI/custom_nodes/goated-prompter`, configure the backend, and restart ComfyUI and reload its browser. The node exposes four optional IMAGE sockets and a prompt STRING output. Queue the graph for image-grounded generation; the canvas preview button is text-only.
+
+The website remains the main installation path. There is no claimed ComfyUI Registry/Manager listing or bundled desktop installer. Installing only the Python package does not build or bundle the website.
+
+## License and credits
+
+[MIT License](LICENSE) — copyright (c) 2026 Jolanoff.
+
+Built with React, Tailwind CSS, Vite, aiohttp, Pillow, and llama.cpp. Downloaded models and third-party dependencies retain their own licenses; model weights are not distributed with this project.

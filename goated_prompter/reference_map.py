@@ -3,22 +3,12 @@
 from dataclasses import dataclass
 import re
 
-
-REFERENCE_ATTRIBUTES = (
-    ("subject", "Subject"),
-    ("face", "Face / Identity"),
-    ("outfit", "Outfit"),
-    ("pose", "Pose"),
-    ("composition", "Composition"),
-    ("camera", "Camera"),
-    ("scene", "Scene / Environment"),
-    ("lighting", "Lighting"),
-    ("colors", "Colors"),
-    ("mood", "Mood / Style"),
-    ("materials", "Materials"),
+from .prompt_catalog import (
+    REFERENCE_ATTRIBUTES,
+    REFERENCE_IMAGE_SLOTS,
+    REFERENCE_MANUAL_CONSTRAINTS as _MANUAL_CONSTRAINTS,
+    REFERENCE_SOURCE_NAMES,
 )
-REFERENCE_SOURCE_NAMES = ("Auto", "Image 1", "Image 2", "Blend", "Off", "Image 3", "Image 4")
-REFERENCE_IMAGE_SLOTS = (("image", "Image 1"), ("image_2", "Image 2"), ("image_3", "Image 3"), ("image_4", "Image 4"))
 
 
 def reference_images(value):
@@ -50,20 +40,6 @@ _LEGACY_ROLE_ATTRIBUTES = {
 }
 _SECONDARY_AUTO_ATTRIBUTES = {"lighting", "colors", "mood"}
 _PRIMARY_DIRECTORS = {"Reverse Engineer", "Surgical Edit"}
-
-_MANUAL_CONSTRAINTS = {
-    "subject": "Use the subject from {source}. Do not use a conflicting subject from {other}.",
-    "face": "Use face and identity from {source}. Do not use conflicting identity features from {other}.",
-    "outfit": "Use clothing/outfit from {source}. Do not use conflicting clothing from {other}.",
-    "pose": "Use pose and action from {source}. Do not use the conflicting pose or action from {other}.",
-    "composition": "Use composition and framing from {source}. Do not use conflicting composition or framing from {other}.",
-    "camera": "Use camera viewpoint and perspective from {source}. Do not use a conflicting camera setup from {other}.",
-    "scene": "Use environment/background from {source}. Do not retain the conflicting environment from {other}.",
-    "lighting": "Use lighting from {source}. Do not use the conflicting lighting treatment from {other}.",
-    "colors": "Use the dominant color treatment/palette from {source}. Do not use the conflicting palette from {other}.",
-    "mood": "Use mood/style from {source}. Do not use the conflicting mood/style treatment from {other}.",
-    "materials": "Use materials and surface treatment from {source}. Do not use conflicting materials from {other}.",
-}
 
 _EXPLICIT_PATTERNS = {
     "subject": (

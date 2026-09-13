@@ -374,6 +374,18 @@ class LlamaCppProcessManager:
             self._owned = None
             return "unloaded"
 
+    def interrupt_active(self):
+        """Immediately stop the owned server currently serving a local request."""
+        with self._lock:
+            owned = self._live_owned()
+            if owned is None:
+                return "idle"
+            _log("Ending active llama.cpp generation")
+            self._terminate(owned)
+            if self._owned is owned:
+                self._owned = None
+            return "stopped"
+
     def cleanup_all(self):
         with self._lock:
             owned = self._live_owned()

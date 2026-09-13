@@ -6,6 +6,10 @@ frontend/dist/
 frontend/test-results/
 frontend/playwright-report/
 /data/
+.pytest_cache/
+.env
+.env.*
+*.gguf
 
 # Private local configuration and evaluation artifacts (history cleanup)
 /config/config.json

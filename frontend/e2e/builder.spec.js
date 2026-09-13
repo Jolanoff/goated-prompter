@@ -8,7 +8,41 @@ test.beforeEach(async ({ request }) => {
   ).toBe(true);
 });
 
-test("builder JSON restores all visible fields and eleven linked sources without images", async ({
+test("task and instruction preset lead the controls on desktop and mobile", async ({ page }) => {
+  await page.goto("/");
+  const controls = page.locator(".panel").filter({
+    has: page.getByRole("heading", { name: "Prompt controls", exact: true }),
+  });
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect(controls.locator("select")).toHaveCount(6);
+    expect(await controls.locator("select").evaluateAll((items) =>
+      items.map((item) => item.getAttribute("aria-label")),
+    )).toEqual([
+      "Prompt task", "Instruction preset", "Target model", "Creativity",
+      "Prompt length", "Prompt engine",
+    ]);
+    const task = await page.getByLabel("Prompt task", { exact: true }).boundingBox();
+    const preset = await page.getByLabel("Instruction preset", { exact: true }).boundingBox();
+    expect(task.y).toBeLessThanOrEqual(preset.y);
+    if (task.y === preset.y) expect(task.x).toBeLessThan(preset.x);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  }
+  await expect(page.getByLabel("Prompt task").locator("option:checked")).toHaveText("Improve a prompt");
+  await page.getByLabel("Prompt task").selectOption({ label: "Architecture & interiors" });
+  await expect(page.getByLabel("Prompt task")).toHaveValue("Archviz");
+  await expect(page.getByLabel("Instruction preset", { exact: true })).toHaveValue("general_director");
+  await expect(page.getByRole("heading", { name: "Keep from reference images" })).toBeVisible();
+  expect(await page.locator(".reference-map select").evaluateAll((items) =>
+    items.map((item) => item.getAttribute("aria-label")),
+  )).toEqual([
+    "Subject source", "Face source", "Outfit source", "Pose source", "Scene source",
+    "Composition source", "Camera source", "Lighting source", "Colors source",
+    "Materials source", "Mood source",
+  ]);
+});
+
+test("builder JSON restores text fields and resets unavailable reference sources after reload", async ({
   page,
   request,
 }) => {
@@ -17,9 +51,9 @@ test("builder JSON restores all visible fields and eleven linked sources without
     .getByLabel("Describe your idea", { exact: true })
     .fill("Persistent idea");
   await page
-    .getByLabel("Director", { exact: true })
+    .getByLabel("Instruction preset", { exact: true })
     .selectOption({ label: "Photography Director" });
-  await page.getByLabel("Mode", { exact: true }).selectOption("Photography");
+  await page.getByLabel("Prompt task", { exact: true }).selectOption("Photography");
   await page.getByLabel("Prompt length").selectOption("Maximum Detail");
   await page.getByLabel("Workflow rules").fill("Keep these rules");
   await page
@@ -52,6 +86,8 @@ test("builder JSON restores all visible fields and eleven linked sources without
   expect(saved.builder.prompt_length).toBe("Maximum Detail");
   expect(Object.keys(saved.builder)).toHaveLength(20);
   expect(saved.builder.mode).toBe("Photography");
+  for (const [index, key] of referenceAttributes.entries())
+    expect(saved.builder[`reference_${key}_source`]).toBe(index % 2 ? "Image 4" : "Blend");
   expect(saved.builder).not.toHaveProperty("system_prompt_override");
   expect(JSON.stringify(saved)).not.toMatch(
     /private-|data:image|image_1_role|preserve_subject/,
@@ -68,7 +104,7 @@ test("builder JSON restores all visible fields and eleven linked sources without
   await expect(page.getByLabel("Workflow rules")).toHaveValue(
     "Keep these rules",
   );
-  await expect(page.getByLabel("Mode", { exact: true })).toHaveValue(
+  await expect(page.getByLabel("Prompt task", { exact: true })).toHaveValue(
     saved.builder.mode,
   );
   await expect(page.getByLabel("Target model", { exact: true })).toHaveValue(
@@ -77,18 +113,19 @@ test("builder JSON restores all visible fields and eleven linked sources without
   await expect(page.getByLabel("Creativity", { exact: true })).toHaveValue(
     saved.builder.creativity,
   );
-  await expect(page.getByLabel("Director", { exact: true })).toHaveValue(
+  await expect(page.getByLabel("Instruction preset", { exact: true })).toHaveValue(
     saved.builder.director_preset,
   );
   await expect(
-    page.getByLabel("Director behavior", { exact: true }),
+    page.getByLabel("Instruction preset behavior", { exact: true }),
   ).toHaveCount(0);
-  for (const [index, key] of referenceAttributes.entries())
+  for (const key of referenceAttributes)
     await expect(
       page.getByLabel(`${key[0].toUpperCase() + key.slice(1)} source`),
-    ).toHaveValue(index % 2 ? "Image 4" : "Blend");
+    ).toHaveValue("Off");
   await expect(page.locator('input[type="file"]')).toHaveCount(4);
-  await expect(page.getByRole("alert")).toContainText("Missing references");
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(page.getByLabel("Subject source")).toBeDisabled();
   await expect(
     page.getByRole("button", { name: /^Use locked prompt/ }),
   ).toBeEnabled();
@@ -204,7 +241,7 @@ test("legacy Maximum hydrates once and generation flushes a linked snapshot firs
   });
   await page.goto("/");
   await expect(page.getByLabel("Prompt length")).toHaveValue("Maximum Detail");
-  await expect(page.getByLabel("Director", { exact: true })).toHaveValue(
+  await expect(page.getByLabel("Instruction preset", { exact: true })).toHaveValue(
     "photography_director",
   );
   await expect(page.getByLabel("Prompt length").locator("option")).toHaveText([

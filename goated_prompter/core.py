@@ -20,6 +20,18 @@ from .evidence import (
 from .image_utils import EncodedImage, encode_comfy_image
 from .models import get_model_adapter
 from .modes import get_mode_adapter, get_vision_mode_adapter
+from .prompt_catalog import (
+    CREATIVITY_ADAPTERS as _CREATIVITY_ADAPTERS,
+    CREATIVITY_NAMES,
+    LENGTH_ADAPTERS as _LENGTH_ADAPTERS,
+    MAXIMUM_DETAIL_GUIDANCE as _MAXIMUM_DETAIL_GUIDANCE,
+    PRESERVATION_ADAPTERS as _PRESERVATION_ADAPTERS,
+    PRESERVATION_LINKED_LOCK,
+    PRESERVATION_NO_LINKED_LOCKS,
+    PRESERVATION_NONE,
+    PROMPT_LENGTH_NAMES,
+    REFERENCE_ROLE_NAMES,
+)
 from .presets import DEFAULT_DIRECTOR_PRESET, get_director_preset, legacy_preset_for_mode
 from .reference_map import REFERENCE_IMAGE_SLOTS, reference_images, reference_map_from_mapping, resolve_reference_map
 from .system_prompt import (
@@ -30,53 +42,6 @@ from .system_prompt import (
     PRIORITY_CONTRACT,
     TEXT_ONLY_PRIORITY_CONTRACT,
 )
-
-CREATIVITY_NAMES = ("Strict", "Balanced", "Creative", "Dice")
-PROMPT_LENGTH_NAMES = ("Short", "Medium", "Detailed", "Maximum Detail", "Maximum")
-REFERENCE_ROLE_NAMES = ("Auto", "Subject", "Scene", "Style", "Pose", "Composition", "Lighting")
-
-_CREATIVITY_ADAPTERS = {
-    "Strict": "Creativity — Strict: preserve the user's concept closely. Add only information required for clarity and coherence; do not invent important content or change the camera.",
-    "Balanced": "Creativity — Balanced: fill reasonable missing visual information while preserving the concept and avoiding conspicuous invention.",
-    "Creative": "Creativity — Creative: add tasteful, coherent visual direction where unspecified, but respect every active preservation constraint.",
-    "Dice": "Creativity — Dice (v0.1 soft level): invent one coherent visual concept from minimal input. Make decisive but internally consistent choices while respecting explicit preservation constraints. This adapter is structured for future Soft, Wild, and Total Chaos levels.",
-}
-
-_MAXIMUM_DETAIL_GUIDANCE = (
-    "Prompt length — Maximum Detail: produce a substantially longer, densely descriptive natural-language prompt. "
-    "Exhaustively cover every relevant, supported visual decision: subject identity, count, age presentation when "
-    "visually relevant, overall appearance, facial structure, eyes, expression, gaze, hair, skin, anatomy, body shape, "
-    "pose, limbs, hands, gesture, and action; garment construction, seams, folds, fit, styling, accessories, fabrics, "
-    "textures, finishes, roughness, reflectivity, translucency, and other material response; foreground, midground, "
-    "background, meaningful objects, spatial relationships, scale, overlap, and occlusion; composition, framing, "
-    "camera height, angle, perspective, lens behavior, depth, focus plane, and focus hierarchy; key, fill, rim, and "
-    "practical light where supported, including direction, softness, contrast, shadows, highlights, reflections, and "
-    "exposure; palette, color relationships, grading, atmosphere, mood, and the relevant photographic, commercial, "
-    "editorial, cinematic, rendered, or artistic character. Clearly distinguish observable or user-specified facts "
-    "from coherent creative additions, and keep every addition compatible with the central concept and active "
-    "Reference Map and Preserve constraints. Do not repeat details, stack synonyms, use generic quality slogans, "
-    "invent unsupported evidence, or pad with filler. Omit irrelevant or unavailable categories instead of "
-    "hallucinating them; never force 35mm, film grain, or ControlNet terminology when it was not requested or observed."
-)
-
-_LENGTH_ADAPTERS = {
-    "Short": "Prompt length — Short: one compact prompt focused on the most consequential visual information.",
-    "Medium": "Prompt length — Medium: a balanced prompt with enough detail to direct subject, composition, lighting, and materials without bloat.",
-    "Detailed": "Prompt length — Detailed: a rich but disciplined prompt covering relevant visual, spatial, material, camera, lighting, and temporal details.",
-    "Maximum Detail": _MAXIMUM_DETAIL_GUIDANCE,
-    # Saved workflows from the pre-release Maximum label remain executable.
-    "Maximum": _MAXIMUM_DETAIL_GUIDANCE,
-}
-
-_PRESERVATION_ADAPTERS = {
-    "subject": "Preserve subject: do not change subject identity, type, count, key attributes, clothing, or defining features unless explicitly requested.",
-    "composition": "Preserve composition: do not rearrange the scene, layout, spatial relationships, crop, or framing unless explicitly requested.",
-    "camera": "Preserve camera: do not invent a different viewpoint, camera height, angle, framing, focal length, or camera movement unless explicitly requested.",
-    "materials": "Preserve materials: do not replace specified materials, finishes, texture character, roughness, or surface response.",
-    "lighting": "Preserve lighting: do not replace the stated light sources, direction, time-of-day character, contrast, or exposure intent.",
-    "colors": "Preserve colors: do not replace the stated palette, object colors, material colors, or color-grading intent.",
-}
-
 
 def _image_descriptor(image):
     if image is None:
@@ -103,12 +68,11 @@ def _preservation_section(request, resolved_reference_map, has_image):
     if has_image or request.linked_references:
         locked = [item for item in resolved_reference_map.attributes if item.preserve]
         if not locked:
-            return "PRESERVATION CONSTRAINTS\nNo attribute-level Preserve locks are enabled."
+            return PRESERVATION_NO_LINKED_LOCKS
         return (
             "PRESERVATION CONSTRAINTS\n- "
             + "\n- ".join(
-                f"Preserve {item.label} from {item.source} strictly. "
-                "This lock controls strictness only and does not change any other attribute's resolved source."
+                PRESERVATION_LINKED_LOCK.format(label=item.label, source=item.source)
                 for item in locked
             )
         )
@@ -121,7 +85,7 @@ def _preservation_section(request, resolved_reference_map, has_image):
     return (
         "PRESERVATION CONSTRAINTS\n- " + "\n- ".join(enabled)
         if enabled
-        else "PRESERVATION CONSTRAINTS\nNone beyond the selected mode and the user's explicit wording."
+        else PRESERVATION_NONE
     )
 
 def _as_bool(value):

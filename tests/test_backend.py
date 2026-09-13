@@ -80,6 +80,12 @@ class ProcessManagerTests(unittest.TestCase):
         self.manager.release(owned)
         self.assertEqual(self.manager.owned_process_count, 0)
 
+    def test_interrupt_active_stops_the_owned_server(self):
+        self.manager.acquire(self.config)
+        self.assertEqual(self.manager.interrupt_active(), "stopped")
+        self.process.terminate.assert_called_once()
+        self.assertIsNone(self.manager._owned)
+
     def test_display_label_does_not_restart(self):
         renamed = replace(self.config, requested_model="Another label")
         self.assertEqual(self.config.command(), renamed.command())
