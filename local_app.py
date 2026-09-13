@@ -38,7 +38,7 @@ from goated_prompter.presets import (
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
 MAX_IMAGE_PIXELS = 40_000_000
 COMPLETED_LIMIT = 32
-TERMINAL = {"succeeded", "failed"}
+TERMINAL = {"succeeded", "failed", "cancelled"}
 STATE = web.AppKey("local_state", object)
 MAX_STORE_BYTES = 16 * 1024 * 1024
 MAX_PROMPTS = 10000
@@ -205,6 +205,8 @@ class Job:
         self.gate = threading.Event()
         self.gate.set()
         self.stopping = False
+        self.cancel_requested = False
+        self.interrupt = None
 
     def snapshot(self):
         with self.lock:
@@ -214,6 +216,8 @@ class Job:
     def checkpoint(self):
         while True:
             with self.lock:
+                if self.cancel_requested:
+                    raise JobCancelled()
                 if self.stopping:
                     raise ValueError("Server is shutting down. Restart it and generate again.")
                 if self.gate.is_set():
@@ -222,6 +226,27 @@ class Job:
                     self.status = "paused"
                     self.revision += 1
             self.gate.wait()
+
+    def set_interrupt(self, interrupt):
+        with self.lock:
+            self.interrupt = interrupt
+            cancelled = self.cancel_requested
+        if cancelled:
+            interrupt()
+
+    def cancel(self):
+        with self.lock:
+            if self.status in TERMINAL:
+                return self.snapshot()
+            self.cancel_requested = True
+            self.status = "cancelling"
+            self.gate.set()
+            self.revision += 1
+            interrupt = self.interrupt
+            snapshot = self.snapshot()
+        if interrupt is not None:
+            interrupt()
+        return snapshot
 
     def deliver(self, result):
         while True:
@@ -234,6 +259,10 @@ class Job:
                 self.finished_at = time.time()
                 self.revision += 1
                 return
+
+
+class JobCancelled(Exception):
+    """A local generation was explicitly ended by the user."""
 
 
 class LocalState:
@@ -365,20 +394,33 @@ class LocalState:
                 if effective.get("backend") == "local_llama_cpp":
                     executable = _resolve_server_executable(local_settings.get("llama_server"), local_settings.get("runtime_root"))
                     validate_local_paths({"llama_server": executable})
+                    # This app owns the active llama.cpp process, so ending its
+                    # job can interrupt the blocking inference request.
+                    job.set_interrupt(get_process_manager().interrupt_active)
                 service = self.service_factory(config=config, checkpoint=job.checkpoint)
                 generated = (service.generate_text_only if text_only else service.generate)(director_request)
                 result = {"ok": True, "prompt": generated.prompt, "backend": generated.backend_name,
                           "director_profile": generated.director_profile,
                           "prompt_model": generated.prompt_model, "director_preset": generated.director_preset}
             job.deliver(result)
-        except Exception as exc:
-            logging.exception("Local generation failed")
+        except JobCancelled:
             with job.lock:
-                job.error = str(exc) if isinstance(exc, (ValueError, GoatedPrompterError)) else (
-                    "Generation failed unexpectedly. Check the server console and model configuration, then retry.")
-                job.status = "failed"
+                job.status = "cancelled"
                 job.finished_at = time.time()
                 job.revision += 1
+        except Exception as exc:
+            with job.lock:
+                cancelled = job.cancel_requested
+                if cancelled:
+                    job.status = "cancelled"
+                else:
+                    job.error = str(exc) if isinstance(exc, (ValueError, GoatedPrompterError)) else (
+                        "Generation failed unexpectedly. Check the server console and model configuration, then retry.")
+                    job.status = "failed"
+                job.finished_at = time.time()
+                job.revision += 1
+            if not cancelled:
+                logging.exception("Local generation failed")
 
     async def run(self, job, *args):
         await asyncio.to_thread(self.execute, job, *args)
@@ -481,6 +523,12 @@ async def job_endpoint(request):
     job = request.app[STATE].jobs.get(request.match_info["id"])
     if job is None:
         raise web.HTTPNotFound(reason="Job not found or expired. Generate again.")
+    if request.method == "POST" and request.match_info["action"] == "cancel":
+        with job.lock:
+            if job.status in TERMINAL:
+                raise web.HTTPConflict(reason="This job has already finished.")
+        # Process termination can briefly wait; keep the HTTP event loop free.
+        return web.json_response(await asyncio.to_thread(job.cancel))
     with job.lock:
         if request.method == "POST":
             if job.status in TERMINAL:
@@ -609,7 +657,7 @@ def create_app(*, port=8190, dist=None, config_loader=load_config, service_facto
                             prompts_path)
     app.add_routes([web.get("/api/bootstrap", bootstrap), web.post("/api/generate", generate),
                     web.get("/api/jobs/{id}", job_endpoint),
-                    web.post("/api/jobs/{id}/{action:pause|resume}", job_endpoint),
+                    web.post("/api/jobs/{id}/{action:pause|resume|cancel}", job_endpoint),
                     web.get("/api/models", models), web.get("/api/presets", presets),
                     web.get("/api/settings", settings_endpoint), web.put("/api/settings", settings_endpoint),
                     web.get("/api/prompts", prompts_endpoint), web.post("/api/prompts", prompts_endpoint),

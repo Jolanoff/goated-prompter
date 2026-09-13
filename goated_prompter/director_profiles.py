@@ -7,21 +7,14 @@ import re
 import threading
 
 from .backends.base import BackendConfigurationError
-
-PROMPT_MODEL_QWEN = "Qwen 3.5 9B"
-PROMPT_MODEL_QWEN_UNCENSORED = "Qwen 3.5 9B — Uncensored"
-PROMPT_MODEL_QWEN_AGGRESSIVE = "Qwen 3.5 9B — HauhauCS Aggressive"
-PROMPT_MODEL_GEMMA = "Gemma 3 12B"
-PROMPT_MODEL_NAMES = (
-    PROMPT_MODEL_QWEN,
-    PROMPT_MODEL_QWEN_UNCENSORED,
-    PROMPT_MODEL_QWEN_AGGRESSIVE,
+from .prompt_catalog import (
+    DIRECTOR_AI_NAMES,
     PROMPT_MODEL_GEMMA,
-    "Custom",
+    PROMPT_MODEL_NAMES,
+    PROMPT_MODEL_QWEN,
+    PROMPT_MODEL_QWEN_AGGRESSIVE,
+    PROMPT_MODEL_QWEN_UNCENSORED,
 )
-
-# Kept for third-party callers that still validate legacy payload values.
-DIRECTOR_AI_NAMES = ("Default", "Uncensored", "Gemma", "Custom")
 
 QWEN_RUNTIME_DEFAULTS = {
     "reasoning": "off",

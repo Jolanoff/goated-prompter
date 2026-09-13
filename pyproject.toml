@@ -4,13 +4,12 @@ version = "1.0.1"
 description = "Local prompt-generation website with a shared Python engine and optional ComfyUI integration."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "TODO: choose license before publication" }
+license = { file = "LICENSE" }
 dependencies = []
 
-[tool.comfy]
-PublisherId = "TODO_PUBLISHER_ID"
-DisplayName = "Goated Prompter"
-Icon = ""
+[project.urls]
+Repository = "https://github.com/Jolanoff/goated-prompter"
+Issues = "https://github.com/Jolanoff/goated-prompter/issues"
 
 [tool.setuptools]
 py-modules = []

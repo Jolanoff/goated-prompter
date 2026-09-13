@@ -9,3 +9,13 @@ __pycache__/
 .venv/
 venv/
 tests/
+data/
+frontend/node_modules/
+frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
+.pytest_cache/
+.env
+.env.*
+*.gguf
+config/config.json

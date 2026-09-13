@@ -208,6 +208,24 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         response = await self.client.get(f"/api/jobs/{job['id']}")
         self.assertEqual(await response.json(), completed)
 
+    async def test_end_generation_cancels_without_delivering_and_releases_admission(self):
+        self.release.clear()
+        job = await self.start()
+        self.assertTrue(await asyncio.to_thread(self.entered.wait, 2))
+        response = await self.client.post(f"/api/jobs/{job['id']}/cancel")
+        ending = await response.json()
+        self.assertEqual(ending["status"], "cancelling")
+        self.assertEqual(ending["revision"], 1)
+        response = await self.client.post("/api/generate", json={})
+        self.assertEqual(response.status, 409)
+        self.release.set()
+        ended = await self.wait_status(job["id"], "cancelled")
+        self.assertIsNone(ended["result"])
+        self.assertEqual(ended["revision"], 2)
+        self.assertIsNone((await (await self.client.get("/api/bootstrap")).json())["active_job"])
+        next_job = await self.start()
+        await self.wait_status(next_job["id"], "succeeded")
+
     async def test_settings_defaults_are_read_only_and_do_not_override_config(self):
         config = {"backend": "mock", "local_llama_cpp": {"models_dir": self.temp.name, "keep_model_loaded": True}}
         state = self.app[local.STATE]

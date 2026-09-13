@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { orderDisplayPresets, presetDisplayLabel } from "./presetPresentation.js";
+import { ui } from "./ui.js";
 import {
   ArrowLeft,
   ArrowUpRight,
@@ -11,8 +13,6 @@ import {
   Layers3,
   LoaderCircle,
   LockKeyhole,
-  Pause,
-  Play,
   Plus,
   RefreshCw,
   RotateCcw,
@@ -35,9 +35,34 @@ import {
   loadSaved,
   SAVED_KEY,
 } from "./storage.js";
-const activeStatuses = ["running", "pause_requested", "paused"];
+const activeStatuses = ["running", "pause_requested", "paused", "cancelling"];
 const titleCase = (text) =>
   text.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+const taskLabels = {
+  Enhance: "Improve a prompt",
+  Archviz: "Architecture & interiors",
+  Photography: "Photography",
+  Character: "Character",
+  Product: "Product",
+  "Image Edit": "Edit an image",
+  "Style Transfer": "Transfer a style",
+  "Dataset Caption": "Caption for a dataset",
+  Video: "Video shot",
+  Custom: "Custom instructions",
+};
+const referenceOrder = [
+  "subject",
+  "face",
+  "outfit",
+  "pose",
+  "scene",
+  "composition",
+  "camera",
+  "lighting",
+  "colors",
+  "materials",
+  "mood",
+];
 
 async function api(path, body, method = "POST") {
   const response = await fetch(
@@ -67,7 +92,7 @@ async function api(path, body, method = "POST") {
 function GoatMark({ small = false }) {
   return (
     <svg
-      className={`goat-mark ${small ? "small" : ""}`}
+      className={`text-[#ad97e8] ${small ? "size-10" : "size-[49px]"}`}
       viewBox="0 0 64 64"
       fill="none"
       aria-hidden="true"
@@ -100,12 +125,12 @@ function Panel({
   className = "",
 }) {
   return (
-    <section className={`panel ${className}`}>
-      <header className="panel-header">
-        <div className="panel-icon">
+    <section className={`${ui.panel} ${className}`}>
+      <header className={ui.panelHeader}>
+        <div className={ui.panelIcon}>
           <Icon size={21} />
         </div>
-        <div className="panel-heading">
+        <div className={ui.panelHeading}>
           <h2>{title}</h2>
           <p>{subtitle}</p>
         </div>
@@ -116,18 +141,19 @@ function Panel({
   );
 }
 
-function Toggle({ label, description, checked, onChange, disabled }) {
+function Toggle({ label, description, checked, onChange, disabled, small = false }) {
   return (
-    <label className="toggle-row">
+    <label className={ui.toggleRow} data-small={small}>
       <input
+        className={ui.toggleInput}
         type="checkbox"
         checked={!!checked}
         onChange={(event) => onChange(event.target.checked)}
         disabled={disabled}
       />
-      <span className="switch" aria-hidden="true" />
+      <span className={ui.switch} data-small={small} aria-hidden="true" />
       <span>
-        <span className="toggle-label">{label}</span>
+        <span className={ui.toggleLabel} data-small={small}>{label}</span>
         {description && <small>{description}</small>}
       </span>
     </label>
@@ -213,12 +239,13 @@ function App() {
     profiles.find((item) => item.id === bootstrap?.settings.selected_profile) ||
     profiles[0];
   const noEngine = !configuredBackend && !selectedProfile;
-  const attributes =
-    bootstrap?.reference_attributes ||
-    referenceAttributes.map((key) => ({
-      key,
-      label: key === "mood" ? "Mood / style" : titleCase(key),
-    }));
+  const attributes = [
+    ...(bootstrap?.reference_attributes ||
+      referenceAttributes.map((key) => ({
+        key,
+        label: key === "mood" ? "Mood / style" : titleCase(key),
+      }))),
+  ].sort((a, b) => referenceOrder.indexOf(a.key) - referenceOrder.indexOf(b.key));
   const sources = bootstrap?.reference_sources || referenceSources;
   const hasImages = images.some(Boolean);
   const imageCount = images.filter(Boolean).length;
@@ -244,9 +271,12 @@ function App() {
       item.id === settings.director_preset ||
       item.label === settings.director_preset,
   );
+  const displayedPresets = orderDisplayPresets(bootstrap?.presets.presets || []);
   const status = submitting
     ? "Starting"
-    : job?.status === "paused"
+    : job?.status === "cancelling"
+      ? "Ending"
+      : job?.status === "paused"
       ? "Paused"
       : job?.status === "pause_requested"
         ? "Pause requested"
@@ -288,6 +318,8 @@ function App() {
             ? "Locked prompt kept exactly as written."
             : "Your prompt is ready. Make it yours.",
         );
+      } else if (next.status === "cancelled") {
+        setNotice("Generation ended.");
       } else
         setError(next.error || "Generation failed. Check the backend console.");
     }
@@ -503,7 +535,8 @@ function App() {
 
   function discardDirector() {
     return (
-      !directorDirty || window.confirm("Discard unsaved Director changes?")
+      !directorDirty ||
+      window.confirm("Discard unsaved instruction preset changes?")
     );
   }
 
@@ -534,7 +567,7 @@ function App() {
     if (
       operation !== "save" &&
       !window.confirm(
-        `${operation === "delete" ? "Delete" : "Reset"} "${editorDirector.label}"? Unsaved changes will be discarded.`,
+        `${operation === "delete" ? "Delete" : "Reset"} "${presetDisplayLabel(editorDirector)}"? Unsaved changes will be discarded.`,
       )
     )
       return;
@@ -573,12 +606,14 @@ function App() {
       );
       setNotice(
         operation === "delete"
-          ? "Director deleted."
-          : "Director saved to the local JSON file.",
+          ? "Instruction preset deleted."
+          : "Instruction preset saved to the local JSON file.",
       );
     } catch (err) {
       if (err.activeJob) receiveJob(err.activeJob);
-      setError(`Could not ${operation} Director. Draft kept. ${err.message}`);
+      setError(
+        `Could not ${operation} instruction preset. Draft kept. ${err.message}`,
+      );
     } finally {
       setActionBusy(false);
     }
@@ -592,11 +627,12 @@ function App() {
         ? type.map((value) => ({ value, label: value }))
         : null);
     return (
-      <label className="field" key={key}>
+      <label className={ui.field} key={key}>
         <span>{label || titleCase(key)}</span>
         {choices ? (
-          <span className="select-wrap">
+          <span className={ui.selectWrap}>
             <select
+              className={ui.select}
               aria-label={label || titleCase(key)}
               value={settings[key] ?? ""}
               onChange={(event) => update(key, event.target.value)}
@@ -611,6 +647,7 @@ function App() {
           </span>
         ) : (
           <input
+            className={ui.input}
             aria-label={label || titleCase(key)}
             type={type === "INT" ? "number" : "text"}
             min={options.min}
@@ -710,15 +747,12 @@ function App() {
     }
   }
 
-  async function pauseResume() {
+  async function endGeneration() {
     setActionBusy(true);
     setError("");
     try {
       receiveJob(
-        await api(
-          `/jobs/${job.id}/${job.status === "running" ? "pause" : "resume"}`,
-          {},
-        ),
+        await api(`/jobs/${job.id}/cancel`, {}),
       );
     } catch (err) {
       setError(err.message);
@@ -876,10 +910,10 @@ function App() {
   }
 
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
+    <div className="min-h-screen">
+      <aside className={ui.sidebar}>
         <a
-          className="sidebar-brand"
+          className={ui.sidebarBrand}
           href="#"
           onClick={(event) => {
             event.preventDefault();
@@ -889,44 +923,48 @@ function App() {
         >
           <GoatMark />
           <span>
-            GOATED<span className="brand-sub">PROMPTER</span>
+            GOATED<span className={ui.brandSub}>PROMPTER</span>
           </span>
         </a>
-        <div className="nav-caption">WORKSPACE</div>
+        <div className={ui.navCaption}>WORKSPACE</div>
         <nav aria-label="Workspace">
           <button
-            className={view === "builder" ? "nav-item selected" : "nav-item"}
+            className={ui.navItem}
+            data-active={view === "builder"}
             onClick={() => navigate("builder")}
           >
             <SlidersHorizontal size={19} />
             Prompt Builder
           </button>
           <button
-            className={view === "saved" ? "nav-item selected" : "nav-item"}
+            className={ui.navItem}
+            data-active={view === "saved"}
             onClick={() => navigate("saved")}
           >
             <Bookmark size={19} />
-            Saved Prompts<span className="nav-count">{saved.length}</span>
+            Saved Prompts<span className={ui.navCount}>{saved.length}</span>
           </button>
           <button
-            className={view === "directors" ? "nav-item selected" : "nav-item"}
+            className={ui.navItem}
+            data-active={view === "directors"}
             onClick={() => navigate("directors")}
             disabled={!bootstrap}
           >
             <WandSparkles size={19} />
-            Directors
+            Instruction presets
           </button>
           <button
-            className={view === "settings" ? "nav-item selected" : "nav-item"}
+            className={ui.navItem}
+            data-active={view === "settings"}
             onClick={() => navigate("settings")}
           >
             <Settings2 size={19} />
             Settings
           </button>
         </nav>
-        <div className="sidebar-bottom">
-          <div className="local-label">
-            <span className="status-dot" />
+        <div className={ui.sidebarBottom}>
+          <div className={ui.localLabel}>
+            <span className={ui.statusDot} />
             YOUR LOCAL WORKSPACE
           </div>
           <p>
@@ -935,7 +973,7 @@ function App() {
             <span>Great possibilities.</span>
           </p>
           <svg
-            className="mountains"
+            className="absolute bottom-0 left-0 w-full"
             viewBox="0 0 240 145"
             fill="none"
             aria-hidden="true"
@@ -958,31 +996,31 @@ function App() {
         </div>
       </aside>
 
-      <div className="main-shell">
-        <header className="topbar">
-          <div className="header-title">
+      <div className={ui.mainShell}>
+        <header className={ui.topbar}>
+          <div className={ui.headerTitle}>
             <GoatMark small />
             <div>
               <h1>Goated Prompter</h1>
               <p>Sharper ideas. Better prompts.</p>
             </div>
           </div>
-          <div className="header-right">
-            <span className={`connection-pill ${bootstrap ? "" : "offline"}`}>
-              <span className="status-dot" />
+          <div className="flex items-center gap-[22px] mobile:gap-0">
+            <span className={ui.connectionPill} data-offline={!bootstrap}>
+              <span className={ui.statusDot} />
               {bootstrap ? "Local backend connected" : "Backend offline"}
             </span>
-            <span className="local-only">
+            <span className={ui.localOnly}>
               <Zap size={14} />
               LOCAL WORKSPACE
             </span>
           </div>
         </header>
 
-        <main className={view === "builder" ? "builder-main" : ""}>
+        <main className={ui.main} data-builder={view === "builder"}>
           {bootstrap && (
             <div
-              className="builder-save"
+              className={ui.builderSave}
               aria-live="polite"
               aria-label="Builder save status"
             >
@@ -994,7 +1032,7 @@ function App() {
                     {builderError}
                   </span>
                   <button
-                    className="button"
+                    className={ui.button}
                     onClick={() => saver.current.flush().catch(() => {})}
                   >
                     Retry builder save
@@ -1004,26 +1042,26 @@ function App() {
             </div>
           )}
           {storageWarning && (
-            <div className="message error" role="alert">
+            <div className={ui.message} role="alert">
               {storageWarning}
             </div>
           )}
           {storageError && (
-            <div className="message error" role="alert">
+            <div className={ui.message} role="alert">
               <span>{storageError}</span>
-              <button onClick={() => setStorageReload((value) => value + 1)}>
+              <button className={ui.retryButton} onClick={() => setStorageReload((value) => value + 1)}>
                 Retry saved prompts
               </button>
             </div>
           )}
           {error && (
-            <div className="message error" role="alert">
+            <div className={ui.message} role="alert">
               <span>{error}</span>
               {!bootstrap && (
-                <button onClick={connect}>Retry connection</button>
+                <button className={ui.retryButton} onClick={connect}>Retry connection</button>
               )}
               <button
-                className="icon-button"
+                className={ui.iconButton}
                 onClick={() => setError("")}
                 aria-label="Dismiss error"
               >
@@ -1031,9 +1069,9 @@ function App() {
               </button>
             </div>
           )}
-          <div className="toast-region" role="status">
+          <div className={ui.toastRegion} data-builder={view === "builder" && !!bootstrap} role="status">
             {notice && (
-              <div className="toast">
+              <div className={ui.toast}>
                 <Check size={16} />
                 {notice}
               </div>
@@ -1042,9 +1080,9 @@ function App() {
 
           {view === "saved" ? (
             <>
-              <div className="page-heading">
+              <div className={ui.pageHeading}>
                 <div>
-                  <div className="eyebrow">YOUR COLLECTION</div>
+                  <div className={ui.eyebrow}>YOUR COLLECTION</div>
                   <h2>
                     Prompts worth keeping<span>.</span>
                   </h2>
@@ -1053,13 +1091,13 @@ function App() {
                     next creation.
                   </p>
                 </div>
-                <button className="button" onClick={() => setView("builder")}>
+                <button className={ui.button} onClick={() => setView("builder")}>
                   <ArrowLeft size={16} />
                   Back to builder
                 </button>
               </div>
               {!storageReady ? (
-                <div className="empty-state">
+                <div className={ui.emptyState}>
                   <Bookmark size={34} />
                   <h3>Saved prompts are not ready yet</h3>
                   <p>
@@ -1068,8 +1106,8 @@ function App() {
                   </p>
                 </div>
               ) : saved.length === 0 ? (
-                <div className="empty-state">
-                  <div className="empty-icon">
+                <div className={ui.emptyState}>
+                  <div className={ui.emptyIcon}>
                     <Bookmark size={30} />
                   </div>
                   <h3>A home for your best ideas.</h3>
@@ -1077,7 +1115,7 @@ function App() {
                     Generate a prompt, then hit Save Prompt to keep it here.
                   </p>
                   <button
-                    className="button primary-small"
+                    className={ui.primaryButton}
                     onClick={() => setView("builder")}
                   >
                     <Plus size={16} />
@@ -1085,10 +1123,10 @@ function App() {
                   </button>
                 </div>
               ) : (
-                <div className="saved-grid">
+                <div className="grid grid-cols-2 gap-[18px] mobile:grid-cols-1">
                   {saved.map((record) => (
-                    <article className="panel saved-card" key={record.id}>
-                      <div className="saved-meta">
+                    <article className={ui.savedCard} key={record.id}>
+                      <div className={ui.savedMeta}>
                         <span>{record.target || "Prompt"}</span>
                         <time dateTime={record.createdAt}>
                           {new Date(record.createdAt).toLocaleDateString(
@@ -1099,16 +1137,16 @@ function App() {
                       </div>
                       <h3>{record.title}</h3>
                       <pre tabIndex={0}>{record.prompt}</pre>
-                      <div className="saved-actions">
+                      <div className="flex gap-2 border-t border-line pt-[15px]">
                         <button
-                          className="button"
+                          className={ui.button}
                           onClick={() => copy(record.prompt)}
                         >
                           <Copy size={15} />
                           Copy
                         </button>
                         <button
-                          className="button"
+                          className={ui.button}
                           disabled={busy}
                           onClick={() => {
                             update("generated_prompt", record.prompt);
@@ -1119,7 +1157,7 @@ function App() {
                           Open
                         </button>
                         <button
-                          className="icon-button delete-button"
+                          className={ui.deleteButton}
                           aria-label={`Delete ${record.title}`}
                           disabled={!storageReady || promptsBusy || dialogBusy}
                           onClick={() => deletePrompt(record)}
@@ -1133,44 +1171,47 @@ function App() {
               )}
             </>
           ) : !bootstrap ? (
-            <div className="empty-state">
+            <div className={ui.emptyState}>
               <GoatMark />
               <h2>Your workspace is getting ready</h2>
               <p>
-                Connect to the Python backend to load the node's controls and
+                Connect to the Python backend to load your workspace controls and
                 models.
               </p>
               <code>python local_app.py</code>
             </div>
           ) : view === "directors" ? (
             <>
-              <div className="page-heading">
+              <div className={ui.pageHeading}>
                 <div>
-                  <div className="eyebrow">YOUR DIRECTION</div>
+                  <div className={ui.eyebrow}>YOUR DIRECTION</div>
                   <h2>
-                    Directors<span>.</span>
+                    Instruction presets<span>.</span>
                   </h2>
-                  <p>Saved instructions, ready for every generation.</p>
+                  <p>
+                    Reusable instructions that guide how your prompt task is written.
+                  </p>
                 </div>
               </div>
-              <div className="directors-grid">
+              <div className={ui.directorsGrid}>
                 <Panel
                   icon={WandSparkles}
-                  title="Director library"
-                  subtitle="Choose a saved Director to edit."
+                  title="Instruction presets"
+                  subtitle="Choose saved instructions to edit."
                 >
-                  <div className="director-list">
-                    {bootstrap.presets.presets.map((item) => (
+                  <div className={ui.directorList}>
+                    {displayedPresets.map((item) => (
                       <button
                         key={item.id}
-                        className={`director-choice ${directorId === item.id ? "selected" : ""}`}
+                        className={`${ui.directorChoice} ${directorId === item.id ? "selected" : ""}`}
+                        data-active={directorId === item.id}
                         disabled={actionBusy}
                         onClick={() => {
                           if (item.id !== directorId && discardDirector())
                             selectDirector(item);
                         }}
                       >
-                        <strong>{item.label}</strong>
+                        <strong>{presetDisplayLabel(item)}</strong>
                         <span>
                           {item.protected ? "Built-in" : "User"}
                           {item.modified ? " / Edited" : ""}
@@ -1179,14 +1220,14 @@ function App() {
                     ))}
                   </div>
                   <button
-                    className="button"
+                    className={ui.button}
                     disabled={busy || actionBusy}
                     onClick={() => {
                       if (discardDirector()) selectDirector(null);
                     }}
                   >
                     <Plus size={15} />
-                    New director
+                    New instruction preset
                   </button>
                 </Panel>
                 <form
@@ -1198,20 +1239,25 @@ function App() {
                   <fieldset disabled={busy || actionBusy}>
                     <Panel
                       icon={FileText}
-                      title={directorId ? "Edit Director" : "New Director"}
+                      title={
+                        directorId ? "Edit instruction preset" : "New instruction preset"
+                      }
                       subtitle={
                         directorDirty
                           ? "Unsaved changes"
                           : "Instructions saved separately from your builder."
                       }
                     >
-                      <label className="field">
-                        <span>Director name</span>
+                      <label className={ui.field}>
+                        <span>Instruction preset name</span>
                         <input
+                          className={ui.input}
                           required
                           maxLength={80}
                           readOnly={!!editorDirector?.protected}
-                          value={directorDraft.name}
+                          value={editorDirector?.protected
+                            ? presetDisplayLabel(editorDirector)
+                            : directorDraft.name}
                           onChange={(event) =>
                             setDirectorDraft((draft) => ({
                               ...draft,
@@ -1221,18 +1267,20 @@ function App() {
                         />
                       </label>
                       {editorDirector?.protected && (
-                        <p className="subtle-note">
+                        <p className={ui.subtleNote}>
                           Built-in names cannot be changed. Instructions can be
                           edited and restored.
                         </p>
                       )}
-                      <p className="subtle-note">
-                        {editorDirector?.description}
+                      <p className={ui.subtleNote}>
+                        {editorDirector?.description === "User Director"
+                          ? "User instruction preset"
+                          : editorDirector?.description}
                       </p>
-                      <label className="field">
-                        <span>Director instructions</span>
+                      <label className={ui.field}>
+                        <span>Preset instructions</span>
                         <textarea
-                          className="director-input"
+                          className={ui.directorInput}
                           required
                           value={directorDraft.instructions}
                           onChange={(event) =>
@@ -1243,9 +1291,9 @@ function App() {
                           }
                         />
                       </label>
-                      <div className="inline-actions">
+                      <div className={ui.inlineActions}>
                         <button
-                          className="button primary-small"
+                          className={ui.primaryButton}
                           disabled={
                             !directorDirty ||
                             !directorDraft.name.trim() ||
@@ -1258,7 +1306,7 @@ function App() {
                         {editorDirector && (
                           <button
                             type="button"
-                            className="button"
+                            className={ui.button}
                             onClick={() => {
                               if (discardDirector()) {
                                 setDirectorDraft(directorOriginal);
@@ -1273,18 +1321,18 @@ function App() {
                         {editorDirector && !editorDirector.protected && (
                           <button
                             type="button"
-                            className="button"
+                            className={ui.button}
                             onClick={() => writeDirector("delete")}
                           >
                             <Trash2 size={14} />
-                            Delete Director
+                            Delete instruction preset
                           </button>
                         )}
                         {editorDirector?.protected &&
                           editorDirector.modified && (
                             <button
                               type="button"
-                              className="button"
+                              className={ui.button}
                               onClick={() => writeDirector("reset")}
                             >
                               <RotateCcw size={14} />
@@ -1292,29 +1340,29 @@ function App() {
                             </button>
                           )}
                       </div>
-                      <p className="subtle-note path-note">
+                      <p className={`${ui.subtleNote} wrap-anywhere`}>
                         Stored JSON library: {bootstrap.presets.storage}
                       </p>
                     </Panel>
                   </fieldset>
                   {busy && (
-                    <p className="warning-note">
-                      Directors are read-only while a generation job is active.
+                    <p className={ui.warningNote}>
+                      Instruction presets are read-only while a generation job is active.
                     </p>
                   )}
                 </form>
               </div>
               {bootstrap.presets.warnings?.map((warning, index) => (
-                <p className="warning-note" key={index}>
+                <p className={ui.warningNote} key={index}>
                   {warning}
                 </p>
               ))}
             </>
           ) : view === "settings" ? (
             <>
-              <div className="page-heading">
+              <div className={ui.pageHeading}>
                 <div>
-                  <div className="eyebrow">YOUR LOCAL SETUP</div>
+                  <div className={ui.eyebrow}>YOUR LOCAL SETUP</div>
                   <h2>
                     Settings<span>.</span>
                   </h2>
@@ -1323,21 +1371,22 @@ function App() {
                     this server.
                   </p>
                 </div>
-                <button className="button" onClick={() => setView("builder")}>
+                <button className={ui.button} onClick={() => setView("builder")}>
                   <ArrowLeft size={16} />
                   Back to builder
                 </button>
               </div>
-              <form onSubmit={saveSettings} className="settings-form">
+              <form onSubmit={saveSettings} className={ui.settingsForm}>
                 <fieldset disabled={busy || settingsBusy || actionBusy}>
                   <Panel
                     icon={Layers3}
                     title="Local models"
                     subtitle={`Configured backend: ${bootstrap.backend}`}
                   >
-                    <label className="field">
+                    <label className={ui.field}>
                       <span>Models directory</span>
                       <input
+                        className={ui.input}
                         required
                         value={settingsDraft.models_directory || ""}
                         aria-describedby="folder-help"
@@ -1349,7 +1398,7 @@ function App() {
                         }
                       />
                     </label>
-                    <p className="subtle-note" id="folder-help">
+                    <p className={ui.subtleNote} id="folder-help">
                       Enter an existing folder path on the server. This folder
                       is scanned directly and recursively; no LLM folder is
                       appended. Put each model GGUF and its matching mmproj GGUF
@@ -1368,13 +1417,13 @@ function App() {
                         }))
                       }
                     />
-                    <div className="inline-actions">
-                      <button className="button primary-small" type="submit">
+                    <div className="mt-[22px] flex flex-wrap items-center gap-2">
+                      <button className={ui.primaryButton} type="submit">
                         <Save size={14} />
                         {settingsBusy ? "Saving..." : "Save settings"}
                       </button>
                       <button
-                        className="button"
+                        className={ui.button}
                         type="button"
                         onClick={() => modelAction()}
                       >
@@ -1382,7 +1431,7 @@ function App() {
                         Refresh models
                       </button>
                       <button
-                        className="button"
+                        className={ui.button}
                         type="button"
                         onClick={() => modelAction(true)}
                       >
@@ -1391,15 +1440,15 @@ function App() {
                       </button>
                     </div>
                     {busy && (
-                      <p className="warning-note">
+                      <p className={ui.warningNote}>
                         Settings are read-only while a generation job is active.
                         Return to the builder to manage the job.
                       </p>
                     )}
-                    <p className="subtle-note path-note">
+                    <p className={`${ui.subtleNote} wrap-anywhere`}>
                       Scanned folder: {bootstrap.models.root}
                     </p>
-                    <p className="subtle-note">
+                    <p className={ui.subtleNote}>
                       {profiles.length} ready prompt engines found.
                       {configuredBackend &&
                         " Generation uses your configured backend, even without local models."}
@@ -1407,14 +1456,14 @@ function App() {
                     {bootstrap.models.profiles
                       .filter((item) => !item.vision_ready)
                       .map((item) => (
-                        <p className="warning-note" key={item.id}>
+                        <p className={ui.warningNote} key={item.id}>
                           {item.label}: incomplete model. Add the model GGUF and
                           matching mmproj to the same folder, then refresh
                           models.
                         </p>
                       ))}
                     {bootstrap.models.warnings.map((warning, index) => (
-                      <p className="warning-note" key={index}>
+                      <p className={ui.warningNote} key={index}>
                         {warning}
                       </p>
                     ))}
@@ -1424,9 +1473,9 @@ function App() {
             </>
           ) : (
             <>
-              <div className="page-heading">
+              <div className={ui.pageHeading}>
                 <div>
-                  <div className="eyebrow">FROM A SPARK TO SOMETHING GREAT</div>
+                  <div className={ui.eyebrow}>FROM A SPARK TO SOMETHING GREAT</div>
                   <h2>
                     Make your next idea <span>look better.</span>
                   </h2>
@@ -1435,40 +1484,40 @@ function App() {
                     workflows.
                   </p>
                 </div>
-                <span className="workspace-tag">
+                <span className={ui.workspaceTag}>
                   <Layers3 size={14} />
                   Prompt workspace
                 </span>
               </div>
 
-              <fieldset className="workspace-fieldset" disabled={busy}>
-                <div className="workspace-grid">
-                  <div className="column main-column">
+              <fieldset disabled={busy}>
+                <div className={ui.workspaceGrid}>
+                  <div className={ui.column}>
                     <Panel
                       icon={FileText}
                       title="Describe your idea"
                       subtitle="Start with the subject, mood, setting, or a little bit of everything."
-                      className="idea-panel"
+                      className={ui.ideaPanel}
                     >
-                      <div className="textarea-wrap">
+                      <div className="relative">
                         <textarea
                           aria-label="Describe your idea"
-                          className="idea-input"
+                          className={ui.ideaInput}
                           value={settings.idea}
                           onChange={(event) =>
                             update("idea", event.target.value)
                           }
                           placeholder="A cinematic portrait of a wandering samurai in a misty forest at dawn..."
                         />
-                        <span className="char-count">
+                        <span className={ui.charCount}>
                           {settings.idea.length.toLocaleString()} characters
                         </span>
                       </div>
-                      <div className="input-hint">
+                      <div className={ui.inputHint}>
                         <Sparkles size={13} />
                         <span>
-                          A rough idea is all you need. Let your Director handle
-                          the details.
+                          Start with a rough idea, then choose a task and saved
+                          instructions below.
                         </span>
                       </div>
                     </Panel>
@@ -1478,11 +1527,48 @@ function App() {
                       title="Prompt controls"
                       subtitle="Choose how your idea takes shape."
                     >
-                      <div className="fields two-fields">
-                        {field("mode", "Mode")}
-                        {field("target_model", "Target model")}
+                      <div className={`${ui.fields} grid-cols-2`}>
+                        {field(
+                          "mode",
+                          "Prompt task",
+                          bootstrap.inputs.mode[0].map((value) => ({
+                            value,
+                            label: taskLabels[value] || value,
+                          })),
+                        )}
+                        {field(
+                          "director_preset",
+                          "Instruction preset",
+                          displayedPresets.map((item) => ({
+                            value: item.id,
+                            label: presetDisplayLabel(item),
+                          })),
+                        )}
                       </div>
-                      <div className="fields three-fields">
+                      <div className="border-t border-[#ffffff07] pt-[15px]">
+                        <p className={ui.subtleNote}>
+                          Prompt task chooses what to do. Instruction preset adds
+                          saved guidance for how to write it; it does not change the task.
+                        </p>
+                        <span className={ui.directorDescription}>
+                          {preset?.description === "User Director"
+                            ? "User instruction preset"
+                            : preset?.description}
+                        </span>
+                        <button
+                          className={ui.textButton}
+                          onClick={() => {
+                            selectDirector(preset || bootstrap.presets.presets[0]);
+                            navigate("directors");
+                          }}
+                        >
+                          Manage instruction presets
+                        </button>
+                      </div>
+                      {field("target_model", "Target model")}
+
+
+                      <div className={`${ui.fields} ${ui.threeFields} mt-5`}>
                         {field("creativity", "Creativity")}
                         {field(
                           "prompt_length",
@@ -1491,10 +1577,11 @@ function App() {
                             (value) => ({ value, label: value }),
                           ),
                         )}
-                        <label className="field">
+                        <label className={ui.field}>
                           <span>Prompt engine</span>
-                          <span className="select-wrap">
+                          <span className={ui.selectWrap}>
                             <select
+                              className={ui.select}
                               aria-label="Prompt engine"
                               value={
                                 configuredBackend
@@ -1529,45 +1616,22 @@ function App() {
                           </span>
                         </label>
                       </div>
-                      <p className="subtle-note">
+                      <p className={ui.subtleNote}>
                         Maximum Detail uses the largest output budget, not a
                         guaranteed word count. Actual length depends on the
                         model and your instructions.
                       </p>
                       {noEngine && (
-                        <p className="warning-note">
+                        <p className={ui.warningNote}>
                           No complete local model found.{" "}
                           <button
-                            className="text-button"
+                            className={ui.textButton}
                             onClick={() => setView("settings")}
                           >
                             Set up models in Settings
                           </button>
                         </p>
                       )}
-                      <div className="director-field">
-                        {field(
-                          "director_preset",
-                          "Director",
-                          bootstrap.presets.presets.map((item) => ({
-                            value: item.id,
-                            label: item.label,
-                          })),
-                        )}
-                        <span className="director-description">
-                          {preset?.description ||
-                            "Select a Director to guide the prompt."}
-                        </span>
-                        <button
-                          className="text-button"
-                          onClick={() => {
-                            selectDirector(preset || bootstrap.presets.presets[0]);
-                            navigate("directors");
-                          }}
-                        >
-                          Manage Directors
-                        </button>
-                      </div>
                     </Panel>
 
                     <Panel
@@ -1576,16 +1640,18 @@ function App() {
                       subtitle="Your next creation starts here. Edit it until it feels right."
                       action={
                         <span
-                          className={`result-status ${active ? "working" : ""}`}
+                          className={ui.resultStatus}
+                          data-working={active}
                         >
-                          <span className="status-dot" />
+                          <span className={ui.statusDot} />
                           {active ? status : prompt ? "Ready" : "Awaiting idea"}
                         </span>
                       }
-                      className="output-panel"
+                      className={ui.outputPanel}
                     >
-                      <div className="textarea-wrap output-wrap">
+                      <div className="relative">
                         <textarea
+                          className={ui.outputInput}
                           aria-label="Generated prompt"
                           value={prompt}
                           onChange={(event) =>
@@ -1594,13 +1660,13 @@ function App() {
                           placeholder="A little direction. A lot of possibility.\n\nYour generated prompt will appear here."
                           spellCheck={false}
                         />
-                        <span className="char-count">
+                        <span className={ui.charCount}>
                           {prompt.length.toLocaleString()} characters
                         </span>
                       </div>
-                      <div className="output-actions">
+                      <div className={ui.outputActions}>
                         <button
-                          className="button"
+                          className={ui.button}
                           disabled={!prompt}
                           onClick={() => copy(prompt)}
                         >
@@ -1608,7 +1674,7 @@ function App() {
                           Copy Prompt
                         </button>
                         <button
-                          className="button save-button"
+                          className={ui.saveButton}
                           disabled={
                             !prompt.trim() ||
                             !storageReady ||
@@ -1621,7 +1687,7 @@ function App() {
                           Save Prompt
                         </button>
                         <button
-                          className="button"
+                          className={ui.button}
                           disabled={!prompt || locked}
                           onClick={() => update("generated_prompt", "")}
                         >
@@ -1629,8 +1695,9 @@ function App() {
                           Clear
                         </button>
                       </div>
-                      <div className="lock-row">
+                      <div className={ui.lockRow}>
                         <Toggle
+                          small
                           label="Lock output"
                           checked={locked}
                           onChange={(value) =>
@@ -1644,21 +1711,22 @@ function App() {
                       </div>
                     </Panel>
                   </div>
-                  <div className="column reference-column">
+                  <div className={ui.column}>
                     <Panel
                       icon={ImagePlus}
                       title="Reference images"
                       subtitle="Bring your vision into focus. Up to four images."
                       action={
-                        <span className="count-chip">
+                        <span className={ui.countChip}>
                           {images.filter(Boolean).length} / 4
                         </span>
                       }
                     >
-                      <div className="image-slots">
+                      <div className="grid grid-cols-2 gap-[11px]">
                         {images.map((image, index) => (
                           <div
-                            className={`image-slot ${image ? "has-image" : ""}`}
+                            className={ui.imageSlot}
+                            data-image={!!image}
                             key={index}
                             onDragOver={(event) => event.preventDefault()}
                             onDrop={(event) => {
@@ -1677,7 +1745,7 @@ function App() {
                                   alt={`Reference ${index + 1}: ${image.name}`}
                                 />
                                 <button
-                                  className="image-remove"
+                                  className={ui.imageRemove}
                                   aria-label={`Remove image ${index + 1}`}
                                   onClick={() =>
                                     setImages((previous) =>
@@ -1689,13 +1757,13 @@ function App() {
                                 >
                                   <X size={15} />
                                 </button>
-                                <div className="image-caption">
+                                <div className={ui.imageCaption}>
                                   <span>IMAGE {index + 1}</span>
                                   <span title={image.name}>{image.name}</span>
                                 </div>
                               </>
                             ) : (
-                              <label className="upload-label">
+                              <label className={ui.uploadLabel}>
                                 <input
                                   type="file"
                                   aria-label={`Upload image ${index + 1}`}
@@ -1705,7 +1773,7 @@ function App() {
                                     event.target.value = "";
                                   }}
                                 />
-                                <span className="upload-icon">
+                                <span className="mb-[3px] text-[#b2a0d6] [&>svg]:inline [&>svg]:align-baseline">
                                   <ImagePlus size={24} />
                                 </span>
                                 <strong>Add image {index + 1}</strong>
@@ -1716,22 +1784,23 @@ function App() {
                           </div>
                         ))}
                       </div>
-                      <p className="subtle-note">
+                      <p className={ui.subtleNote}>
                         Images are not saved. References need reuploading after
                         reload; unavailable preserve mappings reset to Off.
                       </p>
                     </Panel>
                     <Panel
                       icon={Settings2}
-                      title="Preserve references"
-                      subtitle="One source per attribute. Off leaves it unpreserved."
+                      title="Keep from reference images"
+                      subtitle="Choose which image supplies each attribute to keep."
                     >
-                      <div className="reference-map">
+                      <div className={ui.referenceMap}>
                         {attributes.map(({ key: attribute, label }) => (
-                          <label className="reference-row" key={attribute}>
+                          <label className={ui.referenceRow} key={attribute}>
                             <span>{label}</span>
-                            <span className="select-wrap">
+                            <span className={ui.selectWrap}>
                               <select
+                                className={ui.select}
                                 aria-label={`${titleCase(attribute)} source`}
                                 value={hasImages
                                   ? settings[`reference_${attribute}_source`]
@@ -1758,12 +1827,12 @@ function App() {
                           </label>
                         ))}
                       </div>
-                      <p className="subtle-note">
-                        Each selected source preserves that attribute. Blend
+                      <p className={ui.subtleNote}>
+                        Off adds no explicit preserve constraint. Blend
                         uses all uploaded images and requires at least two.
                       </p>
                       {!!missingReferences.length && (
-                        <p className="warning-note" role="alert">
+                        <p className={ui.warningNote} role="alert">
                           Missing references for{" "}
                           {missingReferences
                             .map(({ label }) => label)
@@ -1781,7 +1850,7 @@ function App() {
                       subtitle="Extra instructions, constraints, and finishing touches."
                     >
                       <textarea
-                        className="notes-input"
+                        className={ui.notesInput}
                         aria-label="Workflow rules"
                         placeholder="e.g. Avoid text and watermarks. Keep natural lighting and focus on realistic textures..."
                         value={settings.custom_instructions}
@@ -1794,9 +1863,9 @@ function App() {
                 </div>
               </fieldset>
 
-              <div className="generation-bar">
+              <div className={ui.generationBar}>
                 <button
-                  className="generate-button"
+                  className={ui.generateButton}
                   disabled={
                     (!locked && !!missingReferences.length) ||
                     busy ||
@@ -1810,7 +1879,7 @@ function App() {
                   {busy ? (
                     <LoaderCircle
                       size={25}
-                      className={job?.status === "paused" ? "" : "spinning"}
+                      className={job?.status === "paused" || job?.status === "cancelling" ? "" : "animate-working"}
                     />
                   ) : locked ? (
                     <LockKeyhole size={24} />
@@ -1839,39 +1908,29 @@ function App() {
                   </span>
                 </button>
                 <button
-                  className={`pause-button ${job?.status === "paused" || job?.status === "pause_requested" ? "resume" : ""}`}
+                  className={ui.endButton}
                   disabled={!active || actionBusy}
-                  onClick={pauseResume}
+                  onClick={endGeneration}
                 >
-                  {job?.status === "paused" ||
-                  job?.status === "pause_requested" ? (
-                    <Play size={23} />
-                  ) : (
-                    <Pause size={23} />
-                  )}
+                  <X size={23} />
                   <span>
-                    <strong>
-                      {job?.status === "paused" ||
-                      job?.status === "pause_requested"
-                        ? "Resume generation"
-                        : "Pause generation"}
-                    </strong>
+                    <strong>End generation</strong>
                     <small>
-                      {job?.status === "pause_requested"
-                        ? "Pause requested; waiting for current call"
-                        : "Pauses after the active model call"}
+                      {job?.status === "cancelling"
+                        ? "Ending the active model request"
+                        : "Stop this generation now"}
                     </small>
                   </span>
                 </button>
               </div>
-              <div className="below-actions">
+              <div className={ui.belowActions}>
                 <span>
                   <LockKeyhole size={12} />
                   Settings and saved prompts stay in local JSON files on this
                   server.
                 </span>
                 <button
-                  className="text-button"
+                  className={ui.textButton}
                   disabled={
                     busy ||
                     !!uploading ||
@@ -1885,8 +1944,8 @@ function App() {
                   Text-only preview
                   <ArrowUpRight size={13} />
                 </button>
-                <span className="preview-note">
-                  Ignores references and Preserve, just like the node.
+                <span className={ui.previewNote}>
+                  Ignores reference images and the attributes selected to keep.
                 </span>
               </div>
             </>
@@ -1895,6 +1954,7 @@ function App() {
       </div>
 
       <dialog
+        className={ui.dialog}
         ref={dialogRef}
         onCancel={(event) => {
           if (dialogBusy) event.preventDefault();
@@ -1903,13 +1963,13 @@ function App() {
         onClose={() => setSaveKind(null)}
       >
         <form onSubmit={save}>
-          <div className="dialog-heading">
-            <div className="panel-icon">
+          <div className="mb-[18px] flex items-center justify-between">
+            <div className={ui.panelIcon}>
               <Bookmark size={22} />
             </div>
             <button
               type="button"
-              className="icon-button"
+              className={ui.iconButton}
               disabled={dialogBusy}
               onClick={() => setSaveKind(null)}
               aria-label="Close save dialog"
@@ -1923,13 +1983,14 @@ function App() {
             this server.
           </p>
           {dialogError && (
-            <div className="message error" role="alert">
+            <div className={ui.message} role="alert">
               {dialogError}
             </div>
           )}
-          <label className="field">
+          <label className={ui.field}>
             <span>Prompt name</span>
             <input
+              className={ui.input}
               autoFocus
               required
               maxLength={80}
@@ -1939,7 +2000,7 @@ function App() {
             />
           </label>
           <button
-            className="button primary-small"
+            className={ui.primaryButton}
             disabled={dialogBusy || !saveName.trim()}
           >
             <Save size={16} />

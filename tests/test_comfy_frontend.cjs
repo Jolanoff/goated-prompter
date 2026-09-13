@@ -20,7 +20,7 @@ function fixture() {
     buildAccentPalette: () => ({}), activeFill: () => "", activeForeground: () => "",
     drawPaletteIcon() {}, drawRound() {}, drawText() {}, hexToRgba() {}, ellipsize: (_, text) => text,
   });
-  vm.runInContext(`${source}\nthis.frontend = { WIDGET_NAMES, detachWidgets, widget, value, setValue, setStatus, state, makeLayout, drawUI, choiceMenu, customProfileMenu, generate };`, context);
+  vm.runInContext(`${source}\nthis.frontend = { REFERENCE_SOURCES, WIDGET_NAMES, detachWidgets, widget, value, setValue, setStatus, state, makeLayout, drawUI, choiceMenu, customProfileMenu, generate };`, context);
   const f = context.frontend;
   class Node {
     constructor() {
@@ -42,6 +42,13 @@ function fixture() {
   const finish = (prompt = "preview") => requests[0].resolve({ ok: true, json: async () => ({ ok: true, prompt }) });
   return { f, node, requests, finish, select: (value) => select(value) };
 }
+
+test("canvas reference selector exposes every backend image slot", () => {
+  const { f } = fixture();
+  assert.deepEqual(Array.from(f.REFERENCE_SOURCES), [
+    "Auto", "Image 1", "Image 2", "Blend", "Off", "Image 3", "Image 4",
+  ]);
+});
 
 test("display status cannot release generation ownership; finally permits retry", async () => {
   const { f, node, requests, finish } = fixture();

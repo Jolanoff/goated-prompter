@@ -1,6 +1,7 @@
 """Real local API with a delayed mock service for browser integration tests only."""
 
 from pathlib import Path
+import os
 import sys
 import tempfile
 import time
@@ -20,5 +21,6 @@ class DelayedMockService(GoatedPrompterService):
 
 if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as data:
+        os.environ["GOATED_PROMPTER_USER_DIR"] = str(Path(data) / "directors")
         web.run_app(create_app(config_loader=lambda: {"backend": "mock"}, settings_path=Path(data) / "settings.json",
                                service_factory=DelayedMockService), host="127.0.0.1", port=8190)

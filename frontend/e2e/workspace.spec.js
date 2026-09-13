@@ -9,7 +9,7 @@ test.beforeEach(async ({ request }) => {
   ).toBe(true);
 });
 
-test("desktop generation, pause/resume, saved prompt persistence and deletion", async ({
+test("desktop generation, ending work, saved prompt persistence and deletion", async ({
   page,
 }) => {
   const errors = [];
@@ -18,9 +18,9 @@ test("desktop generation, pause/resume, saved prompt persistence and deletion", 
   await page.goto("/");
   await expect(page.getByText("Local backend connected")).toBeVisible();
   await expect(
-    page.getByLabel("Director", { exact: true }).locator("option:checked"),
-  ).toHaveText("General Director");
-  await expect(page.getByLabel("Mode", { exact: true })).toHaveValue("Enhance");
+    page.getByLabel("Instruction preset", { exact: true }).locator("option:checked"),
+  ).toHaveText("General-Purpose Prompt");
+  await expect(page.getByLabel("Prompt task", { exact: true })).toHaveValue("Enhance");
   await page
     .getByLabel("Describe your idea", { exact: true })
     .fill("A wandering samurai in a misty forest at dawn.");
@@ -28,19 +28,13 @@ test("desktop generation, pause/resume, saved prompt persistence and deletion", 
     .getByRole("button", { name: "Generate prompt", exact: false })
     .click();
   await expect(
-    page.getByRole("button", { name: "Pause generation", exact: false }),
+    page.getByRole("button", { name: "End generation", exact: false }),
   ).toBeEnabled();
   await page
-    .getByRole("button", { name: "Pause generation", exact: false })
+    .getByRole("button", { name: "End generation", exact: false })
     .click();
   await expect(
-    page.getByRole("button", { name: "Resume generation", exact: false }),
-  ).toBeVisible();
-  await expect(
-    page.getByLabel("Generated prompt", { exact: true }),
-  ).toHaveValue("");
-  await expect(
-    page.getByRole("button", { name: "Paused Your idea is in good hands" }),
+    page.getByRole("button", { name: "End generation", exact: false }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(page.getByLabel("Models directory")).toBeDisabled();
@@ -48,11 +42,11 @@ test("desktop generation, pause/resume, saved prompt persistence and deletion", 
   await expect(
     page.getByRole("button", { name: "Unload model" }),
   ).toBeDisabled();
-  await page.getByRole("button", { name: "Directors", exact: true }).click();
-  await expect(page.getByLabel("Director instructions")).toBeDisabled();
-  await expect(page.getByLabel("Director name")).toBeDisabled();
+  await page.getByRole("button", { name: "Instruction presets", exact: true }).click();
+  await expect(page.getByLabel("Preset instructions")).toBeDisabled();
+  await expect(page.getByLabel("Instruction preset name")).toBeDisabled();
   await expect(
-    page.getByRole("button", { name: "New director", exact: true }),
+    page.getByRole("button", { name: "New instruction preset", exact: true }),
   ).toBeDisabled();
   await expect(
     page.getByRole("button", { name: "Use in builder" }),
@@ -60,7 +54,14 @@ test("desktop generation, pause/resume, saved prompt persistence and deletion", 
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   await page.getByRole("button", { name: "Back to builder" }).click();
   await page
-    .getByRole("button", { name: "Resume generation", exact: false })
+    .getByRole("button", { name: "End generation", exact: false })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Generate prompt", exact: false }),
+  ).toBeEnabled();
+  await expect(page.getByLabel("Generated prompt", { exact: true })).toHaveValue("");
+  await page
+    .getByRole("button", { name: "Generate prompt", exact: false })
     .click();
   await expect(
     page.getByLabel("Generated prompt", { exact: true }),
@@ -120,7 +121,7 @@ test("Settings saves directory and retention through the real JSON-backed API", 
       await expect(page.getByLabel(label, { exact: true })).toHaveCount(0);
     }
     await expect(
-      page.getByLabel("Director behavior", { exact: true }),
+      page.getByLabel("Instruction preset behavior", { exact: true }),
     ).toHaveCount(0);
     await expect(page.getByLabel("Image 1 role", { exact: true })).toHaveCount(
       0,
@@ -282,20 +283,11 @@ test("four stable image slots, explicit sources, text-only isolation and mobile 
     .getByLabel("Upload image 1")
     .setInputFiles({ name: "subject.png", mimeType: "image/png", buffer: png });
   await expect(page.getByLabel("Subject source")).toBeEnabled();
-  await expect(
-    page.getByLabel("Subject source").locator('option[value="Image 1"]'),
-  ).toBeEnabled();
-  await expect(
-    page.getByLabel("Subject source").locator('option[value="Image 2"]'),
-  ).toBeDisabled();
   await page.getByLabel("Upload image 2").setInputFiles({
     name: "lighting.png",
     mimeType: "image/png",
     buffer: png,
   });
-  await expect(
-    page.getByLabel("Subject source").locator('option[value="Image 2"]'),
-  ).toBeEnabled();
   for (const slot of [3, 4])
     await page.getByLabel(`Upload image ${slot}`).setInputFiles({
       name: `reference-${slot}.png`,
@@ -305,7 +297,11 @@ test("four stable image slots, explicit sources, text-only isolation and mobile 
   await expect(page.getByText("4 / 4", { exact: true })).toBeVisible();
   await page.getByLabel("Subject source").selectOption("Image 1");
   await page.getByLabel("Lighting source").selectOption("Image 2");
+  await page.getByLabel("Pose source").selectOption("Image 3");
+  await page.getByLabel("Scene source").selectOption("Image 4");
   await page.getByLabel("Colors source").selectOption("Blend");
+  await expect(page.getByLabel("Pose source")).toHaveValue("Image 3");
+  await expect(page.getByLabel("Scene source")).toHaveValue("Image 4");
   await page
     .getByLabel("Describe your idea", { exact: true })
     .fill("Soft natural lighting on a portrait.");
@@ -332,6 +328,8 @@ test("four stable image slots, explicit sources, text-only isolation and mobile 
     page.getByRole("img", { name: "Reference 4: reference-4.png" }),
   ).toBeVisible();
   await expect(page.getByLabel("Subject source")).toHaveValue("Off");
+  await expect(page.getByLabel("Pose source")).toHaveValue("Image 3");
+  await expect(page.getByLabel("Scene source")).toHaveValue("Image 4");
   await expect(
     page.getByRole("button", { name: /^Generate prompt/ }),
   ).toBeEnabled();
@@ -344,7 +342,7 @@ test("four stable image slots, explicit sources, text-only isolation and mobile 
   }
 });
 
-test("paused work is recoverable after reload and locked output remains exact", async ({
+test("ended work does not survive reload and locked output remains exact", async ({
   page,
 }) => {
   await page.goto("/");
@@ -356,22 +354,16 @@ test("paused work is recoverable after reload and locked output remains exact", 
     .getByRole("button", { name: "Generate prompt", exact: false })
     .click();
   await page
-    .getByRole("button", { name: "Pause generation", exact: false })
+    .getByRole("button", { name: "End generation", exact: false })
     .click();
   await expect(
-    page.getByRole("button", { name: "Paused Your idea is in good hands" }),
-  ).toBeVisible();
+    page.getByRole("button", { name: "Generate prompt", exact: false }),
+  ).toBeEnabled();
   await page.evaluate(() => sessionStorage.clear());
   await page.reload();
   await expect(
-    page.getByRole("button", { name: "Resume generation", exact: false }),
-  ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Resume generation", exact: false })
-    .click();
-  await expect(
-    page.getByLabel("Generated prompt", { exact: true }),
-  ).toHaveValue(/A foggy valley/);
+    page.getByRole("button", { name: "Generate prompt", exact: false }),
+  ).toBeEnabled();
   await page
     .getByLabel("Generated prompt", { exact: true })
     .fill("  Keep this exact prompt.\n");
