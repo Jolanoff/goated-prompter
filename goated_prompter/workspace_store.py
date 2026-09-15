@@ -4,6 +4,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 import threading
 import uuid
+from .resolution import normalize_resolution
 
 
 LOCKS = ("identity", "outfit", "pose", "scene", "composition", "camera", "lighting", "colors", "materials", "style")
@@ -36,8 +37,11 @@ def validate_workspace(value):
         raise ValueError("Workspace supports 1000 versions and 100 comparisons. Remove older comparisons or clear history first.")
     ids = set()
     for record in versions:
-        if not isinstance(record, dict) or set(record) != {"id", "parent_id", "prompt", "target", "label", "created_at", "locks", "instruction"}:
+        required = {"id", "parent_id", "prompt", "target", "label", "created_at", "locks", "instruction"}
+        if not isinstance(record, dict) or not required <= record.keys() or record.keys() - required - {"resolution"}:
             raise ValueError("Invalid prompt version.")
+        if "resolution" in record:
+            normalize_resolution(record["resolution"])
         for key, limit in (("id", 128), ("prompt", 100000), ("target", 256), ("label", 100), ("created_at", 64), ("instruction", 10000)):
             text(record[key], key, limit, optional=key == "instruction")
         locks(record["locks"])
@@ -50,8 +54,11 @@ def validate_workspace(value):
         raise ValueError("Invalid redo history.")
     batch_ids = set()
     for batch in comparisons:
-        if not isinstance(batch, dict) or set(batch) != {"id", "base", "target", "locks", "created_at", "results"}:
+        required = {"id", "base", "target", "locks", "created_at", "results"}
+        if not isinstance(batch, dict) or not required <= batch.keys() or batch.keys() - required - {"resolution"}:
             raise ValueError("Invalid comparison.")
+        if "resolution" in batch:
+            normalize_resolution(batch["resolution"])
         for key, limit in (("id", 128), ("base", 100000), ("target", 256), ("created_at", 64)):
             text(batch[key], key, limit)
         locks(batch["locks"])
@@ -93,9 +100,11 @@ class WorkspaceStore:
             self.write(self.path, validate_workspace(updated))
             return updated
 
-    def add_version(self, prompt, target, label, *, parent_id=None, instruction="", detail_locks=("identity",), revision=None):
+    def add_version(self, prompt, target, label, *, parent_id=None, instruction="", detail_locks=("identity",), resolution=None, revision=None):
         record = {"id": uuid.uuid4().hex, "parent_id": parent_id, "prompt": prompt, "target": target,
                   "label": label, "instruction": instruction, "locks": list(detail_locks), "created_at": now()}
+        if resolution is not None:
+            record["resolution"] = normalize_resolution(resolution)
 
         def add(state):
             state["versions"].append(record)

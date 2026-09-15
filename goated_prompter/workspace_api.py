@@ -9,6 +9,7 @@ from .core import GoatedPrompterRequest, _as_bool
 from .prompt_catalog import PROMPT_LENGTH_NAMES, TARGET_MODEL_NAMES
 from .prompt_workflows import PromptWorkflowService
 from .workspace_store import WorkspaceConflict, locks, now, text
+from .resolution import normalize_resolution
 
 
 def register_workspace_routes(app, state_key, job_factory, json_object):
@@ -35,6 +36,7 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
                         result = await asyncio.to_thread(store.add_version, text(payload.get("prompt"), "Prompt"), target,
                                                          "Manual edit" if parent else "Starting prompt", parent_id=parent,
                                                          detail_locks=original["locks"] if original else locks(payload.get("locks", ["identity"])),
+                                                         resolution=original.get("resolution") if original else normalize_resolution(payload.get("resolution")),
                                                          revision=current["revision"])
                     elif action == "delete_comparison":
                         result = await asyncio.to_thread(store.delete_comparison, text(payload.get("id"), "Comparison id", 128), current["revision"])
@@ -49,24 +51,29 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
                 if target not in TARGET_MODEL_NAMES or length not in PROMPT_LENGTH_NAMES:
                     raise ValueError("Invalid target model or prompt length.")
                 workflow = {"operation": operation, "locks": locks(payload.get("locks", []))}
+                saved_workflow = await asyncio.to_thread(state.workflow_settings.snapshot, operation)
+                workflow["instructions"] = saved_workflow["instructions"]
+                resolution = normalize_resolution(settings.get("resolution", saved_workflow["draft"].get("resolution")))
                 if operation == "refine":
                     version = next((item for item in current["versions"] if item["id"] == current["current_id"]), None)
                     if version is None:
                         raise ValueError("Add a starting prompt before refining.")
                     workflow.update(base=version["prompt"], parent_id=version["id"], changes=text(payload.get("changes"), "Requested changes", 10000))
                     target = version["target"]
+                    resolution = normalize_resolution(version.get("resolution"))
                 else:
                     if len(current["comparisons"]) >= 100:
                         raise ValueError("Remove an older comparison before exploring again (100 comparison limit).")
                     workflow["base"] = text(payload.get("base"), "Starting idea or prompt")
                     workflow["batch"] = {"id": uuid.uuid4().hex, "base": workflow["base"], "target": target,
-                                         "locks": workflow["locks"], "created_at": now(), "results": []}
+                                         "locks": workflow["locks"], "created_at": now(), "results": [], "resolution": resolution}
                 if operation == "refine" and len(current["versions"]) >= 1000:
                     raise ValueError("Version history is full. Back it up and clear history before refining again.")
                 config = state.config()
                 configured = config.get("backend") in {"mock", "openai_compatible"}
                 director_request = GoatedPrompterRequest(
                     idea=workflow["base"], target_model=target, prompt_length=length, prompt_model="Custom",
+                    resolution=resolution,
                     director_profile="" if configured else text(settings.get("director_profile", state.saved_settings.get("selected_profile", "")), "Prompt engine", 512, optional=True),
                     director_keep_model_loaded=_as_bool(config.get("local_llama_cpp", {}).get("keep_model_loaded", False)),
                 )
@@ -80,7 +87,34 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
             except WorkspaceConflict as exc:
                 return web.json_response({"error": str(exc)}, status=409)
 
-    app.add_routes([web.get("/api/workspace", endpoint), web.post("/api/workspace", endpoint),
+    async def settings_endpoint(request):
+        state = request.app[state_key]
+        operation = request.match_info["operation"]
+        if request.method == "GET":
+            return web.json_response(await asyncio.to_thread(state.workflow_settings.snapshot, operation))
+        payload = await json_object(request)
+        try:
+            if request.method == "PUT":
+                if set(payload) != {"revision", "draft"} or not isinstance(payload["draft"], dict):
+                    raise ValueError("Expected revision and workflow draft.")
+                result = await asyncio.to_thread(state.workflow_settings.update, operation, payload["revision"], draft=payload["draft"])
+            else:
+                async with state.admission:
+                    if state.active_job():
+                        return web.json_response({"error": "End generation before changing saved instructions.", "active_job": state.active_job()}, status=409)
+                    action = payload.get("action")
+                    if action not in ("save", "reset") or (action == "save" and not isinstance(payload.get("instructions"), dict)):
+                        raise ValueError("Choose save with instructions, or reset.")
+                    result = await asyncio.to_thread(state.workflow_settings.update, operation, payload.get("revision"),
+                                                     instructions=payload.get("instructions"), reset=action == "reset")
+            return web.json_response(result)
+        except WorkspaceConflict as exc:
+            return web.json_response({"error": str(exc)}, status=409)
+
+    app.add_routes([web.get("/api/workspace/settings/{operation:refine|explore}", settings_endpoint),
+                    web.put("/api/workspace/settings/{operation:refine|explore}", settings_endpoint),
+                    web.post("/api/workspace/settings/{operation:refine|explore}/instructions", settings_endpoint),
+                    web.get("/api/workspace", endpoint), web.post("/api/workspace", endpoint),
                     web.post("/api/workspace/{operation:refine|explore}", endpoint)])
 
 
@@ -107,7 +141,7 @@ def execute_workflow(state, job, request, config, workflow):
         if workflow["operation"] == "refine":
             snapshot = persist(result["prompt"], lambda: state.workspace.add_version(
                 result["prompt"], request.target_model, "Refinement", parent_id=workflow["parent_id"],
-                instruction=workflow["changes"], detail_locks=workflow["locks"]))
+                instruction=workflow["changes"], detail_locks=workflow["locks"], resolution=request.resolution))
             result["version_id"] = snapshot["current_id"]
         else:
             result["comparison_id"] = workflow["batch"]["id"]

@@ -15,11 +15,11 @@ test("task and instruction preset lead the controls on desktop and mobile", asyn
   });
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });
-    await expect(controls.locator("select")).toHaveCount(6);
+    await expect(controls.locator("select")).toHaveCount(7);
     expect(await controls.locator("select").evaluateAll((items) =>
       items.map((item) => item.getAttribute("aria-label")),
     )).toEqual([
-      "Prompt task", "Instruction preset", "Target model", "Creativity",
+      "Prompt task", "Instruction preset", "Target model", "Builder aspect ratio", "Creativity",
       "Prompt length", "Prompt engine",
     ]);
     const task = await page.getByLabel("Prompt task", { exact: true }).boundingBox();

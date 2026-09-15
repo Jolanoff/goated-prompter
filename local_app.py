@@ -31,6 +31,8 @@ from goated_prompter.comfy_node import GoatedPrompter
 from goated_prompter.reference_map import REFERENCE_ATTRIBUTES
 from goated_prompter.workspace_store import WorkspaceStore
 from goated_prompter.workspace_api import register_workspace_routes, execute_workflow
+from goated_prompter.workflow_settings import WorkflowSettingsStore
+from goated_prompter.resolution import normalize_resolution, resolution_catalog
 from goated_prompter.presets import (
     DEFAULT_DIRECTOR_PRESET, MODE_DIRECTOR_RECOMMENDATIONS, DirectorLibraryError, delete_user_director,
     list_director_presets, resolve_user_director_directory, save_user_director,
@@ -104,11 +106,14 @@ def validate_settings(payload):
             raise ValueError("builder must be an object.")
         builder = dict(builder)
         builder.pop("lock_generated_prompt", None)
-        unknown = builder.keys() - strings - combos - sources
+        unknown = builder.keys() - strings - combos - sources - {"resolution"}
         if unknown:
             raise ValueError("Unknown builder settings: " + ", ".join(sorted(unknown)))
         schema = GoatedPrompter.INPUT_TYPES()["required"]
         for key, value in builder.items():
+            if key == "resolution":
+                builder[key] = normalize_resolution(value, draft=True)
+                continue
             if not isinstance(value, str) or len(value) > 100000:
                 raise ValueError(f"builder {key} must be a string of at most 100000 characters.")
             elif key in sources and value not in REFERENCE_SOURCES:
@@ -130,8 +135,10 @@ def validate_prompts(payload):
     records = {}
     for record in payload["prompts"]:
         required = {"id", "title", "prompt", "createdAt"}
-        if not isinstance(record, dict) or not required <= record.keys() or record.keys() - required - {"target"}:
-            raise ValueError("Each prompt requires id, title, prompt, createdAt, and optionally target only.")
+        if not isinstance(record, dict) or not required <= record.keys() or record.keys() - required - {"target", "resolution"}:
+            raise ValueError("Each prompt requires id, title, prompt, createdAt, and optionally target and resolution only.")
+        if "resolution" in record:
+            normalize_resolution(record["resolution"])
         for key, limit in (("id", 128), ("title", 80), ("prompt", 100000), ("createdAt", 64), ("target", 256)):
             if key not in record:
                 continue
@@ -300,6 +307,10 @@ class LocalState:
         if workspace_path in {self.settings_path, self.prompts_path}:
             raise ValueError("Workspace, settings and prompts require separate JSON paths.")
         self.workspace = WorkspaceStore(workspace_path, read_store, atomic_json)
+        workflow_settings_path = self.settings_path.parent / "workflow_settings.json"
+        if workflow_settings_path in {self.settings_path, self.prompts_path}:
+            raise ValueError("Workflow settings require a separate JSON path.")
+        self.workflow_settings = WorkflowSettingsStore(workflow_settings_path, read_store, atomic_json)
         self.jobs = OrderedDict()
         self.tasks = set()
         self.admission = asyncio.Lock()
@@ -422,7 +433,7 @@ class LocalState:
                       "prompt_model": generated.prompt_model, "director_preset": generated.director_preset}
             def save_result():
                 try:
-                    snapshot = self.workspace.add_version(generated.prompt, director_request.target_model, "Builder generation")
+                    snapshot = self.workspace.add_version(generated.prompt, director_request.target_model, "Builder generation", resolution=director_request.resolution)
                     result["version_id"] = snapshot["current_id"]
                 except (ValueError, OSError) as exc:
                     result["history_error"] = f"Prompt generated, but version history could not be saved: {exc}"
@@ -490,7 +501,8 @@ async def bootstrap(request):
                                "backend": models["backend"],
                               "reference_attributes": [{"key": key, "label": label} for key, label in REFERENCE_ATTRIBUTES],
                               "reference_sources": REFERENCE_SOURCES,
-                              "max_reference_images": 4,
+                               "max_reference_images": 4,
+                               "resolutions": resolution_catalog(),
                               "settings": await asyncio.to_thread(state.settings),
                               "migration_notices": state.migration_notices,
                               "active_job": state.active_job()})

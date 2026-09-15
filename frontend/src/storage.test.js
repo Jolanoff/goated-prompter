@@ -181,3 +181,23 @@ test("reverting a pending edit returns autosave to Saved without a write", async
   assert.equal(statuses.at(-1), "Saved");
   saver.dispose();
 });
+
+test("explicit reload discards queued edits without sending them after an in-flight acknowledgement", async () => {
+  const writes = [];
+  let release;
+  const saver = createBuilderSaver(async (snapshot) => {
+    writes.push(snapshot);
+    await new Promise((resolve) => { release = resolve; });
+  }, () => {}, 10000);
+  saver.hydrate({ base: "Saved" });
+  saver.stage({ base: "In flight" });
+  const pending = saver.flush();
+  saver.stage({ base: "Discard this queued change" });
+  const discard = saver.discard();
+  release();
+  await Promise.all([pending, discard]);
+  saver.hydrate({ base: "Reloaded from server" });
+  await saver.flush();
+  assert.deepEqual(writes, [{ base: "In flight" }]);
+  saver.dispose();
+});

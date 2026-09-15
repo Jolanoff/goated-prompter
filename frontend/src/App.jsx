@@ -3,6 +3,8 @@ import { orderDisplayPresets, presetDisplayLabel } from "./presetPresentation.js
 import { ui } from "./ui.js";
 import { api } from "./api.js";
 import CreativeWorkspace from "./workflows/CreativeWorkspace.jsx";
+import ResolutionControl from "./ResolutionControl.jsx";
+import { defaultResolution, resolutionError } from "./resolution.js";
 import {
   ArrowLeft,
   ArrowUpRight,
@@ -200,6 +202,7 @@ function App() {
   const [dialogBusy, setDialogBusy] = useState(false);
   const dialogRef = useRef(null);
   const pendingPromptRef = useRef(null);
+  const saveSourceRef = useRef(null);
   const submissionRef = useRef(false);
   const latestJobRef = useRef(null);
   const connectionRef = useRef(0);
@@ -215,6 +218,7 @@ function App() {
     profiles.find((item) => item.id === bootstrap?.settings.selected_profile) ||
     profiles[0];
   const noEngine = !configuredBackend && !selectedProfile;
+  const invalidResolution = !!resolutionError(settings.resolution, bootstrap?.resolutions);
   const attributes = [
     ...(bootstrap?.reference_attributes ||
       referenceAttributes.map((key) => ({
@@ -684,7 +688,7 @@ function App() {
       uploading ||
       actionBusy ||
       settingsBusy ||
-      noEngine
+      noEngine || invalidResolution
     )
       return;
     submissionRef.current = true;
@@ -806,12 +810,16 @@ function App() {
   }
 
   function openSave() {
+    requestPromptSave(prompt, settings.target_model, settings.idea.trim().split("\n")[0].slice(0, 70) || "Untitled prompt", settings.resolution);
+  }
+
+  function requestPromptSave(text, target, title, resolution) {
+    if (!text.trim() || !storageReady || promptsBusy || dialogBusy) return;
+    saveSourceRef.current = { prompt: text, target, resolution: resolution || defaultResolution() };
     pendingPromptRef.current = null;
     setDialogError("");
     setSaveKind("prompt");
-    setSaveName(
-      settings.idea.trim().split("\n")[0].slice(0, 70) || "Untitled prompt",
-    );
+    setSaveName(title.slice(0, 70));
   }
 
   async function save(event) {
@@ -822,17 +830,17 @@ function App() {
     setError("");
     setNotice("");
     try {
+      const source = saveSourceRef.current;
       if (
         pendingPromptRef.current?.title !== saveName.trim() ||
-        pendingPromptRef.current?.prompt !== prompt ||
-        pendingPromptRef.current?.target !== settings.target_model
+        pendingPromptRef.current?.prompt !== source.prompt ||
+        pendingPromptRef.current?.target !== source.target
       )
         pendingPromptRef.current = {
           id: crypto.randomUUID(),
           title: saveName.trim(),
-          prompt,
+          ...source,
           createdAt: new Date().toISOString(),
-          target: settings.target_model,
         };
       const data = await api("/prompts", pendingPromptRef.current);
       setSaved(data.prompts);
@@ -1101,11 +1109,13 @@ function App() {
             <CreativeWorkspace view={view} job={job} busy={busy || actionBusy || settingsBusy || !!uploading}
               active={active} noEngine={noEngine} builderPrompt={prompt} builderIdea={settings.idea}
               builderTarget={settings.target_model} inputs={bootstrap.inputs}
+              builderResolution={settings.resolution} resolutions={bootstrap.resolutions}
+              onSavePrompt={requestPromptSave} canSavePrompt={storageReady && !promptsBusy && !dialogBusy && !saveKind}
               engineLabel={configuredBackend ? `Configured backend (${bootstrap.backend})` : selectedProfile?.label}
               onGenerate={startWorkflow} onCancel={endGeneration} onCopy={copy}
               onNavigate={navigate} onReceiveJob={receiveJob}
-              onUsePrompt={(text, target) => {
-                setSettings((current) => ({ ...current, generated_prompt: text, target_model: target }));
+              onUsePrompt={(text, target, resolution) => {
+                setSettings((current) => ({ ...current, generated_prompt: text, target_model: target, resolution: resolution || defaultResolution() }));
                 navigate("builder");
               }} />
           )}
@@ -1187,7 +1197,8 @@ function App() {
                           className={ui.button}
                           disabled={busy}
                           onClick={() => {
-                            update("generated_prompt", record.prompt);
+                            setSettings((current) => ({ ...current, generated_prompt: record.prompt,
+                              target_model: record.target || current.target_model, resolution: record.resolution || defaultResolution() }));
                             setView("builder");
                           }}
                         >
@@ -1604,6 +1615,7 @@ function App() {
                         </button>
                       </div>
                       {field("target_model", "Target model")}
+                      <ResolutionControl value={settings.resolution} onChange={(value) => update("resolution", value)} catalog={bootstrap.resolutions} disabled={busy} prefix="Builder" />
 
 
                       <div className={`${ui.fields} ${ui.threeFields} mt-5`}>
@@ -1714,7 +1726,8 @@ function App() {
                         <button
                           className={ui.saveButton}
                           disabled={
-                            !prompt.trim() ||
+                             !prompt.trim() ||
+                             invalidResolution ||
                             !storageReady ||
                             promptsBusy ||
                             dialogBusy
@@ -1904,7 +1917,7 @@ function App() {
                     !!uploading ||
                     actionBusy ||
                     settingsBusy ||
-                    noEngine
+                    noEngine || invalidResolution
                   }
                   onClick={() => generate(false)}
                 >
@@ -1962,7 +1975,7 @@ function App() {
                     !!uploading ||
                     actionBusy ||
                     settingsBusy ||
-                    noEngine ||
+                    noEngine || invalidResolution ||
                     !settings.idea.trim()
                   }
                   onClick={() => generate(true)}
