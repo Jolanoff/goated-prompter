@@ -83,7 +83,7 @@ test("builder hydration normalizes Maximum and excludes images, runtime and pres
   for (const key of referenceAttributes)
     assert.equal(result[`reference_${key}_source`], "Off");
   assert.equal(result.generated_prompt, " exact\n");
-  assert.equal(result.lock_generated_prompt, true);
+  assert.equal(Object.hasOwn(result, "lock_generated_prompt"), false);
   assert.equal(Object.hasOwn(result, "images"), false);
   assert.equal(Object.hasOwn(result, "selected_profile"), false);
   assert.equal(Object.hasOwn(result, "preserve_subject"), false);

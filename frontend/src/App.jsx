@@ -141,9 +141,9 @@ function Panel({
   );
 }
 
-function Toggle({ label, description, checked, onChange, disabled, small = false }) {
+function Toggle({ label, description, checked, onChange, disabled }) {
   return (
-    <label className={ui.toggleRow} data-small={small}>
+    <label className={ui.toggleRow}>
       <input
         className={ui.toggleInput}
         type="checkbox"
@@ -151,9 +151,9 @@ function Toggle({ label, description, checked, onChange, disabled, small = false
         onChange={(event) => onChange(event.target.checked)}
         disabled={disabled}
       />
-      <span className={ui.switch} data-small={small} aria-hidden="true" />
+      <span className={ui.switch} aria-hidden="true" />
       <span>
-        <span className={ui.toggleLabel} data-small={small}>{label}</span>
+        <span className={ui.toggleLabel}>{label}</span>
         {description && <small>{description}</small>}
       </span>
     </label>
@@ -228,7 +228,6 @@ function App() {
   const connectionRef = useRef(0);
   const active = !!job && activeStatuses.includes(job.status);
   const busy = active || submitting;
-  const locked = !!settings.lock_generated_prompt;
   const prompt = settings.generated_prompt || "";
   const configuredBackend = ["mock", "openai_compatible"].includes(
     bootstrap?.backend,
@@ -313,11 +312,7 @@ function App() {
           ...current,
           generated_prompt: next.result.prompt,
         }));
-        setNotice(
-          next.result.backend === "locked"
-            ? "Locked prompt kept exactly as written."
-            : "Your prompt is ready. Make it yours.",
-        );
+        setNotice("Your prompt is ready. Make it yours.");
       } else if (next.status === "cancelled") {
         setNotice("Generation ended.");
       } else
@@ -520,7 +515,13 @@ function App() {
   }, [saveKind]);
 
   function update(key, value) {
-    setSettings((previous) => ({ ...previous, [key]: value }));
+    setSettings((previous) => ({
+      ...previous,
+      [key]: value,
+      ...(key === "mode" && {
+        director_preset: bootstrap.presets.mode_directors[value],
+      }),
+    }));
   }
 
   function selectDirector(item) {
@@ -704,7 +705,7 @@ function App() {
       uploading ||
       actionBusy ||
       settingsBusy ||
-      (!locked && noEngine)
+      noEngine
     )
       return;
     submissionRef.current = true;
@@ -712,7 +713,7 @@ function App() {
     setError("");
     setNotice("");
     try {
-      if (!locked && !textOnly && missingReferences.length)
+      if (!textOnly && missingReferences.length)
         throw new Error(
           "Reupload the mapped reference images or select Off before generating.",
         );
@@ -1547,8 +1548,8 @@ function App() {
                       </div>
                       <div className="border-t border-[#ffffff07] pt-[15px]">
                         <p className={ui.subtleNote}>
-                          Prompt task chooses what to do. Instruction preset adds
-                          saved guidance for how to write it; it does not change the task.
+                          Changing the task selects its matching instruction preset.
+                          You can then choose another preset without changing the task.
                         </p>
                         <span className={ui.directorDescription}>
                           {preset?.description === "User Director"
@@ -1688,26 +1689,12 @@ function App() {
                         </button>
                         <button
                           className={ui.button}
-                          disabled={!prompt || locked}
+                          disabled={!prompt}
                           onClick={() => update("generated_prompt", "")}
                         >
                           <Trash2 size={16} />
                           Clear
                         </button>
-                      </div>
-                      <div className={ui.lockRow}>
-                        <Toggle
-                          small
-                          label="Lock output"
-                          checked={locked}
-                          onChange={(value) =>
-                            update("lock_generated_prompt", value)
-                          }
-                        />
-                        <span>
-                          <LockKeyhole size={12} />
-                          Reuse this exact text without inference
-                        </span>
                       </div>
                     </Panel>
                   </div>
@@ -1867,12 +1854,12 @@ function App() {
                 <button
                   className={ui.generateButton}
                   disabled={
-                    (!locked && !!missingReferences.length) ||
+                    !!missingReferences.length ||
                     busy ||
                     !!uploading ||
                     actionBusy ||
                     settingsBusy ||
-                    (!locked && noEngine)
+                    noEngine
                   }
                   onClick={() => generate(false)}
                 >
@@ -1881,8 +1868,6 @@ function App() {
                       size={25}
                       className={job?.status === "paused" || job?.status === "cancelling" ? "" : "animate-working"}
                     />
-                  ) : locked ? (
-                    <LockKeyhole size={24} />
                   ) : (
                     <Sparkles size={25} />
                   )}
@@ -1892,18 +1877,14 @@ function App() {
                         ? status === "Pause requested"
                           ? "Finishing current stage"
                           : status
-                        : locked
-                          ? "Use locked prompt"
-                          : "Generate prompt"}
+                        : "Generate prompt"}
                     </strong>
                     <small>
                       {busy
                         ? "Your idea is in good hands"
-                        : locked
-                          ? "Keep the exact output, no inference"
-                          : images.some(Boolean)
-                            ? "Create a prompt grounded in your references"
-                            : "Turn your idea into a refined prompt"}
+                        : images.some(Boolean)
+                          ? "Create a prompt grounded in your references"
+                          : "Turn your idea into a refined prompt"}
                     </small>
                   </span>
                 </button>
@@ -1936,7 +1917,7 @@ function App() {
                     !!uploading ||
                     actionBusy ||
                     settingsBusy ||
-                    (!locked && noEngine) ||
+                    noEngine ||
                     !settings.idea.trim()
                   }
                   onClick={() => generate(true)}

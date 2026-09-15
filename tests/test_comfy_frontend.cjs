@@ -76,7 +76,6 @@ const changes = {
     f.setValue(node, "idea", "A quiet street", false);
   },
   "manual output": (f, node) => f.setValue(node, "generated_prompt", "manual", false),
-  lock: (f, node) => f.setValue(node, "lock_generated_prompt", true),
   "direct widget write": (f, node) => { f.widget(node, "idea").value = "external"; },
   "workflow result": (_, node) => node.onExecuted({ generated_prompt: ["workflow"] }),
   "identical workflow result": (_, node) => node.onExecuted({ generated_prompt: ["existing"] }),
@@ -181,13 +180,13 @@ test("generation stays owned through response parsing and discards changes durin
   const pending = f.generate(node);
   requests[0].resolve({ ok: true, json: () => body });
   await Promise.resolve();
-  f.setValue(node, "lock_generated_prompt", true);
+  f.setValue(node, "generated_prompt", "manual", false);
   await f.generate(node);
   assert.equal(requests.length, 1);
   assert.equal(node._goatedPrompterInFlight, true);
   finishBody({ ok: true, prompt: "stale" });
   await pending;
-  assert.equal(f.value(node, "generated_prompt"), "existing");
+  assert.equal(f.value(node, "generated_prompt"), "manual");
   assert.equal(node._goatedPrompterInFlight, false);
   assert.equal(node._goatedPrompterStatus.kind, "idle");
 });

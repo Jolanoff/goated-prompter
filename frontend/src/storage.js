@@ -30,7 +30,6 @@ const builderKeys = [
   "director_preset",
   "custom_instructions",
   "generated_prompt",
-  "lock_generated_prompt",
   ...referenceAttributes.map((key) => `reference_${key}_source`),
 ];
 

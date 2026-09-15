@@ -13,7 +13,7 @@ ComfyUI is **not required** to use the website. The app produces prompt text tha
 - **Task-specific direction:** prompt enhancement, photography, architecture, characters, products, image editing, style transfer, dataset captions, and video shots.
 - **Target-aware output:** Generic, Krea 2, FLUX.2 Klein, Z-Image, Qwen Image, MiniMax, LTX 2.5, and Ideogram4. Target selection changes the writing instructions/output format; it does not download or run that image/video model.
 - **Reusable instruction presets:** choose a built-in preset, edit its instructions, or create your own.
-- **Local prompt library:** autosaved builder settings, named saved prompts, copy/edit controls, and exact output locking.
+- **Local prompt library:** autosaved builder settings, named saved prompts, and copy/edit controls.
 - **Local inference through llama.cpp**, with an optional OpenAI-compatible endpoint.
 - **End generation** to cancel an active local llama.cpp job.
 
@@ -142,7 +142,7 @@ Use your own absolute model directory in Settings. The browser workflow is the s
 
 | Control | What it does |
 | --- | --- |
-| **Prompt task** | Chooses the type of work: improve a prompt, describe a photograph, direct an edit, write a video shot, etc. |
+| **Prompt task** | Chooses the type of work and selects its matching instruction preset. You can then choose a different preset. |
 | **Instruction preset** | Adds reusable specialist instructions. Changing it does not change the task. |
 | **Target model** | Shapes the prompt for the image/video generator you will use afterward. |
 | **Creativity** | Controls how much new visual detail the writer may introduce. |
@@ -166,7 +166,6 @@ Slots keep their numbers when an image is removed. Removing a required image res
 ### Output and generation
 
 - **Text-only preview** ignores all reference images and preservation selections.
-- **Lock output** uses the exact current output without inference.
 - **End generation** cancels the local job. With the managed llama.cpp backend it stops the owned server, so the next job reloads the model. An external OpenAI-compatible request currently ends at its next checkpoint rather than aborting the remote computation immediately.
 - One generation runs at a time. Settings and preset editing are locked while a job is active.
 - **Save Prompt** adds named output text to the saved-prompt library. Instruction presets are a separate library.

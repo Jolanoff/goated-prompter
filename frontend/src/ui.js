@@ -81,8 +81,7 @@ export const ui = {
   button,
   saveButton: `${buttonFrame} px-3 py-[9px] text-[10px] text-[#cbbbfa] border-[#73609060] bg-[#9673ff0a]`,
   primaryButton: `${buttonFrame} mt-2 bg-[linear-gradient(110deg,#936eea,#7953cb)] text-white border-[#a689e0] px-5 py-[11px] text-[12px]`,
-  lockRow: "mt-[15px] flex items-center justify-between gap-2.5 [&>span]:flex [&>span]:items-center [&>span]:gap-[5px] [&>span]:text-[8px] [&>span]:text-[#777b92] compact:[&>span]:hidden mobile:[&>span]:flex tiny:[&>span]:hidden",
-  toggleRow: "relative flex min-w-0 cursor-pointer items-center gap-2.5 compact:gap-[7px] data-[small=true]:gap-2 [&_small]:mt-[3px] [&_small]:block [&_small]:text-[8px] [&_small]:leading-[1.6] [&_small]:text-[#9190a6] compact:[&_small]:text-[7px] tablet:[&_small]:text-[9px] mobile:[&_small]:text-[8px] tiny:[&_small]:text-[7px]",
+  toggleRow: "relative flex min-w-0 cursor-pointer items-center gap-2.5 compact:gap-[7px] [&_small]:mt-[3px] [&_small]:block [&_small]:text-[8px] [&_small]:leading-[1.6] [&_small]:text-[#9190a6] compact:[&_small]:text-[7px] tablet:[&_small]:text-[9px] mobile:[&_small]:text-[8px] tiny:[&_small]:text-[7px]",
   toggleInput: "peer absolute inset-0 z-[1] m-0 h-full w-full cursor-pointer opacity-0",
   switch: `
     relative h-5 w-[33px] shrink-0 rounded-[20px] border border-[#454457] bg-[#303140]
@@ -95,10 +94,8 @@ export const ui = {
     peer-checked:after:bg-[#f8f5ff] compact:peer-checked:after:translate-x-[11px]
     peer-focus-visible:outline-2 peer-focus-visible:outline-[#c6afff] peer-focus-visible:outline-offset-[3px]
     peer-disabled:opacity-50 peer-disabled:cursor-not-allowed
-    data-[small=true]:w-7 data-[small=true]:h-4 data-[small=true]:after:size-2.5
-    data-[small=true]:peer-checked:after:translate-x-3 compact:data-[small=true]:peer-checked:after:translate-x-[11px]
   `,
-  toggleLabel: "block text-[10px] font-medium text-[#dedbe9] tablet:text-[11px] mobile:text-[10px] data-[small=true]:text-[10px] data-[small=true]:text-[#b0aec3]",
+  toggleLabel: "block text-[10px] font-medium text-[#dedbe9] tablet:text-[11px] mobile:text-[10px]",
   countChip: "ml-auto rounded-[5px] border border-[#33303f] px-[7px] py-1 text-[10px] whitespace-nowrap text-[#a7a1bc]",
   imageSlot: "relative h-[157px] overflow-hidden rounded-lg border border-dashed border-[#706185] bg-[linear-gradient(140deg,#25202f40,#15161f)] hover:border-[#b398f7] hover:bg-none hover:bg-[#a785f609] data-[image=true]:border-solid data-[image=true]:border-[#484055] wide:h-[180px] tablet:h-[145px] mobile:h-[180px] tiny:h-[155px] [&_img]:size-full [&_img]:object-cover",
   uploadLabel: "relative flex size-full cursor-pointer flex-col items-center justify-center gap-[7px] p-2 text-center focus-within:outline-2 focus-within:outline-accent focus-within:-outline-offset-4 [&_input]:absolute [&_input]:inset-0 [&_input]:size-full [&_input]:opacity-0 [&_input]:cursor-pointer [&_strong]:text-[11px] [&_strong]:font-medium [&_strong]:text-[#e0dcec] [&>span:last-of-type]:text-[9px] [&>span:last-of-type]:text-[#9b95ae] tablet:[&>span:last-of-type]:text-[8px] tiny:[&>span:last-of-type]:text-[7px] [&_small]:text-[8px] [&_small]:tracking-[0.5px] [&_small]:text-[#777189]",

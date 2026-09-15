@@ -100,16 +100,14 @@ def validate_settings(payload):
         sources = {f"reference_{key}_source" for key, _ in REFERENCE_ATTRIBUTES}
         if not isinstance(builder, dict):
             raise ValueError("builder must be an object.")
-        unknown = builder.keys() - strings - combos - sources - {"lock_generated_prompt"}
+        builder = dict(builder)
+        builder.pop("lock_generated_prompt", None)
+        unknown = builder.keys() - strings - combos - sources
         if unknown:
             raise ValueError("Unknown builder settings: " + ", ".join(sorted(unknown)))
-        builder = dict(builder)
         schema = GoatedPrompter.INPUT_TYPES()["required"]
         for key, value in builder.items():
-            if key == "lock_generated_prompt":
-                if not isinstance(value, bool):
-                    raise ValueError("lock_generated_prompt must be a boolean.")
-            elif not isinstance(value, str) or len(value) > 100000:
+            if not isinstance(value, str) or len(value) > 100000:
                 raise ValueError(f"builder {key} must be a string of at most 100000 characters.")
             elif key in sources and value not in REFERENCE_SOURCES:
                 raise ValueError(f"Invalid reference source for {key}.")
@@ -379,29 +377,23 @@ class LocalState:
                 return snapshot
         return None
 
-    def execute(self, job, director_request, config, text_only, locked):
+    def execute(self, job, director_request, config, text_only):
         try:
             job.checkpoint()
-            if locked is not None:
-                result = {"ok": True, "prompt": locked, "backend": "locked",
-                          "director_profile": director_request.director_profile,
-                          "prompt_model": director_request.selected_prompt_model,
-                          "director_preset": director_request.director_preset}
-            else:
-                effective, _ = resolve_director_config(config, director_request)
-                local_settings = effective.get("local_llama_cpp", {})
-                validate_local_paths(local_settings)
-                if effective.get("backend") == "local_llama_cpp":
-                    executable = _resolve_server_executable(local_settings.get("llama_server"), local_settings.get("runtime_root"))
-                    validate_local_paths({"llama_server": executable})
-                    # This app owns the active llama.cpp process, so ending its
-                    # job can interrupt the blocking inference request.
-                    job.set_interrupt(get_process_manager().interrupt_active)
-                service = self.service_factory(config=config, checkpoint=job.checkpoint)
-                generated = (service.generate_text_only if text_only else service.generate)(director_request)
-                result = {"ok": True, "prompt": generated.prompt, "backend": generated.backend_name,
-                          "director_profile": generated.director_profile,
-                          "prompt_model": generated.prompt_model, "director_preset": generated.director_preset}
+            effective, _ = resolve_director_config(config, director_request)
+            local_settings = effective.get("local_llama_cpp", {})
+            validate_local_paths(local_settings)
+            if effective.get("backend") == "local_llama_cpp":
+                executable = _resolve_server_executable(local_settings.get("llama_server"), local_settings.get("runtime_root"))
+                validate_local_paths({"llama_server": executable})
+                # This app owns the active llama.cpp process, so ending its
+                # job can interrupt the blocking inference request.
+                job.set_interrupt(get_process_manager().interrupt_active)
+            service = self.service_factory(config=config, checkpoint=job.checkpoint)
+            generated = (service.generate_text_only if text_only else service.generate)(director_request)
+            result = {"ok": True, "prompt": generated.prompt, "backend": generated.backend_name,
+                      "director_profile": generated.director_profile,
+                      "prompt_model": generated.prompt_model, "director_preset": generated.director_preset}
             job.deliver(result)
         except JobCancelled:
             with job.lock:
@@ -447,7 +439,10 @@ async def models_payload(state, refresh=False):
 
 async def presets_payload():
     presets, warnings = await asyncio.to_thread(list_director_presets)
+    preset_ids = {preset["label"]: preset["id"] for preset in presets}
     return {"ok": True, "default": DEFAULT_DIRECTOR_PRESET, "presets": presets,
+            "mode_directors": {mode: preset_ids[label]
+                               for mode, label in MODE_DIRECTOR_RECOMMENDATIONS.items()},
             "warnings": warnings, "storage": str(resolve_user_director_directory())}
 
 
@@ -478,42 +473,33 @@ async def generate(request):
         raise ValueError("settings must be an object; images must be an array with at most four entries.")
     if not isinstance(text_only, bool):
         raise ValueError("text_only must be a boolean.")
-    locked = None
-    if _as_bool(settings.get("lock_generated_prompt", False)):
-        locked = str(settings.get("generated_prompt") or "")
-        if not locked.strip():
-            raise ValueError("Generated Prompt is locked but empty. Generate or enter a prompt first.")
     async with state.admission:
         active_job = state.active_job()
         if active_job is not None:
             return web.json_response({"ok": False,
                                       "error": "A job is active. Resume it or wait for completion before generating again.",
                                       "active_job": active_job}, status=409)
-        if locked is not None:
-            config = {}
-            director_request = GoatedPrompterRequest(idea="")
-        else:
-            director = get_director_preset(settings.get("director_preset", DEFAULT_DIRECTOR_PRESET), strict=True)
-            settings = {**settings, "director_preset": director.id,
-                        "mode": settings.get("mode") or director.recommended_mode or "Custom",
-                        "system_prompt_override": ""}
-            validate_local_paths(settings)
-            config = state.config()
-            director_request = replace(GoatedPrompterRequest.from_mapping(settings),
-                                       linked_references=_as_bool(settings.get("linked_references", False)))
-            if "keep_model_loaded" in state.saved_settings:
-                director_request = replace(director_request,
-                                           director_keep_model_loaded=state.saved_settings["keep_model_loaded"])
-            if not text_only:
-                vision = config.get("vision", {})
-                dimension = vision.get("max_image_dimension", 1344) if isinstance(vision, dict) else 1344
-                slots = images + [None] * (4 - len(images))
-                encoded = await asyncio.to_thread(lambda: [decode_image(value, dimension) for value in slots])
-                director_request = replace(director_request, image=encoded[0], image_2=encoded[1],
-                                           image_3=encoded[2], image_4=encoded[3])
+        director = get_director_preset(settings.get("director_preset", DEFAULT_DIRECTOR_PRESET), strict=True)
+        settings = {**settings, "director_preset": director.id,
+                    "mode": settings.get("mode") or director.recommended_mode or "Custom",
+                    "system_prompt_override": ""}
+        validate_local_paths(settings)
+        config = state.config()
+        director_request = replace(GoatedPrompterRequest.from_mapping(settings),
+                                   linked_references=_as_bool(settings.get("linked_references", False)))
+        if "keep_model_loaded" in state.saved_settings:
+            director_request = replace(director_request,
+                                       director_keep_model_loaded=state.saved_settings["keep_model_loaded"])
+        if not text_only:
+            vision = config.get("vision", {})
+            dimension = vision.get("max_image_dimension", 1344) if isinstance(vision, dict) else 1344
+            slots = images + [None] * (4 - len(images))
+            encoded = await asyncio.to_thread(lambda: [decode_image(value, dimension) for value in slots])
+            director_request = replace(director_request, image=encoded[0], image_2=encoded[1],
+                                       image_3=encoded[2], image_4=encoded[3])
         job = Job()
         state.jobs[job.id] = job
-        task = asyncio.create_task(state.run(job, director_request, config, text_only, locked))
+        task = asyncio.create_task(state.run(job, director_request, config, text_only))
         state.tasks.add(task)
         task.add_done_callback(state.tasks.discard)
         return web.json_response(job.snapshot(), status=202)

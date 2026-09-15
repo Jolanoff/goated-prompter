@@ -75,7 +75,7 @@ const WIDGET_NAMES = [
   "prompt_model", "director_profile", "director_model_path", "director_mmproj_path",
   "director_llama_server", "director_context_size", "director_image_min_tokens",
   "director_max_tokens", "director_gpu_layers", "director_keep_model_loaded",
-  "director_preset", "image_1_role", "image_2_role", "lock_generated_prompt",
+  "director_preset", "image_1_role", "image_2_role",
   ...REFERENCE_MAP_FIELDS.map(([field]) => field),
 ];
 const PRESERVE_FIELDS = [
@@ -190,8 +190,7 @@ function setValue(node, name, next, invalidate = true) {
   if (!item || Object.is(item.value, next)) return false;
   item.value = next;
   node._goatedPrompterRevision = {};
-  const generatedIsLocked = Boolean(value(node, "lock_generated_prompt", false));
-  if (invalidate && name !== "generated_prompt" && name !== "lock_generated_prompt" && !generatedIsLocked) {
+  if (invalidate && name !== "generated_prompt") {
     const generated = widget(node, "generated_prompt");
     if (generated) generated.value = "";
     setStatus(node, "idle", "Settings changed — generate again");
@@ -292,7 +291,6 @@ function state(node) {
     generated_prompt: String(value(node, "generated_prompt", "")),
     image_1_role: String(value(node, "image_1_role", "Auto")),
     image_2_role: String(value(node, "image_2_role", "Auto")),
-    lock_generated_prompt: Boolean(value(node, "lock_generated_prompt", false)),
   };
   REFERENCE_MAP_FIELDS.forEach(([field]) => { current[field] = String(value(node, field, "Auto")); });
   return current;
@@ -515,13 +513,11 @@ function makeLayout(node, current = state(node)) {
   const connected = connectedReferences(node);
   const referenceMapRows = REFERENCE_MAP_FIELDS.length;
   const referenceMapHeight = connected.length ? 24 + referenceMapRows * 27 : 0;
-  const advancedExtra = 34 + referenceMapHeight;
-  const advanced = { x, y, w, h: open ? (customDirector ? 428 : 364) + advancedExtra : 40 };
+  const advanced = { x, y, w, h: open ? (customDirector ? 428 : 364) + referenceMapHeight : 40 };
   hit("advanced", { x, y, w, h: 40 });
   const preserve = [];
   const referenceMap = [];
   let referenceMapHeader = null;
-  let lockPrompt = null;
   let length = null;
   let custom = null;
   let system = null;
@@ -565,9 +561,6 @@ function makeLayout(node, current = state(node)) {
       });
       contentY += referenceMapHeight;
     }
-    lockPrompt = { field: "lock_generated_prompt", label: "LOCK GENERATED PROMPT", x: x + 14, y: y + contentY, w: w - 28, h: 24 };
-    hit("toggle", lockPrompt, "lock_generated_prompt");
-    contentY += 34;
     length = { x: x + 14, y: y + contentY, w: w - 28, h: 36, field: "prompt_length", label: "PROMPT LENGTH", options: LENGTHS };
     hit("choice", length, "prompt_length");
     custom = { x: x + 14, y: y + contentY + 46, w: w - 28, h: 52 }; hit("text", custom, "custom_instructions");
@@ -618,7 +611,7 @@ function makeLayout(node, current = state(node)) {
   y += appearance.h + 8;
   const footer = { x, y, w, h: 22 };
   const desiredHeight = footer.y + footer.h + 10;
-  return { width, desiredHeight, hits, idea, selectors, promptModel, directorPreset, generate, output, copyGenerated, advanced, preserve, referenceMap, referenceMapHeader, lockPrompt, length, custom, system, resetPreset, saveAsDirector, deleteDirector, directorStatus, unloadModel, refreshModels, customProfile, appearance, themeButtons, swatches, contrast, customAccent, resetAccent, footer };
+  return { width, desiredHeight, hits, idea, selectors, promptModel, directorPreset, generate, output, copyGenerated, advanced, preserve, referenceMap, referenceMapHeader, length, custom, system, resetPreset, saveAsDirector, deleteDirector, directorStatus, unloadModel, refreshModels, customProfile, appearance, themeButtons, swatches, contrast, customAccent, resetAccent, footer };
 }
 
 function drawSelector(ctx, box, selected, tokens, accent) {
@@ -721,12 +714,6 @@ function drawUI(node, ctx) {
         });
       });
     }
-    const locked = s.lock_generated_prompt;
-    const lockCheck = { x: l.lockPrompt.x, y: l.lockPrompt.y + 3, w: 17, h: 17 };
-    drawRound(ctx, lockCheck, locked ? hexToRgba(accent, 0.25) : t.background, locked ? accent : t.border, locked ? 2 : 1, 4);
-    if (locked) drawText(ctx, "✓", lockCheck.x + 8.5, lockCheck.y + 8.5, 12, accent, "900", "center");
-    drawText(ctx, l.lockPrompt.label, l.lockPrompt.x + 24, l.lockPrompt.y + 12, 11, locked ? t.text : t.textSecondary, locked ? "750" : "600");
-    drawText(ctx, locked ? "ON — EXACT OUTPUT · NO INFERENCE" : "OFF — GENERATE AT QUEUE", l.lockPrompt.x + l.lockPrompt.w, l.lockPrompt.y + 12, 10, t.textMuted, "600", "right");
     drawText(ctx, l.length.label, l.length.x, l.length.y - 7, 11, t.textMuted, "850");
     drawSelector(ctx, { ...l.length, x: l.length.x + 106, y: l.length.y - 22, w: l.length.w - 106, label: "" }, s.prompt_length, t, accent);
     drawText(ctx, "WORKFLOW RULES — OPTIONAL", l.custom.x, l.custom.y - 7, 11, t.textMuted, "850");
@@ -996,14 +983,6 @@ async function generate(node) {
   if (node._goatedPrompterInFlight) return;
   const payload = state(node);
   const imageLinked = connectedReferences(node).length > 0;
-  if (payload.lock_generated_prompt) {
-    if (!payload.generated_prompt.trim()) {
-      setStatus(node, "error", "Generated Prompt is locked but empty. Generate or enter a prompt before queueing.");
-    } else {
-      setStatus(node, "success", "Generated Prompt locked — queue will return it exactly");
-    }
-    return;
-  }
   if (!payload.idea.trim()) {
     setStatus(node, "error", "Enter a text prompt first.");
     return;
@@ -1122,12 +1101,10 @@ app.registerExtension({
     nodeType.prototype.onExecuted = function (message) {
       const result = executed?.apply(this, arguments);
       const queuePrompt = promptFromExecution(message);
-      if (queuePrompt !== null) this._goatedPrompterRevision = {};
-      if (queuePrompt !== null && !Boolean(value(this, "lock_generated_prompt", false))) {
+      if (queuePrompt !== null) {
+        this._goatedPrompterRevision = {};
         setValue(this, "generated_prompt", queuePrompt, false);
         setStatus(this, "success", "Generated Prompt updated from workflow result");
-      } else if (queuePrompt !== null) {
-        setStatus(this, "success", "Locked Generated Prompt returned unchanged");
       }
       return result;
     };

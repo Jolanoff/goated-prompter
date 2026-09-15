@@ -49,19 +49,6 @@ for (const width of [1448, 390]) {
     await output.fill("A cinematic forest with warm evening light.");
     await expect(output).toHaveCSS("color", "rgb(189, 192, 212)");
     await expect(output).toHaveCSS("border-color", "rgb(146, 115, 237)");
-    const lock = page.getByLabel("Lock output");
-    await lock.check();
-    const track = lock.locator("+ span");
-    await expect(track).toHaveCSS("width", "28px");
-    await expect(track).toHaveCSS("height", "16px");
-    await expect(track).toHaveCSS("border-color", "rgb(171, 144, 245)");
-    await expect.poll(() => track.evaluate(el => getComputedStyle(el, "::after").translate))
-      .toBe(width <= 1190 ? "11px" : "12px");
-    await lock.focus();
-    await page.keyboard.press("Tab");
-    await page.keyboard.press("Shift+Tab");
-    await expect(lock).toBeFocused();
-    await expect(track).toHaveCSS("outline-color", "rgb(198, 175, 255)");
 
     const save = page.getByRole("button", { name: "Save Prompt", exact: true });
     await save.hover();
@@ -107,7 +94,7 @@ for (const width of [1448, 390]) {
     await page.getByRole("button", { name: "Remove image 1" }).click();
     await expect(upload).toBeAttached();
     await expect(page.getByLabel("Subject source")).toHaveCSS("opacity", "0.7");
-    await expect(page.getByRole("button", { name: /Use locked prompt/ })).toBeInViewport();
+    await expect(page.getByRole("button", { name: /Generate prompt/ })).toBeInViewport();
 
     await page.emulateMedia({ reducedMotion: "reduce" });
     await expect(output).toHaveCSS("transition-duration", "0s");
