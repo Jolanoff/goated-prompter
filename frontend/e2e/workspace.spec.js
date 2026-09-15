@@ -243,10 +243,9 @@ test("local engine discovery, partial selection persistence and empty setup", as
     await page
       .getByLabel("Generated prompt", { exact: true })
       .fill("Exact output");
-    await page.getByLabel("Lock output").check();
     await expect(
-      page.getByRole("button", { name: /^Use locked prompt/ }),
-    ).toBeEnabled();
+      page.getByRole("button", { name: /^Generate prompt/ }),
+    ).toBeDisabled();
     await page
       .getByRole("button", { name: "Set up models in Settings" })
       .click();
@@ -342,7 +341,7 @@ test("four stable image slots, explicit sources, text-only isolation and mobile 
   }
 });
 
-test("ended work does not survive reload and locked output remains exact", async ({
+test("ended work does not survive reload and existing output can be regenerated", async ({
   page,
 }) => {
   await page.goto("/");
@@ -366,15 +365,11 @@ test("ended work does not survive reload and locked output remains exact", async
   ).toBeEnabled();
   await page
     .getByLabel("Generated prompt", { exact: true })
-    .fill("  Keep this exact prompt.\n");
-  await page.getByLabel("Lock output").check();
+    .fill("  Previous prompt.\n");
   await page
-    .getByRole("button", { name: "Use locked prompt", exact: false })
+    .getByRole("button", { name: "Generate prompt", exact: false })
     .click();
   await expect(
-    page.getByRole("button", { name: "Use locked prompt", exact: false }),
-  ).toBeEnabled();
-  await expect(
     page.getByLabel("Generated prompt", { exact: true }),
-  ).toHaveValue("  Keep this exact prompt.\n");
+  ).toHaveValue(/A foggy valley/);
 });

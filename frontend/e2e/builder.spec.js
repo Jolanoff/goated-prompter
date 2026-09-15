@@ -31,7 +31,7 @@ test("task and instruction preset lead the controls on desktop and mobile", asyn
   await expect(page.getByLabel("Prompt task").locator("option:checked")).toHaveText("Improve a prompt");
   await page.getByLabel("Prompt task").selectOption({ label: "Architecture & interiors" });
   await expect(page.getByLabel("Prompt task")).toHaveValue("Archviz");
-  await expect(page.getByLabel("Instruction preset", { exact: true })).toHaveValue("general_director");
+  await expect(page.getByLabel("Instruction preset", { exact: true })).toHaveValue("archviz_director");
   await expect(page.getByRole("heading", { name: "Keep from reference images" })).toBeVisible();
   expect(await page.locator(".reference-map select").evaluateAll((items) =>
     items.map((item) => item.getAttribute("aria-label")),
@@ -40,6 +40,37 @@ test("task and instruction preset lead the controls on desktop and mobile", asyn
     "Composition source", "Camera source", "Lighting source", "Colors source",
     "Materials source", "Mood source",
   ]);
+});
+
+test("changing tasks selects matching directors while manual preset choices remain independent", async ({ page, request }) => {
+  await page.goto("/");
+  const task = page.getByLabel("Prompt task", { exact: true });
+  const director = page.getByLabel("Instruction preset", { exact: true });
+  for (const [mode, id] of [
+    ["Photography", "photography_director"],
+    ["Archviz", "archviz_director"],
+    ["Image Edit", "surgical_edit"],
+    ["Video", "video_director"],
+    ["Enhance", "general_director"],
+    ["Photography", "photography_director"],
+  ]) {
+    await task.selectOption(mode);
+    await expect(director).toHaveValue(id);
+  }
+  await director.selectOption("smartphone_realism");
+  await expect(task).toHaveValue("Photography");
+  await task.selectOption("Enhance");
+  await task.selectOption("Photography");
+  await expect(page.getByLabel("Builder save status")).toHaveText("Saved");
+  expect((await (await request.get("/api/settings")).json()).builder.director_preset).toBe("photography_director");
+  await page.reload();
+  await expect(task).toHaveValue("Photography");
+  await expect(director).toHaveValue("photography_director");
+  await page.getByLabel("Describe your idea", { exact: true }).fill("A forest portrait");
+  const generation = page.waitForRequest("**/api/generate");
+  await page.getByRole("button", { name: /^Generate prompt/ }).click();
+  expect((await generation).postDataJSON().settings.director_preset).toBe("photography_director");
+  await expect(page.getByLabel("Generated prompt", { exact: true })).toHaveValue(/forest portrait/);
 });
 
 test("builder JSON restores text fields and resets unavailable reference sources after reload", async ({
@@ -59,7 +90,7 @@ test("builder JSON restores text fields and resets unavailable reference sources
   await page
     .getByLabel("Generated prompt", { exact: true })
     .fill("  Exact output\n");
-  await page.getByLabel("Lock output").check();
+  await expect(page.getByLabel("Lock output")).toHaveCount(0);
   const png = Buffer.from(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aTioAAAAASUVORK5CYII=",
     "base64",
@@ -84,7 +115,8 @@ test("builder JSON restores text fields and resets unavailable reference sources
   const saved = await (await request.get("/api/settings")).json();
   expect(saved.builder.idea).toBe("Persistent idea");
   expect(saved.builder.prompt_length).toBe("Maximum Detail");
-  expect(Object.keys(saved.builder)).toHaveLength(20);
+  expect(Object.keys(saved.builder)).toHaveLength(19);
+  expect(saved.builder).not.toHaveProperty("lock_generated_prompt");
   expect(saved.builder.mode).toBe("Photography");
   for (const [index, key] of referenceAttributes.entries())
     expect(saved.builder[`reference_${key}_source`]).toBe(index % 2 ? "Image 4" : "Blend");
@@ -99,7 +131,6 @@ test("builder JSON restores text fields and resets unavailable reference sources
   await expect(
     page.getByLabel("Generated prompt", { exact: true }),
   ).toHaveValue("  Exact output\n");
-  await expect(page.getByLabel("Lock output")).toBeChecked();
   await expect(page.getByLabel("Prompt length")).toHaveValue("Maximum Detail");
   await expect(page.getByLabel("Workflow rules")).toHaveValue(
     "Keep these rules",
@@ -127,15 +158,12 @@ test("builder JSON restores text fields and resets unavailable reference sources
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(page.getByLabel("Subject source")).toBeDisabled();
   await expect(
-    page.getByRole("button", { name: /^Use locked prompt/ }),
+    page.getByRole("button", { name: /^Generate prompt/ }),
   ).toBeEnabled();
-  await page.getByRole("button", { name: /^Use locked prompt/ }).click();
-  await expect(
-    page.getByRole("button", { name: /^Use locked prompt/ }),
-  ).toBeEnabled();
+  await page.getByRole("button", { name: /^Generate prompt/ }).click();
   await expect(
     page.getByLabel("Generated prompt", { exact: true }),
-  ).toHaveValue("  Exact output\n");
+  ).toHaveValue(/Persistent idea/);
 });
 
 test("completed job recovery wins over a slower bootstrap and is saved", async ({
@@ -146,8 +174,7 @@ test("completed job recovery wins over a slower bootstrap and is saved", async (
     await request.post("/api/generate", {
       data: {
         settings: {
-          lock_generated_prompt: true,
-          generated_prompt: "Recovered newer output",
+          idea: "Recovered newer output",
         },
       },
     })
@@ -174,7 +201,7 @@ test("completed job recovery wins over a slower bootstrap and is saved", async (
   await page.goto("/");
   await expect(
     page.getByLabel("Generated prompt", { exact: true }),
-  ).toHaveValue("Recovered newer output");
+  ).toHaveValue(/Recovered newer output/);
   await expect(page.getByLabel("Builder save status")).toHaveText("Saved");
   await expect
     .poll(
@@ -182,7 +209,7 @@ test("completed job recovery wins over a slower bootstrap and is saved", async (
         (await (await request.get("/api/settings")).json()).builder
           .generated_prompt,
     )
-    .toBe("Recovered newer output");
+    .toMatch(/Recovered newer output/);
 });
 
 test("failed autosave retains edits, retries, and old responses never replace newer edits", async ({

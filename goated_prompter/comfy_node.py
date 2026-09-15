@@ -45,7 +45,6 @@ class GoatedPrompter:
                 "director_preset": ("STRING", {"default": DEFAULT_DIRECTOR_PRESET}),
                 "image_1_role": (REFERENCE_ROLE_NAMES, {"default": "Auto"}),
                 "image_2_role": (REFERENCE_ROLE_NAMES, {"default": "Auto"}),
-                "lock_generated_prompt": ("BOOLEAN", {"default": False}),
                 **{
                     f"reference_{attribute}_source": (REFERENCE_SOURCE_NAMES, {"default": "Auto"})
                     for attribute, _label in REFERENCE_ATTRIBUTES
@@ -95,7 +94,6 @@ class GoatedPrompter:
         director_preset=DEFAULT_DIRECTOR_PRESET,
         image_1_role="Auto",
         image_2_role="Auto",
-        lock_generated_prompt=False,
         image=None,
         image_2=None,
         director_ai="",
@@ -114,13 +112,7 @@ class GoatedPrompter:
         image_4=None,
         linked_references=False,
     ):
-        generated = str(generated_prompt or "")
-        if lock_generated_prompt:
-            if not generated.strip():
-                raise ValueError("Generated Prompt is locked but empty. Generate or enter a prompt before queueing.")
-            return _execution_result(generated)
-
-        cached = generated.strip()
+        cached = str(generated_prompt or "").strip()
         if cached and image is None and image_2 is None and image_3 is None and image_4 is None:
             return _execution_result(cached)
 

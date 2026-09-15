@@ -92,7 +92,10 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("mode", payload["inputs"])
         self.assertNotIn("system_prompt_override", payload["inputs"])
         self.assertEqual(len([key for key in payload["inputs"] if key.startswith("reference_")]), 11)
-        self.assertEqual(set(payload["presets"]), {"ok", "default", "presets", "warnings", "storage"})
+        self.assertNotIn("lock_generated_prompt", payload["inputs"])
+        self.assertEqual(set(payload["presets"]), {"ok", "default", "presets", "mode_directors", "warnings", "storage"})
+        self.assertEqual(set(payload["presets"]["mode_directors"]), set(payload["inputs"]["mode"][0]))
+        self.assertEqual(payload["presets"]["mode_directors"]["Photography"], "photography_director")
         self.assertEqual(set(payload["models"]), {"ok", "backend", "root", "profiles", "assignments", "warnings"})
         with patch.object(local, "discover_director_profiles", wraps=local.discover_director_profiles) as discover:
             response = await self.client.get("/api/models?refresh=true")
@@ -142,7 +145,7 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.status, 409)
 
     async def test_legacy_builder_recovery_retry_and_canonical_runtime_save(self):
-        legacy = {"builder": {"mode": "Video", "director_preset": "Photography Director", "system_prompt_override": "Legacy draft", "generated_prompt": " exact output "}}
+        legacy = {"builder": {"mode": "Video", "director_preset": "Photography Director", "system_prompt_override": "Legacy draft", "generated_prompt": " exact output ", "lock_generated_prompt": True}}
         local.atomic_json(self.settings_path, legacy)
         with patch.object(local, "atomic_json", side_effect=PermissionError("read only")):
             with self.assertRaisesRegex(ValueError, "original settings remain intact"):
@@ -152,6 +155,7 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         builder = state.settings()["builder"]
         self.assertEqual(builder["mode"], "Video")
         self.assertNotIn("system_prompt_override", builder)
+        self.assertNotIn("lock_generated_prompt", builder)
         self.assertEqual(builder["generated_prompt"], " exact output ")
         recovered = local.get_director_preset(builder["director_preset"], strict=True)
         self.assertEqual(recovered.instructions, "Legacy draft")
@@ -314,11 +318,12 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
                                           "selected_profile": "custom", "builder": builder})
         self.assertEqual(response.status, 200, await response.text())
         builder.pop("system_prompt_override")
+        builder.pop("lock_generated_prompt")
         self.assertEqual((await response.json())["builder"], builder)
         restarted = local.create_app(settings_path=self.settings_path, config_loader=lambda: {})
         self.assertEqual(restarted[local.STATE].settings()["builder"], builder)
         original = self.settings_path.read_bytes()
-        invalid = [None, [], {"lock_generated_prompt": 1}, {"idea": None}, {"idea": "x" * 100001}]
+        invalid = [None, [], {"unknown": True}, {"idea": None}, {"idea": "x" * 100001}]
         invalid += [{key: "invalid"} for key in ("director_preset", "mode", "target_model", "creativity", "prompt_length")]
         invalid += [{"reference_face_source": value} for value in ("Auto", "Image 5", "image 1", "", None)]
         invalid += [{key: "data:image/png;base64,AAAA"} for key in
@@ -437,14 +442,11 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 400)
         self.assertEqual(self.settings_path.read_text(), '{"keep_model_loaded": "false"}')
 
-    async def test_lock_exact_and_fresh_generation(self):
-        exact = "  unchanged\n\n"
-        job = await self.start(settings={"lock_generated_prompt": True, "generated_prompt": exact})
-        self.assertEqual((await self.wait_status(job["id"], "succeeded"))["result"]["prompt"], exact)
-        self.assertEqual(self.calls, [])
-        job = await self.start(settings={"idea": "portrait", "generated_prompt": "not a cache"})
-        self.assertEqual((await self.wait_status(job["id"], "succeeded"))["result"]["prompt"], "fresh prompt")
-        self.assertEqual(len(self.calls), 1)
+    async def test_existing_output_and_obsolete_lock_do_not_bypass_generation(self):
+        for extra in ({}, {"lock_generated_prompt": True}):
+            job = await self.start(settings={"idea": "portrait", "generated_prompt": "not a cache", **extra})
+            self.assertEqual((await self.wait_status(job["id"], "succeeded"))["result"]["prompt"], "fresh prompt")
+        self.assertEqual(len(self.calls), 2)
 
     async def test_delivery_gate_without_service_checkpoint(self):
         entered = threading.Event()
@@ -457,7 +459,7 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
             original(job, result)
 
         with patch.object(local.Job, "deliver", delayed_delivery):
-            job = await self.start(settings={"lock_generated_prompt": True, "generated_prompt": "exact"})
+            job = await self.start()
             try:
                 self.assertTrue(await asyncio.to_thread(entered.wait, 2))
                 await self.client.post(f"/api/jobs/{job['id']}/pause")
@@ -468,28 +470,9 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
             await self.client.post(f"/api/jobs/{job['id']}/resume")
             await self.wait_status(job["id"], "succeeded")
 
-    async def test_locked_bypasses_irrelevant_validation(self):
-        settings = {"lock_generated_prompt": True, "generated_prompt": "  exact\n",
-                    "director_context_size": "not an integer", "prompt_model": "missing model",
-                    "director_preset": "missing preset", "reference_face_source": "invalid",
-                    "director_llama_server": "\\\\server\\share\\run.exe"}
-        with patch.object(local.LocalState, "config", side_effect=AssertionError("Must not load config")), \
-                patch.object(local, "decode_image", side_effect=AssertionError("Must not decode images")), \
-                patch.object(local.GoatedPrompterRequest, "from_mapping", side_effect=AssertionError("Must not map settings")):
-            job = await self.start(settings=settings, images=["invalid image", "data:image/png;base64,!!!!", "bad", "bad"])
-            completed = await self.wait_status(job["id"], "succeeded")
-            self.assertEqual(completed["result"]["prompt"], settings["generated_prompt"])
-            self.assertEqual(completed["result"]["backend"], "locked")
-            self.assertEqual(completed["revision"], 1)
-            self.assertEqual(self.calls, [])
-            response = await self.client.post("/api/generate", json={"settings": {**settings, "generated_prompt": "  "}})
-            self.assertEqual(response.status, 400)
-            self.assertIn("locked but empty", (await response.json())["error"])
-
-    async def test_bypasses_keep_payload_bounds_and_security(self):
-        for settings, text_only in (({"lock_generated_prompt": True, "generated_prompt": "exact"}, False),
-                                    ({"idea": "portrait"}, True)):
-            payload = {"settings": settings, "text_only": text_only}
+    async def test_generation_keeps_payload_bounds_and_security(self):
+        for text_only in (False, True):
+            payload = {"settings": {"idea": "portrait"}, "text_only": text_only}
             for images in ([None] * 5, "not an array"):
                 response = await self.client.post("/api/generate", json={**payload, "images": images})
                 self.assertEqual(response.status, 400)
@@ -537,7 +520,7 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_invalid_inputs_and_security(self):
         for payload in ([], {"images": [None] * 5}, {"images": ["bad"]}, {"settings": []},
-                        {"text_only": "false"}, {"settings": {"lock_generated_prompt": True}},
+                        {"text_only": "false"},
                         {"settings": {"director_llama_server": "\\\\server\\share\\run.exe"}}):
             response = await self.client.post("/api/generate", json=payload)
             self.assertEqual(response.status, 400, await response.text())
