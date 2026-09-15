@@ -30,6 +30,7 @@ const builderKeys = [
   "director_preset",
   "custom_instructions",
   "generated_prompt",
+  "resolution",
   ...referenceAttributes.map((key) => `reference_${key}_source`),
 ];
 
@@ -111,6 +112,13 @@ export function createBuilderSaver(write, onStatus, delay = 300) {
       timer = setTimeout(() => flush().catch(() => {}), delay);
     },
     flush,
+    async discard() {
+      clearTimeout(timer);
+      latest = undefined;
+      if (pending) {
+        try { await pending; } catch { /* The caller is explicitly reloading saved state. */ }
+      }
+    },
     dispose() {
       clearTimeout(timer);
     },

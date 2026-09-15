@@ -1,6 +1,12 @@
 import { test, expect } from "@playwright/test";
 
 test.beforeEach(async ({ request }) => {
+  for (const operation of ["refine", "explore"]) {
+    const path = `/api/workspace/settings/${operation}`;
+    const settings = await (await request.get(path)).json();
+    const saved = await (await request.put(path, { data: { revision: settings.revision, draft: {} } })).json();
+    expect((await request.post(`${path}/instructions`, { data: { revision: saved.revision, action: "reset" } })).ok()).toBe(true);
+  }
   let snapshot = await (await request.get("/api/workspace")).json();
   const cleared = await request.post("/api/workspace", { data: { action: "clear_history", revision: snapshot.revision } });
   expect(cleared.ok()).toBe(true);

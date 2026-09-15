@@ -81,7 +81,7 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 200)
         payload = await response.json()
         self.assertEqual(set(payload), {"inputs", "presets", "models", "backend", "migration_notices", "active_job", "settings",
-                                        "reference_attributes", "reference_sources", "max_reference_images"})
+                                        "reference_attributes", "reference_sources", "max_reference_images", "resolutions"})
         self.assertEqual(payload["reference_attributes"], [{"key": key, "label": label} for key, label in local.REFERENCE_ATTRIBUTES])
         self.assertEqual(payload["reference_sources"], ["Off", "Image 1", "Image 2", "Image 3", "Image 4", "Blend"])
         self.assertEqual(payload["max_reference_images"], 4)

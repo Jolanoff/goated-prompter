@@ -5,6 +5,7 @@ from dataclasses import dataclass, replace
 import hashlib
 
 from .backends.factory import create_backend
+from .resolution import normalize_resolution, resolution_guidance
 from .config import load_config
 from .director_profiles import canonical_prompt_model, infer_prompt_model_family, resolve_director_config
 from .diagnostics import debug_prompts_enabled, log_evidence_result, resolved_scene_sha256
@@ -124,6 +125,7 @@ class GoatedPrompterRequest:
     preserve_lighting: bool = False
     preserve_colors: bool = False
     prompt_length: str = "Medium"
+    resolution: object = None
     custom_instructions: str = ""
     system_prompt_override: str = ""
     reference_map: object = None
@@ -171,6 +173,7 @@ class GoatedPrompterRequest:
             preserve_colors=_as_bool(values.get("preserve_colors", False)),
             prompt_length="Maximum Detail" if values.get("prompt_length") == "Maximum" else str(values.get("prompt_length") or "Medium"),
             custom_instructions=str(values.get("custom_instructions") or ""),
+            resolution=normalize_resolution(values.get("resolution")),
             system_prompt_override=str(values.get("system_prompt_override") or ""),
             reference_map=reference_map_from_mapping(values),
             image_1_role=_reference_role(values.get("image_1_role")),
@@ -313,6 +316,9 @@ def assemble_instruction(
         print(resolved_reference_map.director_constraints(), flush=True)
 
     sections.append(OUTPUT_CONTRACT)
+    canvas_guidance = resolution_guidance(request.resolution)
+    if canvas_guidance:
+        sections.append(canvas_guidance)
 
     if has_visual_context:
         user_message = (

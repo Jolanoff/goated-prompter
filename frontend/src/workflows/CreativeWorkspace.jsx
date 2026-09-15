@@ -4,10 +4,14 @@ import { useWorkspace } from "./useWorkspace.js";
 import RefineTab from "./RefineTab.jsx";
 import ExploreTab from "./ExploreTab.jsx";
 import { PromptText } from "./WorkflowControls.jsx";
+import { useWorkflowSettings } from "./useWorkflowSettings.js";
+import WorkflowSettingsStatus from "./WorkflowSettingsStatus.jsx";
 
 /** Hosts the two independent tabs. App continues to own the single global job. */
 export default function CreativeWorkspace(props) {
   const workspace = useWorkspace(props.job, props.onReceiveJob);
+  const refineSettings = useWorkflowSettings("refine");
+  const exploreSettings = useWorkflowSettings("explore");
   const [starting, setStarting] = useState(false);
   const visible = props.view === "refine" || props.view === "explore";
   const current = workspace.snapshot?.versions.find((version) => version.id === workspace.snapshot.current_id);
@@ -17,6 +21,7 @@ export default function CreativeWorkspace(props) {
     setStarting(true);
     workspace.setError("");
     try {
+      await (operation === "refine" ? refineSettings : exploreSettings).flush();
       return await props.onGenerate(operation, { ...payload, revision: workspace.snapshot.revision });
     } catch (err) {
       if (err.status === 409) await workspace.refresh();
@@ -41,8 +46,14 @@ export default function CreativeWorkspace(props) {
       {props.active && <button className={ui.button} onClick={props.onCancel} disabled={props.job.status === "cancelling"}>End generation</button>}
     </div>
     {!workspace.snapshot ? <div className={ui.emptyState}><h2>Loading your creative workspace</h2><p>Saved versions and comparisons will appear here.</p></div> : <>
-      <div hidden={props.view !== "refine"}><RefineTab {...shared} /></div>
-      <div hidden={props.view !== "explore"}><ExploreTab {...shared} /></div>
+      <div hidden={props.view !== "refine"}>
+        <WorkflowSettingsStatus settings={refineSettings} label="Refine" />
+        {refineSettings.draft && <RefineTab {...shared} preferences={refineSettings} disabled={disabled || refineSettings.working} />}
+      </div>
+      <div hidden={props.view !== "explore"}>
+        <WorkflowSettingsStatus settings={exploreSettings} label="Explore" />
+        {exploreSettings.draft && <ExploreTab {...shared} preferences={exploreSettings} disabled={disabled || exploreSettings.working} />}
+      </div>
     </>}
   </div>;
 }

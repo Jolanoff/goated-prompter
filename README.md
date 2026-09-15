@@ -16,6 +16,8 @@ ComfyUI is **not required** to use the website. The app produces prompt text tha
 - **Local prompt library:** autosaved builder settings, named saved prompts, and copy/edit controls.
 - **Refine tab:** targeted revisions, quick editing actions, detail locks, before/after highlighting, manual edits, and persistent undo/redo with branching version history.
 - **Explore tab:** compare Faithful, Creative, and Experimental directions, then send a favorite into Refine. Completed directions are saved even if a later direction fails or is cancelled.
+- **Resolution-aware framing:** Builder and Explore support square, portrait, landscape and ultrawide presets plus exact custom width/height. Canvas size guides composition and readable detail density.
+- **Persistent creative settings:** Refine and Explore autosave their inputs and controls, offer independent advanced instruction editors, and save results directly to Saved Prompts.
 - **Local inference through llama.cpp**, with an optional OpenAI-compatible endpoint.
 - **End generation** to cancel an active local llama.cpp job.
 
@@ -149,9 +151,31 @@ Use your own absolute model directory in Settings. The browser workflow is the s
 | **Target model** | Shapes the prompt for the image/video generator you will use afterward. |
 | **Creativity** | Controls how much new visual detail the writer may introduce. |
 | **Prompt length** | Controls descriptive density. Maximum Detail requests a larger output budget, not a guaranteed word count. |
+| **Image / video resolution** | Guides framing, subject scale, edge clearance and detail density for your intended output canvas. Set the same dimensions in your generation tool. |
 | **Prompt engine** | The language/vision model that actually writes the prompt. |
 | **Keep from reference images** | Selects the source for each attribute you want to preserve. |
 | **Workflow rules / notes** | Adds constraints for the current request. |
+
+### Image / video resolution
+
+**Prompt Builder** and **Explore** have the same resolution selector. **Auto** preserves the existing behavior without imposing a canvas. Ratio presets include these visible starting dimensions:
+
+| Ratio | Width × height |
+| --- | --- |
+| 1:1 | 1024 × 1024 |
+| 2:3 | 768 × 1152 |
+| 3:2 | 1152 × 768 |
+| 3:4 | 768 × 1024 |
+| 4:3 | 1024 × 768 |
+| 9:16 | 720 × 1280 |
+| 16:9 | 1280 × 720 |
+| 21:9 | 1680 × 720 |
+
+Choose **Custom** to enter your exact width and height, from 16 to 16,384 whole pixels per side. Incomplete values can remain in an autosaved draft, but generation requires valid dimensions. These are prompt-planning dimensions, not a claim that every target generator accepts every size.
+
+The prompt engine receives framing guidance for the orientation and aspect ratio, with simpler incidental detail at small output sizes and more room for supported detail at larger sizes. For video, that guidance applies throughout movement. Explicit subject requirements and reference/detail locks remain authoritative. The app does not resize reference images or set the final renderer's canvas: set the matching dimensions in your image/video tool.
+
+Resolution is retained with generated versions, comparisons and newly saved prompts. Importing Builder output into Explore, choosing an Explore direction for Refine, and opening a saved prompt in Builder carry its dimensions along. Refine keeps the selected version's resolution.
 
 ### Four reference images
 
@@ -182,7 +206,7 @@ Open **Refine** from the sidebar or **Refine & history** under Builder output. S
 2. Select **Keep these details** locks. These refer to facts in the source prompt; locked attributes take priority over conflicting edits. Unrelated details are preserved by the refinement instructions.
 3. Click **Refine prompt**. The original and new version are saved separately, including the requested changes and locks.
 4. Expand **What changed** for added/removed text. Use **Undo**, **Redo**, or select any version in history. Refining an older version creates a branch and keeps the previous branch available.
-5. **Edit text → Save as new version** records a manual revision. **Use in Builder** transfers the selected output and target back to Builder for further work or saving to Saved Prompts.
+5. **Edit text → Save as new version** records a manual revision. **Save prompt** saves the current version directly to Saved Prompts with its target and resolution. **Use in Builder** transfers it back to Builder for further work.
 
 Undo follows the current version's parent; each imported starting prompt or Builder generation begins a new history chain. History selection can restore any chain. The text diff uses bounded work and falls back to highlighting a larger changed region for very large prompts.
 
@@ -198,9 +222,17 @@ The three calls run sequentially inside one model session, avoiding simultaneous
 
 Only **Ideogram4** requests JSON output. Other targets return prompt text (including character tags for Anima). Before saving, the workflows remove simple JSON prompt wrappers without another inference call. Malformed or complex structured output gets at most one format-correction retry for that direction; if it still fails, earlier completed directions stay saved and an error is shown. Existing saved comparisons are not rewritten by this validation.
 
-Both workflows use the selected prompt engine and target adapters with their own editing instructions. They operate on text: to carry image-grounded details into them, generate a reference-guided prompt in Builder first. Model adherence to locks and the quality/distinctness of directions still depend on the selected engine.
+Both workflows use the selected prompt engine and target adapters with their own editing instructions. Each Explore card has **Save prompt**, which opens the shared naming dialog and saves that exact direction, target and resolution. They operate on text: to carry image-grounded details into them, generate a reference-guided prompt in Builder first. Model adherence to locks and the quality/distinctness of directions still depend on the selected engine.
 
-Completed versions, history selection/redo, and comparisons live in **`data/workspace.json`**. Unsubmitted text in the new tabs stays in memory across tab switches; submit/save it before reloading. Writes are atomic and revision-checked so a stale browser tab cannot overwrite newer workspace edits. Storage limits are 1,000 versions, 100 comparisons, and 16 MiB for the workspace file; copy/back up useful results before clearing history or deleting older comparisons. If saving a generated result fails, its recovered text is shown for copying in the current session.
+Completed versions, history selection/redo, and comparisons live in **`data/workspace.json`**. Writes are atomic and revision-checked so a stale browser tab cannot overwrite newer workspace edits. Storage limits are 1,000 versions, 100 comparisons, and 16 MiB for the workspace file; copy/back up useful results before clearing history or deleting older comparisons. If saving a generated result fails, its recovered text is shown for copying in the current session.
+
+### Saved creative settings and advanced instructions
+
+**Refine settings** and **Explore settings** autosave separately to **`data/workflow_settings.json`**. Refine retains requested changes, locks, starting text/target and manual-edit drafts; Explore retains its source text, target, length, resolution, locks and comparison selection. Wait for the respective **Saved** indicator before closing or reloading. Failed writes keep the local draft and expose retry/reload actions; revision checks prevent a stale browser tab from replacing newer settings.
+
+Expand **Refine advanced settings** or **Explore advanced settings** to edit the built-in behavior. Refine has one system-prompt editor. Explore has separate editors for its system prompt and each of the three directions. **Save instructions** activates edits for subsequent generations; **Discard instruction edits** restores the saved editor text; **Use built-in instructions** resets that workflow to its shipped defaults. Unsaved instruction-editor changes require an explicit save before reload, unlike the ordinary autosaved controls.
+
+Custom workflow instructions replace the corresponding built-in behavior. Target formatting, detail locks and resolution guidance are still applied separately, including JSON validation for Ideogram4. Instruction changes are blocked during generation, and each job uses a snapshot of the saved instructions. Builder's instruction-preset library stays independent of these workflow-specific editors.
 
 ## Project and data layout
 
@@ -216,6 +248,9 @@ goated-prompter/
 │   ├── presets.py              # Built-in instruction presets and library management
 │   ├── core.py                 # Prompt assembly and generation orchestration
 │   ├── prompt_workflows.py     # Isolated refinement/exploration instructions and inference
+│   ├── workflow_prompts.py     # Editable built-in workflow behavior
+│   ├── workflow_settings.py    # Per-workflow drafts and instruction overrides
+│   ├── resolution.py           # Canvas presets, validation and framing guidance
 │   ├── workspace_api.py        # Creative-workspace endpoints and shared-job integration
 │   ├── workspace_store.py      # Atomic versions, branching undo/redo and comparisons
 │   ├── reference_map.py        # Attribute-to-image source resolution
@@ -229,6 +264,7 @@ goated-prompter/
 │   ├── settings.json           # Settings and autosaved builder draft
 │   ├── prompts.json            # Saved prompt collection
 │   ├── workspace.json          # Versions, undo/redo and saved direction comparisons
+│   ├── workflow_settings.json  # Refine/Explore drafts and custom instructions
 │   └── directors/              # Custom instruction presets
 │       └── .overrides/         # Edits to built-in instruction presets
 ├── tests/                      # Python and optional canvas tests
