@@ -14,6 +14,8 @@ ComfyUI is **not required** to use the website. The app produces prompt text tha
 - **Target-aware output:** Generic, Krea 2, FLUX.2 Klein, Z-Image, Qwen Image, MiniMax, LTX 2.5, and Ideogram4. Target selection changes the writing instructions/output format; it does not download or run that image/video model.
 - **Reusable instruction presets:** choose a built-in preset, edit its instructions, or create your own.
 - **Local prompt library:** autosaved builder settings, named saved prompts, and copy/edit controls.
+- **Refine tab:** targeted revisions, quick editing actions, detail locks, before/after highlighting, manual edits, and persistent undo/redo with branching version history.
+- **Explore tab:** compare Faithful, Creative, and Experimental directions, then send a favorite into Refine. Completed directions are saved even if a later direction fails or is cancelled.
 - **Local inference through llama.cpp**, with an optional OpenAI-compatible endpoint.
 - **End generation** to cancel an active local llama.cpp job.
 
@@ -172,6 +174,34 @@ Slots keep their numbers when an image is removed. Removing a required image res
 
 The app writes prompts; the quality and faithfulness of the generated description depend on your chosen model and inputs. It does not generate images or videos itself.
 
+### Refine and version history
+
+Open **Refine** from the sidebar or **Refine & history** under Builder output. Successful website Builder generations are automatically recorded in history. To work on an edited Builder output or another prompt, expand **Start from another prompt**, import the Builder text or paste a prompt, and choose its target model.
+
+1. Enter the change you want, or use a quick action such as **Wider shot**, **Shorten**, or **Remove filler**.
+2. Select **Keep these details** locks. These refer to facts in the source prompt; locked attributes take priority over conflicting edits. Unrelated details are preserved by the refinement instructions.
+3. Click **Refine prompt**. The original and new version are saved separately, including the requested changes and locks.
+4. Expand **What changed** for added/removed text. Use **Undo**, **Redo**, or select any version in history. Refining an older version creates a branch and keeps the previous branch available.
+5. **Edit text → Save as new version** records a manual revision. **Use in Builder** transfers the selected output and target back to Builder for further work or saving to Saved Prompts.
+
+Undo follows the current version's parent; each imported starting prompt or Builder generation begins a new history chain. History selection can restore any chain. The text diff uses bounded work and falls back to highlighting a larger changed region for very large prompts.
+
+### Explore three directions
+
+Open **Explore**, import a Builder prompt/idea or the current refinement, or enter new text. Choose a target model, direction length, and any detail locks, then click **Explore three directions**:
+
+- **Faithful:** clarifies the source while retaining its staging and aesthetic.
+- **Creative:** explores compatible, unspecified presentation choices while keeping the source's stated subjects, setting, action and medium.
+- **Experimental:** explores bolder framing, perspective or rendering treatment of the same scene within those constraints. It does not request an unrelated new scene or arbitrary surreal elements.
+
+The three calls run sequentially inside one model session, avoiding simultaneous GPU jobs and repeated model loading between directions. Each direction starts from the original source. Later calls receive bounded plain-text excerpts of earlier directions for comparison only. **End generation** uses the existing cancellation mechanism. Every finished direction is saved immediately; partial comparisons remain available after cancellation, failure, or a server restart. Use the **Saved comparisons** selector to revisit them and **Refine this direction** to start from a favorite.
+
+Only **Ideogram4** requests JSON output. Other targets return prompt text (including character tags for Anima). Before saving, the workflows remove simple JSON prompt wrappers without another inference call. Malformed or complex structured output gets at most one format-correction retry for that direction; if it still fails, earlier completed directions stay saved and an error is shown. Existing saved comparisons are not rewritten by this validation.
+
+Both workflows use the selected prompt engine and target adapters with their own editing instructions. They operate on text: to carry image-grounded details into them, generate a reference-guided prompt in Builder first. Model adherence to locks and the quality/distinctness of directions still depend on the selected engine.
+
+Completed versions, history selection/redo, and comparisons live in **`data/workspace.json`**. Unsubmitted text in the new tabs stays in memory across tab switches; submit/save it before reloading. Writes are atomic and revision-checked so a stale browser tab cannot overwrite newer workspace edits. Storage limits are 1,000 versions, 100 comparisons, and 16 MiB for the workspace file; copy/back up useful results before clearing history or deleting older comparisons. If saving a generated result fails, its recovered text is shown for copying in the current session.
+
 ## Project and data layout
 
 ```text
@@ -185,15 +215,20 @@ goated-prompter/
 │   ├── prompt_catalog.py       # Task, target, creativity, length and general prompts
 │   ├── presets.py              # Built-in instruction presets and library management
 │   ├── core.py                 # Prompt assembly and generation orchestration
+│   ├── prompt_workflows.py     # Isolated refinement/exploration instructions and inference
+│   ├── workspace_api.py        # Creative-workspace endpoints and shared-job integration
+│   ├── workspace_store.py      # Atomic versions, branching undo/redo and comparisons
 │   ├── reference_map.py        # Attribute-to-image source resolution
 │   ├── evidence.py             # Image analysis and resolved scene evidence
 │   └── backends/               # llama.cpp and OpenAI-compatible clients
 ├── frontend/
 │   ├── src/                    # React UI, Tailwind utilities and presentation labels
+│   │   └── workflows/          # Separate Refine/Explore tabs, history and workspace state
 │   └── dist/                   # Generated by npm run build; not committed
 ├── data/                       # Created as you save; not committed
 │   ├── settings.json           # Settings and autosaved builder draft
 │   ├── prompts.json            # Saved prompt collection
+│   ├── workspace.json          # Versions, undo/redo and saved direction comparisons
 │   └── directors/              # Custom instruction presets
 │       └── .overrides/         # Edits to built-in instruction presets
 ├── tests/                      # Python and optional canvas tests
