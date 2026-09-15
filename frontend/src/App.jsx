@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { orderDisplayPresets, presetDisplayLabel } from "./presetPresentation.js";
 import { ui } from "./ui.js";
+import { api } from "./api.js";
+import CreativeWorkspace from "./workflows/CreativeWorkspace.jsx";
 import {
   ArrowLeft,
   ArrowUpRight,
@@ -63,31 +65,6 @@ const referenceOrder = [
   "materials",
   "mood",
 ];
-
-async function api(path, body, method = "POST") {
-  const response = await fetch(
-    `/api${path}`,
-    body === undefined
-      ? {}
-      : {
-          method,
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        },
-  );
-  const data = await response
-    .json()
-    .catch(() => ({ error: "The local server returned an invalid response." }));
-  if (!response.ok) {
-    const error = new Error(
-      data.error || `Request failed (${response.status}).`,
-    );
-    error.status = response.status;
-    error.activeJob = data.active_job;
-    throw error;
-  }
-  return data;
-}
 
 function GoatMark({ small = false }) {
   return (
@@ -308,11 +285,13 @@ function App() {
         /* Optional reload recovery. */
       }
       if (next.status === "succeeded") {
-        setSettings((current) => ({
-          ...current,
-          generated_prompt: next.result.prompt,
-        }));
-        setNotice("Your prompt is ready. Make it yours.");
+        if (!next.kind || next.kind === "builder") {
+          setSettings((current) => ({ ...current, generated_prompt: next.result.prompt }));
+        }
+        if (next.result.history_error) setError(next.result.history_error);
+        setNotice(next.kind === "explore" ? "Three directions saved. Compare them in Explore."
+          : next.kind === "refine" ? "Refinement saved as a new version."
+          : "Your prompt is ready. Make it yours.");
       } else if (next.status === "cancelled") {
         setNotice("Generation ended.");
       } else
@@ -336,7 +315,7 @@ function App() {
         );
         saver.current.hydrate(initial);
         // Job recovery can finish before bootstrap; retain its newer output.
-        if (latestJobRef.current?.status === "succeeded") {
+        if (latestJobRef.current?.status === "succeeded" && (!latestJobRef.current.kind || latestJobRef.current.kind === "builder")) {
           initial.generated_prompt = latestJobRef.current.result.prompt;
         }
         hydrated.current = true;
@@ -762,6 +741,37 @@ function App() {
     }
   }
 
+  async function startWorkflow(operation, payload) {
+    if (submissionRef.current || busy || uploading || actionBusy || settingsBusy || noEngine) return false;
+    submissionRef.current = true;
+    setSubmitting(true);
+    setError("");
+    setNotice("");
+    try {
+      const next = await api(`/workspace/${operation}`, {
+        ...payload,
+        settings: {
+          ...payload.settings,
+          director_profile: configuredBackend ? "" : selectedProfile?.id || "",
+        },
+      });
+      receiveJob(next);
+      return true;
+    } catch (err) {
+      if (err.activeJob) receiveJob(err.activeJob);
+      else {
+        try {
+          const data = await api("/bootstrap");
+          if (data.active_job) receiveJob(data.active_job);
+        } catch { /* Keep the original request error. */ }
+      }
+      throw err;
+    } finally {
+      submissionRef.current = false;
+      setSubmitting(false);
+    }
+  }
+
   async function copy(text) {
     try {
       await navigator.clipboard.writeText(text);
@@ -937,6 +947,14 @@ function App() {
             <SlidersHorizontal size={19} />
             Prompt Builder
           </button>
+          <button className={ui.navItem} data-active={view === "refine"}
+            onClick={() => navigate("refine")} disabled={!bootstrap}>
+            <WandSparkles size={19} />Refine
+          </button>
+          <button className={ui.navItem} data-active={view === "explore"}
+            onClick={() => navigate("explore")} disabled={!bootstrap}>
+            <Layers3 size={19} />Explore
+          </button>
           <button
             className={ui.navItem}
             data-active={view === "saved"}
@@ -1079,7 +1097,26 @@ function App() {
             )}
           </div>
 
-          {view === "saved" ? (
+          {bootstrap && (
+            <CreativeWorkspace view={view} job={job} busy={busy || actionBusy || settingsBusy || !!uploading}
+              active={active} noEngine={noEngine} builderPrompt={prompt} builderIdea={settings.idea}
+              builderTarget={settings.target_model} inputs={bootstrap.inputs}
+              engineLabel={configuredBackend ? `Configured backend (${bootstrap.backend})` : selectedProfile?.label}
+              onGenerate={startWorkflow} onCancel={endGeneration} onCopy={copy}
+              onNavigate={navigate} onReceiveJob={receiveJob}
+              onUsePrompt={(text, target) => {
+                setSettings((current) => ({ ...current, generated_prompt: text, target_model: target }));
+                navigate("builder");
+              }} />
+          )}
+          {active && view !== "builder" && view !== "refine" && view !== "explore" && (
+            <div className={`${ui.panel} mb-5 flex flex-wrap items-center justify-between gap-3`} role="status">
+              <span>{job.progress || "Generating prompt…"}</span>
+              <button className={ui.button} onClick={endGeneration} disabled={actionBusy || job.status === "cancelling"}>End generation</button>
+            </div>
+          )}
+
+          {view === "refine" || view === "explore" ? null : view === "saved" ? (
             <>
               <div className={ui.pageHeading}>
                 <div>
@@ -1694,6 +1731,14 @@ function App() {
                         >
                           <Trash2 size={16} />
                           Clear
+                        </button>
+                      </div>
+                      <div className={ui.inlineActions}>
+                        <button className={ui.button} disabled={!prompt.trim()} onClick={() => navigate("refine")}>
+                          <WandSparkles size={15} />Refine & history
+                        </button>
+                        <button className={ui.button} disabled={!prompt.trim() && !settings.idea.trim()} onClick={() => navigate("explore")}>
+                          <Layers3 size={15} />Explore directions
                         </button>
                       </div>
                     </Panel>

@@ -23,6 +23,7 @@ test("all built-in display titles follow the requested order without mutating th
     "Boudoir Photography", "Krea 2 Phone Photo", "Character Director",
     "Architecture & Interiors", "Product Photography", "Dataset & LoRA Caption",
     "Video Action & Camera Movement", "MiniMax H3 Video Shot",
+    "Anime Director", "NSFW Director",
   ]);
   assert.deepEqual(presets, original);
   for (const item of displayed) assert.equal(item, presets.find((p) => p.id === item.id));
@@ -43,6 +44,8 @@ test("custom labels and order survive after built-ins, including canonical-looki
   const displayed = orderDisplayPresets(input);
   assert.deepEqual(displayed.slice(-3), custom);
   assert.deepEqual(displayed.slice(-3).map(presetDisplayLabel), custom.map((p) => p.label));
-  assert.equal(displayed.at(-4), unknown);
+  // Unmapped built-ins retain input order and still precede user presets.
+  assert.ok(displayed.indexOf(unknown) < displayed.indexOf(custom[0]));
+  assert.ok(displayed.indexOf(unknown) < displayed.findIndex((p) => p.id === "anime_director"));
   assert.equal(presetDisplayLabel(unknown), "Future preset");
 });

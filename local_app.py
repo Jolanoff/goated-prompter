@@ -29,6 +29,8 @@ from goated_prompter.director_profiles import discover_director_profiles, resolv
 from goated_prompter.image_utils import EncodedImage
 from goated_prompter.comfy_node import GoatedPrompter
 from goated_prompter.reference_map import REFERENCE_ATTRIBUTES
+from goated_prompter.workspace_store import WorkspaceStore
+from goated_prompter.workspace_api import register_workspace_routes, execute_workflow
 from goated_prompter.presets import (
     DEFAULT_DIRECTOR_PRESET, MODE_DIRECTOR_RECOMMENDATIONS, DirectorLibraryError, delete_user_director,
     list_director_presets, resolve_user_director_directory, save_user_director,
@@ -205,11 +207,14 @@ class Job:
         self.stopping = False
         self.cancel_requested = False
         self.interrupt = None
+        self.kind = "builder"
+        self.progress = ""
 
     def snapshot(self):
         with self.lock:
             return {"id": self.id, "status": self.status, "revision": self.revision, "created_at": self.created_at,
-                    "finished_at": self.finished_at, "result": self.result, "error": self.error}
+                    "finished_at": self.finished_at, "result": self.result, "error": self.error,
+                    "kind": self.kind, "progress": self.progress}
 
     def checkpoint(self):
         while True:
@@ -247,16 +252,30 @@ class Job:
         return snapshot
 
     def deliver(self, result):
+        """Deliver a result (or a durable-result factory) at a cancellable checkpoint."""
         while True:
             self.checkpoint()
             with self.lock:
                 if not self.gate.is_set():
                     continue
-                self.result = result
+                self.checkpoint()
+                self.result = result() if callable(result) else result
                 self.status = "succeeded"
                 self.finished_at = time.time()
                 self.revision += 1
                 return
+
+    def commit(self, operation, finish=False):
+        """Serialize a durable result with cancellation, without waiting under the lock."""
+        if finish:
+            return self.deliver(operation)
+        while True:
+            self.checkpoint()
+            with self.lock:
+                if not self.gate.is_set():
+                    continue
+                self.checkpoint()
+                return operation()
 
 
 class JobCancelled(Exception):
@@ -277,6 +296,10 @@ class LocalState:
         if not self.settings_path.exists() and legacy.exists():
             self.migrate_settings(legacy)
         read_store(self.prompts_path, {"prompts": []}, validate_prompts)
+        workspace_path = self.settings_path.parent / "workspace.json"
+        if workspace_path in {self.settings_path, self.prompts_path}:
+            raise ValueError("Workspace, settings and prompts require separate JSON paths.")
+        self.workspace = WorkspaceStore(workspace_path, read_store, atomic_json)
         self.jobs = OrderedDict()
         self.tasks = set()
         self.admission = asyncio.Lock()
@@ -377,7 +400,7 @@ class LocalState:
                 return snapshot
         return None
 
-    def execute(self, job, director_request, config, text_only):
+    def execute(self, job, director_request, config, text_only, workflow=None):
         try:
             job.checkpoint()
             effective, _ = resolve_director_config(config, director_request)
@@ -389,12 +412,22 @@ class LocalState:
                 # This app owns the active llama.cpp process, so ending its
                 # job can interrupt the blocking inference request.
                 job.set_interrupt(get_process_manager().interrupt_active)
+            if workflow is not None:
+                execute_workflow(self, job, director_request, config, workflow)
+                return
             service = self.service_factory(config=config, checkpoint=job.checkpoint)
             generated = (service.generate_text_only if text_only else service.generate)(director_request)
             result = {"ok": True, "prompt": generated.prompt, "backend": generated.backend_name,
                       "director_profile": generated.director_profile,
                       "prompt_model": generated.prompt_model, "director_preset": generated.director_preset}
-            job.deliver(result)
+            def save_result():
+                try:
+                    snapshot = self.workspace.add_version(generated.prompt, director_request.target_model, "Builder generation")
+                    result["version_id"] = snapshot["current_id"]
+                except (ValueError, OSError) as exc:
+                    result["history_error"] = f"Prompt generated, but version history could not be saved: {exc}"
+                return result
+            job.commit(save_result, finish=True)
         except JobCancelled:
             with job.lock:
                 job.status = "cancelled"
@@ -650,7 +683,8 @@ def create_app(*, port=8190, dist=None, config_loader=load_config, service_facto
                     web.post("/api/prompts/import", prompts_endpoint), web.delete("/api/prompts/{id}", prompts_endpoint),
                     web.post("/api/presets", presets), web.delete("/api/presets", presets),
                     web.put("/api/presets", presets), web.post("/api/presets/reset", presets),
-                    web.post("/api/unload", unload)])
+                     web.post("/api/unload", unload)])
+    register_workspace_routes(app, STATE, Job, json_object)
     root = Path(dist or Path(__file__).parent / "frontend" / "dist").resolve()
 
     async def assets(request):

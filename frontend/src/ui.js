@@ -9,6 +9,7 @@ const panelPadding = "p-[19px] wide:p-[23px] compact:p-4 mobile:p-[18px] tiny:p-
 const buttonFrame = "inline-flex items-center justify-center gap-2 min-h-[38px] rounded-[7px] border font-medium whitespace-nowrap enabled:hover:bg-none enabled:hover:bg-[#2c293c] enabled:hover:border-[#7c689f]";
 const button = `${buttonFrame} border-[#36394c] bg-[linear-gradient(120deg,#222431,#1a1d28)] px-3 py-[9px] text-[10px] text-[#cecee2]`;
 const iconButtonFrame = "inline-flex size-[30px] shrink-0 items-center justify-center rounded-[5px] border-0 bg-transparent text-[#b2abc5]";
+const listChoice = "flex flex-col items-start gap-[5px] rounded-lg border border-[#393244] bg-transparent p-3 text-left text-inherit wrap-anywhere data-[active=true]:border-[#aa8cda] data-[active=true]:bg-[#aa8cda18] [&_span]:text-[11px] [&_span]:opacity-70";
 const generationButton = `
   flex items-center justify-center gap-[15px] min-h-[73px] rounded-[9px] px-[18px] py-[14px]
   tablet:gap-2.5 tablet:px-2.5 tablet:py-[13px] mobile:min-h-[58px]
@@ -33,7 +34,7 @@ export const ui = {
   // More specific header variants preserve the title sizes of these two panels.
   ideaPanel: "[&>header_h2]:text-[19px] wide:[&>header_h2]:text-[21px] compact:[&>header_h2]:text-[14px] tablet:[&>header_h2]:text-[17px] mobile:[&>header_h2]:text-[19px] tiny:[&>header_h2]:text-[14px]",
   outputPanel: "[&>header]:gap-2.5 compact:[&>header_p]:max-w-[195px] mobile:[&>header_p]:max-w-none",
-  sidebar: "fixed inset-y-0 left-0 z-10 flex w-[205px] flex-col overflow-hidden border-r border-line bg-[linear-gradient(160deg,#14161f,#101218_65%,#1a1728)] compact:w-[175px] tablet:w-[72px] mobile:static mobile:h-auto mobile:w-auto mobile:flex-row mobile:items-center mobile:border-r-0 mobile:border-b mobile:bg-none mobile:bg-[#13151d] mobile:px-[17px] tiny:px-3 [&_nav]:grid [&_nav]:gap-2 [&_nav]:px-[11px] tablet:[&_nav]:px-[9px] tablet:[&_nav]:py-[18px] mobile:[&_nav]:flex mobile:[&_nav]:ml-auto mobile:[&_nav]:p-0",
+  sidebar: "fixed inset-y-0 left-0 z-10 flex w-[205px] flex-col overflow-y-auto border-r border-line bg-[linear-gradient(160deg,#14161f,#101218_65%,#1a1728)] compact:w-[175px] tablet:w-[72px] mobile:static mobile:h-auto mobile:w-auto mobile:flex-row mobile:flex-wrap mobile:items-center mobile:border-r-0 mobile:border-b mobile:bg-none mobile:bg-[#13151d] mobile:px-[17px] tiny:px-3 [&_nav]:grid [&_nav]:gap-2 [&_nav]:px-[11px] tablet:[&_nav]:px-[9px] tablet:[&_nav]:py-[18px] mobile:[&_nav]:flex mobile:[&_nav]:w-full mobile:[&_nav]:overflow-x-auto mobile:[&_nav]:pb-2 mobile:[&_nav]:px-0 mobile:[&_nav]:pt-0",
   sidebarBrand: "flex h-[110px] items-center gap-2.5 px-5 font-display text-[17px] font-extrabold tracking-[2px] compact:px-4 compact:text-[14px] compact:gap-[7px] compact:[&>svg]:w-[42px] tablet:justify-center tablet:p-0 tablet:h-[86px] tablet:[&>span]:hidden mobile:h-[58px] mobile:justify-start mobile:[&>svg]:size-[33px]",
   brandSub: "mt-[3px] block text-[9px] font-medium tracking-[3.6px] text-[#a4a0ba] compact:text-[8px] compact:tracking-[2.5px] mobile:text-[6px]",
   navCaption: "mx-[23px] my-[18px] text-[9px] tracking-[2px] text-[#6f7187] tablet:hidden",
@@ -128,5 +129,6 @@ export const ui = {
   dialog: "m-auto w-[420px] max-w-[calc(100vw-32px)] rounded-[15px] border border-[#514360] bg-[linear-gradient(130deg,#211e2d,#171720)] p-7 text-[#eee9f7] shadow-[0_25px_100px_#0009] backdrop:bg-[#06060bbd] backdrop:backdrop-blur-[5px] [&_h2]:font-display [&_h2]:text-[25px] [&_h2]:font-bold [&_h2]:tracking-[-0.7px] [&_p]:mt-2.5 [&_p]:mb-[22px] [&_p]:text-[12px] [&_p]:leading-[1.7] [&_p]:text-[#a19ab3] [&_form>button:last-child]:w-full [&_form>button:last-child]:mt-5",
   directorsGrid: "grid grid-cols-[minmax(220px,1fr)_minmax(0,2fr)] gap-6 [&>*]:min-w-0 [&_fieldset]:min-w-0 [&_label]:mb-4 [@media(width<=760px)]:grid-cols-1",
   directorList: "mb-5 grid max-h-[58vh] gap-2 overflow-y-auto overscroll-contain pr-1.5 [scrollbar-width:thin] [scrollbar-color:#65577a_#171923]",
-  directorChoice: "director-choice flex flex-col items-start gap-[5px] rounded-lg border border-[#393244] bg-transparent p-3 text-left text-inherit wrap-anywhere data-[active=true]:border-[#aa8cda] data-[active=true]:bg-[#aa8cda18] [&_span]:text-[11px] [&_span]:opacity-70",
+  directorChoice: `director-choice ${listChoice}`,
+  versionChoice: listChoice,
 };
