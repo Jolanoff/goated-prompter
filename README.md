@@ -21,6 +21,10 @@ ComfyUI is **not required** to use the website. The app produces prompt text tha
 - **Local inference through llama.cpp**, with an optional OpenAI-compatible endpoint.
 - **End generation** to cancel an active local llama.cpp job.
 
+### Target models
+
+The Target model menu includes: Generic, Anima, Krea 2, FLUX.2 Klein, Z-Image, Qwen Image, Qwen2.1, MiniMax, LTX 2.5, and Ideogram4.
+
 ### Qwen2.1 target
 
 Qwen2.1 uses writing guidance from the official [text-to-image](https://github.com/QwenLM/Qwen-Image-2.1/blob/main/prompt_rewrite/prompts/system_prompt_t2i.txt) and [image-editing](https://github.com/QwenLM/Qwen-Image-2.1/blob/main/prompt_rewrite/prompts/system_prompt_edit.txt) prompts, with **plain prompt text** as the app's output:
@@ -262,7 +266,7 @@ goated-prompter/
 │   ├── workflow_settings.py    # Per-workflow drafts and instruction overrides
 │   ├── workspace_api.py        # Creative-workspace endpoints and shared-job integration
 │   ├── workspace_store.py      # Atomic versions, branching undo/redo and comparisons
-│   ├── reference_map.py        # Attribute-to-image source resolution
+│   ├── reference_map.py        # Attribute-to-image source mapping
 │   ├── evidence.py             # Image analysis and resolved scene evidence
 │   └── backends/               # llama.cpp and OpenAI-compatible clients
 ├── frontend/
