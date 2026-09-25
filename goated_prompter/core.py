@@ -570,7 +570,7 @@ class GoatedPrompterService:
                 session_backend.validate_instruction(instruction)
                 if self._checkpoint is not None:
                     self._checkpoint()
-                    prompt = str(session_backend.generate(instruction) or "").strip()
+                prompt = str(session_backend.generate(instruction) or "").strip()
                 if self._checkpoint is not None:
                     self._checkpoint()
                 if request.target_model != "Qwen2.1":

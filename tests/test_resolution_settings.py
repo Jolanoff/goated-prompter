@@ -54,7 +54,7 @@ class ResolutionTests(unittest.TestCase):
 
     def test_builder_and_workflow_ignore_resolution_contract_for_generation(self):
         request = GoatedPrompterRequest.from_mapping({"idea": "A group portrait", "resolution": {"aspect_ratio": "9:16"}})
-        guidance = resolution_guidance(request.resolution)
+        guidance = resolution_guidance({"aspect_ratio": "9:16"})
         self.assertEqual(request.resolution, normalize_resolution())
         self.assertNotIn(guidance, assemble_instruction(request, text_only=True).system_message)
         self.assertNotIn(guidance, workflow_instruction(request, "explore", request.idea, "", [], "creative").system_message)
@@ -162,22 +162,24 @@ class SettingsEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 200)
         for path, body in (("/api/generate", {"settings": {"idea": "Portrait", "resolution": incomplete}}),
                            ("/api/workspace/explore", {"revision": 0, "base": "Portrait"})):
+            if path.startswith("/api/workspace"):
+                body = {**body, "revision": (await self.get("/api/workspace"))["revision"]}
             response = await self.client.post(path, json=body)
             self.assertEqual(response.status, 202, await response.text())
             await self.finish(response)
 
-    async def test_resolution_survives_comparison_refinement_and_saved_prompt(self):
+    async def test_resolution_is_not_used_for_generated_comparison_or_refinement(self):
         resolution = {"aspect_ratio": "Custom", "width": 320, "height": 480}
         await self.finish(await self.client.post("/api/workspace/explore", json={"revision": 0, "base": "Portrait", "settings": {"resolution": resolution}}))
         workspace = await self.get("/api/workspace")
-        self.assertEqual(workspace["comparisons"][0]["resolution"], resolution)
+        self.assertEqual(workspace["comparisons"][0]["resolution"], {"aspect_ratio": "Auto", "width": 1024, "height": 1024})
         added = await self.client.post("/api/workspace", json={"revision": workspace["revision"], "action": "add", "prompt": "Portrait", "resolution": resolution})
         version = await added.json()
         await self.finish(await self.client.post("/api/workspace/refine", json={"revision": version["revision"], "changes": "Clearer subject"}))
         self.assertNotIn("Small output", self.backend.calls[-1].system_message)
         self.assertNotIn("OUTPUT CANVAS", self.backend.calls[-1].system_message)
         workspace = await self.get("/api/workspace")
-        self.assertEqual(workspace["versions"][-1]["resolution"], resolution)
+        self.assertEqual(workspace["versions"][-1]["resolution"], {"aspect_ratio": "Auto", "width": 1024, "height": 1024})
         record = {"id": "test", "title": "Saved version", "prompt": "A readable scene.", "target": "Generic", "createdAt": "now", "resolution": resolution}
         response = await self.client.post("/api/prompts", json=record)
         self.assertEqual(response.status, 200)

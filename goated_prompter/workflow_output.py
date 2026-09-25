@@ -96,12 +96,12 @@ def normalize_workflow_output(raw, target):
         if target == "Ideogram4":
             if not _ideogram_caption(decoded):
                 raise WorkflowFormatError("Ideogram4 output is missing the required caption fields or has invalid field types.")
-            return sanitize_prompt_text(value)
+            return value
         if (target == "Qwen2.1" and isinstance(decoded, dict) and "rewritten_prompt" in decoded
                 and set(decoded) <= {"rewritten_prompt", "wh_ratio", "ratio_follow"}
                 and isinstance(decoded["rewritten_prompt"], str)):
             # Older models/saved sources may still use Qwen's rewrite envelope.
-            # Only its prompt text is requested here; ratio metadata is optional.
+            # Only its prompt text is requested here; auxiliary fields are ignored.
             value = _unfence(decoded["rewritten_prompt"].strip())
         elif isinstance(decoded, str):
             value = _unfence(decoded.strip())
