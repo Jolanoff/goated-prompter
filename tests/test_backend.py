@@ -212,6 +212,26 @@ class FinalBudgetTests(unittest.TestCase):
             self.assertEqual(self.outgoing(backend, self.instruction(3072))["max_tokens"], max(configured, 3072))
             self.assertEqual(self.outgoing(backend, self.instruction())["max_tokens"], configured)
 
+    def test_unlimited_remote_request_omits_cap_and_bypasses_coarse_budget_floor(self):
+        backend = self.backend(max_tokens=768, context_size=4096)
+        instruction = replace(self.instruction(4096), user_message="x" * 20000, unlimited_tokens=True)
+        payload = self.outgoing(backend, instruction)
+        self.assertNotIn("max_tokens", payload)
+        self.assertEqual(payload["messages"], instruction.to_messages())
+        # An uncapped workflow must not mutate the backend's other requests.
+        self.assertEqual(self.outgoing(backend, self.instruction())["max_tokens"], 768)
+
+    def test_qwen21_every_detail_level_sends_uncapped_requests(self):
+        core = importlib.import_module(f"{PACKAGE}.core")
+        for length in ("Short", "Medium", "Detailed", "Maximum Detail", "Maximum"):
+            instruction = core.assemble_instruction(core.GoatedPrompterRequest(
+                idea="A red bicycle", target_model="Qwen2.1", prompt_length=length))
+            with self.subTest(length=length):
+                self.assertIsNone(instruction.max_tokens)
+                self.assertTrue(instruction.unlimited_tokens)
+                self.assertNotIn("max_tokens", self.outgoing(self.backend(max_tokens=768), instruction))
+                self.assertEqual(self.outgoing(self.backend(max_tokens=768, _is_llama_cpp=True), instruction)["max_tokens"], -1)
+
     def test_analysis_budget_unchanged_and_alias_guidance_equal(self):
         core = importlib.import_module(f"{PACKAGE}.core")
         backend = self.backend()
@@ -259,6 +279,8 @@ class FinalBudgetTests(unittest.TestCase):
             self.assertEqual(client.context_size, 8192)
             self.assertEqual(self.outgoing(client, self.instruction())["max_tokens"], 768)
             self.assertEqual(self.outgoing(client, self.instruction(3072))["max_tokens"], 3072)
+            unlimited = replace(self.instruction(4096), user_message="x" * 25000, unlimited_tokens=True)
+            self.assertEqual(self.outgoing(client, unlimited)["max_tokens"], -1)
             core = importlib.import_module(f"{PACKAGE}.core")
             references = importlib.import_module(f"{PACKAGE}.reference_map")
             evidence = importlib.import_module(f"{PACKAGE}.evidence")
@@ -280,6 +302,10 @@ class FinalBudgetTests(unittest.TestCase):
         for tokens in (None, 3072):
             with self.assertRaisesRegex(openai.BackendGenerationError, "truncated.*Increase max_tokens and context size"):
                 self.outgoing(self.backend(), self.instruction(tokens), finish_reason="length")
+
+    def test_unlimited_request_still_rejects_context_truncation_with_accurate_error(self):
+        with self.assertRaisesRegex(openai.BackendGenerationError, "no application token cap.*context size"):
+            self.outgoing(self.backend(), replace(self.instruction(), unlimited_tokens=True), finish_reason="length")
 
     def test_base_validates_third_and_fourth_images(self):
         base = importlib.import_module(f"{PACKAGE}.backends.base")

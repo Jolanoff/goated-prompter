@@ -5,7 +5,8 @@ from dataclasses import dataclass, replace
 import hashlib
 
 from .backends.factory import create_backend
-from .resolution import normalize_resolution, resolution_guidance
+from .backends.base import BackendGenerationError
+from .resolution import normalize_resolution
 from .config import load_config
 from .director_profiles import canonical_prompt_model, infer_prompt_model_family, resolve_director_config
 from .diagnostics import debug_prompts_enabled, log_evidence_result, resolved_scene_sha256
@@ -32,6 +33,7 @@ from .prompt_catalog import (
     PRESERVATION_NONE,
     PROMPT_LENGTH_NAMES,
     REFERENCE_ROLE_NAMES,
+    QWEN21_EDIT_ADAPTER,
 )
 from .presets import DEFAULT_DIRECTOR_PRESET, get_director_preset, legacy_preset_for_mode
 from .reference_map import REFERENCE_IMAGE_SLOTS, reference_images, reference_map_from_mapping, resolve_reference_map
@@ -43,6 +45,19 @@ from .system_prompt import (
     PRIORITY_CONTRACT,
     TEXT_ONLY_PRIORITY_CONTRACT,
 )
+from .workflow_output import WorkflowFormatError, normalize_workflow_output, output_contract, sanitize_prompt_text
+
+
+def _qwen21_source_tokens(request, reference_map=None, text_only=False):
+    """Use selected sources even when the final compiler receives evidence, not images."""
+    if text_only:
+        return ()
+    labels = tuple(reference_images(request))
+    if reference_map is not None:
+        selected = {item.source for item in reference_map.attributes}
+        if "Blend" not in selected:
+            labels = tuple(label for label in labels if label in selected)
+    return tuple(f"<image{label.split()[-1]}>" for label in labels)
 
 def _image_descriptor(image):
     if image is None:
@@ -173,7 +188,7 @@ class GoatedPrompterRequest:
             preserve_colors=_as_bool(values.get("preserve_colors", False)),
             prompt_length="Maximum Detail" if values.get("prompt_length") == "Maximum" else str(values.get("prompt_length") or "Medium"),
             custom_instructions=str(values.get("custom_instructions") or ""),
-            resolution=normalize_resolution(values.get("resolution")),
+            resolution=normalize_resolution(),
             system_prompt_override=str(values.get("system_prompt_override") or ""),
             reference_map=reference_map_from_mapping(values),
             image_1_role=_reference_role(values.get("image_1_role")),
@@ -200,6 +215,8 @@ class PromptInstruction:
     image_3: EncodedImage = None
     image_4: EncodedImage = None
     max_tokens: int = None
+    # Opt out of application output budgets; the engine's context still applies.
+    unlimited_tokens: bool = False
 
     def _user_content(self, text):
         if not reference_images(self):
@@ -279,6 +296,7 @@ def assemble_instruction(
     if has_raw_image and resolved_scene is None:
         _log_image_order(request)
     active_director_instructions = request.system_prompt_override.strip() or preset.instructions
+    qwen_images = _qwen21_source_tokens(request, resolved_reference_map, text_only) if request.target_model == "Qwen2.1" else ()
     sections = [
         CORE_SYSTEM_PROMPT,
         TEXT_ONLY_PRIORITY_CONTRACT if text_only else LINKED_PRIORITY_CONTRACT if request.linked_references else PRIORITY_CONTRACT,
@@ -288,7 +306,7 @@ def assemble_instruction(
         sections.append(f"VISUAL GROUNDING\n{get_vision_mode_adapter(request.mode)}")
     sections.extend([
         f"MODE ADAPTER\n{get_mode_adapter(request.mode)}",
-        f"TARGET MODEL ADAPTER\n{get_model_adapter(request.target_model)}",
+        "TARGET MODEL ADAPTER\n" + (QWEN21_EDIT_ADAPTER if qwen_images else get_model_adapter(request.target_model)),
         "USER SETTINGS",
         _CREATIVITY_ADAPTERS.get(request.creativity, _CREATIVITY_ADAPTERS["Balanced"]),
         _LENGTH_ADAPTERS.get(request.prompt_length, _LENGTH_ADAPTERS["Medium"]),
@@ -316,9 +334,14 @@ def assemble_instruction(
         print(resolved_reference_map.director_constraints(), flush=True)
 
     sections.append(OUTPUT_CONTRACT)
-    canvas_guidance = resolution_guidance(request.resolution)
-    if canvas_guidance:
-        sections.append(canvas_guidance)
+    if request.target_model == "Qwen2.1":
+        sections.append(output_contract("Qwen2.1", qwen_task="edit" if qwen_images else "t2i", qwen_images=qwen_images))
+        if qwen_images:
+            sections.append("QWEN INPUT SOURCES\nSelected source tags, preserving the Reference Map's numbering: "
+                            + ", ".join(qwen_images) + ". Image N evidence refers to <imageN>. "
+                            "These sources are available through the selected evidence even if raw pixels are not attached to this final compiler call. "
+                            "Do not reference unused or missing sources. Use natural language for a single image, "
+                            "and individual source tags for multiple images.")
 
     if has_visual_context:
         user_message = (
@@ -341,7 +364,8 @@ def assemble_instruction(
         resolved_scene=resolved_scene,
         model_family=model_family or infer_prompt_model_family(request.selected_prompt_model),
         director_preset=preset.label,
-        max_tokens=3072 if request.prompt_length in {"Maximum", "Maximum Detail"} else None,
+        max_tokens=None,
+        unlimited_tokens=True,
     )
 
 
@@ -401,6 +425,7 @@ def _analyze_image_evidence(backend, image, source_label, model_family, analysis
             image_label=source_label,
             diagnostic_stage=f"evidence:{source_label.casefold().replace(' ', '_')}",
             diagnostic_context=_diagnostic_context(request),
+            unlimited_tokens=True,
         )
         backend.validate_instruction(instruction)
         if checkpoint is not None:
@@ -539,14 +564,34 @@ class GoatedPrompterService:
                     evidence_digest=resolved_scene_sha256(resolved_scene) if resolved_scene is not None else "NONE",
                 ),
             )
-            session_backend.validate_instruction(instruction)
-            if self._checkpoint is not None:
-                self._checkpoint()
-            prompt = str(session_backend.generate(instruction) or "").strip()
-            if self._checkpoint is not None:
-                self._checkpoint()
+            qwen_images = _qwen21_source_tokens(request, resolved_reference_map, text_only) if request.target_model == "Qwen2.1" else ()
+            qwen_task = "edit" if qwen_images else "t2i"
+            for attempt in range(2 if request.target_model == "Qwen2.1" else 1):
+                session_backend.validate_instruction(instruction)
+                if self._checkpoint is not None:
+                    self._checkpoint()
+                    prompt = str(session_backend.generate(instruction) or "").strip()
+                if self._checkpoint is not None:
+                    self._checkpoint()
+                if request.target_model != "Qwen2.1":
+                    break
+                try:
+                    prompt = normalize_workflow_output(prompt, request.target_model)
+                    break
+                except WorkflowFormatError as exc:
+                    if attempt:
+                        raise BackendGenerationError(f"Qwen2.1 returned an invalid prompt after one format-repair attempt: {exc}") from exc
+                    instruction = replace(instruction,
+                        system_message=instruction.system_message + "\n\nFORMAT CORRECTION: " + str(exc) +
+                        "\nRegenerate the complete response from the original request and selected evidence. Preserve source facts and locks. " +
+                        output_contract(request.target_model, qwen_task=qwen_task, qwen_images=qwen_images),
+                        diagnostic_stage="final:format_retry")
         if not prompt:
             raise RuntimeError("Goated Prompter backend returned an empty prompt.")
+        if request.target_model != "Ideogram4":
+            prompt = sanitize_prompt_text(prompt)
+        if not prompt:
+            raise RuntimeError("Goated Prompter backend returned only removable metadata.")
         return GenerationResult(
             prompt=prompt,
             backend_name=backend.name,

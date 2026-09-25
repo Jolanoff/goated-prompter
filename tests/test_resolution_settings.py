@@ -52,11 +52,12 @@ class ResolutionTests(unittest.TestCase):
         self.assertIn("ultrawide", resolution_guidance({"aspect_ratio": "21:9"}))
         self.assertEqual(resolution_guidance(None), "")
 
-    def test_builder_and_workflow_receive_same_resolution_contract(self):
+    def test_builder_and_workflow_ignore_resolution_contract_for_generation(self):
         request = GoatedPrompterRequest.from_mapping({"idea": "A group portrait", "resolution": {"aspect_ratio": "9:16"}})
         guidance = resolution_guidance(request.resolution)
-        self.assertIn(guidance, assemble_instruction(request, text_only=True).system_message)
-        self.assertIn(guidance, workflow_instruction(request, "explore", request.idea, "", [], "creative").system_message)
+        self.assertEqual(request.resolution, normalize_resolution())
+        self.assertNotIn(guidance, assemble_instruction(request, text_only=True).system_message)
+        self.assertNotIn(guidance, workflow_instruction(request, "explore", request.idea, "", [], "creative").system_message)
         self.assertNotIn("OUTPUT CANVAS", assemble_instruction(GoatedPrompterRequest(idea="Portrait")).system_message)
 
 
@@ -131,7 +132,8 @@ class SettingsEndpointTests(unittest.IsolatedAsyncioTestCase):
         for instruction in self.backend.calls:
             self.assertIn("Use grounded graphic design.", instruction.system_message)
             self.assertNotIn("Stale client override", instruction.system_message)
-            self.assertIn("720 x 1280", instruction.system_message)
+            self.assertNotIn("720 x 1280", instruction.system_message)
+            self.assertNotIn("OUTPUT CANVAS", instruction.system_message)
             self.assertIn("Do not output a JSON object", instruction.system_message)
         self.assertIn("Creative custom marker", self.backend.calls[1].system_message)
         self.assertNotIn("Creative custom marker", self.backend.calls[0].system_message)
@@ -151,7 +153,7 @@ class SettingsEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 409)
         self.assertEqual((await self.get("/api/workspace/settings/refine"))["draft"]["changes"], "Keep face")
 
-    async def test_incomplete_resolution_can_be_saved_but_not_generated(self):
+    async def test_incomplete_resolution_can_be_saved_and_is_ignored_by_generation(self):
         incomplete = {"aspect_ratio": "Custom", "width": "", "height": 512}
         response = await self.client.put("/api/settings", json={"builder": {"resolution": incomplete}})
         self.assertEqual(response.status, 200)
@@ -161,8 +163,8 @@ class SettingsEndpointTests(unittest.IsolatedAsyncioTestCase):
         for path, body in (("/api/generate", {"settings": {"idea": "Portrait", "resolution": incomplete}}),
                            ("/api/workspace/explore", {"revision": 0, "base": "Portrait"})):
             response = await self.client.post(path, json=body)
-            self.assertEqual(response.status, 400)
-        self.assertEqual(self.backend.calls, [])
+            self.assertEqual(response.status, 202, await response.text())
+            await self.finish(response)
 
     async def test_resolution_survives_comparison_refinement_and_saved_prompt(self):
         resolution = {"aspect_ratio": "Custom", "width": 320, "height": 480}
@@ -172,7 +174,8 @@ class SettingsEndpointTests(unittest.IsolatedAsyncioTestCase):
         added = await self.client.post("/api/workspace", json={"revision": workspace["revision"], "action": "add", "prompt": "Portrait", "resolution": resolution})
         version = await added.json()
         await self.finish(await self.client.post("/api/workspace/refine", json={"revision": version["revision"], "changes": "Clearer subject"}))
-        self.assertIn("Small output", self.backend.calls[-1].system_message)
+        self.assertNotIn("Small output", self.backend.calls[-1].system_message)
+        self.assertNotIn("OUTPUT CANVAS", self.backend.calls[-1].system_message)
         workspace = await self.get("/api/workspace")
         self.assertEqual(workspace["versions"][-1]["resolution"], resolution)
         record = {"id": "test", "title": "Saved version", "prompt": "A readable scene.", "target": "Generic", "createdAt": "now", "resolution": resolution}

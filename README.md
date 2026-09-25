@@ -16,10 +16,43 @@ ComfyUI is **not required** to use the website. The app produces prompt text tha
 - **Local prompt library:** autosaved builder settings, named saved prompts, and copy/edit controls.
 - **Refine tab:** targeted revisions, quick editing actions, detail locks, before/after highlighting, manual edits, and persistent undo/redo with branching version history.
 - **Explore tab:** compare Faithful, Creative, and Experimental directions, then send a favorite into Refine. Completed directions are saved even if a later direction fails or is cancelled.
+- **MiniMax H3 tab:** a dedicated prompt-writing workflow with 4–15-second clip timing, automatic reference-role analysis, official H3 output schemas, and shared Director presets.
 - **Resolution-aware framing:** Builder and Explore support square, portrait, landscape and ultrawide presets plus exact custom width/height. Canvas size guides composition and readable detail density.
 - **Persistent creative settings:** Refine and Explore autosave their inputs and controls, offer independent advanced instruction editors, and save results directly to Saved Prompts.
 - **Local inference through llama.cpp**, with an optional OpenAI-compatible endpoint.
 - **End generation** to cancel an active local llama.cpp job.
+
+### Qwen2.1 target
+
+Qwen2.1 uses writing guidance from the official [text-to-image](https://github.com/QwenLM/Qwen-Image-2.1/blob/main/prompt_rewrite/prompts/system_prompt_t2i.txt) and [image-editing](https://github.com/QwenLM/Qwen-Image-2.1/blob/main/prompt_rewrite/prompts/system_prompt_edit.txt) prompts, with **plain prompt text** as the app's output:
+
+- **Text only:** an observer-style description of the finished image.
+- **Selected image references:** an actionable editing directive grounded in the selected image evidence.
+
+JSON and ratio metadata are not required. If a model still returns the upstream JSON envelope, the app extracts `rewritten_prompt` for editing, copying and saving. The selected output canvas guides composition; set dimensions in the image generator itself.
+
+All Qwen2.1 detail levels (Short, Medium, Detailed and Maximum Detail) use uncapped requests, including image evidence analysis, Builder, Refine, Explore and format repairs. Length controls writing detail rather than cutting off output. Local llama.cpp receives `max_tokens: -1`; remote requests omit `max_tokens`. Model context capacity and server-side limits still apply.
+
+## MiniMax H3 prompt builder
+
+Open **MiniMax H3**, choose **Clip Length** (10 seconds by default), leave **Mode** on Auto, and describe your video. Choose **MiniMax Director** or any existing instruction preset for creative direction.
+
+Use **+ Image**, **+ Video**, and **+ Audio** to insert symbolic tokens at the cursor. Clicking a chip inserts it again. Valid tokens typed directly into the request are also registered; their numbers stay stable. Example:
+
+```text
+The person in <image1> performs the dance movements from <video1> on a neon-lit rooftop at night. Use energetic electronic music and slowly orbit the camera around the dancer.
+```
+
+Auto distinguishes identity/motion/style references from explicit first/last-frame anchors. The prompt engine internally analyzes each reference's role, then writes the appropriate base or six-section full-reference prompt. It receives only text, so instructions prohibit inventing unseen media contents. Requested music is generated unless you explicitly ask to copy reference audio.
+
+- Images: up to 9; videos: up to 3; audio: up to 3; 12 combined assets, per the official H3 limits. Audio-only references show a non-blocking compatibility warning.
+- **Generate** and **Regenerate** use the existing prompt engine. **Copy** includes the complete editable output. **Clear** resets the request, result, and reference set while keeping scene settings.
+- Settings, references, request, and edited output autosave independently in `workflow_settings.json`. Shared job controls support cancellation.
+- Local prompting knowledge and source links live in [`goated_prompter/minimax_knowledge`](goated_prompter/minimax_knowledge/SOURCES.md). No documentation fetch is needed during generation.
+- Output validation checks H3 section order, exact frame alignment, shot timing, reference IDs, retention markers and dialogue syntax before delivery. Invalid output gets one repair attempt; a failed attempt leaves your previous output intact.
+- MiniMax analysis, prompt writing, and repair requests have no application output-token cap. Local llama.cpp runs until EOS (`max_tokens: -1`); remote OpenAI-compatible requests omit `max_tokens`. Engine context capacity and provider-side limits still apply.
+
+This page writes **prompt text only**. It does not upload/analyze media, render videos, or call MiniMax's video-generation API. It requires a configured language-model prompt engine; the generic mock backend is for plumbing tests and does not perform H3 semantic rewriting.
 
 ## Installation
 

@@ -14,7 +14,7 @@ export default function AdvancedInstructions({ settings, label, disabled }) {
   const valid = Object.values(draft).every((value) => value.trim() && value.length <= 20000);
   return <details className={`${ui.panel} mt-5`}>
     <summary className="cursor-pointer text-sm font-semibold">{label} advanced settings</summary>
-    <p className="my-3 text-xs leading-relaxed text-muted">Edit this workflow’s built-in behavior. Saved instructions apply to future generations. Target format, detail locks and resolution controls are applied separately.</p>
+    <p className="my-3 text-xs leading-relaxed text-muted">Edit this workflow’s built-in behavior. Saved instructions apply to future generations. Target format and detail locks are applied separately.</p>
     <p className="mb-3 text-xs text-[#cbbbfa]">{Object.keys(settings.record.overrides).length ? "Using saved custom instructions" : "Using built-in instructions"}{dirty ? " · Unsaved edits" : ""}</p>
     <fieldset disabled={disabled || settings.working}>
       {Object.keys(saved).length > 1 && <label className={`${ui.field} mb-3`}><span>Instruction section</span>

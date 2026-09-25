@@ -4,7 +4,6 @@ import { ui } from "../ui.js";
 import { DetailLocks, PromptText, TargetSelect } from "./WorkflowControls.jsx";
 import VersionHistory, { VersionDiff } from "./VersionHistory.jsx";
 import AdvancedInstructions from "./AdvancedInstructions.jsx";
-import { resolutionLabel } from "../resolution.js";
 
 const quickActions = [
   ["More natural", "Make the language more natural and the scene more believable. Preserve all unrelated details."],
@@ -42,7 +41,7 @@ export default function RefineTab({ workspace, current, disabled, canGenerate, b
         <section className={ui.panel}>
           <h3 className="mb-3 font-display text-base font-bold">{current ? "Current version" : "Choose a starting prompt"}</h3>
           {current && <>
-            <p className="mb-3 text-xs text-muted">{current.label} · {current.target} · {resolutionLabel(current.resolution)}</p>
+            <p className="mb-3 text-xs text-muted">{current.label} · {current.target}</p>
             <PromptText text={current.prompt} label="Current refinement prompt" />
             <div className={ui.inlineActions}>
               <button className={ui.button} onClick={() => onCopy(current.prompt)}><Copy size={15} />Copy prompt</button>

@@ -9,9 +9,8 @@ from .director_profiles import resolve_director_config
 from .models import get_model_adapter
 from .prompt_catalog import LENGTH_ADAPTERS
 from .workspace_store import DIRECTIONS
-from .workflow_output import WorkflowFormatError, normalize_workflow_output, output_contract
+from .workflow_output import WorkflowFormatError, normalize_workflow_output, output_contract, sanitize_prompt_text
 from .workflow_prompts import builtin_workflow_instructions
-from .resolution import resolution_guidance
 
 
 def workflow_instruction(request, operation, base, changes, detail_locks, direction=None, previous=(), model_family="qwen", instructions=None):
@@ -25,7 +24,6 @@ def workflow_instruction(request, operation, base, changes, detail_locks, direct
         "TARGET MODEL\n" + get_model_adapter(request.target_model),
         "LENGTH\n" + ("Preserve the source's descriptive density unless REQUESTED CHANGES explicitly asks for a length change." if operation == "refine" else LENGTH_ADAPTERS[request.prompt_length]),
         output_contract(request.target_model),
-        resolution_guidance(request.resolution),
     ])
     content = [f"SOURCE PROMPT\n<source>\n{base}\n</source>",
                "REQUESTED CHANGES\n" + (changes or "Explore the selected direction within the source anchors."),
@@ -39,8 +37,8 @@ def workflow_instruction(request, operation, base, changes, detail_locks, direct
     content.append(output_contract(request.target_model))
     return PromptInstruction(system_message=system, user_message="\n\n".join(content),
                              model_family=model_family, diagnostic_stage=f"{operation}:{direction or 'edit'}",
-                             max_tokens=(max(768, min(3072, len(base) // 3 + 512)) if operation == "refine"
-                                         else 3072 if request.prompt_length == "Maximum Detail" else None))
+                             max_tokens=None,
+                             unlimited_tokens=True)
 
 
 class PromptWorkflowService:
@@ -55,7 +53,12 @@ class PromptWorkflowService:
             raw = session.generate(instruction)
             self.checkpoint()
             try:
-                return normalize_workflow_output(raw, target)
+                prompt = normalize_workflow_output(raw, target)
+                if target != "Ideogram4":
+                    prompt = sanitize_prompt_text(prompt)
+                    if not prompt:
+                        raise WorkflowFormatError("The prompt engine returned only removable metadata.")
+                return prompt
             except WorkflowFormatError as exc:
                 if attempt:
                     raise BackendGenerationError(f"The prompt engine returned an invalid format twice. {exc} Completed directions are still saved.") from exc
@@ -63,7 +66,7 @@ class PromptWorkflowService:
                 instruction = replace(instruction,
                     system_message=instruction.system_message + "\n\nFORMAT CORRECTION: The last response used an invalid output format. "
                     "Regenerate the complete prompt from the original source and direction. Keep every source anchor and lock. "
-                    + output_contract(target), diagnostic_stage=instruction.diagnostic_stage + ":format_retry")
+                    + str(exc) + "\n" + output_contract(target), diagnostic_stage=instruction.diagnostic_stage + ":format_retry")
 
     def run(self, request, workflow, progress, save_direction):
         effective, profile = resolve_director_config(self.config, request)

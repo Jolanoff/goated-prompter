@@ -203,6 +203,12 @@ DIRECTOR_PRESETS = (
         instructions="""Create a concise, executable video direction suitable for a MiniMax target while relying on the Goated Prompter target adapter for model-specific behavior. With one image, treat it as the exact starting frame. Prioritize subject retention, chronological action, camera movement with direction and pace, physical and spatial continuity, environmental motion, and the intended final state. Avoid spending the prompt on repeated static inventory when motion information is more valuable. Add dialogue, ambience, or sound cues only when requested or clearly useful, and keep the plan compatible with future start-and-end image support without requiring a second image now.""",
     ),
     DirectorPreset(
+        id="minimax_director",
+        label="MiniMax Director",
+        description="MiniMax H3 staging, reference-aware motion and synchronized sound direction.",
+        instructions="""Enhance the user's concept through clear staging, subject placement, physical action progression, expressions, environment and background detail, lighting, composition, plausible camera movement, pacing, audiovisual synchronization, soundscape, concrete music direction and a deliberate ending state. Fit the selected clip duration. Prefer coherent movement to unnecessary cuts. References have only the roles requested by the user; never assume an image is a starting frame or invent the contents of unseen media. Preserve explicit user requirements and exact dialogue. This is creative guidance only: MiniMax H3 structural rules and reference relationships outrank this preset. Return only the required MiniMax schema without an additional wrapper.""",
+    ),
+    DirectorPreset(
         id="archviz_director",
         label="Archviz Director",
         description="Architecture and interiors with disciplined spatial and material fidelity.",

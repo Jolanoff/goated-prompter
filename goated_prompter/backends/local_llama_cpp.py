@@ -29,6 +29,7 @@ class LocalLlamaCppBackend(GoatedPrompterBackend):
                 "context_size": active_config.context_size,
                 "context_reserve_tokens": self.context_reserve_tokens,
                 "image_min_tokens": active_config.image_min_tokens,
+                "_is_llama_cpp": True,
                 "_runtime_diagnostics": runtime_diagnostics or {},
             }
         )

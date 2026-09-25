@@ -47,7 +47,25 @@ VISION_MODE_ADAPTERS = {
 DEFAULT_VISION_ADAPTER = """Image grounding: distinguish OBSERVED IMAGE CONTENT from USER REQUESTED CHANGES. Treat visible subject, environment, geometry, layout, composition, framing, camera, perspective, materials, objects, people, clothing, lighting, colors, surfaces, and style cues as ground truth. Do not hallucinate changes to visible content unless the user requests them or the selected mode requires them."""
 
 # Target model
-TARGET_MODEL_NAMES = ("Generic", "Anima", "Krea 2", "FLUX.2 Klein", "Z-Image", "Qwen Image", "MiniMax", "LTX 2.5", "Ideogram4")
+TARGET_MODEL_NAMES = ("Generic", "Anima", "Krea 2", "FLUX.2 Klein", "Z-Image", "Qwen Image", "Qwen2.1", "MiniMax", "LTX 2.5", "Ideogram4")
+# Task-specific writing guidance adapted from the official prompts:
+# https://github.com/QwenLM/Qwen-Image-2.1/blob/main/prompt_rewrite/prompts/system_prompt_t2i.txt
+# https://github.com/QwenLM/Qwen-Image-2.1/blob/main/prompt_rewrite/prompts/system_prompt_edit.txt
+# This app returns the prompt itself, not the upstream rewriter's JSON envelope.
+QWEN21_EDIT_ADAPTER = """Qwen2.1 image-editing rewrite: an input image or selected image evidence is present. Return only the complete plain prompt text. No JSON object, metadata fields, commentary or Markdown fences.
+
+Write a precise, affirmative editing instruction, leading with the requested operation rather than describing a finished picture. Edit exactly the named attributes to a strong, unmistakable degree while preserving all untargeted content at input fidelity. Avoid both leakage into unrelated attributes and under-editing. For a local edit, constrain the change with one blanket preservation clause rather than repainting unchanged details. For a requested new scene built from references, construct that scene with appropriate composition, staging and lighting, retaining the assigned identity and reference roles. Never invent uncertain evidence, clean up unrequested defects or weaken the requested operation. Identity, personal accessories, product design/markings/count and rendering medium remain invariant unless explicitly targeted. Reference identity by source rather than regenerating a verbal feature inventory.
+
+For multiple selected input images, use their supplied <imageN> tags individually, state each source's role and identify the canvas whose composition survives. Never use image A, the first image or grouped ranges instead of tags. For a single selected image, refer naturally to "the image" without a tag. Keep source numbering stable.
+
+Use the user's explicit format only when it is part of the creative request. Do not emit size metadata; the user sets dimensions in the image generator.
+
+Without a requested format, ordinary single-image editing retains the source framing. For multi-image editing choose composition from the edit purpose: destination scene for compositing, body for face swaps, person for clothing swaps, content for style transfer, foreground subject for background replacement, original edited image for local object replacement. For a new scene using references only for identity, design a composition appropriate to the requested subject. Outpainting explicitly names the extension and its direction rather than blindly retaining the original framing. Multi-view/grid compositions derive from subject proportions and panel arrangement, not a fixed wide default.
+
+Write a continuous editing directive, without ellipses or truncation. Be decisive, precise and affirmative, with no unresolved alternatives. The selected prompt length controls the amount of useful description.
+
+Descriptive prose is Chinese for a Chinese instruction, otherwise English. Visible image text is a separate language decision: exact user-provided text or requested language first, otherwise the image's dominant text language, otherwise the user's instruction language. Preserve exact readable strings in straight double quotes. Each rendered string is monolingual unless bilingual text was explicitly requested; genre does not change its language. Do not quote descriptive prose as if it were rendered text. Never guess unreadable source text."""
+
 MODEL_ADAPTERS = {
     "Generic": """Generic target: write clean, coherent natural-language visual description without model-specific syntax or tag chains.""",
    
@@ -60,6 +78,15 @@ MODEL_ADAPTERS = {
     "FLUX.2 Klein": """FLUX.2 Klein target: use concise, precise natural-language instructions. For editing or enhancement, distinguish requested changes from protected content explicitly. Avoid bloated keyword chains.""",
     "Z-Image": """Z-Image target: use conservative, direct natural-language description with clear visual relationships. Avoid speculative special syntax so this adapter remains easy to tune after testing.""",
     "Qwen Image": """Qwen Image target: use clear structured natural language. State relationships among subjects, environment, composition, and requested modifications explicitly, especially for image editing.""",
+    "Qwen2.1": """Qwen2.1 text-to-image rewrite: return only the complete plain prompt text. No JSON object, metadata fields, commentary or Markdown fences.
+
+Write an English observer's description of the finished image, present tense and third person, never addressing the user or renderer. Preserve every fixed subject, count, color, position, named object and literal visible-text string. Preserve text character-for-character in its original script, punctuation and spacing; only visible text is enclosed in straight double quotes. Do not invent signage where none was requested. Obey job instructions silently instead of echoing them as picture content.
+
+First decide the frame from the user's explicit format when one is part of the creative request; otherwise choose a horizontal, vertical, square or wide composition appropriate to the subject. Apply that choice to natural composition and placement without emitting size metadata.
+
+Open by naming medium, style, subject and background/palette, usually with orientation. Inventory each element and its position, then walk the frame from background and top through left/center/right to bottom, or walk a single subject from background/pose through head, body, garments, contacts and remaining edges. Use concrete positional phrases throughout, including corners and edges. Describe actual materials, nuanced colors, scale, occlusion, spatial relationships, pose and coherent lighting/shadow/reflection behavior. Enumerate items rather than saying various decorations; use object classes unless the user named a brand. Hedge genuinely ambiguous details without weakening user-fixed facts. Name the source, direction and quality of light explicitly, generally in its own sentence. End with exactly one whole-frame composition sentence.
+
+Respect the application's selected length and creativity controls: Short stays compact, Medium balanced, Detailed rich, and Maximum Detail expansive with useful concrete detail. Normally use one paragraph; genuinely stacked panels/cards/sections may use one paragraph per region. Keep literal image text in its original language while all descriptive prose is English. Avoid instructions, quality slogans, filler and a second closing summary.""",
     "MiniMax": """MiniMax target: use direct cinematic natural language. In Video mode, prioritize visible action, temporal order, camera motion, environmental motion, spatial continuity, and a clear end state.""",
     "LTX 2.5": """LTX 2.5 target: describe a clear shot in natural language. In Video mode, make chronological motion, camera behavior, subject movement, beginning-to-end progression, continuity, and final framing explicit.""",
 

@@ -4,6 +4,7 @@ from contextlib import ExitStack, nullcontext, redirect_stdout
 from dataclasses import replace
 import importlib
 from io import StringIO
+import json
 from pathlib import Path
 import sys
 from types import ModuleType, SimpleNamespace
@@ -181,7 +182,8 @@ class CoreTests(unittest.TestCase):
                         self.assertIn(core.get_mode_adapter(mode), message)
                         self.assertIn(core.get_director_preset(director).instructions, message)
                         self.assertIn(core._LENGTH_ADAPTERS[length], message)
-                        self.assertEqual(instruction.max_tokens, 3072 if length == "Maximum Detail" else None)
+                        self.assertIsNone(instruction.max_tokens)
+                        self.assertTrue(instruction.unlimited_tokens)
                         contract = (core.TEXT_ONLY_PRIORITY_CONTRACT if path == "text_only" else
                                     core.LINKED_PRIORITY_CONTRACT if path == "linked_reference" else
                                     core.PRIORITY_CONTRACT)
@@ -203,6 +205,104 @@ class CoreTests(unittest.TestCase):
         self.session.generate.return_value = "  "
         with self.assertRaisesRegex(RuntimeError, "empty prompt"):
             self.service.generate(core.GoatedPrompterRequest(idea="portrait"))
+
+    def test_qwen21_generation_returns_plain_text_from_legacy_json(self):
+        self.session.generate.side_effect = None
+        self.session.generate.return_value = (
+            '{"rewritten_prompt":"A warm photograph of a red bicycle.",'
+            '"wh_ratio":"3:2"}'
+        )
+        result = self.service.generate(core.GoatedPrompterRequest(idea="red bicycle", target_model="Qwen2.1"))
+        self.assertEqual(result.prompt, "A warm photograph of a red bicycle.")
+        self.session.generate.return_value = '{"rewritten_prompt":'
+        with self.assertRaisesRegex(RuntimeError, "invalid prompt"):
+            self.service.generate(core.GoatedPrompterRequest(idea="red bicycle", target_model="Qwen2.1"))
+
+    def test_qwen21_plain_text_works_at_every_detail_level(self):
+        self.session.generate.side_effect = None
+        self.session.generate.return_value = 'A red bicycle beside a sign reading "你好".'
+        for length in ("Short", "Medium", "Detailed", "Maximum Detail", "Maximum"):
+            for generate in (self.service.generate, self.service.generate_text_only):
+                with self.subTest(length=length, path=generate.__name__):
+                    self.session.reset_mock()
+                    result = generate(core.GoatedPrompterRequest(idea="red bicycle", target_model="Qwen2.1", prompt_length=length))
+                    self.assertEqual(result.prompt, self.session.generate.return_value)
+                    self.assertIsNone(result.instruction.max_tokens)
+                    self.assertTrue(result.instruction.unlimited_tokens)
+                    self.assertIn(core._LENGTH_ADAPTERS[length], result.instruction.system_message)
+                    self.session.generate.assert_called_once()
+
+    def test_qwen21_text_and_edit_keep_task_guidance_but_request_plain_output(self):
+        text = self.service.assemble(core.GoatedPrompterRequest(idea="a poster", target_model="Qwen2.1"))
+        self.assertIn('Return only the complete plain prompt text', text.system_message)
+        self.assertNotIn('Qwen2.1 image-editing rewrite', text.system_message)
+        self.assertIsNone(text.max_tokens)
+        self.assertTrue(text.unlimited_tokens)
+        edit = self.service.assemble(self.request("Image 2", target_model="Qwen2.1"))
+        self.assertIn('Qwen2.1 image-editing rewrite', edit.system_message)
+        self.assertNotIn('Qwen2.1 text-to-image rewrite', edit.system_message)
+        self.assertIn('Available source tags: <image2>', edit.system_message)
+        self.assertNotIn('Available source tags: <image1>', edit.system_message)
+        text_only = self.service.assemble(self.request(target_model="Qwen2.1"), text_only=True)
+        self.assertIn('Return only the complete plain prompt text', text_only.system_message)
+
+    def test_qwen21_official_edit_payload_survives_evidence_compilation(self):
+        expected = '{"rewritten_prompt":"Change the sky in the image to sunset.","wh_ratio":"","ratio_follow":"<image2>"}'
+        self.session.generate.side_effect = lambda instruction: (
+            '{"subject":"observed person"}' if instruction.diagnostic_stage.startswith("evidence:") else expected)
+        result = self.service.generate(self.request("Image 2", target_model="Qwen2.1"))
+        self.assertEqual(result.prompt, json.loads(expected)["rewritten_prompt"])
+        self.assertIsNone(result.instruction.image)
+        self.assertIsNotNone(result.instruction.resolved_scene)
+        self.assertIn('IMAGE EDITING', result.instruction.system_message)
+        self.assertEqual(self.session.generate.call_count, 2)
+        self.assertTrue(all(call.args[0].unlimited_tokens and call.args[0].max_tokens is None
+                            for call in self.session.generate.call_args_list))
+
+    def test_qwen21_all_off_uses_t2i_and_legacy_empty_field_is_removed_losslessly(self):
+        self.session.generate.side_effect = None
+        self.session.generate.return_value = json.dumps({"rewritten_prompt": 'A sign reads "你好".', "wh_ratio": "3:2", "ratio_follow": ""})
+        result = self.service.generate(self.request("Off", linked_references=True, target_model="Qwen2.1"))
+        self.assertEqual(result.prompt, 'A sign reads "你好".')
+        self.encode.assert_not_called()
+        self.assertIn('TEXT TO IMAGE', result.instruction.system_message)
+
+    def test_qwen21_format_repair_uses_same_session_and_original_request(self):
+        expected = 'A red bicycle.'
+        self.session.generate.side_effect = ['{"rewritten_prompt":', expected]
+        result = self.service.generate(core.GoatedPrompterRequest(idea="red bicycle", target_model="Qwen2.1"))
+        self.assertEqual(result.prompt, expected)
+        first, retry = [entry.args[0] for entry in self.session.generate.call_args_list]
+        self.assertEqual(first.user_message, retry.user_message)
+        self.assertIn('FORMAT CORRECTION', retry.system_message)
+        self.assertEqual(retry.diagnostic_stage, 'final:format_retry')
+        self.assertTrue(first.unlimited_tokens and retry.unlimited_tokens)
+        self.backend.generation_session.assert_called_once()
+
+    def test_qwen21_repair_preserves_selected_image_evidence(self):
+        expected = 'Change the sky in the image.'
+        self.session.generate.side_effect = ['{"subject":"observed person"}', '{"rewritten_prompt":[]}', expected]
+        result = self.service.generate(self.request("Image 2", target_model="Qwen2.1"))
+        self.assertEqual(result.prompt, expected)
+        calls = [entry.args[0] for entry in self.session.generate.call_args_list]
+        self.assertEqual(len(calls), 3)
+        self.assertIs(calls[1].resolved_scene, calls[2].resolved_scene)
+        self.encode.assert_called_once()
+
+    def test_qwen21_cancellation_stops_format_retry(self):
+        class Cancelled(Exception):
+            pass
+        checkpoints = []
+        def checkpoint():
+            checkpoints.append(True)
+            if len(checkpoints) == 4:
+                raise Cancelled()
+        self.session.generate.side_effect = None
+        self.session.generate.return_value = '{"rewritten_prompt":"Incomplete'
+        with self.assertRaises(Cancelled):
+            core.GoatedPrompterService(config={}, checkpoint=checkpoint).generate(
+                core.GoatedPrompterRequest(idea="red bicycle", target_model="Qwen2.1"))
+        self.session.generate.assert_called_once()
 
     def test_image_order_does_not_hash_when_debug_disabled(self):
         with patch.object(core, "_image_descriptor") as descriptor:
@@ -314,18 +414,22 @@ class LinkedCoreTests(unittest.TestCase):
         self.assertEqual(resolved.source_for("outfit"), "User Prompt")
         self.assertEqual(resolved.source_for("mood"), "User Prompt")
 
-    def test_mapping_alias_and_maximum_only_final_budget(self):
+    def test_mapping_alias_and_maximum_are_uncapped(self):
         for value in ("Maximum", "Maximum Detail"):
             request = core.GoatedPrompterRequest.from_mapping({"idea": "portrait", "linked_references": "true", "prompt_length": value})
             self.assertTrue(request.linked_references)
             self.assertEqual(request.prompt_length, "Maximum Detail")
-            self.assertEqual(core.assemble_instruction(request).max_tokens, 3072)
+            instruction = core.assemble_instruction(request)
+            self.assertIsNone(instruction.max_tokens)
+            self.assertTrue(instruction.unlimited_tokens)
         self.assertFalse(core.GoatedPrompterRequest.from_mapping({"linked_references": "false"}).linked_references)
         self.assertFalse(core.GoatedPrompterRequest.from_mapping({}).linked_references)
         result = self.service.generate(replace(self.request(), prompt_length="Maximum"))
         analysis, final = [entry.args[0] for entry in self.session.generate.call_args_list]
         self.assertIsNone(analysis.max_tokens)
-        self.assertEqual(final.max_tokens, 3072)
+        self.assertIsNone(final.max_tokens)
+        self.assertTrue(analysis.unlimited_tokens)
+        self.assertTrue(final.unlimited_tokens)
         self.assertIn(core._MAXIMUM_DETAIL_GUIDANCE, result.instruction.system_message)
         for length in ("Short", "Medium", "Detailed"):
             self.assertIsNone(core.assemble_instruction(replace(self.request(), prompt_length=length)).max_tokens)
