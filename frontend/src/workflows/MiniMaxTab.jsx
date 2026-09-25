@@ -46,13 +46,12 @@ export default function MiniMaxTab({ visible, job, busy, active, noEngine, engin
   }
   function editRequest(value) {
     const typed = parseReferences(value).references;
-    const references = [...new Set([...draft.references, ...typed])];
-    if (references.length > 12) {
+    if (typed.length > 12) {
       // Keep the user's text, but never silently register unsupported references.
       update({ user_request: value });
       setError("MiniMax H3 supports 12 combined references. Clear the draft to start a new reference set.");
     } else {
-      update({ user_request: value, references });
+      update({ user_request: value, references: typed });
       setError("");
     }
   }

@@ -122,6 +122,16 @@ class MiniMaxContractTests(unittest.TestCase):
                 data = validate_minimax_draft({"references": refs})
                 self.assertEqual(validate_analysis(raw, data)["mode"], mode)
 
+    def test_auto_and_full_reference_ignore_unrequested_frame_anchor_guesses(self):
+        raw = plan_json(role("image1", "identity"), role("image2", "object"), role("image3", "environment"), first="image1")
+        for mode in ("auto", "Ref2VA"):
+            with self.subTest(mode=mode):
+                data = validate_minimax_draft({"mode": mode, "references": ["image1", "image2", "image3"],
+                                              "user_request": "<image1> is an apple, <image2> is a banana, <image3> is the street."})
+                plan = validate_analysis(raw, data)
+                self.assertIsNone(plan["first_frame"])
+                self.assertEqual(plan["mode"], "Ref2VA")
+
     def test_analysis_cannot_invent_or_omit_assets_or_roles(self):
         for raw in ("not JSON", "[]", plan_json(role("image1", "identity")),
                     plan_json(role("image1", "identity"), role("video2", "motion")),
@@ -150,7 +160,6 @@ class MiniMaxContractTests(unittest.TestCase):
         bad = ["Here is your prompt\n" + REF, "```text\n" + REF + "\n```", REF.replace("summary:", "overview:"),
                REF.replace("<Picture 1>", "<Picture 2>"), REF.replace("<Video 1>", "<Video 4>"),
                REF.replace("<Subject 2>", "<Subject N>"), REF.replace("attribute_transfer", "fully_copy"),
-               REF.replace("[Shot 1] A", "[Shot 1] At 00:00.000, A"),
                REF.replace("[Shot 1] A", "[Shot 1] A [Shot 2] At 00:16.000, A"),
                REF.replace("[Shot 1] A", "[Shot 1] A [Shot 2] At 00:05.000, A [Shot 3] At 00:04.000, A"),
                REF.replace("[Shot 1] A", "[Shot 1] A [Shot 2] At 00:05.000, A [Shot 3] At 00:05.000, A"),
@@ -160,6 +169,18 @@ class MiniMaxContractTests(unittest.TestCase):
         for prompt in bad:
             with self.subTest(prompt=prompt[:100]), self.assertRaises(ValueError):
                 validate_output(prompt, data, plan)
+
+    def test_output_normalizes_target_video_wording_and_zero_first_shot_timestamp(self):
+        data = validate_minimax_draft({"user_request": "A cartoon apple walks down a street."})
+        plan = validate_analysis(plan_json(), data)
+        variants = ["[Shot 1] At 00:00.000, Video 1 shows a leaf",
+                    "[Shot 1] 0:00 - Video 1 shows a leaf",
+                    "[Shot 1] At 00:01.000: Video 1 shows a leaf"]
+        for variant in variants:
+            with self.subTest(variant=variant):
+                normalized = validate_output(BASE.replace("[Shot 1] A leaf", variant), data, plan)
+                self.assertIn("[Shot 1] target video shows", normalized)
+                self.assertNotIn("Video 1", normalized)
 
     def test_dialogue_language_exact_words_voiceover_and_speaker_ids(self):
         data = validate_minimax_draft({"user_request": 'The speaker says: <d>[French] Bonjour, mes amis!</d>'})
@@ -179,6 +200,9 @@ class MiniMaxContractTests(unittest.TestCase):
         data = validate_minimax_draft({"user_request": "Use <audio1> for music style", "references": ["audio1"]}, generation=True)
         self.assertTrue(reference_warnings(data))
         self.assertFalse(reference_warnings(dance_input()))
+        data = validate_minimax_draft({"user_request": "Generate new music", "references": ["audio1"]}, generation=True)
+        self.assertEqual(data["references"], [])
+        self.assertFalse(reference_warnings(data))
         with self.assertRaises(ValueError):
             validate_output(REF.replace("Generate an energetic", "Use <Audio 1> for an energetic"), dance_input(), validate_analysis(DANCE_PLAN, dance_input()))
 

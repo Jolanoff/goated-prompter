@@ -69,6 +69,7 @@ def validate_minimax_draft(value, *, generation=False):
         missing = set(used) - set(result["references"])
         if missing:
             raise ValueError("Register the symbolic references used in your request: " + ", ".join(sorted(missing)))
+        result["references"] = [ref for ref in result["references"] if ref in used]
         result["user_request"] = TOKEN.sub(lambda m: f"<{reference_name(m[0])}>", result["user_request"])
         get_director_preset(result["director_preset"], strict=True)
         refs, mode = result["references"], result["mode"]
@@ -146,7 +147,10 @@ def validate_analysis(raw, data):
         if token is not None:
             token = reference_name(token)
             if token not in by_token or not token.startswith("image") or role not in by_token[token]["roles"]:
-                raise ValueError("Frame anchors must identify an existing image with the corresponding frame role.")
+                if data["mode"] in ("auto", "Ref2VA"):
+                    token = None
+                else:
+                    raise ValueError("Frame anchors must identify an existing image with the corresponding frame role.")
             plan[key] = token
     plan["references"] = list(by_token.values())
     first, last = plan["first_frame"], plan["last_frame"]
@@ -200,6 +204,7 @@ def generation_instruction(data, plan, director, family):
     mode = plan["mode"]
     context = {key: data[key] for key in ("model", "duration_seconds", "mode", "references")}
     context.update(resolved_mode=mode, reference_analysis=plan)
+    allowed = sorted(set(plan["label_map"].values()) | set(plan["video_audio_tracks"]))
     return PromptInstruction(system_message="\n\n".join([
         knowledge("skill"), knowledge("base"), knowledge("reference") if mode == "Ref2VA" else "",
         GUARDRAILS,
@@ -207,7 +212,12 @@ def generation_instruction(data, plan, director, family):
         "Use the supplied label_map only after interpreting roles. It maps provenance, NOT a blind text replacement. "
         "The video_audio_tracks map, when nonempty, enables ONLY explicitly requested audio from existing videos. "
         "Define each mapped Audio label as that video's synchronized track, with explicit provenance; it is not a new file. "
-        "No other unregistered Audio label is permitted. Never enable a video's sound merely because it contains audio.",
+        "No other unregistered Audio label is permitted. Generated music, ambience, dialogue and sound design are NOT Audio references; "
+        "describe them directly without Audio N labels unless label_map or video_audio_tracks supplies that label. "
+        "Never enable a video's sound merely because it contains audio. "
+        "Allowed source labels for this request: " + (", ".join(f"<{label}>" for label in allowed) if allowed else "none") + ". "
+        "Never call the generated output Video 1; call it the target video. "
+        "Timeline syntax is strict: use [Shot 1] exactly with no timestamp after it; later shots start exactly [Shot 2] At MM:SS.mmm, then [Shot 3] At MM:SS.mmm, if needed.",
     ]), user_message="\n\n".join([
         "STRUCTURED SETTINGS\n" + json.dumps(context, ensure_ascii=False),
         "DIRECTOR PRESET — CREATIVE GUIDANCE ONLY\n" + json.dumps({"name": director.label, "instructions": director.instructions}, ensure_ascii=False),
@@ -228,6 +238,10 @@ def validate_output(raw, data, plan):
     if not isinstance(raw, str) or not raw.strip():
         raise ValueError("MiniMax returned an empty prompt.")
     prompt = raw.strip()
+    allowed = set(plan["label_map"].values()) | set(plan["video_audio_tracks"])
+    prompt = re.sub(r"(\[Shot 1\])\s+(?:At\s+)?\d{1,2}:\d{2}(?:\.\d{1,3})?\s*[,\-:;]?\s*", r"\1 ", prompt)
+    prompt = re.sub(r"(?<!<)\bVideo\s+([1-9]\d*)\b(?!>)",
+                    lambda match: match[0] if f"Video {match[1]}" in allowed else "target video", prompt, flags=re.I)
     if "```" in prompt:
         raise ValueError("Remove markdown fences; return only the MiniMax prompt.")
     if TOKEN.search(prompt):
@@ -267,14 +281,13 @@ def validate_output(raw, data, plan):
     alignment = frame_instruction(plan["mode"], data["duration_seconds"], len(shots))
     if prompt[:headers[0].start()] != (alignment + "\n\n" if alignment else ""):
         raise ValueError("Use the exact frame-alignment instruction before the fields, or no preamble for T2VA/Ref2VA.")
-    allowed = set(plan["label_map"].values()) | set(plan["video_audio_tracks"])
     for label in re.findall(r"<(?:Subject|Picture|Video|Audio)[^>]*>", prompt, re.I):
         if not re.fullmatch(r"<(?:Subject|Picture|Video|Audio) [1-9]\d*>", label):
             raise ValueError("Official reference labels require their exact spelling and positive numeric IDs.")
     for match in re.finditer(r"\b(Picture|Video|Audio)\s+(\d+)\b", prompt, re.I):
         label = f"{match[1].title()} {match[2]}"
         if label not in allowed:
-            raise ValueError(f"{label} is not an existing reference in the supplied label map.")
+            raise ValueError(f"{label} was introduced without a supplied reference. Do not create forced Picture, Video or Audio labels.")
     if plan["mode"] == "Ref2VA":
         definitions = set(re.findall(r"(?m)^<(Subject|Picture|Video|Audio) (\d+)>", parts["subject_definitions"]))
         subjects = set(re.findall(r"<Subject (\d+)>", prompt))
