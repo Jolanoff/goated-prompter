@@ -16,7 +16,9 @@ MODELS = ("MiniMax H3",)
 MODES = ("auto", "T2VA", "I2VA", "FL2VA", "L2VA", "Ref2VA")
 RATIOS = ("Auto", "16:9", "9:16", "1:1", "4:3", "3:4", "21:9")
 LIMITS = {"image": 9, "video": 3, "audio": 3}
+REPAIR_ATTEMPTS = 2
 TOKEN = re.compile(r"<(image|video|audio)(\d+)>", re.I)
+SHOT_TAG = re.compile(r"\[Shot\s*(\d+)\]", re.I)
 BASE_SECTIONS = ("integrated_multimodal_description", "overall_soundscape", "non_diegetic_music")
 REF_SECTIONS = ("subject_definitions", "summary", "retention_analysis", "detailed_description", "overall_soundscape", "non_diegetic_music")
 VISUAL_ROLES = {"identity", "appearance", "character", "object", "product", "environment", "style", "first frame",
@@ -92,6 +94,28 @@ def reference_warnings(data):
 @lru_cache(maxsize=3)
 def knowledge(name):
     return files("goated_prompter").joinpath("minimax_knowledge", name + ".md").read_text(encoding="utf-8")
+
+
+def reference_knowledge(plan):
+    """Keep guide examples and modality rules relevant to registered sources."""
+    allowed = set(plan["label_map"].values()) | set(plan["video_audio_tracks"])
+    has_video = any(label.startswith("Video ") for label in allowed)
+    has_audio = any(label.startswith("Audio ") for label in allowed)
+    lines = []
+    for line in knowledge("reference").splitlines():
+        labels = re.findall(r"<(Picture|Video|Audio) (\d+)>", line)
+        if any(f"{kind} {number}" not in allowed for kind, number in labels):
+            continue
+        if not has_video and ("<Video N>" in line or line.startswith(("[video editing", "video editing:",
+                                                                       "video continuation:", "Video presence", "For a video-editing"))):
+            continue
+        if not has_audio and ("<Audio N>" in line or line.startswith(("audio reuse:", "audio reference:",
+                                                                       "[video editing + reference generation + audio reuse]",
+                                                                       "Audio relationships:", "fully_copy:", "partially_copy:",
+                                                                       "reference: only timbre"))):
+            continue
+        lines.append(line)
+    return "\n".join(lines)
 
 
 GUARDRAILS = """You build MiniMax H3 prompts, not videos. Media are symbolic and UNSEEN.
@@ -200,24 +224,70 @@ def frame_instruction(mode, duration, last_shot=1):
     return ""
 
 
+def reference_scaffold(plan):
+    """Render provenance and retention from validated roles, without inspecting media."""
+    definitions, retention = [], []
+    subject_number = 0
+    for item in plan["references"]:
+        token, roles = item["token"], set(item["roles"])
+        source = plan["label_map"][token]
+        if token.startswith("audio"):
+            label, marker = source, "partially_copy" if roles & {"direct audio reuse", "background music reuse"} else "reference"
+            definitions.append(f"<{label}> is the supplied audio reference, used only for the requested {', '.join(item['roles'])}.")
+        elif token.startswith("video") and roles & {"editing source", "video continuation", "camera movement", "cut structure", "pacing"}:
+            label, marker = source, "partially_preserved" if roles & {"editing source", "video continuation"} else "weak_reference"
+            definitions.append(f"<{label}> is the supplied video reference, used only for the requested {', '.join(item['roles'])}.")
+        elif token.startswith("image") and roles <= {"first frame", "last frame", "keyframe", "storyboard"}:
+            label, marker = source, "fully_preserved"
+            definitions.append(f"<{label}> is the supplied frame reference, used only for the requested {', '.join(item['roles'])}.")
+        else:
+            subject_number += 1
+            label = f"Subject {subject_number}"
+            marker = "fully_preserved" if roles & {"identity", "appearance", "character", "object", "product", "environment"} else "weak_reference"
+            definitions.append(f"<{label}> is the requested {', '.join(item['roles'])} subject from <{source}>; follow only the role described by the user.")
+        retention.append(f"<{label}>: {marker} - retain only the requested {', '.join(item['roles'])} characteristics from <{source}>.")
+    for label, token in plan["video_audio_tracks"].items():
+        source = plan["label_map"][token]
+        definitions.append(f"<{label}> is the explicitly requested synchronized soundtrack from <{source}>.")
+        retention.append(f"<{label}>: partially_copy - reuse only the requested portions of the soundtrack from <{source}>.")
+    return "\n".join(definitions), "\n".join(retention)
+
+
 def generation_instruction(data, plan, director, family):
     mode = plan["mode"]
     context = {key: data[key] for key in ("model", "duration_seconds", "mode", "references")}
     context.update(resolved_mode=mode, reference_analysis=plan)
+    spoken_lines = requested_spoken_lines(data["user_request"])
+    if spoken_lines:
+        context["spoken_lines"] = spoken_lines
+    if mode == "Ref2VA":
+        definitions, retention = reference_scaffold(plan)
+        context["reference_definitions"] = definitions
+        context["reference_retention"] = retention
     allowed = sorted(set(plan["label_map"].values()) | set(plan["video_audio_tracks"]))
+    has_video = any(label.startswith("Video ") for label in allowed)
+    has_audio = any(label.startswith("Audio ") for label in allowed)
     return PromptInstruction(system_message="\n\n".join([
-        knowledge("skill"), knowledge("base"), knowledge("reference") if mode == "Ref2VA" else "",
+        knowledge("skill"), knowledge("base"), reference_knowledge(plan) if mode == "Ref2VA" else "",
         GUARDRAILS,
         "SELECTED MODE: " + mode + ". Output sections in exact order: " + ", ".join(REF_SECTIONS if mode == "Ref2VA" else BASE_SECTIONS),
         "Use the supplied label_map only after interpreting roles. It maps provenance, NOT a blind text replacement. "
+        "For Full Reference, use the supplied reference_definitions and reference_retention as the required minimum in their matching sections. "
+        "Expand only with user-supported details; never replace these sections with unnumbered prose. "
+        "For each spoken_lines entry, include its exact words inside a balanced <d>[Language] words</d> block in the timeline, "
+        "with the named speaker and a stable (S1), (S2) ID. Infer the language when not specified; never paraphrase the spoken words. "
         "The video_audio_tracks map, when nonempty, enables ONLY explicitly requested audio from existing videos. "
         "Define each mapped Audio label as that video's synchronized track, with explicit provenance; it is not a new file. "
         "No other unregistered Audio label is permitted. Generated music, ambience, dialogue and sound design are NOT Audio references; "
         "describe them directly without Audio N labels unless label_map or video_audio_tracks supplies that label. "
         "Never enable a video's sound merely because it contains audio. "
         "Allowed source labels for this request: " + (", ".join(f"<{label}>" for label in allowed) if allowed else "none") + ". "
-        "Never call the generated output Video 1; call it the target video. "
-        "Timeline syntax is strict: use [Shot 1] exactly with no timestamp after it; later shots start exactly [Shot 2] At MM:SS.mmm, then [Shot 3] At MM:SS.mmm, if needed.",
+        + ("No video source was supplied. Do not define or mention a numbered Video source, video editing or video continuation. " if not has_video else "")
+        + ("No audio source was supplied. Dialogue and sound are generated; do not define or mention a numbered Audio source or audio reuse. " if not has_audio else "")
+        + "Call the generated output the target video, never a numbered Video source. "
+        "Timeline syntax is strict: use [Shot 1] exactly once as the first shot heading, with no timestamp after it. "
+        "If the user did not request cuts, prefer one continuous shot. Later shot headings, if needed, start [Shot 2] At MM:SS.mmm, "
+        "then [Shot 3] At MM:SS.mmm, with times inside the selected duration. Do not use a shot heading merely to restate a shot in prose.",
     ]), user_message="\n\n".join([
         "STRUCTURED SETTINGS\n" + json.dumps(context, ensure_ascii=False),
         "DIRECTOR PRESET — CREATIVE GUIDANCE ONLY\n" + json.dumps({"name": director.label, "instructions": director.instructions}, ensure_ascii=False),
@@ -226,12 +296,138 @@ def generation_instruction(data, plan, director, family):
     ]), model_family=family, diagnostic_stage="minimax:prompt", unlimited_tokens=True)
 
 
+def requested_spoken_lines(text):
+    """Extract explicitly spoken, untagged lines from natural-language requests."""
+    lines = []
+    cue = r"(?:says?|said|speaks?|whispers?|shouts?|sings?)"
+    for line in text.splitlines():
+        match = re.match(rf"\s*(?P<speaker>[^:\n<>]{{1,80}}?)\s+{cue}\s*:\s*(?P<words>.+?)\s*$", line, re.I)
+        if not match:
+            match = re.match(rf'''\s*(?P<speaker>[^:\n<>]{{1,80}}?)\s+{cue}\s+(?:["“](?P<words>.+?)["”]|['‘](?P<single>.+?)['’])\s*$''', line, re.I)
+        if not match:
+            continue
+        words = (match["words"] or match.groupdict().get("single") or "").strip().strip('"“”‘’')
+        if "<d>" in words:
+            continue
+        if words:
+            lines.append({"speaker": match["speaker"].strip(), "words": words})
+    return lines
+
+
 def exact_dialogue(text):
     tagged = re.findall(r"<d>\[[^\]]+\]\s*(.*?)</d>", text, re.S)
     cue = r'\b(?:says?|say|speaks?|dialogue|lyrics|sings?|sing|voiceover|narrat(?:es?|ion)|shouts?|whispers?)\b'
     quoted = re.findall(cue + r'[^"“\n]{0,60}["“]([^"”]+)["”]', text, re.I)
     quoted += re.findall(cue + r"[^'‘\n]{0,60}['‘]([^'’]+)['’]", text, re.I)
-    return tagged + quoted
+    return tagged + quoted + [line["words"] for line in requested_spoken_lines(text)]
+
+
+def normalize_spoken_lines(parts, data, plan):
+    """Repair model dialogue formatting using words explicitly supplied by the user."""
+    lines = requested_spoken_lines(data["user_request"])
+    if not lines or "<d>" in data["user_request"]:
+        return False
+    key = "detailed_description" if plan["mode"] == "Ref2VA" else "integrated_multimodal_description"
+    timeline = parts[key]
+    blocks = list(re.finditer(r"<d>\[([^\]\n]+)\]\s*(.*?)</d>", timeline, re.S))
+    if len(blocks) == len(lines) and timeline.count("<d>") == len(blocks) and timeline.count("</d>") == len(blocks):
+        for block, line in reversed(list(zip(blocks, lines))):
+            language = "English" if block[1].casefold() in {"language", "unknown"} else block[1]
+            if block[2] != line["words"] or language != block[1]:
+                timeline = timeline[:block.start()] + f"<d>[{language}] {line['words']}</d>" + timeline[block.end():]
+    else:
+        # A malformed or absent model block is recoverable when the user supplied
+        # the actual words; keep the visual action and put dialogue at its cue.
+        timeline = re.sub(r"<d>(?:\[[^\]\n]+\]\s*)?|</d>", "", timeline)
+        search_from = 0
+        for line in lines:
+            block = f"<d>[English] {line['words']}</d>"
+            cue = re.search(r"\b(?:says?|said|speaks?|whispers?|shouts?|sings?)\b\s*:?\s*", timeline[search_from:], re.I)
+            if cue:
+                cue_start, cue_end = search_from + cue.start(), search_from + cue.end()
+                tail = timeline[cue_end:]
+                quoted = re.match(r'''["“'‘][^"”'’\n]*["”'’]''', tail)
+                words = re.search(re.escape(line["words"]), tail[:200], re.I)
+                if quoted:
+                    start, end = cue_end, cue_end + quoted.end()
+                elif words:
+                    start, end = cue_end + words.start(), cue_end + words.end()
+                else:
+                    phrase = re.match(r"[^.!?\n]+[.!?]?", tail)
+                    start, end = cue_end, cue_end + phrase.end() if phrase else cue_end
+                timeline = timeline[:start] + block + timeline[end:]
+                search_from = start + len(block)
+            else:
+                speech = f"{line['speaker']} says: {block}. "
+                crying = re.search(r"\b(?:crying|cry|cries)\b", timeline[search_from:], re.I)
+                boundary = timeline.rfind(".", 0, search_from + crying.start()) + 1 if crying else len(timeline)
+                timeline = timeline[:boundary].rstrip() + " " + speech + timeline[boundary:].lstrip()
+                search_from = boundary + len(speech)
+    speaker_ids = {speaker: i + 1 for i, speaker in enumerate(dict.fromkeys(line["speaker"].casefold() for line in lines))}
+    for block, line in reversed(list(zip(re.finditer(r"<d>\[[^\]\n]+\]\s*.*?</d>", timeline, re.S), lines))):
+        before = timeline[max(0, block.start() - 100):block.start()]
+        cues = list(re.finditer(r"\b(?:says?|said|speaks?|whispers?|shouts?|sings?)\b", before, re.I))
+        if cues and len(before) - cues[-1].end() < 80:
+            cue_start = block.start() - len(before) + cues[-1].start()
+            if not re.search(r"\(S\d+\)", timeline[max(0, cue_start - 16):cue_start]):
+                timeline = timeline[:cue_start] + f"(S{speaker_ids[line['speaker'].casefold()]}) " + timeline[cue_start:]
+        else:
+            timeline = timeline[:block.start()] + f"{line['speaker']} (S{speaker_ids[line['speaker'].casefold()]}) says: " + timeline[block.start():]
+    parts[key] = timeline
+    for section in parts:
+        if section != key and ("<d>" in parts[section] or "</d>" in parts[section]):
+            parts[section] = re.sub(r"<d>.*?</d>|<d>(?:\[[^\]\n]+\]\s*)?[^\n]*|</d>",
+                                    "the requested dialogue", parts[section], flags=re.S)
+    return True
+
+
+def shot_headings(timeline):
+    """Find actual timeline shot starts, not incidental references to a shot."""
+    headings = []
+    for match in SHOT_TAG.finditer(timeline):
+        prefix = timeline[timeline.rfind("\n", 0, match.start()) + 1:match.start()]
+        timed_cut = re.match(r"\s*(?:At\s+)?\d{1,2}:\d{2}", timeline[match.end():], re.I)
+        if not prefix.strip() or timeline[:match.start()].rstrip().endswith((".", "!", "?", ";", ":")) or timed_cut:
+            headings.append(match)
+    return headings
+
+
+def normalize_shots(timeline, data, plan):
+    """Format model shot headings without fabricating cuts or cut times."""
+    timeline = re.sub(r"(?im)^[ \t]*(?:[-*][ \t]*)?Shot\s*(\d+)[ \t]*[:.)\-–—][ \t]*",
+                      lambda match: f"[Shot {int(match[1])}] ", timeline)
+    timeline = re.sub(r"(?im)^[ \t]*[-*][ \t]*(?=\[Shot\s*\d+\])", "", timeline)
+    headings = shot_headings(timeline)
+    if not headings:
+        style = re.match(r"((?:The target video|This video|The clip)[^.!?\n]*[.!?])\s*", timeline, re.I)
+        if style:
+            return timeline[:style.end(1)] + "\n[Shot 1] " + timeline[style.end():].lstrip()
+        return "[Shot 1] " + timeline
+    output, previous, shot_number = timeline[:headings[0].start()], 0, 1
+    collapse = plan["mode"] in ("Ref2VA", "T2VA") and not re.search(r"\b(?:shots?|cuts?)\s*\d+|\bcut\s+to\b", data["user_request"], re.I)
+    for i, heading in enumerate(headings):
+        after = timeline[heading.end():headings[i + 1].start() if i + 1 < len(headings) else len(timeline)]
+        stamp = re.match(r"\s*(?:At\s+)?(\d{1,2}):([0-5]\d)(?:\.(\d{1,3}))?\s*[,;:\-]?\s*", after, re.I)
+        if i == 0:
+            if stamp:
+                after = " " + after[stamp.end():]
+            output += "[Shot 1]" + after
+        elif stamp:
+            millis = int(stamp[3] or "0") * 10 ** (3 - len(stamp[3] or ""))
+            seconds = int(stamp[1]) * 60 + int(stamp[2]) + millis / 1000
+            if previous < seconds < data["duration_seconds"]:
+                previous = seconds
+                shot_number += 1
+                output += f"[Shot {shot_number}] At {int(stamp[1]):02d}:{int(stamp[2]):02d}.{millis:03d}, " + after[stamp.end():]
+            else:
+                shot_number += 1
+                output += f"[Shot {shot_number}]" + after
+        elif collapse and not re.match(r"\s*(?:At\b|\d{1,2}:\d{2})", after, re.I):
+            output += after
+        else:
+            shot_number += 1
+            output += f"[Shot {shot_number}]" + after
+    return output
 
 
 def validate_output(raw, data, plan):
@@ -239,9 +435,13 @@ def validate_output(raw, data, plan):
         raise ValueError("MiniMax returned an empty prompt.")
     prompt = raw.strip()
     allowed = set(plan["label_map"].values()) | set(plan["video_audio_tracks"])
+    prompt = re.sub(r"<(subject|picture|video|audio) ([1-9]\d*)>",
+                    lambda match: f"<{match[1].title()} {match[2]}>", prompt, flags=re.I)
     prompt = re.sub(r"(\[Shot 1\])\s+(?:At\s+)?\d{1,2}:\d{2}(?:\.\d{1,3})?\s*[,\-:;]?\s*", r"\1 ", prompt)
     prompt = re.sub(r"(?<!<)\bVideo\s+([1-9]\d*)\b(?!>)",
                     lambda match: match[0] if f"Video {match[1]}" in allowed else "target video", prompt, flags=re.I)
+    prompt = re.sub(r"(?<!<)\bAudio\s+([1-9]\d*)\b(?!>)",
+                    lambda match: match[0] if f"Audio {match[1]}" in allowed else "generated audio", prompt, flags=re.I)
     if "```" in prompt:
         raise ValueError("Remove markdown fences; return only the MiniMax prompt.")
     if TOKEN.search(prompt):
@@ -257,8 +457,24 @@ def validate_output(raw, data, plan):
     parts = {match[1]: prompt[match.end():headers[i + 1].start() if i + 1 < len(headers) else len(prompt)].strip() for i, match in enumerate(headers)}
     if any(not value for value in parts.values()):
         raise ValueError("MiniMax sections must not be empty.")
-    timeline = parts["detailed_description" if plan["mode"] == "Ref2VA" else "integrated_multimodal_description"]
-    shots = list(re.finditer(r"\[Shot (\d+)\]", timeline))
+    if plan["mode"] == "Ref2VA" and not re.search(r"(?m)^<(?:Subject|Picture|Video|Audio) [1-9]\d*>", parts["subject_definitions"]):
+        # The scene writer sometimes returns descriptive prose here instead of
+        # official definitions. Provenance is known from the validated plan.
+        if not any(f"{kind} {number}" not in allowed for kind, number in
+                   re.findall(r"<(Picture|Video|Audio) (\d+)>", parts["subject_definitions"])):
+            definitions, retention = reference_scaffold(plan)
+            parts["subject_definitions"] = definitions
+            parts["retention_analysis"] = retention
+            prompt = prompt[:headers[0].start()] + "\n\n".join(f"{section}:\n{parts[section]}" for section in sections)
+    if normalize_spoken_lines(parts, data, plan):
+        prompt = prompt[:headers[0].start()] + "\n\n".join(f"{section}:\n{parts[section]}" for section in sections)
+    timeline_key = "detailed_description" if plan["mode"] == "Ref2VA" else "integrated_multimodal_description"
+    timeline = parts[timeline_key]
+    normalized_timeline = normalize_shots(timeline, data, plan)
+    if normalized_timeline != timeline:
+        parts[timeline_key] = timeline = normalized_timeline
+        prompt = prompt[:headers[0].start()] + "\n\n".join(f"{section}:\n{parts[section]}" for section in sections)
+    shots = shot_headings(timeline)
     if not shots or [int(shot[1]) for shot in shots] != list(range(1, len(shots) + 1)):
         raise ValueError("Timeline shots must start at [Shot 1] and be sequential without duplicates.")
     previous = 0
@@ -326,8 +542,9 @@ class MiniMaxService:
     def __init__(self, config, checkpoint):
         self.config, self.checkpoint = config, checkpoint
 
-    def _call(self, session, instruction, validator, progress):
-        for attempt in range(2):
+    def _call(self, session, instruction, validator, progress, retry_budget):
+        original = instruction
+        while True:
             self.checkpoint()
             session.validate_instruction(instruction)
             raw = session.generate(instruction)
@@ -335,12 +552,16 @@ class MiniMaxService:
             try:
                 return validator(raw)
             except ValueError as exc:
-                if attempt:
-                    raise BackendGenerationError(f"MiniMax prompt validation failed after one repair attempt: {exc}") from exc
-                progress("Correcting MiniMax formatting (one retry)")
-                instruction = replace(instruction, user_message=instruction.user_message +
-                    "\n\nVALIDATION CORRECTION: " + str(exc) + "\nRegenerate the complete response from the original request. Do not explain the correction.",
-                    diagnostic_stage=instruction.diagnostic_stage + ":repair")
+                if retry_budget[0] == 0:
+                    raise BackendGenerationError(f"MiniMax prompt validation failed after {REPAIR_ATTEMPTS} repair attempts: {exc}") from exc
+                retry_budget[0] -= 1
+                progress(f"Correcting MiniMax formatting (retry {REPAIR_ATTEMPTS - retry_budget[0]}/{REPAIR_ATTEMPTS})")
+                instruction = replace(original, user_message=original.user_message +
+                    "\n\nVALIDATION CORRECTION: " + str(exc) +
+                    "\nEdit the previous response below into a complete valid response. Follow the original request and the supplied label_map; "
+                    "remove invented source assets and claims about them everywhere, including definitions, summary and retention analysis. "
+                    "Keep the requested scene and exact dialogue. Return only the corrected complete response.\n\nPREVIOUS RESPONSE:\n" + str(raw)[:24000],
+                    diagnostic_stage=original.diagnostic_stage + ":repair")
 
     def run(self, request, data, progress):
         data = validate_minimax_draft(data, generation=True)
@@ -348,13 +569,14 @@ class MiniMaxService:
         effective, profile = resolve_director_config(self.config, request)
         backend = create_backend(effective)
         family = _effective_model_family(request, profile, effective)
+        retry_budget = [REPAIR_ATTEMPTS]
         with backend.generation_session() as session:
             if data["references"]:
                 progress("Understanding reference roles")
-                plan = self._call(session, analysis_instruction(data, family), lambda raw: validate_analysis(raw, data), progress)
+                plan = self._call(session, analysis_instruction(data, family), lambda raw: validate_analysis(raw, data), progress, retry_budget)
             else:
                 plan = validate_analysis('{"references": [], "first_frame": null, "last_frame": null}', data)
             progress("Writing MiniMax H3 prompt")
-            prompt = self._call(session, generation_instruction(data, plan, director, family), lambda raw: validate_output(raw, data, plan), progress)
+            prompt = self._call(session, generation_instruction(data, plan, director, family), lambda raw: validate_output(raw, data, plan), progress, retry_budget)
         return {"ok": True, "kind": "minimax", "prompt": prompt, "mode": plan["mode"],
                 "warnings": reference_warnings(data), "backend": backend.name}

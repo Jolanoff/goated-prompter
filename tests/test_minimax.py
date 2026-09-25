@@ -16,7 +16,7 @@ import local_app as local
 from goated_prompter.backends.base import GoatedPrompterBackend, BackendGenerationError
 from goated_prompter.core import GoatedPrompterRequest
 from goated_prompter.minimax import (MiniMaxService, analysis_instruction, default_minimax_draft,
-    frame_instruction, generation_instruction, parse_reference_tokens, reference_warnings,
+    frame_instruction, generation_instruction, parse_reference_tokens, reference_warnings, requested_spoken_lines,
     validate_analysis, validate_minimax_draft, validate_output)
 from goated_prompter.presets import get_director_preset
 from goated_prompter.workflow_settings import WorkflowSettingsStore, empty_settings
@@ -24,6 +24,33 @@ from goated_prompter.workflow_settings import WorkflowSettingsStore, empty_setti
 REQUEST = ("I want the person in <image1> to do the same dancing style and movements as the dancer in <video1>. "
            "Put the person on a rooftop at night with neon city lights behind them. I want energetic electronic music. "
            "Start with a medium full-body shot, then slowly move the camera around the dancer.")
+APPLE_REQUEST = ("cartoonish style\n<image1> is mike, its an apple\n<image2> is track, its a bannana\n"
+                 "<image3> the background its the street\nstart by apple walking on the street, it steps on dog poop, "
+                 "apple looks sad after and walks toward her friend banana\n"
+                 "<d>[English] I stepped on poop</d>\nbannana and apple start crying")
+APPLE_PLAIN_REQUEST = APPLE_REQUEST.replace("<d>[English] I stepped on poop</d>", "apple says : i stepped on a poop")
+APPLE_PROMPT = """subject_definitions:
+<Subject 1> is the apple character Mike, based on <Picture 1>.
+<Subject 2> is the banana friend, based on <Picture 2>.
+<Subject 3> is the street setting, based on <Picture 3>.
+
+summary:
+[reference generation] In a cartoonish street scene, Mike steps in dog poop, complains to the banana and they cry together.
+
+retention_analysis:
+<Subject 1> (appears in [Shot 1]): fully_preserved - retain the apple's referenced appearance.
+<Subject 2> (appears in [Shot 1]): fully_preserved - retain the banana's referenced appearance.
+<Subject 3> (appears in [Shot 1]): fully_preserved - retain the street's referenced appearance.
+
+detailed_description:
+The target video has a cartoonish style.
+[Shot 1] <Subject 1> walks along <Subject 3>, steps in dog poop, looks sad, and approaches <Subject 2>. <Subject 1> (S1) says: <d>[English] I stepped on poop</d> Then <Subject 1> and <Subject 2> begin to cry together.
+
+overall_soundscape:
+Footsteps and soft crying accompany the street ambience.
+
+non_diegetic_music:
+N/A"""
 BASE = "integrated_multimodal_description: [Shot 1] A leaf falls onto a quiet path.\n\noverall_soundscape: Wind rustles the branches.\n\nnon_diegetic_music: N/A"
 REF = """subject_definitions:
 <Subject 1> is the person shown in <Picture 1>, preserving the person's visible identity, appearance and clothing.
@@ -170,7 +197,7 @@ class MiniMaxContractTests(unittest.TestCase):
             with self.subTest(prompt=prompt[:100]), self.assertRaises(ValueError):
                 validate_output(prompt, data, plan)
 
-    def test_output_normalizes_target_video_wording_and_zero_first_shot_timestamp(self):
+    def test_output_normalizes_generated_video_audio_wording_and_first_shot_timestamp(self):
         data = validate_minimax_draft({"user_request": "A cartoon apple walks down a street."})
         plan = validate_analysis(plan_json(), data)
         variants = ["[Shot 1] At 00:00.000, Video 1 shows a leaf",
@@ -181,6 +208,9 @@ class MiniMaxContractTests(unittest.TestCase):
                 normalized = validate_output(BASE.replace("[Shot 1] A leaf", variant), data, plan)
                 self.assertIn("[Shot 1] target video shows", normalized)
                 self.assertNotIn("Video 1", normalized)
+        normalized = validate_output(BASE.replace("Wind rustles", "Audio 1 carries the spoken line while wind rustles"), data, plan)
+        self.assertIn("generated audio carries", normalized)
+        self.assertNotIn("Audio 1", normalized)
 
     def test_dialogue_language_exact_words_voiceover_and_speaker_ids(self):
         data = validate_minimax_draft({"user_request": 'The speaker says: <d>[French] Bonjour, mes amis!</d>'})
@@ -193,8 +223,92 @@ class MiniMaxContractTests(unittest.TestCase):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 validate_output(bad, data, plan)
         data["user_request"] = 'She says "Wait, don’t go!"'
-        with self.assertRaises(ValueError):
-            validate_output(BASE, data, plan)
+        normalized = validate_output(BASE, data, plan)
+        self.assertIn('She (S1) says: <d>[English] Wait, don’t go!</d>', normalized)
+
+    def test_plain_speech_is_formatted_and_preserved_from_user_text(self):
+        self.assertEqual(requested_spoken_lines(APPLE_PLAIN_REQUEST),
+                         [{"speaker": "apple", "words": "i stepped on a poop"}])
+        self.assertEqual(requested_spoken_lines("Apple says 'Don't go!'"),
+                         [{"speaker": "Apple", "words": "Don't go!"}])
+        data = validate_minimax_draft({"references": ["image1", "image2", "image3"],
+                                       "user_request": APPLE_PLAIN_REQUEST}, generation=True)
+        roles = plan_json(role("image1", "character"), role("image2", "character"), role("image3", "environment"))
+        plan = validate_analysis(roles, data)
+        instruction = generation_instruction(data, plan, get_director_preset(data["director_preset"]), "qwen")
+        self.assertIn('"speaker": "apple", "words": "i stepped on a poop"', instruction.user_message)
+        for spoken in ('<d>[English] I stepped on poop</d>', '<d>[Language] i stepped on a poop</d>', '"I stepped on a poop."',
+                       '<d>[English] i stepped on a poop', 'i stepped on a poop'):
+            with self.subTest(spoken=spoken):
+                raw = APPLE_PROMPT.replace('<d>[English] I stepped on poop</d>', spoken).replace('(S1) says:', 'says:')
+                raw = raw.replace('Footsteps and soft crying', '<d>[English] i stepped on a poop</d> Footsteps and soft crying')
+                result = validate_output(raw, data, plan)
+                self.assertIn('<Subject 1> (S1) says: <d>[English] i stepped on a poop</d>', result)
+                self.assertEqual(result.count('<d>'), 1)
+                self.assertEqual(result.count('</d>'), 1)
+                self.assertIn('Then <Subject 1> and <Subject 2> begin to cry together.', result)
+        raw = APPLE_PROMPT.replace('<d>[English] I stepped on poop</d>', 'i stepped on a poop')
+        raw = raw.replace('Footsteps and soft crying', '<d>[English] i stepped on a poop Footsteps and soft crying')
+        result = validate_output(raw, data, plan)
+        self.assertEqual(result.count('<d>'), 1)
+        without_speech = APPLE_PROMPT.replace('<Subject 1> (S1) says: <d>[English] I stepped on poop</d>', '')
+        self.assertIn('apple (S1) says: <d>[English] i stepped on a poop</d>', validate_output(without_speech, data, plan))
+        backend = ScriptedBackend(roles, raw)
+        with patch("goated_prompter.minimax.create_backend", return_value=backend):
+            result = MiniMaxService({"backend": "mock"}, lambda: None).run(
+                GoatedPrompterRequest(idea=APPLE_PLAIN_REQUEST), data, lambda _: None)
+        self.assertEqual(len(backend.calls), 2)
+        self.assertIn('<d>[English] i stepped on a poop</d>', result["prompt"])
+
+    def test_multiple_natural_speakers_keep_distinct_ids_and_exact_words(self):
+        request = APPLE_PLAIN_REQUEST.replace("apple says : i stepped on a poop",
+                                              'apple says : i stepped on a poop\nbanana whispers: "We will cry together!"')
+        data = validate_minimax_draft({"references": ["image1", "image2", "image3"], "user_request": request}, generation=True)
+        plan = validate_analysis(plan_json(role("image1", "character"), role("image2", "character"),
+                                           role("image3", "environment")), data)
+        raw = APPLE_PROMPT.replace('<d>[English] I stepped on poop</d>', '"I stepped on a poop."')
+        raw = raw.replace('Then <Subject 1>', '<Subject 2> whispers: "We will cry together!" Then <Subject 1>')
+        result = validate_output(raw, data, plan)
+        self.assertIn('<Subject 1> (S1) says: <d>[English] i stepped on a poop</d>', result)
+        self.assertIn('<Subject 2> (S2) whispers: <d>[English] We will cry together!</d>', result)
+        self.assertEqual(result.count('<d>'), 2)
+
+    def test_image_only_scene_repairs_model_shot_headings_without_retries(self):
+        data = validate_minimax_draft({"references": ["image1", "image2", "image3"],
+                                       "user_request": APPLE_PLAIN_REQUEST}, generation=True)
+        roles = plan_json(role("image1", "character"), role("image2", "character"), role("image3", "environment"))
+        plan = validate_analysis(roles, data)
+        variants = {
+            "missing": APPLE_PROMPT.replace("[Shot 1] <Subject 1> walks", "<Subject 1> walks"),
+            "unnumbered": APPLE_PROMPT.replace("[Shot 1] <Subject 1> walks", "Shot 2: <Subject 1> walks"),
+            "dash": APPLE_PROMPT.replace("[Shot 1] <Subject 1> walks", "Shot 1 — <Subject 1> walks"),
+            "repeated": APPLE_PROMPT.replace("begin to cry together.",
+                                              "begin to cry together. [Shot 1] They comfort each other."),
+            "timed": APPLE_PROMPT.replace("begin to cry together.",
+                                           "begin to cry together. [Shot 4] At 00:04.000, the camera cuts to their faces."),
+            "short_time": APPLE_PROMPT.replace("begin to cry together.",
+                                                "begin to cry together. [Shot 4] 0:04 - the camera cuts to their faces."),
+            "mention": APPLE_PROMPT.replace("The target video has a cartoonish style.",
+                                             "The target video has a cartoonish style, echoed in [Shot 1] without a cut."),
+        }
+        for kind, raw in variants.items():
+            with self.subTest(kind=kind):
+                result = validate_output(raw, data, plan)
+                timeline = result.split("detailed_description:\n", 1)[1].split("\n\noverall_soundscape:", 1)[0]
+                self.assertIn("[Shot 1]", timeline)
+                self.assertIn("<d>[English] i stepped on a poop</d>", timeline)
+                self.assertIn("cry together", timeline)
+                if kind == "repeated":
+                    self.assertIn("They comfort each other", timeline)
+                    self.assertEqual(timeline.count("[Shot 1]"), 1)
+                if kind in ("timed", "short_time"):
+                    self.assertIn("[Shot 2] At 00:04.000,", timeline)
+        backend = ScriptedBackend(roles, variants["unnumbered"])
+        with patch("goated_prompter.minimax.create_backend", return_value=backend):
+            result = MiniMaxService({"backend": "mock"}, lambda: None).run(
+                GoatedPrompterRequest(idea=APPLE_PLAIN_REQUEST), data, lambda _: None)
+        self.assertEqual(len(backend.calls), 2)
+        self.assertIn("[Shot 1]", result["prompt"])
 
     def test_audio_only_is_a_nonblocking_warning_and_missing_audio_is_never_invented(self):
         data = validate_minimax_draft({"user_request": "Use <audio1> for music style", "references": ["audio1"]}, generation=True)
@@ -220,6 +334,7 @@ class MiniMaxContractTests(unittest.TestCase):
         instruction = generation_instruction(data, plan, get_director_preset("video_director"), "qwen")
         self.assertIn("six", instruction.system_message)
         self.assertIn("attribute_transfer", instruction.system_message)
+        self.assertIn("<Video 1> (cut and pacing structure)", instruction.system_message)
         self.assertIn("UNSEEN", instruction.system_message)
         self.assertIn("ALWAYS overrides", instruction.system_message)
         self.assertIn('"duration_seconds": 15', instruction.user_message)
@@ -233,6 +348,72 @@ class MiniMaxContractTests(unittest.TestCase):
         self.assertTrue(analysis_instruction(data, "qwen").unlimited_tokens)
         self.assertIsNone(analysis_instruction(data, "qwen").max_tokens)
 
+    def test_image_only_generation_excludes_unregistered_guide_examples_and_repairs_draft(self):
+        data = validate_minimax_draft({"references": ["image1", "image2", "image3"],
+                                       "user_request": APPLE_REQUEST}, generation=True)
+        roles = plan_json(role("image1", "character"), role("image2", "character"), role("image3", "environment"))
+        plan = validate_analysis(roles, data)
+        instruction = generation_instruction(data, plan, get_director_preset(data["director_preset"]), "qwen")
+        self.assertNotIn("<Video 1>", instruction.system_message)
+        self.assertNotIn("<Audio 1>", instruction.system_message)
+        self.assertNotIn("<Video N>", instruction.system_message)
+        self.assertNotIn("<Audio N>", instruction.system_message)
+        for label in ("<Picture 1>", "<Picture 2>", "<Picture 3>"):
+            self.assertIn(label, instruction.system_message)
+        self.assertIn("No video source was supplied", instruction.system_message)
+        self.assertIn("No audio source was supplied", instruction.system_message)
+        self.assertIn(APPLE_REQUEST, instruction.user_message)
+        self.assertEqual(validate_output(APPLE_PROMPT, data, plan), APPLE_PROMPT)
+        bad = APPLE_PROMPT.replace("<Subject 1> walks", "<Video 1> shows <Subject 1> walking as <Subject 1> walks")
+        with self.assertRaisesRegex(ValueError, "Video 1 was introduced"):
+            validate_output(bad, data, plan)
+        backend = ScriptedBackend(roles, bad, APPLE_PROMPT)
+        with patch("goated_prompter.minimax.create_backend", return_value=backend):
+            result = MiniMaxService({"backend": "mock"}, lambda: None).run(
+                GoatedPrompterRequest(idea=APPLE_REQUEST), data, lambda _: None)
+        self.assertEqual(result["prompt"], APPLE_PROMPT)
+        self.assertIn("PREVIOUS RESPONSE:\n" + bad, backend.calls[-1].user_message)
+        self.assertIn("VALIDATION CORRECTION", backend.calls[-1].user_message)
+        self.assertEqual(backend.calls[-1].system_message, backend.calls[-2].system_message)
+        self.assertEqual(backend.calls[-1].user_message.count("VALIDATION CORRECTION"), 1)
+
+    def test_image_only_generation_supplies_missing_role_definitions_without_retries(self):
+        data = validate_minimax_draft({"references": ["image1", "image2", "image3"],
+                                       "user_request": APPLE_REQUEST}, generation=True)
+        roles = plan_json(role("image1", "character"), role("image2", "character"), role("image3", "environment"))
+        bad = APPLE_PROMPT.replace(
+            APPLE_PROMPT.split("subject_definitions:\n", 1)[1].split("\n\nsummary:", 1)[0],
+            "Mike the apple comes from Picture 1; the banana comes from Picture 2; the street comes from Picture 3.")
+        bad = bad.replace(
+            bad.split("retention_analysis:\n", 1)[1].split("\n\ndetailed_description:", 1)[0],
+            "Keep the three referenced subjects recognizable.")
+        backend = ScriptedBackend(roles, bad)
+        with patch("goated_prompter.minimax.create_backend", return_value=backend):
+            result = MiniMaxService({"backend": "mock"}, lambda: None).run(
+                GoatedPrompterRequest(idea=APPLE_REQUEST), data, lambda _: None)
+        self.assertEqual(len(backend.calls), 2)
+        self.assertIn("reference_definitions", backend.calls[-1].user_message)
+        for subject, picture in ((1, 1), (2, 2), (3, 3)):
+            self.assertIn(f"<Subject {subject}> is the requested", result["prompt"])
+            self.assertIn(f"from <Picture {picture}>", result["prompt"])
+            self.assertIn(f"<Subject {subject}>: ", result["prompt"])
+        self.assertIn(APPLE_PROMPT.split("detailed_description:\n", 1)[1], result["prompt"])
+        self.assertNotIn("<Video 1>", result["prompt"])
+        plan = validate_analysis(roles, data)
+        self.assertEqual(validate_output(APPLE_PROMPT.replace("<Subject 1>", "<subject 1>")
+                                         .replace("<Picture 1>", "<picture 1>"), data, plan), APPLE_PROMPT)
+        with self.assertRaisesRegex(ValueError, "Video 1 was introduced"):
+            validate_output(bad.replace("Mike the apple comes", "<Video 1> comes"), data, plan)
+
+    def test_scaffold_uses_actual_video_source_without_enabling_audio(self):
+        data = dance_input()
+        plan = validate_analysis(DANCE_PLAN, data)
+        bad = REF.replace(REF.split("subject_definitions:\n", 1)[1].split("\n\nsummary:", 1)[0],
+                          "Use the person image for appearance and the video for dance movement.")
+        result = validate_output(bad, data, plan)
+        self.assertIn("<Subject 2> is the requested dance, motion subject from <Video 1>", result)
+        self.assertNotIn("<Audio 1>", result)
+
     def test_generation_acceptance_and_bounded_repair_keep_one_model_session(self):
         backend = ScriptedBackend(DANCE_PLAN, REF.replace("summary:", "overview:"), REF)
         with patch("goated_prompter.minimax.create_backend", return_value=backend):
@@ -243,10 +424,18 @@ class MiniMaxContractTests(unittest.TestCase):
         self.assertIn("VALIDATION CORRECTION", backend.calls[-1].user_message)
         self.assertTrue(all(call.image is None and call.image_2 is None for call in backend.calls))
         self.assertTrue(all(call.unlimited_tokens and call.max_tokens is None for call in backend.calls))
-        backend = ScriptedBackend("wrong", "still wrong")
-        with patch("goated_prompter.minimax.create_backend", return_value=backend), self.assertRaises(BackendGenerationError):
+        backend = ScriptedBackend(*(["wrong"] * 3))
+        with patch("goated_prompter.minimax.create_backend", return_value=backend), self.assertRaisesRegex(BackendGenerationError, "after 2 repair attempts"):
             MiniMaxService({"backend": "mock"}, lambda: None).run(GoatedPrompterRequest(idea="A leaf falls"), {"user_request": "A leaf falls"}, lambda _: None)
-        self.assertEqual(len(backend.calls), 2)
+        self.assertEqual(len(backend.calls), 3)
+        backend = ScriptedBackend("invalid plan", DANCE_PLAN, "bad prompt", "still bad")
+        progress = []
+        with patch("goated_prompter.minimax.create_backend", return_value=backend), self.assertRaisesRegex(BackendGenerationError, "after 2 repair attempts"):
+            MiniMaxService({"backend": "mock"}, lambda: None).run(
+                GoatedPrompterRequest(idea=REQUEST), dance_input(), progress.append)
+        self.assertEqual(len(backend.calls), 4)
+        self.assertTrue(any("retry 1/2" in update for update in progress))
+        self.assertTrue(any("retry 2/2" in update for update in progress))
 
 
 class MiniMaxEndpointTests(unittest.IsolatedAsyncioTestCase):
