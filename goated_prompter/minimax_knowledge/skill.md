@@ -24,6 +24,6 @@ Ref2VA rewrites use subject_definitions, summary, retention_analysis, detailed_d
 
 ## Tips for Better Results
 - Always match the total duration of the description to the requested video length (4–15 seconds).
-- Keep reference labels consistent (e.g. <Picture 1>, <Video 1>, <Audio 1>) across every section.
+- Keep only the actually supplied reference labels consistent across every section; never add a source label merely because the guide lists that modality.
 - Prefer concrete visual and audio details over abstract words like "cinematic" or "beautiful".
 - When using keyframes (I2VA / FL2VA / L2VA), clearly state how the first and/or last frame connects to the timeline.
