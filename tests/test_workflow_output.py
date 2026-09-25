@@ -7,7 +7,7 @@ from unittest.mock import patch
 from goated_prompter.backends.base import BackendGenerationError, GoatedPrompterBackend
 from goated_prompter.core import GoatedPrompterRequest
 from goated_prompter.prompt_catalog import TARGET_MODEL_NAMES
-from goated_prompter.prompt_workflows import PromptWorkflowService
+from goated_prompter.prompt_workflows import PromptWorkflowService, workflow_instruction
 from goated_prompter.workflow_output import WorkflowFormatError, normalize_workflow_output
 
 
@@ -19,7 +19,7 @@ CAPTION = {
 
 
 class OutputFormatTests(unittest.TestCase):
-    def test_every_non_ideogram_target_unwraps_prompt_without_changing_text(self):
+    def test_every_plain_text_target_unwraps_prompt_without_changing_text(self):
         prompt = 'mira, red_hair, blue_jacket\nMira waits beside a sign reading "OPEN" in the sunlit plaza.'
         for target in TARGET_MODEL_NAMES:
             if target == "Ideogram4":
@@ -35,6 +35,37 @@ class OutputFormatTests(unittest.TestCase):
         for invalid in ("A sunlit plaza", '{"prompt":"A sunlit plaza"}', '{"high_level_description":"Incomplete"}'):
             with self.subTest(invalid=invalid), self.assertRaises(WorkflowFormatError):
                 normalize_workflow_output(invalid, "Ideogram4")
+
+    def test_qwen21_extracts_legacy_prompt_and_rejects_unusable_wrappers(self):
+        payload = {
+            "rewritten_prompt": "A warm editorial photograph of a red bicycle beside a brick wall.",
+            "wh_ratio": "3:2",
+            "ratio_follow": "",
+        }
+        raw = json.dumps(payload)
+        self.assertEqual(normalize_workflow_output(raw, "Qwen2.1"), payload["rewritten_prompt"])
+        self.assertEqual(normalize_workflow_output("```json\n" + raw + "\n```", "Qwen2.1"), payload["rewritten_prompt"])
+        for invalid in ('{"rewritten_prompt":', '{"rewritten_prompt":[]}', '{"rewritten_prompt":""}',
+                        '{"rewritten_prompt":"A bicycle", "unrelated_details":"Must not be silently lost"}'):
+            with self.subTest(invalid=invalid), self.assertRaises(WorkflowFormatError):
+                normalize_workflow_output(invalid, "Qwen2.1")
+
+    def test_qwen21_plain_output_preserves_paragraphs_unicode_and_quotes(self):
+        payload = {"rewritten_prompt": 'A poster with a header reading "你好".\n\nBelow it, a red bicycle fills the lower panel.', "wh_ratio": "2:3"}
+        raw = json.dumps(payload, ensure_ascii=False)
+        self.assertEqual(normalize_workflow_output(raw, "Qwen2.1"), payload["rewritten_prompt"])
+        pretty = json.dumps(payload, indent=2, ensure_ascii=False)
+        normalized = normalize_workflow_output(pretty, "Qwen2.1")
+        self.assertEqual(normalized, payload["rewritten_prompt"])
+        legacy = json.dumps({**payload, "ratio_follow": ""}, ensure_ascii=False)
+        self.assertEqual(normalize_workflow_output(legacy, "Qwen2.1"), payload["rewritten_prompt"])
+
+    def test_qwen21_does_not_require_ratio_metadata_to_deliver_prompt_text(self):
+        prompt = '将图中标题替换为"夏日特惠"，保留其余内容不变。'
+        for metadata in ({}, {"wh_ratio": "3:2"}, {"wh_ratio": "", "ratio_follow": ""},
+                         {"wh_ratio": "", "ratio_follow": "<image2>"}, {"wh_ratio": "Auto"}):
+            raw = json.dumps({"rewritten_prompt": prompt, **metadata}, ensure_ascii=False)
+            self.assertEqual(normalize_workflow_output(raw, "Qwen2.1"), prompt)
 
     def test_broken_or_complex_json_is_not_flattened_or_silently_saved(self):
         invalid = ('{"prompt": "A surreal anime still', '{"prompt":"Mira", "lighting":"Daylight"}',
@@ -124,6 +155,28 @@ class FormatRepairTests(unittest.TestCase):
         self.assertEqual(len(backend.calls), 3)
         for direction in result["directions"]:
             self.assertEqual(json.loads(direction["prompt"]), CAPTION)
+
+    def test_qwen21_all_three_directions_return_only_prompt_text(self):
+        payload = {"rewritten_prompt": "An anime illustration of Mira in a sunlit plaza.", "wh_ratio": "3:2"}
+        raw = json.dumps(payload)
+        backend = ScriptedBackend([raw, payload["rewritten_prompt"], raw])
+        result = self.run_workflow(backend, target="Qwen2.1")
+        self.assertEqual(len(backend.calls), 3)
+        for direction in result["directions"]:
+            self.assertEqual(direction["prompt"], payload["rewritten_prompt"])
+        self.assertTrue(all('Return only the complete plain prompt text' in instruction.system_message for instruction in backend.calls))
+        self.assertTrue(all(instruction.unlimited_tokens and instruction.max_tokens is None for instruction in backend.calls))
+        self.assertNotIn('"rewritten_prompt":', backend.calls[-1].user_message)
+
+    def test_qwen21_refine_and_explore_are_uncapped_for_every_length(self):
+        for length in ("Short", "Medium", "Detailed", "Maximum Detail"):
+            for operation in ("refine", "explore"):
+                with self.subTest(length=length, operation=operation):
+                    request = GoatedPrompterRequest(idea="A bicycle", target_model="Qwen2.1", prompt_length=length)
+                    instruction = workflow_instruction(request, operation, "A bicycle", "Red paint", [],
+                                                       direction="faithful" if operation == "explore" else None)
+                    self.assertTrue(instruction.unlimited_tokens)
+                    self.assertIsNone(instruction.max_tokens)
 
 
 if __name__ == "__main__":

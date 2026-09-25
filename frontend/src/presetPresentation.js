@@ -27,6 +27,7 @@ const builtinTitles = new Map([
   ["dataset_caption_director", "Dataset & LoRA Caption"],
   ["video_director", "Video Action & Camera Movement"],
   ["minimax_h3_director", "MiniMax H3 Video Shot"],
+  ["minimax_director", "MiniMax Director"],
 ]);
 const builtinOrder = new Map(
   [...builtinTitles.keys()].map((id, index) => [id, index]),

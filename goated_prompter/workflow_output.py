@@ -8,12 +8,38 @@ class WorkflowFormatError(ValueError):
     """The model's output needs a format-correction pass before it can be saved."""
 
 
-def output_contract(target):
+def sanitize_prompt_text(value):
+    """Remove prompt punctuation and renderer metadata the UI does not want copied."""
+    text = str(value or "")
+    text = re.sub(
+        r"(?i)(?:^|[,\n]\s*)\b(?:aspect\s*ratio|resolution|output\s*canvas|canvas\s*size|wh_ratio|ratio_follow)\b\s*[:=\-]?\s*(?:\d{1,5}\s*[x×:]\s*\d{1,5}|\d{1,4}\s*:\s*\d{1,4}|auto)\b\. ?",
+        lambda match: "\n" if match.group(0).startswith("\n") else "",
+        text,
+    )
+    text = text.replace(";", ",").replace("(", "").replace(")", "")
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    text = re.sub(r"\s+([,.!?])", r"\1", text)
+    text = re.sub(r",\s*,+", ", ", text)
+    text = re.sub(r"^[ \t]+|[ \t]+$", "", text, flags=re.MULTILINE)
+    return text.strip()
+
+
+def output_contract(target, *, qwen_task="t2i", qwen_images=None):
     if target == "Ideogram4":
         return (
             "OUTPUT FORMAT — Ideogram4: Return exactly one valid JSON caption using the target adapter's "
             "high_level_description, style_description and compositional_deconstruction schema. "
             "No prompt wrapper, markdown fences, direction label or commentary."
+        )
+    if target == "Qwen2.1":
+        return (
+            "OUTPUT FORMAT — Qwen2.1 " + ("IMAGE EDITING" if qwen_task == "edit" else "TEXT TO IMAGE") +
+            ": Return only the complete plain prompt text, ready to copy into the image model. "
+            "Do not output JSON, field names, Markdown fences or commentary. "
+            + ("Write an actionable image-editing directive. " if qwen_task == "edit" else
+               "Write an English observer's description of the finished image. ")
+            + ("Available source tags: " + ", ".join(qwen_images) + ". " if qwen_images else "")
+            + "Apply the selected length as writing guidance, not a token cutoff."
         )
     return (
         f"OUTPUT FORMAT — {target}: Return only the complete prompt text in the target adapter's writing style. "
@@ -70,8 +96,14 @@ def normalize_workflow_output(raw, target):
         if target == "Ideogram4":
             if not _ideogram_caption(decoded):
                 raise WorkflowFormatError("Ideogram4 output is missing the required caption fields or has invalid field types.")
-            return value
-        if isinstance(decoded, str):
+            return sanitize_prompt_text(value)
+        if (target == "Qwen2.1" and isinstance(decoded, dict) and "rewritten_prompt" in decoded
+                and set(decoded) <= {"rewritten_prompt", "wh_ratio", "ratio_follow"}
+                and isinstance(decoded["rewritten_prompt"], str)):
+            # Older models/saved sources may still use Qwen's rewrite envelope.
+            # Only its prompt text is requested here; ratio metadata is optional.
+            value = _unfence(decoded["rewritten_prompt"].strip())
+        elif isinstance(decoded, str):
             value = _unfence(decoded.strip())
         elif isinstance(decoded, dict) and set(decoded) == {"prompt"} and isinstance(decoded["prompt"], str):
             value = _unfence(decoded["prompt"].strip())

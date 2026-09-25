@@ -3,8 +3,8 @@ import { orderDisplayPresets, presetDisplayLabel } from "./presetPresentation.js
 import { ui } from "./ui.js";
 import { api } from "./api.js";
 import CreativeWorkspace from "./workflows/CreativeWorkspace.jsx";
-import ResolutionControl from "./ResolutionControl.jsx";
-import { defaultResolution, resolutionError } from "./resolution.js";
+import MiniMaxTab from "./workflows/MiniMaxTab.jsx";
+import { defaultResolution } from "./resolution.js";
 import {
   ArrowLeft,
   ArrowUpRight,
@@ -13,6 +13,7 @@ import {
   ChevronDown,
   Copy,
   FileText,
+  Film,
   ImagePlus,
   Layers3,
   LoaderCircle,
@@ -218,7 +219,6 @@ function App() {
     profiles.find((item) => item.id === bootstrap?.settings.selected_profile) ||
     profiles[0];
   const noEngine = !configuredBackend && !selectedProfile;
-  const invalidResolution = !!resolutionError(settings.resolution, bootstrap?.resolutions);
   const attributes = [
     ...(bootstrap?.reference_attributes ||
       referenceAttributes.map((key) => ({
@@ -688,7 +688,7 @@ function App() {
       uploading ||
       actionBusy ||
       settingsBusy ||
-      noEngine || invalidResolution
+      noEngine
     )
       return;
     submissionRef.current = true;
@@ -963,6 +963,10 @@ function App() {
             onClick={() => navigate("explore")} disabled={!bootstrap}>
             <Layers3 size={19} />Explore
           </button>
+          <button className={ui.navItem} data-active={view === "minimax"}
+            onClick={() => navigate("minimax")} disabled={!bootstrap}>
+            <Film size={19} />MiniMax H3
+          </button>
           <button
             className={ui.navItem}
             data-active={view === "saved"}
@@ -1119,14 +1123,18 @@ function App() {
                 navigate("builder");
               }} />
           )}
-          {active && view !== "builder" && view !== "refine" && view !== "explore" && (
+          {bootstrap && <MiniMaxTab visible={view === "minimax"} job={job}
+            busy={busy || actionBusy || settingsBusy || !!uploading} active={active} noEngine={noEngine}
+            engineLabel={configuredBackend ? `Configured backend (${bootstrap.backend})` : selectedProfile?.label}
+            presets={bootstrap.presets.presets} onGenerate={startWorkflow} onCancel={endGeneration} onCopy={copy} />}
+          {active && view !== "builder" && view !== "refine" && view !== "explore" && view !== "minimax" && (
             <div className={`${ui.panel} mb-5 flex flex-wrap items-center justify-between gap-3`} role="status">
               <span>{job.progress || "Generating prompt…"}</span>
               <button className={ui.button} onClick={endGeneration} disabled={actionBusy || job.status === "cancelling"}>End generation</button>
             </div>
           )}
 
-          {view === "refine" || view === "explore" ? null : view === "saved" ? (
+          {view === "refine" || view === "explore" || view === "minimax" ? null : view === "saved" ? (
             <>
               <div className={ui.pageHeading}>
                 <div>
@@ -1615,9 +1623,6 @@ function App() {
                         </button>
                       </div>
                       {field("target_model", "Target model")}
-                      <ResolutionControl value={settings.resolution} onChange={(value) => update("resolution", value)} catalog={bootstrap.resolutions} disabled={busy} prefix="Builder" />
-
-
                       <div className={`${ui.fields} ${ui.threeFields} mt-5`}>
                         {field("creativity", "Creativity")}
                         {field(
@@ -1727,8 +1732,7 @@ function App() {
                           className={ui.saveButton}
                           disabled={
                              !prompt.trim() ||
-                             invalidResolution ||
-                            !storageReady ||
+                             !storageReady ||
                             promptsBusy ||
                             dialogBusy
                           }
@@ -1917,7 +1921,7 @@ function App() {
                     !!uploading ||
                     actionBusy ||
                     settingsBusy ||
-                    noEngine || invalidResolution
+                    noEngine
                   }
                   onClick={() => generate(false)}
                 >
@@ -1975,7 +1979,7 @@ function App() {
                     !!uploading ||
                     actionBusy ||
                     settingsBusy ||
-                    noEngine || invalidResolution ||
+                    noEngine ||
                     !settings.idea.trim()
                   }
                   onClick={() => generate(true)}

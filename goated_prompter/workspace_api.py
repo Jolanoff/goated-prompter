@@ -10,9 +10,38 @@ from .prompt_catalog import PROMPT_LENGTH_NAMES, TARGET_MODEL_NAMES
 from .prompt_workflows import PromptWorkflowService
 from .workspace_store import WorkspaceConflict, locks, now, text
 from .resolution import normalize_resolution
+from .minimax import MiniMaxService, validate_minimax_draft
 
 
 def register_workspace_routes(app, state_key, job_factory, json_object):
+    async def minimax_endpoint(request):
+        state = request.app[state_key]
+        payload = await json_object(request)
+        if set(payload) - {"input", "settings"}:
+            raise ValueError("Expected MiniMax input and prompt-engine settings.")
+        data = validate_minimax_draft(payload.get("input"), generation=True)
+        settings = payload.get("settings", {})
+        if not isinstance(settings, dict) or set(settings) - {"director_profile"}:
+            raise ValueError("Invalid MiniMax prompt-engine settings.")
+        async with state.admission:
+            active = state.active_job()
+            if active:
+                return web.json_response({"error": "Wait for the active generation before generating again.", "active_job": active}, status=409)
+            config = state.config()
+            configured = config.get("backend") in {"mock", "openai_compatible"}
+            director_request = GoatedPrompterRequest(
+                idea=data["user_request"], prompt_model="Custom",
+                director_profile="" if configured else text(settings.get("director_profile", state.saved_settings.get("selected_profile", "")), "Prompt engine", 512, optional=True),
+                director_keep_model_loaded=_as_bool(config.get("local_llama_cpp", {}).get("keep_model_loaded", False)),
+            )
+            job = job_factory()
+            job.kind = "minimax"
+            state.jobs[job.id] = job
+            task = asyncio.create_task(state.run(job, director_request, config, True, {"operation": "minimax", "input": data}))
+            state.tasks.add(task)
+            task.add_done_callback(state.tasks.discard)
+            return web.json_response(job.snapshot(), status=202)
+
     async def endpoint(request):
         state = request.app[state_key]
         store = state.workspace
@@ -53,14 +82,14 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
                 workflow = {"operation": operation, "locks": locks(payload.get("locks", []))}
                 saved_workflow = await asyncio.to_thread(state.workflow_settings.snapshot, operation)
                 workflow["instructions"] = saved_workflow["instructions"]
-                resolution = normalize_resolution(settings.get("resolution", saved_workflow["draft"].get("resolution")))
+                resolution = normalize_resolution()
                 if operation == "refine":
                     version = next((item for item in current["versions"] if item["id"] == current["current_id"]), None)
                     if version is None:
                         raise ValueError("Add a starting prompt before refining.")
                     workflow.update(base=version["prompt"], parent_id=version["id"], changes=text(payload.get("changes"), "Requested changes", 10000))
                     target = version["target"]
-                    resolution = normalize_resolution(version.get("resolution"))
+                    resolution = normalize_resolution()
                 else:
                     if len(current["comparisons"]) >= 100:
                         raise ValueError("Remove an older comparison before exploring again (100 comparison limit).")
@@ -111,8 +140,9 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
         except WorkspaceConflict as exc:
             return web.json_response({"error": str(exc)}, status=409)
 
-    app.add_routes([web.get("/api/workspace/settings/{operation:refine|explore}", settings_endpoint),
-                    web.put("/api/workspace/settings/{operation:refine|explore}", settings_endpoint),
+    app.add_routes([web.post("/api/workspace/minimax", minimax_endpoint),
+                    web.get("/api/workspace/settings/{operation:refine|explore|minimax}", settings_endpoint),
+                    web.put("/api/workspace/settings/{operation:refine|explore|minimax}", settings_endpoint),
                     web.post("/api/workspace/settings/{operation:refine|explore}/instructions", settings_endpoint),
                     web.get("/api/workspace", endpoint), web.post("/api/workspace", endpoint),
                     web.post("/api/workspace/{operation:refine|explore}", endpoint)])
@@ -134,6 +164,11 @@ def execute_workflow(state, job, request, config, workflow):
 
     def save_direction(direction, prompt):
         job.commit(lambda: persist(prompt, lambda: state.workspace.save_direction(workflow["batch"], direction, prompt)))
+
+    if workflow["operation"] == "minimax":
+        result = MiniMaxService(config, job.checkpoint).run(request, workflow["input"], progress)
+        job.commit(lambda: result, finish=True)
+        return
 
     service = PromptWorkflowService(config, job.checkpoint)
     result = service.run(request, workflow, progress, save_direction)

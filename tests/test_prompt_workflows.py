@@ -241,7 +241,8 @@ class WorkflowInstructionTests(unittest.TestCase):
         self.assertIn("Do not output a JSON object", instruction.system_message)
         self.assertEqual(len(instruction.to_messages()), 1)
         self.assertEqual(instruction.to_messages()[0]["role"], "user")
-        self.assertLess(instruction.max_tokens, 3072)
+        self.assertIsNone(instruction.max_tokens)
+        self.assertTrue(instruction.unlimited_tokens)
 
     def test_exploration_bounds_previous_output_context_without_changing_saved_results(self):
         previous = [{"direction": "faithful", "prompt": "a" * 10000}]

@@ -23,6 +23,9 @@ WRITING_STYLE = (
 
 
 def builtin_workflow_instructions(operation):
+    if operation == "minimax":
+        # Official rules are package resources; creative customization uses Directors.
+        return {}
     if operation == "refine":
         return {"system": "Refine the supplied source prompt with the minimum changes needed to satisfy REQUESTED CHANGES. "
                 "Preserve all unrelated details and the original intent. Shortening may compress wording without changing locked facts.\n\n" + WRITING_STYLE}

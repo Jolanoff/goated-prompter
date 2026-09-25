@@ -66,9 +66,15 @@ def _chat_completions_url(base_url):
     return f"{value}/chat/completions"
 
 
-def _response_text(payload):
+def _response_text(payload, *, unlimited_tokens=False):
     try:
         if payload["choices"][0].get("finish_reason") == "length":
+            if unlimited_tokens:
+                raise BackendGenerationError(
+                    "The prompt engine stopped at its context or server output limit. This request had no "
+                    "application token cap. Increase the engine's context size or server output allowance, "
+                    "or shorten the input, then retry. The incomplete prompt was not accepted."
+                )
             raise BackendGenerationError(
                 "Generation was truncated at the token limit. Increase max_tokens and context size, "
                 "shorten the input, or select a shorter prompt length, then retry."
@@ -106,6 +112,8 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
         api_key_env = str(settings.get("api_key_env") or "GOATED_PROMPTER_API_KEY").strip()
         self.api_key = str(settings.get("api_key") or os.environ.get(api_key_env, "")).strip()
         self.runtime_diagnostics = dict(settings.get("_runtime_diagnostics") or {})
+        # Set by the owned llama.cpp adapter, not inferred from arbitrary URLs.
+        self.is_llama_cpp = settings.get("_is_llama_cpp") is True
 
         try:
             self.temperature = max(0.0, min(2.0, float(settings.get("temperature", 0.5))))
@@ -126,7 +134,16 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
             "max_tokens": self.max_tokens,
         }
         override = getattr(instruction, "max_tokens", None)
-        if isinstance(override, int) and override > 0:
+        unlimited = getattr(instruction, "unlimited_tokens", False)
+        if unlimited:
+            # llama.cpp explicitly supports -1 (generate until EOS). Generic
+            # OpenAI-compatible APIs instead use their own default when omitted;
+            # sending a negative token count to those providers is not portable.
+            if self.is_llama_cpp:
+                payload["max_tokens"] = -1
+            else:
+                payload.pop("max_tokens")
+        elif isinstance(override, int) and override > 0:
             budget = max(self.max_tokens, override)
             if self.context_size:
                 # No model tokenizer is available: this is a coarse text estimate
@@ -185,6 +202,6 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
             response_payload = json.loads(body)
         except json.JSONDecodeError as exc:
             raise BackendGenerationError("OpenAI-compatible backend returned invalid JSON.") from exc
-        result = _response_text(response_payload)
+        result = _response_text(response_payload, unlimited_tokens=unlimited)
         log_response(instruction, result)
         return result
