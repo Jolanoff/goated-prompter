@@ -19,6 +19,8 @@ LIMITS = {"image": 9, "video": 3, "audio": 3}
 REPAIR_ATTEMPTS = 2
 TOKEN = re.compile(r"<(image|video|audio)(\d+)>", re.I)
 SHOT_TAG = re.compile(r"\[Shot\s*(\d+)\]", re.I)
+SHOT_INPUT = re.compile(r"<shot(\d+)>", re.I)
+SHOT_RANGE = re.compile(r"^\s*(\d{1,2}(?:\.\d{1,3})?)\s*[-–—]\s*(\d{1,2}(?:\.\d{1,3})?)\s*s\b", re.I)
 BASE_SECTIONS = ("integrated_multimodal_description", "overall_soundscape", "non_diegetic_music")
 REF_SECTIONS = ("subject_definitions", "summary", "retention_analysis", "detailed_description", "overall_soundscape", "non_diegetic_music")
 VISUAL_ROLES = {"identity", "appearance", "character", "object", "product", "environment", "style", "first frame",
@@ -48,6 +50,48 @@ def parse_reference_tokens(text):
     return list(dict.fromkeys(reference_name(match[0]) for match in TOKEN.finditer(text)))
 
 
+def parse_shot_outline(text, duration):
+    """Resolve optional user shot markers to contiguous millisecond boundaries."""
+    if any(not SHOT_INPUT.fullmatch(match[0]) for match in re.finditer(r"<shot[^>]*>", text, re.I)):
+        raise ValueError("Shot shortcuts use <shot1>, <shot2>, and so on.")
+    matches = list(SHOT_INPUT.finditer(text))
+    if not matches:
+        return []
+    if [match[1] for match in matches] != [str(i) for i in range(1, len(matches) + 1)]:
+        raise ValueError("Shot shortcuts must appear once each in order: <shot1>, <shot2>, and so on.")
+    boundaries = [None] * (len(matches) + 1)
+    boundaries[0], boundaries[-1] = 0, duration * 1000
+    descriptions = []
+
+    def set_boundary(index, millis):
+        if boundaries[index] is not None and boundaries[index] != millis:
+            raise ValueError("Shot time ranges must meet without gaps or overlaps and match Clip Length.")
+        boundaries[index] = millis
+
+    for i, match in enumerate(matches):
+        content = text[match.end():matches[i + 1].start() if i + 1 < len(matches) else len(text)].strip()
+        timing = SHOT_RANGE.match(content)
+        if timing:
+            for boundary, value in ((i, timing[1]), (i + 1, timing[2])):
+                whole, _, fraction = value.partition(".")
+                set_boundary(boundary, int(whole) * 1000 + int(fraction.ljust(3, "0") or "0"))
+            content = content[timing.end():].lstrip(" ,:-\n\t")
+        elif re.match(r"^\s*\d+(?:\.\d+)?\s*[-–—]\s*\d+", content):
+            raise ValueError(f"Use a shot time range like <shot{i + 1}> 0-3s (seconds, up to three decimals).")
+        if not content:
+            raise ValueError(f"Describe the action in <shot{i + 1}> before generating.")
+        descriptions.append(content)
+    known = [i for i, value in enumerate(boundaries) if value is not None]
+    for left, right in zip(known, known[1:]):
+        start, end = boundaries[left], boundaries[right]
+        if end - start < right - left:
+            raise ValueError("Every shot needs time within Clip Length; adjust the shot ranges or clip length.")
+        for i in range(left + 1, right):
+            boundaries[i] = start + (end - start) * (i - left) // (right - left)
+    return [{"number": i + 1, "start_ms": boundaries[i], "end_ms": boundaries[i + 1], "description": description}
+            for i, description in enumerate(descriptions)]
+
+
 def validate_minimax_draft(value, *, generation=False):
     defaults = default_minimax_draft()
     if not isinstance(value, dict) or value.keys() - defaults.keys():
@@ -73,6 +117,7 @@ def validate_minimax_draft(value, *, generation=False):
             raise ValueError("Register the symbolic references used in your request: " + ", ".join(sorted(missing)))
         result["references"] = [ref for ref in result["references"] if ref in used]
         result["user_request"] = TOKEN.sub(lambda m: f"<{reference_name(m[0])}>", result["user_request"])
+        parse_shot_outline(result["user_request"], result["duration_seconds"])
         get_director_preset(result["director_preset"], strict=True)
         refs, mode = result["references"], result["mode"]
         images = [ref for ref in refs if ref.startswith("image")]
@@ -135,6 +180,7 @@ def analysis_instruction(data, family):
         "Determine relationships from the request, including negations and multiple subjects. Do not guess media contents. "
         "For an unspecified reference role use style with weak guidance, not identity or a frame assumption. "
         "Only assign first/last frame roles to explicit concrete frame anchors; opening with a person is not anchoring an image. "
+        "User <shotN> markers organize the target timeline; they are NOT source media or image first/last-frame anchors. "
         "When a frame mode is explicitly selected it establishes those frame roles; use user-specified ordering, otherwise numeric image order. "
         "All additional identity/motion/style/audio roles require full reference mode in Auto. "
         "Assign audio roles to a VIDEO only when the user explicitly requests its audio track; dance rhythm is visual timing, not an enabled soundtrack. "
@@ -257,6 +303,9 @@ def generation_instruction(data, plan, director, family):
     mode = plan["mode"]
     context = {key: data[key] for key in ("model", "duration_seconds", "mode", "references")}
     context.update(resolved_mode=mode, reference_analysis=plan)
+    shot_outline = parse_shot_outline(data["user_request"], data["duration_seconds"])
+    if shot_outline:
+        context["shot_outline"] = shot_outline
     spoken_lines = requested_spoken_lines(data["user_request"])
     if spoken_lines:
         context["spoken_lines"] = spoken_lines
@@ -276,6 +325,9 @@ def generation_instruction(data, plan, director, family):
         "Expand only with user-supported details; never replace these sections with unnumbered prose. "
         "For each spoken_lines entry, include its exact words inside a balanced <d>[Language] words</d> block in the timeline, "
         "with the named speaker and a stable (S1), (S2) ID. Infer the language when not specified; never paraphrase the spoken words. "
+        "If shot_outline is present, preserve its exact number of shots, their order and described actions. "
+        "Shot shortcut tokens are instructions, not media references: output [Shot 1] without a timestamp, "
+        "then numbered shot headings At MM:SS.mmm, at each supplied start_ms boundary. Never print symbolic shot tokens in the final output. "
         "The video_audio_tracks map, when nonempty, enables ONLY explicitly requested audio from existing videos. "
         "Define each mapped Audio label as that video's synchronized track, with explicit provenance; it is not a new file. "
         "No other unregistered Audio label is permitted. Generated music, ambience, dialogue and sound design are NOT Audio references; "
@@ -301,6 +353,9 @@ def requested_spoken_lines(text):
     lines = []
     cue = r"(?:says?|said|speaks?|whispers?|shouts?|sings?)"
     for line in text.splitlines():
+        if re.match(r"\s*<shot\d+>", line, re.I):
+            line = re.sub(r"^\s*<shot\d+>\s*", "", line, count=1, flags=re.I)
+            line = SHOT_RANGE.sub("", line, count=1)
         match = re.match(rf"\s*(?P<speaker>[^:\n<>]{{1,80}}?)\s+{cue}\s*:\s*(?P<words>.+?)\s*$", line, re.I)
         if not match:
             match = re.match(rf'''\s*(?P<speaker>[^:\n<>]{{1,80}}?)\s+{cue}\s+(?:["“](?P<words>.+?)["”]|['‘](?P<single>.+?)['’])\s*$''', line, re.I)
@@ -373,6 +428,7 @@ def normalize_spoken_lines(parts, data, plan):
                 timeline = timeline[:cue_start] + f"(S{speaker_ids[line['speaker'].casefold()]}) " + timeline[cue_start:]
         else:
             timeline = timeline[:block.start()] + f"{line['speaker']} (S{speaker_ids[line['speaker'].casefold()]}) says: " + timeline[block.start():]
+    timeline = re.sub(r"\b(says?|said|speaks?|whispers?|shouts?|sings?)\s+:\s*(?=<d>)", r"\1: ", timeline, flags=re.I)
     parts[key] = timeline
     for section in parts:
         if section != key and ("<d>" in parts[section] or "</d>" in parts[section]):
@@ -394,10 +450,13 @@ def shot_headings(timeline):
 
 def normalize_shots(timeline, data, plan):
     """Format model shot headings without fabricating cuts or cut times."""
+    outline = parse_shot_outline(data["user_request"], data["duration_seconds"])
     timeline = re.sub(r"(?im)^[ \t]*(?:[-*][ \t]*)?Shot\s*(\d+)[ \t]*[:.)\-–—][ \t]*",
                       lambda match: f"[Shot {int(match[1])}] ", timeline)
     timeline = re.sub(r"(?im)^[ \t]*[-*][ \t]*(?=\[Shot\s*\d+\])", "", timeline)
     headings = shot_headings(timeline)
+    if outline:
+        return normalize_outlined_shots(timeline, headings, outline, plan, data["user_request"])
     if not headings:
         style = re.match(r"((?:The target video|This video|The clip)[^.!?\n]*[.!?])\s*", timeline, re.I)
         if style:
@@ -430,6 +489,40 @@ def normalize_shots(timeline, data, plan):
     return output
 
 
+def normalize_outlined_shots(timeline, headings, outline, plan, request):
+    """Make user-authored shot boundaries authoritative, retaining model prose when usable."""
+    scene = timeline[:headings[0].start()].strip() if headings else ""
+    if not scene:
+        style = re.match(r"((?:The target video|This video|The clip)[^.!?\n]*[.!?])\s*", timeline, re.I)
+        if style:
+            scene = style[1]
+    if not scene:
+        introduction = request[:SHOT_INPUT.search(request).start()]
+        style = next((line.strip().rstrip(".") for line in introduction.splitlines()
+                      if line.strip() and not TOKEN.search(line)), "the requested visual style and reference roles")
+        scene = f"The target video follows {style}."
+    bodies = []
+    if len(headings) == len(outline):
+        for i, heading in enumerate(headings):
+            body = timeline[heading.end():headings[i + 1].start() if i + 1 < len(headings) else len(timeline)]
+            body = re.sub(r"^\s*(?:At\s+)?\d{1,2}:\d{2}(?:\.\d{1,3})?\s*[,;:\-]?\s*", "", body, count=1, flags=re.I).strip()
+            body = SHOT_RANGE.sub("", body, count=1).strip()
+            bodies.append(body)
+        numbers = [int(heading[1]) for heading in headings]
+        if set(numbers) == set(range(1, len(outline) + 1)) and len(set(numbers)) == len(outline):
+            bodies = [bodies[numbers.index(i)] for i in range(1, len(outline) + 1)]
+    if len(bodies) != len(outline) or any(not body for body in bodies):
+        bodies = [shot["description"] for shot in outline]
+        for token, label in plan["label_map"].items():
+            bodies = [re.sub(re.escape(f"<{token}>"), f"<{label}>", body, flags=re.I) for body in bodies]
+    sections = [scene] if plan["mode"] == "Ref2VA" else []
+    for i, (shot, body) in enumerate(zip(outline, bodies)):
+        start = shot["start_ms"]
+        heading = "[Shot 1]" if i == 0 else f"[Shot {i + 1}] At {start // 60000:02d}:{start // 1000 % 60:02d}.{start % 1000:03d},"
+        sections.append(f"{heading} {scene} {body}" if i == 0 and plan["mode"] != "Ref2VA" else f"{heading} {body}")
+    return "\n".join(sections)
+
+
 def validate_output(raw, data, plan):
     if not isinstance(raw, str) or not raw.strip():
         raise ValueError("MiniMax returned an empty prompt.")
@@ -437,6 +530,9 @@ def validate_output(raw, data, plan):
     allowed = set(plan["label_map"].values()) | set(plan["video_audio_tracks"])
     prompt = re.sub(r"<(subject|picture|video|audio) ([1-9]\d*)>",
                     lambda match: f"<{match[1].title()} {match[2]}>", prompt, flags=re.I)
+    if re.search(r"<shot[^>]*>", prompt, re.I) and not SHOT_INPUT.search(prompt):
+        raise ValueError("Remove unresolved symbolic shot tokens from the MiniMax output.")
+    prompt = SHOT_INPUT.sub(lambda match: f"[Shot {int(match[1])}]", prompt)
     prompt = re.sub(r"(\[Shot 1\])\s+(?:At\s+)?\d{1,2}:\d{2}(?:\.\d{1,3})?\s*[,\-:;]?\s*", r"\1 ", prompt)
     prompt = re.sub(r"(?<!<)\bVideo\s+([1-9]\d*)\b(?!>)",
                     lambda match: match[0] if f"Video {match[1]}" in allowed else "target video", prompt, flags=re.I)
@@ -466,13 +562,14 @@ def validate_output(raw, data, plan):
             parts["subject_definitions"] = definitions
             parts["retention_analysis"] = retention
             prompt = prompt[:headers[0].start()] + "\n\n".join(f"{section}:\n{parts[section]}" for section in sections)
-    if normalize_spoken_lines(parts, data, plan):
-        prompt = prompt[:headers[0].start()] + "\n\n".join(f"{section}:\n{parts[section]}" for section in sections)
     timeline_key = "detailed_description" if plan["mode"] == "Ref2VA" else "integrated_multimodal_description"
     timeline = parts[timeline_key]
     normalized_timeline = normalize_shots(timeline, data, plan)
     if normalized_timeline != timeline:
         parts[timeline_key] = timeline = normalized_timeline
+        prompt = prompt[:headers[0].start()] + "\n\n".join(f"{section}:\n{parts[section]}" for section in sections)
+    if normalize_spoken_lines(parts, data, plan):
+        timeline = parts[timeline_key]
         prompt = prompt[:headers[0].start()] + "\n\n".join(f"{section}:\n{parts[section]}" for section in sections)
     shots = shot_headings(timeline)
     if not shots or [int(shot[1]) for shot in shots] != list(range(1, len(shots) + 1)):
@@ -495,7 +592,10 @@ def validate_output(raw, data, plan):
         if int(stamp[2]) >= 60 or seconds > data["duration_seconds"]:
             raise ValueError("A generated timestamp exceeds Clip Length or is malformed.")
     alignment = frame_instruction(plan["mode"], data["duration_seconds"], len(shots))
-    if prompt[:headers[0].start()] != (alignment + "\n\n" if alignment else ""):
+    if parse_shot_outline(data["user_request"], data["duration_seconds"]) and alignment:
+        prompt = alignment + "\n\n" + prompt[headers[0].start():]
+    first_header = re.search(r"(?m)^[a-z_]+:", prompt)
+    if prompt[:first_header.start()] != (alignment + "\n\n" if alignment else ""):
         raise ValueError("Use the exact frame-alignment instruction before the fields, or no preamble for T2VA/Ref2VA.")
     for label in re.findall(r"<(?:Subject|Picture|Video|Audio)[^>]*>", prompt, re.I):
         if not re.fullmatch(r"<(?:Subject|Picture|Video|Audio) [1-9]\d*>", label):

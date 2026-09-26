@@ -98,6 +98,21 @@ test("reference chips insert at the cursor, append, preserve numbering and enfor
   await expect(page.getByRole("button", { name: "Generate MiniMax prompt", exact: true })).toBeDisabled();
 });
 
+test("optional shot shortcuts insert in the prompt without registering media", async ({ page }) => {
+  await open(page);
+  const text = page.getByLabel("Describe your video");
+  await text.fill("cartoonish style");
+  await page.getByRole("button", { name: "+ Shot", exact: true }).click();
+  await expect(text).toHaveValue("cartoonish style\n<shot1> ");
+  await text.fill("<image1> is an apple\n<shot1> 0-3s apple walks");
+  await page.getByRole("button", { name: "+ Shot", exact: true }).click();
+  await expect(text).toHaveValue("<image1> is an apple\n<shot1> 0-3s apple walks\n<shot2> ");
+  await expect(page.getByLabel("Registered references").getByRole("button")).toHaveCount(1);
+  await text.fill("<shot2> apple walks");
+  await expect(page.getByText(/Shots must appear once each in order/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Generate MiniMax prompt", exact: true })).toBeDisabled();
+});
+
 test("autosave errors retain draft and retry; stale tabs cannot overwrite", async ({ page, request }) => {
   await open(page);
   await page.route("**/api/workspace/settings/minimax", (route) => route.request().method() === "PUT"
