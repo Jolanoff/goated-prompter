@@ -17,6 +17,7 @@ ComfyUI is **not required** to use the website. The app produces prompt text tha
 - **Refine tab:** targeted revisions, quick editing actions, detail locks, before/after highlighting, manual edits, and persistent undo/redo with branching version history.
 - **Explore tab:** compare Faithful, Creative, and Experimental directions, then send a favorite into Refine. Completed directions are saved even if a later direction fails or is cancelled.
 - **MiniMax H3 tab:** a dedicated prompt-writing workflow with 4–15-second clip timing, automatic reference-role analysis, official H3 output schemas, and shared Director presets.
+- **Dataset tab:** generate 1–25 trigger-prefixed prompts from user-led rules and guided inputs, with optional advanced coverage planning, automatic quality diagnostics, a model-assisted consistency review, and TXT/JSONL export.
 - **Persistent creative settings:** Refine and Explore autosave their inputs and controls, offer independent advanced instruction editors, and save results directly to Saved Prompts.
 - **Local inference through llama.cpp**, with an optional OpenAI-compatible endpoint.
 - **End generation** to cancel an active local llama.cpp job.
@@ -141,6 +142,8 @@ Open **`config/config.json`** and set `local_llama_cpp.llama_server` to your act
 
 Leave `"backend": "local_llama_cpp"` selected. If `config.json` is absent, copy `config/config.example.json` to `config/config.json` first. The example uses `llama-server` on PATH; an absolute path is usually easier on Windows. You do not need to hand-edit `model_path` or `mmproj_path` for an engine selected through the website.
 
+The shipped local defaults use `context_size: 32768` and `max_tokens: 4096`. Dataset generation remains EOS-driven (`max_tokens: -1`) and can use the larger context when needed. A 32K context consumes more RAM/VRAM than 8K; lower `context_size` if your hardware cannot load it. Restart the app (and unload any retained model) after changing runtime settings so llama.cpp starts with the new context.
+
 Start the app from the project folder:
 
 ```powershell
@@ -242,11 +245,25 @@ Completed versions, history selection/redo, and comparisons live in **`data/work
 
 ### Saved creative settings and advanced instructions
 
-**Refine settings** and **Explore settings** autosave separately to **`data/workflow_settings.json`**. Refine retains requested changes, locks, starting text/target and manual-edit drafts; Explore retains its source text, target, length, locks and comparison selection. Wait for the respective **Saved** indicator before closing or reloading. Failed writes keep the local draft and expose retry/reload actions; revision checks prevent a stale browser tab from replacing newer settings.
+Refine, Explore, MiniMax H3, and Dataset settings autosave separately to **`data/workflow_settings.json`**. Refine retains requested changes, locks, starting text/target and manual-edit drafts; Explore retains its source text, target, length, locks and comparison selection; MiniMax and Dataset retain their workflow-specific inputs and current results. Wait for the respective **Saved** indicator before closing or reloading. Failed writes keep the local draft and expose retry/reload actions; revision checks prevent a stale browser tab from replacing newer settings.
 
 Expand **Refine advanced settings** or **Explore advanced settings** to edit the built-in behavior. Refine has one system-prompt editor. Explore has separate editors for its system prompt and each of the three directions. **Save instructions** activates edits for subsequent generations; **Discard instruction edits** restores the saved editor text; **Use built-in instructions** resets that workflow to its shipped defaults. Unsaved instruction-editor changes require an explicit save before reload, unlike the ordinary autosaved controls.
 
 Custom workflow instructions replace the corresponding built-in behavior. Target formatting and detail locks are still applied separately, including JSON validation for Ideogram4. Instruction changes are blocked during generation, and each job uses a snapshot of the saved instructions. Builder's instruction-preset library stays independent of these workflow-specific editors.
+
+### Dataset prompt batches
+
+Open **Dataset** and enter the exact trigger/prepend token, choose what it represents, and describe the traits that must remain consistent. Character batches preserve identity while varying pose, expression, framing and scene; style batches vary subject matter while preserving the visual language. Object, brand/logo, typography/text and custom concepts use their own consistency rules.
+
+Choose 1–25 prompts, a realistic or non-realistic visual treatment, variety level, Director preset, target model and prompt length. **Concept-led variations** develops compatible presentations inside your concept and consistency rules. **Guided inputs** uses one line per scene idea and cycles those lines with new presentations when the batch is larger.
+
+**Advanced coverage planning is optional and off by default.** With it off, the model follows your concept, consistency rules, and guided inputs without receiving automatic pose, action, expression, setting, or lighting assignments. This is the recommended mode for a tightly directed theme such as romance or a specific activity.
+
+When explicitly enabled, the Coverage planner assigns category-specific axes before inference—for example framing, viewpoint, pose, expression, lighting and setting for characters. Focused, Balanced and Wide select progressively more axes; you can override those choices, preview the complete matrix, and reshuffle it with a persisted seed. Planned facets remain subordinate to the user's concept and rules. Disabling planning preserves an existing matrix for later but excludes it from generation.
+
+Generation runs sequentially in one model session. Completed items appear while the batch runs and are retained in the current Dataset draft if a later item is stopped or fails. Results are editable and can be copied together or downloaded as TXT or JSONL. For Ideogram4, the trigger starts `high_level_description` so the outer JSON remains valid.
+
+After generation, the local **Dataset quality report** checks completion, exact trigger placement, target formatting, leaked planning markers, unusual lengths, repeated openings, exact/near duplicates, and guided-input assignments without another model call. Planned coverage is scored only when the optional planner is enabled. **Deep consistency review** is optional: it asks the selected prompt engine to inspect bounded groups of four prompts for identity/style drift, constraint conflicts and target usability. It uses a fixed 2,048-token output budget per group. Both the plan and report autosave with the Dataset draft; editing a prompt invalidates and recomputes the deterministic report.
 
 ## Project and data layout
 

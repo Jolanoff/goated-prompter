@@ -19,8 +19,8 @@ from .prompt_catalog import (
 QWEN_RUNTIME_DEFAULTS = {
     "reasoning": "off",
     "image_min_tokens": 1024,
-    "max_tokens": 768,
-    "context_size": 8192,
+    "max_tokens": 4096,
+    "context_size": 32768,
     "gpu_layers": "auto",
     "host": "127.0.0.1",
 }
@@ -28,8 +28,8 @@ QWEN_RUNTIME_DEFAULTS = {
 GEMMA_RUNTIME_DEFAULTS = {
     "reasoning": "off",
     "image_min_tokens": 1024,
-    "max_tokens": 768,
-    "context_size": 8192,
+    "max_tokens": 4096,
+    "context_size": 32768,
     "gpu_layers": "auto",
     "host": "127.0.0.1",
 }

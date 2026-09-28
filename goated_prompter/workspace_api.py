@@ -11,9 +11,99 @@ from .prompt_workflows import PromptWorkflowService
 from .workspace_store import WorkspaceConflict, locks, now, text
 from .resolution import normalize_resolution
 from .minimax import MiniMaxService, validate_minimax_draft
+from .dataset import DatasetReviewService, DatasetService, validate_dataset_draft
+from .dataset_coverage import analyze_dataset_quality, build_coverage_plan, effective_coverage_plan
+from .presets import get_director_preset
 
 
 def register_workspace_routes(app, state_key, job_factory, json_object):
+    async def dataset_plan_endpoint(request):
+        payload = await json_object(request)
+        if set(payload) != {"input"}:
+            raise ValueError("Expected Dataset input only.")
+        data = validate_dataset_draft(payload["input"])
+        return web.json_response(await asyncio.to_thread(build_coverage_plan, data))
+
+    async def dataset_quality_endpoint(request):
+        payload = await json_object(request)
+        if set(payload) != {"input"}:
+            raise ValueError("Expected Dataset input only.")
+        data = validate_dataset_draft(payload["input"])
+        coverage = effective_coverage_plan(data)
+        report = await asyncio.to_thread(
+            analyze_dataset_quality, data, data["results"], coverage["plan"])
+        return web.json_response({"report": report, "coverage": coverage})
+
+    async def dataset_endpoint(request):
+        state = request.app[state_key]
+        payload = await json_object(request)
+        if set(payload) - {"input", "settings"}:
+            raise ValueError("Expected Dataset input and prompt-engine settings.")
+        data = validate_dataset_draft(payload.get("input"), generation=True)
+        settings = payload.get("settings", {})
+        if not isinstance(settings, dict) or set(settings) - {"director_profile"}:
+            raise ValueError("Invalid Dataset prompt-engine settings.")
+        director = get_director_preset(data["director_preset"], strict=True)
+        async with state.admission:
+            active = state.active_job()
+            if active:
+                return web.json_response({"error": "Wait for the active generation before generating again.",
+                                          "active_job": active}, status=409)
+            config = state.config()
+            configured = config.get("backend") in {"mock", "openai_compatible"}
+            director_request = GoatedPrompterRequest(
+                idea=data["subject"], mode="Custom", target_model=data["target"],
+                prompt_length=data["length"], prompt_model="Custom", director_preset=director.id,
+                director_profile="" if configured else text(
+                    settings.get("director_profile", state.saved_settings.get("selected_profile", "")),
+                    "Prompt engine", 512, optional=True),
+                director_keep_model_loaded=_as_bool(
+                    config.get("local_llama_cpp", {}).get("keep_model_loaded", False)),
+            )
+            job = job_factory()
+            job.kind = "dataset"
+            state.jobs[job.id] = job
+            task = asyncio.create_task(state.run(
+                job, director_request, config, True, {"operation": "dataset", "input": data}))
+            state.tasks.add(task)
+            task.add_done_callback(state.tasks.discard)
+            return web.json_response(job.snapshot(), status=202)
+
+    async def dataset_review_endpoint(request):
+        state = request.app[state_key]
+        payload = await json_object(request)
+        if set(payload) - {"input", "settings"}:
+            raise ValueError("Expected Dataset input and prompt-engine settings.")
+        data = validate_dataset_draft(payload.get("input"), generation=True)
+        if not data["results"]:
+            raise ValueError("Generate at least one dataset prompt before running a deep review.")
+        settings = payload.get("settings", {})
+        if not isinstance(settings, dict) or set(settings) - {"director_profile"}:
+            raise ValueError("Invalid Dataset prompt-engine settings.")
+        async with state.admission:
+            active = state.active_job()
+            if active:
+                return web.json_response({"error": "Wait for the active generation before reviewing again.",
+                                          "active_job": active}, status=409)
+            config = state.config()
+            configured = config.get("backend") in {"mock", "openai_compatible"}
+            director_request = GoatedPrompterRequest(
+                idea=data["subject"], mode="Custom", target_model=data["target"], prompt_model="Custom",
+                director_profile="" if configured else text(
+                    settings.get("director_profile", state.saved_settings.get("selected_profile", "")),
+                    "Prompt engine", 512, optional=True),
+                director_keep_model_loaded=_as_bool(
+                    config.get("local_llama_cpp", {}).get("keep_model_loaded", False)),
+            )
+            job = job_factory()
+            job.kind = "dataset_review"
+            state.jobs[job.id] = job
+            task = asyncio.create_task(state.run(
+                job, director_request, config, True, {"operation": "dataset_review", "input": data}))
+            state.tasks.add(task)
+            task.add_done_callback(state.tasks.discard)
+            return web.json_response(job.snapshot(), status=202)
+
     async def minimax_endpoint(request):
         state = request.app[state_key]
         payload = await json_object(request)
@@ -141,8 +231,12 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
             return web.json_response({"error": str(exc)}, status=409)
 
     app.add_routes([web.post("/api/workspace/minimax", minimax_endpoint),
-                    web.get("/api/workspace/settings/{operation:refine|explore|minimax}", settings_endpoint),
-                    web.put("/api/workspace/settings/{operation:refine|explore|minimax}", settings_endpoint),
+                    web.post("/api/workspace/dataset", dataset_endpoint),
+                    web.post("/api/workspace/dataset/review", dataset_review_endpoint),
+                    web.post("/api/workspace/dataset/plan", dataset_plan_endpoint),
+                    web.post("/api/workspace/dataset/quality", dataset_quality_endpoint),
+                    web.get("/api/workspace/settings/{operation:refine|explore|minimax|dataset}", settings_endpoint),
+                    web.put("/api/workspace/settings/{operation:refine|explore|minimax|dataset}", settings_endpoint),
                     web.post("/api/workspace/settings/{operation:refine|explore}/instructions", settings_endpoint),
                     web.get("/api/workspace", endpoint), web.post("/api/workspace", endpoint),
                     web.post("/api/workspace/{operation:refine|explore}", endpoint)])
@@ -167,6 +261,22 @@ def execute_workflow(state, job, request, config, workflow):
 
     if workflow["operation"] == "minimax":
         result = MiniMaxService(config, job.checkpoint).run(request, workflow["input"], progress)
+        job.commit(lambda: result, finish=True)
+        return
+
+    if workflow["operation"] == "dataset":
+        def partial(result):
+            with job.lock:
+                job.result = result
+                job.revision += 1
+        result = DatasetService(config, job.checkpoint).run(
+            request, workflow["input"], progress, partial)
+        job.commit(lambda: result, finish=True)
+        return
+
+    if workflow["operation"] == "dataset_review":
+        result = DatasetReviewService(config, job.checkpoint).run(
+            request, workflow["input"], progress)
         job.commit(lambda: result, finish=True)
         return
 

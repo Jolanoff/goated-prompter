@@ -23,7 +23,7 @@ WRITING_STYLE = (
 
 
 def builtin_workflow_instructions(operation):
-    if operation == "minimax":
+    if operation in ("minimax", "dataset"):
         # Official rules are package resources; creative customization uses Directors.
         return {}
     if operation == "refine":
