@@ -4,6 +4,7 @@ import { ui } from "./ui.js";
 import { api } from "./api.js";
 import CreativeWorkspace from "./workflows/CreativeWorkspace.jsx";
 import MiniMaxTab from "./workflows/MiniMaxTab.jsx";
+import DatasetTab from "./workflows/DatasetTab.jsx";
 import { defaultResolution } from "./resolution.js";
 import {
   ArrowLeft,
@@ -12,6 +13,7 @@ import {
   Check,
   ChevronDown,
   Copy,
+  Database,
   FileText,
   Film,
   ImagePlus,
@@ -295,6 +297,8 @@ function App() {
         if (next.result.history_error) setError(next.result.history_error);
         setNotice(next.kind === "explore" ? "Three directions saved. Compare them in Explore."
           : next.kind === "refine" ? "Refinement saved as a new version."
+          : next.kind === "dataset" ? `${next.result.completed} dataset prompts are ready.`
+          : next.kind === "dataset_review" ? `Deep review completed for ${next.result.reviewed} prompts.`
           : "Your prompt is ready. Make it yours.");
       } else if (next.status === "cancelled") {
         setNotice("Generation ended.");
@@ -967,6 +971,10 @@ function App() {
             onClick={() => navigate("minimax")} disabled={!bootstrap}>
             <Film size={19} />MiniMax H3
           </button>
+          <button className={ui.navItem} data-active={view === "dataset"}
+            onClick={() => navigate("dataset")} disabled={!bootstrap}>
+            <Database size={19} />Dataset
+          </button>
           <button
             className={ui.navItem}
             data-active={view === "saved"}
@@ -1126,15 +1134,21 @@ function App() {
           {bootstrap && <MiniMaxTab visible={view === "minimax"} job={job}
             busy={busy || actionBusy || settingsBusy || !!uploading} active={active} noEngine={noEngine}
             engineLabel={configuredBackend ? `Configured backend (${bootstrap.backend})` : selectedProfile?.label}
-            presets={bootstrap.presets.presets} onGenerate={startWorkflow} onCancel={endGeneration} onCopy={copy} />}
-          {active && view !== "builder" && view !== "refine" && view !== "explore" && view !== "minimax" && (
+               presets={bootstrap.presets.presets} onGenerate={startWorkflow} onCancel={endGeneration} onCopy={copy} />}
+          {bootstrap && <DatasetTab visible={view === "dataset"} job={job}
+            busy={busy || actionBusy || settingsBusy || !!uploading} active={active} noEngine={noEngine}
+            engineLabel={configuredBackend ? `Configured backend (${bootstrap.backend})` : selectedProfile?.label}
+            presets={bootstrap.presets.presets} targets={bootstrap.inputs.target_model[0]}
+            lengths={bootstrap.inputs.prompt_length[0]} onGenerate={startWorkflow}
+            onCancel={endGeneration} onCopy={copy} />}
+          {active && view !== "builder" && view !== "refine" && view !== "explore" && view !== "minimax" && view !== "dataset" && (
             <div className={`${ui.panel} mb-5 flex flex-wrap items-center justify-between gap-3`} role="status">
               <span>{job.progress || "Generating prompt…"}</span>
               <button className={ui.button} onClick={endGeneration} disabled={actionBusy || job.status === "cancelling"}>End generation</button>
             </div>
           )}
 
-          {view === "refine" || view === "explore" || view === "minimax" ? null : view === "saved" ? (
+          {view === "refine" || view === "explore" || view === "minimax" || view === "dataset" ? null : view === "saved" ? (
             <>
               <div className={ui.pageHeading}>
                 <div>

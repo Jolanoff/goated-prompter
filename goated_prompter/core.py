@@ -128,9 +128,9 @@ class GoatedPrompterRequest:
     director_model_path: str = ""
     director_mmproj_path: str = ""
     director_llama_server: str = ""
-    director_context_size: int = 8192
+    director_context_size: int = 32768
     director_image_min_tokens: int = 1024
-    director_max_tokens: int = 768
+    director_max_tokens: int = 4096
     director_gpu_layers: str = "auto"
     director_keep_model_loaded: bool = False
     preserve_subject: bool = True
@@ -175,9 +175,9 @@ class GoatedPrompterRequest:
             director_model_path=str(values.get("director_model_path") or ""),
             director_mmproj_path=str(values.get("director_mmproj_path") or ""),
             director_llama_server=str(values.get("director_llama_server") or ""),
-            director_context_size=int(values.get("director_context_size", 8192)),
+            director_context_size=int(values.get("director_context_size", 32768)),
             director_image_min_tokens=int(values.get("director_image_min_tokens", 1024)),
-            director_max_tokens=int(values.get("director_max_tokens", 768)),
+            director_max_tokens=int(values.get("director_max_tokens", 4096)),
             director_gpu_layers=str(values.get("director_gpu_layers") or "auto"),
             director_keep_model_loaded=_as_bool(values.get("director_keep_model_loaded", False)),
             preserve_subject=_as_bool(values.get("preserve_subject", True)),

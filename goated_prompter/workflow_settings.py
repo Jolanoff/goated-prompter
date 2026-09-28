@@ -8,11 +8,14 @@ from .resolution import normalize_resolution
 from .workspace_store import WorkspaceConflict, locks, text
 from .workflow_prompts import builtin_workflow_instructions
 from .minimax import default_minimax_draft, validate_minimax_draft
+from .dataset import default_dataset_draft, validate_dataset_draft
 
 
 def default_draft(operation):
     if operation == "minimax":
         return default_minimax_draft()
+    if operation == "dataset":
+        return default_dataset_draft()
     common = {"target": "Generic", "locks": ["identity"]}
     if operation == "refine":
         return {**common, "changes": "", "source": "", "editing": None, "lock_version_id": None}
@@ -22,6 +25,8 @@ def default_draft(operation):
 def validate_draft(operation, value):
     if operation == "minimax":
         return validate_minimax_draft(value)
+    if operation == "dataset":
+        return validate_dataset_draft(value)
     defaults = default_draft(operation)
     if not isinstance(value, dict) or value.keys() - defaults.keys():
         raise ValueError(f"Invalid {operation} settings fields.")
@@ -56,11 +61,14 @@ def validate_instructions(operation, value):
 
 
 def empty_settings():
-    return {operation: {"revision": 0, "draft": default_draft(operation), "overrides": {}} for operation in ("refine", "explore", "minimax")}
+    return {operation: {"revision": 0, "draft": default_draft(operation), "overrides": {}}
+            for operation in ("refine", "explore", "minimax", "dataset")}
 
 
 def validate_settings_store(value):
-    if not isinstance(value, dict) or set(value) not in ({"refine", "explore"}, {"refine", "explore", "minimax"}):
+    allowed = {"refine", "explore", "minimax", "dataset"}
+    if (not isinstance(value, dict) or not {"refine", "explore"} <= set(value)
+            or set(value) - allowed):
         raise ValueError("Invalid workflow settings store.")
     for operation, record in value.items():
         if not isinstance(record, dict) or set(record) != {"revision", "draft", "overrides"} or type(record["revision"]) is not int or record["revision"] < 0:
