@@ -68,7 +68,9 @@ class DatasetUnitTests(unittest.TestCase):
         self.assertIn("Anima target", instruction.system_message)
         self.assertIn("COVERAGE ASSIGNMENT", instruction.user_message)
         self.assertIn("Framing", instruction.user_message)
-        self.assertTrue(instruction.unlimited_tokens)
+        self.assertFalse(instruction.unlimited_tokens)
+        self.assertEqual(instruction.hard_max_tokens, 768)
+        self.assertEqual(instruction.max_tokens, 768)
 
     def test_coverage_plan_is_stable_balanced_and_category_aware(self):
         data = valid_draft(amount=12, source_mode="guided", inputs="portrait\naction", variety="Wide",
@@ -130,6 +132,20 @@ class DatasetUnitTests(unittest.TestCase):
         self.assertTrue(all(item["prompt"].startswith("ohwx_person,") for item in result["prompts"]))
         self.assertEqual([item["completed"] for item in partials], [1, 2, 3])
 
+    def test_service_reports_engine_waiting_and_validation_progress(self):
+        backend = CaptureBackend()
+        progress = []
+        data = valid_draft(amount=1)
+        request = GoatedPrompterRequest(idea=data["subject"], target_model=data["target"])
+        with patch("goated_prompter.dataset.create_backend", return_value=backend):
+            DatasetService({"backend": "mock"}, lambda: None).run(
+                request, data, progress.append, lambda _result: None)
+        self.assertEqual(progress, [
+            "Starting the prompt engine for the dataset…",
+            "Waiting for prompt engine · dataset prompt 1/1",
+            "Checking dataset prompt 1/1",
+        ])
+
 
 class DatasetEndpointTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -161,6 +177,10 @@ class DatasetEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["status"], "succeeded")
         self.assertEqual(result["kind"], "dataset")
         self.assertEqual(result["result"]["completed"], 3)
+        messages = [event["message"] for event in result["events"]]
+        self.assertTrue(any("Waiting for prompt engine" in message for message in messages))
+        self.assertTrue(any("prompt 3/3 completed" in message for message in messages))
+        self.assertEqual(result["events"][-1]["type"], "success")
         self.assertEqual(len(result["result"]["coverage"]["plan"]), 3)
         self.assertIn("quality_report", result["result"])
         self.assertEqual(self.backend.sessions, 1)

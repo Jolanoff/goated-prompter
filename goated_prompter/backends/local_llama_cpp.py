@@ -15,6 +15,7 @@ class LocalLlamaCppBackend(GoatedPrompterBackend):
     def __init__(self, settings, process_manager=None):
         self.config = LlamaCppLaunchConfig.from_mapping(settings)
         self.context_reserve_tokens = settings.get("context_reserve_tokens", 1024)
+        self.activity_callback = settings.get("_activity_callback")
         self.process_manager = process_manager or get_process_manager()
 
     def _client(self, runtime_config=None, runtime_diagnostics=None):
@@ -31,6 +32,7 @@ class LocalLlamaCppBackend(GoatedPrompterBackend):
                 "image_min_tokens": active_config.image_min_tokens,
                 "_is_llama_cpp": True,
                 "_runtime_diagnostics": runtime_diagnostics or {},
+                "_activity_callback": self.activity_callback,
             }
         )
 

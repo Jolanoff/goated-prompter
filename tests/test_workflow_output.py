@@ -6,8 +6,8 @@ from unittest.mock import patch
 
 from goated_prompter.backends.base import BackendGenerationError, GoatedPrompterBackend
 from goated_prompter.core import GoatedPrompterRequest
-from goated_prompter.prompt_catalog import TARGET_MODEL_NAMES
-from goated_prompter.prompt_workflows import PromptWorkflowService, workflow_instruction
+from goated_prompter.prompting.target_models import TARGET_MODEL_NAMES
+from goated_prompter.refinement import RefineService, refine_instruction
 from goated_prompter.workflow_output import WorkflowFormatError, normalize_workflow_output
 
 
@@ -89,47 +89,38 @@ class ScriptedBackend(GoatedPrompterBackend):
 
 
 class FormatRepairTests(unittest.TestCase):
-    def run_workflow(self, backend, target="Anima", checkpoint=lambda: None, progress=None, saved=None):
+    def run_workflow(self, backend, target="Anima", checkpoint=lambda: None, progress=None):
         progress = progress if progress is not None else []
-        saved = saved if saved is not None else []
-        workflow = {"operation": "explore", "base": "Mira waits in a sunlit urban plaza. Anime illustration.", "locks": ["identity"]}
-        with patch("goated_prompter.prompt_workflows.create_backend", return_value=backend):
-            return PromptWorkflowService({"backend": "mock"}, checkpoint).run(
-                GoatedPrompterRequest(idea=workflow["base"], target_model=target), workflow, progress.append,
-                lambda direction, prompt: saved.append((direction, prompt)))
+        workflow = {"operation": "refine", "base": "Mira waits in a sunlit urban plaza. Anime illustration.",
+                    "changes": "Use stronger framing", "locks": ["identity"]}
+        with patch("goated_prompter.refinement.create_backend", return_value=backend):
+            return RefineService({"backend": "mock"}, checkpoint).run(
+                GoatedPrompterRequest(idea=workflow["base"], target_model=target), workflow, progress.append)
 
-    def test_simple_wrappers_cost_no_extra_inference_and_cannot_contaminate_later_examples(self):
-        backend = ScriptedBackend(['{"prompt":"Mira in the sunlit plaza."}', "Mira in the same plaza, framed through an arch.", '{"prompt":"Mira in the same plaza, with graphic framing."}'])
-        saved = []
-        result = self.run_workflow(backend, saved=saved)
-        self.assertEqual(len(backend.calls), 3)
-        self.assertEqual(len(saved), 3)
-        self.assertEqual(result["directions"][0]["prompt"], "Mira in the sunlit plaza.")
-        for call in backend.calls:
-            self.assertNotIn('{"prompt":', call.user_message)
-        self.assertIn("<example>\nMira in the sunlit plaza.\n</example>", backend.calls[1].user_message)
+    def test_simple_wrapper_costs_no_extra_inference(self):
+        backend = ScriptedBackend(['{"prompt":"Mira in the sunlit plaza."}'])
+        result = self.run_workflow(backend)
+        self.assertEqual(len(backend.calls), 1)
+        self.assertEqual(result["prompt"], "Mira in the sunlit plaza.")
 
-    def test_malformed_third_direction_gets_one_retry_before_persistence(self):
-        backend = ScriptedBackend(["Mira in the plaza.", "Mira in the plaza, low angle.", '{"prompt": "A surreal anime still', "Mira in the plaza, graphic framing."])
-        saved, progress = [], []
-        result = self.run_workflow(backend, saved=saved, progress=progress)
-        self.assertEqual(len(backend.calls), 4)
-        self.assertEqual(len(saved), 3)
+    def test_malformed_output_gets_one_retry(self):
+        backend = ScriptedBackend(['{"prompt": "A surreal anime still', "Mira in the plaza, graphic framing."])
+        progress = []
+        result = self.run_workflow(backend, progress=progress)
+        self.assertEqual(len(backend.calls), 2)
         self.assertIn("Correcting output format (one retry)", progress)
-        self.assertEqual(backend.calls[3].user_message, backend.calls[2].user_message)
-        self.assertEqual(result["directions"][-1]["prompt"], "Mira in the plaza, graphic framing.")
+        self.assertEqual(backend.calls[1].user_message, backend.calls[0].user_message)
+        self.assertEqual(result["prompt"], "Mira in the plaza, graphic framing.")
 
-    def test_failed_repair_is_bounded_and_keeps_only_completed_directions(self):
-        backend = ScriptedBackend(["Mira in the plaza.", "Mira in the plaza, low angle.", '{"prompt":', '{"prompt":'])
-        saved = []
+    def test_failed_repair_is_bounded(self):
+        backend = ScriptedBackend(['{"prompt":', '{"prompt":'])
         with self.assertRaisesRegex(BackendGenerationError, "invalid format twice"):
-            self.run_workflow(backend, saved=saved)
-        self.assertEqual(len(backend.calls), 4)
-        self.assertEqual([direction for direction, _ in saved], ["faithful", "creative"])
+            self.run_workflow(backend)
+        self.assertEqual(len(backend.calls), 2)
 
     def test_cancel_before_retry_does_not_start_another_call_or_save_bad_output(self):
         backend = ScriptedBackend(['{"prompt":'])
-        saved, cancelled = [], []
+        cancelled = []
 
         class Cancelled(Exception):
             pass
@@ -144,39 +135,31 @@ class FormatRepairTests(unittest.TestCase):
                     cancelled.append(True)
 
         with self.assertRaises(Cancelled):
-            self.run_workflow(backend, saved=saved, checkpoint=checkpoint, progress=Progress())
+            self.run_workflow(backend, checkpoint=checkpoint, progress=Progress())
         self.assertEqual(len(backend.calls), 1)
-        self.assertEqual(saved, [])
 
-    def test_ideogram_schema_survives_all_three_directions(self):
+    def test_ideogram_schema_survives_refinement(self):
         raw = json.dumps(CAPTION)
-        backend = ScriptedBackend([raw, raw, raw])
+        backend = ScriptedBackend([raw])
         result = self.run_workflow(backend, target="Ideogram4")
-        self.assertEqual(len(backend.calls), 3)
-        for direction in result["directions"]:
-            self.assertEqual(json.loads(direction["prompt"]), CAPTION)
+        self.assertEqual(json.loads(result["prompt"]), CAPTION)
 
-    def test_qwen21_all_three_directions_return_only_prompt_text(self):
+    def test_qwen21_refinement_returns_only_prompt_text(self):
         payload = {"rewritten_prompt": "An anime illustration of Mira in a sunlit plaza.", "wh_ratio": "3:2"}
         raw = json.dumps(payload)
-        backend = ScriptedBackend([raw, payload["rewritten_prompt"], raw])
+        backend = ScriptedBackend([raw])
         result = self.run_workflow(backend, target="Qwen2.1")
-        self.assertEqual(len(backend.calls), 3)
-        for direction in result["directions"]:
-            self.assertEqual(direction["prompt"], payload["rewritten_prompt"])
-        self.assertTrue(all('Return only the complete plain prompt text' in instruction.system_message for instruction in backend.calls))
-        self.assertTrue(all(instruction.unlimited_tokens and instruction.max_tokens is None for instruction in backend.calls))
-        self.assertNotIn('"rewritten_prompt":', backend.calls[-1].user_message)
+        self.assertEqual(result["prompt"], payload["rewritten_prompt"])
+        self.assertIn('Return only the complete plain prompt text', backend.calls[0].system_message)
+        self.assertTrue(backend.calls[0].unlimited_tokens)
 
-    def test_qwen21_refine_and_explore_are_uncapped_for_every_length(self):
+    def test_qwen21_refine_is_uncapped_for_every_length(self):
         for length in ("Short", "Medium", "Detailed", "Maximum Detail"):
-            for operation in ("refine", "explore"):
-                with self.subTest(length=length, operation=operation):
-                    request = GoatedPrompterRequest(idea="A bicycle", target_model="Qwen2.1", prompt_length=length)
-                    instruction = workflow_instruction(request, operation, "A bicycle", "Red paint", [],
-                                                       direction="faithful" if operation == "explore" else None)
-                    self.assertTrue(instruction.unlimited_tokens)
-                    self.assertIsNone(instruction.max_tokens)
+            with self.subTest(length=length):
+                request = GoatedPrompterRequest(idea="A bicycle", target_model="Qwen2.1", prompt_length=length)
+                instruction = refine_instruction(request, "A bicycle", "Red paint", [])
+                self.assertTrue(instruction.unlimited_tokens)
+                self.assertIsNone(instruction.max_tokens)
 
 
 if __name__ == "__main__":

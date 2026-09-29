@@ -8,6 +8,7 @@ from types import ModuleType
 from types import SimpleNamespace
 import unittest
 from unittest.mock import MagicMock, Mock, patch
+from urllib.error import URLError
 
 
 # Import backend modules without running ComfyUI node/route registration.
@@ -187,11 +188,72 @@ class OpenAITimeoutTests(unittest.TestCase):
                     self.assertEqual(backend.generate(instruction), "result")
                 self.assertEqual(request.call_args.kwargs["timeout"], expected)
 
+    def test_wrapped_socket_timeout_has_actionable_error(self):
+        backend = openai.OpenAICompatibleBackend({
+            "base_url": "http://127.0.0.1:8189/v1", "model": "test", "timeout": 37,
+        })
+        instruction = SimpleNamespace(
+            image=None, image_2=None, image_3=None, image_4=None,
+            unlimited_tokens=False, max_tokens=None, diagnostic_context={},
+            diagnostic_stage="timeout-test", system_message="system", user_message="test",
+            to_messages=lambda: [{"role": "user", "content": "test"}],
+        )
+        with patch.object(openai, "urlopen", side_effect=URLError(TimeoutError("timed out"))), \
+             patch.object(openai, "log_request"), patch.object(openai, "_log_multimodal_messages"), \
+             self.assertRaisesRegex(openai.BackendGenerationError, "within 37 seconds"):
+            backend.generate(instruction)
+
+    def test_activity_callback_enables_streaming_and_exposes_request_and_live_text(self):
+        class StreamingResponse:
+            headers = {"Content-Type": "text/event-stream; charset=utf-8"}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def __iter__(self):
+                chunks = [
+                    {"choices": [{"delta": {"role": "assistant"}, "finish_reason": None}]},
+                    {"choices": [{"delta": {"reasoning_content": "visible analysis"}, "finish_reason": None}]},
+                    {"choices": [{"delta": {"content": "hello "}, "finish_reason": None}]},
+                    {"choices": [{"delta": {"content": "world"}, "finish_reason": "stop"}]},
+                ]
+                lines = [f"data: {json.dumps(chunk)}\n\n".encode() for chunk in chunks]
+                return iter(lines + [b"data: [DONE]\n\n"])
+
+        events = []
+        backend = openai.OpenAICompatibleBackend({
+            "base_url": "http://127.0.0.1:8189/v1", "model": "test", "_activity_callback": events.append,
+        })
+        instruction = SimpleNamespace(
+            image=None, image_2=None, image_3=None, image_4=None,
+            unlimited_tokens=False, max_tokens=None, diagnostic_context={},
+            diagnostic_stage="stream-test", system_message="exact system", user_message="exact user",
+            to_messages=lambda: [
+                {"role": "system", "content": "exact system"},
+                {"role": "user", "content": "exact user"},
+            ],
+        )
+        with patch.object(openai, "urlopen", return_value=StreamingResponse()) as send, \
+             patch.object(openai, "log_request"), patch.object(openai, "log_response"), \
+             patch.object(openai, "_log_multimodal_messages"):
+            self.assertEqual(backend.generate(instruction), "hello world")
+        outgoing = json.loads(send.call_args.args[0].data)
+        self.assertTrue(outgoing["stream"])
+        self.assertEqual(events[0]["messages"], instruction.to_messages())
+        self.assertEqual("".join(event.get("text", "") for event in events if event["type"] == "response_delta"), "hello world")
+        self.assertEqual(next(event["text"] for event in events if event["type"] == "reasoning_delta"), "visible analysis")
+        self.assertEqual(events[-1], {"type": "response_complete", "finish_reason": "stop"})
+
 
 class FinalBudgetTests(unittest.TestCase):
-    def instruction(self, max_tokens=None):
+    def instruction(self, max_tokens=None, hard_max_tokens=None):
         core = importlib.import_module(f"{PACKAGE}.core")
-        return core.PromptInstruction("system", "user", max_tokens=max_tokens)
+        return core.PromptInstruction(
+            "system", "user", max_tokens=max_tokens, hard_max_tokens=hard_max_tokens,
+        )
 
     def outgoing(self, backend, instruction, finish_reason="stop"):
         response = MagicMock()
@@ -211,6 +273,20 @@ class FinalBudgetTests(unittest.TestCase):
             backend = self.backend(max_tokens=configured)
             self.assertEqual(self.outgoing(backend, self.instruction(3072))["max_tokens"], max(configured, 3072))
             self.assertEqual(self.outgoing(backend, self.instruction())["max_tokens"], configured)
+
+    def test_workflow_hard_limit_lowers_backend_budget_and_reports_looping(self):
+        backend = self.backend(max_tokens=4096)
+        instruction = replace(self.instruction(384, 384), unlimited_tokens=True)
+        self.assertEqual(self.outgoing(backend, instruction)["max_tokens"], 384)
+
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps({
+            "choices": [{"message": {"content": "unfinished"}, "finish_reason": "length"}],
+        }).encode()
+        with patch.object(openai, "urlopen", return_value=response), \
+             patch.object(openai, "log_request"), patch.object(openai, "_log_multimodal_messages"), \
+             self.assertRaisesRegex(openai.BackendGenerationError, "may be looping"):
+            backend.generate(instruction)
 
     def test_unlimited_remote_request_omits_cap_and_bypasses_coarse_budget_floor(self):
         backend = self.backend(max_tokens=768, context_size=4096)
@@ -232,7 +308,7 @@ class FinalBudgetTests(unittest.TestCase):
                 self.assertNotIn("max_tokens", self.outgoing(self.backend(max_tokens=768), instruction))
                 self.assertEqual(self.outgoing(self.backend(max_tokens=768, _is_llama_cpp=True), instruction)["max_tokens"], -1)
 
-    def test_analysis_budget_unchanged_and_alias_guidance_equal(self):
+    def test_builder_and_analysis_are_uncapped_and_alias_guidance_equal(self):
         core = importlib.import_module(f"{PACKAGE}.core")
         backend = self.backend()
         instructions = [core.assemble_instruction(core.GoatedPrompterRequest.from_mapping({
@@ -240,12 +316,12 @@ class FinalBudgetTests(unittest.TestCase):
         })) for length in ("Maximum", "Maximum Detail")]
         self.assertEqual(instructions[0], instructions[1])
         for instruction in instructions:
-            self.assertEqual(self.outgoing(backend, instruction)["max_tokens"], 3072)
+            self.assertNotIn("max_tokens", self.outgoing(backend, instruction))
         analysis = replace(self.instruction(), diagnostic_stage="evidence:image_4")
         self.assertEqual(self.outgoing(backend, analysis)["max_tokens"], 768)
         for length in ("Short", "Medium", "Detailed"):
             instruction = core.assemble_instruction(core.GoatedPrompterRequest(idea="portrait", prompt_length=length))
-            self.assertEqual(self.outgoing(backend, instruction)["max_tokens"], 768)
+            self.assertNotIn("max_tokens", self.outgoing(backend, instruction))
 
     def test_context_cap_reserve_and_actionable_failure(self):
         backend = self.backend(context_size=8192, max_tokens=10000, context_reserve_tokens=2048)
@@ -295,7 +371,7 @@ class FinalBudgetTests(unittest.TestCase):
             }), "test")
             scene = evidence.build_resolved_scene(resolved, evidence_by_source={"Image 4": observed})
             instruction = core.assemble_instruction(request, resolved_scene=scene)
-            self.assertEqual(self.outgoing(client, instruction)["max_tokens"], 3072)
+            self.assertEqual(self.outgoing(client, instruction)["max_tokens"], -1)
         manager.release.assert_called_once_with(owned)
 
     def test_finish_reason_length_never_returns_partial_success(self):

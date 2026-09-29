@@ -15,10 +15,9 @@ ComfyUI is **not required** to use the website. The app produces prompt text tha
 - **Reusable instruction presets:** choose a built-in preset, edit its instructions, or create your own.
 - **Local prompt library:** autosaved builder settings, named saved prompts, and copy/edit controls.
 - **Refine tab:** targeted revisions, quick editing actions, detail locks, before/after highlighting, manual edits, and persistent undo/redo with branching version history.
-- **Explore tab:** compare Faithful, Creative, and Experimental directions, then send a favorite into Refine. Completed directions are saved even if a later direction fails or is cancelled.
 - **MiniMax H3 tab:** a dedicated prompt-writing workflow with 4–15-second clip timing, automatic reference-role analysis, official H3 output schemas, and shared Director presets.
 - **Dataset tab:** generate 1–25 trigger-prefixed prompts from user-led rules and guided inputs, with optional advanced coverage planning, automatic quality diagnostics, a model-assisted consistency review, and TXT/JSONL export.
-- **Persistent creative settings:** Refine and Explore autosave their inputs and controls, offer independent advanced instruction editors, and save results directly to Saved Prompts.
+- **Persistent creative settings:** Refine autosaves its inputs and controls, offers an independent advanced instruction editor, and saves results directly to Saved Prompts.
 - **Local inference through llama.cpp**, with an optional OpenAI-compatible endpoint.
 - **End generation** to cancel an active local llama.cpp job.
 
@@ -35,7 +34,7 @@ Qwen2.1 uses writing guidance from the official [text-to-image](https://github.c
 
 JSON metadata is not required. If a model still returns the upstream JSON envelope, the app extracts `rewritten_prompt` for editing, copying and saving.
 
-All Qwen2.1 detail levels (Short, Medium, Detailed and Maximum Detail) use uncapped requests, including image evidence analysis, Builder, Refine, Explore and format repairs. Length controls writing detail rather than cutting off output. Local llama.cpp receives `max_tokens: -1`; remote requests omit `max_tokens`. Model context capacity and server-side limits still apply.
+All Qwen2.1 detail levels (Short, Medium, Detailed and Maximum Detail) use uncapped requests in Builder, Refine and format repairs. Length controls writing detail rather than cutting off output. Local llama.cpp receives `max_tokens: -1`; remote requests omit `max_tokens`. Model context capacity and server-side limits still apply.
 
 ## MiniMax H3 prompt builder
 
@@ -227,27 +226,13 @@ Open **Refine** from the sidebar or **Refine & history** under Builder output. S
 
 Undo follows the current version's parent; each imported starting prompt or Builder generation begins a new history chain. History selection can restore any chain. The text diff uses bounded work and falls back to highlighting a larger changed region for very large prompts.
 
-### Explore three directions
-
-Open **Explore**, import a Builder prompt/idea or the current refinement, or enter new text. Choose a target model, direction length, and any detail locks, then click **Explore three directions**:
-
-- **Faithful:** clarifies the source while retaining its staging and aesthetic.
-- **Creative:** explores compatible, unspecified presentation choices while keeping the source's stated subjects, setting, action and medium.
-- **Experimental:** explores bolder framing, perspective or rendering treatment of the same scene within those constraints. It does not request an unrelated new scene or arbitrary surreal elements.
-
-The three calls run sequentially inside one model session, avoiding simultaneous GPU jobs and repeated model loading between directions. Each direction starts from the original source. Later calls receive bounded plain-text excerpts of earlier directions for comparison only. **End generation** uses the existing cancellation mechanism. Every finished direction is saved immediately; partial comparisons remain available after cancellation, failure, or a server restart. Use the **Saved comparisons** selector to revisit them and **Refine this direction** to start from a favorite.
-
-Only **Ideogram4** requests JSON output. Other targets return prompt text (including character tags for Anima). Before saving, the workflows remove simple JSON prompt wrappers without another inference call. Malformed or complex structured output gets at most one format-correction retry for that direction; if it still fails, earlier completed directions stay saved and an error is shown. Existing saved comparisons are not rewritten by this validation.
-
-Both workflows use the selected prompt engine and target adapters with their own editing instructions. Each Explore card has **Save prompt**, which opens the shared naming dialog and saves that exact direction and target. They operate on text: to carry image-grounded details into them, generate a reference-guided prompt in Builder first. Model adherence to locks and the quality/distinctness of directions still depend on the selected engine.
-
-Completed versions, history selection/redo, and comparisons live in **`data/workspace.json`**. Writes are atomic and revision-checked so a stale browser tab cannot overwrite newer workspace edits. Storage limits are 1,000 versions, 100 comparisons, and 16 MiB for the workspace file; copy/back up useful results before clearing history or deleting older comparisons. If saving a generated result fails, its recovered text is shown for copying in the current session.
+Completed versions and history selection/redo live in **`data/workspace.json`**. Writes are atomic and revision-checked so a stale browser tab cannot overwrite newer workspace edits. The storage limit is 1,000 versions and 16 MiB for the workspace file; copy or back up useful results before clearing history. If saving a generated result fails, its recovered text is shown for copying in the current session.
 
 ### Saved creative settings and advanced instructions
 
-Refine, Explore, MiniMax H3, and Dataset settings autosave separately to **`data/workflow_settings.json`**. Refine retains requested changes, locks, starting text/target and manual-edit drafts; Explore retains its source text, target, length, locks and comparison selection; MiniMax and Dataset retain their workflow-specific inputs and current results. Wait for the respective **Saved** indicator before closing or reloading. Failed writes keep the local draft and expose retry/reload actions; revision checks prevent a stale browser tab from replacing newer settings.
+Refine, MiniMax H3, and Dataset settings autosave separately to **`data/workflow_settings.json`**. Refine retains requested changes, locks, starting text/target and manual-edit drafts; MiniMax and Dataset retain their workflow-specific inputs and current results. Wait for the respective **Saved** indicator before closing or reloading. Failed writes keep the local draft and expose retry/reload actions; revision checks prevent a stale browser tab from replacing newer settings.
 
-Expand **Refine advanced settings** or **Explore advanced settings** to edit the built-in behavior. Refine has one system-prompt editor. Explore has separate editors for its system prompt and each of the three directions. **Save instructions** activates edits for subsequent generations; **Discard instruction edits** restores the saved editor text; **Use built-in instructions** resets that workflow to its shipped defaults. Unsaved instruction-editor changes require an explicit save before reload, unlike the ordinary autosaved controls.
+Expand **Refine advanced settings** to edit its built-in behavior. **Save instructions** activates edits for subsequent generations; **Discard instruction edits** restores the saved editor text; **Use built-in instructions** resets the workflow to its shipped default. Unsaved instruction-editor changes require an explicit save before reload, unlike the ordinary autosaved controls.
 
 Custom workflow instructions replace the corresponding built-in behavior. Target formatting and detail locks are still applied separately, including JSON validation for Ideogram4. Instruction changes are blocked during generation, and each job uses a snapshot of the saved instructions. Builder's instruction-preset library stays independent of these workflow-specific editors.
 
@@ -275,26 +260,35 @@ goated-prompter/
 │   ├── config.example.json     # Portable configuration template
 │   └── config.json             # Backend / llama-server configuration
 ├── goated_prompter/
-│   ├── prompt_catalog.py       # Task, target, creativity, length and general prompts
-│   ├── presets.py              # Built-in instruction presets and library management
+│   ├── prompting/              # Prompt content split by concern
+│   │   ├── modes.py            # Prompt task modes
+│   │   ├── directors.py        # Built-in Directors
+│   │   ├── target_models.py    # Target-model adapters
+│   │   ├── base.py             # Base and priority contracts
+│   │   ├── output.py           # Final output contract
+│   │   ├── creativity.py       # Creativity controls
+│   │   ├── details.py          # Detail, preservation and reference controls
+│   │   ├── refine.py           # Refine prompt construction
+│   │   ├── minimax.py          # MiniMax prompt schemas and validation
+│   │   └── dataset.py          # Dataset prompt construction
+│   ├── presets.py              # Instruction-preset storage and library management
 │   ├── core.py                 # Prompt assembly and generation orchestration
-│   ├── prompt_workflows.py     # Isolated refinement/exploration instructions and inference
-│   ├── workflow_prompts.py     # Editable built-in workflow behavior
+│   ├── refinement.py           # Refine inference runtime
 │   ├── workflow_settings.py    # Per-workflow drafts and instruction overrides
 │   ├── workspace_api.py        # Creative-workspace endpoints and shared-job integration
-│   ├── workspace_store.py      # Atomic versions, branching undo/redo and comparisons
+│   ├── workspace_store.py      # Atomic versions and branching undo/redo
 │   ├── reference_map.py        # Attribute-to-image source mapping
 │   ├── evidence.py             # Image analysis and resolved scene evidence
 │   └── backends/               # llama.cpp and OpenAI-compatible clients
 ├── frontend/
 │   ├── src/                    # React UI, Tailwind utilities and presentation labels
-│   │   └── workflows/          # Separate Refine/Explore tabs, history and workspace state
+│   │   └── workflows/          # Refine, MiniMax, Dataset and workspace state
 │   └── dist/                   # Generated by npm run build; not committed
 ├── data/                       # Created as you save; not committed
 │   ├── settings.json           # Settings and autosaved builder draft
 │   ├── prompts.json            # Saved prompt collection
-│   ├── workspace.json          # Versions, undo/redo and saved direction comparisons
-│   ├── workflow_settings.json  # Refine/Explore drafts and custom instructions
+│   ├── workspace.json          # Versions and undo/redo history
+│   ├── workflow_settings.json  # Workflow drafts and custom instructions
 │   └── directors/              # Custom instruction presets
 │       └── .overrides/         # Edits to built-in instruction presets
 ├── tests/                      # Python and optional canvas tests
@@ -356,7 +350,7 @@ npm --prefix frontend run dev
 
 Open **http://127.0.0.1:5173**. Vite proxies `/api` to the backend on port 8190.
 
-Static prompt content is in **`goated_prompter/prompt_catalog.py`**. Restart Python after editing it. Keep saved option keys stable. For new tasks, add both the option and its adapter; Director recommended-mode validation also lives in `presets.py`. Website-only display names/order live in `frontend/src/App.jsx` and `frontend/src/presetPresentation.js`.
+Static prompt content is organized by concern in **`goated_prompter/prompting/`**. Restart Python after editing it. Keep saved option keys stable. For new tasks, add both the option and its adapter in the relevant file. Website-only display names/order live in `frontend/src/App.jsx` and `frontend/src/presetPresentation.js`.
 
 Run the checks from the project root:
 

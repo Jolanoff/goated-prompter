@@ -15,7 +15,7 @@ const quickActions = [
 ];
 
 export default function RefineTab({ workspace, current, disabled, canGenerate, builderPrompt, builderTarget, targets,
-  onGenerate, onCopy, onUsePrompt, preferences, builderResolution, onSavePrompt, canSavePrompt }) {
+  onGenerate, onCopy, onUsePrompt, preferences, onSavePrompt, canSavePrompt }) {
   const { changes, locks, source, target, editing, lock_version_id } = preferences.draft;
   const setChanges = (value) => preferences.update({ changes: typeof value === "function" ? value(changes) : value });
   const setLocks = (value) => preferences.update({ locks: value });
@@ -26,8 +26,8 @@ export default function RefineTab({ workspace, current, disabled, canGenerate, b
     if (lock_version_id !== (current?.id || null)) preferences.update({ locks: current ? current.locks : ["identity"], lock_version_id: current?.id || null });
   }, [current?.id, lock_version_id]);
   const parent = workspace.snapshot.versions.find((version) => version.id === current?.parent_id);
-  async function addSource(prompt, model, resolution) {
-    const result = await workspace.mutate({ action: "add", prompt, target: model, resolution });
+  async function addSource(prompt, model) {
+    const result = await workspace.mutate({ action: "add", prompt, target: model });
     if (result) setSource("");
   }
   return <>
@@ -45,8 +45,8 @@ export default function RefineTab({ workspace, current, disabled, canGenerate, b
             <PromptText text={current.prompt} label="Current refinement prompt" />
             <div className={ui.inlineActions}>
               <button className={ui.button} onClick={() => onCopy(current.prompt)}><Copy size={15} />Copy prompt</button>
-              <button className={ui.saveButton} disabled={!canSavePrompt} onClick={() => onSavePrompt(current.prompt, current.target, "Refined prompt", current.resolution)}>Save prompt</button>
-              <button className={ui.button} disabled={disabled} onClick={() => onUsePrompt(current.prompt, current.target, current.resolution)}>Use in Builder</button>
+              <button className={ui.saveButton} disabled={!canSavePrompt} onClick={() => onSavePrompt(current.prompt, current.target, "Refined prompt")}>Save prompt</button>
+              <button className={ui.button} disabled={disabled} onClick={() => onUsePrompt(current.prompt, current.target)}>Use in Builder</button>
               <button className={ui.button} disabled={disabled} onClick={() => setEditing({ id: current.id, text: current.prompt })}>Edit text</button>
             </div>
             {editing && <div className="mt-4">
@@ -67,7 +67,7 @@ export default function RefineTab({ workspace, current, disabled, canGenerate, b
           <details className="mt-4" open={!current || undefined}>
             <summary className="cursor-pointer text-xs font-semibold">Start from another prompt</summary>
             <p className="my-3 text-xs text-muted">Import Builder output or paste a prompt. Earlier versions remain in history.</p>
-            <button className={ui.button} disabled={disabled || !builderPrompt.trim()} onClick={() => addSource(builderPrompt, builderTarget, builderResolution)}>Use Builder prompt</button>
+            <button className={ui.button} disabled={disabled || !builderPrompt.trim()} onClick={() => addSource(builderPrompt, builderTarget)}>Use Builder prompt</button>
             <label className={`${ui.field} mt-4`}><span>Starting prompt</span>
               <textarea className={ui.ideaInput} aria-label="Starting prompt" value={source} maxLength={100000} disabled={disabled}
                 onChange={(event) => setSource(event.target.value)} placeholder="Paste the prompt you want to improve…" />

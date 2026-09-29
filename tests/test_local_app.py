@@ -81,7 +81,7 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 200)
         payload = await response.json()
         self.assertEqual(set(payload), {"inputs", "presets", "models", "backend", "migration_notices", "active_job", "settings",
-                                        "reference_attributes", "reference_sources", "max_reference_images", "resolutions"})
+                                    "reference_attributes", "reference_sources", "max_reference_images"})
         self.assertEqual(payload["reference_attributes"], [{"key": key, "label": label} for key, label in local.REFERENCE_ATTRIBUTES])
         self.assertEqual(payload["reference_sources"], ["Off", "Image 1", "Image 2", "Image 3", "Image 4", "Blend"])
         self.assertEqual(payload["max_reference_images"], 4)
@@ -101,6 +101,26 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
             response = await self.client.get("/api/models?refresh=true")
             self.assertEqual(response.status, 200)
             self.assertTrue(discover.call_args.args[1])
+
+    async def test_job_live_llm_trace_keeps_exact_exposed_text(self):
+        job = local.Job()
+        job.record_llm_activity({
+            "type": "request", "model": "test-model",
+            "messages": [{"role": "system", "content": "Read this exactly."},
+                         {"role": "user", "content": "Write this exactly."}],
+            "parameters": {"temperature": 0.3},
+            "timeout_seconds": 45,
+        })
+        job.record_llm_activity({"type": "reasoning_delta", "text": "exposed reason"})
+        job.record_llm_activity({"type": "response_delta", "text": "partial "})
+        job.record_llm_activity({"type": "response_delta", "text": "answer"})
+        job.record_llm_activity({"type": "response_complete", "finish_reason": "stop"})
+        trace = job.snapshot()["llm_trace"]
+        self.assertEqual(trace["messages"][0]["content"], "Read this exactly.")
+        self.assertEqual(trace["reasoning"], "exposed reason")
+        self.assertEqual(trace["output"], "partial answer")
+        self.assertEqual(trace["timeout_seconds"], 45)
+        self.assertEqual(trace["status"], "complete")
 
     async def test_director_updates_reset_and_generation_authority(self):
         from goated_prompter import presets as library
@@ -179,11 +199,15 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(job["revision"], 0)
         self.assertTrue(await asyncio.to_thread(self.entered.wait, 2))
         response = await self.client.get("/api/bootstrap")
-        self.assertEqual((await response.json())["active_job"], job)
+        active = (await response.json())["active_job"]
+        self.assertEqual(active["id"], job["id"])
+        self.assertIn("Builder model workflow", active["progress"])
         response = await self.client.post(f"/api/jobs/{job['id']}/pause")
         requested = await response.json()
         self.assertEqual(requested["status"], "pause_requested")
-        self.assertEqual(requested["revision"], 1)
+        self.assertEqual(requested["revision"], 2)
+        self.assertIn("safe checkpoint", requested["status_reason"])
+        self.assertEqual(requested["events"][-1]["type"], "pause")
         response = await self.client.post("/api/generate", json={})
         self.assertEqual(response.status, 409)
         conflict = await response.json()
@@ -193,17 +217,19 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.release.set()
         paused = await self.wait_status(job["id"], "paused")
         self.assertIsNone(paused["result"])
-        self.assertEqual(paused["revision"], 2)
+        self.assertEqual(paused["revision"], 3)
+        self.assertIn("safe checkpoint", paused["status_reason"])
         response = await self.client.get("/api/bootstrap")
         self.assertEqual((await response.json())["active_job"], paused)
         response = await self.client.post(f"/api/jobs/{job['id']}/pause")
-        self.assertEqual((await response.json())["revision"], 3)
+        self.assertEqual((await response.json())["revision"], 4)
         response = await self.client.post(f"/api/jobs/{job['id']}/resume")
         resumed = await response.json()
-        self.assertEqual(resumed["revision"], 4)
+        self.assertEqual(resumed["revision"], 5)
         self.assertEqual(resumed["status"], "running")
+        self.assertIn("resumed", resumed["status_reason"])
         completed = await self.wait_status(job["id"], "succeeded")
-        self.assertEqual(completed["revision"], 5)
+        self.assertEqual(completed["revision"], 6)
         self.assertEqual(completed["result"]["prompt"], "fresh prompt")
         response = await self.client.get("/api/bootstrap")
         self.assertIsNone((await response.json())["active_job"])
@@ -219,13 +245,13 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         response = await self.client.post(f"/api/jobs/{job['id']}/cancel")
         ending = await response.json()
         self.assertEqual(ending["status"], "cancelling")
-        self.assertEqual(ending["revision"], 1)
+        self.assertEqual(ending["revision"], 2)
         response = await self.client.post("/api/generate", json={})
         self.assertEqual(response.status, 409)
         self.release.set()
         ended = await self.wait_status(job["id"], "cancelled")
         self.assertIsNone(ended["result"])
-        self.assertEqual(ended["revision"], 2)
+        self.assertEqual(ended["revision"], 3)
         self.assertIsNone((await (await self.client.get("/api/bootstrap")).json())["active_job"])
         next_job = await self.start()
         await self.wait_status(next_job["id"], "succeeded")

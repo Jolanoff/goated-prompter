@@ -26,6 +26,12 @@ const categoryAxes = {
 };
 const varietyAxisCounts = { Focused: 3, Balanced: 5, Wide: 6 };
 
+function elapsedLabel(seconds) {
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return minutes ? `${minutes}m ${remainder}s` : `${remainder}s`;
+}
+
 function download(name, content, type) {
   const url = URL.createObjectURL(new Blob([content], { type }));
   const link = document.createElement("a");
@@ -46,6 +52,25 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
   const submission = useRef(false);
   const synced = useRef("");
   const qualityAttempt = useRef(0);
+  const [clock, setClock] = useState(Date.now());
+
+  const datasetJob = job?.kind === "dataset" || job?.kind === "dataset_review";
+  const workflowActive = datasetJob && active;
+  const stageSeconds = workflowActive
+    ? Math.max(0, Math.floor(clock / 1000 - (job.progress_at || job.created_at || clock / 1000)))
+    : 0;
+
+  useEffect(() => {
+    if (!workflowActive) return;
+    setClock(Date.now());
+    const timer = setInterval(() => setClock(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [workflowActive, job?.id, job?.progress_at]);
+
+  useEffect(() => {
+    if (!datasetJob || job.status !== "failed") return;
+    setError(`${job.kind === "dataset_review" ? "Dataset review" : "Dataset generation"} failed. ${job.error || "The prompt engine did not return a usable result."}`);
+  }, [datasetJob, job?.id, job?.revision, job?.status]);
 
   useEffect(() => {
     if (!draft || job?.kind !== "dataset" || !Array.isArray(job.result?.prompts)) return;
@@ -182,9 +207,13 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
     {error && <div className={ui.message} role="alert"><span>{error}</span></div>}
     <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line px-4 py-3 text-xs text-muted">
       <span>{noEngine ? "Choose a prompt engine in Builder or Settings to generate." : `Engine: ${engineLabel}`}</span>
-      <span role="status">{isGenerating ? job.status === "cancelling" ? "Ending batch…" : job.progress || "Writing dataset prompts…" : `${draft?.results.length || 0} prompts in the current batch`}</span>
+      <span role="status">{workflowActive ? job.status === "cancelling" ? "Ending batch…" : <>{job.progress || "Starting dataset generation…"}{stageSeconds >= 5 && ` · ${elapsedLabel(stageSeconds)}`}</> : `${draft?.results.length || 0} prompts in the current batch`}</span>
       {active && <button className={ui.button} onClick={onCancel} disabled={job.status === "cancelling"}>End generation</button>}
     </div>
+    {workflowActive && stageSeconds >= 45 && <p className={`${ui.subtleNote} mb-5`} role="status">
+      {job.kind === "dataset" && !job.result?.completed ? "No prompt has completed yet. " : "The current model request is still running. "}
+      A local model may still be loading or generating. If the engine stops responding, its configured timeout will produce an error here; you can end generation now without waiting.
+    </p>}
 
     {draft && <>
       <div className="grid grid-cols-[minmax(260px,0.8fr)_minmax(0,1.35fr)] items-start gap-[18px] mobile:grid-cols-1">

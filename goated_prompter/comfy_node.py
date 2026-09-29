@@ -2,8 +2,8 @@
 
 from .core import CREATIVITY_NAMES, PROMPT_LENGTH_NAMES, REFERENCE_ROLE_NAMES, GoatedPrompterRequest, GoatedPrompterService
 from .director_profiles import PROMPT_MODEL_NAMES
-from .models import TARGET_MODEL_NAMES
-from .modes import MODE_NAMES
+from .prompting.modes import MODE_NAMES
+from .prompting.target_models import TARGET_MODEL_NAMES
 from .presets import DEFAULT_DIRECTOR_PRESET, legacy_preset_for_mode
 from .reference_map import REFERENCE_ATTRIBUTES, REFERENCE_SOURCE_NAMES
 

@@ -7,7 +7,7 @@ import re
 import threading
 
 from .backends.base import BackendConfigurationError
-from .prompt_catalog import (
+from .prompting.directors import (
     DIRECTOR_AI_NAMES,
     PROMPT_MODEL_GEMMA,
     PROMPT_MODEL_NAMES,

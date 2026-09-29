@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import base64
 import binascii
+import copy
 from contextlib import closing
 from collections import OrderedDict
 from dataclasses import replace
@@ -32,7 +33,6 @@ from goated_prompter.reference_map import REFERENCE_ATTRIBUTES
 from goated_prompter.workspace_store import WorkspaceStore
 from goated_prompter.workspace_api import register_workspace_routes, execute_workflow
 from goated_prompter.workflow_settings import WorkflowSettingsStore
-from goated_prompter.resolution import normalize_resolution, resolution_catalog
 from goated_prompter.presets import (
     DEFAULT_DIRECTOR_PRESET, MODE_DIRECTOR_RECOMMENDATIONS, DirectorLibraryError, delete_user_director,
     list_director_presets, resolve_user_director_directory, save_user_director,
@@ -106,14 +106,12 @@ def validate_settings(payload):
             raise ValueError("builder must be an object.")
         builder = dict(builder)
         builder.pop("lock_generated_prompt", None)
-        unknown = builder.keys() - strings - combos - sources - {"resolution"}
+        builder.pop("resolution", None)  # Remove legacy data from pre-removal settings.
+        unknown = builder.keys() - strings - combos - sources
         if unknown:
             raise ValueError("Unknown builder settings: " + ", ".join(sorted(unknown)))
         schema = GoatedPrompter.INPUT_TYPES()["required"]
         for key, value in builder.items():
-            if key == "resolution":
-                builder[key] = normalize_resolution(value, draft=True)
-                continue
             if not isinstance(value, str) or len(value) > 100000:
                 raise ValueError(f"builder {key} must be a string of at most 100000 characters.")
             elif key in sources and value not in REFERENCE_SOURCES:
@@ -136,9 +134,8 @@ def validate_prompts(payload):
     for record in payload["prompts"]:
         required = {"id", "title", "prompt", "createdAt"}
         if not isinstance(record, dict) or not required <= record.keys() or record.keys() - required - {"target", "resolution"}:
-            raise ValueError("Each prompt requires id, title, prompt, createdAt, and optionally target and resolution only.")
-        if "resolution" in record:
-            normalize_resolution(record["resolution"])
+            raise ValueError("Each prompt requires id, title, prompt, createdAt, and optionally target only.")
+        record = {key: value for key, value in record.items() if key != "resolution"}
         for key, limit in (("id", 128), ("title", 80), ("prompt", 100000), ("createdAt", 64), ("target", 256)):
             if key not in record:
                 continue
@@ -216,12 +213,111 @@ class Job:
         self.interrupt = None
         self.kind = "builder"
         self.progress = ""
+        self.progress_at = self.created_at
+        self.status_reason = "The job was accepted and is waiting for the generation worker."
+        self.events = []
+        self._event_sequence = 0
+        self._llm_request_sequence = 0
+        self.llm_trace = None
+        self._append_event(self.status_reason, "status")
+
+    def _append_event(self, message, event_type="info"):
+        self._event_sequence += 1
+        self.events.append({
+            "id": self._event_sequence,
+            "timestamp": time.time(),
+            "type": event_type,
+            "message": str(message),
+        })
+        del self.events[:-200]
+
+    def record_event(self, message, event_type="info", *, revise=True):
+        """Record bounded, user-safe runtime activity without exposing prompt contents."""
+        with self.lock:
+            self._append_event(message, event_type)
+            if revise:
+                self.revision += 1
+
+    def set_progress(self, message):
+        with self.lock:
+            self.progress = message
+            self.progress_at = time.time()
+            self.status_reason = message
+            self._append_event(message, "stage")
+            self.revision += 1
+
+    def record_llm_activity(self, event):
+        """Capture the exact text exposed by the model transport for the live inspector."""
+        if not isinstance(event, dict):
+            return
+        event_type = event.get("type")
+        with self.lock:
+            now = time.time()
+            if event_type == "request":
+                self._llm_request_sequence += 1
+                self.llm_trace = {
+                    "request_number": self._llm_request_sequence,
+                    "status": "waiting_first_token",
+                    "model": str(event.get("model") or "unknown"),
+                    "messages": copy.deepcopy(event.get("messages") or []),
+                    "parameters": copy.deepcopy(event.get("parameters") or {}),
+                    "timeout_seconds": event.get("timeout_seconds"),
+                    "output": "",
+                    "reasoning": "",
+                    "issue": "",
+                    "started_at": now,
+                    "first_token_at": None,
+                    "updated_at": now,
+                    "finished_at": None,
+                    "finish_reason": None,
+                }
+                self._append_event(
+                    f"LLM request {self._llm_request_sequence} sent; waiting for the first response text.",
+                    "request",
+                )
+            elif self.llm_trace is not None and event_type in {"response_delta", "reasoning_delta"}:
+                field = "reasoning" if event_type == "reasoning_delta" else "output"
+                text = str(event.get("text") or "")
+                if text:
+                    first = self.llm_trace["first_token_at"] is None
+                    self.llm_trace[field] += text
+                    self.llm_trace["status"] = "receiving"
+                    self.llm_trace["first_token_at"] = self.llm_trace["first_token_at"] or now
+                    self.llm_trace["updated_at"] = now
+                    if first:
+                        self._append_event(
+                            f"LLM request {self.llm_trace['request_number']} started returning text.",
+                            "response",
+                        )
+            elif self.llm_trace is not None and event_type == "response_complete":
+                self.llm_trace["status"] = "complete"
+                self.llm_trace["finish_reason"] = str(event.get("finish_reason") or "stop")
+                self.llm_trace["updated_at"] = now
+                self.llm_trace["finished_at"] = now
+                self._append_event(
+                    f"LLM request {self.llm_trace['request_number']} completed with finish reason "
+                    f"'{self.llm_trace['finish_reason']}'.",
+                    "response",
+                )
+            elif event_type == "error":
+                message = str(event.get("message") or "The model transport failed.")
+                if self.llm_trace is not None:
+                    self.llm_trace["status"] = "error"
+                    self.llm_trace["issue"] = message
+                    self.llm_trace["updated_at"] = now
+                    self.llm_trace["finished_at"] = now
+                self._append_event(message, "error")
+            else:
+                return
+            self.revision += 1
 
     def snapshot(self):
         with self.lock:
             return {"id": self.id, "status": self.status, "revision": self.revision, "created_at": self.created_at,
                     "finished_at": self.finished_at, "result": self.result, "error": self.error,
-                    "kind": self.kind, "progress": self.progress}
+                    "kind": self.kind, "progress": self.progress, "progress_at": self.progress_at,
+                    "status_reason": self.status_reason, "events": list(self.events),
+                    "llm_trace": copy.deepcopy(self.llm_trace)}
 
     def checkpoint(self):
         while True:
@@ -234,6 +330,8 @@ class Job:
                     return
                 if self.status != "paused":
                     self.status = "paused"
+                    self.status_reason = "Paused at a safe checkpoint because a pause was requested. Resume the job to continue."
+                    self._append_event(self.status_reason, "pause")
                     self.revision += 1
             self.gate.wait()
 
@@ -250,6 +348,10 @@ class Job:
                 return self.snapshot()
             self.cancel_requested = True
             self.status = "cancelling"
+            self.status_reason = (
+                "Cancellation was requested. Waiting for the active model call to stop or reach a safe checkpoint."
+            )
+            self._append_event(self.status_reason, "cancel")
             self.gate.set()
             self.revision += 1
             interrupt = self.interrupt
@@ -268,6 +370,8 @@ class Job:
                 self.checkpoint()
                 self.result = result() if callable(result) else result
                 self.status = "succeeded"
+                self.status_reason = "Generation completed successfully."
+                self._append_event(self.status_reason, "success")
                 self.finished_at = time.time()
                 self.revision += 1
                 return
@@ -414,6 +518,7 @@ class LocalState:
     def execute(self, job, director_request, config, text_only, workflow=None):
         try:
             job.checkpoint()
+            config = {**config, "_activity_callback": job.record_llm_activity}
             effective, _ = resolve_director_config(config, director_request)
             local_settings = effective.get("local_llama_cpp", {})
             validate_local_paths(local_settings)
@@ -426,6 +531,9 @@ class LocalState:
             if workflow is not None:
                 execute_workflow(self, job, director_request, config, workflow)
                 return
+            job.set_progress(
+                "Running the Builder model workflow. The engine may be loading, analyzing references, or writing the final prompt."
+            )
             service = self.service_factory(config=config, checkpoint=job.checkpoint)
             generated = (service.generate_text_only if text_only else service.generate)(director_request)
             result = {"ok": True, "prompt": generated.prompt, "backend": generated.backend_name,
@@ -433,7 +541,7 @@ class LocalState:
                       "prompt_model": generated.prompt_model, "director_preset": generated.director_preset}
             def save_result():
                 try:
-                    snapshot = self.workspace.add_version(generated.prompt, director_request.target_model, "Builder generation", resolution=director_request.resolution)
+                    snapshot = self.workspace.add_version(generated.prompt, director_request.target_model, "Builder generation")
                     result["version_id"] = snapshot["current_id"]
                 except (ValueError, OSError) as exc:
                     result["history_error"] = f"Prompt generated, but version history could not be saved: {exc}"
@@ -442,6 +550,8 @@ class LocalState:
         except JobCancelled:
             with job.lock:
                 job.status = "cancelled"
+                job.status_reason = "Generation stopped because cancellation was requested."
+                job._append_event(job.status_reason, "cancel")
                 job.finished_at = time.time()
                 job.revision += 1
         except Exception as exc:
@@ -449,10 +559,14 @@ class LocalState:
                 cancelled = job.cancel_requested
                 if cancelled:
                     job.status = "cancelled"
+                    job.status_reason = "Generation stopped because cancellation was requested."
+                    job._append_event(job.status_reason, "cancel")
                 else:
                     job.error = str(exc) if isinstance(exc, (ValueError, GoatedPrompterError)) else (
                         "Generation failed unexpectedly. Check the server console and model configuration, then retry.")
                     job.status = "failed"
+                    job.status_reason = job.error
+                    job._append_event(job.error, "error")
                 job.finished_at = time.time()
                 job.revision += 1
             if not cancelled:
@@ -502,7 +616,6 @@ async def bootstrap(request):
                               "reference_attributes": [{"key": key, "label": label} for key, label in REFERENCE_ATTRIBUTES],
                               "reference_sources": REFERENCE_SOURCES,
                                "max_reference_images": 4,
-                               "resolutions": resolution_catalog(),
                               "settings": await asyncio.to_thread(state.settings),
                               "migration_notices": state.migration_notices,
                               "active_job": state.active_job()})
@@ -568,9 +681,16 @@ async def job_endpoint(request):
                 job.gate.clear()
                 if job.status != "paused":
                     job.status = "pause_requested"
+                    job.status_reason = (
+                        "Pause requested. Live response text may continue to appear, but the active model call must "
+                        "end before the job can pause at its next safe checkpoint."
+                    )
+                    job._append_event(job.status_reason, "pause")
             else:
                 job.status = "running"
                 job.gate.set()
+                job.status_reason = "Generation resumed and is continuing from the last safe checkpoint."
+                job._append_event(job.status_reason, "status")
             job.revision += 1
         return web.json_response(job.snapshot())
 

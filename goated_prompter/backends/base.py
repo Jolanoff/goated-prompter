@@ -17,6 +17,10 @@ class BackendGenerationError(GoatedPrompterError):
     """The selected backend failed while generating text."""
 
 
+class BackendRunawayError(BackendGenerationError):
+    """A bounded workflow exceeded its limit or entered a repetition loop."""
+
+
 class BackendCapabilityError(GoatedPrompterError):
     """The selected backend cannot handle the supplied request modality."""
 
@@ -31,6 +35,17 @@ class GoatedPrompterBackend(ABC):
     name = "unknown"
     supports_text = True
     supports_vision = False
+    activity_callback = None
+
+    def emit_activity(self, event_type, **details):
+        """Publish user-visible request activity without coupling backends to the UI."""
+        callback = getattr(self, "activity_callback", None)
+        if callback is not None:
+            try:
+                callback({"type": event_type, **details})
+            except Exception:
+                # Observability must never break generation.
+                pass
 
     def validate_vision_input(self, image):
         if image is not None and not self.supports_vision:

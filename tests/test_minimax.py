@@ -573,7 +573,6 @@ class MiniMaxEndpointTests(unittest.IsolatedAsyncioTestCase):
         path = self.app[local.STATE].workflow_settings.path
         old = empty_settings()
         del old["minimax"]
-        old["explore"]["draft"]["base"] = "Keep my previous draft"
         local.atomic_json(path, old)
         response = await self.client.get("/api/workspace/settings/minimax")
         record = await response.json()
@@ -583,7 +582,6 @@ class MiniMaxEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(saved.status, 200)
         reload = WorkflowSettingsStore(path, local.read_store, local.atomic_json)
         self.assertEqual(reload.snapshot("minimax")["draft"], draft)
-        self.assertEqual(reload.snapshot("explore")["draft"]["base"], "Keep my previous draft")
         stale = await self.client.put("/api/workspace/settings/minimax", json={"revision": 0, "draft": {}})
         self.assertEqual(stale.status, 409)
 
