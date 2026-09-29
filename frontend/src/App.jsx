@@ -5,7 +5,7 @@ import { api } from "./api.js";
 import CreativeWorkspace from "./workflows/CreativeWorkspace.jsx";
 import MiniMaxTab from "./workflows/MiniMaxTab.jsx";
 import DatasetTab from "./workflows/DatasetTab.jsx";
-import { defaultResolution } from "./resolution.js";
+import JobLogModal from "./JobLogModal.jsx";
 import {
   ArrowLeft,
   ArrowUpRight,
@@ -24,6 +24,7 @@ import {
   RefreshCw,
   RotateCcw,
   Save,
+  ScrollText,
   Settings2,
   SlidersHorizontal,
   Sparkles,
@@ -203,6 +204,7 @@ function App() {
   const [saveKind, setSaveKind] = useState(null);
   const [saveName, setSaveName] = useState("");
   const [dialogBusy, setDialogBusy] = useState(false);
+  const [logOpen, setLogOpen] = useState(false);
   const dialogRef = useRef(null);
   const pendingPromptRef = useRef(null);
   const saveSourceRef = useRef(null);
@@ -295,8 +297,7 @@ function App() {
           setSettings((current) => ({ ...current, generated_prompt: next.result.prompt }));
         }
         if (next.result.history_error) setError(next.result.history_error);
-        setNotice(next.kind === "explore" ? "Three directions saved. Compare them in Explore."
-          : next.kind === "refine" ? "Refinement saved as a new version."
+        setNotice(next.kind === "refine" ? "Refinement saved as a new version."
           : next.kind === "dataset" ? `${next.result.completed} dataset prompts are ready.`
           : next.kind === "dataset_review" ? `Deep review completed for ${next.result.reviewed} prompts.`
           : "Your prompt is ready. Make it yours.");
@@ -814,12 +815,12 @@ function App() {
   }
 
   function openSave() {
-    requestPromptSave(prompt, settings.target_model, settings.idea.trim().split("\n")[0].slice(0, 70) || "Untitled prompt", settings.resolution);
+    requestPromptSave(prompt, settings.target_model, settings.idea.trim().split("\n")[0].slice(0, 70) || "Untitled prompt");
   }
 
-  function requestPromptSave(text, target, title, resolution) {
+  function requestPromptSave(text, target, title) {
     if (!text.trim() || !storageReady || promptsBusy || dialogBusy) return;
-    saveSourceRef.current = { prompt: text, target, resolution: resolution || defaultResolution() };
+    saveSourceRef.current = { prompt: text, target };
     pendingPromptRef.current = null;
     setDialogError("");
     setSaveKind("prompt");
@@ -963,10 +964,6 @@ function App() {
             onClick={() => navigate("refine")} disabled={!bootstrap}>
             <WandSparkles size={19} />Refine
           </button>
-          <button className={ui.navItem} data-active={view === "explore"}
-            onClick={() => navigate("explore")} disabled={!bootstrap}>
-            <Layers3 size={19} />Explore
-          </button>
           <button className={ui.navItem} data-active={view === "minimax"}
             onClick={() => navigate("minimax")} disabled={!bootstrap}>
             <Film size={19} />MiniMax H3
@@ -1045,6 +1042,11 @@ function App() {
             </div>
           </div>
           <div className="flex items-center gap-[22px] mobile:gap-0">
+            {job && (
+              <button className={ui.button} onClick={() => setLogOpen(true)} aria-label="View LLM activity log">
+                <ScrollText size={14} /><span className="mobile:hidden">View log</span>
+              </button>
+            )}
             <span className={ui.connectionPill} data-offline={!bootstrap}>
               <span className={ui.statusDot} />
               {bootstrap ? "Local backend connected" : "Backend offline"}
@@ -1121,13 +1123,12 @@ function App() {
             <CreativeWorkspace view={view} job={job} busy={busy || actionBusy || settingsBusy || !!uploading}
               active={active} noEngine={noEngine} builderPrompt={prompt} builderIdea={settings.idea}
               builderTarget={settings.target_model} inputs={bootstrap.inputs}
-              builderResolution={settings.resolution} resolutions={bootstrap.resolutions}
               onSavePrompt={requestPromptSave} canSavePrompt={storageReady && !promptsBusy && !dialogBusy && !saveKind}
               engineLabel={configuredBackend ? `Configured backend (${bootstrap.backend})` : selectedProfile?.label}
               onGenerate={startWorkflow} onCancel={endGeneration} onCopy={copy}
               onNavigate={navigate} onReceiveJob={receiveJob}
-              onUsePrompt={(text, target, resolution) => {
-                setSettings((current) => ({ ...current, generated_prompt: text, target_model: target, resolution: resolution || defaultResolution() }));
+              onUsePrompt={(text, target) => {
+                setSettings((current) => ({ ...current, generated_prompt: text, target_model: target }));
                 navigate("builder");
               }} />
           )}
@@ -1141,14 +1142,14 @@ function App() {
             presets={bootstrap.presets.presets} targets={bootstrap.inputs.target_model[0]}
             lengths={bootstrap.inputs.prompt_length[0]} onGenerate={startWorkflow}
             onCancel={endGeneration} onCopy={copy} />}
-          {active && view !== "builder" && view !== "refine" && view !== "explore" && view !== "minimax" && view !== "dataset" && (
+          {active && view !== "builder" && view !== "refine" && view !== "minimax" && view !== "dataset" && (
             <div className={`${ui.panel} mb-5 flex flex-wrap items-center justify-between gap-3`} role="status">
               <span>{job.progress || "Generating prompt…"}</span>
               <button className={ui.button} onClick={endGeneration} disabled={actionBusy || job.status === "cancelling"}>End generation</button>
             </div>
           )}
 
-          {view === "refine" || view === "explore" || view === "minimax" || view === "dataset" ? null : view === "saved" ? (
+          {view === "refine" || view === "minimax" || view === "dataset" ? null : view === "saved" ? (
             <>
               <div className={ui.pageHeading}>
                 <div>
@@ -1220,7 +1221,7 @@ function App() {
                           disabled={busy}
                           onClick={() => {
                             setSettings((current) => ({ ...current, generated_prompt: record.prompt,
-                              target_model: record.target || current.target_model, resolution: record.resolution || defaultResolution() }));
+                              target_model: record.target || current.target_model }));
                             setView("builder");
                           }}
                         >
@@ -1768,9 +1769,6 @@ function App() {
                         <button className={ui.button} disabled={!prompt.trim()} onClick={() => navigate("refine")}>
                           <WandSparkles size={15} />Refine & history
                         </button>
-                        <button className={ui.button} disabled={!prompt.trim() && !settings.idea.trim()} onClick={() => navigate("explore")}>
-                          <Layers3 size={15} />Explore directions
-                        </button>
                       </div>
                     </Panel>
                   </div>
@@ -2009,6 +2007,10 @@ function App() {
           )}
         </main>
       </div>
+
+      <JobLogModal open={logOpen} job={job}
+        engineLabel={configuredBackend ? `Configured backend (${bootstrap?.backend})` : selectedProfile?.label}
+        onClose={() => setLogOpen(false)} />
 
       <dialog
         className={ui.dialog}

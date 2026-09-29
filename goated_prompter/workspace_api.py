@@ -1,15 +1,13 @@
 """Dedicated HTTP workflows; uses the application's shared job admission/cancellation."""
 
 import asyncio
-import uuid
-
 from aiohttp import web
 
 from .core import GoatedPrompterRequest, _as_bool
-from .prompt_catalog import PROMPT_LENGTH_NAMES, TARGET_MODEL_NAMES
-from .prompt_workflows import PromptWorkflowService
-from .workspace_store import WorkspaceConflict, locks, now, text
-from .resolution import normalize_resolution
+from .prompting.details import PROMPT_LENGTH_NAMES
+from .prompting.target_models import TARGET_MODEL_NAMES
+from .refinement import RefineService
+from .workspace_store import WorkspaceConflict, locks, text
 from .minimax import MiniMaxService, validate_minimax_draft
 from .dataset import DatasetReviewService, DatasetService, validate_dataset_draft
 from .dataset_coverage import analyze_dataset_quality, build_coverage_plan, effective_coverage_plan
@@ -155,10 +153,7 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
                         result = await asyncio.to_thread(store.add_version, text(payload.get("prompt"), "Prompt"), target,
                                                          "Manual edit" if parent else "Starting prompt", parent_id=parent,
                                                          detail_locks=original["locks"] if original else locks(payload.get("locks", ["identity"])),
-                                                         resolution=original.get("resolution") if original else normalize_resolution(payload.get("resolution")),
                                                          revision=current["revision"])
-                    elif action == "delete_comparison":
-                        result = await asyncio.to_thread(store.delete_comparison, text(payload.get("id"), "Comparison id", 128), current["revision"])
                     else:
                         result = await asyncio.to_thread(store.navigate, action, current["revision"], payload.get("id"))
                     return web.json_response(result)
@@ -169,35 +164,25 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
                 target, length = settings.get("target_model", "Generic"), settings.get("prompt_length", "Medium")
                 if target not in TARGET_MODEL_NAMES or length not in PROMPT_LENGTH_NAMES:
                     raise ValueError("Invalid target model or prompt length.")
-                workflow = {"operation": operation, "locks": locks(payload.get("locks", []))}
+                workflow = {"operation": "refine", "locks": locks(payload.get("locks", []))}
                 saved_workflow = await asyncio.to_thread(state.workflow_settings.snapshot, operation)
                 workflow["instructions"] = saved_workflow["instructions"]
-                resolution = normalize_resolution()
-                if operation == "refine":
-                    version = next((item for item in current["versions"] if item["id"] == current["current_id"]), None)
-                    if version is None:
-                        raise ValueError("Add a starting prompt before refining.")
-                    workflow.update(base=version["prompt"], parent_id=version["id"], changes=text(payload.get("changes"), "Requested changes", 10000))
-                    target = version["target"]
-                    resolution = normalize_resolution()
-                else:
-                    if len(current["comparisons"]) >= 100:
-                        raise ValueError("Remove an older comparison before exploring again (100 comparison limit).")
-                    workflow["base"] = text(payload.get("base"), "Starting idea or prompt")
-                    workflow["batch"] = {"id": uuid.uuid4().hex, "base": workflow["base"], "target": target,
-                                         "locks": workflow["locks"], "created_at": now(), "results": [], "resolution": resolution}
-                if operation == "refine" and len(current["versions"]) >= 1000:
+                version = next((item for item in current["versions"] if item["id"] == current["current_id"]), None)
+                if version is None:
+                    raise ValueError("Add a starting prompt before refining.")
+                workflow.update(base=version["prompt"], parent_id=version["id"], changes=text(payload.get("changes"), "Requested changes", 10000))
+                target = version["target"]
+                if len(current["versions"]) >= 1000:
                     raise ValueError("Version history is full. Back it up and clear history before refining again.")
                 config = state.config()
                 configured = config.get("backend") in {"mock", "openai_compatible"}
                 director_request = GoatedPrompterRequest(
                     idea=workflow["base"], target_model=target, prompt_length=length, prompt_model="Custom",
-                    resolution=resolution,
                     director_profile="" if configured else text(settings.get("director_profile", state.saved_settings.get("selected_profile", "")), "Prompt engine", 512, optional=True),
                     director_keep_model_loaded=_as_bool(config.get("local_llama_cpp", {}).get("keep_model_loaded", False)),
                 )
                 job = job_factory()
-                job.kind = operation
+                job.kind = "refine"
                 state.jobs[job.id] = job
                 task = asyncio.create_task(state.run(job, director_request, config, True, workflow))
                 state.tasks.add(task)
@@ -235,11 +220,11 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
                     web.post("/api/workspace/dataset/review", dataset_review_endpoint),
                     web.post("/api/workspace/dataset/plan", dataset_plan_endpoint),
                     web.post("/api/workspace/dataset/quality", dataset_quality_endpoint),
-                    web.get("/api/workspace/settings/{operation:refine|explore|minimax|dataset}", settings_endpoint),
-                    web.put("/api/workspace/settings/{operation:refine|explore|minimax|dataset}", settings_endpoint),
-                    web.post("/api/workspace/settings/{operation:refine|explore}/instructions", settings_endpoint),
+                    web.get("/api/workspace/settings/{operation:refine|minimax|dataset}", settings_endpoint),
+                    web.put("/api/workspace/settings/{operation:refine|minimax|dataset}", settings_endpoint),
+                    web.post("/api/workspace/settings/{operation:refine}/instructions", settings_endpoint),
                     web.get("/api/workspace", endpoint), web.post("/api/workspace", endpoint),
-                    web.post("/api/workspace/{operation:refine|explore}", endpoint)])
+                    web.post("/api/workspace/{operation:refine}", endpoint)])
 
 
 def execute_workflow(state, job, request, config, workflow):
@@ -252,12 +237,7 @@ def execute_workflow(state, job, request, config, workflow):
             raise ValueError(f"The prompt was generated, but saving failed. Copy the recovered result before leaving this page. {exc}") from exc
 
     def progress(message):
-        with job.lock:
-            job.progress = message
-            job.revision += 1
-
-    def save_direction(direction, prompt):
-        job.commit(lambda: persist(prompt, lambda: state.workspace.save_direction(workflow["batch"], direction, prompt)))
+        job.set_progress(message)
 
     if workflow["operation"] == "minimax":
         result = MiniMaxService(config, job.checkpoint).run(request, workflow["input"], progress)
@@ -268,6 +248,11 @@ def execute_workflow(state, job, request, config, workflow):
         def partial(result):
             with job.lock:
                 job.result = result
+                job.record_event(
+                    f"Dataset prompt {result['completed']}/{result['total']} completed and is available.",
+                    "result",
+                    revise=False,
+                )
                 job.revision += 1
         result = DatasetService(config, job.checkpoint).run(
             request, workflow["input"], progress, partial)
@@ -280,15 +265,12 @@ def execute_workflow(state, job, request, config, workflow):
         job.commit(lambda: result, finish=True)
         return
 
-    service = PromptWorkflowService(config, job.checkpoint)
-    result = service.run(request, workflow, progress, save_direction)
+    service = RefineService(config, job.checkpoint)
+    result = service.run(request, workflow, progress)
     def finish():
-        if workflow["operation"] == "refine":
-            snapshot = persist(result["prompt"], lambda: state.workspace.add_version(
-                result["prompt"], request.target_model, "Refinement", parent_id=workflow["parent_id"],
-                instruction=workflow["changes"], detail_locks=workflow["locks"], resolution=request.resolution))
-            result["version_id"] = snapshot["current_id"]
-        else:
-            result["comparison_id"] = workflow["batch"]["id"]
+        snapshot = persist(result["prompt"], lambda: state.workspace.add_version(
+            result["prompt"], request.target_model, "Refinement", parent_id=workflow["parent_id"],
+            instruction=workflow["changes"], detail_locks=workflow["locks"]))
+        result["version_id"] = snapshot["current_id"]
         return result
     job.commit(finish, finish=True)

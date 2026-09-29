@@ -1,12 +1,11 @@
-"""Independent saved drafts and instruction overrides for Refine and Explore."""
+"""Independent saved drafts and instruction overrides for prompt workflows."""
 
 from copy import deepcopy
 import threading
 
-from .prompt_catalog import PROMPT_LENGTH_NAMES, TARGET_MODEL_NAMES
-from .resolution import normalize_resolution
+from .prompting.refine import builtin_refine_instructions
+from .prompting.target_models import TARGET_MODEL_NAMES
 from .workspace_store import WorkspaceConflict, locks, text
-from .workflow_prompts import builtin_workflow_instructions
 from .minimax import default_minimax_draft, validate_minimax_draft
 from .dataset import default_dataset_draft, validate_dataset_draft
 
@@ -16,10 +15,9 @@ def default_draft(operation):
         return default_minimax_draft()
     if operation == "dataset":
         return default_dataset_draft()
-    common = {"target": "Generic", "locks": ["identity"]}
     if operation == "refine":
-        return {**common, "changes": "", "source": "", "editing": None, "lock_version_id": None}
-    return {**common, "base": "", "length": "Medium", "selected_id": "", "resolution": normalize_resolution()}
+        return {"target": "Generic", "locks": ["identity"], "changes": "", "source": "", "editing": None, "lock_version_id": None}
+    raise ValueError("Unknown workflow settings operation.")
 
 
 def validate_draft(operation, value):
@@ -46,15 +44,11 @@ def validate_draft(operation, value):
                 raise ValueError("Invalid manual edit draft.")
             text(edit["id"], "Edit version id", 128)
             text(edit["text"], "Manual edit", optional=True)
-    else:
-        if result["length"] not in PROMPT_LENGTH_NAMES:
-            raise ValueError("Invalid prompt length.")
-        result["resolution"] = normalize_resolution(result["resolution"], draft=True)
     return result
 
 
 def validate_instructions(operation, value):
-    defaults = builtin_workflow_instructions(operation)
+    defaults = builtin_refine_instructions() if operation == "refine" else {}
     if not isinstance(value, dict) or value.keys() - defaults.keys():
         raise ValueError("Unknown workflow instruction section.")
     return {key: text(content, "System instructions", 20000) for key, content in value.items() if content != defaults[key]}
@@ -62,14 +56,14 @@ def validate_instructions(operation, value):
 
 def empty_settings():
     return {operation: {"revision": 0, "draft": default_draft(operation), "overrides": {}}
-            for operation in ("refine", "explore", "minimax", "dataset")}
+            for operation in ("refine", "minimax", "dataset")}
 
 
 def validate_settings_store(value):
-    allowed = {"refine", "explore", "minimax", "dataset"}
-    if (not isinstance(value, dict) or not {"refine", "explore"} <= set(value)
-            or set(value) - allowed):
+    supported = {"refine", "minimax", "dataset"}
+    if not isinstance(value, dict) or "refine" not in value:
         raise ValueError("Invalid workflow settings store.")
+    value = {key: record for key, record in value.items() if key in supported}
     for operation, record in value.items():
         if not isinstance(record, dict) or set(record) != {"revision", "draft", "overrides"} or type(record["revision"]) is not int or record["revision"] < 0:
             raise ValueError("Invalid workflow settings record.")
@@ -88,7 +82,7 @@ class WorkflowSettingsStore:
         return self.read(self.path, empty_settings(), validate_settings_store)
 
     def _public(self, operation, record):
-        defaults = builtin_workflow_instructions(operation)
+        defaults = builtin_refine_instructions() if operation == "refine" else {}
         return {**record, "draft": validate_draft(operation, record["draft"]), "defaults": defaults,
                 "instructions": {**defaults, **record["overrides"]}}
 

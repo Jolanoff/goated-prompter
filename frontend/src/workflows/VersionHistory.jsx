@@ -37,7 +37,7 @@ export default function VersionHistory({ snapshot, current, disabled, onAction }
       </li>)}
     </ol>
     {!!snapshot.versions.length && <button className={`${ui.textButton} mt-4`} disabled={disabled} onClick={() => {
-      if (window.confirm("Clear all version history? Copy any prompts you want to keep first. Saved Prompts and comparisons are kept.")) onAction({ action: "clear_history" });
+      if (window.confirm("Clear all version history? Copy any prompts you want to keep first. Saved Prompts are kept.")) onAction({ action: "clear_history" });
     }}>Clear version history</button>}
   </section>;
 }

@@ -2,18 +2,16 @@ import { useState } from "react";
 import { ui } from "../ui.js";
 import { useWorkspace } from "./useWorkspace.js";
 import RefineTab from "./RefineTab.jsx";
-import ExploreTab from "./ExploreTab.jsx";
 import { PromptText } from "./WorkflowControls.jsx";
 import { useWorkflowSettings } from "./useWorkflowSettings.js";
 import WorkflowSettingsStatus from "./WorkflowSettingsStatus.jsx";
 
-/** Hosts the two independent tabs. App continues to own the single global job. */
+/** Hosts Refine while App continues to own the single global job. */
 export default function CreativeWorkspace(props) {
   const workspace = useWorkspace(props.job, props.onReceiveJob);
   const refineSettings = useWorkflowSettings("refine");
-  const exploreSettings = useWorkflowSettings("explore");
   const [starting, setStarting] = useState(false);
-  const visible = props.view === "refine" || props.view === "explore";
+  const visible = props.view === "refine";
   const current = workspace.snapshot?.versions.find((version) => version.id === workspace.snapshot.current_id);
   const disabled = props.busy || workspace.pending || starting;
   async function generate(operation, payload) {
@@ -21,7 +19,7 @@ export default function CreativeWorkspace(props) {
     setStarting(true);
     workspace.setError("");
     try {
-      await (operation === "refine" ? refineSettings : exploreSettings).flush();
+      await refineSettings.flush();
       return await props.onGenerate(operation, { ...payload, revision: workspace.snapshot.revision });
     } catch (err) {
       if (err.status === 409) await workspace.refresh();
@@ -42,17 +40,13 @@ export default function CreativeWorkspace(props) {
     </section>}
     <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line px-4 py-3 text-xs text-muted">
       <span>{props.noEngine ? "Choose a prompt engine in Builder or Settings to generate." : `Engine: ${props.engineLabel}`}</span>
-      <span role="status">{props.active ? props.job.status === "cancelling" ? "Ending generation…" : props.job.progress || "Generating prompt…" : workspace.pending ? "Saving…" : "Versions & comparisons saved locally"}</span>
+      <span role="status">{props.active ? props.job.status === "cancelling" ? "Ending generation…" : props.job.progress || "Generating prompt…" : workspace.pending ? "Saving…" : "Versions saved locally"}</span>
       {props.active && <button className={ui.button} onClick={props.onCancel} disabled={props.job.status === "cancelling"}>End generation</button>}
     </div>
-    {!workspace.snapshot ? <div className={ui.emptyState}><h2>Loading your creative workspace</h2><p>Saved versions and comparisons will appear here.</p></div> : <>
+    {!workspace.snapshot ? <div className={ui.emptyState}><h2>Loading your creative workspace</h2><p>Saved versions will appear here.</p></div> : <>
       <div hidden={props.view !== "refine"}>
         <WorkflowSettingsStatus settings={refineSettings} label="Refine" />
         {refineSettings.draft && <RefineTab {...shared} preferences={refineSettings} disabled={disabled || refineSettings.working} />}
-      </div>
-      <div hidden={props.view !== "explore"}>
-        <WorkflowSettingsStatus settings={exploreSettings} label="Explore" />
-        {exploreSettings.draft && <ExploreTab {...shared} preferences={exploreSettings} disabled={disabled || exploreSettings.working} />}
       </div>
     </>}
   </div>;
