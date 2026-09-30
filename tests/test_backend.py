@@ -247,6 +247,66 @@ class OpenAITimeoutTests(unittest.TestCase):
         self.assertEqual(next(event["text"] for event in events if event["type"] == "reasoning_delta"), "visible analysis")
         self.assertEqual(events[-1], {"type": "response_complete", "finish_reason": "stop"})
 
+    def test_streaming_repetition_loop_is_stopped_early(self):
+        class RepeatingResponse:
+            def __iter__(self):
+                text = "A coherent opening, " + ", ".join(
+                    f"no visible garment number {index}" for index in range(80)
+                )
+                chunk = {"choices": [{"delta": {"content": text}, "finish_reason": None}]}
+                return iter([f"data: {json.dumps(chunk)}\n\n".encode()])
+
+        backend = openai.OpenAICompatibleBackend({
+            "base_url": "http://127.0.0.1:8189/v1", "model": "test",
+        })
+        with self.assertRaisesRegex(openai.BackendRunawayError, "repetition loop"):
+            backend._stream_response(RepeatingResponse(), False, 3072)
+
+    def test_streaming_loop_exposes_only_sentence_complete_pre_loop_prefix(self):
+        prefix = "A coherent visual scene with distinct subject action and natural light."
+        text = prefix + " " + ", ".join(f"no visible garment number {index}" for index in range(80))
+        chunk = {"choices": [{"delta": {"content": text}, "finish_reason": None}]}
+        response = [f"data: {json.dumps(chunk)}\n\n".encode()]
+        backend = openai.OpenAICompatibleBackend({
+            "base_url": "http://127.0.0.1:8189/v1", "model": "test",
+        })
+        with self.assertRaises(openai.BackendRunawayError) as caught:
+            backend._stream_response(response, False, 3072)
+        self.assertEqual(caught.exception.recoverable_text, prefix)
+
+    def test_unfinished_stream_over_7000_characters_is_stopped_for_retry(self):
+        class OversizedResponse:
+            def __iter__(self):
+                text = " ".join(f"unique{index}" for index in range(900))
+                chunk = {"choices": [{"delta": {"content": text}, "finish_reason": None}]}
+                return iter([f"data: {json.dumps(chunk)}\n\n".encode()])
+
+        backend = openai.OpenAICompatibleBackend({
+            "base_url": "http://127.0.0.1:8189/v1", "model": "test",
+        })
+        with self.assertRaisesRegex(openai.BackendRunawayError, "7,000 generated characters"):
+            backend._stream_response(OversizedResponse(), False, 3072)
+
+    def test_finished_stream_over_7000_characters_is_not_restarted(self):
+        class FinishedResponse:
+            def __iter__(self):
+                text = " ".join(f"unique{index}" for index in range(900))
+                chunk = {"choices": [{"delta": {"content": text}, "finish_reason": "stop"}]}
+                return iter([f"data: {json.dumps(chunk)}\n\n".encode()])
+
+        backend = openai.OpenAICompatibleBackend({
+            "base_url": "http://127.0.0.1:8189/v1", "model": "test",
+        })
+        result = backend._stream_response(FinishedResponse(), False, 3072)
+        self.assertGreater(len(result), 7000)
+
+    def test_repetition_detector_ignores_normal_detailed_prose(self):
+        prose = " ".join(
+            f"Section {index} describes a distinct visual feature with varied composition lighting texture and pose."
+            for index in range(30)
+        )
+        self.assertIsNone(openai._repetition_issue(prose))
+
 
 class FinalBudgetTests(unittest.TestCase):
     def instruction(self, max_tokens=None, hard_max_tokens=None):

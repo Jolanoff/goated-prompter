@@ -10,17 +10,22 @@ from .director_profiles import resolve_director_config
 from .prompting.dataset import (
     DATASET_SOURCES, DATASET_STYLES, DATASET_TYPES, DATASET_VARIETY,
     DEEP_CATEGORIES, dataset_instruction, deep_review_instruction,
-    dataset_format_repair, dataset_loop_repair, deep_review_correction,
+    dataset_format_repair, dataset_loop_repair, dataset_plan_instruction, deep_review_correction,
 )
 from .prompting.details import PROMPT_LENGTH_NAMES
 from .prompting.target_models import TARGET_MODEL_NAMES
 from .workflow_output import WorkflowFormatError, normalize_workflow_output, sanitize_prompt_text
 from .dataset_coverage import AXES, analyze_dataset_quality, effective_coverage_plan
+from .dataset_triggers import trigger_presence_error
+
+
+DATASET_MAX_RETRIES = 3
 
 
 def default_dataset_draft():
     return {
         "trigger": "", "trigger_type": "Character", "custom_type": "", "subject": "",
+        "trigger_at_start": False, "trigger_connected": True, "expand_trigger": False,
         "amount": 12, "visual_style": "Photorealistic", "custom_style": "",
         "source_mode": "random", "inputs": "", "target": "Generic", "length": "Medium",
         "director_preset": "general_director", "variety": "Balanced", "constraints": "",
@@ -38,11 +43,17 @@ def _text(value, label, limit, *, required=False):
 
 def validate_dataset_draft(value, *, generation=False):
     defaults = default_dataset_draft()
-    if not isinstance(value, dict) or value.keys() - defaults.keys():
+    if not isinstance(value, dict):
+        raise ValueError("Invalid Dataset settings fields.")
+    # Silently discard fields written by the reverted frame/aspect experiment
+    # so drafts saved during that version continue to load normally.
+    value = {key: item for key, item in value.items()
+             if key not in {"aspect_ratio", "custom_aspect_ratio", "frame_mode"}}
+    if value.keys() - defaults.keys():
         raise ValueError("Invalid Dataset settings fields.")
     result = {**defaults, **value}
     result["trigger"] = _text(result["trigger"], "Trigger / prepend", 200, required=generation).strip()
-    result["subject"] = _text(result["subject"], "Trigger description", 10000, required=generation).strip()
+    result["subject"] = _text(result["subject"], "Dataset concept", 10000, required=generation).strip()
     result["custom_type"] = _text(result["custom_type"], "Custom subject kind", 120).strip()
     result["custom_style"] = _text(result["custom_style"], "Custom visual style", 500).strip()
     result["inputs"] = _text(result["inputs"], "Guided inputs", 50000)
@@ -65,6 +76,11 @@ def validate_dataset_draft(value, *, generation=False):
         raise ValueError("Dataset prompt amount must be between 1 and 25.")
     if type(result["coverage_enabled"]) is not bool:
         raise ValueError("Coverage planning must be enabled or disabled.")
+    for key, label in (("trigger_at_start", "Trigger starting placement"),
+                       ("trigger_connected", "Connected trigger text"),
+                       ("expand_trigger", "Trigger expansion")):
+        if type(result[key]) is not bool:
+            raise ValueError(f"{label} must be enabled or disabled.")
     if type(result["plan_seed"]) is not int or not 0 <= result["plan_seed"] <= 2147483647:
         raise ValueError("Coverage plan seed must be between 0 and 2147483647.")
     if (not isinstance(result["coverage_axes"], list) or len(result["coverage_axes"]) > len(AXES)
@@ -114,19 +130,12 @@ def validate_dataset_draft(value, *, generation=False):
     return result
 
 
-def ensure_trigger(prompt, trigger, target):
-    if target == "Ideogram4":
-        decoded = json.loads(prompt)
-        description = decoded["high_level_description"].lstrip()
-        if not description.startswith(trigger):
-            separator = " " if trigger.endswith((",", ".", ":", ";")) else ", "
-            decoded["high_level_description"] = trigger + separator + description
-        return json.dumps(decoded, ensure_ascii=False, indent=2)
-    prompt = sanitize_prompt_text(prompt)
-    if prompt.startswith(trigger):
-        return prompt
-    separator = " " if trigger.endswith((",", ".", ":", ";")) else ", "
-    return trigger + separator + prompt
+def validate_trigger_contract(prompt, data, progress=None):
+    cleaned = prompt if data["target"] == "Ideogram4" else sanitize_prompt_text(prompt)
+    error = trigger_presence_error(cleaned, data["trigger"], data["target"])
+    if error and progress:
+        progress(f"Trigger warning: {error} Keeping the finished prompt without rewriting it.")
+    return cleaned
 
 
 class DatasetService:
@@ -134,44 +143,99 @@ class DatasetService:
         self.config, self.checkpoint = config, checkpoint
 
     def _generate(self, session, instruction, data, index, progress):
-        for attempt in range(2):
+        original = instruction
+        for attempt in range(DATASET_MAX_RETRIES + 1):
             self.checkpoint()
             progress(
-                f"{'Repairing' if attempt else 'Waiting for'} prompt engine · "
+                f"{'Retrying' if attempt else 'Waiting for'} prompt engine · "
                 f"dataset prompt {index}/{data['amount']}"
+                + (f" · retry {attempt}/{DATASET_MAX_RETRIES}" if attempt else "")
             )
             session.validate_instruction(instruction)
             try:
                 raw = session.generate(instruction)
             except BackendRunawayError as exc:
-                if attempt:
+                self.checkpoint()
+                recovered = getattr(exc, "recoverable_text", "")
+                if recovered and len(recovered.split()) >= 30 and recovered.rstrip().endswith((".", "!", "?", "}")):
+                    try:
+                        prompt = normalize_workflow_output(recovered, data["target"])
+                        prompt = validate_trigger_contract(prompt, data, progress)
+                    except (WorkflowFormatError, ValueError, KeyError, TypeError):
+                        progress("The pre-loop prefix was not a valid complete target prompt; retrying.")
+                    else:
+                        progress(f"Dataset prompt {index}/{data['amount']} recovered from the usable text before the repetition loop.")
+                        return prompt
+                if attempt >= DATASET_MAX_RETRIES:
                     raise BackendGenerationError(
-                        f"The prompt engine produced runaway dataset output twice. {exc}"
+                        f"Dataset prompt {index}/{data['amount']} produced runaway output after "
+                        f"{DATASET_MAX_RETRIES} retries. {exc}"
                     ) from exc
                 progress(
                     f"Dataset prompt {index}/{data['amount']} entered a repetition/output-limit loop: "
-                    f"{exc} Retrying once with stricter finite-output instructions."
+                    f"{exc} Retrying with stricter finite-output instructions "
+                    f"({attempt + 1}/{DATASET_MAX_RETRIES})."
                 )
                 instruction = replace(
-                    instruction,
-                    system_message=dataset_loop_repair(instruction.system_message, exc),
-                    diagnostic_stage=instruction.diagnostic_stage + ":loop_retry",
+                    original,
+                    system_message=dataset_loop_repair(original.system_message, exc, attempt + 1),
+                    max_tokens=max(384, int(original.max_tokens * (0.8 ** (attempt + 1)))),
+                    hard_max_tokens=max(384, int(original.hard_max_tokens * (0.8 ** (attempt + 1)))),
+                    diagnostic_stage=original.diagnostic_stage + f":loop_retry_{attempt + 1}",
                 )
                 continue
             self.checkpoint()
             progress(f"Checking dataset prompt {index}/{data['amount']}")
             try:
                 prompt = normalize_workflow_output(raw, data["target"])
-                return ensure_trigger(prompt, data["trigger"], data["target"])
+                return validate_trigger_contract(prompt, data, progress)
             except (WorkflowFormatError, ValueError, KeyError, TypeError) as exc:
-                if attempt:
-                    raise BackendGenerationError(f"The prompt engine returned an invalid dataset prompt twice. {exc}") from exc
+                if attempt >= DATASET_MAX_RETRIES:
+                    raise BackendGenerationError(
+                        f"Dataset prompt {index}/{data['amount']} remained invalid after "
+                        f"{DATASET_MAX_RETRIES} retries. {exc}"
+                    ) from exc
                 progress(
-                    f"Dataset prompt {index}/{data['amount']} failed output validation: {exc} Retrying once."
+                    f"Dataset prompt {index}/{data['amount']} failed output validation: {exc} "
+                    f"Retrying ({attempt + 1}/{DATASET_MAX_RETRIES})."
                 )
-                instruction = replace(instruction,
-                    system_message=dataset_format_repair(instruction.system_message, exc),
-                    diagnostic_stage=instruction.diagnostic_stage + ":format_retry")
+                # Repair from clean instructions without raising the detail or
+                # token budget lowered by an earlier loop recovery attempt.
+                retry_system = original.system_message
+                if instruction.hard_max_tokens < original.hard_max_tokens:
+                    retry_system = dataset_loop_repair(retry_system, exc, attempt + 1)
+                instruction = replace(original,
+                    system_message=dataset_format_repair(retry_system, exc),
+                    max_tokens=instruction.max_tokens,
+                    hard_max_tokens=instruction.hard_max_tokens,
+                    diagnostic_stage=original.diagnostic_stage + f":format_retry_{attempt + 1}")
+
+    def _plan(self, session, data, coverage, family, progress):
+        correction = ""
+        for attempt in range(2):
+            self.checkpoint()
+            progress("Planning dataset scenes…" if not attempt else "Repairing dataset scene plan…")
+            instruction = dataset_plan_instruction(data, coverage, family, correction)
+            session.validate_instruction(instruction)
+            try:
+                raw = session.generate(instruction)
+                self.checkpoint()
+                rows = json.loads(raw)
+                if not isinstance(rows, list) or len(rows) != data["amount"]:
+                    raise ValueError("Plan must contain one row per requested prompt.")
+                for index, row in enumerate(rows, 1):
+                    if (not isinstance(row, dict) or set(row) != {"index", "scene"}
+                            or type(row["index"]) is not int or row["index"] != index
+                            or not isinstance(row["scene"], str) or not row["scene"].strip()
+                            or len(row["scene"]) > 200):
+                        raise ValueError("Plan rows require sequential indexes and concise nonempty scenes.")
+                return rows
+            except (ValueError, TypeError, BackendGenerationError) as exc:
+                progress(f"Scene planning failed validation: {exc}")
+                correction = "Return the exact JSON schema with sequential indexes and concise scene strings."
+        progress("Scene planning unavailable; using the supplied concept and guided inputs directly.")
+        return [{"index": row["index"], "scene": row["input"] or data["subject"]}
+                for row in coverage["plan"]]
 
     def run(self, request, data, progress, partial):
         effective, profile = resolve_director_config(self.config, request)
@@ -182,10 +246,11 @@ class DatasetService:
         results = []
         progress("Starting the prompt engine for the dataset…")
         with backend.generation_session() as session:
+            scenes = self._plan(session, data, coverage, family, progress)
             for index in range(1, data["amount"] + 1):
                 self.checkpoint()
-                plan_item = plan[index - 1]
-                instruction = dataset_instruction(request, data, index, results, family, plan_item)
+                plan_item = {**plan[index - 1], "scene": scenes[index - 1]["scene"]}
+                instruction = dataset_instruction(request, data, index, (), family, plan_item)
                 prompt = self._generate(session, instruction, data, index, progress)
                 seed = plan_item["input"]
                 results.append({"index": index, "prompt": prompt, "input": seed})
