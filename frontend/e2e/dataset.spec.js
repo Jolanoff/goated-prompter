@@ -7,8 +7,8 @@ test("Dataset builds, persists and exports a trigger-ready batch", async ({ page
   await page.goto("/");
   await page.getByRole("button", { name: "Dataset", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Build a prompt dataset." })).toBeVisible();
-  await page.getByLabel("Trigger / prepend text").fill("ohwx_person");
-  await page.getByLabel("Describe the consistent concept").fill(
+  await page.getByLabel("Trigger text or terms").fill("ohwx_person");
+  await page.getByLabel("What should every dataset prompt be about?").fill(
     "A woman with short black hair, green eyes, and a fitted red jacket.",
   );
   await page.getByLabel("Number of prompts").selectOption("3");
@@ -25,7 +25,7 @@ test("Dataset builds, persists and exports a trigger-ready batch", async ({ page
   await expect(planner.getByText("standing portrait in a city at night", { exact: true })).toBeVisible();
   await expect(planner.getByText("running through a sunlit field", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Generate 3 prompts" }).click();
-  await expect(page.getByLabel("Dataset prompt 3")).toHaveValue(/^ohwx_person,/);
+  await expect(page.getByLabel("Dataset prompt 3")).toHaveValue(/ohwx_person/);
   await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(/standing portrait/);
   await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/running through/);
   await expect(page.getByRole("button", { name: "TXT", exact: true })).toBeEnabled();
@@ -37,7 +37,7 @@ test("Dataset builds, persists and exports a trigger-ready batch", async ({ page
   await expect(page.getByText("Dataset settings: Saved")).toBeVisible();
   await page.reload();
   await page.getByRole("button", { name: "Dataset", exact: true }).click();
-  await expect(page.getByLabel("Dataset prompt 3")).toHaveValue(/^ohwx_person,/);
+  await expect(page.getByLabel("Dataset prompt 3")).toHaveValue(/ohwx_person/);
   await expect(page.getByRole("region", { name: "Coverage planner" }).getByRole("row")).toHaveCount(4);
   await expect(page.getByRole("region", { name: "Dataset quality report" }).getByText("Overall", { exact: true })).toBeVisible();
   expect(errors).toEqual([]);
@@ -79,8 +79,8 @@ test("Dataset shows background prompt-engine failures in its own view", async ({
 
   await page.goto("/");
   await page.getByRole("button", { name: "Dataset", exact: true }).click();
-  await page.getByLabel("Trigger / prepend text").fill("ohwx_person");
-  await page.getByLabel("Describe the consistent concept").fill("A woman wearing a red jacket.");
+  await page.getByLabel("Trigger text or terms").fill("ohwx_person");
+  await page.getByLabel("What should every dataset prompt be about?").fill("A woman wearing a red jacket.");
   await page.getByRole("button", { name: "Generate 12 prompts" }).click();
 
   await expect(page.getByText(

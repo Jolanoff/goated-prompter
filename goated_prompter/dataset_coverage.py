@@ -7,6 +7,7 @@ import random
 import re
 
 from .workflow_output import WorkflowFormatError, normalize_workflow_output
+from .dataset_triggers import trigger_contract_error, trigger_presence_error, trigger_terms, trigger_text_target
 
 
 AXES = {
@@ -32,18 +33,23 @@ AXES = {
 
 CATEGORY_AXES = {
     "Character": ("framing", "viewpoint", "pose_action", "expression", "lighting", "setting"),
+    "Multiple characters": ("framing", "viewpoint", "pose_action", "expression", "lighting", "setting"),
+    "Animal": ("framing", "viewpoint", "pose_action", "context", "lighting", "setting"),
     "Visual style": ("subject_matter", "composition", "scale", "palette", "lighting", "setting"),
     "Object / product": ("framing", "viewpoint", "context", "surface", "lighting", "background"),
+    "Location / environment": ("viewpoint", "composition", "scale", "lighting", "setting", "context"),
     "Brand / logo": ("application", "material", "placement", "layout", "lighting", "setting"),
     "Typography / text": ("layout", "hierarchy", "material", "placement", "background", "lighting"),
+    "Concept": ("framing", "viewpoint", "composition", "context", "lighting", "setting"),
     "Custom": ("framing", "viewpoint", "composition", "context", "lighting", "setting"),
 }
 
 VARIETY_AXIS_COUNTS = {"Focused": 3, "Balanced": 5, "Wide": 6}
 LEAKED_LABELS = re.compile(
-    r"(?im)^\s*(?:ITEM|TRIGGER TYPE|TRIGGER DESCRIPTION|SOURCE MODE|GUIDED INPUT|"
-    r"ADDITIONAL CONSISTENCY RULES|EARLIER ITEM|OUTPUT FORMAT)\s*(?:\d+[^\n]*)?$|"
-    r"</?(?:data|input|constraints|example)>",
+    r"(?im)^\s*(?:ITEM|TRIGGER TYPE|TRIGGER DESCRIPTION|REQUIRED TRIGGER TEXT|DATASET CONCEPT|"
+    r"SOURCE MODE|GUIDED INPUT|ADDITIONAL CONSISTENCY RULES|CONSISTENCY AND VARIATION RULES|"
+    r"EARLIER ITEM|OUTPUT FORMAT)\s*(?:\d+[^\n]*)?$|"
+    r"</?(?:data|trigger|input|constraints|example)>",
 )
 
 
@@ -110,17 +116,13 @@ def effective_coverage_plan(data):
     return build_coverage_plan(data)
 
 
-def _normalized_words(prompt, trigger, target="Generic"):
-    text = prompt
-    if target == "Ideogram4":
-        try:
-            value = json.loads(prompt)
-            if isinstance(value, dict) and isinstance(value.get("high_level_description"), str):
-                text = value["high_level_description"]
-        except (ValueError, TypeError):
-            pass
-    if text.startswith(trigger):
-        text = text[len(trigger):]
+def _normalized_words(prompt, trigger, target="Generic", connected=True):
+    try:
+        text = trigger_text_target(prompt, target)
+    except ValueError:
+        text = prompt
+    for term in trigger_terms(trigger, connected):
+        text = re.sub(re.escape(term), " ", text, flags=re.IGNORECASE)
     return re.findall(r"[a-z0-9]+", text.casefold())
 
 
@@ -142,21 +144,39 @@ def _issue(code, severity, message, related=None):
     return result
 
 
-def _prompt_trigger_valid(prompt, trigger, target):
-    if not trigger:
+def _prompt_trigger_valid(prompt, data):
+    try:
+        return trigger_presence_error(
+            prompt, data.get("trigger", ""), data.get("target", "Generic"),
+        ) is None
+    except ValueError:
         return False
-    if target == "Ideogram4":
-        try:
-            value = json.loads(prompt)
-            description = value.get("high_level_description", "") if isinstance(value, dict) else ""
-            return isinstance(description, str) and description.lstrip().startswith(trigger)
-        except (ValueError, TypeError):
-            return False
-    return prompt.startswith(trigger)
+
+
+def _prompt_trigger_issue(prompt, data):
+    try:
+        return trigger_presence_error(
+            prompt, data.get("trigger", ""), data.get("target", "Generic"),
+        )
+    except ValueError as exc:
+        return str(exc)
+
+
+def _prompt_trigger_preference(prompt, data):
+    try:
+        return trigger_contract_error(
+            prompt, data.get("trigger", ""), data.get("target", "Generic"),
+            connected=data.get("trigger_connected", True),
+            at_start=data.get("trigger_at_start", False),
+        )
+    except ValueError:
+        return None
 
 
 def quality_signature(data, results, plan):
     value = {"trigger": data.get("trigger"), "target": data.get("target"),
+             "trigger_connected": data.get("trigger_connected", True),
+             "trigger_at_start": data.get("trigger_at_start", False),
              "amount": data.get("amount"), "results": results, "plan": plan}
     return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True,
                                      separators=(",", ":")).encode("utf-8")).hexdigest()[:20]
@@ -180,20 +200,21 @@ def analyze_dataset_quality(data, results=None, plan=None):
     lengths = []
     for item in results:
         index, prompt = item["index"], item["prompt"]
-        words = _normalized_words(prompt, trigger, target)
+        words = _normalized_words(prompt, trigger, target, data.get("trigger_connected", True))
         normalized[index] = " ".join(words)
         shingles[index] = _shingles(words)
         openings[index] = " ".join(words[:8])
         lengths.append((index, len(words)))
         if not prompt.strip():
             add(index, _issue("empty_output", "error", "The prompt is empty."))
-        if _prompt_trigger_valid(prompt, trigger, target):
+        if _prompt_trigger_valid(prompt, data):
             trigger_passes += 1
+            preference = _prompt_trigger_preference(prompt, data)
+            if preference:
+                add(index, _issue("trigger_preference", "warning", preference))
         else:
-            add(index, _issue("trigger_position", "error", "The exact trigger is missing from the required starting position."))
-        count = prompt.count(trigger) if trigger else 0
-        if count > 1:
-            add(index, _issue("trigger_repeated", "warning", f"The trigger appears {count} times; it should normally appear once."))
+            issue = _prompt_trigger_issue(prompt, data)
+            add(index, _issue("trigger_missing", "warning", issue or "Requested trigger wording is missing."))
         try:
             normalize_workflow_output(prompt, target)
             format_passes += 1

@@ -7,7 +7,8 @@ import { TargetSelect } from "./WorkflowControls.jsx";
 import { useWorkflowSettings } from "./useWorkflowSettings.js";
 import WorkflowSettingsStatus from "./WorkflowSettingsStatus.jsx";
 
-const triggerTypes = ["Character", "Visual style", "Object / product", "Brand / logo", "Typography / text", "Custom"];
+const triggerTypes = ["Character", "Multiple characters", "Animal", "Object / product", "Visual style",
+  "Location / environment", "Brand / logo", "Typography / text", "Concept", "Custom"];
 const visualStyles = ["Photorealistic", "Cinematic photography", "Anime / manga", "Illustration", "3D render", "Graphic design", "Keep described style", "Mixed styles", "Custom"];
 const varieties = ["Focused", "Balanced", "Wide"];
 const axisLabels = {
@@ -18,10 +19,14 @@ const axisLabels = {
 };
 const categoryAxes = {
   Character: ["framing", "viewpoint", "pose_action", "expression", "lighting", "setting"],
+  "Multiple characters": ["framing", "viewpoint", "pose_action", "expression", "lighting", "setting"],
+  Animal: ["framing", "viewpoint", "pose_action", "context", "lighting", "setting"],
   "Visual style": ["subject_matter", "composition", "scale", "palette", "lighting", "setting"],
   "Object / product": ["framing", "viewpoint", "context", "surface", "lighting", "background"],
+  "Location / environment": ["viewpoint", "composition", "scale", "lighting", "setting", "context"],
   "Brand / logo": ["application", "material", "placement", "layout", "lighting", "setting"],
   "Typography / text": ["layout", "hierarchy", "material", "placement", "background", "lighting"],
+  Concept: ["framing", "viewpoint", "composition", "context", "lighting", "setting"],
   Custom: ["framing", "viewpoint", "composition", "context", "lighting", "setting"],
 };
 const varietyAxisCounts = { Focused: 3, Balanced: 5, Wide: 6 };
@@ -109,6 +114,9 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
   const allowedAxes = categoryAxes[draft?.trigger_type] || categoryAxes.Custom;
   const defaultAxes = allowedAxes.slice(0, varietyAxisCounts[draft?.variety] || 5);
   const selectedAxes = draft?.coverage_axes?.length ? draft.coverage_axes.filter((key) => allowedAxes.includes(key)) : defaultAxes;
+  const triggerParts = draft?.trigger_connected === false
+    ? draft.trigger.split(/(?:[,\n]+|\s+and\s+)/i).map((part) => part.trim()).filter(Boolean)
+    : draft?.trigger.trim() ? [draft.trigger.trim()] : [];
 
   useEffect(() => {
     if (!draft?.results.length || isGenerating || job?.kind === "dataset" && active) return;
@@ -201,7 +209,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
     <div className={ui.pageHeading}><div>
       <div className={ui.eyebrow}>CONSISTENT CONCEPT. USEFUL VARIATION.</div>
       <h2>Build a prompt <span>dataset.</span></h2>
-      <p>Create up to 25 trigger-ready prompts for character, style, product, brand, text, or custom training sets.</p>
+      <p>Create up to 25 trigger-ready prompts for characters, animals, objects, styles, locations, concepts, or custom training sets.</p>
     </div></div>
     <WorkflowSettingsStatus settings={preferences} label="Dataset" />
     {error && <div className={ui.message} role="alert"><span>{error}</span></div>}
@@ -217,16 +225,16 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
 
     {draft && <>
       <div className="grid grid-cols-[minmax(260px,0.8fr)_minmax(0,1.35fr)] items-start gap-[18px] mobile:grid-cols-1">
-        <section className={ui.panel} aria-label="Dataset identity settings">
+        <section className={ui.panel} aria-label="Dataset trigger and concept settings">
           <header className={ui.panelHeader}>
             <div className={ui.panelIcon}><Database size={21} /></div>
-            <div className={ui.panelHeading}><h2>Dataset identity</h2><p>Define what must stay recognizable across every prompt.</p></div>
+            <div className={ui.panelHeading}><h2>Trigger & concept</h2><p>Define the required trigger and what every prompt should be about.</p></div>
           </header>
           <fieldset disabled={disabled} className={ui.fields}>
-            <label className={ui.field}><span>Trigger / prepend text</span>
-              <input className={ui.input} aria-label="Trigger / prepend text" maxLength={200} value={draft.trigger}
-                onChange={(event) => update({ trigger: event.target.value, quality_report: {} })} placeholder="e.g. ohwx_person" />
-              <small className={ui.directorDescription}>Placed at the start of every result. For structured targets, it starts the primary description field.</small>
+            <label className={ui.field}><span>Trigger text or terms</span>
+              <textarea className={ui.notesInput} style={{ minHeight: 82 }} aria-label="Trigger text or terms" maxLength={200} value={draft.trigger}
+                onChange={(event) => update({ trigger: event.target.value, quality_report: {} })} placeholder="e.g. old lady with dark hair · or woman, cake" />
+              <small className={ui.directorDescription}>The exact required text. When distributed, separate terms with commas or new lines.</small>
             </label>
             <label className={ui.field}><span>What is the trigger about?</span>
               <select className={ui.select} aria-label="What is the trigger about?" value={draft.trigger_type}
@@ -238,15 +246,40 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
               <input className={ui.input} aria-label="Custom subject kind" maxLength={120} value={draft.custom_type}
                 onChange={(event) => updatePlanning({ custom_type: event.target.value })} placeholder="e.g. architecture language, mascot, material" />
             </label>}
-            <label className={ui.field}><span>Describe the consistent concept</span>
-              <textarea className={ui.notesInput} aria-label="Describe the consistent concept" maxLength={10000}
+            <div className="grid gap-2">
+              <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-line bg-[#11131b] p-3 text-xs">
+                <input type="checkbox" className="mt-0.5 accent-[#aa8cda]" aria-label="Require trigger at beginning"
+                  checked={draft.trigger_at_start === true} onChange={(event) => update({ trigger_at_start: event.target.checked, quality_report: {} })} />
+                <span><strong className="block">Require trigger at the beginning</strong>
+                  <small className="mt-1 block leading-relaxed text-muted">On strongly requests beginning placement. Off encourages a natural introduction first. Placement will never make an otherwise usable prompt fail.</small></span>
+              </label>
+              <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-line bg-[#11131b] p-3 text-xs">
+                <input type="checkbox" className="mt-0.5 accent-[#aa8cda]" aria-label="Keep trigger text connected"
+                  checked={draft.trigger_connected !== false} onChange={(event) => update({ trigger_connected: event.target.checked, quality_report: {} })} />
+                <span><strong className="block">Keep trigger text connected</strong>
+                  <small className="mt-1 block leading-relaxed text-muted">Off requests comma-, line-, or “and”-separated terms in different positions. Missing wording or grouping is reported as a warning; finished prompts are not discarded.</small></span>
+              </label>
+              {draft.trigger_connected === false && triggerParts.length > 0 && <p className={ui.subtleNote}>
+                {triggerParts.length === 1 ? "One required term detected. Add commas, new lines, or “and” to distribute multiple terms: " : "Required distributed terms: "}
+                {triggerParts.map((part) => `“${part}”`).join(" · ")}
+              </p>}
+              <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-line bg-[#11131b] p-3 text-xs">
+                <input type="checkbox" className="mt-0.5 accent-[#aa8cda]" aria-label="Allow trigger expansion"
+                  checked={draft.expand_trigger === true} onChange={(event) => update({ expand_trigger: event.target.checked, quality_report: {} })} />
+                <span><strong className="block">Allow the model to expand the trigger</strong>
+                  <small className="mt-1 block leading-relaxed text-muted">Off prevents unsolicited identity, appearance, design, material, or style details. Explicit concept and rule requirements are still allowed.</small></span>
+              </label>
+            </div>
+            <label className={ui.field}><span>What should every dataset prompt be about?</span>
+              <textarea className={ui.notesInput} aria-label="What should every dataset prompt be about?" maxLength={10000}
                 value={draft.subject} onChange={(event) => update({ subject: event.target.value, quality_report: {} })}
-                placeholder="Describe identity, appearance, signature details, colors, materials, or style traits that every prompt must preserve." />
+                placeholder="e.g. Their adventures together · an old lady doing different sports with her partner" />
+              <small className={ui.directorDescription}>This is the recurring activity, relationship, setting, or theme—not another description of the trigger.</small>
             </label>
-            <label className={ui.field}><span>Consistency rules (optional)</span>
-              <textarea className={ui.notesInput} aria-label="Consistency rules" maxLength={10000}
+            <label className={ui.field}><span>Consistency and variation rules (optional)</span>
+              <textarea className={ui.notesInput} aria-label="Consistency and variation rules" maxLength={10000}
                 value={draft.constraints} onChange={(event) => update({ constraints: event.target.value, quality_report: {} })}
-                placeholder="Must keep the red jacket; no hats; preserve exact logo spelling…" />
+                placeholder="The man is always taller and has a beard. The woman has moles. Use a different activity and outfit in every prompt…" />
             </label>
           </fieldset>
         </section>
@@ -377,13 +410,13 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
         <header className={ui.panelHeader}>
           <div className={ui.panelIcon}>{quality?.status === "strong" ? <ShieldCheck size={21} /> : <CircleAlert size={21} />}</div>
           <div className={ui.panelHeading}><h2>Dataset quality report</h2>
-            <p>Automated diagnostics for trigger placement, formatting, uniqueness and leakage{coverageEnabled ? ", plus optional planned coverage" : ""}.</p></div>
+            <p>Automated diagnostics for the configured trigger contract, formatting, uniqueness and leakage{coverageEnabled ? ", plus optional planned coverage" : ""}.</p></div>
           <span className={ui.resultStatus} data-working={qualityBusy || active && job?.kind === "dataset_review"}><span className={ui.statusDot} />
             {active && job?.kind === "dataset_review" ? "Reviewing" : qualityBusy ? "Checking" : quality?.status === "strong" ? "Strong" : quality?.status === "review" ? "Needs review" : quality?.status === "issues" ? "Issues found" : "Pending"}
           </span>
         </header>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-[#11131b] px-3 py-2.5 text-[11px] text-muted">
-          <span>{quality?.deep_review?.completed ? `Deep review complete · ${quality.deep_review.errors} errors · ${quality.deep_review.warnings} warnings` : "Optional: ask the prompt engine to check identity, style and constraint drift in bounded chunks."}</span>
+          <span>{quality?.deep_review?.completed ? `Deep review complete · ${quality.deep_review.errors} errors · ${quality.deep_review.warnings} warnings` : "Optional: ask the prompt engine to check trigger expansion, identity, style and rule drift in bounded chunks."}</span>
           <button className={ui.button} disabled={disabled || noEngine || !draft.results.length} onClick={deepReview}>
             <ShieldCheck size={14} />{active && job?.kind === "dataset_review" ? "Deep reviewing…" : quality?.deep_review?.completed ? "Run deep review again" : "Deep consistency review"}
           </button>

@@ -20,6 +20,10 @@ class BackendGenerationError(GoatedPrompterError):
 class BackendRunawayError(BackendGenerationError):
     """A bounded workflow exceeded its limit or entered a repetition loop."""
 
+    def __init__(self, message, *, recoverable_text=""):
+        super().__init__(message)
+        self.recoverable_text = recoverable_text
+
 
 class BackendCapabilityError(GoatedPrompterError):
     """The selected backend cannot handle the supplied request modality."""

@@ -15,6 +15,9 @@ from .base import BackendConfigurationError, BackendGenerationError, BackendRuna
 from ..diagnostics import debug_prompts_enabled, log_request, log_response, payload_without_binary_images
 
 
+RUNAWAY_STREAM_CHARACTER_LIMIT = 7000
+
+
 def _image_url_descriptor(url):
     value = str(url or "")
     if value.startswith("data:") and "," in value:
@@ -128,7 +131,9 @@ def _repetition_issue(text):
         if not phrases:
             continue
         phrase, count = phrases.most_common(1)[0]
-        if count >= minimum and count * width / len(words) >= 0.1:
+        # Measure how frequently the phrase restarts, rather than multiplying
+        # by phrase width; the latter flags ordinary repeated sentence syntax.
+        if count >= minimum and count / len(words) >= 0.12:
             return " ".join(phrase)
     return None
 
@@ -297,6 +302,23 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
             raise
         if streaming:
             self.emit_activity("response_delta", text=result)
+        if hard_limit and len(result) > hard_limit * 12:
+            message = (
+                f"The prompt engine exceeded the workflow safety limit "
+                f"({len(result)} characters for a {hard_limit}-token request). "
+                "The model appears to be looping."
+            )
+            self.emit_activity("error", message=message)
+            raise BackendRunawayError(message)
+        repeated = _repetition_issue(result)
+        if hard_limit and repeated:
+            message = (
+                f'The prompt engine entered a repetition loop around "{repeated}". '
+                "Generation was stopped before the output could be accepted."
+            )
+            self.emit_activity("error", message=message)
+            raise BackendRunawayError(message)
+        if streaming:
             self.emit_activity("response_complete", finish_reason=response_payload.get("choices", [{}])[0].get("finish_reason"))
         log_response(instruction, result)
         return result
@@ -304,6 +326,7 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
     def _stream_response(self, response, unlimited, hard_max_tokens=None):
         pieces = []
         streamed_characters = 0
+        output_characters = 0
         hard_character_limit = hard_max_tokens * 12 if hard_max_tokens else None
         next_repetition_check = 1200
         finish_reason = None
@@ -325,6 +348,7 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
             if not choices:
                 continue
             choice = choices[0]
+            chunk_finish_reason = choice.get("finish_reason")
             delta = choice.get("delta") or {}
             reasoning = _stream_part_text(delta.get("reasoning_content") or delta.get("reasoning"))
             if reasoning:
@@ -334,23 +358,38 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
             if text:
                 pieces.append(text)
                 streamed_characters += len(text)
+                output_characters += len(text)
                 self.emit_activity("response_delta", text=text)
+            if (hard_max_tokens and output_characters > RUNAWAY_STREAM_CHARACTER_LIMIT
+                    and not chunk_finish_reason):
+                raise BackendRunawayError(
+                    f"The prompt engine exceeded {RUNAWAY_STREAM_CHARACTER_LIMIT:,} generated characters "
+                    "without finishing. Generation was stopped so this prompt can be retried."
+                )
             if hard_character_limit and streamed_characters > hard_character_limit:
                 raise BackendRunawayError(
                     f"The prompt engine exceeded the workflow safety limit while streaming "
                     f"({streamed_characters} characters for a {hard_max_tokens}-token request). "
                     "The model appears to be looping, so generation was stopped."
                 )
-            output = "".join(pieces)
-            if len(output) >= next_repetition_check:
+            if output_characters >= next_repetition_check:
+                output = "".join(pieces)
                 repeated = _repetition_issue(output)
                 if repeated:
+                    phrase = r"\b" + r"\W+".join(re.escape(word) for word in repeated.split()) + r"\b"
+                    first_repeat = re.search(phrase, output, flags=re.IGNORECASE)
+                    prefix = output[:first_repeat.start()] if first_repeat else ""
+                    # Offer only text preceding the repeated pattern, never the
+                    # looping tail. Dataset still validates this before use.
+                    sentence_ends = list(re.finditer(r"[.!?](?=\s|$)", prefix))
+                    prefix = prefix[:sentence_ends[-1].end()] if sentence_ends else ""
                     raise BackendRunawayError(
                         f'The prompt engine entered a repetition loop around "{repeated}". '
-                        "Generation was stopped before the output could grow indefinitely."
+                        "Generation was stopped before the output could grow indefinitely.",
+                        recoverable_text=prefix,
                     )
-                next_repetition_check = len(output) + 400
-            finish_reason = choice.get("finish_reason") or finish_reason
+                next_repetition_check = output_characters + 400
+            finish_reason = chunk_finish_reason or finish_reason
         result = "".join(pieces).strip()
         if finish_reason == "length":
             if hard_max_tokens:
