@@ -41,7 +41,7 @@ class CaptureBackend(GoatedPrompterBackend):
 
     def generate(self, instruction):
         self.calls.append(instruction)
-        if instruction.diagnostic_stage == "dataset:plan":
+        if instruction.diagnostic_stage.startswith("dataset:scene_planner"):
             data = json.loads(instruction.user_message)
             return json.dumps([{"index": index, "scene": f"Distinct adventure {index}"}
                                for index in range(1, data["amount"] + 1)])
@@ -53,7 +53,7 @@ class CaptureBackend(GoatedPrompterBackend):
 
 class RunawayOnceBackend(CaptureBackend):
     def generate(self, instruction):
-        if instruction.diagnostic_stage == "dataset:plan":
+        if instruction.diagnostic_stage.startswith("dataset:scene_planner"):
             return super().generate(instruction)
         self.calls.append(instruction)
         if len(self.calls) == 2:
@@ -63,13 +63,23 @@ class RunawayOnceBackend(CaptureBackend):
 
 class AlwaysRunawayBackend(CaptureBackend):
     def generate(self, instruction):
-        if instruction.diagnostic_stage == "dataset:plan":
+        if instruction.diagnostic_stage.startswith("dataset:scene_planner"):
             return super().generate(instruction)
         self.calls.append(instruction)
         raise BackendRunawayError("The prompt engine exceeded 7,000 generated characters without finishing.")
 
 
 class DatasetUnitTests(unittest.TestCase):
+    def test_obsolete_fields_are_removed_without_losing_supported_draft(self):
+        data = valid_draft(results=[{"index": 1, "prompt": "A studio portrait.", "input": "portrait"}])
+        legacy = {**data, "discarded_experiment": {"enabled": True}, "frame_mode": "Close-up"}
+        for generation in (False, True):
+            with self.subTest(generation=generation):
+                self.assertEqual(validate_dataset_draft(legacy, generation=generation), data)
+        self.assertIn("discarded_experiment", legacy)
+        with self.assertRaises(ValueError):
+            validate_dataset_draft({**legacy, "amount": 26})
+
     def test_long_trigger_paraphrase_is_kept_without_retry_and_reported(self):
         from unittest.mock import Mock
         data = valid_draft(amount=1, trigger_connected=False,
@@ -113,7 +123,9 @@ class DatasetUnitTests(unittest.TestCase):
             [{"index": 1, "prompt": "contaminating previous prose"}],
             plan_item={"scene": "Cycling together along a country road"})
         builder = assemble_instruction(request, text_only=True)
-        self.assertTrue(instruction.system_message.startswith(builder.system_message.split("WORKFLOW RULES")[0].split("Output contract:")[0].rstrip()))
+        self.assertTrue(instruction.system_message.startswith(builder.system_message.split("USER SETTINGS")[0]))
+        self.assertIn("Creativity — Strict", instruction.system_message)
+        self.assertIn("Scene Planner owns scene creativity", instruction.system_message)
         self.assertNotIn("contaminating previous prose", instruction.user_message)
         self.assertIn("Cycling together", instruction.user_message)
         self.assertIn("FRAME COMPLETENESS DEFAULT", instruction.system_message)
@@ -123,13 +135,15 @@ class DatasetUnitTests(unittest.TestCase):
         self.assertIn("reference locks still take priority", builder.system_message)
 
     def test_planner_rejects_invalid_rows_and_falls_back_without_failing_batch(self):
-        service = DatasetService({}, lambda: None)
+        from goated_prompter.scene_planner import ScenePlanner
+        planner = ScenePlanner(lambda: None)
         data = valid_draft(amount=2, source_mode="guided", inputs="cycling\ntennis")
         from unittest.mock import Mock
         session = Mock()
         session.generate.return_value = '[{"index": 2, "scene": "wrong order"}]'
         progress = []
-        rows = service._plan(session, data, build_coverage_plan(data), "qwen", progress.append)
+        rows = planner.plan_batch(session=session, data=data, coverage=build_coverage_plan(data),
+                                  family="qwen", progress=progress.append)
         self.assertEqual(session.generate.call_count, 2)
         self.assertEqual([row["scene"] for row in rows], ["cycling", "tennis"])
         self.assertTrue(any("unavailable" in message for message in progress))
@@ -238,7 +252,7 @@ class DatasetUnitTests(unittest.TestCase):
         self.assertEqual(backend.sessions, 1)
         self.assertEqual(len(backend.calls), 4)
         self.assertTrue(all("COVERAGE ASSIGNMENT" not in call.user_message for call in backend.calls))
-        self.assertEqual(backend.calls[0].diagnostic_stage, "dataset:plan")
+        self.assertEqual(backend.calls[0].diagnostic_stage, "dataset:scene_planner")
         self.assertIn("CURRENT SCENE", backend.calls[1].user_message)
         self.assertTrue(all("EARLIER RESULT" not in call.user_message for call in backend.calls))
         self.assertEqual([item["input"] for item in result["prompts"]], ["standing", "running", "standing"])
@@ -256,7 +270,7 @@ class DatasetUnitTests(unittest.TestCase):
                 request, data, progress.append, lambda _result: None)
         self.assertEqual(progress, [
             "Starting the prompt engine for the dataset…",
-            "Planning dataset scenes…",
+            "Scene Planner · planning dataset scenes…",
             "Waiting for prompt engine · dataset prompt 1/1",
             "Checking dataset prompt 1/1",
         ])
@@ -326,6 +340,29 @@ class DatasetUnitTests(unittest.TestCase):
         )
 
 class DatasetEndpointTests(unittest.IsolatedAsyncioTestCase):
+    async def test_legacy_draft_loads_and_autosaves_without_obsolete_fields(self):
+        from goated_prompter.workflow_settings import empty_settings
+        data = valid_draft(results=[{"index": 1, "prompt": "A studio portrait.", "input": "portrait"}])
+        store = empty_settings()
+        store["dataset"] = {"revision": 7, "draft": {**data, "discarded_experiment": True}, "overrides": {}}
+        path = Path(self.temp.name) / "workflow_settings.json"
+        path.write_text(json.dumps(store), encoding="utf-8")
+        response = await self.client.get("/api/workspace/settings/dataset")
+        self.assertEqual(response.status, 200, await response.text())
+        record = await response.json()
+        self.assertEqual(record["draft"], data)
+        self.assertEqual(record["revision"], 7)
+        response = await self.client.put("/api/workspace/settings/dataset", json={
+            "revision": 7, "draft": {**data, "another_removed_control": "unused"}})
+        self.assertEqual(response.status, 200, await response.text())
+        self.assertEqual((await response.json())["draft"], data)
+        persisted = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(persisted["dataset"]["draft"], data)
+        self.assertEqual(persisted["dataset"]["revision"], 8)
+        self.assertEqual(persisted["refine"], store["refine"])
+        stale = await self.client.put("/api/workspace/settings/dataset", json={"revision": 7, "draft": data})
+        self.assertEqual(stale.status, 409)
+
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)

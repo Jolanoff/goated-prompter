@@ -248,7 +248,10 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
             with urlopen(request, timeout=self.timeout) as response:
                 content_type = str(getattr(response, "headers", {}).get("Content-Type", "")).casefold()
                 if streaming and ("text/event-stream" in content_type or "ndjson" in content_type):
-                    result = self._stream_response(response, unlimited, hard_limit)
+                    character_limit = getattr(instruction, "stream_character_limit", None)
+                    if type(character_limit) is not int or not 0 < character_limit <= 1048576:
+                        character_limit = RUNAWAY_STREAM_CHARACTER_LIMIT
+                    result = self._stream_response(response, unlimited, hard_limit, character_limit)
                     log_response(instruction, result)
                     return result
                 body = response.read().decode("utf-8")
@@ -323,7 +326,8 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
         log_response(instruction, result)
         return result
 
-    def _stream_response(self, response, unlimited, hard_max_tokens=None):
+    def _stream_response(self, response, unlimited, hard_max_tokens=None,
+                         stream_character_limit=RUNAWAY_STREAM_CHARACTER_LIMIT):
         pieces = []
         streamed_characters = 0
         output_characters = 0
@@ -360,10 +364,10 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
                 streamed_characters += len(text)
                 output_characters += len(text)
                 self.emit_activity("response_delta", text=text)
-            if (hard_max_tokens and output_characters > RUNAWAY_STREAM_CHARACTER_LIMIT
+            if (hard_max_tokens and output_characters > stream_character_limit
                     and not chunk_finish_reason):
                 raise BackendRunawayError(
-                    f"The prompt engine exceeded {RUNAWAY_STREAM_CHARACTER_LIMIT:,} generated characters "
+                    f"The prompt engine exceeded {stream_character_limit:,} generated characters "
                     "without finishing. Generation was stopped so this prompt can be retried."
                 )
             if hard_character_limit and streamed_characters > hard_character_limit:

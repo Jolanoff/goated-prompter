@@ -250,7 +250,9 @@ Choose 1–25 prompts, a realistic or non-realistic visual treatment, variety le
 
 When explicitly enabled, the Coverage planner assigns category-specific axes before inference—for example framing, viewpoint, pose, expression, lighting and setting for characters. Focused, Balanced and Wide select progressively more axes; you can override those choices, preview the complete matrix, and reshuffle it with a persisted seed. Planned facets remain subordinate to the user's concept and rules. Disabling planning preserves an existing matrix for later but excludes it from generation.
 
-Generation first creates a compact structured scene plan, then writes each scene using the same instruction assembly as Prompt Builder (Enhance mode, selected Director, target adapter, and length guidance), with a thin trigger/style/rules wrapper. Earlier full prompts are not supplied to the writer. Invalid scene plans receive one repair attempt, then fall back to the supplied concept and guided inputs rather than failing the batch.
+Generation follows **user input → deterministic coverage / guided selection → Scene Planner → final Dataset writer → image prompt**. The Dataset-only **Scene Planner** skill plans the whole batch together, interpreting coverage into coherent, distinct scenes while preserving guided actions, identity facts and constraints. Each scene is normally one 30–100-word paragraph, not a final prompt. Its instructions live in `goated_prompter/prompting/scene_planner.py`; its service, strict JSON validation and fallback live in `goated_prompter/scene_planner.py`. It does not run in Builder or other workflows, apply target syntax, or manage trigger placement.
+
+The final Dataset writer uses the existing Builder instruction assembly (Enhance mode, selected Director, target adapter and length guidance), with strict creativity and a Dataset-specific scene-authority contract: render the planned action, setting, framing and lighting faithfully, rather than brainstorm again. Director technique is subordinate to the scene and user rules. Earlier full prompts are not supplied to the writer. Invalid scene plans receive one repair attempt, then fall back to the original guided input or concept without failing the batch. Fallback does not invent coverage details that might contradict user constraints. Schema validation cannot guarantee semantic faithfulness or diversity from a real model; review the resulting prompts.
 
 Generation runs sequentially in one model session. Completed items appear while the batch runs and are retained in the current Dataset draft if a later item is stopped or fails. A prompt with invalid target format or runaway bounded output is regenerated up to three times before the batch fails. Retries start from clean instructions; loop retries progressively shorten detail guidance and output allowance, and subsequent format repairs never restore the larger allowance. A sentence-complete prefix before a detected repetition pattern may be recovered if it passes target-format checks. Trigger wording, placement and grouping misses never trigger regeneration. Results are editable and can be copied together or downloaded as TXT or JSONL. For Ideogram4, trigger placement applies inside `high_level_description` so the outer JSON remains valid.
 
@@ -276,9 +278,11 @@ goated-prompter/
 │   │   ├── details.py          # Detail, preservation and reference controls
 │   │   ├── refine.py           # Refine prompt construction
 │   │   ├── minimax.py          # MiniMax prompt schemas and validation
-│   │   └── dataset.py          # Dataset prompt construction
+│   │   ├── dataset.py          # Dataset prompt construction
+│   │   └── scene_planner.py    # Dataset-only scene ideation instructions
 │   ├── presets.py              # Instruction-preset storage and library management
 │   ├── core.py                 # Prompt assembly and generation orchestration
+│   ├── scene_planner.py        # Batch scene planning, validation and fallback
 │   ├── refinement.py           # Refine inference runtime
 │   ├── workflow_settings.py    # Per-workflow drafts and instruction overrides
 │   ├── workspace_api.py        # Creative-workspace endpoints and shared-job integration

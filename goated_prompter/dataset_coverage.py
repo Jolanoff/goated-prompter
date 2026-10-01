@@ -48,8 +48,8 @@ VARIETY_AXIS_COUNTS = {"Focused": 3, "Balanced": 5, "Wide": 6}
 LEAKED_LABELS = re.compile(
     r"(?im)^\s*(?:ITEM|TRIGGER TYPE|TRIGGER DESCRIPTION|REQUIRED TRIGGER TEXT|DATASET CONCEPT|"
     r"SOURCE MODE|GUIDED INPUT|ADDITIONAL CONSISTENCY RULES|CONSISTENCY AND VARIATION RULES|"
-    r"EARLIER ITEM|OUTPUT FORMAT)\s*(?:\d+[^\n]*)?$|"
-    r"</?(?:data|trigger|input|constraints|example)>",
+    r"EARLIER ITEM|OUTPUT FORMAT|CURRENT SCENE|COVERAGE ASSIGNMENT)\s*(?:\d+[^\n]*)?$|"
+    r"</?(?:data|trigger|input|constraints|example|scene)>",
 )
 
 

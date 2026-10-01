@@ -10,13 +10,14 @@ from .director_profiles import resolve_director_config
 from .prompting.dataset import (
     DATASET_SOURCES, DATASET_STYLES, DATASET_TYPES, DATASET_VARIETY,
     DEEP_CATEGORIES, dataset_instruction, deep_review_instruction,
-    dataset_format_repair, dataset_loop_repair, dataset_plan_instruction, deep_review_correction,
+    dataset_format_repair, dataset_loop_repair, deep_review_correction,
 )
 from .prompting.details import PROMPT_LENGTH_NAMES
 from .prompting.target_models import TARGET_MODEL_NAMES
 from .workflow_output import WorkflowFormatError, normalize_workflow_output, sanitize_prompt_text
 from .dataset_coverage import AXES, analyze_dataset_quality, effective_coverage_plan
 from .dataset_triggers import trigger_presence_error
+from .scene_planner import ScenePlanner
 
 
 DATASET_MAX_RETRIES = 3
@@ -45,12 +46,9 @@ def validate_dataset_draft(value, *, generation=False):
     defaults = default_dataset_draft()
     if not isinstance(value, dict):
         raise ValueError("Invalid Dataset settings fields.")
-    # Silently discard fields written by the reverted frame/aspect experiment
-    # so drafts saved during that version continue to load normally.
-    value = {key: item for key, item in value.items()
-             if key not in {"aspect_ratio", "custom_aspect_ratio", "frame_mode"}}
-    if value.keys() - defaults.keys():
-        raise ValueError("Invalid Dataset settings fields.")
+    # Discard obsolete controls from older builds instead of blocking the entire
+    # draft. Supported fields still receive the value validation below.
+    value = {key: item for key, item in value.items() if key in defaults}
     result = {**defaults, **value}
     result["trigger"] = _text(result["trigger"], "Trigger / prepend", 200, required=generation).strip()
     result["subject"] = _text(result["subject"], "Dataset concept", 10000, required=generation).strip()
@@ -210,33 +208,6 @@ class DatasetService:
                     hard_max_tokens=instruction.hard_max_tokens,
                     diagnostic_stage=original.diagnostic_stage + f":format_retry_{attempt + 1}")
 
-    def _plan(self, session, data, coverage, family, progress):
-        correction = ""
-        for attempt in range(2):
-            self.checkpoint()
-            progress("Planning dataset scenes…" if not attempt else "Repairing dataset scene plan…")
-            instruction = dataset_plan_instruction(data, coverage, family, correction)
-            session.validate_instruction(instruction)
-            try:
-                raw = session.generate(instruction)
-                self.checkpoint()
-                rows = json.loads(raw)
-                if not isinstance(rows, list) or len(rows) != data["amount"]:
-                    raise ValueError("Plan must contain one row per requested prompt.")
-                for index, row in enumerate(rows, 1):
-                    if (not isinstance(row, dict) or set(row) != {"index", "scene"}
-                            or type(row["index"]) is not int or row["index"] != index
-                            or not isinstance(row["scene"], str) or not row["scene"].strip()
-                            or len(row["scene"]) > 200):
-                        raise ValueError("Plan rows require sequential indexes and concise nonempty scenes.")
-                return rows
-            except (ValueError, TypeError, BackendGenerationError) as exc:
-                progress(f"Scene planning failed validation: {exc}")
-                correction = "Return the exact JSON schema with sequential indexes and concise scene strings."
-        progress("Scene planning unavailable; using the supplied concept and guided inputs directly.")
-        return [{"index": row["index"], "scene": row["input"] or data["subject"]}
-                for row in coverage["plan"]]
-
     def run(self, request, data, progress, partial):
         effective, profile = resolve_director_config(self.config, request)
         backend = create_backend(effective)
@@ -246,7 +217,8 @@ class DatasetService:
         results = []
         progress("Starting the prompt engine for the dataset…")
         with backend.generation_session() as session:
-            scenes = self._plan(session, data, coverage, family, progress)
+            scenes = ScenePlanner(self.checkpoint).plan_batch(
+                session=session, data=data, coverage=coverage, family=family, progress=progress)
             for index in range(1, data["amount"] + 1):
                 self.checkpoint()
                 plan_item = {**plan[index - 1], "scene": scenes[index - 1]["scene"]}
