@@ -20,34 +20,30 @@ DATASET_STYLES = (
 DATASET_SOURCES = ("random", "guided")
 DATASET_VARIETY = ("Focused", "Balanced", "Wide")
 
-TYPE_RULES = {
-    "Character": "The trigger identifies a character or person. Preserve its supplied wording and count. Vary only scene-useful action, pose, interaction, expression, clothing, framing, lighting, and setting unless explicit user rules request more.",
-    "Multiple characters": "The trigger identifies multiple people or characters. Preserve every supplied subject and count, keep their appearance, clothing, actions, and attributes clearly separated, and maintain all explicit relationships and continuity rules.",
-    "Animal": "The trigger identifies an animal or group of animals. Preserve supplied species, count, and explicit traits while varying compatible action, pose, interaction, framing, lighting, and setting.",
-    "Visual style": "The trigger identifies a visual style. Apply the exact style term to every item while varying subject matter and presentation inside the user's dataset concept.",
-    "Object / product": "The trigger identifies an object or product. Preserve supplied wording, count, and explicit design facts while varying compatible viewpoint, placement, use context, lighting, and background.",
-    "Location / environment": "The trigger identifies a location or environment. Keep that place central and preserve explicitly supplied properties while varying compatible activity, inhabitants, viewpoint, conditions, and composition.",
-    "Brand / logo": "The trigger identifies a brand or logo. Preserve exact brand identity, spelling, marks, colors, and design language. Vary credible applications, surfaces, layouts, environments, and presentation without redesigning the identity.",
-    "Typography / text": "The trigger identifies exact text or a typographic concept. Preserve every supplied literal character, spelling, case, and punctuation. Vary layout, hierarchy, material, placement, lighting, and compatible design context.",
-    "Concept": "The trigger identifies a recurring visual concept. Include it meaningfully in every item and vary only compatible visual realizations inside the user's dataset concept and rules.",
-}
-
 STYLE_RULES = {
     "Photorealistic": "Use believable photography: physically plausible anatomy/materials, natural imperfections, credible lenses and coherent light.",
     "Cinematic photography": "Use realistic cinematic photography with deliberate blocking, lens language, motivated lighting, depth and color treatment.",
-    "Anime / manga": "Keep the batch clearly anime/manga rather than realistic photography; vary compatible illustration treatments without losing subject consistency.",
+    "Anime / manga": "Render the planned scene as anime/manga rather than realistic photography, preserving its subject and composition.",
     "Illustration": "Use an authored illustration language with coherent shapes, line/paint handling, color design and non-photographic finish.",
     "3D render": "Use a deliberate 3D-rendered treatment with coherent geometry, shaders, materials, lighting and render presentation.",
     "Graphic design": "Use graphic-design composition, hierarchy, typography where relevant, shape language, controlled palette and intentional layout.",
     "Keep described style": "Use the style stated in the trigger description or guided input and do not replace it with a generic aesthetic.",
-    "Mixed styles": "Choose a meaningfully different, clearly named visual medium or style treatment for each prompt while preserving the trigger's core identity.",
+    "Mixed styles": "Preserve the visual medium or style treatment selected in the planned scene; do not choose a different treatment.",
 }
 
-USER_DIRECTED_VARIETY_RULES = {
-    "Focused": "Stay very close to the requested scenario and vary only minor presentation details that the user did not specify. If the concept names a broad family such as sports or adventures, choose a compatible concrete instance rather than leaving it vague.",
-    "Balanced": "Create useful differences while keeping every item centered on the requested theme, relationship, mood, and constraints. When the concept names a broad family such as sports or adventures, choose a different compatible concrete instance for each item unless a rule fixes it.",
-    "Wide": "Vary compatible concrete instances, framing, viewpoint, lighting, setting, or composition more broadly without leaving the central concept. Never introduce an unrelated theme, relationship, activity, or mood.",
-}
+PLANNED_SCENE_CONTRACT = (
+    "SCENE PLANNER AUTHORITY: The supplied CURRENT SCENE has already been deliberately planned. "
+    "Scene Planner owns scene creativity. Your task is to faithfully render this scene as a high-quality "
+    "target-model prompt, not brainstorm or replace it. Preserve its core action, pose, expression, "
+    "setting, props, framing, viewpoint, lighting, mood and compatible requested coverage. "
+    "Add only useful visual wording and supported detail within that scene; do not choose another "
+    "activity, location, outfit, camera idea or lighting situation. User subject facts, guided input "
+    "and explicit constraints outrank planner additions; the planned scene outranks optional "
+    "coverage cues, Director embellishment, default framing and detail preferences. "
+    "Director supplies rendering technique and emphasis only, never another competing scene idea. "
+    "If planning fell back to terse user input, clarify that input conservatively without inventing "
+    "a replacement scene. Do not expose planning labels or instructions in the final prompt."
+)
 
 
 def dataset_instruction(request, data, index, previous=(), model_family="qwen", plan_item=None):
@@ -80,6 +76,7 @@ def dataset_instruction(request, data, index, previous=(), model_family="qwen", 
     structured_trigger = f"{grouping} {placement} Include the requested trigger wording naturally; prioritize a complete coherent scene over awkward repetition. {expansion}"
     rules = "\n".join([
         structured_trigger,
+        PLANNED_SCENE_CONTRACT,
         "The concept and explicit rules outrank optional Director embellishments. Write only this one finished visual scene and stop when it is complete. Describe observable requirements, not claims that consistency was preserved. Batch planning, next-scene suggestions, and future camera changes do not belong in the finished prompt.",
         style_rule,
     ])
@@ -90,47 +87,26 @@ def dataset_instruction(request, data, index, previous=(), model_family="qwen", 
     content = [f"TRIGGER TYPE\n{trigger_type}",
                f"REQUIRED TRIGGER TEXT\n<trigger>\n{data['trigger']}\n</trigger>",
                f"DATASET CONCEPT\n<data>\n{data['subject']}\n</data>"]
-    if (plan_item or {}).get("scene"):
-        content.append("CURRENT SCENE\n" + plan_item["scene"])
+    scene = (plan_item or {}).get("scene") or seed or data["subject"]
+    content.append("CURRENT SCENE\n<scene>\n" + scene + "\n</scene>")
     if seed:
-        content.append(f"GUIDED INPUT\n<input>\n{seed}\n</input>\nUse this as the item-specific scene/content direction while preserving the dataset identity.")
+        content.append(f"GUIDED INPUT\n<input>\n{seed}\n</input>\nPreserve these original anchors in the supplied scene; do not select another scene.")
     if data["constraints"].strip():
-        content.append(f"CONSISTENCY AND VARIATION RULES\n<constraints>\n{data['constraints'].strip()}\n</constraints>\nApply fixed requirements in every item and deliberate variation requirements across the batch.")
+        content.append(f"CONSISTENCY AND VARIATION RULES\n<constraints>\n{data['constraints'].strip()}\n</constraints>\nApply fixed requirements and preserve this scene's planned interpretation of variation rules; do not plan other items or new scene variants.")
     if data["coverage_enabled"] and plan_item and plan_item.get("facets"):
         content.append("COVERAGE ASSIGNMENT\n" + "\n".join(
             f"- {AXES[key][0]}: {value}" for key, value in plan_item["facets"].items()
-        ) + "\nTreat these as compatible visual coverage cues. Adapt them naturally without exposing the labels.")
+        ) + "\nPreserve compatible coverage already interpreted in CURRENT SCENE. These cues cannot replace its action or override user constraints. Do not expose the labels.")
     builder_request = replace(
         request, idea="\n\n".join(content), mode="Enhance",
         director_preset=director.id, system_prompt_override="",
-        custom_instructions=rules, prompt_length=data["length"],
+        custom_instructions=rules, prompt_length=data["length"], creativity="Strict",
     )
     instruction = assemble_instruction(builder_request, model_family=model_family, text_only=True)
     token_limit = DATASET_OUTPUT_TOKEN_LIMITS[data["length"]]
     return replace(instruction, diagnostic_stage=f"dataset:{index}",
                    max_tokens=token_limit, unlimited_tokens=False, hard_max_tokens=token_limit)
 
-
-def dataset_plan_instruction(data, coverage, model_family="qwen", correction=""):
-    return PromptInstruction(
-        system_message=(
-            "Plan concrete visual scenes, not finished image prompts. Return only a JSON array "
-            'of objects with exactly "index" (integer) and "scene" (a concise string). '
-            "One row per requested item in order. Keep all scenes inside the concept and obey "
-            "fixed rules, deliberate variation rules, and guided inputs. Keep subject traits "
-            "limited to user-provided facts. Use compatible distinct activities/settings when "
-            "the concept permits them. Keep each scene under 200 characters. " + correction
-        ),
-        user_message=json.dumps({
-            "amount": data["amount"], "trigger": data["trigger"],
-            "type": data["trigger_type"], "concept": data["subject"],
-            "type_guidance": TYPE_RULES.get(data["trigger_type"], data["custom_type"]),
-            "rules": data["constraints"], "variety": USER_DIRECTED_VARIETY_RULES[data["variety"]],
-            "assignments": coverage["plan"],
-        }, ensure_ascii=False),
-        model_family=model_family, diagnostic_stage="dataset:plan",
-        max_tokens=4096, hard_max_tokens=4096,
-    )
 
 DEEP_CATEGORIES = {"identity_drift", "style_drift", "constraint_conflict", "coverage_mismatch", "target_usability"}
 
@@ -172,7 +148,7 @@ def deep_review_instruction(data, chunk, model_family="qwen", correction=""):
 def dataset_format_repair(system_message, error):
     return (
         system_message
-        + "\n\nFORMAT CORRECTION: Regenerate the complete item. The last response violated "
+        + "\n\nFORMAT CORRECTION: Render the same supplied scene again as a complete item without replanning it. The last response violated "
         "the required target format. "
         + str(error)
     )
@@ -186,8 +162,9 @@ def dataset_loop_repair(system_message, error, retry=1):
             system_message = system_message.replace(LENGTH_ADAPTERS[level], LENGTH_ADAPTERS[fallback_length])
     return (
         system_message
-        + "\n\nLOOP CORRECTION: Write a shorter, finite scene description. Focus on the action, "
-        "relationships, setting, composition, and light. Finish as soon as the scene is clear."
+        + "\n\nLOOP CORRECTION: Write a shorter, finite final prompt for the same supplied scene. "
+        "Preserve its action, relationships, setting, composition and light; do not replan it. "
+        "Finish as soon as the scene is clearly rendered."
     )
 
 

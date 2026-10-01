@@ -214,6 +214,9 @@ class PromptInstruction:
     # A workflow safety ceiling. Unlike max_tokens, this may lower the backend's
     # configured allowance and protects bounded outputs from runaway generation.
     hard_max_tokens: int = None
+    # Optional bounded stream ceiling for structured batch planning. Individual
+    # prompt workflows retain the transport's default runaway-output ceiling.
+    stream_character_limit: int = None
 
     def _user_content(self, text):
         if not reference_images(self):

@@ -67,7 +67,7 @@ def validate_settings_store(value):
     for operation, record in value.items():
         if not isinstance(record, dict) or set(record) != {"revision", "draft", "overrides"} or type(record["revision"]) is not int or record["revision"] < 0:
             raise ValueError("Invalid workflow settings record.")
-        validate_draft(operation, record["draft"])
+        value[operation] = {**record, "draft": validate_draft(operation, record["draft"])}
         validate_instructions(operation, record["overrides"])
     # Older stores gain an independent workflow without altering their drafts/revisions.
     return {**empty_settings(), **value}
