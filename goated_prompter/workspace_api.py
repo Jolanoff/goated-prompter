@@ -15,7 +15,7 @@ from .presets import get_director_preset
 
 
 def register_workspace_routes(app, state_key, job_factory, json_object):
-    async def dataset_plan_endpoint(request):
+    async def dataset_coverage_endpoint(request):
         payload = await json_object(request)
         if set(payload) != {"input"}:
             raise ValueError("Expected Dataset input only.")
@@ -37,11 +37,12 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
         payload = await json_object(request)
         if set(payload) - {"input", "settings"}:
             raise ValueError("Expected Dataset input and prompt-engine settings.")
-        data = validate_dataset_draft(payload.get("input"), generation=True)
+        scenes_only = request.path.endswith("/scenes")
+        data = validate_dataset_draft(payload.get("input"), generation=True, planning=scenes_only)
         settings = payload.get("settings", {})
         if not isinstance(settings, dict) or set(settings) - {"director_profile"}:
             raise ValueError("Invalid Dataset prompt-engine settings.")
-        director = get_director_preset(data["director_preset"], strict=True)
+        director = None if scenes_only else get_director_preset(data["director_preset"], strict=True)
         async with state.admission:
             active = state.active_job()
             if active:
@@ -51,7 +52,8 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
             configured = config.get("backend") in {"mock", "openai_compatible"}
             director_request = GoatedPrompterRequest(
                 idea=data["subject"], mode="Custom", target_model=data["target"],
-                prompt_length=data["length"], prompt_model="Custom", director_preset=director.id,
+                prompt_length=data["length"], prompt_model="Custom",
+                director_preset=director.id if director else "general_director",
                 director_profile="" if configured else text(
                     settings.get("director_profile", state.saved_settings.get("selected_profile", "")),
                     "Prompt engine", 512, optional=True),
@@ -59,10 +61,10 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
                     config.get("local_llama_cpp", {}).get("keep_model_loaded", False)),
             )
             job = job_factory()
-            job.kind = "dataset"
+            job.kind = "dataset_scenes" if scenes_only else "dataset"
             state.jobs[job.id] = job
             task = asyncio.create_task(state.run(
-                job, director_request, config, True, {"operation": "dataset", "input": data}))
+                job, director_request, config, True, {"operation": job.kind, "input": data}))
             state.tasks.add(task)
             task.add_done_callback(state.tasks.discard)
             return web.json_response(job.snapshot(), status=202)
@@ -217,8 +219,10 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
 
     app.add_routes([web.post("/api/workspace/minimax", minimax_endpoint),
                     web.post("/api/workspace/dataset", dataset_endpoint),
+                    web.post("/api/workspace/dataset/scenes", dataset_endpoint),
                     web.post("/api/workspace/dataset/review", dataset_review_endpoint),
-                    web.post("/api/workspace/dataset/plan", dataset_plan_endpoint),
+                    web.post("/api/workspace/dataset/coverage", dataset_coverage_endpoint),
+                    web.post("/api/workspace/dataset/plan", dataset_coverage_endpoint),
                     web.post("/api/workspace/dataset/quality", dataset_quality_endpoint),
                     web.get("/api/workspace/settings/{operation:refine|minimax|dataset}", settings_endpoint),
                     web.put("/api/workspace/settings/{operation:refine|minimax|dataset}", settings_endpoint),
@@ -244,18 +248,20 @@ def execute_workflow(state, job, request, config, workflow):
         job.commit(lambda: result, finish=True)
         return
 
-    if workflow["operation"] == "dataset":
+    if workflow["operation"] in {"dataset", "dataset_scenes"}:
         def partial(result):
             with job.lock:
                 job.result = result
                 job.record_event(
-                    f"Dataset prompt {result['completed']}/{result['total']} completed and is available.",
+                    (f"Dataset prompt {result['completed']}/{result['total']} completed and is available."
+                     if result["completed"] else "Dataset scene plan is ready and available before prompt writing."),
                     "result",
                     revise=False,
                 )
                 job.revision += 1
         result = DatasetService(config, job.checkpoint).run(
-            request, workflow["input"], progress, partial)
+            request, workflow["input"], progress, partial,
+            scenes_only=workflow["operation"] == "dataset_scenes")
         job.commit(lambda: result, finish=True)
         return
 

@@ -43,7 +43,7 @@ class CaptureBackend(GoatedPrompterBackend):
         self.calls.append(instruction)
         if instruction.diagnostic_stage.startswith("dataset:scene_planner"):
             data = json.loads(instruction.user_message)
-            return json.dumps([{"index": index, "scene": f"Distinct adventure {index}"}
+            return json.dumps([{"index": index, "idea": f"Distinct activity {index}", "scene": f"Distinct adventure {index}"}
                                for index in range(1, data["amount"] + 1)])
         if instruction.diagnostic_stage == "dataset:deep_review":
             return json.dumps([{"index": int(index), "issues": []}
@@ -258,7 +258,12 @@ class DatasetUnitTests(unittest.TestCase):
         self.assertEqual([item["input"] for item in result["prompts"]], ["standing", "running", "standing"])
         self.assertTrue(all("ohwx_person" in item["prompt"] for item in result["prompts"]))
         self.assertTrue(all(not item["prompt"].startswith("ohwx_person") for item in result["prompts"]))
-        self.assertEqual([item["completed"] for item in partials], [1, 2, 3])
+        self.assertEqual([item["completed"] for item in partials], [0, 1, 2, 3])
+        self.assertEqual(len(partials[0]["scene_plan"]), 3)
+        for partial in partials[1:]:
+            self.assertTrue(all("idea" in item and "scene" in item for item in partial["prompts"]))
+        self.assertTrue(all(set(item) == {"index", "input", "idea", "scene", "prompt"}
+                            for item in result["prompts"]))
 
     def test_service_reports_engine_waiting_and_validation_progress(self):
         backend = CaptureBackend()
@@ -410,6 +415,49 @@ class DatasetEndpointTests(unittest.IsolatedAsyncioTestCase):
                      valid_draft(source_mode="guided", inputs="")):
             response = await self.client.post("/api/workspace/dataset", json={"input": data})
             self.assertEqual(response.status, 400, await response.text())
+        self.assertEqual(self.backend.calls, [])
+
+    async def test_scene_only_endpoint_persists_editable_plan_and_reuses_across_targets(self):
+        data = valid_draft(amount=2, trigger="")
+        response = await self.client.post("/api/workspace/dataset/scenes", json={"input": data})
+        self.assertEqual(response.status, 202, await response.text())
+        job = await self.terminal(await response.json())
+        self.assertEqual(job["status"], "succeeded", job)
+        result = job["result"]
+        self.assertEqual(job["kind"], "dataset_scenes")
+        self.assertNotIn("prompts", result)
+        self.assertEqual(len(self.backend.calls), 1)
+        data.update(scene_plan=result["scene_plan"], scene_plan_signature=result["scene_plan_signature"])
+        data["scene_plan"][0]["scene"] = "An adult character reads a book while sitting on a red couch."
+        data["scene_plan"][0]["idea"] = "Reading on a red couch"
+        record = await (await self.client.get("/api/workspace/settings/dataset")).json()
+        response = await self.client.put("/api/workspace/settings/dataset",
+            json={"revision": record["revision"], "draft": data})
+        self.assertEqual(response.status, 200, await response.text())
+        saved = await response.json()
+        self.assertTrue(saved["scene_plan_current"])
+        reloaded = await (await self.client.get("/api/workspace/settings/dataset")).json()
+        self.assertEqual(reloaded["draft"]["scene_plan"], data["scene_plan"])
+        data.update(trigger="ohwx_person", target="Qwen Image", length="Detailed")
+        response = await self.client.post("/api/workspace/dataset", json={"input": data})
+        final = await self.terminal(await response.json())
+        self.assertEqual(final["status"], "succeeded", final)
+        self.assertEqual(len(self.backend.calls), 3)
+        self.assertEqual(final["result"]["prompts"][0]["scene"], data["scene_plan"][0]["scene"])
+        self.assertEqual(final["result"]["prompts"][0]["idea"], data["scene_plan"][0]["idea"])
+        self.assertIn(data["scene_plan"][0]["idea"], self.backend.calls[1].user_message)
+        self.assertIn(data["scene_plan"][0]["scene"], self.backend.calls[1].user_message)
+        data["results"] = final["result"]["prompts"]
+        response = await self.client.put("/api/workspace/settings/dataset",
+            json={"revision": saved["revision"], "draft": data})
+        self.assertEqual(response.status, 200, await response.text())
+        self.assertEqual((await response.json())["draft"]["results"], final["result"]["prompts"])
+
+    async def test_coverage_endpoint_alias_remains_inference_free(self):
+        data = valid_draft(coverage_enabled=True)
+        old = await self.client.post("/api/workspace/dataset/plan", json={"input": data})
+        new = await self.client.post("/api/workspace/dataset/coverage", json={"input": data})
+        self.assertEqual(await old.json(), await new.json())
         self.assertEqual(self.backend.calls, [])
 
     async def test_plan_and_quality_endpoints_are_inference_free(self):

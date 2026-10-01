@@ -8,6 +8,9 @@ from .prompting.target_models import TARGET_MODEL_NAMES
 from .workspace_store import WorkspaceConflict, locks, text
 from .minimax import default_minimax_draft, validate_minimax_draft
 from .dataset import default_dataset_draft, validate_dataset_draft
+from .dataset_coverage import effective_coverage_plan
+from .scene_planner import reusable_scene_plan
+from .prompting.scene_planner import MAX_SCENE_CHARACTERS, MAX_SCENE_WORDS, MAX_IDEA_CHARACTERS, MAX_IDEA_WORDS
 
 
 def default_draft(operation):
@@ -83,7 +86,12 @@ class WorkflowSettingsStore:
 
     def _public(self, operation, record):
         defaults = builtin_refine_instructions() if operation == "refine" else {}
-        return {**record, "draft": validate_draft(operation, record["draft"]), "defaults": defaults,
+        draft = validate_draft(operation, record["draft"])
+        scene_state = ({"scene_plan_current": reusable_scene_plan(draft, effective_coverage_plan(draft)) is not None,
+                         "scene_limits": {"characters": MAX_SCENE_CHARACTERS, "words": MAX_SCENE_WORDS},
+                         "idea_limits": {"characters": MAX_IDEA_CHARACTERS, "words": MAX_IDEA_WORDS}}
+                       if operation == "dataset" else {})
+        return {**record, "draft": draft, "defaults": defaults, **scene_state,
                 "instructions": {**defaults, **record["overrides"]}}
 
     def snapshot(self, operation):

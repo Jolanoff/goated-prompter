@@ -1,0 +1,24 @@
+{
+  "amount": 10,
+  "variety": "Balanced",
+  "criteria": [
+    "Concept adherence", "Semantic diversity", "Visual depictability", "One primary event",
+    "Scene clarity", "Identity stability", "Constraint adherence", "Coverage adherence",
+    "Idea scope and distinctness", "Camera body head gaze coherence", "Framing visibility",
+    "Action mechanics and prop reach", "Idea and scene to final prompt fidelity"
+  ],
+  "cases": [
+    {"subject": "A woman doing funny stuff", "trigger_type": "Character", "constraints": "Preserve the same character identity. One readable comic situation per image; include broad interpretations, not only mishaps."},
+    {"subject": "A dog going on small adventures", "trigger_type": "Animal", "constraints": "Keep the same dog and markings. Use safe everyday adventures with visibly different activities."},
+    {"subject": "A fantasy knight doing ordinary office work", "trigger_type": "Character", "constraints": "Same knight and armor throughout. All scenes indoors, each with a different office activity."},
+    {"subject": "An old man trying different sports", "trigger_type": "Character", "constraints": "Same elderly man and physical traits. Safe attempts at different sports, not one sport in different locations."},
+    {"subject": "A sneaker being used in everyday situations", "trigger_type": "Object / product", "constraints": "Preserve the sneaker's design and color. Distinct credible use contexts, not human expressions on the shoe."},
+    {"subject": "A recurring couple on different dates", "trigger_type": "Multiple characters", "constraints": "Same two adults and their relationship. Different visible shared activities, not just portraits at different venues."},
+    {"subject": "A character doing household chores", "trigger_type": "Character", "constraints": "Same identity and outfit. Indoor scenes only. Different chores with one readable task per scene."},
+    {"subject": "A robot trying human hobbies", "trigger_type": "Custom", "custom_type": "A recurring humanoid robot", "constraints": "Same robot design. Different visible hobbies, not changes to its construction."},
+    {"subject": "A woman posing confidently", "trigger_type": "Character", "constraints": "Same identity. Physically interpretable varied poses; gaze need not always be toward the viewer."},
+    {"subject": "A woman doing different funny facial expressions", "trigger_type": "Character", "constraints": "Same identity. Different facial expressions are the requested idea space, not duplicate-category failures."},
+    {"subject": "A product used in creative situations", "trigger_type": "Object / product", "constraints": "Use the same handheld flashlight. Distinct creative uses with physically understandable light paths and object placement."},
+    {"subject": "A robot doing human jobs", "trigger_type": "Custom", "custom_type": "A recurring humanoid robot", "constraints": "Preserve its construction. Different recognizable jobs; hands, tools and objects must occupy reachable positions."}
+  ]
+}

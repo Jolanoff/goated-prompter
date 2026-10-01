@@ -8,6 +8,7 @@ import re
 
 from .workflow_output import WorkflowFormatError, normalize_workflow_output
 from .dataset_triggers import trigger_contract_error, trigger_presence_error, trigger_terms, trigger_text_target
+from .dataset_visible_content import visible_content_error, positive_prompt_error
 
 
 AXES = {
@@ -48,8 +49,8 @@ VARIETY_AXIS_COUNTS = {"Focused": 3, "Balanced": 5, "Wide": 6}
 LEAKED_LABELS = re.compile(
     r"(?im)^\s*(?:ITEM|TRIGGER TYPE|TRIGGER DESCRIPTION|REQUIRED TRIGGER TEXT|DATASET CONCEPT|"
     r"SOURCE MODE|GUIDED INPUT|ADDITIONAL CONSISTENCY RULES|CONSISTENCY AND VARIATION RULES|"
-    r"EARLIER ITEM|OUTPUT FORMAT|CURRENT SCENE|COVERAGE ASSIGNMENT)\s*(?:\d+[^\n]*)?$|"
-    r"</?(?:data|trigger|input|constraints|example|scene)>",
+    r"EARLIER ITEM|OUTPUT FORMAT|CURRENT SCENE|PLANNED IDEA|PLANNED SCENE(?: / CURRENT SCENE)?|FINAL PROMPT|COVERAGE ASSIGNMENT)\s*(?:\d+[^\n]*)?$|"
+    r"</?(?:data|trigger|input|constraints|example|idea|scene)>",
 )
 
 
@@ -144,6 +145,124 @@ def _issue(code, severity, message, related=None):
     return result
 
 
+def _scene_event_words(scene):
+    """Cheap lexical heuristic, not semantic inference or a scene planner."""
+    event = re.split(r";|\b(?:under|with)\s+(?:soft|bright|diffuse|warm|dramatic|overcast)\b",
+                     scene.casefold(), maxsplit=1)[0]
+    event = re.split(r"\b(?:in|at|beside|against)\s+(?:a |an |the )?"
+                     r"(?:bedroom|kitchen|office|park|studio|room|interior)\b", event, maxsplit=1)[0]
+    stop = {"a", "an", "the", "she", "he", "they", "her", "his", "their", "woman", "man",
+            "person", "character", "is", "are", "and", "while", "with", "in", "on", "at", "to",
+            "of", "for", "by", "from", "as", "it", "its", "outside", "indoors", "outdoors"}
+    return [word for word in re.findall(r"[a-z0-9]+", event) if word not in stop]
+
+
+def analyze_scene_diversity(rows):
+    """Flag exact, near-text and cosmetic-event repetitions without another LLM."""
+    rows = [row for row in rows if row.get("scene", "").strip()]
+    records = {row["index"]: {"index": row["index"], "issues": []} for row in rows}
+    duplicate_pairs = set()
+    for position, left in enumerate(rows):
+        left_text = " ".join(left["scene"].casefold().split())
+        left_words = re.findall(r"[a-z0-9]+", left_text)
+        left_event = _scene_event_words(left["scene"])
+        for right in rows[position + 1:]:
+            right_text = " ".join(right["scene"].casefold().split())
+            right_words = re.findall(r"[a-z0-9]+", right_text)
+            right_event = _scene_event_words(right["scene"])
+            code = None
+            if left_text == right_text:
+                code = "exact_duplicate_scene"
+            elif len(left_words) >= 5 and len(right_words) >= 5 and _similarity(_shingles(left_words), _shingles(right_words)) >= .7:
+                code = "near_duplicate_scene"
+            elif (len(left_event) >= 2 and len(right_event) >= 2
+                  and _similarity(set(left_event), set(right_event)) >= .8):
+                code = "repeated_scene_event"
+            if code:
+                duplicate_pairs.add((left["index"], right["index"]))
+                for current, other in ((left, right), (right, left)):
+                    records[current["index"]]["issues"].append(_issue(
+                        code, "warning", f"Scene idea may repeat scene {other['index']} ({code.replace('_', ' ')}). Review the core event, not just its presentation.", other["index"]))
+    pairs = max(1, len(rows) * (len(rows) - 1) // 2)
+    return {"count": len(rows), "uniqueness": round(100 * (1 - len(duplicate_pairs) / pairs)),
+            "scenes": list(records.values()), "method": "lexical heuristics; not a semantic guarantee"}
+
+
+def analyze_idea_diversity(data, rows):
+    """Inspect short ideas separately; heuristics defer to explicit concept scope."""
+    rows = [row for row in rows if row.get("idea", "").strip()]
+    records = {row["index"]: {"index": row["index"], "issues": []} for row in rows}
+    pairs = set()
+    constrained = data.get("source_mode") == "guided" or data.get("variety") == "Focused"
+    scope = (data.get("subject", "") + " " + data.get("constraints", "")).casefold()
+    expression_scope = bool(re.search(r"(?:different|various|funny|facial)\s+(?:facial\s+)?expressions\b", scope))
+
+    def idea_words(text):
+        text = re.sub(r"\b(?:at (?:night|dawn|dusk|sunset)|in (?:warm|soft|bright) light|from a low angle)\b", "", text)
+        return set(_scene_event_words(text))
+
+    for position, left in enumerate(rows):
+        for right in rows[position + 1:]:
+            # Repeated/cycling authoritative guided lines are not brainstorming failures.
+            if constrained:
+                continue
+            a, b = [" ".join(row["idea"].casefold().split()) for row in (left, right)]
+            aw, bw = [idea_words(text) for text in (a, b)]
+            facial = all(re.search(r"\b(?:face|facial|expression|expressions)\b", text) for text in (a, b))
+            code = None
+            if a == b:
+                code = "exact_duplicate_idea"
+            elif facial and expression_scope:
+                continue
+            elif aw and bw and (_similarity(aw, bw) >= .75 or (facial and not expression_scope)):
+                code = "similar_idea_category"
+            if code:
+                pairs.add((left["index"], right["index"]))
+                for current, other in ((left, right), (right, left)):
+                    records[current["index"]]["issues"].append(_issue(code, "warning",
+                        f"Idea may repeat the concept of idea {other['index']}. Check semantic variety, not just presentation differences.", other["index"]))
+    total_pairs = max(1, len(rows) * (len(rows) - 1) // 2)
+    return {"count": len(rows), "uniqueness": round(100 * (1 - len(pairs) / total_pairs)),
+            "ideas": list(records.values()), "method": "concept-aware lexical hints; not semantic verification"}
+
+
+def explicit_geometry_issues(text):
+    """Narrow explicit contradictions only; not a body simulator or pose judge.
+
+    Negated requirements and mirror/multi-panel scenes are left to Deep Review.
+    Unusual actions, rear three-quarter head turns and non-viewer gaze are not errors.
+    """
+    text = text.casefold().replace("–", "-").replace("—", "-")
+    if re.search(r"\b(?:mirror|reflection|reflected|collage|inset|split.screen)\b", text):
+        return []
+
+    def asserted(pattern):
+        for match in re.finditer(pattern, text):
+            prefix = text[max(0, match.start() - 40):match.start()]
+            if not re.search(r"\b(?:no|not|never|without|avoid)\b[^,.;:]*$", prefix):
+                return True
+        return False
+
+    issues = []
+    rear = asserted(r"\b(?:direct|straight) rear view\b|\bcamera directly behind\b")
+    frontal = asserted(r"\bfull(?:y)? frontal face\b|\bface (?:is )?(?:clearly )?fully frontal\b")
+    turn = asserted(r"\bhead (?:is )?turned (?:back )?over (?:her |his |their |one )?shoulder\b")
+    if rear and frontal and not turn:
+        issues.append(_issue("rear_front_conflict", "warning",
+            "Explicit direct rear view and fully frontal face conflict without a plausible turn. Check camera/body/head geometry."))
+    close = asserted(r"\btight (?:face|facial) close[- ]up\b|\btight upper[- ]body crop\b")
+    feet = asserted(r"\b(?:shoes|feet) (?:are )?(?:clearly |fully )?visible\b|\b(?:clearly|fully) (?:showing|shows) (?:her |his |their )?(?:shoes|feet)\b")
+    if close and feet:
+        issues.append(_issue("crop_visibility_conflict", "warning",
+            "A tight face/upper-body crop cannot also clearly show feet or shoes in the same view."))
+    front_camera = asserted(r"\bcamera (?:is )?(?:directly )?in front\b")
+    rear_camera = asserted(r"\bcamera (?:is )?directly behind\b")
+    if front_camera and rear_camera:
+        issues.append(_issue("camera_direction_conflict", "warning",
+            "One camera is specified both directly in front and directly behind the subject."))
+    return issues
+
+
 def _prompt_trigger_valid(prompt, data):
     try:
         return trigger_presence_error(
@@ -174,7 +293,7 @@ def _prompt_trigger_preference(prompt, data):
 
 
 def quality_signature(data, results, plan):
-    value = {"trigger": data.get("trigger"), "target": data.get("target"),
+    value = {"version": 4, "trigger": data.get("trigger"), "target": data.get("target"),
              "trigger_connected": data.get("trigger_connected", True),
              "trigger_at_start": data.get("trigger_at_start", False),
              "amount": data.get("amount"), "results": results, "plan": plan}
@@ -224,6 +343,27 @@ def analyze_dataset_quality(data, results=None, plan=None):
             add(index, _issue("too_short", "warning", "The prompt is unusually short and may not provide useful coverage."))
         if LEAKED_LABELS.search(prompt):
             add(index, _issue("internal_marker", "error", "Internal planning labels or delimiters leaked into the prompt."))
+        try:
+            leakage = positive_prompt_error(prompt, target, trigger_terms(trigger, data.get("trigger_connected", True)))
+        except (ValueError, KeyError, TypeError):
+            leakage = None  # Already reported by the target-format check above.
+        if leakage:
+            add(index, _issue("positive_content_leakage", "warning", leakage))
+        for source in ("idea", "scene"):
+            if leakage := visible_content_error(item.get(source, "")):
+                add(index, _issue(source + "_content_leakage", "warning", leakage))
+        try:
+            final_text = trigger_text_target(prompt, target)
+        except ValueError:
+            final_text = prompt
+        for source, text in (("scene", item.get("scene", "")), ("prompt", final_text)):
+            for issue in explicit_geometry_issues(text):
+                add(index, {**issue, "code": source + "_" + issue["code"],
+                            "message": f"{source.title()} geometry: " + issue["message"]})
+        event_words = set(_scene_event_words(item.get("scene", "")))
+        if len(event_words) >= 4 and len(event_words & set(words)) / len(event_words) < .25:
+            add(index, _issue("scene_anchor_loss", "warning",
+                             "Few planned-event words appear in the final prompt. Check scene fidelity or run Deep Review; paraphrasing may explain this warning."))
 
     duplicate_pairs = set()
     indexes = sorted(records)
@@ -284,13 +424,25 @@ def analyze_dataset_quality(data, results=None, plan=None):
         "uniqueness": max(0, round(100 * (1 - len(duplicate_pairs) / pair_count))),
     }
     if coverage_enabled:
-        metrics["coverage"] = coverage_score
+        metrics["planned_coverage"] = coverage_score
+    scene_quality = analyze_scene_diversity(results)
+    if scene_quality["count"]:
+        metrics["scene_uniqueness"] = scene_quality["uniqueness"]
+        for record in scene_quality["scenes"]:
+            for issue in record["issues"]:
+                add(record["index"], issue)
+    idea_quality = analyze_idea_diversity(data, results)
+    if idea_quality["count"]:
+        metrics["idea_uniqueness"] = idea_quality["uniqueness"]
+        for record in idea_quality["ideas"]:
+            for issue in record["issues"]:
+                add(record["index"], issue)
     for record in records.values():
         severities = {issue["severity"] for issue in record["issues"]}
         record["status"] = "error" if "error" in severities else "warning" if severities else "pass"
     all_issues = batch_issues + [issue for record in records.values() for issue in record["issues"]]
     score = (round(metrics["trigger"] * .25 + metrics["format"] * .20
-                   + metrics["uniqueness"] * .30 + metrics["coverage"] * .25)
+                   + metrics["uniqueness"] * .30 + metrics["planned_coverage"] * .25)
              if coverage_enabled else
              round((metrics["trigger"] * .25 + metrics["format"] * .20
                     + metrics["uniqueness"] * .30) / .75))
@@ -298,4 +450,6 @@ def analyze_dataset_quality(data, results=None, plan=None):
     status = "issues" if "error" in severities else "review" if "warning" in severities or score < 85 else "strong"
     return {"signature": quality_signature(data, results, plan), "status": status, "score": score,
             "metrics": metrics, "batch_issues": batch_issues,
+            "scene_quality": scene_quality,
+            "idea_quality": idea_quality,
             "prompts": [records[index] for index in sorted(records)]}
