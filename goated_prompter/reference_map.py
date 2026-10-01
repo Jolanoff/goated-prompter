@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 import re
 
-from .prompt_catalog import (
+from .prompting.details import (
     REFERENCE_ATTRIBUTES,
     REFERENCE_IMAGE_SLOTS,
     REFERENCE_MANUAL_CONSTRAINTS as _MANUAL_CONSTRAINTS,

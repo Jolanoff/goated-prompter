@@ -16,7 +16,7 @@ import local_app as local
 from goated_prompter.backends.base import GoatedPrompterBackend, BackendGenerationError
 from goated_prompter.core import GoatedPrompterRequest
 from goated_prompter.minimax import (MiniMaxService, analysis_instruction, default_minimax_draft,
-    frame_instruction, generation_instruction, parse_reference_tokens, reference_warnings, requested_spoken_lines,
+    frame_instruction, generation_instruction, parse_reference_tokens, parse_shot_outline, reference_warnings, requested_spoken_lines,
     validate_analysis, validate_minimax_draft, validate_output)
 from goated_prompter.presets import get_director_preset
 from goated_prompter.workflow_settings import WorkflowSettingsStore, empty_settings
@@ -29,6 +29,10 @@ APPLE_REQUEST = ("cartoonish style\n<image1> is mike, its an apple\n<image2> is 
                  "apple looks sad after and walks toward her friend banana\n"
                  "<d>[English] I stepped on poop</d>\nbannana and apple start crying")
 APPLE_PLAIN_REQUEST = APPLE_REQUEST.replace("<d>[English] I stepped on poop</d>", "apple says : i stepped on a poop")
+APPLE_SHOTS = ("cartoonish style\n<image1> is mike, its an apple\n<image2> is track, its a bannana\n"
+               "<image3> the background its the street\n\n<shot1> apple walking on the street, it steps on dog poop,\n"
+               "<shot2> apple looks sad after and walks toward her friend banana\n"
+               "<shot3>apple says : i stepped on a poop\nbannana and apple start crying")
 APPLE_PROMPT = """subject_definitions:
 <Subject 1> is the apple character Mike, based on <Picture 1>.
 <Subject 2> is the banana friend, based on <Picture 2>.
@@ -132,6 +136,75 @@ class MiniMaxContractTests(unittest.TestCase):
         self.assertEqual(validate_minimax_draft({"user_request": "unfinished <image10>"})["user_request"], "unfinished <image10>")
         with self.assertRaises(ValueError):
             validate_minimax_draft({"references": [f"image{i}" for i in range(1, 10)] + ["video1", "video2", "video3", "audio1"]})
+
+    def test_optional_shot_shortcuts_validate_and_allocate_clip_timing(self):
+        self.assertEqual(parse_shot_outline("An apple walks", 10), [])
+        shots = parse_shot_outline(APPLE_SHOTS, 10)
+        self.assertEqual([(shot["start_ms"], shot["end_ms"]) for shot in shots],
+                         [(0, 3333), (3333, 6666), (6666, 10000)])
+        timed = APPLE_SHOTS.replace("<shot1> apple", "<shot1> 0-3s apple")
+        self.assertEqual([(shot["start_ms"], shot["end_ms"]) for shot in parse_shot_outline(timed, 10)],
+                         [(0, 3000), (3000, 6500), (6500, 10000)])
+        self.assertEqual(parse_shot_outline("<shot1> 0-2.5s Walk. <shot2> 2.5-6s Stop.", 6)[1]["start_ms"], 2500)
+        self.assertEqual(requested_spoken_lines(timed), [{"speaker": "apple", "words": "i stepped on a poop"}])
+        for request in ("<shot2> hello", "<shot1> hello <shot1> again", "<shot01> hello", "<shot0> hello",
+                        "<shotx> hello", "<shot1> hello <shotx> again", "<shot1> 0-3sec hello <shot2> goodbye",
+                        "<shot1> hello <shot2> 4-8s goodbye", "<shot1> 0-3s hello",
+                        "<shot1> 1-3s hello <shot2> goodbye", "<shot1> 0-3s hello <shot2> 4-10s goodbye",
+                        "<shot1> hello <shot2>"):
+            with self.subTest(request=request), self.assertRaises(ValueError):
+                validate_minimax_draft({"user_request": request}, generation=True)
+
+    def test_image_only_shot_outline_converts_to_guide_fields_and_keeps_speech(self):
+        data = validate_minimax_draft({"references": ["image1", "image2", "image3"],
+                                       "user_request": APPLE_SHOTS.replace("<shot1> apple", "<shot1> 0-3s apple")}, generation=True)
+        roles = plan_json(role("image1", "character"), role("image2", "character"), role("image3", "environment"))
+        plan = validate_analysis(roles, data)
+        instruction = generation_instruction(data, plan, get_director_preset(data["director_preset"]), "qwen")
+        self.assertIn('"start_ms": 3000', instruction.user_message)
+        self.assertIn('"start_ms": 6500', instruction.user_message)
+        self.assertIn('"speaker": "apple", "words": "i stepped on a poop"', instruction.user_message)
+        result = validate_output(APPLE_PROMPT, data, plan)
+        timeline = result.split("detailed_description:\n", 1)[1].split("\n\noverall_soundscape:", 1)[0]
+        self.assertIn("[Shot 1] apple walking on the street, it steps on dog poop", timeline)
+        self.assertIn("[Shot 2] At 00:03.000, apple looks sad", timeline)
+        self.assertIn("[Shot 3] At 00:06.500, apple (S1) says: <d>[English] i stepped on a poop</d>", timeline)
+        self.assertIn("bannana and apple start crying", timeline)
+        self.assertNotIn("<shot", result.lower())
+        model = APPLE_PROMPT.replace(
+            APPLE_PROMPT.split("detailed_description:\n", 1)[1].split("\n\noverall_soundscape:", 1)[0],
+            "The target video has a cartoonish style.\n<shot1> <Subject 1> walks along <Subject 3> and steps in dog poop.\n"
+            "<shot2> At 00:04.000, <Subject 1> looks sad and approaches <Subject 2>.\n"
+            "<shot3> At 00:08.000, <Subject 1> (S1) says: <d>[English] i stepped on a poop</d> "
+            "and <Subject 1> and <Subject 2> begin crying.")
+        enhanced = validate_output(model, data, plan)
+        self.assertIn("[Shot 2] At 00:03.000, <Subject 1> looks sad", enhanced)
+        self.assertIn("[Shot 3] At 00:06.500, <Subject 1> (S1) says", enhanced)
+        backend = ScriptedBackend(roles, model)
+        with patch("goated_prompter.minimax.create_backend", return_value=backend):
+            generated = MiniMaxService({"backend": "mock"}, lambda: None).run(
+                GoatedPrompterRequest(idea=APPLE_SHOTS), data, lambda _: None)
+        self.assertEqual(len(backend.calls), 2)
+        self.assertEqual(generated["prompt"], enhanced)
+
+    def test_shot_outline_preserves_base_frame_alignment(self):
+        request = "Start from <image1>. <shot1> 0-3s Begin walking. <shot2> Continue walking and stop."
+        data = validate_minimax_draft({"mode": "I2VA", "references": ["image1"], "user_request": request}, generation=True)
+        plan = validate_analysis(plan_json(role("image1", "first frame"), first="image1"), data)
+        model = frame_instruction("I2VA", 10) + "\n\n" + BASE
+        result = validate_output(model, data, plan)
+        self.assertTrue(result.startswith(frame_instruction("I2VA", 10) + "\n\n"))
+        self.assertIn("[Shot 2] At 00:03.000, Continue walking and stop.", result)
+        self.assertIn("[Shot 1]", result)
+
+    def test_shot_shortcuts_also_work_without_media_references(self):
+        request = "A cartoon leaf scene.\n<shot1> 0-2s A leaf falls.\n<shot2> The leaf lands on a path."
+        data = validate_minimax_draft({"user_request": request, "duration_seconds": 6}, generation=True)
+        plan = validate_analysis(plan_json(), data)
+        result = validate_output(BASE, data, plan)
+        self.assertTrue(result.startswith("integrated_multimodal_description:\n[Shot 1]"))
+        self.assertIn("[Shot 2] At 00:02.000, The leaf lands on a path.", result)
+        self.assertNotIn("<shot", result)
 
     def test_auto_uses_semantic_roles_not_presence_of_an_image_or_video(self):
         cases = [([], plan_json(), "T2VA"),
@@ -500,7 +573,6 @@ class MiniMaxEndpointTests(unittest.IsolatedAsyncioTestCase):
         path = self.app[local.STATE].workflow_settings.path
         old = empty_settings()
         del old["minimax"]
-        old["explore"]["draft"]["base"] = "Keep my previous draft"
         local.atomic_json(path, old)
         response = await self.client.get("/api/workspace/settings/minimax")
         record = await response.json()
@@ -510,7 +582,6 @@ class MiniMaxEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(saved.status, 200)
         reload = WorkflowSettingsStore(path, local.read_store, local.atomic_json)
         self.assertEqual(reload.snapshot("minimax")["draft"], draft)
-        self.assertEqual(reload.snapshot("explore")["draft"]["base"], "Keep my previous draft")
         stale = await self.client.put("/api/workspace/settings/minimax", json={"revision": 0, "draft": {}})
         self.assertEqual(stale.status, 409)
 

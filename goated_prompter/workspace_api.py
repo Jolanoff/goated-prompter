@@ -1,19 +1,109 @@
 """Dedicated HTTP workflows; uses the application's shared job admission/cancellation."""
 
 import asyncio
-import uuid
-
 from aiohttp import web
 
 from .core import GoatedPrompterRequest, _as_bool
-from .prompt_catalog import PROMPT_LENGTH_NAMES, TARGET_MODEL_NAMES
-from .prompt_workflows import PromptWorkflowService
-from .workspace_store import WorkspaceConflict, locks, now, text
-from .resolution import normalize_resolution
+from .prompting.details import PROMPT_LENGTH_NAMES
+from .prompting.target_models import TARGET_MODEL_NAMES
+from .refinement import RefineService
+from .workspace_store import WorkspaceConflict, locks, text
 from .minimax import MiniMaxService, validate_minimax_draft
+from .dataset import DatasetReviewService, DatasetService, validate_dataset_draft
+from .dataset_coverage import analyze_dataset_quality, build_coverage_plan, effective_coverage_plan
+from .presets import get_director_preset
 
 
 def register_workspace_routes(app, state_key, job_factory, json_object):
+    async def dataset_coverage_endpoint(request):
+        payload = await json_object(request)
+        if set(payload) != {"input"}:
+            raise ValueError("Expected Dataset input only.")
+        data = validate_dataset_draft(payload["input"])
+        return web.json_response(await asyncio.to_thread(build_coverage_plan, data))
+
+    async def dataset_quality_endpoint(request):
+        payload = await json_object(request)
+        if set(payload) != {"input"}:
+            raise ValueError("Expected Dataset input only.")
+        data = validate_dataset_draft(payload["input"])
+        coverage = effective_coverage_plan(data)
+        report = await asyncio.to_thread(
+            analyze_dataset_quality, data, data["results"], coverage["plan"])
+        return web.json_response({"report": report, "coverage": coverage})
+
+    async def dataset_endpoint(request):
+        state = request.app[state_key]
+        payload = await json_object(request)
+        if set(payload) - {"input", "settings"}:
+            raise ValueError("Expected Dataset input and prompt-engine settings.")
+        scenes_only = request.path.endswith("/scenes")
+        data = validate_dataset_draft(payload.get("input"), generation=True, planning=scenes_only)
+        settings = payload.get("settings", {})
+        if not isinstance(settings, dict) or set(settings) - {"director_profile"}:
+            raise ValueError("Invalid Dataset prompt-engine settings.")
+        director = None if scenes_only else get_director_preset(data["director_preset"], strict=True)
+        async with state.admission:
+            active = state.active_job()
+            if active:
+                return web.json_response({"error": "Wait for the active generation before generating again.",
+                                          "active_job": active}, status=409)
+            config = state.config()
+            configured = config.get("backend") in {"mock", "openai_compatible"}
+            director_request = GoatedPrompterRequest(
+                idea=data["subject"], mode="Custom", target_model=data["target"],
+                prompt_length=data["length"], prompt_model="Custom",
+                director_preset=director.id if director else "general_director",
+                director_profile="" if configured else text(
+                    settings.get("director_profile", state.saved_settings.get("selected_profile", "")),
+                    "Prompt engine", 512, optional=True),
+                director_keep_model_loaded=_as_bool(
+                    config.get("local_llama_cpp", {}).get("keep_model_loaded", False)),
+            )
+            job = job_factory()
+            job.kind = "dataset_scenes" if scenes_only else "dataset"
+            state.jobs[job.id] = job
+            task = asyncio.create_task(state.run(
+                job, director_request, config, True, {"operation": job.kind, "input": data}))
+            state.tasks.add(task)
+            task.add_done_callback(state.tasks.discard)
+            return web.json_response(job.snapshot(), status=202)
+
+    async def dataset_review_endpoint(request):
+        state = request.app[state_key]
+        payload = await json_object(request)
+        if set(payload) - {"input", "settings"}:
+            raise ValueError("Expected Dataset input and prompt-engine settings.")
+        data = validate_dataset_draft(payload.get("input"), generation=True)
+        if not data["results"]:
+            raise ValueError("Generate at least one dataset prompt before running a deep review.")
+        settings = payload.get("settings", {})
+        if not isinstance(settings, dict) or set(settings) - {"director_profile"}:
+            raise ValueError("Invalid Dataset prompt-engine settings.")
+        async with state.admission:
+            active = state.active_job()
+            if active:
+                return web.json_response({"error": "Wait for the active generation before reviewing again.",
+                                          "active_job": active}, status=409)
+            config = state.config()
+            configured = config.get("backend") in {"mock", "openai_compatible"}
+            director_request = GoatedPrompterRequest(
+                idea=data["subject"], mode="Custom", target_model=data["target"], prompt_model="Custom",
+                director_profile="" if configured else text(
+                    settings.get("director_profile", state.saved_settings.get("selected_profile", "")),
+                    "Prompt engine", 512, optional=True),
+                director_keep_model_loaded=_as_bool(
+                    config.get("local_llama_cpp", {}).get("keep_model_loaded", False)),
+            )
+            job = job_factory()
+            job.kind = "dataset_review"
+            state.jobs[job.id] = job
+            task = asyncio.create_task(state.run(
+                job, director_request, config, True, {"operation": "dataset_review", "input": data}))
+            state.tasks.add(task)
+            task.add_done_callback(state.tasks.discard)
+            return web.json_response(job.snapshot(), status=202)
+
     async def minimax_endpoint(request):
         state = request.app[state_key]
         payload = await json_object(request)
@@ -65,10 +155,7 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
                         result = await asyncio.to_thread(store.add_version, text(payload.get("prompt"), "Prompt"), target,
                                                          "Manual edit" if parent else "Starting prompt", parent_id=parent,
                                                          detail_locks=original["locks"] if original else locks(payload.get("locks", ["identity"])),
-                                                         resolution=original.get("resolution") if original else normalize_resolution(payload.get("resolution")),
                                                          revision=current["revision"])
-                    elif action == "delete_comparison":
-                        result = await asyncio.to_thread(store.delete_comparison, text(payload.get("id"), "Comparison id", 128), current["revision"])
                     else:
                         result = await asyncio.to_thread(store.navigate, action, current["revision"], payload.get("id"))
                     return web.json_response(result)
@@ -79,35 +166,25 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
                 target, length = settings.get("target_model", "Generic"), settings.get("prompt_length", "Medium")
                 if target not in TARGET_MODEL_NAMES or length not in PROMPT_LENGTH_NAMES:
                     raise ValueError("Invalid target model or prompt length.")
-                workflow = {"operation": operation, "locks": locks(payload.get("locks", []))}
+                workflow = {"operation": "refine", "locks": locks(payload.get("locks", []))}
                 saved_workflow = await asyncio.to_thread(state.workflow_settings.snapshot, operation)
                 workflow["instructions"] = saved_workflow["instructions"]
-                resolution = normalize_resolution()
-                if operation == "refine":
-                    version = next((item for item in current["versions"] if item["id"] == current["current_id"]), None)
-                    if version is None:
-                        raise ValueError("Add a starting prompt before refining.")
-                    workflow.update(base=version["prompt"], parent_id=version["id"], changes=text(payload.get("changes"), "Requested changes", 10000))
-                    target = version["target"]
-                    resolution = normalize_resolution()
-                else:
-                    if len(current["comparisons"]) >= 100:
-                        raise ValueError("Remove an older comparison before exploring again (100 comparison limit).")
-                    workflow["base"] = text(payload.get("base"), "Starting idea or prompt")
-                    workflow["batch"] = {"id": uuid.uuid4().hex, "base": workflow["base"], "target": target,
-                                         "locks": workflow["locks"], "created_at": now(), "results": [], "resolution": resolution}
-                if operation == "refine" and len(current["versions"]) >= 1000:
+                version = next((item for item in current["versions"] if item["id"] == current["current_id"]), None)
+                if version is None:
+                    raise ValueError("Add a starting prompt before refining.")
+                workflow.update(base=version["prompt"], parent_id=version["id"], changes=text(payload.get("changes"), "Requested changes", 10000))
+                target = version["target"]
+                if len(current["versions"]) >= 1000:
                     raise ValueError("Version history is full. Back it up and clear history before refining again.")
                 config = state.config()
                 configured = config.get("backend") in {"mock", "openai_compatible"}
                 director_request = GoatedPrompterRequest(
                     idea=workflow["base"], target_model=target, prompt_length=length, prompt_model="Custom",
-                    resolution=resolution,
                     director_profile="" if configured else text(settings.get("director_profile", state.saved_settings.get("selected_profile", "")), "Prompt engine", 512, optional=True),
                     director_keep_model_loaded=_as_bool(config.get("local_llama_cpp", {}).get("keep_model_loaded", False)),
                 )
                 job = job_factory()
-                job.kind = operation
+                job.kind = "refine"
                 state.jobs[job.id] = job
                 task = asyncio.create_task(state.run(job, director_request, config, True, workflow))
                 state.tasks.add(task)
@@ -141,11 +218,17 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
             return web.json_response({"error": str(exc)}, status=409)
 
     app.add_routes([web.post("/api/workspace/minimax", minimax_endpoint),
-                    web.get("/api/workspace/settings/{operation:refine|explore|minimax}", settings_endpoint),
-                    web.put("/api/workspace/settings/{operation:refine|explore|minimax}", settings_endpoint),
-                    web.post("/api/workspace/settings/{operation:refine|explore}/instructions", settings_endpoint),
+                    web.post("/api/workspace/dataset", dataset_endpoint),
+                    web.post("/api/workspace/dataset/scenes", dataset_endpoint),
+                    web.post("/api/workspace/dataset/review", dataset_review_endpoint),
+                    web.post("/api/workspace/dataset/coverage", dataset_coverage_endpoint),
+                    web.post("/api/workspace/dataset/plan", dataset_coverage_endpoint),
+                    web.post("/api/workspace/dataset/quality", dataset_quality_endpoint),
+                    web.get("/api/workspace/settings/{operation:refine|minimax|dataset}", settings_endpoint),
+                    web.put("/api/workspace/settings/{operation:refine|minimax|dataset}", settings_endpoint),
+                    web.post("/api/workspace/settings/{operation:refine}/instructions", settings_endpoint),
                     web.get("/api/workspace", endpoint), web.post("/api/workspace", endpoint),
-                    web.post("/api/workspace/{operation:refine|explore}", endpoint)])
+                    web.post("/api/workspace/{operation:refine}", endpoint)])
 
 
 def execute_workflow(state, job, request, config, workflow):
@@ -158,27 +241,42 @@ def execute_workflow(state, job, request, config, workflow):
             raise ValueError(f"The prompt was generated, but saving failed. Copy the recovered result before leaving this page. {exc}") from exc
 
     def progress(message):
-        with job.lock:
-            job.progress = message
-            job.revision += 1
-
-    def save_direction(direction, prompt):
-        job.commit(lambda: persist(prompt, lambda: state.workspace.save_direction(workflow["batch"], direction, prompt)))
+        job.set_progress(message)
 
     if workflow["operation"] == "minimax":
         result = MiniMaxService(config, job.checkpoint).run(request, workflow["input"], progress)
         job.commit(lambda: result, finish=True)
         return
 
-    service = PromptWorkflowService(config, job.checkpoint)
-    result = service.run(request, workflow, progress, save_direction)
+    if workflow["operation"] in {"dataset", "dataset_scenes"}:
+        def partial(result):
+            with job.lock:
+                job.result = result
+                job.record_event(
+                    (f"Dataset prompt {result['completed']}/{result['total']} completed and is available."
+                     if result["completed"] else "Dataset scene plan is ready and available before prompt writing."),
+                    "result",
+                    revise=False,
+                )
+                job.revision += 1
+        result = DatasetService(config, job.checkpoint).run(
+            request, workflow["input"], progress, partial,
+            scenes_only=workflow["operation"] == "dataset_scenes")
+        job.commit(lambda: result, finish=True)
+        return
+
+    if workflow["operation"] == "dataset_review":
+        result = DatasetReviewService(config, job.checkpoint).run(
+            request, workflow["input"], progress)
+        job.commit(lambda: result, finish=True)
+        return
+
+    service = RefineService(config, job.checkpoint)
+    result = service.run(request, workflow, progress)
     def finish():
-        if workflow["operation"] == "refine":
-            snapshot = persist(result["prompt"], lambda: state.workspace.add_version(
-                result["prompt"], request.target_model, "Refinement", parent_id=workflow["parent_id"],
-                instruction=workflow["changes"], detail_locks=workflow["locks"], resolution=request.resolution))
-            result["version_id"] = snapshot["current_id"]
-        else:
-            result["comparison_id"] = workflow["batch"]["id"]
+        snapshot = persist(result["prompt"], lambda: state.workspace.add_version(
+            result["prompt"], request.target_model, "Refinement", parent_id=workflow["parent_id"],
+            instruction=workflow["changes"], detail_locks=workflow["locks"]))
+        result["version_id"] = snapshot["current_id"]
         return result
     job.commit(finish, finish=True)
