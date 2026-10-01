@@ -53,7 +53,8 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
                 raise ValueError("Per-scene actions require a current saved idea plan.")
             if action == "regenerate_prompt" and (not rows[index - 1]["scene"].strip()
                     or rows[index - 1].get("scene_status") in {"not_generated", "geometry_warning"}
-                    or geometry_errors(rows[index - 1])):
+                    or geometry_errors(rows[index - 1], character=data["planning_mode"] == "Quality"
+                        and data["trigger_type"] == "Character" and rows[index - 1].get("scene_status") != "guided_fallback")):
                 raise ValueError("Repair this scene before regenerating its prompt.")
             scene_action = (action, index)
         settings = payload.get("settings", {})

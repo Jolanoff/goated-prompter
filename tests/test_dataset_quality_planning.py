@@ -27,10 +27,11 @@ def draft(**changes):
 def scene(index=1, idea="trying to juggle and failing", **changes):
     return {"index": index, "idea": idea,
             "scene": "She unsuccessfully juggles oranges, hands beneath the falling fruit and gaze tracking it.",
-            "geometry": {"framing": "three-quarter body", "camera_view": "front three-quarter",
-                         "body_orientation": "turned slightly left", "head_direction": "toward falling object",
-                         "gaze": "tracking falling object", "pose": "standing mid-action",
-                         "action_focus": "juggling", "visibility_focus": ["face", "hands", "falling objects"]}, **changes}
+            "geometry": {"framing": "full_body", "camera_view": "front_three_quarter",
+                         "body_orientation": "front_three_quarter_left", "head_direction": "toward_action",
+                         "gaze_direction": "toward_action", "pose_type": "standing_dynamic", "face_visibility": "three_quarter",
+                         "action_focus": idea, "hand_visibility": "both_visible",
+                         "visibility_focus": ["face", "hands", "falling objects"]}, **changes}
 
 
 def saved(data, rows):
@@ -60,7 +61,7 @@ def run(data, outputs, **kwargs):
 
 
 class QualityPlanningTests(unittest.TestCase):
-    def test_ten_prompts_use_exactly_two_planning_calls_plus_ten_writers(self):
+    def test_ten_prompts_use_full_batch_ideas_then_three_composer_chunks_plus_ten_writers(self):
         ideas = ["trying to juggle and failing", "walking in giant shoes", "making a funny face",
                  "getting tangled in a bedsheet", "catching popcorn in her mouth", "taking a ridiculous selfie",
                  "wearing a sweater backwards", "sitting in a tiny chair", "balancing a spoon on her nose",
@@ -68,12 +69,12 @@ class QualityPlanningTests(unittest.TestCase):
         rows = [scene(i, idea, scene="A woman " + idea + ", with her necessary props visible in one coherent image.")
                 for i, idea in enumerate(ideas, 1)]
         result, session, _ = run(draft(amount=10), [json.dumps([{"index": row["index"], "idea": row["idea"]} for row in rows]),
-            json.dumps(rows)] + ["person_token. " + row["scene"] for row in rows])
+            *[json.dumps(rows[start:start + 4]) for start in range(0, 10, 4)]] + ["person_token. " + row["scene"] for row in rows])
         stages = [call.args[0].diagnostic_stage for call in session.generate.call_args_list]
-        self.assertEqual(stages, ["dataset:idea_planner", "dataset:scene_composer"] + [f"dataset:{i}" for i in range(1, 11)])
+        self.assertEqual(stages, ["dataset:idea_planner"] + ["dataset:scene_composer"] * 3 + [f"dataset:{i}" for i in range(1, 11)])
         self.assertEqual(result["completed"], 10)
         self.assertTrue(all(row["prompt_status"] == "valid" for row in result["scene_plan"]))
-        for row, call in zip(rows, session.generate.call_args_list[2:]):
+        for row, call in zip(rows, session.generate.call_args_list[4:]):
             self.assertIn(row["idea"], call.args[0].user_message)
             self.assertIn(json.dumps(row["geometry"]), call.args[0].user_message)
 
@@ -331,10 +332,10 @@ class GeometryAndQualityTests(unittest.TestCase):
                 self.assertTrue(geometry_errors(scene(geometry={}, scene=text)))
 
     def test_unusual_rear_shoulder_turn_is_valid(self):
-        geometry = {"camera_view": "rear three-quarter", "body_orientation": "mostly away",
-                    "head_direction": "turned over shoulder", "gaze": "camera",
-                    "face_visibility": "partial three-quarter visibility"}
-        self.assertFalse(geometry_errors(scene(geometry=geometry)))
+        geometry = {"camera_view": "rear_three_quarter_right", "body_orientation": "rear_three_quarter_right",
+                    "head_direction": "over_left_shoulder", "gaze_direction": "toward_camera",
+                    "face_visibility": "three_quarter"}
+        self.assertFalse(geometry_errors(scene(idea="Looking back over her shoulder", geometry=geometry)))
         self.assertFalse(geometry_errors(scene(geometry={}, scene="Not a direct rear view; full frontal face clearly visible.")))
         self.assertFalse(geometry_errors(scene(geometry={}, scene="Direct rear view with a fully frontal face in a mirror reflection.")))
 
@@ -364,7 +365,7 @@ class GeometryAndQualityTests(unittest.TestCase):
             coverage = effective_coverage_plan(data)
             coverage["plan"][0]["facets"]["framing"] = "face close-up"
             row = scene(idea=idea, scene="A woman " + idea + ".",
-                        geometry={"framing": framing, "visibility_focus": focus})
+                         geometry={**scene(idea=idea)["geometry"], "framing": framing.replace(" ", "_").replace("-", "_"), "visibility_focus": focus})
             session = Mock()
             session.generate.return_value = json.dumps([row])
             planned = ScenePlanner(lambda: None).compose(session=session, data=data, coverage=coverage,
@@ -378,7 +379,7 @@ class GeometryAndQualityTests(unittest.TestCase):
     def test_invalid_shoe_crop_repairs_locally_without_changing_idea(self):
         data = draft(amount=1)
         bad = scene(idea="walking in giant shoes", scene="She walks in giant shoes.", geometry={"framing": "face close-up"})
-        good = {**bad, "geometry": {"framing": "full body", "visibility_focus": ["shoes"]}}
+        good = {**bad, "geometry": {**scene(idea=bad["idea"])["geometry"], "framing": "full_body", "visibility_focus": ["shoes"]}}
         session = Mock()
         session.generate.side_effect = [json.dumps([bad]), json.dumps([good])]
         result = ScenePlanner(lambda: None).compose(session=session, data=data, coverage=effective_coverage_plan(data),

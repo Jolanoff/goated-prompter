@@ -1,6 +1,31 @@
 import { test, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 
+test("Quality composes in small chunks and geometry stays behind a readable disclosure", async ({ page, request }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  await page.getByLabel("Dataset idea", { exact: true }).fill("A traveler visiting different exhibits.");
+  await page.getByLabel("Trigger text or terms").fill("ohwx_traveler");
+  await page.getByLabel("Dataset planning mode").selectOption("Quality");
+  await page.getByLabel("Number of prompts").selectOption("5");
+  const accepted = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset") && response.status() === 202);
+  await page.getByRole("button", { name: "Generate 5 prompts", exact: true }).click();
+  const job = await (await accepted).json();
+  await expect(page.getByLabel("Dataset prompt 5")).toHaveValue(/ohwx_traveler/);
+  const finished = await (await request.get(`/api/jobs/${job.id}`)).json();
+  expect(finished.status).toBe("succeeded");
+  expect(finished.llm_trace.request_number).toBe(8); // Full-batch ideas + 2 chunks + 5 writers.
+  const plan = page.getByRole("region", { name: "Scene Planner ideas", exact: true });
+  const disclosure = plan.locator("details").filter({ has: page.getByText("Geometry 1", { exact: true }) });
+  await expect(disclosure).not.toHaveAttribute("open");
+  await expect(disclosure.getByText("gaze direction", { exact: true })).not.toBeVisible();
+  await disclosure.locator("summary").click();
+  await expect(disclosure.getByText("gaze direction", { exact: true })).toBeVisible();
+  await expect(disclosure.getByText("toward action", { exact: true })).toHaveCount(2); // Head and eyes are separate facts.
+  await expect(disclosure.getByText("standing neutral", { exact: true })).toBeVisible();
+  expect(finished.result.scene_plan.every((row) => row.geometry.gaze_direction === "toward_action" && !("gaze" in row.geometry))).toBe(true);
+});
+
 test.beforeEach(async ({ request }) => {
   const settings = await (await request.get("/api/workspace/settings/dataset")).json();
   expect((await request.put("/api/workspace/settings/dataset", {
