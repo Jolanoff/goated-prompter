@@ -1,14 +1,12 @@
-"""Revision-checked, atomic storage for prompt versions and direction comparisons."""
+"""Revision-checked, atomic storage for prompt versions."""
 
 from copy import deepcopy
 from datetime import datetime, timezone
 import threading
 import uuid
-from .resolution import normalize_resolution
 
 
 LOCKS = ("identity", "outfit", "pose", "scene", "composition", "camera", "lighting", "colors", "materials", "style")
-DIRECTIONS = ("faithful", "creative", "experimental")
 
 
 def text(value, name, limit=100000, optional=False):
@@ -24,24 +22,23 @@ def locks(value):
 
 
 def empty_workspace():
-    return {"revision": 0, "versions": [], "current_id": None, "redo": [], "comparisons": []}
+    return {"revision": 0, "versions": [], "current_id": None, "redo": []}
 
 
 def validate_workspace(value):
-    if not isinstance(value, dict) or set(value) != set(empty_workspace()):
+    if not isinstance(value, dict) or not set(empty_workspace()) <= set(value):
         raise ValueError("Invalid creative workspace store.")
     if type(value["revision"]) is not int or value["revision"] < 0:
         raise ValueError("Invalid workspace revision.")
-    versions, comparisons = value["versions"], value["comparisons"]
-    if not isinstance(versions, list) or len(versions) > 1000 or not isinstance(comparisons, list) or len(comparisons) > 100:
-        raise ValueError("Workspace supports 1000 versions and 100 comparisons. Remove older comparisons or clear history first.")
+    versions = value["versions"]
+    if not isinstance(versions, list) or len(versions) > 1000:
+        raise ValueError("Workspace supports 1000 versions. Clear history before adding more.")
     ids = set()
     for record in versions:
         required = {"id", "parent_id", "prompt", "target", "label", "created_at", "locks", "instruction"}
         if not isinstance(record, dict) or not required <= record.keys() or record.keys() - required - {"resolution"}:
             raise ValueError("Invalid prompt version.")
-        if "resolution" in record:
-            normalize_resolution(record["resolution"])
+        record.pop("resolution", None)
         for key, limit in (("id", 128), ("prompt", 100000), ("target", 256), ("label", 100), ("created_at", 64), ("instruction", 10000)):
             text(record[key], key, limit, optional=key == "instruction")
         locks(record["locks"])
@@ -52,24 +49,7 @@ def validate_workspace(value):
         raise ValueError("Current version is missing.")
     if not isinstance(value["redo"], list) or len(value["redo"]) > 1000 or any(item not in ids for item in value["redo"]):
         raise ValueError("Invalid redo history.")
-    batch_ids = set()
-    for batch in comparisons:
-        required = {"id", "base", "target", "locks", "created_at", "results"}
-        if not isinstance(batch, dict) or not required <= batch.keys() or batch.keys() - required - {"resolution"}:
-            raise ValueError("Invalid comparison.")
-        if "resolution" in batch:
-            normalize_resolution(batch["resolution"])
-        for key, limit in (("id", 128), ("base", 100000), ("target", 256), ("created_at", 64)):
-            text(batch[key], key, limit)
-        locks(batch["locks"])
-        if batch["id"] in batch_ids or not isinstance(batch["results"], list) or len(batch["results"]) > 3:
-            raise ValueError("Invalid comparison results.")
-        batch_ids.add(batch["id"])
-        for index, result in enumerate(batch["results"]):
-            if not isinstance(result, dict) or set(result) != {"direction", "prompt"} or result["direction"] != DIRECTIONS[index]:
-                raise ValueError("Invalid comparison direction.")
-            text(result["prompt"], "Direction prompt")
-    return value
+    return {key: value[key] for key in empty_workspace()}
 
 
 class WorkspaceConflict(ValueError):
@@ -100,12 +80,9 @@ class WorkspaceStore:
             self.write(self.path, validate_workspace(updated))
             return updated
 
-    def add_version(self, prompt, target, label, *, parent_id=None, instruction="", detail_locks=("identity",), resolution=None, revision=None):
+    def add_version(self, prompt, target, label, *, parent_id=None, instruction="", detail_locks=("identity",), revision=None):
         record = {"id": uuid.uuid4().hex, "parent_id": parent_id, "prompt": prompt, "target": target,
                   "label": label, "instruction": instruction, "locks": list(detail_locks), "created_at": now()}
-        if resolution is not None:
-            record["resolution"] = normalize_resolution(resolution)
-
         def add(state):
             state["versions"].append(record)
             state["current_id"] = record["id"]
@@ -137,20 +114,6 @@ class WorkspaceStore:
                 raise ValueError("Unknown history action.")
 
         return self.mutate(move, revision)
-
-    def save_direction(self, batch, direction, prompt):
-        def save(state):
-            existing = next((item for item in state["comparisons"] if item["id"] == batch["id"]), None)
-            if existing is None:
-                existing = deepcopy(batch)
-                state["comparisons"].append(existing)
-            existing["results"].append({"direction": direction, "prompt": prompt})
-
-        return self.mutate(save)
-
-    def delete_comparison(self, batch_id, revision):
-        return self.mutate(lambda state: state.update(comparisons=[item for item in state["comparisons"] if item["id"] != batch_id]), revision)
-
 
 def now():
     return datetime.now(timezone.utc).isoformat()

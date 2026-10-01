@@ -4,6 +4,7 @@ from .base import (
     BackendCapabilityError,
     BackendConfigurationError,
     BackendGenerationError,
+    BackendRunawayError,
     ImageEncodingError,
     GoatedPrompterBackend,
 )
@@ -13,6 +14,7 @@ __all__ = [
     "BackendCapabilityError",
     "BackendConfigurationError",
     "BackendGenerationError",
+    "BackendRunawayError",
     "ImageEncodingError",
     "GoatedPrompterBackend",
     "create_backend",

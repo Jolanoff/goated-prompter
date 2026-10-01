@@ -5,7 +5,7 @@ import { orderDisplayPresets, presetDisplayLabel } from "../presetPresentation.j
 import { TargetSelect } from "./WorkflowControls.jsx";
 import { useWorkflowSettings } from "./useWorkflowSettings.js";
 import WorkflowSettingsStatus from "./WorkflowSettingsStatus.jsx";
-import { insertReference, nextReference, parseReferences, referenceLimits } from "./minimaxReferences.js";
+import { insertReference, insertShot, nextReference, nextShot, parseReferences, parseShots, referenceLimits } from "./minimaxReferences.js";
 
 const modes = [["auto", "Auto"], ["T2VA", "Text to Video"], ["I2VA", "First Frame"],
   ["FL2VA", "First + Last Frame"], ["L2VA", "Last Frame"], ["Ref2VA", "Full Reference"]];
@@ -26,11 +26,12 @@ export default function MiniMaxTab({ visible, job, busy, active, noEngine, engin
 
   const disabled = busy || starting || preferences.working;
   const parsed = parseReferences(draft?.user_request || "");
+  const parsedShots = parseShots(draft?.user_request || "");
   const audioOnly = draft?.references.length > 0 && draft.references.every((token) => token.startsWith("audio"));
   const availablePresets = orderDisplayPresets(presets || []);
   const director = availablePresets.find((item) => item.id === draft?.director_preset);
   const missingReferences = parsed.references.filter((token) => !draft?.references.includes(token));
-  const canGenerate = draft && !disabled && !noEngine && !preferences.conflict && director && draft.user_request.trim() && !parsed.invalid.length && !missingReferences.length;
+  const canGenerate = draft && !disabled && !noEngine && !preferences.conflict && director && draft.user_request.trim() && !parsed.invalid.length && !missingReferences.length && !parsedShots.invalid.length && parsedShots.ordered;
 
   function insert(token, references = draft.references) {
     const input = textarea.current;
@@ -43,6 +44,16 @@ export default function MiniMaxTab({ visible, job, busy, active, noEngine, engin
   }
   function preserveCursor(event) {
     if (document.activeElement === textarea.current) event.preventDefault();
+  }
+  function addShot() {
+    const input = textarea.current;
+    const focused = document.activeElement === input;
+    const token = nextShot(draft.user_request);
+    const next = insertShot(draft.user_request, token,
+      focused ? input.selectionStart : draft.user_request.length,
+      focused ? input.selectionEnd : draft.user_request.length);
+    update({ user_request: next.text });
+    requestAnimationFrame(() => { input.focus(); input.setSelectionRange(next.cursor, next.cursor); });
   }
   function editRequest(value) {
     const typed = parseReferences(value).references;
@@ -130,12 +141,19 @@ export default function MiniMaxTab({ visible, job, busy, active, noEngine, engin
           {audioOnly && <p className={ui.warningNote} role="status">Audio cannot be the only reference modality. Add an image or video reference before using the prompt in MiniMax.</p>}
           {!!parsed.invalid.length && <p className={ui.warningNote} role="alert">Unsupported reference: {parsed.invalid.join(", ")}. Use image1–image9, video1–video3 or audio1–audio3.</p>}
         </fieldset>
+        <fieldset disabled={disabled} className="mt-5 min-w-0 border-t border-line pt-4">
+          <legend className="pr-2 text-xs font-semibold">Shots (optional)</legend>
+          <p className="mb-3 text-[11px] leading-relaxed text-muted">Type &lt;shot1&gt;, &lt;shot2&gt; in order, or add one below. For example, &lt;shot1&gt; 0-3s then &lt;shot2&gt; for the rest of the clip. Untimed shots share the remaining length.</p>
+          <button type="button" className={ui.button} onPointerDown={preserveCursor} onClick={addShot}>+ Shot</button>
+          {!!parsedShots.invalid.length && <p className={ui.warningNote} role="alert">Unsupported shot shortcut: {parsedShots.invalid.join(", ")}. Use &lt;shot1&gt;, &lt;shot2&gt;, etc.</p>}
+          {!parsedShots.ordered && <p className={ui.warningNote} role="alert">Shots must appear once each in order, starting with &lt;shot1&gt;.</p>}
+        </fieldset>
       </section>
       <div className={ui.column}>
         <section className={ui.panel}>
           <header className={ui.panelHeader}>
             <div className={ui.panelIcon}><Film size={21} /></div>
-            <div className={ui.panelHeading}><h2><label htmlFor="minimax-request">Describe your video</label></h2><p>Write naturally. Auto mode works out how your references should be used.</p></div>
+            <div className={ui.panelHeading}><h2><label htmlFor="minimax-request">Describe your video</label></h2><p>Write naturally. Optionally split it with &lt;shot1&gt;, &lt;shot2&gt; and timing such as 0-3s.</p></div>
           </header>
           <textarea id="minimax-request" ref={textarea} className={ui.ideaInput} style={{ minHeight: 220 }}
             value={draft.user_request} maxLength={100000} disabled={disabled} onChange={(event) => editRequest(event.target.value)}

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { insertReference, nextReference, parseReferences } from "./workflows/minimaxReferences.js";
+import { insertReference, insertShot, nextReference, nextShot, parseReferences, parseShots } from "./workflows/minimaxReferences.js";
 
 test("symbolic references normalize case, deduplicate and flag out-of-range numbers", () => {
   assert.deepEqual(parseReferences("<IMAGE1> <video3> <image1> <audio4> <image10> <image01>"),
@@ -17,4 +17,13 @@ test("allocations preserve sparse identifiers and respect modality and combined 
   assert.deepEqual(refs, ["image9", "image1", "video1"]);
   assert.equal(nextReference("video", ["video1", "video2", "video3"]), null);
   assert.equal(nextReference("audio", [...Array.from({ length: 9 }, (_, i) => `image${i + 1}`), "video1", "video2", "video3"]), null);
+});
+test("shot shortcuts stay separate from media references and insert on new lines", () => {
+  const text = "<image1> is an apple\n<shot1> 0-3s apple walks";
+  assert.deepEqual(parseReferences(text), { references: ["image1"], invalid: [] });
+  assert.deepEqual(parseShots(text), { shots: ["shot1"], invalid: [], ordered: true });
+  assert.equal(nextShot(text), "shot2");
+  assert.deepEqual(insertShot(text, "shot2"), { text: `${text}\n<shot2> `, cursor: text.length + 9 });
+  assert.deepEqual(parseShots("<shot2> <shot1>"), { shots: ["shot2", "shot1"], invalid: [], ordered: false });
+  assert.deepEqual(parseShots("<shot0> <shot01> <shotx>"), { shots: [], invalid: ["<shot0>", "<shot01>", "<shotx>"], ordered: true });
 });

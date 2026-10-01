@@ -6,25 +6,26 @@ import hashlib
 
 from .backends.factory import create_backend
 from .backends.base import BackendGenerationError
-from .resolution import normalize_resolution
 from .config import load_config
 from .director_profiles import canonical_prompt_model, infer_prompt_model_family, resolve_director_config
 from .diagnostics import debug_prompts_enabled, log_evidence_result, resolved_scene_sha256
 from .evidence import (
-    EVIDENCE_ANALYSIS_SYSTEM_PROMPT,
     build_resolved_scene,
     cache_evidence,
-    evidence_analysis_user_message,
     evidence_cache_key,
     get_cached_evidence,
     parse_image_evidence,
 )
 from .image_utils import EncodedImage, encode_comfy_image
-from .models import get_model_adapter
-from .modes import get_mode_adapter, get_vision_mode_adapter
-from .prompt_catalog import (
-    CREATIVITY_ADAPTERS as _CREATIVITY_ADAPTERS,
-    CREATIVITY_NAMES,
+from .prompting.base import (
+    CONTROL_CONTRACT,
+    CORE_SYSTEM_PROMPT,
+    LINKED_PRIORITY_CONTRACT,
+    PRIORITY_CONTRACT,
+    TEXT_ONLY_PRIORITY_CONTRACT,
+)
+from .prompting.creativity import CREATIVITY_ADAPTERS as _CREATIVITY_ADAPTERS, CREATIVITY_NAMES
+from .prompting.details import (
     LENGTH_ADAPTERS as _LENGTH_ADAPTERS,
     MAXIMUM_DETAIL_GUIDANCE as _MAXIMUM_DETAIL_GUIDANCE,
     PRESERVATION_ADAPTERS as _PRESERVATION_ADAPTERS,
@@ -33,19 +34,14 @@ from .prompt_catalog import (
     PRESERVATION_NONE,
     PROMPT_LENGTH_NAMES,
     REFERENCE_ROLE_NAMES,
-    QWEN21_EDIT_ADAPTER,
 )
+from .prompting.evidence import EVIDENCE_ANALYSIS_SYSTEM_PROMPT, evidence_analysis_user_message
+from .prompting.modes import get_mode_adapter, get_vision_mode_adapter
+from .prompting.output import OUTPUT_CONTRACT, output_contract, qwen_format_repair
+from .prompting.target_models import QWEN21_EDIT_ADAPTER, get_model_adapter
 from .presets import DEFAULT_DIRECTOR_PRESET, get_director_preset, legacy_preset_for_mode
 from .reference_map import REFERENCE_IMAGE_SLOTS, reference_images, reference_map_from_mapping, resolve_reference_map
-from .system_prompt import (
-    CONTROL_CONTRACT,
-    CORE_SYSTEM_PROMPT,
-    LINKED_PRIORITY_CONTRACT,
-    OUTPUT_CONTRACT,
-    PRIORITY_CONTRACT,
-    TEXT_ONLY_PRIORITY_CONTRACT,
-)
-from .workflow_output import WorkflowFormatError, normalize_workflow_output, output_contract, sanitize_prompt_text
+from .workflow_output import WorkflowFormatError, normalize_workflow_output, sanitize_prompt_text
 
 
 def _qwen21_source_tokens(request, reference_map=None, text_only=False):
@@ -128,9 +124,9 @@ class GoatedPrompterRequest:
     director_model_path: str = ""
     director_mmproj_path: str = ""
     director_llama_server: str = ""
-    director_context_size: int = 8192
+    director_context_size: int = 32768
     director_image_min_tokens: int = 1024
-    director_max_tokens: int = 768
+    director_max_tokens: int = 4096
     director_gpu_layers: str = "auto"
     director_keep_model_loaded: bool = False
     preserve_subject: bool = True
@@ -140,7 +136,6 @@ class GoatedPrompterRequest:
     preserve_lighting: bool = False
     preserve_colors: bool = False
     prompt_length: str = "Medium"
-    resolution: object = None
     custom_instructions: str = ""
     system_prompt_override: str = ""
     reference_map: object = None
@@ -175,9 +170,9 @@ class GoatedPrompterRequest:
             director_model_path=str(values.get("director_model_path") or ""),
             director_mmproj_path=str(values.get("director_mmproj_path") or ""),
             director_llama_server=str(values.get("director_llama_server") or ""),
-            director_context_size=int(values.get("director_context_size", 8192)),
+            director_context_size=int(values.get("director_context_size", 32768)),
             director_image_min_tokens=int(values.get("director_image_min_tokens", 1024)),
-            director_max_tokens=int(values.get("director_max_tokens", 768)),
+            director_max_tokens=int(values.get("director_max_tokens", 4096)),
             director_gpu_layers=str(values.get("director_gpu_layers") or "auto"),
             director_keep_model_loaded=_as_bool(values.get("director_keep_model_loaded", False)),
             preserve_subject=_as_bool(values.get("preserve_subject", True)),
@@ -188,7 +183,6 @@ class GoatedPrompterRequest:
             preserve_colors=_as_bool(values.get("preserve_colors", False)),
             prompt_length="Maximum Detail" if values.get("prompt_length") == "Maximum" else str(values.get("prompt_length") or "Medium"),
             custom_instructions=str(values.get("custom_instructions") or ""),
-            resolution=normalize_resolution(),
             system_prompt_override=str(values.get("system_prompt_override") or ""),
             reference_map=reference_map_from_mapping(values),
             image_1_role=_reference_role(values.get("image_1_role")),
@@ -217,6 +211,12 @@ class PromptInstruction:
     max_tokens: int = None
     # Opt out of application output budgets; the engine's context still applies.
     unlimited_tokens: bool = False
+    # A workflow safety ceiling. Unlike max_tokens, this may lower the backend's
+    # configured allowance and protects bounded outputs from runaway generation.
+    hard_max_tokens: int = None
+    # Optional bounded stream ceiling for structured batch planning. Individual
+    # prompt workflows retain the transport's default runaway-output ceiling.
+    stream_character_limit: int = None
 
     def _user_content(self, text):
         if not reference_images(self):
@@ -582,9 +582,11 @@ class GoatedPrompterService:
                     if attempt:
                         raise BackendGenerationError(f"Qwen2.1 returned an invalid prompt after one format-repair attempt: {exc}") from exc
                     instruction = replace(instruction,
-                        system_message=instruction.system_message + "\n\nFORMAT CORRECTION: " + str(exc) +
-                        "\nRegenerate the complete response from the original request and selected evidence. Preserve source facts and locks. " +
-                        output_contract(request.target_model, qwen_task=qwen_task, qwen_images=qwen_images),
+                        system_message=qwen_format_repair(
+                            instruction.system_message,
+                            exc,
+                            output_contract(request.target_model, qwen_task=qwen_task, qwen_images=qwen_images),
+                        ),
                         diagnostic_stage="final:format_retry")
         if not prompt:
             raise RuntimeError("Goated Prompter backend returned an empty prompt.")
