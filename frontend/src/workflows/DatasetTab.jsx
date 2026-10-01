@@ -370,7 +370,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                 <textarea className={ui.ideaInput} style={{ minHeight: 160 }} aria-label="Guided dataset inputs" maxLength={50000}
                   value={draft.inputs} onChange={(event) => updatePlanning({ inputs: event.target.value })}
                   placeholder={"standing portrait in a city at night\nrunning through a sunlit field\nclose-up profile in a quiet studio"} />
-                 <small className={ui.directorDescription}>When lines repeat, their central action stays fixed; only permitted context and presentation vary.</small>
+                  <small className={ui.directorDescription}>Lines cycle to fill the requested amount. Full scenes or partial place/pose/outfit ideas are welcome. Each line applies only to its own images; stated actions stay fixed.</small>
               </label>}
             </fieldset>
 

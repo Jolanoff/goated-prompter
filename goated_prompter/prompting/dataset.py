@@ -101,7 +101,7 @@ def dataset_instruction(request, data, index, previous=(), model_family="qwen", 
     content.append("PLANNED IDEA\n<idea>\n" + idea + "\n</idea>")
     content.append("PLANNED SCENE / CURRENT SCENE\n<scene>\n" + scene + "\n</scene>")
     if seed:
-        content.append(f"GUIDED INPUT\n<input>\n{seed}\n</input>\nPreserve these original anchors in the supplied scene; do not select another scene.")
+        content.append(f"GUIDED INPUT\n<input>\n{seed}\n</input>\nPreserve these original anchors in the supplied scene; do not select another scene. This input's outfit, setting, pose and action are local to this item. Shared identity does not imply a shared outfit unless explicitly locked in the concept or consistency rules.")
     if data["constraints"].strip():
         content.append(f"CONSISTENCY AND VARIATION RULES\n<constraints>\n{data['constraints'].strip()}\n</constraints>\nApply fixed requirements and preserve this scene's planned interpretation of variation rules; do not plan other items or new scene variants.")
     if data["coverage_enabled"] and plan_item and plan_item.get("facets"):
