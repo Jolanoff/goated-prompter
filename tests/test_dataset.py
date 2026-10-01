@@ -52,7 +52,11 @@ class CaptureBackend(GoatedPrompterBackend):
         if instruction.diagnostic_stage.startswith("dataset:scene_composer"):
             data = json.loads(instruction.user_message)
             return json.dumps([{"index": row["index"], "idea": row["idea"],
-                                "scene": f"Composed physical scene {row['index']}", "geometry": {"camera_view": "front"}}
+                                "scene": f"Composed physical scene {row['index']}", "geometry": {
+                                    "camera_view": "front", "framing": "full_body", "body_orientation": "front",
+                                    "head_direction": "toward_action", "gaze_direction": "toward_action",
+                                    "pose_type": "standing_neutral", "action_focus": row["idea"],
+                                    "face_visibility": "full", "visibility_focus": ["face"]}}
                                for row in data["assignments"]])
         if instruction.diagnostic_stage == "dataset:deep_review":
             return json.dumps([{"index": int(index), "issues": []}

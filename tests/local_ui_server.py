@@ -36,7 +36,10 @@ class DatasetUIMock(MockBackend):
                     if stage.startswith("dataset:scene_composer"):
                         text = idea
                     rows.append({"index": index, "idea": idea, "scene": f"{text}; mock scene {index}.",
-                                 "geometry": {"camera_view": "front", "framing": "full body"}})
+                                 "geometry": {"camera_view": "front", "framing": "full_body",
+                                     "body_orientation": "front", "head_direction": "toward_action",
+                                     "gaze_direction": "toward_action", "pose_type": "standing_neutral",
+                                     "action_focus": idea, "face_visibility": "full", "visibility_focus": ["face"]}})
             result = json.dumps(rows)
         elif re.match(r"dataset:\d+", stage):
             text = re.search(r"<scene>\n(.*?)\n</scene>", instruction.user_message, re.S).group(1)

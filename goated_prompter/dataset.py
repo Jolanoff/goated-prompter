@@ -22,7 +22,7 @@ from .dataset_triggers import trigger_presence_error, trigger_terms
 from .dataset_visible_content import PositiveContentError, positive_prompt_error, sanitize_positive_prompt
 from .scene_planner import (ScenePlanner, MAX_STORED_SCENE_CHARACTERS, MAX_STORED_IDEA_CHARACTERS,
                             reusable_scene_plan, scene_plan_signature, validate_saved_scene_plan, validate_plan_metadata)
-from .dataset_geometry import validate_geometry, geometry_errors
+from .dataset_geometry import geometry_errors, migrate_saved_geometry
 
 
 DATASET_MAX_RETRIES = 3
@@ -123,7 +123,7 @@ def validate_dataset_draft(value, *, generation=False, planning=False):
         if "idea" in item:
             record["idea"] = _text(item["idea"], f"Dataset idea {index + 1}", MAX_STORED_IDEA_CHARACTERS)
         if "geometry" in item:
-            record["geometry"] = validate_geometry(item["geometry"])
+            record["geometry"], _ = migrate_saved_geometry(item["geometry"])
         validate_plan_metadata(item)
         if "coverage_conflicts" in item:
             record["coverage_conflicts"] = list(item["coverage_conflicts"])
@@ -280,7 +280,9 @@ class DatasetService:
         progress("Starting the prompt engine for the dataset…")
         with backend.generation_session() as session:
             planner = ScenePlanner(self.checkpoint)
-            scenes = None if scenes_only else reusable_scene_plan(data, coverage, require_scenes=False)
+            scenes = reusable_scene_plan(data, coverage, require_scenes=False)
+            if scenes_only and scenes and all(row["scene"].strip() and row.get("scene_status") not in {"not_generated", "geometry_warning"} for row in scenes):
+                scenes = None  # Explicit replanning of a completed plan still creates new ideas.
             if scene_action and scenes is None:
                 raise ValueError("Per-scene actions need a current saved idea plan. Plan scenes first.")
             def save_planning_stage(rows):
@@ -331,16 +333,24 @@ class DatasetService:
                 elif action != "regenerate_prompt":
                     raise ValueError("Unknown per-scene action.")
             # Saved/manual idea edits invalidate only their downstream scene.
+            pending = [scenes[index - 1] for index in selected if not scenes[index - 1]["scene"].strip()]
+            if pending:
+                if scene_action and scene_action[0] == "regenerate_prompt":
+                    raise ValueError("Compose or repair this scene before regenerating its prompt.")
+                def save_composed(rows):
+                    for composed in rows:
+                        original = scenes[composed["index"] - 1]
+                        scenes[composed["index"] - 1] = {**original, **composed,
+                            "idea_status": "valid", "prompt_status": "not_generated"}
+                    publish()
+                composed = planner.compose(session=session, data=data, coverage=coverage, ideas=pending,
+                    family=family, progress=progress, plan_update=save_composed)
+                save_composed([{**row, "scene_status": "valid"} for row in composed])
             for index in selected:
                 row = scenes[index - 1]
-                if not row["scene"].strip():
-                    if scene_action and scene_action[0] == "regenerate_prompt":
-                        raise ValueError("Compose or repair this scene before regenerating its prompt.")
-                    composed = planner.compose(session=session, data=data, coverage=coverage, ideas=[row],
-                                               family=family, progress=progress)[0]
-                    scenes[index - 1] = {**composed, "input": row["input"], "idea_status": "valid",
-                                        "scene_status": "valid", "prompt_status": "not_generated"}
-                elif (errors := geometry_errors(row)) or row.get("scene_status") in {"not_generated", "geometry_warning"}:
+                errors = geometry_errors(row, character=data.get("planning_mode") == "Quality"
+                    and data["trigger_type"] == "Character" and row.get("scene_status") != "guided_fallback")
+                if errors or row.get("scene_status") in {"not_generated", "geometry_warning"}:
                     if scene_action and scene_action[0] == "regenerate_prompt":
                         raise ValueError("Repair this scene's geometry before regenerating its prompt.")
                     scenes[index - 1] = {**row, "scene_status": "geometry_warning", "prompt_status": "not_generated"}

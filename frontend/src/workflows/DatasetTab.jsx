@@ -8,6 +8,7 @@ import { useWorkflowSettings } from "./useWorkflowSettings.js";
 import WorkflowSettingsStatus from "./WorkflowSettingsStatus.jsx";
 import { datasetJsonl } from "./datasetExport.js";
 import { editDatasetPlan, invalidateDatasetPrompts } from "./datasetState.js";
+import { geometryRows } from "./datasetGeometry.js";
 
 const triggerTypes = ["Character", "Multiple characters", "Animal", "Object / product", "Visual style",
   "Location / environment", "Brand / logo", "Typography / text", "Concept", "Custom"];
@@ -32,6 +33,18 @@ const categoryAxes = {
   Custom: ["framing", "viewpoint", "composition", "context", "lighting", "setting"],
 };
 const varietyAxisCounts = { Focused: 3, Balanced: 5, Wide: 6 };
+
+function GeometryDetails({ geometry, index }) {
+  const rows = geometryRows(geometry);
+  if (!rows.length) return null;
+  return <details className="rounded-lg border border-line p-3 text-xs">
+    <summary className="cursor-pointer font-semibold">Geometry {index}</summary>
+    <dl className="mt-3 grid gap-2">{rows.map(({ label, value }) => <div key={label} className="grid gap-1">
+      <dt className="capitalize font-semibold">{label}</dt>
+      <dd className="wrap-anywhere leading-relaxed text-muted">{value}</dd>
+    </div>)}</dl>
+  </details>;
+}
 
 function elapsedLabel(seconds) {
   const minutes = Math.floor(seconds / 60);
@@ -308,7 +321,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                 onChange={(event) => updateSceneSettings({ planning_mode: event.target.value })}>
                 <option>Fast</option><option>Quality</option>
               </select>
-              <small className={ui.directorDescription}>Fast: one idea + scene call. Quality: distinct ideas first, then coherent scene composition. Repairs affect only the bad item.</small>
+               <small className={ui.directorDescription}>Fast: one idea + scene call. Quality: distinct ideas first, then scenes in small chunks. Valid chunks are saved; repairs affect only the broken scene or chunk.</small>
             </label>
              <label className={ui.field}><span>Trigger text or terms</span>
               <textarea className={ui.notesInput} style={{ minHeight: 82 }} aria-label="Trigger text or terms" maxLength={200} value={draft.trigger}
@@ -484,6 +497,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                 onChange={(event) => update(editDatasetPlan(draft, item.index, "scene", event.target.value))} />
             </label>
             <small className="text-muted">Idea: {item.idea_status || "valid"} · Scene: {item.scene_status || "valid"} · Prompt: {item.prompt_status || "not_generated"}</small>
+            <GeometryDetails geometry={item.geometry} index={item.index} />
             {!!item.coverage_conflicts?.length && <small className="text-muted">Incompatible coverage omitted: {item.coverage_conflicts.join(", ")}</small>}
             <div className="flex flex-wrap gap-2">
               <button className={ui.button} disabled={!canGenerate || staleScenePlan}
@@ -576,7 +590,8 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
               {item.scene ? <details className="mb-3 rounded-lg border border-line p-3 text-xs" open>
                <summary className="cursor-pointer font-semibold">Scene {item.index}</summary>
                <p className="mt-2 whitespace-pre-wrap leading-relaxed text-muted">{item.scene}</p>
-             </details> : <p className={`${ui.subtleNote} mb-3`}>Legacy result: no originating scene was saved.</p>}
+              </details> : <p className={`${ui.subtleNote} mb-3`}>Legacy result: no originating scene was saved.</p>}
+              <GeometryDetails geometry={item.geometry} index={item.index} />
              <p className="mb-2 text-xs font-semibold">Final prompt</p>
             <textarea className={ui.outputInput} style={{ minHeight: 220 }} aria-label={`Dataset prompt ${item.index}`}
               value={item.prompt} maxLength={100000} disabled={isGenerating || active && job?.kind === "dataset_review"}
