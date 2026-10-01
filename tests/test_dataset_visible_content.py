@@ -2,14 +2,14 @@
 
 import json
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from goated_prompter.backends.base import BackendGenerationError, BackendRunawayError
 from goated_prompter.core import GoatedPrompterRequest, assemble_instruction
 from goated_prompter.dataset import DatasetService, default_dataset_draft
 from goated_prompter.dataset_coverage import analyze_dataset_quality, effective_coverage_plan
 from goated_prompter.dataset_visible_content import (
-    VISIBLE_CONTENT_CONTRACT, positive_prompt_error, visible_content_error,
+    VISIBLE_CONTENT_CONTRACT, positive_prompt_error, visible_content_error, sanitize_positive_prompt,
 )
 from goated_prompter.prompting.dataset import dataset_instruction, deep_review_instruction
 from goated_prompter.prompting.scene_planner import scene_planner_instruction
@@ -94,7 +94,9 @@ class VisibleContentTests(unittest.TestCase):
                                                   {**data, "target": target}, 1)
                 self.assertIn(VISIBLE_CONTENT_CONTRACT, instruction.system_message)
         builder = assemble_instruction(GoatedPrompterRequest(idea=data["subject"]), text_only=True)
-        self.assertNotIn("VISIBLE CONTENT ONLY / POSITIVE VISUAL DESCRIPTION", builder.system_message)
+        self.assertNotIn("VISIBLE CONTENT ONLY", builder.system_message)
+        for phrase in BAD:
+            self.assertNotIn(phrase.casefold(), VISIBLE_CONTENT_CONTRACT.casefold())
         review = deep_review_instruction(data, [{"index": 1, "prompt": "A woman, no extra people."}])
         self.assertIn("POSITIVE CONTENT AUDIT", review.system_message)
 
@@ -124,12 +126,12 @@ class VisibleContentTests(unittest.TestCase):
         self.assertIsNone(visible_content_error(result))
         self.assertNotIn("other people", result)
 
-    def test_writer_retries_leakage_preserving_exact_idea_scene_and_token_budget(self):
+    def test_writer_accepts_standalone_leakage_cleanup_in_one_generation(self):
         for target in ("Generic", "Anima", "Qwen Image", "Ideogram4"):
             data = draft(target=target)
             instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"], target_model=target), data, 1,
                 plan_item={"idea": "Cooking at home", "scene": "A woman stands beside a kitchen table."})
-            for phrase in BAD:
+            for phrase in BAD[:-1]:  # A negative-prompt section needs content repair.
                 session = Mock()
                 if target == "Ideogram4":
                     bad, good = caption(), caption()
@@ -141,18 +143,18 @@ class VisibleContentTests(unittest.TestCase):
                 session.generate.side_effect = outputs
                 with self.subTest(target=target, phrase=phrase):
                     result = DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None)
-                    self.assertEqual(session.generate.call_count, 2)
-                    first, retry = [call.args[0] for call in session.generate.call_args_list]
-                    self.assertEqual(first.user_message, retry.user_message)
-                    self.assertEqual(first.hard_max_tokens, retry.hard_max_tokens)
-                    self.assertIn(VISIBLE_CONTENT_CONTRACT, retry.system_message)
+                    self.assertEqual(session.generate.call_count, 1)
+                    if target == "Ideogram4":
+                        self.assertEqual(json.loads(result), good)
+                    else:
+                        self.assertEqual(result, "A woman person_token at a kitchen table")
                     self.assertIsNone(positive_prompt_error(result, target))
 
     def test_repeated_leakage_fails_boundedly_and_runaway_prefix_is_not_exempt(self):
         data = draft()
         instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1)
         session = Mock()
-        session.generate.return_value = "person_token, no other people, no watermark."
+        session.generate.return_value = "A woman person_token smiles with no other people while juggling oranges."
         with self.assertRaisesRegex(BackendGenerationError, "after 3 retries"):
             DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None)
         self.assertEqual(session.generate.call_count, 4)
@@ -161,8 +163,169 @@ class VisibleContentTests(unittest.TestCase):
         session.generate.side_effect = [BackendRunawayError("loop", recoverable_text=prefix),
                                        "person_token sits beside a wooden kitchen table."]
         result = DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None)
-        self.assertEqual(session.generate.call_count, 2)
+        self.assertEqual(session.generate.call_count, 1)
         self.assertNotIn("watermark", result)
+
+    def test_sanitizer_removes_complete_clauses_and_repairs_delimiters(self):
+        cases = (
+            ("a woman juggling oranges, no other people in frame, soft daylight",
+             "a woman juggling oranges, soft daylight"),
+            ("a blond woman juggling oranges, soft daylight, no other people or distracting elements in frame, photographic realism",
+             "a blond woman juggling oranges, soft daylight, photographic realism"),
+            ("No watermark. A woman juggles oranges. No other people. Soft daylight.",
+             "A woman juggles oranges. Soft daylight."),
+            ("A woman juggles oranges, no watermark, no bad anatomy.", "A woman juggles oranges."),
+            ("best quality, a woman juggling oranges, soft daylight", "a woman juggling oranges, soft daylight"),
+            ("a woman juggling oranges; avoid extra limbs; soft daylight", "a woman juggling oranges; soft daylight"),
+            ("a woman juggling oranges\nno watermark\nsoft daylight", "a woman juggling oranges\nsoft daylight"),
+            ("a woman juggling oranges, no watermark", "a woman juggling oranges"),
+        )
+        for original, expected in cases:
+            with self.subTest(original=original):
+                result = sanitize_positive_prompt(original, "Generic")
+                self.assertEqual(result, expected)
+                self.assertEqual(sanitize_positive_prompt(result, "Generic"), expected)
+                self.assertIsNone(positive_prompt_error(result, "Generic"))
+
+    def test_sanitizer_preserves_visible_absence_literals_and_trigger_anchors(self):
+        cases = ("an empty street", "a bare wall", "an unoccupied chair", "a deserted classroom",
+                 "she has no shoes", 'a sign reading "NO ENTRY"', 'a sign reading "NO TEXT, worst quality"',
+                 "a shirt printed with 'low quality'", "a “no other people” sign hangs on a wall",
+                 "A woman in a sparsely furnished room, lens f/1.8, soft daylight.")
+        for text in cases:
+            with self.subTest(text=text):
+                self.assertEqual(sanitize_positive_prompt(text, "Generic"), text)
+                self.assertIsNone(positive_prompt_error(text, "Generic"))
+        text = 'a sign reading "NO TEXT, worst quality", no watermark, bare wall'
+        self.assertEqual(sanitize_positive_prompt(text, "Generic"),
+                         'a sign reading "NO TEXT, worst quality", bare wall')
+        for text, terms in (("no text, soft daylight", ("no text",)),
+                            ("no watermark on person_token, a woman juggling", ("person_token",)),
+                            ("no other people, best quality, soft daylight", ("no other people, best quality",))):
+            with self.subTest(text=text):
+                self.assertEqual(sanitize_positive_prompt(text, "Generic", terms), text)
+
+    def test_mixed_or_uncertain_prose_is_left_for_strict_content_validation(self):
+        cases = ("A woman juggling oranges with no other people in frame.",
+                 "A woman smiles, no other people while juggling oranges, soft daylight.",
+                 "A woman smiles, best quality sunlight brightens her face.",
+                 'A woman, "no other people", soft daylight.',
+                 'A sign reading "hello, no watermark, best quality',
+                 "A woman, no text on the bare wall beside her.")
+        for text in cases:
+            with self.subTest(text=text):
+                self.assertEqual(sanitize_positive_prompt(text, "Generic"), text)
+                self.assertIsNotNone(positive_prompt_error(text, "Generic"))
+
+    def test_ideogram_sanitizes_descriptions_but_preserves_rendered_text_and_structure(self):
+        original = caption()
+        original["compositional_deconstruction"]["elements"].append(
+            {"type": "text", "text": "NO TEXT, worst quality", "desc": 'A sign reading "NO ENTRY".'})
+        expected = json.loads(json.dumps(original))
+        original["high_level_description"] += ", no other people"
+        for key in original["style_description"]:
+            original["style_description"][key] += ", best quality"
+        original["compositional_deconstruction"]["background"] += ", no additional objects"
+        for element in original["compositional_deconstruction"]["elements"]:
+            element["desc"] += ", no watermark"
+        cleaned = sanitize_positive_prompt(json.dumps(original), "Ideogram4")
+        self.assertEqual(json.loads(cleaned), expected)
+        self.assertIsNone(positive_prompt_error(cleaned, "Ideogram4"))
+
+    def test_cleanup_cannot_accept_an_empty_description(self):
+        data = draft()
+        instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1)
+        session = Mock()
+        session.generate.side_effect = ["no watermark, best quality", "person_token juggling oranges."]
+        result = DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None)
+        self.assertEqual(result, "person_token juggling oranges.")
+        self.assertIn("OUTPUT CONTENT CORRECTION", session.generate.call_args.args[0].system_message)
+        original = caption()
+        original["style_description"]["lighting"] = "no watermark"
+        cleaned = sanitize_positive_prompt(json.dumps(original), "Ideogram4")
+        # Do not destroy the schema or invent a lighting description.
+        self.assertEqual(json.loads(cleaned)["style_description"]["lighting"], "no watermark")
+        self.assertIsNotNone(positive_prompt_error(cleaned, "Ideogram4"))
+
+    def test_content_retry_preserves_plan_and_budget_without_echoing_forbidden_phrase(self):
+        data = draft()
+        instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1,
+            plan_item={"idea": "Juggling and failing", "scene": "A woman tracks a falling orange with her gaze."})
+        session = Mock()
+        session.generate.side_effect = ["person_token juggles with no other people while tracking a falling orange.",
+                                       "person_token juggles, gaze tracking a falling orange."]
+        DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None)
+        self.assertEqual(session.generate.call_count, 2)
+        retry = session.generate.call_args.args[0]
+        self.assertEqual(retry.user_message, instruction.user_message)
+        self.assertEqual(retry.hard_max_tokens, instruction.hard_max_tokens)
+        correction = retry.system_message[len(instruction.system_message):]
+        self.assertIn("OUTPUT CONTENT CORRECTION", correction)
+        self.assertNotIn("FORMAT CORRECTION", correction)
+        self.assertNotIn("no other people", correction)
+        self.assertIn(":content_retry_1", retry.diagnostic_stage)
+
+    def test_format_errors_use_format_repair_not_content_repair(self):
+        data = draft(target="Ideogram4")
+        instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"], target_model="Ideogram4"), data, 1)
+        for invalid in ("{broken JSON", '{"wrong_schema": "A woman"}', "```json\n{broken JSON\n```"):
+            with self.subTest(invalid=invalid):
+                session = Mock()
+                session.generate.side_effect = [invalid, json.dumps(caption())]
+                DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None)
+                retry = session.generate.call_args.args[0]
+                correction = retry.system_message[len(instruction.system_message):]
+                self.assertIn("FORMAT CORRECTION", correction)
+                self.assertNotIn("OUTPUT CONTENT CORRECTION", correction)
+                self.assertIn(":format_retry_1", retry.diagnostic_stage)
+
+    def test_long_prompt_retains_every_valid_detail_in_one_call(self):
+        data = draft()
+        instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1)
+        prose = "A woman person_token juggles oranges in soft daylight. " + "Her gaze follows the falling fruit. " * 30
+        session = Mock()
+        session.generate.return_value = prose.rstrip() + " No other people or distracting elements in frame."
+        result = DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None)
+        self.assertEqual(result, prose.rstrip())
+        self.assertEqual(session.generate.call_count, 1)
+
+    def test_generation_validation_order_includes_general_and_positive_cleanup(self):
+        from goated_prompter import dataset as module
+        data = draft()
+        instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1)
+        calls = []
+
+        def track(name, function):
+            def wrapped(*args, **kwargs):
+                calls.append(name)
+                return function(*args, **kwargs)
+            return wrapped
+
+        session = Mock()
+        session.generate.return_value = "person_token juggling oranges, no watermark, soft daylight."
+        with patch.object(module, "normalize_workflow_output", side_effect=track("normalize", module.normalize_workflow_output)), \
+             patch.object(module, "sanitize_prompt_text", side_effect=track("general", module.sanitize_prompt_text)), \
+             patch.object(module, "trigger_presence_error", side_effect=track("trigger", module.trigger_presence_error)), \
+             patch.object(module, "sanitize_positive_prompt", side_effect=track("positive_cleanup", module.sanitize_positive_prompt)), \
+             patch.object(module, "positive_prompt_error", side_effect=track("positive_validation", module.positive_prompt_error)):
+            DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None)
+        self.assertEqual(calls, ["normalize", "general", "trigger", "positive_cleanup", "positive_validation"])
+
+    def test_unfixable_recovered_prefix_uses_content_and_loop_repair(self):
+        data = draft()
+        instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1)
+        prefix = "person_token with no other people while juggling oranges beside a kitchen table. " + "Soft daylight falls across the wooden table. " * 5
+        session = Mock()
+        session.generate.side_effect = [BackendRunawayError("loop", recoverable_text=prefix),
+                                       "person_token juggling oranges beside a table."]
+        DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None)
+        retry = session.generate.call_args.args[0]
+        correction = retry.system_message[len(instruction.system_message):]
+        self.assertIn("OUTPUT CONTENT CORRECTION", correction)
+        self.assertIn("LOOP CORRECTION", retry.system_message)
+        self.assertNotIn("FORMAT CORRECTION", correction)
+        self.assertNotIn("no other people", correction)
+        self.assertLess(retry.hard_max_tokens, instruction.hard_max_tokens)
 
     def test_saved_bad_plans_and_manually_edited_results_are_not_silent(self):
         data = draft(scene_plan=[{"index": 1, "input": "", "idea": "Cooking at home",
