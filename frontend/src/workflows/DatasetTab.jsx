@@ -7,6 +7,7 @@ import { TargetSelect } from "./WorkflowControls.jsx";
 import { useWorkflowSettings } from "./useWorkflowSettings.js";
 import WorkflowSettingsStatus from "./WorkflowSettingsStatus.jsx";
 import { datasetJsonl } from "./datasetExport.js";
+import { editDatasetPlan, invalidateDatasetPrompts } from "./datasetState.js";
 
 const triggerTypes = ["Character", "Multiple characters", "Animal", "Object / product", "Visual style",
   "Location / environment", "Brand / logo", "Typography / text", "Concept", "Custom"];
@@ -19,8 +20,8 @@ const axisLabels = {
   application: "Application", material: "Material", placement: "Placement", layout: "Layout", hierarchy: "Hierarchy",
 };
 const categoryAxes = {
-  Character: ["framing", "viewpoint", "pose_action", "expression", "lighting", "setting"],
-  "Multiple characters": ["framing", "viewpoint", "pose_action", "expression", "lighting", "setting"],
+  Character: ["framing", "viewpoint", "lighting", "setting", "pose_action", "expression"],
+  "Multiple characters": ["framing", "viewpoint", "lighting", "setting", "pose_action", "expression"],
   Animal: ["framing", "viewpoint", "pose_action", "context", "lighting", "setting"],
   "Visual style": ["subject_matter", "composition", "scale", "palette", "lighting", "setting"],
   "Object / product": ["framing", "viewpoint", "context", "surface", "lighting", "background"],
@@ -113,17 +114,18 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
   const sourceReady = draft?.source_mode !== "guided" || guidedLines > 0;
   const canPlanScenes = draft && !disabled && !noEngine && !preferences.conflict &&
     draft.subject.trim() && customReady && styleReady && sourceReady;
-  const staleScenePlan = !!draft?.scene_plan_signature && preferences.record?.scene_plan_current === false &&
+  const staleScenePlan = !!draft?.scene_plan_signature && preferences.record?.idea_plan_current === false &&
     preferences.record?.draft.scene_plan_signature === draft.scene_plan_signature;
   const scenePlanReady = !staleScenePlan && !!draft?.scene_plan_signature && draft.scene_plan?.length === draft.amount &&
     draft.scene_plan.every((item) => item.idea?.trim() && item.scene.trim());
   const canGenerate = canPlanScenes && director && draft.trigger.trim() &&
-    !draft.scene_plan?.some((item) => !item.scene.trim() || (item.idea !== undefined && !item.idea.trim()));
+    !draft.scene_plan?.some((item) => item.idea !== undefined && !item.idea.trim());
   const isGenerating = active && job?.kind === "dataset";
   const scenePlannerBusy = active && job?.kind === "dataset_scenes";
   const coverageEnabled = draft?.coverage_enabled === true;
   const allowedAxes = categoryAxes[draft?.trigger_type] || categoryAxes.Custom;
-  const defaultAxes = allowedAxes.slice(0, varietyAxisCounts[draft?.variety] || 5);
+  const defaultAxes = allowedAxes.slice(0, ["Character", "Multiple characters"].includes(draft?.trigger_type)
+    ? 4 : varietyAxisCounts[draft?.variety] || 5);
   const selectedAxes = draft?.coverage_axes?.length ? draft.coverage_axes.filter((key) => allowedAxes.includes(key)) : defaultAxes;
   const triggerParts = draft?.trigger_connected === false
     ? draft.trigger.split(/(?:[,\n]+|\s+and\s+)/i).map((part) => part.trim()).filter(Boolean)
@@ -154,11 +156,27 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
 
   function updatePlanning(patch) {
     update({ ...patch, coverage_plan: [], plan_signature: "", quality_report: {},
-      scene_plan: [], scene_plan_signature: "" });
+      scene_plan: [], scene_plan_signature: "", results: [] });
   }
 
   function updateSceneSettings(patch) {
-    update({ ...patch, scene_plan: [], scene_plan_signature: "", quality_report: {} });
+    update({ ...patch, scene_plan: [], scene_plan_signature: "", quality_report: {}, results: [] });
+  }
+
+  function updateWriterSettings(patch) {
+    update(invalidateDatasetPrompts(draft, patch));
+  }
+
+  async function sceneAction(index, action) {
+    if (disabled || staleScenePlan || !canGenerate || submission.current) return;
+    submission.current = true;
+    setStarting(true);
+    setError("");
+    try {
+      await preferences.flush();
+      await onGenerate("dataset/scene", { input: draft, index, action });
+    } catch (err) { setError(err.message); }
+    finally { submission.current = false; setStarting(false); }
   }
 
   async function createPlan(shuffle = false) {
@@ -226,13 +244,12 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
 
   return <div hidden={!visible}>
     <div className={ui.pageHeading}><div>
-      <div className={ui.eyebrow}>CONSISTENT CONCEPT. USEFUL VARIATION.</div>
-      <h2>Build a prompt <span>dataset.</span></h2>
-      <p>Create up to 25 trigger-ready prompts for characters, animals, objects, styles, locations, concepts, or custom training sets.</p>
+      <h2>Build a prompt dataset</h2>
+      <p>One concept, distinct scenes. Create up to 25 trigger-ready prompts for your training set.</p>
     </div></div>
     <WorkflowSettingsStatus settings={preferences} label="Dataset" />
     {error && <div className={ui.message} role="alert"><span>{error}</span></div>}
-    <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line px-4 py-3 text-xs text-muted">
+    <div className={ui.workflowStatus}>
       <span>{noEngine ? "Choose a prompt engine in Builder or Settings to generate." : `Engine: ${engineLabel}`}</span>
       <span role="status">{workflowActive ? job.status === "cancelling" ? "Ending batch…" : <>{job.progress || "Starting dataset generation…"}{stageSeconds >= 5 && ` · ${elapsedLabel(stageSeconds)}`}</> : `${draft?.results.length || 0} prompts in the current batch`}</span>
       {active && <button className={ui.button} onClick={onCancel} disabled={job.status === "cancelling"}>End generation</button>}
@@ -243,7 +260,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
     </p>}
 
     {draft && <>
-      <div className="grid grid-cols-[minmax(260px,0.8fr)_minmax(0,1.35fr)] items-start gap-[18px] mobile:grid-cols-1">
+      <div className="grid grid-cols-[minmax(260px,0.9fr)_minmax(0,1.2fr)] items-start gap-6 [@media(width<=850px)]:grid-cols-1">
         <section className={ui.panel} aria-label="Dataset trigger and concept settings">
           <header className={ui.panelHeader}>
             <div className={ui.panelIcon}><Database size={21} /></div>
@@ -286,24 +303,31 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                 value={draft.constraints} onChange={(event) => updateSceneSettings({ constraints: event.target.value })}
                 placeholder="Same hairstyle and outfit. No outdoor scenes. Each image shows a different mishap…" />
             </label>
-            <details className="rounded-lg border border-line p-3">
-              <summary className="cursor-pointer text-xs font-semibold">Training trigger & controls</summary>
-              <div className="mt-4 grid gap-4">
-            <label className={ui.field}><span>Trigger text or terms</span>
-              <textarea className={ui.notesInput} style={{ minHeight: 82 }} aria-label="Trigger text or terms" maxLength={200} value={draft.trigger}
-                onChange={(event) => update({ trigger: event.target.value, quality_report: {} })} placeholder="e.g. old lady with dark hair · or woman, cake" />
-              <small className={ui.directorDescription}>The exact required text. When distributed, separate terms with commas or new lines.</small>
+            <label className={ui.field}><span>Planning mode</span>
+              <select className={ui.select} aria-label="Dataset planning mode" value={draft.planning_mode || "Fast"}
+                onChange={(event) => updateSceneSettings({ planning_mode: event.target.value })}>
+                <option>Fast</option><option>Quality</option>
+              </select>
+              <small className={ui.directorDescription}>Fast: one idea + scene call. Quality: distinct ideas first, then coherent scene composition. Repairs affect only the bad item.</small>
             </label>
+             <label className={ui.field}><span>Trigger text or terms</span>
+              <textarea className={ui.notesInput} style={{ minHeight: 82 }} aria-label="Trigger text or terms" maxLength={200} value={draft.trigger}
+                onChange={(event) => updateWriterSettings({ trigger: event.target.value })} placeholder="e.g. old lady with dark hair · or woman, cake" />
+              <small className={ui.directorDescription}>The exact required text. When distributed, separate terms with commas or new lines.</small>
+             </label>
+             <details className="rounded-lg border border-line p-3">
+               <summary className="cursor-pointer text-xs font-semibold">Training trigger & controls</summary>
+               <div className="mt-4 grid gap-4">
             <div className="grid gap-2">
-              <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-line bg-[#11131b] p-3 text-xs">
-                <input type="checkbox" className="mt-0.5 accent-[#aa8cda]" aria-label="Require trigger at beginning"
-                  checked={draft.trigger_at_start === true} onChange={(event) => update({ trigger_at_start: event.target.checked, quality_report: {} })} />
+               <label className={ui.choiceCard}>
+                 <input type="checkbox" className="mt-0.5" aria-label="Require trigger at beginning"
+                  checked={draft.trigger_at_start === true} onChange={(event) => updateWriterSettings({ trigger_at_start: event.target.checked })} />
                 <span><strong className="block">Require trigger at the beginning</strong>
                   <small className="mt-1 block leading-relaxed text-muted">On strongly requests beginning placement. Off encourages a natural introduction first. Placement will never make an otherwise usable prompt fail.</small></span>
               </label>
-              <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-line bg-[#11131b] p-3 text-xs">
-                <input type="checkbox" className="mt-0.5 accent-[#aa8cda]" aria-label="Keep trigger text connected"
-                  checked={draft.trigger_connected !== false} onChange={(event) => update({ trigger_connected: event.target.checked, quality_report: {} })} />
+               <label className={ui.choiceCard}>
+                 <input type="checkbox" className="mt-0.5" aria-label="Keep trigger text connected"
+                  checked={draft.trigger_connected !== false} onChange={(event) => updateWriterSettings({ trigger_connected: event.target.checked })} />
                 <span><strong className="block">Keep trigger text connected</strong>
                   <small className="mt-1 block leading-relaxed text-muted">Off requests comma-, line-, or “and”-separated terms in different positions. Missing wording or grouping is reported as a warning; finished prompts are not discarded.</small></span>
               </label>
@@ -311,9 +335,9 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                 {triggerParts.length === 1 ? "One required term detected. Add commas, new lines, or “and” to distribute multiple terms: " : "Required distributed terms: "}
                 {triggerParts.map((part) => `“${part}”`).join(" · ")}
               </p>}
-              <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-line bg-[#11131b] p-3 text-xs">
-                <input type="checkbox" className="mt-0.5 accent-[#aa8cda]" aria-label="Allow trigger expansion"
-                  checked={draft.expand_trigger === true} onChange={(event) => update({ expand_trigger: event.target.checked, quality_report: {} })} />
+               <label className={ui.choiceCard}>
+                 <input type="checkbox" className="mt-0.5" aria-label="Allow trigger expansion"
+                  checked={draft.expand_trigger === true} onChange={(event) => updateWriterSettings({ expand_trigger: event.target.checked })} />
                 <span><strong className="block">Allow the model to expand the trigger</strong>
                   <small className="mt-1 block leading-relaxed text-muted">Off prevents unsolicited identity, appearance, design, material, or style details. Explicit concept and rule requirements are still allowed.</small></span>
               </label>
@@ -336,7 +360,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                 </select>
               </label>
               <label className={ui.field}><span>Director preset</span>
-                <select className={ui.select} aria-label="Dataset director preset" value={draft.director_preset} onChange={(event) => update({ director_preset: event.target.value })}>
+                <select className={ui.select} aria-label="Dataset director preset" value={draft.director_preset} onChange={(event) => updateWriterSettings({ director_preset: event.target.value })}>
                   {!director && <option value={draft.director_preset}>Unavailable — choose a preset</option>}
                   {availablePresets.map((item) => <option key={item.id} value={item.id}>{presetDisplayLabel(item)}</option>)}
                 </select>
@@ -347,9 +371,9 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                 onChange={(event) => updatePlanning({ custom_style: event.target.value })} placeholder="Describe medium, realism, rendering, texture and finish…" />
             </label>}
             <div className="mt-4 grid grid-cols-2 gap-4 tiny:grid-cols-1">
-              <TargetSelect label="Dataset target model" value={draft.target} targets={targets} disabled={disabled} onChange={(target) => update({ target, quality_report: {} })} />
+              <TargetSelect label="Dataset target model" value={draft.target} targets={targets} disabled={disabled} onChange={(target) => updateWriterSettings({ target })} />
               <label className={ui.field}><span>Prompt length</span>
-                <select className={ui.select} aria-label="Dataset prompt length" value={draft.length} onChange={(event) => update({ length: event.target.value })}>
+                <select className={ui.select} aria-label="Dataset prompt length" value={draft.length} onChange={(event) => updateWriterSettings({ length: event.target.value })}>
                   {lengths.map((item) => <option key={item}>{item}</option>)}
                 </select>
               </label>
@@ -360,9 +384,9 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
               <div className="mt-2 grid grid-cols-2 gap-2 tiny:grid-cols-1">
                 {[['random', 'Let Scene Planner invent scenes', 'Give Scene Planner the overall Dataset concept and it will create distinct visual situations.'],
                   ['guided', 'Provide my own scene ideas', 'Enter one idea per line. Scene Planner improves each idea without replacing its central action.']].map(([value, label, help]) =>
-                  <label key={value} className="cursor-pointer rounded-lg border border-line bg-[#11131b] p-3 has-checked:border-[#aa8cda] has-checked:bg-[#aa8cda12]">
+                   <label key={value} className={`${ui.choiceCard} block`}>
                     <span className="flex items-center gap-2 text-xs font-semibold"><input type="radio" name="dataset-source" value={value}
-                      checked={draft.source_mode === value} onChange={() => updatePlanning({ source_mode: value })} className="accent-[#aa8cda]" />{label}</span>
+                       checked={draft.source_mode === value} onChange={() => updatePlanning({ source_mode: value })} />{label}</span>
                     <small className="mt-2 block text-[10px] leading-relaxed text-muted">{help}</small>
                   </label>)}
               </div>
@@ -375,14 +399,14 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
             </fieldset>
 
             <section className="mt-5 border-t border-line pt-4" aria-label="Coverage planner">
-              <details className="rounded-lg border border-line bg-[#11131b] p-3">
+               <details className="rounded-lg border border-line bg-canvas p-3">
                 <summary className="cursor-pointer text-xs font-semibold">Advanced coverage planning (optional)</summary>
                 <p className="mt-3 text-[11px] leading-relaxed text-muted">Off by default. When off, your concept, romance or action rules, and guided inputs control the batch without automatic facet assignments.</p>
-                <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-lg border border-line bg-[#0d0f16] p-3 text-xs">
-                  <input type="checkbox" className="mt-0.5 accent-[#aa8cda]" aria-label="Use coverage plan"
+                 <label className={`${ui.choiceCard} mt-4`}>
+                   <input type="checkbox" className="mt-0.5" aria-label="Use coverage plan"
                     checked={coverageEnabled} onChange={(event) => updateSceneSettings({ coverage_enabled: event.target.checked })} />
                   <span><strong className="block">Use coverage plan</strong>
-                    <small className="mt-1 block leading-relaxed text-muted">Adds optional framing, viewpoint, lighting, and other category-specific cues. User instructions always take priority.</small></span>
+                    <small className="mt-1 block leading-relaxed text-muted">Adds optional framing, viewpoint, lighting, and other category-specific cues. Pose/expression axes are soft requests; Scene Planner chooses action-compatible staging. User instructions always take priority.</small></span>
                 </label>
                 {!coverageEnabled && draft.coverage_plan?.length > 0 && <p className={ui.subtleNote}>Your saved {draft.coverage_plan.length}-row plan is preserved but will be ignored.</p>}
                 {coverageEnabled && <>
@@ -399,8 +423,8 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                     <legend className="text-[11px] font-medium">Coverage axes</legend>
                     <div className="mt-2 flex flex-wrap gap-2">
                       {allowedAxes.map((key) => <label key={key}
-                        className="flex cursor-pointer items-center gap-2 rounded-lg border border-line bg-[#0d0f16] px-3 py-2 text-[11px] has-checked:border-[#aa8cda] has-checked:text-[#d7c9ff]">
-                        <input type="checkbox" className="accent-[#aa8cda]" aria-label={`Coverage axis ${axisLabels[key]}`}
+                         className={ui.choiceChip}>
+                         <input type="checkbox" aria-label={`Coverage axis ${axisLabels[key]}`}
                           checked={selectedAxes.includes(key)} onChange={(event) => {
                             const next = event.target.checked ? [...selectedAxes, key] : selectedAxes.filter((item) => item !== key);
                             if (next.length) updatePlanning({ coverage_axes: allowedAxes.filter((item) => next.includes(item)) });
@@ -409,15 +433,16 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                       </label>)}
                     </div>
                   </fieldset>
-                  {draft.coverage_plan?.length ? <div className="mt-4 overflow-x-auto rounded-lg border border-line">
-                    <table className="w-full min-w-[720px] border-collapse text-left text-[10px]">
-                      <thead className="bg-[#0d0f16] text-[#aaa7bd]"><tr>
+                   {draft.coverage_plan?.length ? <div className="mt-4 overflow-x-auto rounded-lg border border-line"
+                     tabIndex={0} role="region" aria-label="Dataset coverage assignments">
+                     <table className="w-full min-w-[720px] border-collapse text-left text-xs">
+                       <thead className="bg-canvas text-muted"><tr>
                         <th className="px-3 py-2.5">#</th>
                         {draft.source_mode === "guided" && <th className="px-3 py-2.5">Guided input</th>}
                         {Object.keys(draft.coverage_plan[0]?.facets || {}).map((key) => <th key={key} className="px-3 py-2.5">{axisLabels[key] || key}</th>)}
                       </tr></thead>
-                      <tbody>{draft.coverage_plan.map((row) => <tr key={row.index} className="border-t border-line text-[#c6c7d9]">
-                        <td className="px-3 py-2.5 font-semibold text-[#b8a2f4]">{row.index}</td>
+                       <tbody>{draft.coverage_plan.map((row) => <tr key={row.index} className="border-t border-line text-ink">
+                         <td className="px-3 py-2.5 font-semibold text-accent">{row.index}</td>
                         {draft.source_mode === "guided" && <td className="max-w-48 truncate px-3 py-2.5" title={row.input}>{row.input}</td>}
                         {Object.entries(row.facets).map(([key, value]) => <td key={key} className="px-3 py-2.5">{value}</td>)}
                       </tr>)}</tbody>
@@ -431,7 +456,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
             </button>
             <button className={`${ui.button} mt-3 w-full justify-center`} disabled={!canPlanScenes}
               onClick={() => generate(true)}><Sparkles size={15} />{scenePlannerBusy ? "Planning scenes…" : "Plan scenes first"}</button>
-            <p className={ui.subtleNote}>One-click generation plans automatically. Planning first needs no trigger and lets you edit ideas before writing prompts.</p>
+             <p className={ui.subtleNote}>{!draft.subject.trim() ? "Add a dataset idea to get started. " : !draft.trigger.trim() ? "Add trigger text to generate final prompts, or plan scenes without it. " : "One-click generation plans automatically. "}Planning first lets you edit ideas before writing prompts.</p>
           </fieldset>
         </section>
       </div>
@@ -442,7 +467,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
           <div className={ui.panelHeading}><h2>Scene Planner ideas</h2>
              <p>Idea = what happens. Scene = how it fits one image. Target and prompt length changes reuse both.</p></div>
         </header>
-        <p className={ui.subtleNote}>Keep edited ideas and scenes consistent. Edits affect the next generation, not existing results. Replanning replaces both ideas and scenes.</p>
+        <p className={ui.subtleNote}>Idea edits invalidate only that scene and prompt. Scene edits invalidate only that prompt. Output settings keep the plan and invalidate prompts.</p>
         {staleScenePlan && <p className={ui.warningNote}>This plan no longer matches the Dataset settings. Plan scenes again or use the main Generate action to replan automatically.</p>}
         <div className="grid grid-cols-2 gap-4 mobile:grid-cols-1">
           {draft.scene_plan.map((item) => <div key={item.index} className="grid gap-3 rounded-lg border border-line p-3">
@@ -451,15 +476,23 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
               <input className={ui.input} aria-label={`Planned idea ${item.index}`} value={item.idea || ""}
                 placeholder="Legacy plan: replan to generate an idea" disabled={disabled}
                 maxLength={preferences.record?.idea_limits?.characters}
-                onChange={(event) => update({ scene_plan: draft.scene_plan.map((row) => row.index === item.index
-                  ? { ...row, idea: event.target.value } : row), quality_report: {} })} />
+                onChange={(event) => update(editDatasetPlan(draft, item.index, "idea", event.target.value))} />
             </label>
             <label className={ui.field}><span>Scene {item.index}</span>
               <textarea className={ui.notesInput} aria-label={`Planned scene ${item.index}`} value={item.scene}
                 maxLength={preferences.record?.scene_limits?.characters} disabled={disabled}
-                onChange={(event) => update({ scene_plan: draft.scene_plan.map((row) => row.index === item.index
-                  ? { ...row, scene: event.target.value } : row), quality_report: {} })} />
+                onChange={(event) => update(editDatasetPlan(draft, item.index, "scene", event.target.value))} />
             </label>
+            <small className="text-muted">Idea: {item.idea_status || "valid"} · Scene: {item.scene_status || "valid"} · Prompt: {item.prompt_status || "not_generated"}</small>
+            {!!item.coverage_conflicts?.length && <small className="text-muted">Incompatible coverage omitted: {item.coverage_conflicts.join(", ")}</small>}
+            <div className="flex flex-wrap gap-2">
+              <button className={ui.button} disabled={!canGenerate || staleScenePlan}
+                onClick={() => sceneAction(item.index, "regenerate_idea")}>Regenerate idea</button>
+              <button className={ui.button} disabled={!canGenerate || staleScenePlan || !item.idea?.trim()}
+                onClick={() => sceneAction(item.index, "repair_scene")}>Repair scene</button>
+              <button className={ui.button} disabled={!canGenerate || staleScenePlan || !item.scene.trim() || ["not_generated", "geometry_warning"].includes(item.scene_status)}
+                onClick={() => sceneAction(item.index, "regenerate_prompt")}>Regenerate prompt</button>
+            </div>
           </div>)}
         </div>
         <div className="mt-4 flex flex-wrap gap-3">
@@ -480,7 +513,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
             {active && job?.kind === "dataset_review" ? "Reviewing" : qualityBusy ? "Checking" : quality?.status === "strong" ? "Strong" : quality?.status === "review" ? "Needs review" : quality?.status === "issues" ? "Issues found" : "Pending"}
           </span>
         </header>
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-[#11131b] px-3 py-2.5 text-[11px] text-muted">
+         <div className={`${ui.workflowStatus} mb-4`}>
            <span>{quality?.deep_review?.completed ? `Deep review complete · ${quality.deep_review.errors} errors · ${quality.deep_review.warnings} warnings` : "Optional: check planned-scene fidelity, identity, style, constraints and achieved coverage with the prompt engine."}</span>
           <button className={ui.button} disabled={disabled || noEngine || !draft.results.length} onClick={deepReview}>
             <ShieldCheck size={14} />{active && job?.kind === "dataset_review" ? "Deep reviewing…" : quality?.deep_review?.completed ? "Run deep review again" : "Deep consistency review"}
@@ -488,9 +521,9 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
         </div>
         {quality?.metrics ? <>
           <div className={`grid ${coverageEnabled ? "grid-cols-5" : "grid-cols-4"} gap-3 mobile:grid-cols-2`}>
-            <div className="rounded-lg border border-line bg-[#11131b] p-3 mobile:col-span-2"><span className="text-[10px] text-muted">Overall</span><strong className="mt-1 block font-display text-xl text-[#d7c9ff]">{quality.score}</strong></div>
-            {Object.entries(quality.metrics).map(([key, value]) => <div key={key} className="rounded-lg border border-line bg-[#11131b] p-3">
-              <span className="text-[10px] capitalize text-muted">{key === "coverage" ? "Planned coverage" : key.replaceAll("_", " ")}</span><strong className="mt-1 block font-display text-xl">{value}%</strong>
+             <div className="rounded-lg border border-line bg-selected p-4 mobile:col-span-2"><span className="text-xs text-muted">Overall</span><strong className="mt-1 block font-display text-2xl text-accent">{quality.score}</strong></div>
+             {Object.entries(quality.metrics).map(([key, value]) => <div key={key} className="rounded-lg border border-line bg-canvas p-4">
+               <span className="text-xs capitalize text-muted">{key === "coverage" ? "Planned coverage" : key.replaceAll("_", " ")}</span><strong className="mt-1 block font-display text-xl">{value}%</strong>
             </div>)}
           </div>
           {!!quality.batch_issues?.length && <div className="mt-4 grid gap-2">
@@ -498,10 +531,10 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
               <strong className="mr-1">{issue.severity === "error" ? "Issue:" : "Review:"}</strong>{issue.message}
             </p>)}
           </div>}
-          <details className="mt-4 rounded-lg border border-line bg-[#11131b] p-3 text-xs">
+           <details className="mt-4 rounded-lg border border-line bg-canvas p-3 text-xs">
             <summary className="cursor-pointer font-semibold">Prompt checks · {(quality.prompts || []).filter((item) => item.status === "pass").length}/{quality.prompts?.length || 0} passed</summary>
             <div className="mt-3 grid gap-2">{(quality.prompts || []).map((item) => <div key={item.index} className="flex items-start gap-2 border-t border-line pt-2 first:border-0 first:pt-0">
-              {item.status === "pass" ? <CircleCheck size={15} className="text-success" /> : <CircleAlert size={15} className={item.status === "error" ? "text-[#e8a2a2]" : "text-[#d5b879]"} />}
+               {item.status === "pass" ? <CircleCheck size={15} className="text-success" /> : <CircleAlert size={15} className={item.status === "error" ? "text-danger" : "text-warning"} />}
               <div><strong>Prompt {item.index}</strong>
                 {item.issues.length ? <ul className="mt-1 grid gap-1 text-[11px] leading-relaxed text-muted">{item.issues.map((issue, index) => <li key={`${issue.code}-${index}`}>{issue.message}</li>)}</ul>
                   : <p className="mt-1 text-[11px] text-muted">All automatic checks passed.</p>}
@@ -524,15 +557,15 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
           </div>
         </div>
         {!draft.results.length ? <div className={`${ui.emptyState} min-h-[260px]`}>
-          <Database size={34} /><h3>Your batch will appear here.</h3><p>Describe a Dataset idea, optionally plan scenes first, then generate final prompts.</p>
+           <Database size={34} /><h3>Your scenes start with an idea</h3><p>Describe your concept above. Plan scenes to review them first, or generate the full batch.</p>
         </div> : <div className="grid grid-cols-2 gap-4 [@media(width<=1050px)]:grid-cols-1">
           {draft.results.map((item) => {
             const check = promptQuality.get(item.index);
             return <article className={ui.panel} key={item.index}>
             <div className="mb-3 flex items-center justify-between gap-3">
-              <div><span className="text-[10px] font-semibold tracking-[1.3px] text-[#b8a2f4]">PROMPT {item.index}</span>
+               <div><span className="text-sm font-semibold text-accent">Prompt {item.index}</span>
                 {item.input && <p className="mt-1 max-w-[48ch] truncate text-[10px] text-muted" title={item.input}>{item.input}</p>}
-                {check && <span className={`mt-1 inline-flex items-center gap-1 text-[9px] ${check.status === "pass" ? "text-success" : check.status === "error" ? "text-[#e8a2a2]" : "text-[#d5b879]"}`}>
+                 {check && <span className={`mt-1 inline-flex items-center gap-1 text-xs ${check.status === "pass" ? "text-success" : check.status === "error" ? "text-danger" : "text-warning"}`}>
                   {check.status === "pass" ? <CircleCheck size={11} /> : <CircleAlert size={11} />}{check.status === "pass" ? "Passed checks" : `${check.issues.length} ${check.issues.length === 1 ? "issue" : "issues"}`}
                 </span>}</div>
               <button className={ui.button} onClick={() => onCopy(item.prompt)}><Copy size={14} />Copy</button>

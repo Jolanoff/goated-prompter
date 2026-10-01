@@ -24,7 +24,9 @@ _LEAKAGE = re.compile(
     r"|(?:^|[,;\n])\s*(?:masterpiece|best\s+quality|worst\s+quality|low\s+quality|bad\s+anatomy"
     r"|correct\s+anatomy|extra\s+limbs|watermark|signature)\s*(?=[,;.\n]|$)"
     r"|\b(?:best|worst|low)\s+quality\b"
-    r"|(?:^|[,\n])\s*(?:negative\s+prompt|negative\s+conditioning)\s*:",
+    r"|(?:^|[,\n])\s*(?:negative\s+prompt|negative\s+conditioning)\s*:"
+    r"|(?:^|[\n])\s*PLANNED\s+GEOMETRY\b"
+    r"|\b(?:camera_view|body_orientation|head_direction|visibility_focus|face_visibility|idea_status|scene_status|prompt_status)\s*[:=]",
     re.IGNORECASE,
 )
 _QUOTED = re.compile(r'"(?:\\.|[^"\\])*"|(?<!\w)\'(?:\\.|[^\'\\\n])+\'(?!\w)|“[^”]*”|‘[^’]*’')

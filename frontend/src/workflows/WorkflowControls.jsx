@@ -12,8 +12,8 @@ export function DetailLocks({ value, onChange, disabled, prefix }) {
     <p className="my-2 text-xs leading-relaxed text-muted">Preserve these attributes from the source text. Locks take priority over requested changes.</p>
     <div className="flex flex-wrap gap-2">
       {lockOptions.map(([key, label]) => <label key={key}
-        className="flex cursor-pointer items-center gap-2 rounded-lg border border-line bg-[#11131b] px-3 py-2 text-xs has-checked:border-[#aa8cda] has-checked:text-[#d7c9ff]">
-        <input type="checkbox" className="accent-[#aa8cda]" aria-label={`${prefix} lock ${label}`}
+        className={ui.choiceChip}>
+        <input type="checkbox" aria-label={`${prefix} lock ${label}`}
           checked={value.includes(key)} onChange={(event) => onChange(event.target.checked ? [...value, key] : value.filter((item) => item !== key))} />
         {label}
       </label>)}
@@ -31,6 +31,6 @@ export function TargetSelect({ value, onChange, targets, disabled, label = "Targ
 }
 
 export function PromptText({ text, label }) {
-  return <pre aria-label={label} tabIndex={0}
-    className="max-h-[460px] min-h-40 overflow-auto whitespace-pre-wrap wrap-anywhere rounded-lg border border-line bg-[#11131b] p-4 font-notes text-xs leading-[1.9] text-[#c6c7d9]">{text}</pre>;
+  return <pre role="region" aria-label={label} tabIndex={0}
+    className={ui.promptText}>{text}</pre>;
 }

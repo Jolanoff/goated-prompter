@@ -8,6 +8,7 @@ ComfyUI is **not required** to use the website. The app produces prompt text tha
 
 ## Features
 
+- **Dark by default:** a responsive prompt studio with an optional light-mode switch in the header. Your theme preference stays in your browser.
 - **Text or image-guided prompts:** describe an idea, upload up to four reference images, or combine both.
 - **Independent reference controls:** keep a face from Image 1, a pose from Image 2, a scene from Image 3, and lighting from Image 4. Blend can combine an attribute from all uploaded images.
 - **Task-specific direction:** prompt enhancement, photography, architecture, characters, products, image editing, style transfer, dataset captions, and video shots.

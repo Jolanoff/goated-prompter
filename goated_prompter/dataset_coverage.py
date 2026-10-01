@@ -33,8 +33,8 @@ AXES = {
 }
 
 CATEGORY_AXES = {
-    "Character": ("framing", "viewpoint", "pose_action", "expression", "lighting", "setting"),
-    "Multiple characters": ("framing", "viewpoint", "pose_action", "expression", "lighting", "setting"),
+    "Character": ("framing", "viewpoint", "lighting", "setting", "pose_action", "expression"),
+    "Multiple characters": ("framing", "viewpoint", "lighting", "setting", "pose_action", "expression"),
     "Animal": ("framing", "viewpoint", "pose_action", "context", "lighting", "setting"),
     "Visual style": ("subject_matter", "composition", "scale", "palette", "lighting", "setting"),
     "Object / product": ("framing", "viewpoint", "context", "surface", "lighting", "background"),
@@ -49,7 +49,7 @@ VARIETY_AXIS_COUNTS = {"Focused": 3, "Balanced": 5, "Wide": 6}
 LEAKED_LABELS = re.compile(
     r"(?im)^\s*(?:ITEM|TRIGGER TYPE|TRIGGER DESCRIPTION|REQUIRED TRIGGER TEXT|DATASET CONCEPT|"
     r"SOURCE MODE|GUIDED INPUT|ADDITIONAL CONSISTENCY RULES|CONSISTENCY AND VARIATION RULES|"
-    r"EARLIER ITEM|OUTPUT FORMAT|CURRENT SCENE|PLANNED IDEA|PLANNED SCENE(?: / CURRENT SCENE)?|FINAL PROMPT|COVERAGE ASSIGNMENT)\s*(?:\d+[^\n]*)?$|"
+    r"EARLIER ITEM|OUTPUT FORMAT|CURRENT SCENE|PLANNED IDEA|PLANNED GEOMETRY|PLANNED SCENE(?: / CURRENT SCENE)?|FINAL PROMPT|COVERAGE ASSIGNMENT)\s*(?:\d+[^\n]*)?$|"
     r"</?(?:data|trigger|input|constraints|example|idea|scene)>",
 )
 
@@ -65,6 +65,10 @@ def selected_axes(data):
     if explicit:
         selected = tuple(key for key in explicit if key in allowed)
         return selected or allowed[:VARIETY_AXIS_COUNTS.get(data.get("variety"), 5)]
+    if data.get("trigger_type") in {"Character", "Multiple characters"}:
+        # Legacy explicit pose/expression axes remain available as soft requests.
+        # Automatic coverage no longer invents actions independently of ideas.
+        return allowed[:4]
     return allowed[:VARIETY_AXIS_COUNTS.get(data.get("variety"), 5)]
 
 
@@ -138,6 +142,54 @@ def _similarity(left, right):
     return len(left & right) / len(union) if union else 1.0
 
 
+def _cluster_uniqueness(rows, pairs):
+    """Count redundant items, not the fraction of all possible duplicate pairs."""
+    parent = {row["index"]: row["index"] for row in rows}
+    def root(index):
+        while parent[index] != index:
+            index = parent[index]
+        return index
+    for left, right in pairs:
+        parent[root(right)] = root(left)
+    distinct = len({root(index) for index in parent})
+    return round(100 * (distinct - 1) / (len(rows) - 1)) if len(rows) > 1 else 100
+
+
+# Small dependency-free semantic lexicon: normalize events and object families,
+# not a menu of scene ideas. Deliberately conservative for narrow/guided scopes.
+_CONCEPT_FAMILIES = {
+    "juggle": r"juggl\w*",
+    "failure": r"fail\w*|dropp\w*|drops?|spill\w*|fumbl\w*|losing|lost",
+    "fruit": r"oranges?|apples?|pears?|bananas?|fruits?",
+    "walk": r"walk\w*|stroll\w*|stepp\w*|steps?|strid\w*|trudg\w*",
+    "run": r"runn\w*|runs?|sprint\w*|dash\w*|jogg\w*",
+    "laugh": r"laugh\w*|chuckl\w*|giggl\w*",
+    "wear": r"wear\w*|dressed|donning",
+    "catch": r"catch\w*|catches|caught|snatch\w*|intercept\w*",
+    "read": r"read\w*",
+}
+
+
+def idea_concepts(text):
+    text = text.casefold()
+    for family, pattern in _CONCEPT_FAMILIES.items():
+        text = re.sub(r"\b(?:" + pattern + r")\b", family, text)
+    # Object control in flight is a common paraphrase of failed juggling.
+    if "failure" in text and "fruit" in text and re.search(r"\b(?:airborne|air|flight)\b", text):
+        text += " juggle"
+    text = re.sub(r"\b(?:trying|attempting|attempt|control|airborne|air|flight|three|two|one|and|to)\b", "", text)
+    text = re.sub(r"\b(?:at (?:night|dawn|dusk|sunset)|in (?:warm|soft|bright) light|from a low angle)\b", "", text)
+    return set(_scene_event_words(text))
+
+
+def idea_action_error(idea, description):
+    """High-confidence action loss only; unknown paraphrases remain review hints."""
+    actions = idea_concepts(idea) & {"juggle", "walk", "run", "laugh", "catch", "read"}
+    if actions and not actions & idea_concepts(description):
+        return "The planned primary action disappeared. Preserve the fixed idea and its important action."
+    return None
+
+
 def _issue(code, severity, message, related=None):
     result = {"code": code, "severity": severity, "message": message}
     if related is not None:
@@ -183,8 +235,7 @@ def analyze_scene_diversity(rows):
                 for current, other in ((left, right), (right, left)):
                     records[current["index"]]["issues"].append(_issue(
                         code, "warning", f"Scene idea may repeat scene {other['index']} ({code.replace('_', ' ')}). Review the core event, not just its presentation.", other["index"]))
-    pairs = max(1, len(rows) * (len(rows) - 1) // 2)
-    return {"count": len(rows), "uniqueness": round(100 * (1 - len(duplicate_pairs) / pairs)),
+    return {"count": len(rows), "uniqueness": _cluster_uniqueness(rows, duplicate_pairs),
             "scenes": list(records.values()), "method": "lexical heuristics; not a semantic guarantee"}
 
 
@@ -193,27 +244,27 @@ def analyze_idea_diversity(data, rows):
     rows = [row for row in rows if row.get("idea", "").strip()]
     records = {row["index"]: {"index": row["index"], "issues": []} for row in rows}
     pairs = set()
-    constrained = data.get("source_mode") == "guided" or data.get("variety") == "Focused"
+    guided = data.get("source_mode") == "guided"
+    focused = data.get("variety") == "Focused"
     scope = (data.get("subject", "") + " " + data.get("constraints", "")).casefold()
     expression_scope = bool(re.search(r"(?:different|various|funny|facial)\s+(?:facial\s+)?expressions\b", scope))
-
-    def idea_words(text):
-        text = re.sub(r"\b(?:at (?:night|dawn|dusk|sunset)|in (?:warm|soft|bright) light|from a low angle)\b", "", text)
-        return set(_scene_event_words(text))
 
     for position, left in enumerate(rows):
         for right in rows[position + 1:]:
             # Repeated/cycling authoritative guided lines are not brainstorming failures.
-            if constrained:
+            if guided and (not left.get("input") or not right.get("input")
+                           or " ".join(left["input"].split()) == " ".join(right["input"].split())):
                 continue
             a, b = [" ".join(row["idea"].casefold().split()) for row in (left, right)]
-            aw, bw = [idea_words(text) for text in (a, b)]
+            aw, bw = [idea_concepts(text) for text in (a, b)]
             facial = all(re.search(r"\b(?:face|facial|expression|expressions)\b", text) for text in (a, b))
             code = None
             if a == b:
                 code = "exact_duplicate_idea"
             elif facial and expression_scope:
                 continue
+            elif focused:
+                continue  # Narrow family variants are valid, but exact copies are not.
             elif aw and bw and (_similarity(aw, bw) >= .75 or (facial and not expression_scope)):
                 code = "similar_idea_category"
             if code:
@@ -221,8 +272,7 @@ def analyze_idea_diversity(data, rows):
                 for current, other in ((left, right), (right, left)):
                     records[current["index"]]["issues"].append(_issue(code, "warning",
                         f"Idea may repeat the concept of idea {other['index']}. Check semantic variety, not just presentation differences.", other["index"]))
-    total_pairs = max(1, len(rows) * (len(rows) - 1) // 2)
-    return {"count": len(rows), "uniqueness": round(100 * (1 - len(pairs) / total_pairs)),
+    return {"count": len(rows), "uniqueness": _cluster_uniqueness(rows, pairs),
             "ideas": list(records.values()), "method": "concept-aware lexical hints; not semantic verification"}
 
 
@@ -250,6 +300,17 @@ def explicit_geometry_issues(text):
     if rear and frontal and not turn:
         issues.append(_issue("rear_front_conflict", "warning",
             "Explicit direct rear view and fully frontal face conflict without a plausible turn. Check camera/body/head geometry."))
+    elif rear and not turn and asserted(r"\blooking (?:straight |directly )?(?:at|into) (?:the )?(?:camera|viewer)\b"):
+        issues.append(_issue("rear_gaze_conflict", "warning",
+            "Direct rear view cannot support camera-directed gaze without a plausible over-shoulder head turn."))
+    if (asserted(r"\b(?:straight |side |direct )?profile view\b|\bin profile\b")
+            and asserted(r"\bboth sides of (?:the |her |his |their )?face (?:are )?equally visible\b")):
+        issues.append(_issue("profile_face_conflict", "warning",
+            "A profile camera view cannot show both sides of the face equally."))
+    if (asserted(r"\bbody (?:is )?fully facing away\b")
+            and asserted(r"\bhead (?:is )?fully frontal(?: toward (?:the )?camera)?\b")):
+        issues.append(_issue("body_head_conflict", "warning",
+            "A fully away body cannot support a fully frontal head toward the camera."))
     close = asserted(r"\btight (?:face|facial) close[- ]up\b|\btight upper[- ]body crop\b")
     feet = asserted(r"\b(?:shoes|feet) (?:are )?(?:clearly |fully )?visible\b|\b(?:clearly|fully) (?:showing|shows) (?:her |his |their )?(?:shoes|feet)\b")
     if close and feet:
@@ -293,7 +354,7 @@ def _prompt_trigger_preference(prompt, data):
 
 
 def quality_signature(data, results, plan):
-    value = {"version": 4, "trigger": data.get("trigger"), "target": data.get("target"),
+    value = {"version": 5, "trigger": data.get("trigger"), "target": data.get("target"),
              "trigger_connected": data.get("trigger_connected", True),
              "trigger_at_start": data.get("trigger_at_start", False),
              "amount": data.get("amount"), "results": results, "plan": plan}
@@ -352,6 +413,13 @@ def analyze_dataset_quality(data, results=None, plan=None):
         for source in ("idea", "scene"):
             if leakage := visible_content_error(item.get(source, "")):
                 add(index, _issue(source + "_content_leakage", "warning", leakage))
+        for facet in item.get("coverage_conflicts", []):
+            add(index, _issue("coverage_incompatible", "warning",
+                f"Coverage {facet} was omitted to preserve the idea and coherent staging."))
+        if item.get("geometry"):
+            from .dataset_geometry import geometry_errors
+            for message in geometry_errors(item):
+                add(index, _issue("structured_geometry", "warning", message))
         try:
             final_text = trigger_text_target(prompt, target)
         except ValueError:
@@ -412,16 +480,19 @@ def analyze_dataset_quality(data, results=None, plan=None):
     coverage_parts = []
     if coverage_enabled:
         for key in selected_axes(data):
-            values = [item.get("facets", {}).get(key) for item in plan if item.get("facets", {}).get(key)]
+            by_index = {item["index"]: item for item in results}
+            values = [item.get("facets", {}).get(key) for item in plan if item.get("facets", {}).get(key)
+                      and key not in by_index.get(item["index"], {}).get("coverage_conflicts", [])]
             expected = min(len(values), len(AXES[key][1]))
-            coverage_parts.append(len(set(values)) / expected if expected else 1)
+            planned_count = sum(bool(item.get("facets", {}).get(key)) for item in plan)
+            coverage_parts.append((len(set(values)) / expected * len(values) / planned_count)
+                                  if expected and planned_count else 0)
     coverage_score = round(100 * sum(coverage_parts) / len(coverage_parts)) if coverage_parts else 100
     total = max(1, len(results))
-    pair_count = max(1, len(results) * (len(results) - 1) // 2)
     metrics = {
         "trigger": round(100 * trigger_passes / total),
         "format": round(100 * format_passes / total),
-        "uniqueness": max(0, round(100 * (1 - len(duplicate_pairs) / pair_count))),
+        "uniqueness": _cluster_uniqueness(results, duplicate_pairs),
     }
     if coverage_enabled:
         metrics["planned_coverage"] = coverage_score
@@ -441,11 +512,11 @@ def analyze_dataset_quality(data, results=None, plan=None):
         severities = {issue["severity"] for issue in record["issues"]}
         record["status"] = "error" if "error" in severities else "warning" if severities else "pass"
     all_issues = batch_issues + [issue for record in records.values() for issue in record["issues"]]
-    score = (round(metrics["trigger"] * .25 + metrics["format"] * .20
-                   + metrics["uniqueness"] * .30 + metrics["planned_coverage"] * .25)
-             if coverage_enabled else
-             round((metrics["trigger"] * .25 + metrics["format"] * .20
-                    + metrics["uniqueness"] * .30) / .75))
+    weights = {"idea_uniqueness": .30, "scene_uniqueness": .20, "uniqueness": .15,
+               "trigger": .15, "format": .10, "planned_coverage": .10}
+    # Legacy results without planning provenance remain diagnosable, not fabricated.
+    active_weights = {key: weight for key, weight in weights.items() if key in metrics}
+    score = round(sum(metrics[key] * weight for key, weight in active_weights.items()) / sum(active_weights.values()))
     severities = {issue["severity"] for issue in all_issues}
     status = "issues" if "error" in severities else "review" if "warning" in severities or score < 85 else "strong"
     return {"signature": quality_signature(data, results, plan), "status": status, "score": score,
