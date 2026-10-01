@@ -195,6 +195,27 @@ if set(TYPE_GUIDANCE) != set(DATASET_TYPES):
     raise RuntimeError("Scene Planner guidance must cover every supported Dataset subject type.")
 
 
+GUIDED_ASSIGNMENT_RULES = """GUIDED ASSIGNMENT MODE
+Each assignment's input is an authoritative LOCAL specification for that image, not a rule for the
+whole batch. Shared subject facts and explicit global constraints apply to all images; a setting,
+outfit, pose, prop or action supplied in one guided line applies only to that line's assignments.
+Do not copy one line's clothing restrictions or scene details into other lines. Same character identity
+does not imply the same outfit unless the user explicitly locks the outfit globally.
+
+Guided input may be a full scene OR a partial anchor: a place, pose, outfit, interaction or activity.
+Preserve every supplied local anchor in both idea and scene. If a central activity is specified,
+keep it. If only a place/outfit/pose is supplied, invent a compatible image-worthy activity from the
+shared concept to fill the missing pieces, rather than returning that fragment unchanged or replacing
+its anchors. For a funny-activity concept, a park line needs a funny idea in a park; a sitting-on-table
+line needs an idea that keeps the subject sitting on the table. Creativity fills gaps, not overrides.
+
+Lines may cycle because the requested amount exceeds the supplied line count. Treat every occurrence
+as its own assignment. For partial anchors, prefer different compatible completions where permitted;
+for a fully specified/fixed scene, vary only allowed presentation. Exact repeated ideas/scenes for the
+same guided input are valid when needed. Do not force a different event against an authoritative action.
+"""
+
+
 def scene_planner_instruction(data, coverage, family="qwen", correction=""):
     """Provide the whole batch, but no trigger-placement or target-format adapters."""
     assignments = [{"index": row["index"], "input": row["input"],
@@ -214,6 +235,7 @@ def scene_planner_instruction(data, coverage, family="qwen", correction=""):
     budget = 512 + data["amount"] * 352
     return PromptInstruction(
         system_message=SCENE_PLANNER_SYSTEM + "\n\n" + VISIBLE_CONTENT_CONTRACT
+        + ("\n\n" + GUIDED_ASSIGNMENT_RULES if data["source_mode"] == "guided" else "")
         + ("\n\nFORMAT CORRECTION\n" + correction if correction else ""),
         user_message=json.dumps(context, ensure_ascii=False), model_family=family,
         diagnostic_stage="dataset:scene_planner" + (":repair" if correction else ""),

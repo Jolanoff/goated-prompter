@@ -448,6 +448,122 @@ class ScenePlannerTests(unittest.TestCase):
         self.assertIn("FORMAT CORRECTION", repair.system_message)
         self.assertEqual(repair.diagnostic_stage, "dataset:scene_planner:repair")
 
+    def test_duplicate_scenes_are_allowed_only_for_the_same_nonempty_guided_input(self):
+        rows = [{"index": index, "idea": "Reading on a red couch", "scene": "She sits on a red couch reading a book."}
+                for index in (1, 2)]
+        raw = json.dumps(rows)
+        self.assertEqual(validate_scene_plan(raw, 2, guided_inputs=["reading on a red couch", " reading  on a red couch "]), rows)
+        for inputs in (None, ["reading", "park"], ["", ""], ["reading", ""],
+                       ["a sign reading HELLO", "a sign reading hello"]):
+            with self.subTest(inputs=inputs), self.assertRaisesRegex(ValueError, "identical scenes"):
+                validate_scene_plan(raw, 2, guided_inputs=inputs)
+        for inputs in ([], ["reading"], ["reading", None], "reading"):
+            with self.subTest(inputs=inputs), self.assertRaises(ValueError):
+                validate_scene_plan(raw, 2, guided_inputs=inputs)
+
+    def test_guided_repetition_does_not_bypass_schema_or_positive_content_checks(self):
+        rows = [{"index": index, "idea": "Reading", "scene": "Reading on a red couch."} for index in (1, 2)]
+        for changes in ({"scene": "Reading, no other people."}, {"idea": ""}, {"index": 1}, {"extra": "field"}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                invalid = [rows[0], {**rows[1], **changes}]
+                validate_scene_plan(json.dumps(invalid), 2, guided_inputs=["reading", "reading"])
+
+    def test_six_guided_fragments_cycle_to_ten_expanded_scenes_without_fallback(self):
+        inputs = ["outdoor, wearing only a tshirt,", "indoors", "sitting on the table", "park", "beach", "zoo"]
+        examples = [
+            ("Balancing a toy flamingo outdoors", "Outdoors, she wears only a t-shirt while holding a toy flamingo balanced on her head, seen from the front with both arms raised."),
+            ("Juggling rubber chickens indoors", "She juggles rubber chickens indoors beside a sofa, gaze tracking a falling chicken with her hands beneath it."),
+            ("Eating spaghetti with chopsticks while sitting on a table", "She sits on a wooden table with a bowl of spaghetti beside her, lifting tangled noodles with chopsticks and watching them slip."),
+            ("Chasing a runaway hat in a park", "She runs through a park after a windblown hat, leaning forward with her gaze on the hat and arms reaching toward it."),
+            ("Building a lopsided sandcastle at the beach", "She kneels on a beach beside a lopsided sandcastle, holding a small bucket and grinning at its crooked tower."),
+            ("Imitating a giraffe's tall stance at the zoo", "She stands near a giraffe enclosure at the zoo, stretching upward on tiptoes with an amused expression while the giraffe towers beside her."),
+        ]
+        rows = [{"index": index + 1, "idea": examples[index % 6][0], "scene": examples[index % 6][1]}
+                for index in range(10)]
+        for covered in (False, True):
+            with self.subTest(coverage=covered):
+                data = draft(amount=10, source_mode="guided", subject="A woman doing funny stuff",
+                             inputs="\n".join(inputs), coverage_enabled=covered,
+                             constraints="The woman must be the same in every prompt.")
+                session, progress = Mock(), []
+                session.generate.return_value = json.dumps(rows)
+                planned = ScenePlanner(lambda: None).plan_batch(session=session, data=data,
+                    coverage=effective_coverage_plan(data), progress=progress.append)
+                self.assertEqual(planned, rows)
+                self.assertEqual(session.generate.call_count, 1)
+                self.assertFalse(any("failed" in message or "unavailable" in message for message in progress))
+                context = json.loads(session.generate.call_args.args[0].user_message)
+                self.assertEqual([row["input"] for row in context["assignments"]], inputs + inputs[:4])
+                self.assertNotEqual(planned[2]["scene"], inputs[2])
+                self.assertNotEqual(planned[3]["idea"], inputs[3])
+
+    def test_guided_instructions_fill_missing_actions_without_spreading_local_clothing(self):
+        data = draft(amount=2, source_mode="guided", subject="A woman doing funny stuff",
+                     inputs="outdoors wearing only a t-shirt\nindoors", constraints="Same woman in every image.")
+        instruction = scene_planner_instruction(data, effective_coverage_plan(data))
+        self.assertIn("GUIDED ASSIGNMENT MODE", instruction.system_message)
+        self.assertIn("full scene OR a partial anchor", instruction.system_message)
+        self.assertIn("Creativity fills gaps, not overrides", instruction.system_message)
+        self.assertIn("Do not copy one line's clothing restrictions", instruction.system_message)
+        self.assertIn("Exact repeated ideas/scenes for the", instruction.system_message)
+        context = json.loads(instruction.user_message)
+        self.assertEqual(context["assignments"][1]["input"], "indoors")
+        writer = dataset_prompts.dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 2,
+            plan_item={"input": "indoors", "idea": "Juggling indoors", "scene": "She juggles rubber chickens indoors."})
+        self.assertNotIn("wearing only a t-shirt", writer.user_message)
+        self.assertIn("local to this item", writer.user_message)
+        random = scene_planner_instruction({**data, "source_mode": "random"}, effective_coverage_plan({**data, "source_mode": "random"}))
+        self.assertNotIn("GUIDED ASSIGNMENT MODE", random.system_message)
+
+    def test_different_guided_inputs_and_random_repetition_still_trigger_repair(self):
+        repeated = [{"index": index, "idea": "Reading a book", "scene": "She reads a book sitting on a red couch."}
+                    for index in (1, 2)]
+        for source, inputs in (("guided", "reading\npark"), ("random", "reading\nreading")):
+            with self.subTest(source=source):
+                data = draft(source_mode=source, inputs=inputs)
+                session = Mock()
+                session.generate.side_effect = [json.dumps(repeated), json.dumps(scene_rows())]
+                result = ScenePlanner(lambda: None).plan_batch(session=session, data=data,
+                    coverage=effective_coverage_plan(data), progress=lambda _: None)
+                self.assertEqual(result, scene_rows())
+                self.assertEqual(session.generate.call_count, 2)
+
+    def test_cycled_guided_plan_is_persisted_and_reused_by_writer_not_raw_fallback(self):
+        data = draft(amount=3, source_mode="guided", inputs="sitting on a table\npark")
+        rows = [
+            {"index": 1, "idea": "Sitting on a table juggling oranges", "scene": "She sits on a table juggling oranges, eyes tracking the fruit."},
+            {"index": 2, "idea": "Chasing a hat in a park", "scene": "She runs through a park after a windblown hat, gaze focused on it."},
+            {"index": 3, "idea": "Sitting on a table juggling oranges", "scene": "She sits on a table juggling oranges, eyes tracking the fruit."},
+        ]
+        session = Mock()
+        session.generate.side_effect = [json.dumps(rows)] + ["person_token in a coherent funny scene." for _ in rows]
+        backend = Mock()
+        backend.name = "guided-cycle-test"
+        @contextmanager
+        def generation_session():
+            yield session
+        backend.generation_session = generation_session
+        request = GoatedPrompterRequest(idea=data["subject"])
+        progress, partial = [], []
+        with patch("goated_prompter.dataset.create_backend", return_value=backend):
+            service = DatasetService({"backend": "mock"}, lambda: None)
+            planned = service.run(request, data, progress.append, partial.append, scenes_only=True)
+            data.update(scene_plan=planned["scene_plan"], scene_plan_signature=planned["scene_plan_signature"])
+            data = validate_dataset_draft(data)
+            self.assertEqual(data["scene_plan"][0]["scene"], rows[0]["scene"])
+            self.assertEqual(reusable_scene_plan(data, effective_coverage_plan(data)), data["scene_plan"])
+            final = service.run(request, data, progress.append, partial.append)
+        self.assertEqual(session.generate.call_count, 4)  # One planner + three writers, no repair.
+        self.assertFalse(any("unavailable" in message for message in progress))
+        self.assertEqual(final["scene_plan"], data["scene_plan"])
+        for index, (row, call) in enumerate(zip(rows, session.generate.call_args_list[1:])):
+            writer = call.args[0]
+            self.assertIn(row["idea"], writer.user_message)
+            self.assertIn(row["scene"], writer.user_message)
+            self.assertEqual(final["prompts"][index]["scene"], row["scene"])
+            self.assertEqual(final["prompts"][index]["input"], "sitting on a table" if index in (0, 2) else "park")
+        self.assertEqual(partial[0]["scene_plan"], data["scene_plan"])
+
     def test_fallback_preserves_input_after_format_or_transport_failure(self):
         for guided in (False, True):
             for error in ("[]", BackendGenerationError("engine transport failed")):

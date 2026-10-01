@@ -460,6 +460,44 @@ class DatasetEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await old.json(), await new.json())
         self.assertEqual(self.backend.calls, [])
 
+    async def test_guided_cycle_keeps_expanded_plan_through_api_save_and_generation(self):
+        data = valid_draft(amount=3, source_mode="guided", inputs="reading on a red couch\nlying on floor")
+        expanded = {"reading on a red couch": "She sits on a red couch reading a book, eyes focused on its open pages.",
+                    "lying on floor": "She lies on the floor holding a book above her, arms raised and gaze on the pages."}
+        original_generate = self.backend.generate
+
+        def generate(instruction):
+            if not instruction.diagnostic_stage.startswith("dataset:scene_planner"):
+                return original_generate(instruction)
+            self.backend.calls.append(instruction)
+            context = json.loads(instruction.user_message)
+            return json.dumps([{"index": row["index"], "idea": row["input"], "scene": expanded[row["input"]]}
+                               for row in context["assignments"]])
+
+        self.enterContext(patch.object(self.backend, "generate", side_effect=generate))
+        response = await self.client.post("/api/workspace/dataset/scenes", json={"input": data})
+        self.assertEqual(response.status, 202, await response.text())
+        job = await self.terminal(await response.json())
+        self.assertEqual(job["status"], "succeeded", job)
+        self.assertEqual(len(self.backend.calls), 1)
+        self.assertFalse(any("failed validation" in event["message"] or "unavailable" in event["message"]
+                             for event in job["events"]))
+        data.update(scene_plan=job["result"]["scene_plan"], scene_plan_signature=job["result"]["scene_plan_signature"])
+        self.assertEqual(data["scene_plan"][0]["scene"], expanded["reading on a red couch"])
+        self.assertEqual(data["scene_plan"][2]["scene"], data["scene_plan"][0]["scene"])
+        settings = await (await self.client.get("/api/workspace/settings/dataset")).json()
+        response = await self.client.put("/api/workspace/settings/dataset",
+            json={"revision": settings["revision"], "draft": data})
+        self.assertEqual(response.status, 200, await response.text())
+        self.assertTrue((await response.json())["scene_plan_current"])
+        saved = await (await self.client.get("/api/workspace/settings/dataset")).json()
+        self.assertEqual(saved["draft"]["scene_plan"], data["scene_plan"])
+        response = await self.client.post("/api/workspace/dataset", json={"input": data})
+        final = await self.terminal(await response.json())
+        self.assertEqual(final["status"], "succeeded", final)
+        self.assertEqual(len(self.backend.calls), 4)  # No extra planner/repair call.
+        self.assertEqual(final["result"]["prompts"][2]["scene"], expanded["reading on a red couch"])
+
     async def test_plan_and_quality_endpoints_are_inference_free(self):
         data = valid_draft(amount=4)
         response = await self.client.post("/api/workspace/dataset/plan", json={"input": data})

@@ -62,14 +62,17 @@ def _unique_object(pairs):
     return result
 
 
-def validate_scene_plan(raw, amount):
+def validate_scene_plan(raw, amount, *, guided_inputs=None):
     """Accept only the minimal JSON schema; never salvage fenced/broken output."""
+    if guided_inputs is not None and (not isinstance(guided_inputs, list) or len(guided_inputs) != amount
+                                     or any(not isinstance(value, str) for value in guided_inputs)):
+        raise ValueError("Guided validation requires one source input per requested scene.")
     if not isinstance(raw, str):
         raise ValueError("Scene Planner must return a valid JSON array.")
     rows = json.loads(raw, object_pairs_hook=_unique_object)
     if not isinstance(rows, list) or len(rows) != amount:
         raise ValueError("Scene Planner must return exactly one scene per requested image.")
-    cleaned, seen = [], set()
+    cleaned, seen = [], {}
     for index, row in enumerate(rows, 1):
         if (not isinstance(row, dict) or set(row) != {"index", "idea", "scene"}
                 or type(row["index"]) is not int or row["index"] != index):
@@ -88,9 +91,13 @@ def validate_scene_plan(raw, amount):
         if error := visible_content_error(idea) or visible_content_error(scene):
             raise ValueError(error)
         signature = " ".join(scene.casefold().split())
+        guided_input = " ".join(guided_inputs[index - 1].split()) if guided_inputs is not None else ""
         if signature in seen:
-            raise ValueError("Scene Planner returned identical scenes; use distinct primary events unless guided actions are fixed.")
-        seen.add(signature)
+            # Cycling/repeated authoritative guided lines may deliberately ask
+            # for the same scene. Never exempt random or different guided inputs.
+            if not guided_input or guided_input != seen[signature]:
+                raise ValueError("Scene Planner returned identical scenes for different assignments; diversify while preserving each input. Exact repeats are allowed only for the same nonempty guided input.")
+        seen[signature] = guided_input
         cleaned.append({"index": index, "idea": idea.strip(), "scene": scene})
     return cleaned
 
@@ -112,7 +119,9 @@ class ScenePlanner:
                 session.validate_instruction(instruction)
                 raw = session.generate(instruction)
                 self.checkpoint()
-                return validate_scene_plan(raw, data["amount"])
+                guided_inputs = ([row["input"] for row in coverage["plan"]]
+                                 if data["source_mode"] == "guided" else None)
+                return validate_scene_plan(raw, data["amount"], guided_inputs=guided_inputs)
             except (ValueError, TypeError, RecursionError, BackendGenerationError) as exc:
                 # A checkpoint outside the handler preserves pause/cancellation
                 # even when the model call itself fails.
