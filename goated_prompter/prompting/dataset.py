@@ -176,6 +176,16 @@ def dataset_format_repair(system_message, error):
     )
 
 
+def dataset_content_repair(system_message):
+    return (
+        system_message
+        + "\n\nOUTPUT CONTENT CORRECTION: Render the same planned idea and scene again. "
+        "Describe only the intended visible image state. Apply restrictions silently instead of "
+        "verbalizing absent or prohibited content. Preserve the existing scene, geometry, "
+        "trigger anchors, literal rendered text and valid visual details."
+    )
+
+
 def dataset_loop_repair(system_message, error, retry=1):
     fallback_length = "Detailed" if retry == 1 else "Medium" if retry == 2 else "Short"
     levels = ("Short", "Medium", "Detailed", "Maximum Detail")

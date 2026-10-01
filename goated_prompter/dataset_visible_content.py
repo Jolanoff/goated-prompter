@@ -4,28 +4,12 @@ import json
 import re
 
 
-VISIBLE_CONTENT_CONTRACT = """VISIBLE CONTENT ONLY / POSITIVE VISUAL DESCRIPTION
-Describe WHAT THE IMAGE CONTAINS, like an observer of the finished image, not what the generator
-should avoid. This applies to both IDEA and SCENE and every positive final-prompt description.
-Apply exclusion constraints silently through subject count, composition and visible states. Only the
-woman means describe one woman, not append 'no other people in frame'. Omit absent text, logos, props,
-people and defects rather than inventorying their absence. Do not copy internal validation, preservation,
-quality or negative-conditioning rules into visible prose, even when they occur in user constraints,
-guided input, a fallback plan, Director instructions or target conventions.
-Use positive visible descriptions: a quiet sparsely furnished room; a simple background; hands resting
-naturally on a table; a clear unobstructed face. Meaningful absence is allowed as a visible state:
-an empty abandoned street, a deserted classroom, a bare wall, an unoccupied chair or an otherwise empty
-stage. Solitude is useful only when it matters to the scene, not a mandatory repeated exclusion clause.
-Do not output exclusion lists such as 'no extra people', 'no text', 'no watermark', 'no bad anatomy',
-'no distorted hands', 'without any other people', 'avoid extra limbs' or 'do not show another person'.
-Keep quality slogans/tags such as 'masterpiece', 'best quality', 'worst quality', 'low quality' and
-'correct anatomy' internal rather than adding them to the positive description. No negative-prompt
-headings or syntax. A target's dedicated negative-conditioning field, if supported separately, must
-stay structurally separate; never emulate it by concatenating negatives into a positive prompt.
-Preserve requested literal in-image text and protected trigger tokens exactly: their wording is visible
-content or an explicit anchor, not leaked instructions. A sign reading 'NO ENTRY' is legitimate.
-This Dataset rule overrides generic target/Director quality-tag and negative-guidance conventions.
-"""
+VISIBLE_CONTENT_CONTRACT = """VISIBLE CONTENT ONLY
+Describe only the visible intended image state.
+Express subject count, composition, environment, anatomy, cleanliness and other constraints through positive visible description. Apply exclusions and restrictions silently rather than verbalizing what is absent or what the generator should avoid.
+Do not expose internal validation rules, quality-control language, negative-conditioning instructions, preservation rules or prompt-engineering metadata in the generated positive prompt.
+If the user explicitly requests rendered text, preserve that literal visible text. Protected trigger text also remains exact.
+Describe the finished image itself, not instructions for preventing generation errors."""
 
 # Phrase patterns, not a ban on "no", "without" or "avoid" in ordinary prose.
 _LEAKAGE = re.compile(
@@ -44,6 +28,123 @@ _LEAKAGE = re.compile(
     re.IGNORECASE,
 )
 _QUOTED = re.compile(r'"(?:\\.|[^"\\])*"|(?<!\w)\'(?:\\.|[^\'\\\n])+\'(?!\w)|“[^”]*”|‘[^’]*’')
+
+# Full-clause allowlist: detection above is deliberately broader than cleanup.
+# Unknown qualifiers, useful actions or scene details must be repaired by the LLM,
+# not deleted along with a forbidden phrase.
+_EXCLUDED_ITEM = (
+    r"(?:(?:other|another|extra|additional|duplicate)\s+)?(?:people|persons?|characters?|objects?|props?|limbs?|fingers?)"
+    r"|(?:bad|correct)\s+anatomy|distorted\s+hands|masterpiece|text|logos?|watermarks?|signature"
+    r"|blur|background\s+clutter|distracting\s+elements|distortions?"
+)
+_EXCLUSION_CLAUSE = re.compile(
+    r"(?:no|without|avoid|do\s+not\s+(?:show|include|add|render)|don't\s+(?:show|include|add|render))\s+"
+    r"(?:any\s+)?(?:" + _EXCLUDED_ITEM + r")"
+    r"(?:\s+(?:and|or)\s+(?:no\s+)?(?:" + _EXCLUDED_ITEM + r"))*"
+    r"(?:\s+(?:in\s+(?:the\s+)?(?:frame|image|scene|background)|present|visible|anywhere))*",
+    re.IGNORECASE,
+)
+_META_CLAUSE = re.compile(
+    r"masterpiece|(?:best|worst|low)\s+quality|(?:bad|correct)\s+anatomy|extra\s+limbs|watermark|signature",
+    re.IGNORECASE,
+)
+
+
+class PositiveContentError(ValueError):
+    """Positive prose needs content repair, not a format/schema correction."""
+
+
+def _sanitize_positive_text(text, protected_terms):
+    # Mask quoted text and anchors only for boundary detection. Never modify or
+    # remove a clause containing either, even when leakage appears beside it.
+    spans = [match.span() for match in _QUOTED.finditer(text)]
+    if text.count('"') % 2 or text.count('“') != text.count('”'):
+        return text  # Unclosed literal text: boundaries cannot be trusted.
+    for term in protected_terms:
+        if term:
+            spans.extend(match.span() for match in re.finditer(re.escape(term), text))
+    masked = list(text)
+    for start, end in spans:
+        masked[start:end] = "x" * (end - start)
+    masked = "".join(masked)
+    clauses, start = [], 0
+    for boundary in re.finditer(r"[,;.!?\r\n]+", masked):
+        if (boundary.group() == "." and boundary.start() > 0 and boundary.end() < len(text)
+                and text[boundary.start() - 1].isdigit() and text[boundary.end()].isdigit()):
+            continue  # Preserve decimal lens/settings values.
+        clauses.append((start, boundary.start()))
+        start = boundary.end()
+    clauses.append((start, len(text)))
+    kept, removed = [], []
+    for start, end in clauses:
+        while start < end and text[start].isspace():
+            start += 1
+        while end > start and text[end - 1].isspace():
+            end -= 1
+        if start == end:
+            continue
+        clause = text[start:end]
+        protected = any(left < end and right > start for left, right in spans)
+        if (not protected and visible_content_error(clause)
+                and (_EXCLUSION_CLAUSE.fullmatch(clause) or _META_CLAUSE.fullmatch(clause))):
+            removed.append((start, end))
+        else:
+            kept.append((start, end))
+    if not removed:
+        return text
+    if not kept:
+        return ""
+    first, last = kept[0], kept[-1]
+    result = text[first[0]:first[1]] if removed[0][0] < first[0] else text[:first[1]]
+    previous_end = first[1]
+    for start, end in kept[1:]:
+        if any(previous_end <= left < start for left, _ in removed):
+            gap = masked[previous_end:start]
+            sentence = re.search(r"[.!?]", gap)
+            separator = (sentence.group() + " " if sentence else "\n" if "\n" in gap
+                         else "; " if ";" in gap else ", ")
+            result += separator + text[start:end]
+        else:
+            result += text[previous_end:end]
+        previous_end = end
+    if removed[-1][0] > last[1]:
+        ending = re.search(r"[.!?]\s*$", text)
+        first_tail = next(left for left, _ in removed if left > last[1])
+        preceding_ending = re.search(r"[.!?]", masked[last[1]:first_tail])
+        if ending:
+            result += ending.group().rstrip()
+        elif preceding_ending:
+            result += preceding_ending.group()
+    else:
+        result += text[last[1]:]
+    return result
+
+
+def sanitize_positive_prompt(prompt, target, protected_terms=()):
+    """Remove only standalone leakage clauses, never global word replacements.
+
+    Call after target normalization. JSON required fields are left intact if
+    cleanup would empty them so the validator can request content repair.
+    """
+    if target != "Ideogram4":
+        return _sanitize_positive_text(prompt, protected_terms)
+    value = json.loads(prompt)
+
+    def clean_field(container, key):
+        original = container[key]
+        if isinstance(original, str):
+            cleaned = _sanitize_positive_text(original, protected_terms)
+            if cleaned.strip():
+                container[key] = cleaned
+
+    clean_field(value, "high_level_description")
+    for key in value["style_description"]:
+        clean_field(value["style_description"], key)
+    composition = value["compositional_deconstruction"]
+    clean_field(composition, "background")
+    for element in composition["elements"]:
+        clean_field(element, "desc")
+    return json.dumps(value, ensure_ascii=False)
 
 
 def visible_content_error(text, protected_terms=()):

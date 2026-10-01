@@ -10,14 +10,14 @@ from .director_profiles import resolve_director_config
 from .prompting.dataset import (
     DATASET_SOURCES, DATASET_STYLES, DATASET_TYPES, DATASET_VARIETY,
     DEEP_CATEGORIES, dataset_instruction, deep_review_instruction,
-    dataset_format_repair, dataset_loop_repair, deep_review_correction,
+    dataset_format_repair, dataset_content_repair, dataset_loop_repair, deep_review_correction,
 )
 from .prompting.details import PROMPT_LENGTH_NAMES
 from .prompting.target_models import TARGET_MODEL_NAMES
 from .workflow_output import WorkflowFormatError, normalize_workflow_output, sanitize_prompt_text
 from .dataset_coverage import AXES, analyze_dataset_quality, effective_coverage_plan
 from .dataset_triggers import trigger_presence_error, trigger_terms
-from .dataset_visible_content import positive_prompt_error
+from .dataset_visible_content import PositiveContentError, positive_prompt_error, sanitize_positive_prompt
 from .scene_planner import (ScenePlanner, MAX_STORED_SCENE_CHARACTERS, MAX_STORED_IDEA_CHARACTERS,
                             reusable_scene_plan, scene_plan_signature, validate_saved_scene_plan)
 
@@ -148,9 +148,13 @@ def validate_trigger_contract(prompt, data, progress=None):
 
 
 def validate_positive_content(prompt, data):
-    error = positive_prompt_error(prompt, data["target"], trigger_terms(data["trigger"], data["trigger_connected"]))
+    terms = trigger_terms(data["trigger"], data["trigger_connected"])
+    prompt = sanitize_positive_prompt(prompt, data["target"], terms)
+    error = positive_prompt_error(prompt, data["target"], terms)
+    if not prompt.strip():
+        error = "Positive content cleanup left no visible image description."
     if error:
-        raise WorkflowFormatError(error)
+        raise PositiveContentError(error)
     return prompt
 
 
@@ -173,11 +177,15 @@ class DatasetService:
             except BackendRunawayError as exc:
                 self.checkpoint()
                 recovered = getattr(exc, "recoverable_text", "")
+                content_failure = False
                 if recovered and len(recovered.split()) >= 30 and recovered.rstrip().endswith((".", "!", "?", "}")):
                     try:
                         prompt = normalize_workflow_output(recovered, data["target"])
                         prompt = validate_trigger_contract(prompt, data, progress)
                         prompt = validate_positive_content(prompt, data)
+                    except PositiveContentError:
+                        content_failure = True
+                        progress("The pre-loop prefix still had invalid positive content after cleanup; retrying.")
                     except (WorkflowFormatError, ValueError, KeyError, TypeError):
                         progress("The pre-loop prefix was not a valid complete target prompt; retrying.")
                     else:
@@ -193,9 +201,12 @@ class DatasetService:
                     f"{exc} Retrying with stricter finite-output instructions "
                     f"({attempt + 1}/{DATASET_MAX_RETRIES})."
                 )
+                retry_system = dataset_loop_repair(original.system_message, exc, attempt + 1)
+                if content_failure:
+                    retry_system = dataset_content_repair(retry_system)
                 instruction = replace(
                     original,
-                    system_message=dataset_loop_repair(original.system_message, exc, attempt + 1),
+                    system_message=retry_system,
                     max_tokens=max(384, int(original.max_tokens * (0.8 ** (attempt + 1)))),
                     hard_max_tokens=max(384, int(original.hard_max_tokens * (0.8 ** (attempt + 1)))),
                     diagnostic_stage=original.diagnostic_stage + f":loop_retry_{attempt + 1}",
@@ -222,11 +233,14 @@ class DatasetService:
                 retry_system = original.system_message
                 if instruction.hard_max_tokens < original.hard_max_tokens:
                     retry_system = dataset_loop_repair(retry_system, exc, attempt + 1)
+                content_failure = isinstance(exc, PositiveContentError)
                 instruction = replace(original,
-                    system_message=dataset_format_repair(retry_system, exc),
+                    system_message=(dataset_content_repair(retry_system) if content_failure
+                                    else dataset_format_repair(retry_system, exc)),
                     max_tokens=instruction.max_tokens,
                     hard_max_tokens=instruction.hard_max_tokens,
-                    diagnostic_stage=original.diagnostic_stage + f":format_retry_{attempt + 1}")
+                    diagnostic_stage=original.diagnostic_stage
+                    + f":{'content' if content_failure else 'format'}_retry_{attempt + 1}")
 
     def run(self, request, data, progress, partial, *, scenes_only=False):
         effective, profile = resolve_director_config(self.config, request)
