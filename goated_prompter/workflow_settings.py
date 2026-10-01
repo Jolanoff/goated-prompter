@@ -88,6 +88,7 @@ class WorkflowSettingsStore:
         defaults = builtin_refine_instructions() if operation == "refine" else {}
         draft = validate_draft(operation, record["draft"])
         scene_state = ({"scene_plan_current": reusable_scene_plan(draft, effective_coverage_plan(draft)) is not None,
+                         "idea_plan_current": reusable_scene_plan(draft, effective_coverage_plan(draft), require_scenes=False) is not None,
                          "scene_limits": {"characters": MAX_SCENE_CHARACTERS, "words": MAX_SCENE_WORDS},
                          "idea_limits": {"characters": MAX_IDEA_CHARACTERS, "words": MAX_IDEA_WORDS}}
                        if operation == "dataset" else {})

@@ -20,6 +20,22 @@ LENGTH_ADAPTERS = {
     "Maximum": MAXIMUM_DETAIL_GUIDANCE,
 }
 
+# Dataset overrides are applied only by its final writer, never the Builder.
+DATASET_DETAIL_DISCIPLINE = """DATASET DETAIL DISCIPLINE
+Expand the planned scene only until its important visible relationships are clear and useful for
+the target model. Prompt length controls useful scene-specific richness, not an exhaustive inventory.
+Do not spend detail budget inventing unrelated garment construction, arbitrary clothing colors,
+background decoration, material microdetail, cinematic atmosphere, accessories or environmental
+objects unless they support the planned scene. Maximum Detail should be scene-dense, not filler-dense.
+State each important semantic fact once. Use additional words for new visual information rather
+than synonymous emphasis. Preserve the requested medium rather than adding stylistic defaults."""
+DATASET_LENGTH_ADAPTERS = {
+    "Short": LENGTH_ADAPTERS["Short"],
+    "Medium": LENGTH_ADAPTERS["Medium"],
+    "Detailed": "Prompt length — Detailed: enrich this scene's important visible action, relationships and composition with supported scene-specific detail. Stop when it is clearly described.",
+    "Maximum Detail": "Prompt length — Maximum Detail: give the planned scene dense, useful visual specificity. Clarify action, pose, contacts, spatial relationships, crop and scene-relevant rendering; do not expand irrelevant categories or repeat semantic facts.",
+}
+
 # Preserve (legacy booleans and linked reference-map output)
 REFERENCE_ROLE_NAMES = ("Auto", "Subject", "Scene", "Style", "Pose", "Composition", "Lighting")
 PRESERVATION_ADAPTERS = {

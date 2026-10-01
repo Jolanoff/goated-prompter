@@ -16,7 +16,7 @@ test.beforeEach(async ({ request }) => {
 async function openRefine(page) {
   await page.goto("/");
   await page.getByRole("button", { name: "Refine", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Refine your prompt." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Refine your prompt", exact: true })).toBeVisible();
 }
 
 test("refinement, manual edit, diff, undo/redo and branch history persist", async ({ page, request }) => {

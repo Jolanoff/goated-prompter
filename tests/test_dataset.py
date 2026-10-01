@@ -45,6 +45,15 @@ class CaptureBackend(GoatedPrompterBackend):
             data = json.loads(instruction.user_message)
             return json.dumps([{"index": index, "idea": f"Distinct activity {index}", "scene": f"Distinct adventure {index}"}
                                for index in range(1, data["amount"] + 1)])
+        if instruction.diagnostic_stage.startswith("dataset:idea_planner"):
+            data = json.loads(instruction.user_message)
+            return json.dumps([{"index": row["index"], "idea": f"Replacement concept {row['index']}"}
+                               for row in data["assignments"]])
+        if instruction.diagnostic_stage.startswith("dataset:scene_composer"):
+            data = json.loads(instruction.user_message)
+            return json.dumps([{"index": row["index"], "idea": row["idea"],
+                                "scene": f"Composed physical scene {row['index']}", "geometry": {"camera_view": "front"}}
+                               for row in data["assignments"]])
         if instruction.diagnostic_stage == "dataset:deep_review":
             return json.dumps([{"index": int(index), "issues": []}
                                for index in re.findall(r"(?m)^PROMPT (\d+)$", instruction.user_message)])
@@ -207,7 +216,7 @@ class DatasetUnitTests(unittest.TestCase):
         self.assertNotEqual(first["plan"], shuffled["plan"])
         self.assertEqual([row["input"] for row in first["plan"][:4]], ["portrait", "action", "portrait", "action"])
         self.assertEqual(set(first["plan"][0]["facets"]),
-                         {"framing", "viewpoint", "pose_action", "expression", "lighting", "setting"})
+                         {"framing", "viewpoint", "lighting", "setting"})
         style = build_coverage_plan(valid_draft(trigger_type="Visual style", variety="Focused",
                                                  coverage_enabled=True))
         self.assertEqual(set(style["plan"][0]["facets"]), {"subject_matter", "composition", "scale"})
@@ -459,6 +468,60 @@ class DatasetEndpointTests(unittest.IsolatedAsyncioTestCase):
         new = await self.client.post("/api/workspace/dataset/coverage", json={"input": data})
         self.assertEqual(await old.json(), await new.json())
         self.assertEqual(self.backend.calls, [])
+
+    async def test_per_scene_endpoint_preserves_other_items_and_stage_boundaries(self):
+        data = valid_draft(amount=2)
+        response = await self.client.post("/api/workspace/dataset", json={"input": data})
+        generated = (await self.terminal(await response.json()))["result"]
+        data.update(scene_plan=generated["scene_plan"], scene_plan_signature=generated["scene_plan_signature"],
+                    results=generated["prompts"])
+        for action, stages in (("regenerate_prompt", ["dataset:1"]),
+                               ("repair_scene", ["dataset:scene_composer:repair", "dataset:1"]),
+                               ("regenerate_idea", ["dataset:idea_planner", "dataset:scene_composer", "dataset:1"])):
+            self.backend.calls.clear()
+            response = await self.client.post("/api/workspace/dataset/scene",
+                json={"input": data, "action": action, "index": 1})
+            self.assertEqual(response.status, 202, await response.text())
+            job = await self.terminal(await response.json())
+            self.assertEqual(job["status"], "succeeded", job)
+            result = job["result"]
+            self.assertEqual([call.diagnostic_stage for call in self.backend.calls], stages)
+            self.assertEqual(result["scene_plan"][1], data["scene_plan"][1])
+            self.assertEqual(result["prompts"][1], data["results"][1])
+            if action != "regenerate_idea":
+                self.assertEqual(result["scene_plan"][0]["idea"], data["scene_plan"][0]["idea"])
+            self.assertEqual(validate_dataset_draft({**data, "scene_plan": result["scene_plan"],
+                                                    "results": result["prompts"]})["results"], result["prompts"])
+
+    async def test_invalid_per_scene_actions_do_not_start_inference(self):
+        data = valid_draft(amount=2)
+        for action, index in (("unknown", 1), ("repair_scene", True), ("repair_scene", 3), ("regenerate_prompt", 1)):
+            response = await self.client.post("/api/workspace/dataset/scene",
+                json={"input": data, "action": action, "index": index})
+            self.assertEqual(response.status, 400, await response.text())
+        self.assertEqual(self.backend.calls, [])
+
+    async def test_manual_idea_edit_keeps_plan_current_for_local_scene_repair(self):
+        data = valid_draft(amount=2)
+        response = await self.client.post("/api/workspace/dataset", json={"input": data})
+        generated = (await self.terminal(await response.json()))["result"]
+        data.update(scene_plan=generated["scene_plan"], scene_plan_signature=generated["scene_plan_signature"],
+                    results=[generated["prompts"][1]])
+        data["scene_plan"][0].update(idea="Edited activity", scene="", geometry={}, scene_status="not_generated", prompt_status="not_generated")
+        settings = await (await self.client.get("/api/workspace/settings/dataset")).json()
+        response = await self.client.put("/api/workspace/settings/dataset",
+            json={"revision": settings["revision"], "draft": data})
+        self.assertEqual(response.status, 200, await response.text())
+        saved = await response.json()
+        self.assertTrue(saved["idea_plan_current"])
+        self.assertFalse(saved["scene_plan_current"])
+        response = await self.client.post("/api/workspace/dataset/scene",
+            json={"input": data, "action": "repair_scene", "index": 1})
+        self.assertEqual(response.status, 202, await response.text())
+        job = await self.terminal(await response.json())
+        self.assertEqual(job["status"], "succeeded", job)
+        self.assertEqual(job["result"]["scene_plan"][0]["idea"], "Edited activity")
+        self.assertEqual(job["result"]["prompts"][1], generated["prompts"][1])
 
     async def test_guided_cycle_keeps_expanded_plan_through_api_save_and_generation(self):
         data = valid_draft(amount=3, source_mode="guided", inputs="reading on a red couch\nlying on floor")

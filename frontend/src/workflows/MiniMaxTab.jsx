@@ -10,6 +10,7 @@ import { insertReference, insertShot, nextReference, nextShot, parseReferences, 
 const modes = [["auto", "Auto"], ["T2VA", "Text to Video"], ["I2VA", "First Frame"],
   ["FL2VA", "First + Last Frame"], ["L2VA", "Last Frame"], ["Ref2VA", "Full Reference"]];
 const models = ["MiniMax H3"];
+const ratios = ["Auto", "16:9", "9:16", "1:1", "4:3", "3:4", "21:9"];
 
 export default function MiniMaxTab({ visible, job, busy, active, noEngine, engineLabel, presets, onGenerate, onCancel, onCopy }) {
   const preferences = useWorkflowSettings("minimax");
@@ -81,19 +82,19 @@ export default function MiniMaxTab({ visible, job, busy, active, noEngine, engin
 
   return <div hidden={!visible}>
     <div className={ui.pageHeading}>
-      <div><div className={ui.eyebrow}>VIDEO PROMPT WORKSPACE</div>
-        <h2>MiniMax <span>H3</span></h2>
+      <div>
+        <h2>MiniMax H3</h2>
         <p>Describe the scene. Build a copy-ready prompt with motion, references and sound.</p>
       </div>
     </div>
     <WorkflowSettingsStatus settings={preferences} label="MiniMax H3" />
     {error && <div className={ui.message} role="alert">{error}</div>}
-    <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line px-4 py-3 text-xs text-muted">
+    <div className={ui.workflowStatus}>
       <span>{noEngine ? "Choose a prompt engine in Builder or Settings to generate." : `Engine: ${engineLabel}`}</span>
       <span role="status">{active ? job.status === "cancelling" ? "Ending generation…" : job.progress || "Generating prompt…" : "Prompt writing only · symbolic references"}</span>
       {active && <button className={ui.button} onClick={onCancel} disabled={job.status === "cancelling"}>End generation</button>}
     </div>
-    {draft && <div className="grid grid-cols-[minmax(230px,0.7fr)_minmax(0,1.6fr)] items-start gap-[18px] mobile:grid-cols-1">
+    {draft && <div className="grid grid-cols-[minmax(230px,0.7fr)_minmax(0,1.6fr)] items-start gap-6 [@media(width<=850px)]:grid-cols-1">
       <section className={ui.panel} aria-label="MiniMax settings">
         <header className={ui.panelHeader}>
           <div className={ui.panelIcon}><SlidersHorizontal size={21} /></div>
@@ -109,6 +110,12 @@ export default function MiniMaxTab({ visible, job, busy, active, noEngine, engin
           <label className={ui.field}><span>Mode</span>
             <select className={ui.select} aria-label="Mode" value={draft.mode} disabled={disabled} onChange={(event) => update({ mode: event.target.value })}>
               {modes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+          <label className={ui.field}><span>Aspect ratio</span>
+            <select className={ui.select} aria-label="Aspect Ratio" value={draft.aspect_ratio} disabled={disabled}
+              onChange={(event) => update({ aspect_ratio: event.target.value })}>
+              {ratios.map((ratio) => <option key={ratio}>{ratio}</option>)}
             </select>
           </label>
           <label className={ui.field}><span>Director Preset</span>
@@ -130,7 +137,7 @@ export default function MiniMaxTab({ visible, job, busy, active, noEngine, engin
                 onClick={() => insert(next, [...draft.references, next])}>+ {kind[0].toUpperCase() + kind.slice(1)}</button>;
             })}
           </div>
-          <div className="mt-3 flex flex-wrap gap-2" aria-label="Registered references">
+          <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Registered references">
             {draft.references.map((token) => <button type="button" className={ui.button} key={token}
               onPointerDown={preserveCursor} onClick={() => insert(token)}>{`<${token}>`}</button>)}
           </div>

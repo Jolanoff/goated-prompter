@@ -311,6 +311,20 @@ class VisibleContentTests(unittest.TestCase):
             DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None)
         self.assertEqual(calls, ["normalize", "general", "trigger", "positive_cleanup", "positive_validation"])
 
+    def test_geometry_metadata_leakage_requires_content_retry_but_literals_survive(self):
+        data = draft()
+        instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1,
+            plan_item={"idea": "Juggling", "scene": "A woman juggles oranges.", "geometry": {"camera_view": "front"}})
+        session = Mock()
+        session.generate.side_effect = ["person_token juggles oranges.\nPLANNED GEOMETRY\ncamera_view: front",
+                                        "person_token juggles oranges, viewed from the front."]
+        output = DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None)
+        self.assertEqual(output, "person_token juggles oranges, viewed from the front.")
+        self.assertEqual(session.generate.call_count, 2)
+        self.assertIn("OUTPUT CONTENT CORRECTION", session.generate.call_args.args[0].system_message)
+        self.assertIsNone(visible_content_error('A sign reads "camera_view: front".'))
+        self.assertIsNone(visible_content_error("A label showing camera_view: front.", ("camera_view: front",)))
+
     def test_unfixable_recovered_prefix_uses_content_and_loop_repair(self):
         data = draft()
         instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1)

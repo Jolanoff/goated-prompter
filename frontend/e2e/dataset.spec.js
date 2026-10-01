@@ -14,7 +14,7 @@ test("Dataset builds, persists and exports a trigger-ready batch", async ({ page
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await page.getByRole("button", { name: "Dataset", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Build a prompt dataset." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Build a prompt dataset", exact: true })).toBeVisible();
   await page.getByText("Training trigger & controls", { exact: true }).click();
   await page.getByLabel("Trigger text or terms").fill("ohwx_person");
   await page.getByLabel("Dataset idea", { exact: true }).fill(
@@ -126,10 +126,10 @@ test("plan first, edit and persist ideas, reuse across targets, and invalidate s
   await page.getByLabel("Dataset idea", { exact: true }).fill("A woman doing funny stuff");
   await page.getByLabel("Number of prompts").selectOption("2");
   await page.getByRole("button", { name: "Plan scenes first", exact: true }).click();
-  await expect(page.getByLabel("Planned scene 2")).toHaveValue("A woman doing funny stuff");
+  await expect(page.getByLabel("Planned scene 2")).toHaveValue("A woman doing funny stuff; mock scene 2.");
   const scene = "She attempts a pancake flip and the pancake lands on her head, spatula still raised.";
   const idea = "Flipping a pancake onto her head";
-  await expect(page.getByLabel("Planned idea 1")).toHaveValue("A woman doing funny stuff");
+  await expect(page.getByLabel("Planned idea 1")).toHaveValue("Mock activity1");
   await page.getByLabel("Planned idea 1").fill(idea);
   await page.getByLabel("Planned scene 1").fill(scene);
   await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
@@ -171,4 +171,50 @@ test("plan first, edit and persist ideas, reuse across targets, and invalidate s
   expect(changed.scene_plan).toEqual([]);
   expect(changed.scene_plan_signature).toBe("");
   expect(errors).toEqual([]);
+});
+
+test("Quality planning and per-scene controls preserve the rest of the batch", async ({ page, request }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  await page.getByLabel("Dataset idea", { exact: true }).fill("A woman doing funny stuff");
+  await page.getByLabel("Number of prompts").selectOption("2");
+  await page.getByLabel("Dataset planning mode").selectOption("Quality");
+  await page.getByText("Training trigger & controls", { exact: true }).click();
+  await page.getByLabel("Trigger text or terms").fill("ohwx_woman");
+  const accepted = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset") && response.status() === 202);
+  await page.getByRole("button", { name: "Generate 2 prompts", exact: true }).click();
+  const job = await (await accepted).json();
+  await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/ohwx_woman/);
+  const finished = await (await request.get(`/api/jobs/${job.id}`)).json();
+  expect(finished.llm_trace.request_number).toBe(4); // two planning calls, two writers
+  await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
+  const before = (await (await request.get("/api/workspace/settings/dataset")).json()).draft;
+  for (const [label, calls] of [["Regenerate prompt", 1], ["Repair scene", 2], ["Regenerate idea", 3]]) {
+    const started = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset/scene") && response.status() === 202);
+    await page.getByRole("button", { name: label, exact: true }).first().click();
+    const sceneJob = await (await started).json();
+    await expect(page.getByRole("button", { name: label, exact: true }).first()).toBeEnabled();
+    await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
+    const done = await (await request.get(`/api/jobs/${sceneJob.id}`)).json();
+    expect(done.status).toBe("succeeded");
+    expect(done.llm_trace.request_number).toBe(calls);
+    // The button can re-enable before the final job update's autosave is flushed.
+    await expect.poll(async () => (await (await request.get("/api/workspace/settings/dataset")).json()).draft.scene_plan)
+      .toEqual(done.result.scene_plan);
+    const after = (await (await request.get("/api/workspace/settings/dataset")).json()).draft;
+    expect(after.scene_plan[1]).toEqual(before.scene_plan[1]);
+    expect(after.results[1]).toEqual(before.results[1]);
+    if (label !== "Regenerate idea") expect(after.scene_plan[0].idea).toBe(before.scene_plan[0].idea);
+    else expect(after.scene_plan[0].idea).not.toBe(before.scene_plan[0].idea);
+  }
+  await page.getByLabel("Planned idea 1").fill("Edited activity");
+  await expect(page.getByLabel("Planned scene 1")).toHaveValue("");
+  await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
+  const state = await (await request.get("/api/workspace/settings/dataset")).json();
+  expect(state.idea_plan_current).toBe(true);
+  expect(state.scene_plan_current).toBe(false);
+  await expect(page.getByRole("button", { name: "Repair scene", exact: true }).first()).toBeEnabled();
+  await page.getByRole("button", { name: "Repair scene", exact: true }).first().click();
+  await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(/Edited activity/);
+  await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(before.results[1].prompt);
 });

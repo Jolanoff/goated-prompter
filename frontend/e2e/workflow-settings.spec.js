@@ -51,6 +51,7 @@ test("advanced Refine instructions save and reset independently", async ({ page,
   await page.getByRole("button", { name: "Save Refine instructions", exact: true }).click();
   expect((await (await request.get("/api/workspace/settings/refine")).json()).instructions.system)
     .toBe("Keep edits concise and grounded in the source.");
+  page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Use built-in Refine instructions", exact: true }).click();
   await expect(page.getByRole("paragraph").filter({ hasText: /^Using built-in instructions$/ })).toBeVisible();
 });

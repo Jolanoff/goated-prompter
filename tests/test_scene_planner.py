@@ -38,11 +38,11 @@ class ScenePlannerTests(unittest.TestCase):
         for heading in ("IDEA DUPLICATION CHECK", "SCENE GEOMETRY AND VISIBILITY", "VISIBLE DETAIL RULE",
                         "BODY AND POSE LOGIC", "ACTION LOGIC", "GAZE LOGIC", "EXPRESSION LOGIC", "SCENE COHERENCE AUDIT"):
             self.assertIn(heading, system)
-        self.assertIn("not only everyday accidents", system)
+        self.assertIn("Do not mechanically use every category", system)
         self.assertIn("Do not automatically force eye contact", system)
         self.assertIn("normally 3–15 words", system)
         self.assertIn("14. NO ANATOMY HACKS", system)
-        self.assertIn("exactly three keys", system)
+        self.assertIn('"geometry" (object)', system)
 
     def test_broad_and_narrow_concepts_produce_matching_idea_scene_counts_in_one_call(self):
         # Mocked semantic examples test orchestration, not real LLM creativity.
@@ -111,7 +111,7 @@ class ScenePlannerTests(unittest.TestCase):
         self.assertIn("clown costume", planned[0]["idea"])
         self.assertIn("clown costume", planned[0]["scene"])
         self.assertNotIn("juggling", planned[0]["scene"])
-        self.assertIn("Clown costume", session.generate.call_args.args[0].system_message)
+        self.assertNotIn("clown costume", session.generate.call_args.args[0].system_message.casefold())
 
     def test_legacy_plans_remain_loadable_but_are_not_reused_without_ideas(self):
         data = draft(scene_plan=[{"index": i, "input": "", "scene": f"Reading beside window {i}."} for i in (1, 2)])
@@ -555,7 +555,7 @@ class ScenePlannerTests(unittest.TestCase):
             final = service.run(request, data, progress.append, partial.append)
         self.assertEqual(session.generate.call_count, 4)  # One planner + three writers, no repair.
         self.assertFalse(any("unavailable" in message for message in progress))
-        self.assertEqual(final["scene_plan"], data["scene_plan"])
+        self.assertEqual(final["scene_plan"], [{**row, "prompt_status": "valid"} for row in data["scene_plan"]])
         for index, (row, call) in enumerate(zip(rows, session.generate.call_args_list[1:])):
             writer = call.args[0]
             self.assertIn(row["idea"], writer.user_message)
@@ -573,6 +573,12 @@ class ScenePlannerTests(unittest.TestCase):
                     session.generate.side_effect = error
                 else:
                     session.generate.return_value = error
+                if not guided:
+                    with self.assertRaisesRegex(BackendGenerationError, "planning failed"):
+                        ScenePlanner(lambda: None).plan_batch(session=session, data=data,
+                            coverage=effective_coverage_plan(data), progress=lambda _: None)
+                    self.assertEqual(session.generate.call_count, 2)
+                    continue
                 result = ScenePlanner(lambda: None).plan_batch(
                     session=session, data=data, coverage=effective_coverage_plan(data), progress=lambda _: None)
                 self.assertEqual(session.generate.call_count, 2)
@@ -591,14 +597,14 @@ class ScenePlannerTests(unittest.TestCase):
                 coverage=effective_coverage_plan(data), progress=lambda _: None)
         self.assertEqual(session.generate.call_count, 1)
 
-    def test_instruction_validation_failure_also_retries_then_falls_back(self):
+    def test_instruction_validation_failure_also_retries_then_fails_planning(self):
         data, session = draft(), Mock()
         session.validate_instruction.side_effect = BackendGenerationError("unsupported planning response")
-        rows = ScenePlanner(lambda: None).plan_batch(session=session, data=data,
-            coverage=effective_coverage_plan(data), progress=lambda _: None)
+        with self.assertRaisesRegex(BackendGenerationError, "planning failed"):
+            ScenePlanner(lambda: None).plan_batch(session=session, data=data,
+                coverage=effective_coverage_plan(data), progress=lambda _: None)
         self.assertEqual(session.validate_instruction.call_count, 2)
         session.generate.assert_not_called()
-        self.assertEqual([row["scene"] for row in rows], [data["subject"]] * 2)
 
     def test_no_second_planner_and_normal_builder_is_unchanged(self):
         self.assertFalse(hasattr(dataset_prompts, "dataset_plan_instruction"))

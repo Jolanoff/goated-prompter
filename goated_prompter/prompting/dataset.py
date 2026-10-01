@@ -8,7 +8,8 @@ from ..dataset_coverage import AXES, effective_coverage_plan
 from ..dataset_triggers import trigger_terms
 from ..dataset_visible_content import VISIBLE_CONTENT_CONTRACT
 from ..presets import get_director_preset
-from .details import DATASET_OUTPUT_TOKEN_LIMITS, LENGTH_ADAPTERS
+from .details import (DATASET_OUTPUT_TOKEN_LIMITS, LENGTH_ADAPTERS,
+                      DATASET_DETAIL_DISCIPLINE, DATASET_LENGTH_ADAPTERS)
 
 DATASET_TYPES = (
     "Character", "Multiple characters", "Animal", "Object / product", "Visual style",
@@ -86,6 +87,7 @@ def dataset_instruction(request, data, index, previous=(), model_family="qwen", 
         structured_trigger,
         PLANNED_SCENE_CONTRACT,
         VISIBLE_CONTENT_CONTRACT,
+        DATASET_DETAIL_DISCIPLINE,
         "The concept and explicit rules outrank optional Director embellishments. Write only this one finished visual scene and stop when it is complete. Describe observable requirements, not claims that consistency was preserved. Batch planning, next-scene suggestions, and future camera changes do not belong in the finished prompt.",
         style_rule,
     ])
@@ -100,6 +102,9 @@ def dataset_instruction(request, data, index, previous=(), model_family="qwen", 
     idea = (plan_item or {}).get("idea") or "Unavailable for this legacy item; preserve the supplied scene's semantic purpose."
     content.append("PLANNED IDEA\n<idea>\n" + idea + "\n</idea>")
     content.append("PLANNED SCENE / CURRENT SCENE\n<scene>\n" + scene + "\n</scene>")
+    if (plan_item or {}).get("geometry"):
+        content.append("PLANNED GEOMETRY\n" + json.dumps(plan_item["geometry"], ensure_ascii=False)
+                       + "\nInternal staging facts: preserve them without exposing field names.")
     if seed:
         content.append(f"GUIDED INPUT\n<input>\n{seed}\n</input>\nPreserve these original anchors in the supplied scene; do not select another scene. This input's outfit, setting, pose and action are local to this item. Shared identity does not imply a shared outfit unless explicitly locked in the concept or consistency rules.")
     if data["constraints"].strip():
@@ -107,6 +112,7 @@ def dataset_instruction(request, data, index, previous=(), model_family="qwen", 
     if data["coverage_enabled"] and plan_item and plan_item.get("facets"):
         content.append("COVERAGE ASSIGNMENT\n" + "\n".join(
             f"- {AXES[key][0]}: {value}" for key, value in plan_item["facets"].items()
+            if key not in plan_item.get("coverage_conflicts", [])
         ) + "\nPreserve compatible coverage already interpreted in CURRENT SCENE. These cues cannot replace its action or override user constraints. Do not expose the labels.")
     builder_request = replace(
         request, idea="\n\n".join(content), mode="Enhance",
@@ -115,7 +121,8 @@ def dataset_instruction(request, data, index, previous=(), model_family="qwen", 
     )
     instruction = assemble_instruction(builder_request, model_family=model_family, text_only=True)
     token_limit = DATASET_OUTPUT_TOKEN_LIMITS[data["length"]]
-    return replace(instruction, diagnostic_stage=f"dataset:{index}",
+    system = instruction.system_message.replace(LENGTH_ADAPTERS[data["length"]], DATASET_LENGTH_ADAPTERS[data["length"]])
+    return replace(instruction, system_message=system, diagnostic_stage=f"dataset:{index}",
                    max_tokens=token_limit, unlimited_tokens=False, hard_max_tokens=token_limit)
 
 
@@ -191,7 +198,8 @@ def dataset_loop_repair(system_message, error, retry=1):
     levels = ("Short", "Medium", "Detailed", "Maximum Detail")
     for level in levels:
         if levels.index(level) > levels.index(fallback_length):
-            system_message = system_message.replace(LENGTH_ADAPTERS[level], LENGTH_ADAPTERS[fallback_length])
+            system_message = system_message.replace(LENGTH_ADAPTERS[level], DATASET_LENGTH_ADAPTERS[fallback_length])
+            system_message = system_message.replace(DATASET_LENGTH_ADAPTERS[level], DATASET_LENGTH_ADAPTERS[fallback_length])
     return (
         system_message
         + "\n\nLOOP CORRECTION: Write a shorter, finite final prompt for the same supplied scene. "

@@ -12,10 +12,11 @@ export default function AdvancedInstructions({ settings, label, disabled }) {
   useEffect(() => { setDraft(JSON.parse(serialized)); }, [serialized]);
   const dirty = JSON.stringify(draft) !== serialized;
   const valid = Object.values(draft).every((value) => value.trim() && value.length <= 20000);
-  return <details className={`${ui.panel} mt-5`}>
+  return <details className={ui.panel}>
     <summary className="cursor-pointer text-sm font-semibold">{label} advanced settings</summary>
     <p className="my-3 text-xs leading-relaxed text-muted">Edit this workflow’s built-in behavior. Saved instructions apply to future generations. Target format and detail locks are applied separately.</p>
-    <p className="mb-3 text-xs text-[#cbbbfa]">{Object.keys(settings.record.overrides).length ? "Using saved custom instructions" : "Using built-in instructions"}{dirty ? " · Unsaved edits" : ""}</p>
+    <p className="mb-3 text-xs text-accent">{Object.keys(settings.record.overrides).length ? "Using saved custom instructions" : "Using built-in instructions"}</p>
+    {dirty && <p className="mb-3 text-xs text-warning">Unsaved edits</p>}
     <fieldset disabled={disabled || settings.working}>
       {Object.keys(saved).length > 1 && <label className={`${ui.field} mb-3`}><span>Instruction section</span>
         <select className={ui.select} aria-label={`${label} instruction section`} value={section} onChange={(event) => setSection(event.target.value)}>
@@ -39,6 +40,6 @@ export default function AdvancedInstructions({ settings, label, disabled }) {
         }}>Use built-in {label} instructions</button>
       </div>
     </fieldset>
-    {notice && <p className="mt-3 text-xs text-[#a6eac2]" aria-live="polite">{notice}</p>}
+    {notice && <p className="mt-3 text-xs text-success" aria-live="polite">{notice}</p>}
   </details>;
 }
