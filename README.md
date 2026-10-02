@@ -1,32 +1,53 @@
-# Goated Prompter
+<a id="top"></a>
 
-**Turn a rough idea and reference images into a prompt for your image or video model.**
+<div align="center">
 
-Goated Prompter is a local web app with a React + Tailwind interface and a Python backend. It uses a language/vision model to write prompts, with controls for task, target model, creativity, detail, and which parts of your reference images to keep.
+# 🐐 Goated Prompter
 
-ComfyUI is **not required** to use the website. The app produces prompt text that you can copy into your preferred generation tool.
+**From rough idea to ready-to-use prompt.**
+
+A local prompt studio for image and video workflows.<br>
+Bring your ideas and reference images. Shape the result. Copy it into your favorite generator.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-a3e635?style=flat-square)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![React 19](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=white)](frontend/package.json)
+[![llama.cpp](https://img.shields.io/badge/Local_inference-llama.cpp-a3e635?style=flat-square)](https://github.com/ggml-org/llama.cpp)
+
+[Get started](#installation) · [Workflows](#using-the-controls) · [Troubleshooting](#troubleshooting) · [Development](#development-and-verification) · [Report an issue](https://github.com/Jolanoff/goated-prompter/issues)
+
+</div>
+
+---
+
+Goated Prompter pairs a **React + Tailwind interface** with a **Python backend** and a language/vision model. Control the task, target model, creativity, detail, and exactly which parts of your references to preserve—all from your browser.
+
+> [!NOTE]
+> **This app writes prompts, not images or videos.** Copy the output into your preferred generation tool. ComfyUI is optional; model weights are downloaded separately.
 
 ## Features
 
-- **Dark by default:** a responsive prompt studio with an optional light-mode switch in the header. Your theme preference stays in your browser.
-- **Text or image-guided prompts:** describe an idea, upload up to four reference images, or combine both.
-- **Independent reference controls:** keep a face from Image 1, a pose from Image 2, a scene from Image 3, and lighting from Image 4. Blend can combine an attribute from all uploaded images.
-- **Task-specific direction:** prompt enhancement, photography, architecture, characters, products, image editing, style transfer, dataset captions, and video shots.
-- **Target-aware output:** supports Generic, Anima, Krea 2, FLUX.2 Klein, Z-Image, Qwen Image, Qwen2.1, MiniMax, LTX 2.5, and Ideogram4. Target selection changes the writing instructions/output format; it does not download or run that image/video model.
-- **Reusable instruction presets:** choose a built-in preset, edit its instructions, or create your own.
-- **Local prompt library:** autosaved builder settings, named saved prompts, and copy/edit controls.
-- **Refine tab:** targeted revisions, quick editing actions, detail locks, before/after highlighting, manual edits, and persistent undo/redo with branching version history.
-- **MiniMax H3 tab:** a dedicated prompt-writing workflow with 4–15-second clip timing, automatic reference-role analysis, official H3 output schemas, and shared Director presets.
-- **Dataset tab:** generate 1–25 trigger-aware prompts from a shared concept, fixed/variation rules, and optional guided inputs. Trigger terms can stay connected or be distributed naturally, with optional starting placement and controlled expansion, plus coverage planning, diagnostics, review, and TXT/JSONL export.
-- **Persistent creative settings:** Refine autosaves its inputs and controls, offers an independent advanced instruction editor, and saves results directly to Saved Prompts.
-- **Local inference through llama.cpp**, with an optional OpenAI-compatible endpoint.
-- **End generation** to cancel an active local llama.cpp job.
+| Workflow | What you can do |
+| --- | --- |
+| **Prompt Builder** | Turn text and up to **four reference images** into target-aware prompts. Mix a face from one image, a pose from another, and lighting from a third. |
+| **Refine & history** | Make targeted edits, lock important details, compare changes, and explore branching versions with persistent undo/redo. |
+| **MiniMax H3** | Write video prompts for **4–15-second clips**, with symbolic references, automatic role analysis, H3 schemas, and Director presets. |
+| **Dataset** | Create **1–25 prompts** from a shared concept, with trigger controls, scene planning, optional coverage planning, quality checks, and TXT/JSONL export. |
+| **Saved Prompts** | Keep a named prompt library, reuse instruction presets, and pick up where you left off with autosaved drafts. |
 
-### Target models
+- **Your creative direction:** photography, architecture, characters, products, image editing, style transfer, dataset captions, and video shots.
+- **Your inference setup:** managed local **llama.cpp** or an **OpenAI-compatible endpoint**, with shared generation controls and local job cancellation.
+- **Your workspace:** responsive, dark by default, with an optional light theme and persistent creative settings.
 
-The Target model menu includes: Generic, Anima, Krea 2, FLUX.2 Klein, Z-Image, Qwen Image, Qwen2.1, MiniMax, LTX 2.5, and Ideogram4.
+### Supported targets
 
-### Qwen2.1 target
+**Images:** Generic · Anima · Krea 2 · FLUX.2 Klein · Z-Image · Qwen Image · Qwen2.1 · Ideogram4<br>
+**Video:** MiniMax · LTX 2.5
+
+The **target model** shapes the writing instructions and output format. The **prompt engine** is the language/vision model that writes the text. Selecting a target does not download or run that image/video generator.
+
+<details>
+<summary><strong>Qwen2.1: output format and generation limits</strong></summary>
 
 Qwen2.1 uses writing guidance from the official [text-to-image](https://github.com/QwenLM/Qwen-Image-2.1/blob/main/prompt_rewrite/prompts/system_prompt_t2i.txt) and [image-editing](https://github.com/QwenLM/Qwen-Image-2.1/blob/main/prompt_rewrite/prompts/system_prompt_edit.txt) prompts, with **plain prompt text** as the app's output:
 
@@ -37,7 +58,10 @@ JSON metadata is not required. If a model still returns the upstream JSON envelo
 
 All Qwen2.1 detail levels (Short, Medium, Detailed and Maximum Detail) use uncapped requests in Builder, Refine and format repairs. Length controls writing detail rather than cutting off output. Local llama.cpp receives `max_tokens: -1`; remote requests omit `max_tokens`. Model context capacity and server-side limits still apply.
 
-## MiniMax H3 prompt builder
+</details>
+
+<details>
+<summary><strong>MiniMax H3: references, clip timing, and output validation</strong></summary>
 
 Open **MiniMax H3**, choose **Clip Length** (10 seconds by default), leave **Mode** on Auto, and describe your video. Choose **MiniMax Director** or any existing instruction preset for creative direction.
 
@@ -58,7 +82,11 @@ Auto distinguishes identity/motion/style references from explicit first/last-fra
 
 This page writes **prompt text only**. It does not upload/analyze media, render videos, or call MiniMax's video-generation API. It requires a configured language-model prompt engine; the generic mock backend is for plumbing tests and does not perform H3 semantic rewriting.
 
+</details>
+
 ## Installation
+
+**Setup at a glance:** install dependencies → download llama.cpp → download a model + projector → configure → launch.
 
 The walkthrough below uses **Windows PowerShell**. Download the app, llama.cpp, and the model separately; model weights are not included in this repository.
 
@@ -71,7 +99,8 @@ The walkthrough below uses **Windows PowerShell**. Download the app, llama.cpp, 
 | Git | [Git downloads](https://git-scm.com/downloads) — optional if you download the repository ZIP instead. |
 | llama.cpp | A current build containing **`llama-server`**, with support for your chosen vision model. See step 3. |
 
-**Hardware:** inference memory and speed depend on the model, quantization, context size, and llama.cpp backend. The example model files total about **6.6 GB on disk**; runtime RAM/VRAM use is higher. A supported GPU is recommended. This project does not currently publish a benchmarked minimum-VRAM requirement.
+> [!IMPORTANT]
+> **Plan for model memory.** The example model files total about **6.6 GB on disk**; runtime RAM/VRAM use is higher and depends on quantization, context size, and backend. A supported GPU is recommended. There is no benchmarked minimum-VRAM requirement published for this project.
 
 ### 2. Download Goated Prompter and install dependencies
 
@@ -132,7 +161,7 @@ D:\AI\Models\
 
 For additional models, give each model/projector pair its own subfolder. Use a model that your llama.cpp build actually supports for vision. The app detects filenames and pairs files within a folder; it cannot prove that weights and projectors from different downloads are compatible.
 
-### 5. Configure the executable and start the website
+### 5. Configure and launch
 
 Open **`config/config.json`** and set `local_llama_cpp.llama_server` to your actual executable path. Use forward slashes or escaped backslashes in JSON:
 
@@ -150,7 +179,7 @@ Start the app from the project folder:
 .\.venv\Scripts\python.exe local_app.py
 ```
 
-Open **http://127.0.0.1:8190** and keep the terminal running.
+**Open [http://127.0.0.1:8190](http://127.0.0.1:8190)** and keep the terminal running.
 
 1. Open **Settings** in the sidebar.
 2. Set **Models directory** to `D:\AI\Models` for the layout above.
@@ -163,7 +192,7 @@ The first generation loads the model and can take longer. **Keep model loaded** 
 On later launches, you only need `.\.venv\Scripts\python.exe local_app.py` and the browser. After updating frontend source, run `npm --prefix frontend ci` and `npm --prefix frontend run build` again.
 
 <details>
-<summary>Linux / macOS command equivalents</summary>
+<summary><strong>Linux / macOS command equivalents</strong></summary>
 
 Use a llama.cpp build appropriate for your OS/GPU, and set `llama_server` to its executable path (for example `/opt/llama.cpp/build/bin/llama-server`) or to `llama-server` if it is on PATH.
 
@@ -194,7 +223,7 @@ Use your own absolute model directory in Settings. The browser workflow is the s
 | **Keep from reference images** | Selects the source for each attribute you want to preserve. |
 | **Workflow rules / notes** | Adds constraints for the current request. |
 
-### Four reference images
+### Reference images
 
 Each attribute—subject, face/identity, outfit, pose, scene, composition, camera, lighting, colors, materials, and mood/style—has its own source:
 
@@ -206,7 +235,8 @@ Only selected source images are analyzed. Their evidence is combined by attribut
 
 Slots keep their numbers when an image is removed. Removing a required image resets unavailable selections to **Off**. Images and filenames are not saved, so after reloading the page you must re-upload images and reselect their attributes.
 
-### Output and generation
+<details>
+<summary><strong>Output, saving, and cancellation behavior</strong></summary>
 
 - **Text-only preview** ignores all reference images and preservation selections.
 - **End generation** cancels the local job. With the managed llama.cpp backend it stops the owned server, so the next job reloads the model. An external OpenAI-compatible request currently ends at its next checkpoint rather than aborting the remote computation immediately.
@@ -215,7 +245,9 @@ Slots keep their numbers when an image is removed. Removing a required image res
 
 The app writes prompts; the quality and faithfulness of the generated description depend on your chosen model and inputs. It does not generate images or videos itself.
 
-### Refine and version history
+</details>
+
+### Refine & version history
 
 Open **Refine** from the sidebar or **Refine & history** under Builder output. Successful website Builder generations are automatically recorded in history. To work on an edited Builder output or another prompt, expand **Start from another prompt**, import the Builder text or paste a prompt, and choose its target model.
 
@@ -227,9 +259,12 @@ Open **Refine** from the sidebar or **Refine & history** under Builder output. S
 
 Undo follows the current version's parent; each imported starting prompt or Builder generation begins a new history chain. History selection can restore any chain. The text diff uses bounded work and falls back to highlighting a larger changed region for very large prompts.
 
+<details>
+<summary><strong>History storage, autosave, and advanced instructions</strong></summary>
+
 Completed versions and history selection/redo live in **`data/workspace.json`**. Writes are atomic and revision-checked so a stale browser tab cannot overwrite newer workspace edits. The storage limit is 1,000 versions and 16 MiB for the workspace file; copy or back up useful results before clearing history. If saving a generated result fails, its recovered text is shown for copying in the current session.
 
-### Saved creative settings and advanced instructions
+#### Saved creative settings and advanced instructions
 
 Refine, MiniMax H3, and Dataset settings autosave separately to **`data/workflow_settings.json`**. Refine retains requested changes, locks, starting text/target and manual-edit drafts; MiniMax and Dataset retain their workflow-specific inputs and current results. Wait for the respective **Saved** indicator before closing or reloading. Failed writes keep the local draft and expose retry/reload actions; revision checks prevent a stale browser tab from replacing newer settings.
 
@@ -237,7 +272,20 @@ Expand **Refine advanced settings** to edit its built-in behavior. **Save instru
 
 Custom workflow instructions replace the corresponding built-in behavior. Target formatting and detail locks are still applied separately, including JSON validation for Ideogram4. Instruction changes are blocked during generation, and each job uses a snapshot of the saved instructions. Builder's instruction-preset library stays independent of these workflow-specific editors.
 
+</details>
+
 ### Dataset prompt batches
+
+Build a batch around one concept, keep shared details consistent, and vary the scenes. Review the planned ideas before writing final prompts, or generate everything in one click.
+
+1. Describe the **Dataset idea** and choose a subject type, amount (**1–25**), and variety.
+2. Add consistency rules, optional guided scene ideas, and training triggers if needed.
+3. Choose the visual treatment, Director preset, target model, and prompt length.
+4. Click **Generate prompts**, or **Plan scenes first** to inspect and edit the ideas and scenes.
+5. Review quality warnings, edit your results, and export **TXT**, **JSONL**, or **Scenes JSON**.
+
+<details>
+<summary><strong>Dataset controls, scene planning, and validation details</strong></summary>
 
 Open **Dataset** and start with **Dataset idea**: describe the subject and what should happen, for example “a woman doing funny stuff.” Choose Subject type, Amount and Variety, then final visual treatment, target and prompt length. Character, multiple-character, animal, object/product, visual-style, location/environment, brand/logo, typography/text, concept and custom types receive appropriate planning guidance. Training trigger controls are separate and collapsible; opaque trigger tokens are not sent to Scene Planner as visual descriptions.
 
@@ -267,7 +315,17 @@ After generation, the local **Dataset quality report** checks triggers, format, 
 
 The real-model evaluation fixture and scoring checklist are in [`tests/fixtures/scene_planner_eval.md`](tests/fixtures/scene_planner_eval.md). Automated tests validate the pipeline with mocks, not LLM creativity or semantic fidelity. `/api/workspace/dataset/coverage` creates deterministic assignments; `/api/workspace/dataset/scenes` starts a planning-only job. The old `/dataset/plan` coverage endpoint remains an alias for existing clients.
 
+</details>
+
 ## Project and data layout
+
+The website runs on loopback only. With the local backend, inference stays on your machine and UI assets/fonts are bundled locally. A remote OpenAI-compatible endpoint receives generation inputs, including selected images.
+
+> [!TIP]
+> Back up **`data/` and your configuration** to preserve prompts, history, presets, and settings. Keep downloaded models and llama.cpp outside the source tree.
+
+<details>
+<summary><strong>Directory structure and local storage</strong></summary>
 
 ```text
 goated-prompter/
@@ -316,9 +374,9 @@ goated-prompter/
 
 Keep downloaded models and llama.cpp outside this source tree, as in the installation examples. Back up **`data/` and your configuration** to preserve your setup. Wait for the builder's **Saved** status before closing; stop the server before manually editing its JSON stores.
 
-The website binds to loopback only. With the local backend, inference runs on your machine and UI assets/fonts are bundled locally. Configuring a remote OpenAI-compatible endpoint sends generation inputs, including selected images, to that endpoint.
-
 Existing SQLite settings and browser-saved prompt collections have migration paths. A browser collection is imported when you revisit its original browser/address; the original copy is retained if importing fails.
+
+</details>
 
 ## Troubleshooting
 
@@ -357,6 +415,9 @@ Set `GOATED_PROMPTER_API_KEY` in the environment if authentication is required. 
 
 ## Development and verification
 
+<details>
+<summary><strong>Live development and project conventions</strong></summary>
+
 For live frontend edits, run the backend in one terminal and Vite in another, from the project root:
 
 ```powershell
@@ -370,6 +431,11 @@ npm --prefix frontend run dev
 Open **http://127.0.0.1:5173**. Vite proxies `/api` to the backend on port 8190.
 
 Static prompt content is organized by concern in **`goated_prompter/prompting/`**. Restart Python after editing it. Keep saved option keys stable. For new tasks, add both the option and its adapter in the relevant file. Website-only display names/order live in `frontend/src/App.jsx` and `frontend/src/presetPresentation.js`.
+
+</details>
+
+<details>
+<summary><strong>Build checks, unit tests, and browser tests</strong></summary>
 
 Run the checks from the project root:
 
@@ -392,14 +458,24 @@ On Windows with Edge installed, use `$env:PLAYWRIGHT_CHANNEL = "msedge"` before 
 
 Automated checks cover prompt assembly, reference mapping, API/storage behavior, and browser workflows. Mock tests do not measure real-model output quality, GPU compatibility, or performance. Report issues with your OS, Python/Node versions, llama.cpp build/backend, exact model/projector filenames, and the relevant error at [GitHub Issues](https://github.com/Jolanoff/goated-prompter/issues).
 
+</details>
+
 ## Optional ComfyUI integration
 
 The original node remains available under the stable ID `GoatedPrompter`. To use it, place one copy of this repository at `ComfyUI/custom_nodes/goated-prompter`, configure the backend, and restart ComfyUI and reload its browser. The node exposes four optional IMAGE sockets and a prompt STRING output. Queue the graph for image-grounded generation; the canvas preview button is text-only.
 
 The website remains the main installation path. There is no claimed ComfyUI Registry/Manager listing or bundled desktop installer. Installing only the Python package does not build or bundle the website.
 
+---
+
 ## License and credits
 
 [MIT License](LICENSE) — copyright (c) 2026 Jolanoff.
 
 Built with React, Tailwind CSS, Vite, aiohttp, Pillow, and llama.cpp. Downloaded models and third-party dependencies retain their own licenses; model weights are not distributed with this project.
+
+<div align="center">
+
+[Back to top](#top)
+
+</div>
