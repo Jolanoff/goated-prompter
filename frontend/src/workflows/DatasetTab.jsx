@@ -7,7 +7,7 @@ import { TargetSelect } from "./WorkflowControls.jsx";
 import { useWorkflowSettings } from "./useWorkflowSettings.js";
 import WorkflowSettingsStatus from "./WorkflowSettingsStatus.jsx";
 import { datasetJsonl } from "./datasetExport.js";
-import { editDatasetPlan, invalidateDatasetPrompts } from "./datasetState.js";
+import { editDatasetPlan, invalidateDatasetPrompts, isDatasetSceneUsable } from "./datasetState.js";
 import { geometryRows } from "./datasetGeometry.js";
 
 const triggerTypes = ["Character", "Multiple characters", "Animal", "Object / product", "Visual style",
@@ -37,13 +37,20 @@ const varietyAxisCounts = { Focused: 3, Balanced: 5, Wide: 6 };
 function GeometryDetails({ geometry, index }) {
   const rows = geometryRows(geometry);
   if (!rows.length) return null;
-  return <details className="rounded-lg border border-line p-3 text-xs">
+  return <details className="dataset-geometry min-w-0 rounded-lg border border-line p-3 text-xs">
     <summary className="cursor-pointer font-semibold">Geometry {index}</summary>
-    <dl className="mt-3 grid gap-2">{rows.map(({ label, value }) => <div key={label} className="grid gap-1">
+    <dl className="dataset-geometry-fields mt-3 gap-3" tabIndex={0} aria-label={`Geometry ${index} fields`}>{rows.map(({ label, value }) => <div key={label} className="min-w-0 content-start grid gap-1">
       <dt className="capitalize font-semibold">{label}</dt>
       <dd className="wrap-anywhere leading-relaxed text-muted">{value}</dd>
     </div>)}</dl>
   </details>;
+}
+
+function FailureReason({ item }) {
+  if (!item.failure_reason && item.scene_status !== "failed" && item.prompt_status !== "failed") return null;
+  return <p className={`${ui.warningNote} mt-2`} role="note" aria-label={`Prompt ${item.index} failure reason`}>
+    <strong>{item.failure_stage === "prompt" ? "Prompt failed: " : "Scene planning failed: "}</strong>{item.failure_reason || "No failure details were recorded. Retry this item to get a fresh result."}
+  </p>;
 }
 
 function elapsedLabel(seconds) {
@@ -127,12 +134,12 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
   const sourceReady = draft?.source_mode !== "guided" || guidedLines > 0;
   const canPlanScenes = draft && !disabled && !noEngine && !preferences.conflict &&
     draft.subject.trim() && customReady && styleReady && sourceReady;
-  const staleScenePlan = !!draft?.scene_plan_signature && preferences.record?.idea_plan_current === false &&
+  const staleScenePlan = !!draft?.scene_plan_signature && (preferences.record?.scene_plan_matches_settings ?? preferences.record?.idea_plan_current) === false &&
     preferences.record?.draft.scene_plan_signature === draft.scene_plan_signature;
-  const scenePlanReady = !staleScenePlan && !!draft?.scene_plan_signature && draft.scene_plan?.length === draft.amount &&
-    draft.scene_plan.every((item) => item.idea?.trim() && item.scene.trim());
-  const canGenerate = canPlanScenes && director && draft.trigger.trim() &&
-    !draft.scene_plan?.some((item) => item.idea !== undefined && !item.idea.trim());
+  const validSceneCount = draft?.scene_plan?.filter(isDatasetSceneUsable).length || 0;
+  const scenePlanReady = !staleScenePlan && !!draft?.scene_plan_signature && validSceneCount > 0;
+  const canWrite = canPlanScenes && director && draft.trigger.trim();
+  const canGenerate = canWrite && !draft.scene_plan?.some((item) => item.scene_status !== "failed" && item.idea !== undefined && !item.idea.trim());
   const isGenerating = active && job?.kind === "dataset";
   const scenePlannerBusy = active && job?.kind === "dataset_scenes";
   const coverageEnabled = draft?.coverage_enabled === true;
@@ -181,7 +188,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
   }
 
   async function sceneAction(index, action) {
-    if (disabled || staleScenePlan || !canGenerate || submission.current) return;
+    if (disabled || staleScenePlan || !canWrite || submission.current) return;
     submission.current = true;
     setStarting(true);
     setError("");
@@ -213,8 +220,8 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
     } finally { setCoverageBusy(false); }
   }
 
-  async function generate(scenesOnly = false) {
-    if (!(scenesOnly ? canPlanScenes : canGenerate) || submission.current) return;
+  async function generate(scenesOnly = false, validOnly = false) {
+    if (!(scenesOnly ? canPlanScenes : validOnly ? canWrite && scenePlanReady : canGenerate) || submission.current) return;
     submission.current = true;
     setStarting(true);
     setError("");
@@ -229,7 +236,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
         update({ results: [], result_job_id: "", quality_report: {} });
       }
       await preferences.flush();
-      await onGenerate(scenesOnly ? "dataset/scenes" : "dataset", { input });
+      await onGenerate(scenesOnly ? "dataset/scenes" : "dataset", { input, ...(validOnly ? { valid_only: true } : {}) });
     } catch (err) { setError(err.message); }
     finally { submission.current = false; setStarting(false); }
   }
@@ -254,6 +261,9 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
   const jsonl = datasetJsonl(draft);
   const quality = draft?.quality_report;
   const promptQuality = new Map((quality?.prompts || []).map((item) => [item.index, item]));
+  const failedItems = draft?.scene_plan?.filter((item) => item.scene_status === "failed" || item.prompt_status === "failed") || [];
+  const displayedResults = [...(draft?.results || []), ...failedItems.filter((item) => !draft.results.some((result) => result.index === item.index))
+    .map((item) => ({ ...item, failed: true, prompt: "" }))].sort((left, right) => left.index - right.index);
 
   return <div hidden={!visible}>
     <div className={ui.pageHeading}><div>
@@ -264,7 +274,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
     {error && <div className={ui.message} role="alert"><span>{error}</span></div>}
     <div className={ui.workflowStatus}>
       <span>{noEngine ? "Choose a prompt engine in Builder or Settings to generate." : `Engine: ${engineLabel}`}</span>
-      <span role="status">{workflowActive ? job.status === "cancelling" ? "Ending batch…" : <>{job.progress || "Starting dataset generation…"}{stageSeconds >= 5 && ` · ${elapsedLabel(stageSeconds)}`}</> : `${draft?.results.length || 0} prompts in the current batch`}</span>
+      <span role="status">{workflowActive ? job.status === "cancelling" ? "Ending batch…" : <>{job.progress || "Starting dataset generation…"}{stageSeconds >= 5 && ` · ${elapsedLabel(stageSeconds)}`}</> : `${draft?.results.length || 0} prompts in the current batch${failedItems.length ? ` · ${failedItems.length} failed` : ""}`}</span>
       {active && <button className={ui.button} onClick={onCancel} disabled={job.status === "cancelling"}>End generation</button>}
     </div>
     {workflowActive && stageSeconds >= 45 && <p className={`${ui.subtleNote} mb-5`} role="status">
@@ -321,7 +331,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                 onChange={(event) => updateSceneSettings({ planning_mode: event.target.value })}>
                 <option>Fast</option><option>Quality</option>
               </select>
-               <small className={ui.directorDescription}>Fast: one idea + scene call. Quality: distinct ideas first, then scenes in small chunks. Valid chunks are saved; repairs affect only the broken scene or chunk.</small>
+               <small className={ui.directorDescription}>Fast: combined ideas and scenes in small chunks. Quality: distinct ideas first, then scenes in small chunks. Valid chunks are saved. After three failed fixes, try one new idea, then skip the item if it still fails.</small>
             </label>
              <label className={ui.field}><span>Trigger text or terms</span>
               <textarea className={ui.notesInput} style={{ minHeight: 82 }} aria-label="Trigger text or terms" maxLength={200} value={draft.trigger}
@@ -482,8 +492,8 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
         </header>
         <p className={ui.subtleNote}>Idea edits invalidate only that scene and prompt. Scene edits invalidate only that prompt. Output settings keep the plan and invalidate prompts.</p>
         {staleScenePlan && <p className={ui.warningNote}>This plan no longer matches the Dataset settings. Plan scenes again or use the main Generate action to replan automatically.</p>}
-        <div className="grid grid-cols-2 gap-4 mobile:grid-cols-1">
-          {draft.scene_plan.map((item) => <div key={item.index} className="grid gap-3 rounded-lg border border-line p-3">
+        <div className="grid grid-cols-2 items-start gap-4 mobile:grid-cols-1">
+          {draft.scene_plan.map((item) => <div key={item.index} className="min-w-0 grid content-start gap-3 rounded-lg border border-line p-3">
             {item.input && <small className="text-muted">Original idea: {item.input}</small>}
             <label className={ui.field}><span>Idea {item.index}</span>
               <input className={ui.input} aria-label={`Planned idea ${item.index}`} value={item.idea || ""}
@@ -498,20 +508,21 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
             </label>
             <small className="text-muted">Idea: {item.idea_status || "valid"} · Scene: {item.scene_status || "valid"} · Prompt: {item.prompt_status || "not_generated"}</small>
             <GeometryDetails geometry={item.geometry} index={item.index} />
+            <FailureReason item={item} />
             {!!item.coverage_conflicts?.length && <small className="text-muted">Incompatible coverage omitted: {item.coverage_conflicts.join(", ")}</small>}
             <div className="flex flex-wrap gap-2">
-              <button className={ui.button} disabled={!canGenerate || staleScenePlan}
+              <button className={ui.button} disabled={!canWrite || staleScenePlan}
                 onClick={() => sceneAction(item.index, "regenerate_idea")}>Regenerate idea</button>
-              <button className={ui.button} disabled={!canGenerate || staleScenePlan || !item.idea?.trim()}
+              <button className={ui.button} disabled={!canWrite || staleScenePlan || !item.idea?.trim()}
                 onClick={() => sceneAction(item.index, "repair_scene")}>Repair scene</button>
-              <button className={ui.button} disabled={!canGenerate || staleScenePlan || !item.scene.trim() || ["not_generated", "geometry_warning"].includes(item.scene_status)}
+              <button className={ui.button} disabled={!canWrite || staleScenePlan || !isDatasetSceneUsable(item)}
                 onClick={() => sceneAction(item.index, "regenerate_prompt")}>Regenerate prompt</button>
             </div>
           </div>)}
         </div>
         <div className="mt-4 flex flex-wrap gap-3">
-          <button className={ui.primaryButton} disabled={!canGenerate || !scenePlanReady}
-            onClick={() => generate(false)}>Generate prompts from these scenes</button>
+          <button className={ui.primaryButton} disabled={!canWrite || !scenePlanReady}
+            onClick={() => generate(false, true)}>{validSceneCount === draft.amount ? "Generate prompts from these scenes" : `Generate prompts from ${validSceneCount} valid ${validSceneCount === 1 ? "scene" : "scenes"}`}</button>
           <button className={ui.button} disabled={!canPlanScenes} onClick={() => generate(true)}><RefreshCw size={14} />Replan scenes</button>
           <button className={ui.button} disabled={!draft.scene_plan.length}
             onClick={() => download("dataset-scenes.json", JSON.stringify(draft.scene_plan, null, 2), "application/json")}><FileJson size={14} />Scenes JSON</button>
@@ -570,10 +581,10 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
             <button className={ui.button} disabled={disabled || !draft.results.length} onClick={() => update({ results: [], result_job_id: "", quality_report: {} })}><Trash2 size={15} />Clear</button>
           </div>
         </div>
-        {!draft.results.length ? <div className={`${ui.emptyState} min-h-[260px]`}>
+        {!displayedResults.length ? <div className={`${ui.emptyState} min-h-[260px]`}>
            <Database size={34} /><h3>Your scenes start with an idea</h3><p>Describe your concept above. Plan scenes to review them first, or generate the full batch.</p>
-        </div> : <div className="grid grid-cols-2 gap-4 [@media(width<=1050px)]:grid-cols-1">
-          {draft.results.map((item) => {
+        </div> : <div className="grid grid-cols-2 items-start gap-4 [@media(width<=1050px)]:grid-cols-1">
+          {displayedResults.map((item) => {
             const check = promptQuality.get(item.index);
             return <article className={ui.panel} key={item.index}>
             <div className="mb-3 flex items-center justify-between gap-3">
@@ -582,7 +593,8 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                  {check && <span className={`mt-1 inline-flex items-center gap-1 text-xs ${check.status === "pass" ? "text-success" : check.status === "error" ? "text-danger" : "text-warning"}`}>
                   {check.status === "pass" ? <CircleCheck size={11} /> : <CircleAlert size={11} />}{check.status === "pass" ? "Passed checks" : `${check.issues.length} ${check.issues.length === 1 ? "issue" : "issues"}`}
                 </span>}</div>
-              <button className={ui.button} onClick={() => onCopy(item.prompt)}><Copy size={14} />Copy</button>
+               {!item.failed && <button className={ui.button} onClick={() => onCopy(item.prompt)}><Copy size={14} />Copy</button>}
+               {item.failed && <span className="text-xs font-semibold text-warning">Failed · skipped</span>}
              </div>
               {item.idea ? <div className="mb-3 text-xs"><strong>Idea {item.index}</strong>
                 <p className="mt-1 whitespace-pre-wrap leading-relaxed text-muted">{item.idea}</p>
@@ -592,10 +604,13 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                <p className="mt-2 whitespace-pre-wrap leading-relaxed text-muted">{item.scene}</p>
               </details> : <p className={`${ui.subtleNote} mb-3`}>Legacy result: no originating scene was saved.</p>}
               <GeometryDetails geometry={item.geometry} index={item.index} />
-             <p className="mb-2 text-xs font-semibold">Final prompt</p>
-            <textarea className={ui.outputInput} style={{ minHeight: 220 }} aria-label={`Dataset prompt ${item.index}`}
+              <FailureReason item={item} />
+              {item.failed ? <button className={`${ui.button} mt-3`} disabled={!canWrite || staleScenePlan}
+                onClick={() => sceneAction(item.index, isDatasetSceneUsable(item) ? "regenerate_prompt" : "regenerate_idea")}>Retry failed {isDatasetSceneUsable(item) ? "prompt" : "idea"}</button> : <>
+              <p className="mb-2 text-xs font-semibold">Final prompt</p>
+             <textarea className={ui.outputInput} style={{ minHeight: 220 }} aria-label={`Dataset prompt ${item.index}`}
               value={item.prompt} maxLength={100000} disabled={isGenerating || active && job?.kind === "dataset_review"}
-              onChange={(event) => editResult(item.index, event.target.value)} />
+              onChange={(event) => editResult(item.index, event.target.value)} /></>}
           </article>})}
         </div>}
       </section>

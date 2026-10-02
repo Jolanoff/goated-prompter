@@ -1,7 +1,9 @@
 import { test, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
+import AxeBuilder from "@axe-core/playwright";
 
 test("Quality composes in small chunks and geometry stays behind a readable disclosure", async ({ page, request }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/");
   await page.getByRole("button", { name: "Dataset", exact: true }).click();
   await page.getByLabel("Dataset idea", { exact: true }).fill("A traveler visiting different exhibits.");
@@ -19,10 +21,30 @@ test("Quality composes in small chunks and geometry stays behind a readable disc
   const disclosure = plan.locator("details").filter({ has: page.getByText("Geometry 1", { exact: true }) });
   await expect(disclosure).not.toHaveAttribute("open");
   await expect(disclosure.getByText("gaze direction", { exact: true })).not.toBeVisible();
+  const neighboringScene = plan.getByLabel("Planned scene 2").locator("../..");
+  const sceneBefore = await neighboringScene.boundingBox();
   await disclosure.locator("summary").click();
   await expect(disclosure.getByText("gaze direction", { exact: true })).toBeVisible();
   await expect(disclosure.getByText("toward action", { exact: true })).toHaveCount(2); // Head and eyes are separate facts.
   await expect(disclosure.getByText("standing neutral", { exact: true })).toBeVisible();
+  const sceneAfter = await neighboringScene.boundingBox();
+  expect(sceneAfter.height).toBe(sceneBefore.height);
+  expect(sceneAfter.width).toBe(sceneBefore.width);
+  expect(sceneAfter.x).toBe(sceneBefore.x);
+  const fields = disclosure.locator("dl");
+  expect(await fields.evaluate((element) => getComputedStyle(element).gridTemplateRows.split(" ").length)).toBe(2);
+  expect(await fields.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
+  const results = page.getByRole("region", { name: "Dataset results", exact: true });
+  const neighboringPrompt = results.getByLabel("Dataset prompt 2").locator("..");
+  const promptBefore = await neighboringPrompt.boundingBox();
+  await results.getByText("Geometry 1", { exact: true }).click();
+  const promptAfter = await neighboringPrompt.boundingBox();
+  expect(promptAfter.height).toBe(promptBefore.height);
+  expect(promptAfter.width).toBe(promptBefore.width);
+  expect(promptAfter.x).toBe(promptBefore.x);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  expect(await fields.evaluate((element) => getComputedStyle(element).gridTemplateRows.split(" ").length)).toBe(2);
   expect(finished.result.scene_plan.every((row) => row.geometry.gaze_direction === "toward_action" && !("gaze" in row.geometry))).toBe(true);
 });
 
@@ -31,6 +53,66 @@ test.beforeEach(async ({ request }) => {
   expect((await request.put("/api/workspace/settings/dataset", {
     data: { revision: settings.revision, draft: {} },
   })).ok()).toBe(true);
+});
+
+test("Fast plans ten scenes in three combined chunks", async ({ page, request }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  await page.getByLabel("Dataset idea", { exact: true }).fill("A traveler visiting different exhibits.");
+  await page.getByLabel("Dataset planning mode").selectOption("Fast");
+  await page.getByLabel("Number of prompts").selectOption("10");
+  const accepted = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset/scenes") && response.status() === 202);
+  await page.getByRole("button", { name: "Plan scenes first", exact: true }).click();
+  const job = await (await accepted).json();
+  await expect(page.getByLabel("Planned scene 10")).toHaveValue(/mock scene 10/);
+  const finished = await (await request.get(`/api/jobs/${job.id}`)).json();
+  expect(finished.status).toBe("succeeded");
+  expect(finished.llm_trace.request_number).toBe(3);
+  expect(finished.result.scene_plan.map((row) => row.index)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+});
+
+test("failed scenes show persistent reasons and do not block writing valid scenes", async ({ page, request }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  await page.getByLabel("Dataset idea", { exact: true }).fill("A traveler visiting exhibits.");
+  await page.getByLabel("Number of prompts").selectOption("3");
+  await page.getByRole("button", { name: "Plan scenes first", exact: true }).click();
+  await expect(page.getByLabel("Planned scene 3")).toHaveValue(/mock scene 3/);
+  await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
+  const settings = await (await request.get("/api/workspace/settings/dataset")).json();
+  const reason = "Direct rear camera cannot show a full face. Replacement scene failed after bounded recovery.";
+  settings.draft.scene_plan[0] = { ...settings.draft.scene_plan[0], idea: "", scene: "", geometry: {},
+    idea_status: "failed", scene_status: "failed", prompt_status: "failed", failure_reason: reason,
+    failure_stage: "scene", replacement_attempted: true };
+  settings.draft.scene_plan[2] = { ...settings.draft.scene_plan[2], idea: "", scene: "", geometry: {},
+    idea_status: "not_generated", scene_status: "not_generated", prompt_status: "not_generated" };
+  settings.draft.trigger = "ohwx_traveler";
+  expect((await request.put("/api/workspace/settings/dataset", {
+    data: { revision: settings.revision, draft: settings.draft },
+  })).ok()).toBe(true);
+  await page.reload();
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  const plan = page.getByRole("region", { name: "Scene Planner ideas", exact: true });
+  await expect(plan.getByLabel("Prompt 1 failure reason")).toContainText(reason);
+  const results = page.getByRole("region", { name: "Dataset results", exact: true });
+  await expect(results.getByLabel("Prompt 1 failure reason")).toContainText(reason);
+  expect((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze()).violations).toEqual([]);
+  const accepted = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset") && response.status() === 202);
+  await page.getByRole("button", { name: "Generate prompts from 1 valid scene", exact: true }).click();
+  const response = await accepted;
+  expect(response.request().postDataJSON().valid_only).toBe(true);
+  const job = await response.json();
+  await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/ohwx_traveler/);
+  await expect(page.getByLabel("Dataset prompt 1")).toHaveCount(0);
+  await expect(results.getByLabel("Prompt 1 failure reason")).toContainText(reason);
+  const finished = await (await request.get(`/api/jobs/${job.id}`)).json();
+  expect(finished.status).toBe("succeeded");
+  expect(finished.llm_trace.request_number).toBe(1);
+  expect(finished.result.prompts.map((row) => row.index)).toEqual([2]);
+  await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Dataset results", exact: true }).getByLabel("Prompt 1 failure reason")).toContainText(reason);
 });
 
 test("Dataset builds, persists and exports a trigger-ready batch", async ({ page }) => {

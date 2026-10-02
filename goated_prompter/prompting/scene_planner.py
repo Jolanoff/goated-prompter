@@ -30,10 +30,10 @@ body/torso/hip orientation, pose, head direction, gaze, expression, important ob
 camera direction, framing and relevant environment. Do not expand into a final high-detail prompt.
 
 PLANNING PROCESS
-Perform this process internally for the entire requested batch, in this order:
+Perform this process internally for the requested indexes, in this order:
 STEP 1 — UNDERSTAND THE CONCEPT: identify recurring subject, theme, constraints, authoritative guided
 inputs, allowed variation and stable identity. Understand the scope before selecting ideas.
-STEP 2 — GENERATE DISTINCT IDEAS: brainstorm exactly one idea per requested image, for the whole batch
+STEP 2 — GENERATE DISTINCT IDEAS: brainstorm exactly one idea per requested index, for this chunk
 first. Different meanings, activities and situations, not just different camera, light, room or colors.
 STEP 3 — COMPOSE EACH IDEA AS A SCENE: only now select compatible action, body orientation, pose, head,
 gaze, expression, interactions, viewpoint and crop. Apply compatible coverage after selecting the idea.
@@ -164,13 +164,14 @@ idea and vary only its allowed surroundings or presentation. Never force diversi
 For Mixed styles, choose a concrete compatible medium/treatment per scene here; the writer preserves it.
 
 OUTPUT
-Return only a valid JSON array of exactly the requested amount of objects, in sequential index order
-starting at 1. Each object has "index" (integer), "idea" (nonempty string), "scene" (nonempty string),
+Return only a valid JSON array of exactly the requested amount of objects, using the requested indexes
+in supplied order. Each object has "index" (integer), "idea" (nonempty string), "scene" (nonempty string),
 and "geometry" (object). No explanations or metadata. Geometry fields are optional where irrelevant;
 use canonical snake_case values. Use gaze_direction for eyes, expression for emotion, pose_type for mechanics.
 {geometry_prompt_schema()}
 action_focus is concise free text; visibility_focus is a short free string array.
-For an unusual pose use pose_type="custom" with pose_detail; expression="custom" requires expression_detail.
+For an unusual pose use pose_type="custom"; pose_detail and expression_detail are optional helper metadata.
+Keep useful details when supplied; custom pose/expression values are valid without details. Scene prose is authoritative.
 Optional coverage_conflicts is an array of omitted incompatible coverage axis names.
 Each idea is normally 3–15 words, at most {MAX_IDEA_WORDS} words and {MAX_IDEA_CHARACTERS} characters.
 Each scene is one concise paragraph, normally 20–70 words, at most {MAX_SCENE_WORDS} words and
@@ -217,31 +218,33 @@ same guided input are valid when needed. Do not force a different event against 
 """
 
 
-def scene_planner_instruction(data, coverage, family="qwen", correction=""):
-    """Provide the whole batch, but no trigger-placement or target-format adapters."""
+def scene_planner_instruction(data, coverage, family="qwen", correction="", *, indexes=None, existing=()):
+    """Combined idea/scene planning with batch context and chunk-local output."""
+    indexes = indexes or list(range(1, data["amount"] + 1))
     assignments = [{"index": row["index"], "input": row["input"],
                     "facets": row["facets"] if coverage["enabled"] else {}}
-                   for row in coverage["plan"]]
+                   for row in coverage["plan"] if row["index"] in indexes]
     context = {
-        "amount": data["amount"], "subject": data["subject"],
+        "amount": len(indexes), "requested_amount": data["amount"], "indexes": indexes, "subject": data["subject"],
         "source_mode": data["source_mode"],
         "trigger_type": data["trigger_type"], "custom_type": data["custom_type"],
         "type_guidance": TYPE_GUIDANCE[data["trigger_type"]],
         "visual_style": data["visual_style"], "custom_style": data["custom_style"],
         "variety": data["variety"], "constraints": data["constraints"],
         "assignments": assignments,
+        "existing_ideas": [{"index": row["index"], "idea": row["idea"]} for row in existing],
     }
-    # Budget scales with the batch: 25 paragraph-sized scenes cannot fit in the
-    # old fixed budget for 200-character summaries. Still finite and bounded.
-    budget = 512 + data["amount"] * 512
+    budget = 512 + len(indexes) * 512
     return PromptInstruction(
         system_message=SCENE_PLANNER_SYSTEM + "\n\n" + VISIBLE_CONTENT_CONTRACT
+        + "\nCreate new ideas for these indexes that are meaningfully different from the already accepted ideas. "
+          "Respect guided repetition and concept scope. Return only this chunk; do not regenerate earlier valid chunks."
         + ("\n\n" + GUIDED_ASSIGNMENT_RULES if data["source_mode"] == "guided" else "")
         + ("\n\nFORMAT CORRECTION\n" + correction if correction else ""),
         user_message=json.dumps(context, ensure_ascii=False), model_family=family,
         diagnostic_stage="dataset:scene_planner" + (":repair" if correction else ""),
         max_tokens=budget, hard_max_tokens=budget, unlimited_tokens=False,
-        stream_character_limit=1024 + data["amount"] * (MAX_SCENE_CHARACTERS + MAX_IDEA_CHARACTERS + 2048),
+        stream_character_limit=1024 + len(indexes) * (MAX_SCENE_CHARACTERS + MAX_IDEA_CHARACTERS + 2048),
     )
 
 
@@ -284,7 +287,7 @@ def idea_planner_instruction(data, coverage, family="qwen", correction="", *, in
 
 
 def scene_composer_instruction(data, coverage, ideas, family="qwen", correction="", *, previous=None):
-    base = scene_planner_instruction(data, coverage, family)
+    base = scene_planner_instruction(data, coverage, family, indexes=[row["index"] for row in ideas])
     context = json.loads(base.user_message)
     context["amount"] = len(ideas)
     by_index = {row["index"]: row for row in context["assignments"]}
@@ -312,9 +315,11 @@ ACTION_FOCUS is concise free text describing the activity. VISIBILITY_FOCUS is a
 of important visible regions/objects, not an exhaustive inventory.
 Use canonical snake_case enum values, not display prose. Use only fields useful to this scene.
 Character geometry requires framing, camera_view, body_orientation, head_direction, gaze_direction,
-pose_type, action_focus, face_visibility and visibility_focus. Other subject types omit irrelevant human fields.
-For uncommon valid posing use pose_type="custom" paired with pose_detail; never discard an unusual
-idea just because no standard pose fits. expression="custom" requires expression_detail.
+and face_visibility. All other geometry fields are optional helper metadata; missing optional fields
+are not contradictions. Other subject types omit irrelevant human fields. Scene prose is authoritative.
+For uncommon valid posing use pose_type="custom" with optional pose_detail; never discard an unusual
+idea just because no standard pose fits. expression="custom" is valid with or without expression_detail.
+Keep useful supplied custom details, but do not invent a repair just because a helper field is absent.
 Optional counts are integers (primary_subject_count positive, secondary_subject_count nonnegative).
 Optional enum fields and their allowed values are in optional_geometry_values. Do not emit them all.
 Rear three-quarter with an over-shoulder head turn, camera gaze and three-quarter face visibility is valid.

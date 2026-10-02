@@ -12,7 +12,7 @@ from .minimax import MiniMaxService, validate_minimax_draft
 from .dataset import DatasetReviewService, DatasetService, validate_dataset_draft
 from .dataset_coverage import analyze_dataset_quality, build_coverage_plan, effective_coverage_plan
 from .presets import get_director_preset
-from .scene_planner import reusable_scene_plan
+from .scene_planner import reusable_scene_plan, scene_is_usable
 from .dataset_geometry import geometry_errors
 
 
@@ -38,21 +38,30 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
         state = request.app[state_key]
         payload = await json_object(request)
         local_scene = request.path.endswith("/scene")
-        if set(payload) - ({"input", "settings", "action", "index"} if local_scene else {"input", "settings"}):
+        if set(payload) - ({"input", "settings", "action", "index"} if local_scene else {"input", "settings", "valid_only"}):
             raise ValueError("Expected Dataset input and prompt-engine settings.")
         scenes_only = request.path.endswith("/scenes")
+        valid_only = payload.get("valid_only", False)
+        if type(valid_only) is not bool or (valid_only and scenes_only):
+            raise ValueError("Valid-scenes-only generation must be a boolean for prompt generation.")
         data = validate_dataset_draft(payload.get("input"), generation=True, planning=scenes_only)
+        if valid_only:
+            rows = reusable_scene_plan(data, effective_coverage_plan(data), require_scenes=False, allow_pending=True)
+            if rows is None or not any(scene_is_usable(row, data) for row in rows):
+                raise ValueError("No valid scenes are available in the current saved plan.")
         scene_action = None
         if local_scene:
             action, index = payload.get("action"), payload.get("index")
             if (not isinstance(action, str) or action not in {"regenerate_idea", "repair_scene", "regenerate_prompt"}
                     or type(index) is not int or not 1 <= index <= data["amount"]):
                 raise ValueError("Choose a valid scene index and regenerate_idea, repair_scene or regenerate_prompt.")
-            rows = reusable_scene_plan(data, effective_coverage_plan(data), require_scenes=False)
+            rows = reusable_scene_plan(data, effective_coverage_plan(data), require_scenes=False, allow_pending=True)
             if rows is None:
                 raise ValueError("Per-scene actions require a current saved idea plan.")
+            if action == "repair_scene" and not rows[index - 1].get("idea", "").strip():
+                raise ValueError("Generate an idea for this item before repairing its scene.")
             if action == "regenerate_prompt" and (not rows[index - 1]["scene"].strip()
-                    or rows[index - 1].get("scene_status") in {"not_generated", "geometry_warning"}
+                     or rows[index - 1].get("scene_status") in {"not_generated", "geometry_warning", "failed"}
                     or geometry_errors(rows[index - 1], character=data["planning_mode"] == "Quality"
                         and data["trigger_type"] == "Character" and rows[index - 1].get("scene_status") != "guided_fallback")):
                 raise ValueError("Repair this scene before regenerating its prompt.")
@@ -83,7 +92,7 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
             state.jobs[job.id] = job
             task = asyncio.create_task(state.run(
                 job, director_request, config, True, {"operation": job.kind, "input": data,
-                                                     "scene_action": scene_action}))
+                                                      "scene_action": scene_action, "valid_only": valid_only}))
             state.tasks.add(task)
             task.add_done_callback(state.tasks.discard)
             return web.json_response(job.snapshot(), status=202)
@@ -283,7 +292,8 @@ def execute_workflow(state, job, request, config, workflow):
                 job.revision += 1
         result = DatasetService(config, job.checkpoint).run(
             request, workflow["input"], progress, partial,
-            scenes_only=workflow["operation"] == "dataset_scenes", scene_action=workflow.get("scene_action"))
+            scenes_only=workflow["operation"] == "dataset_scenes", scene_action=workflow.get("scene_action"),
+            valid_only=workflow.get("valid_only", False))
         job.commit(lambda: result, finish=True)
         return
 

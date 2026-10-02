@@ -44,7 +44,7 @@ class CaptureBackend(GoatedPrompterBackend):
         if instruction.diagnostic_stage.startswith("dataset:scene_planner"):
             data = json.loads(instruction.user_message)
             return json.dumps([{"index": index, "idea": f"Distinct activity {index}", "scene": f"Distinct adventure {index}"}
-                               for index in range(1, data["amount"] + 1)])
+                               for index in data["indexes"]])
         if instruction.diagnostic_stage.startswith("dataset:idea_planner"):
             data = json.loads(instruction.user_message)
             return json.dumps([{"index": row["index"], "idea": f"Replacement concept {row['index']}"}
@@ -147,7 +147,7 @@ class DatasetUnitTests(unittest.TestCase):
         self.assertIn("all one thousand", builder.system_message)
         self.assertIn("reference locks still take priority", builder.system_message)
 
-    def test_planner_rejects_invalid_rows_and_falls_back_without_failing_batch(self):
+    def test_planner_rejects_invalid_rows_and_records_failures_without_failing_batch(self):
         from goated_prompter.scene_planner import ScenePlanner
         planner = ScenePlanner(lambda: None)
         data = valid_draft(amount=2, source_mode="guided", inputs="cycling\ntennis")
@@ -157,9 +157,9 @@ class DatasetUnitTests(unittest.TestCase):
         progress = []
         rows = planner.plan_batch(session=session, data=data, coverage=build_coverage_plan(data),
                                   family="qwen", progress=progress.append)
-        self.assertEqual(session.generate.call_count, 2)
-        self.assertEqual([row["scene"] for row in rows], ["cycling", "tennis"])
-        self.assertTrue(any("unavailable" in message for message in progress))
+        self.assertEqual(session.generate.call_count, 12)  # Chunk retry + (3 local attempts + 2 idea attempts) per item.
+        self.assertTrue(all(row["scene_status"] == "failed" and row["failure_reason"] for row in rows))
+        self.assertTrue(any("Skipping" in message for message in progress))
 
     def test_recovery_accepts_complete_valid_prefix_without_retry(self):
         from unittest.mock import Mock
@@ -271,7 +271,7 @@ class DatasetUnitTests(unittest.TestCase):
         self.assertEqual([item["input"] for item in result["prompts"]], ["standing", "running", "standing"])
         self.assertTrue(all("ohwx_person" in item["prompt"] for item in result["prompts"]))
         self.assertTrue(all(not item["prompt"].startswith("ohwx_person") for item in result["prompts"]))
-        self.assertEqual([item["completed"] for item in partials], [0, 1, 2, 3])
+        self.assertEqual([item["completed"] for item in partials], [0, 0, 1, 2, 3])
         self.assertEqual(len(partials[0]["scene_plan"]), 3)
         for partial in partials[1:]:
             self.assertTrue(all("idea" in item and "scene" in item for item in partial["prompts"]))
@@ -288,7 +288,7 @@ class DatasetUnitTests(unittest.TestCase):
                 request, data, progress.append, lambda _result: None)
         self.assertEqual(progress, [
             "Starting the prompt engine for the dataset…",
-            "Scene Planner · planning dataset scenes…",
+            "Scene Planner · chunk 1–1 · planning…",
             "Waiting for prompt engine · dataset prompt 1/1",
             "Checking dataset prompt 1/1",
         ])
@@ -312,15 +312,17 @@ class DatasetUnitTests(unittest.TestCase):
         backend = AlwaysRunawayBackend()
         data = valid_draft(amount=1)
         request = GoatedPrompterRequest(idea=data["subject"], target_model=data["target"])
-        with patch("goated_prompter.dataset.create_backend", return_value=backend), \
-             self.assertRaisesRegex(Exception, "after 3 retries"):
-            DatasetService({"backend": "mock"}, lambda: None).run(
+        with patch("goated_prompter.dataset.create_backend", return_value=backend):
+            result = DatasetService({"backend": "mock"}, lambda: None).run(
                 request, data, lambda _message: None, lambda _result: None)
-        self.assertEqual(len(backend.calls), 5)
+        self.assertEqual(result["completed"], 0)
+        self.assertEqual(result["failed"], 1)
+        self.assertIn("exceeded", result["scene_plan"][0]["failure_reason"])
+        self.assertEqual(len(backend.calls), 7)  # Four writer attempts, then bounded replacement ideation.
         self.assertTrue(all(call.system_message.count("LOOP CORRECTION:") == 1
-                            for call in backend.calls[2:]))
-        self.assertIn("Prompt length — Short", backend.calls[-1].system_message)
-        self.assertLessEqual(backend.calls[-1].hard_max_tokens, backend.calls[1].hard_max_tokens)
+                            for call in backend.calls[2:5]))
+        self.assertIn("Prompt length — Short", backend.calls[4].system_message)
+        self.assertLessEqual(backend.calls[4].hard_max_tokens, backend.calls[1].hard_max_tokens)
 
     def test_connected_starting_and_distributed_trigger_contracts(self):
         self.assertEqual(trigger_terms("woman, cake", False), ("woman", "cake"))
@@ -502,6 +504,37 @@ class DatasetEndpointTests(unittest.IsolatedAsyncioTestCase):
         for action, index in (("unknown", 1), ("repair_scene", True), ("repair_scene", 3), ("regenerate_prompt", 1)):
             response = await self.client.post("/api/workspace/dataset/scene",
                 json={"input": data, "action": action, "index": index})
+            self.assertEqual(response.status, 400, await response.text())
+        self.assertEqual(self.backend.calls, [])
+
+    async def test_valid_only_api_writes_good_index_and_persists_failed_reason(self):
+        from tests.test_dataset_quality_planning import saved
+        from tests.test_scene_composer import rows
+        data = saved(valid_draft(amount=2), rows(2))
+        data["scene_plan"][0].update(idea="", scene="", geometry={}, idea_status="failed", scene_status="failed",
+            prompt_status="failed", failure_stage="scene", failure_reason="Direct rear camera cannot show a full face.", replacement_attempted=True)
+        data["results"] = []
+        settings = await (await self.client.get("/api/workspace/settings/dataset")).json()
+        response = await self.client.put("/api/workspace/settings/dataset",
+            json={"revision": settings["revision"], "draft": data})
+        self.assertEqual(response.status, 200, await response.text())
+        persisted = await response.json()
+        self.assertTrue(persisted["idea_plan_current"])
+        self.assertFalse(persisted["scene_plan_current"])
+        self.assertTrue(persisted["scene_plan_matches_settings"])
+        self.assertEqual(persisted["draft"]["scene_plan"][0]["failure_reason"], data["scene_plan"][0]["failure_reason"])
+        response = await self.client.post("/api/workspace/dataset", json={"input": data, "valid_only": True})
+        self.assertEqual(response.status, 202, await response.text())
+        job = await self.terminal(await response.json())
+        self.assertEqual(job["status"], "succeeded", job)
+        self.assertEqual([row["index"] for row in job["result"]["prompts"]], [2])
+        self.assertEqual(job["result"]["scene_plan"][0], data["scene_plan"][0])
+        self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:2"])
+
+    async def test_valid_only_api_rejects_invalid_flag_and_missing_valid_plan(self):
+        for path, flag in (("/api/workspace/dataset", "yes"), ("/api/workspace/dataset", True),
+                           ("/api/workspace/dataset/scenes", True)):
+            response = await self.client.post(path, json={"input": valid_draft(), "valid_only": flag})
             self.assertEqual(response.status, 400, await response.text())
         self.assertEqual(self.backend.calls, [])
 

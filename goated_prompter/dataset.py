@@ -21,7 +21,8 @@ from .dataset_triggers import trigger_text_target
 from .dataset_triggers import trigger_presence_error, trigger_terms
 from .dataset_visible_content import PositiveContentError, positive_prompt_error, sanitize_positive_prompt
 from .scene_planner import (ScenePlanner, MAX_STORED_SCENE_CHARACTERS, MAX_STORED_IDEA_CHARACTERS,
-                            reusable_scene_plan, scene_plan_signature, validate_saved_scene_plan, validate_plan_metadata)
+                            reusable_scene_plan, scene_plan_signature, validate_saved_scene_plan, validate_plan_metadata,
+                            failure_reason, failed_scene, scene_is_usable, FAILURE_METADATA)
 from .dataset_geometry import geometry_errors, migrate_saved_geometry
 
 
@@ -177,7 +178,7 @@ class DatasetService:
     def __init__(self, config, checkpoint):
         self.config, self.checkpoint = config, checkpoint
 
-    def _generate(self, session, instruction, data, index, progress, plan_item=None):
+    def _generate(self, session, instruction, data, index, progress, plan_item=None, *, retries=DATASET_MAX_RETRIES):
         def check_fidelity(prompt):
             if data.get("planning_mode") == "Quality" and plan_item:
                 text = trigger_text_target(prompt, data["target"])
@@ -188,7 +189,7 @@ class DatasetService:
                     raise SceneFidelityError(error)
             return prompt
         original = instruction
-        for attempt in range(DATASET_MAX_RETRIES + 1):
+        for attempt in range(retries + 1):
             self.checkpoint()
             progress(
                 f"{'Retrying' if attempt else 'Waiting for'} prompt engine · "
@@ -216,10 +217,10 @@ class DatasetService:
                     else:
                         progress(f"Dataset prompt {index}/{data['amount']} recovered from the usable text before the repetition loop.")
                         return prompt
-                if attempt >= DATASET_MAX_RETRIES:
+                if attempt >= retries:
                     raise BackendGenerationError(
                         f"Dataset prompt {index}/{data['amount']} produced runaway output after "
-                        f"{DATASET_MAX_RETRIES} retries. {exc}"
+                        f"{retries} retries. {exc}"
                     ) from exc
                 progress(
                     f"Dataset prompt {index}/{data['amount']} entered a repetition/output-limit loop: "
@@ -237,6 +238,15 @@ class DatasetService:
                     diagnostic_stage=original.diagnostic_stage + f":loop_retry_{attempt + 1}",
                 )
                 continue
+            except BackendGenerationError as exc:
+                self.checkpoint()
+                if attempt >= retries:
+                    raise BackendGenerationError(
+                        f"Dataset prompt {index}/{data['amount']} could not be generated after {retries} retries. {exc}"
+                    ) from exc
+                progress(f"Dataset prompt {index}/{data['amount']} engine request failed: {exc} Retrying ({attempt + 1}/{retries}).")
+                instruction = replace(original, diagnostic_stage=original.diagnostic_stage + f":transport_retry_{attempt + 1}")
+                continue
             self.checkpoint()
             progress(f"Checking dataset prompt {index}/{data['amount']}")
             try:
@@ -244,10 +254,10 @@ class DatasetService:
                 prompt = validate_trigger_contract(prompt, data, progress)
                 return check_fidelity(validate_positive_content(prompt, data))
             except (WorkflowFormatError, ValueError, KeyError, TypeError) as exc:
-                if attempt >= DATASET_MAX_RETRIES:
+                if attempt >= retries:
                     raise BackendGenerationError(
                         f"Dataset prompt {index}/{data['amount']} remained invalid after "
-                        f"{DATASET_MAX_RETRIES} retries. {exc}"
+                        f"{retries} retries. {exc}"
                     ) from exc
                 progress(
                     f"Dataset prompt {index}/{data['amount']} failed output validation: {exc} "
@@ -269,7 +279,7 @@ class DatasetService:
                     diagnostic_stage=original.diagnostic_stage
                     + f":{'scene' if fidelity_failure else 'content' if content_failure else 'format'}_retry_{attempt + 1}")
 
-    def run(self, request, data, progress, partial, *, scenes_only=False, scene_action=None):
+    def run(self, request, data, progress, partial, *, scenes_only=False, scene_action=None, valid_only=False):
         effective, profile = resolve_director_config(self.config, request)
         backend = create_backend(effective)
         family = _effective_model_family(request, profile, effective)
@@ -280,15 +290,17 @@ class DatasetService:
         progress("Starting the prompt engine for the dataset…")
         with backend.generation_session() as session:
             planner = ScenePlanner(self.checkpoint)
-            scenes = reusable_scene_plan(data, coverage, require_scenes=False)
-            if scenes_only and scenes and all(row["scene"].strip() and row.get("scene_status") not in {"not_generated", "geometry_warning"} for row in scenes):
+            scenes = reusable_scene_plan(data, coverage, require_scenes=False, allow_pending=valid_only or scene_action is not None)
+            if valid_only and (scenes is None or not any(scene_is_usable(row, data) for row in scenes)):
+                raise ValueError("No valid scenes are available in the current saved plan.")
+            if scenes_only and scenes and all(scene_is_usable(row, data) for row in scenes):
                 scenes = None  # Explicit replanning of a completed plan still creates new ideas.
             if scene_action and scenes is None:
                 raise ValueError("Per-scene actions need a current saved idea plan. Plan scenes first.")
             def save_planning_stage(rows):
                 nonlocal scenes
-                scenes = [{**row, "input": assignment["input"], "idea_status": "valid",
-                           "scene_status": row.get("scene_status", "valid"), "prompt_status": "not_generated"}
+                scenes = [{**row, "input": assignment["input"], "idea_status": row.get("idea_status", "valid"),
+                           "scene_status": row.get("scene_status", "valid"), "prompt_status": row.get("prompt_status", "not_generated")}
                           for row, assignment in zip(rows, plan)]
                 partial({"ok": True, "kind": "dataset_scenes" if scenes_only else "dataset",
                          "prompts": list(results), "completed": len(results), "total": data["amount"],
@@ -298,10 +310,10 @@ class DatasetService:
                 planned = planner.plan_batch(
                     session=session, data=data, coverage=coverage, family=family, progress=progress,
                     plan_update=save_planning_stage)
-                scenes = [{**row, "input": assignment["input"], "idea_status": "valid",
-                           "scene_status": ("guided_fallback" if data["source_mode"] == "guided"
-                                            and row["scene"] == assignment["input"] else "valid"),
-                           "prompt_status": "not_generated"}
+                scenes = [{**row, "input": assignment["input"], "idea_status": row.get("idea_status", "valid"),
+                            "scene_status": row.get("scene_status", ("guided_fallback" if data["source_mode"] == "guided"
+                                             and row["scene"] == assignment["input"] else "valid")),
+                            "prompt_status": row.get("prompt_status", "not_generated")}
                           for row, assignment in zip(planned, plan)]
             else:
                 scenes = [dict(row) for row in scenes]
@@ -310,30 +322,40 @@ class DatasetService:
                 partial({"ok": True, "kind": "dataset", "prompts": list(results), "completed": len(results),
                          "total": data["amount"], "target": data["target"], "coverage": coverage,
                          "scene_plan": [dict(row) for row in scenes], "scene_plan_signature": signature})
-            selected = list(range(1, data["amount"] + 1))
+            selected = [row["index"] for row in scenes if scene_is_usable(row, data)] if valid_only else list(range(1, data["amount"] + 1))
             if scene_action:
                 action, index = scene_action
                 selected = [index]
                 original = scenes[index - 1]
+                if action != "regenerate_prompt":
+                    original = {key: value for key, value in original.items() if key not in FAILURE_METADATA}
                 results = [row for row in results if row["index"] != index]
                 scenes[index - 1] = {**original, "prompt_status": "not_generated"}
                 if action == "regenerate_idea":
-                    idea = planner.plan_ideas(session=session, data=data, coverage=coverage, family=family,
-                        progress=progress, indexes=[index], existing=scenes)[0]
-                    scenes[index - 1] = {**idea, "input": original["input"], "scene": "", "geometry": {},
-                        "idea_status": "valid", "scene_status": "not_generated", "prompt_status": "not_generated"}
+                    try:
+                        idea = planner.plan_ideas(session=session, data=data, coverage=coverage, family=family,
+                            progress=progress, indexes=[index], existing=scenes)[0]
+                    except BackendGenerationError as exc:
+                        self.checkpoint()
+                        scenes[index - 1] = failed_scene({**original, "replacement_attempted": True},
+                            "Requested new idea failed: " + failure_reason(exc), stage="idea")
+                    else:
+                        scenes[index - 1] = {**idea, "input": original["input"], "scene": "", "geometry": {},
+                             "idea_status": "valid", "scene_status": "not_generated", "prompt_status": "not_generated"}
                     publish()
                 elif action == "repair_scene":
                     scenes[index - 1] = {**original, "scene_status": "not_generated", "prompt_status": "not_generated"}
                     publish()
-                    repaired = planner.repair_scene(session=session, data=data, coverage=coverage,
-                        row=original, family=family, progress=progress)
-                    scenes[index - 1] = {**repaired, "input": original["input"], "idea_status": "valid",
-                                        "scene_status": "valid", "prompt_status": "not_generated"}
+                    repaired = planner.recover_scene(session=session, data=data, coverage=coverage,
+                        row=original, family=family, progress=progress,
+                        existing_rows=[row for row in scenes if row["index"] != index])
+                    scenes[index - 1] = {**repaired, "input": original["input"], "idea_status": repaired.get("idea_status", "valid"),
+                                        "scene_status": repaired.get("scene_status", "valid"), "prompt_status": repaired.get("prompt_status", "not_generated")}
                 elif action != "regenerate_prompt":
                     raise ValueError("Unknown per-scene action.")
             # Saved/manual idea edits invalidate only their downstream scene.
-            pending = [scenes[index - 1] for index in selected if not scenes[index - 1]["scene"].strip()]
+            pending = [scenes[index - 1] for index in selected if not scenes[index - 1]["scene"].strip()
+                       and scenes[index - 1].get("scene_status") != "failed"]
             if pending:
                 if scene_action and scene_action[0] == "regenerate_prompt":
                     raise ValueError("Compose or repair this scene before regenerating its prompt.")
@@ -341,13 +363,15 @@ class DatasetService:
                     for composed in rows:
                         original = scenes[composed["index"] - 1]
                         scenes[composed["index"] - 1] = {**original, **composed,
-                            "idea_status": "valid", "prompt_status": "not_generated"}
+                             "idea_status": composed.get("idea_status", "valid"), "prompt_status": composed.get("prompt_status", "not_generated")}
                     publish()
                 composed = planner.compose(session=session, data=data, coverage=coverage, ideas=pending,
                     family=family, progress=progress, plan_update=save_composed)
-                save_composed([{**row, "scene_status": "valid"} for row in composed])
+                save_composed([{**row, "scene_status": row.get("scene_status", "valid")} for row in composed])
             for index in selected:
                 row = scenes[index - 1]
+                if row.get("scene_status") == "failed":
+                    continue
                 errors = geometry_errors(row, character=data.get("planning_mode") == "Quality"
                     and data["trigger_type"] == "Character" and row.get("scene_status") != "guided_fallback")
                 if errors or row.get("scene_status") in {"not_generated", "geometry_warning"}:
@@ -355,11 +379,15 @@ class DatasetService:
                         raise ValueError("Repair this scene's geometry before regenerating its prompt.")
                     scenes[index - 1] = {**row, "scene_status": "geometry_warning", "prompt_status": "not_generated"}
                     publish()
-                    repaired = planner.repair_scene(session=session, data=data, coverage=coverage,
-                        row=row, family=family, progress=progress, errors=errors)
-                    scenes[index - 1] = {**row, **repaired, "scene_status": "valid", "prompt_status": "not_generated"}
+                    repaired = planner.recover_scene(session=session, data=data, coverage=coverage,
+                        row=row, family=family, progress=progress, errors=errors,
+                        existing_rows=[item for item in scenes if item["index"] != index])
+                    scenes[index - 1] = {**row, **repaired, "scene_status": repaired.get("scene_status", "valid"),
+                        "prompt_status": repaired.get("prompt_status", "not_generated")}
             duplicates = {row["index"] for row in analyze_idea_diversity(data, scenes)["ideas"] if row["issues"]}
             for index in selected:
+                if scenes[index - 1].get("scene_status") == "failed":
+                    continue
                 if "idea_status" in scenes[index - 1]:
                     scenes[index - 1] = {**scenes[index - 1],
                         "idea_status": "duplicate_warning" if index in duplicates else "valid"}
@@ -374,9 +402,42 @@ class DatasetService:
             publish()
             for index in selected:
                 self.checkpoint()
+                if scenes[index - 1].get("scene_status") == "failed":
+                    continue
                 plan_item = {**plan[index - 1], **scenes[index - 1]}
                 instruction = dataset_instruction(request, data, index, (), family, plan_item)
-                prompt = self._generate(session, instruction, data, index, progress, plan_item)
+                try:
+                    prompt = self._generate(session, instruction, data, index, progress, plan_item)
+                except BackendGenerationError as exc:
+                    self.checkpoint()
+                    original_reason = failure_reason(exc)
+                    if scenes[index - 1].get("replacement_attempted"):
+                        scenes[index - 1].update(prompt_status="failed", failure_stage="prompt",
+                            failure_reason=original_reason)
+                        progress(f"Skipping prompt {index}: {original_reason}")
+                        publish()
+                        continue
+                    replacement = planner.replace_failed_scene(session=session, data=data, coverage=coverage,
+                        row=scenes[index - 1], family=family, progress=progress, reason=original_reason,
+                        existing_rows=[row for row in scenes if row["index"] != index])
+                    scenes[index - 1] = {**replacement, "input": plan_item["input"],
+                        "scene_status": replacement.get("scene_status", "valid"),
+                        "idea_status": replacement.get("idea_status", "valid"),
+                        "prompt_status": replacement.get("prompt_status", "not_generated")}
+                    publish()
+                    if replacement.get("scene_status") == "failed":
+                        continue
+                    plan_item = {**plan[index - 1], **scenes[index - 1]}
+                    instruction = dataset_instruction(request, data, index, (), family, plan_item)
+                    try:
+                        prompt = self._generate(session, instruction, data, index, progress, plan_item, retries=0)
+                    except BackendGenerationError as replacement_error:
+                        self.checkpoint()
+                        scenes[index - 1].update(prompt_status="failed", failure_stage="prompt",
+                            failure_reason=f"Original prompt: {original_reason} Replacement prompt failed: {failure_reason(replacement_error)}"[:2000])
+                        progress(f"Skipping prompt {index}: {scenes[index - 1]['failure_reason']}")
+                        publish()
+                        continue
                 seed = plan_item["input"]
                 results.append({"index": index, "prompt": prompt, "input": seed,
                                 "idea": plan_item["idea"], "scene": plan_item["scene"],
@@ -384,10 +445,13 @@ class DatasetService:
                 results.sort(key=lambda row: row["index"])
                 if "prompt_status" in scenes[index - 1]:
                     scenes[index - 1] = {**scenes[index - 1], "prompt_status": "valid"}
+                scenes[index - 1] = {key: value for key, value in scenes[index - 1].items()
+                                    if key not in {"failure_reason", "failure_stage"}}
                 publish()
             scene_state = {"scene_plan": scenes, "scene_plan_signature": signature}
         report = analyze_dataset_quality(data, results, plan)
         return {"ok": True, "kind": "dataset", "prompts": results,
+                "failed": sum(row.get("prompt_status") == "failed" for row in scenes),
                 "completed": len(results), "total": data["amount"], "target": data["target"],
                 "coverage": coverage, **scene_state, "quality_report": report, "backend": backend.name}
 
