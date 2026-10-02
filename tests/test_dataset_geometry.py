@@ -4,7 +4,7 @@ import unittest
 
 from goated_prompter.dataset_geometry import (
     CHARACTER_REQUIRED_FIELDS, CUSTOM_DETAIL_FIELDS, GEOMETRY_ENUMS,
-    GeometryValidationError, geometry_errors, migrate_saved_geometry, validate_geometry,
+    GeometryValidationError, geometry_errors, migrate_saved_geometry, normalize_geometry_value, validate_geometry,
 )
 
 
@@ -35,16 +35,29 @@ class GeometrySchemaTests(unittest.TestCase):
             with self.subTest(field=field), self.assertRaises(ValueError):
                 validate_geometry({field: "custom"})
 
-    def test_custom_pose_and_expression_require_detail(self):
+    def test_custom_pose_and_expression_details_are_optional(self):
         for field, detail in CUSTOM_DETAIL_FIELDS.items():
-            for invalid in ({field: "custom"}, {field: "custom", detail: ""}, {field: "custom", detail: "x\ny"}):
+            self.assertEqual(validate_geometry({field: "custom"}), {field: "custom"})
+            for invalid in ({field: "custom", detail: ""}, {field: "custom", detail: "x\ny"}):
                 with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                     validate_geometry(invalid)
         geometry = character_geometry(pose_type="custom", pose_detail="one-foot balance while leaning sideways")
         self.assertEqual(validate_geometry(geometry, character=True), geometry)
         self.assertFalse(geometry_errors({"geometry": geometry, "scene": "Balancing with a readable action."}))
 
+    def test_enum_formatting_is_normalized_before_validation(self):
+        for value, expected in ((" front three-quarter ", "front_three_quarter"), ("full body", "full_body"),
+                                ("eye-level", "eye_level"), ("REAR three  quarter__left", "rear_three_quarter_left")):
+            self.assertEqual(normalize_geometry_value(value), expected)
+        raw = {"framing": "Full body", "camera_view": "front three-quarter", "camera_height": "eye-level"}
+        canonical = {"framing": "full_body", "camera_view": "front_three_quarter", "camera_height": "eye_level"}
+        self.assertEqual(validate_geometry(raw), canonical)
+        self.assertEqual(migrate_saved_geometry(raw), (canonical, False))
+        self.assertFalse(geometry_errors({"geometry": raw, "scene": "One coherent view."}))
+
     def test_required_character_fields_and_optional_nonhuman_geometry(self):
+        self.assertEqual(CHARACTER_REQUIRED_FIELDS, {"framing", "camera_view", "body_orientation",
+                                                    "head_direction", "gaze_direction", "face_visibility"})
         base = character_geometry()
         for field in CHARACTER_REQUIRED_FIELDS:
             with self.subTest(field=field), self.assertRaisesRegex(ValueError, "missing"):
@@ -52,6 +65,10 @@ class GeometrySchemaTests(unittest.TestCase):
         self.assertEqual(validate_geometry({"framing": "wide", "composition": "environmental"}),
                          {"framing": "wide", "composition": "environmental"})
         self.assertEqual(validate_geometry({}), {})  # Loadable pending/manual/legacy state.
+        minimal = {key: value for key, value in base.items() if key in CHARACTER_REQUIRED_FIELDS}
+        self.assertEqual(validate_geometry(minimal, character=True), minimal)
+        self.assertFalse(geometry_errors({"geometry": minimal, "idea": "juggling oranges",
+                                         "scene": "She juggles oranges with her hands visible."}, character=True))
 
     def test_counts_are_integers_not_enums_or_booleans(self):
         self.assertEqual(validate_geometry({"primary_subject_count": 1, "secondary_subject_count": 0}),
@@ -141,7 +158,7 @@ class GeometryCompatibilityTests(unittest.TestCase):
                 self.assertFalse(self.errors(action_focus=action, hand_visibility="right_visible"))
         self.assertTrue(self.errors(action_focus="holding a box with both hands", hand_visibility="right_visible"))
         self.assertFalse(self.errors(action_focus="holding a box with both hands", hand_visibility="partially_visible"))
-        self.assertTrue(self.errors(action_focus="juggling oranges"))
+        self.assertFalse(self.errors(action_focus="juggling oranges"))
         self.assertFalse(self.errors(action_focus="juggling oranges", visibility_focus=["hands", "oranges"]))
         self.assertFalse(self.errors(action_focus="catching popcorn in her mouth", hand_visibility="none_visible"))
         self.assertTrue(geometry_errors({"idea": "walking in oversized shoes", "geometry": {"framing": "face_close_up"}}))
@@ -154,6 +171,8 @@ class GeometryCompatibilityTests(unittest.TestCase):
         self.assertFalse(geometry_errors({"geometry": {"pose_type": "selfie_pose"},
             "scene": "In a mirror selfie, the phone is visible beside her face."}))
         self.assertTrue(geometry_errors({"geometry": {"gaze_direction": "eyes_closed"}, "scene": "Looking directly at the camera."}))
+        self.assertTrue(geometry_errors({"geometry": {"gaze_direction": "toward_camera"}, "scene": "Her eyes are closed."}))
+        self.assertTrue(geometry_errors({"geometry": {"body_orientation": "direct_rear"}, "scene": "Full frontal face toward camera."}))
         self.assertFalse(geometry_errors({"geometry": {"gaze_direction": "eyes_closed"}, "scene": "A relaxed face with closed eyes."}))
 
 

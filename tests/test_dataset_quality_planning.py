@@ -78,7 +78,7 @@ class QualityPlanningTests(unittest.TestCase):
             self.assertIn(row["idea"], call.args[0].user_message)
             self.assertIn(json.dumps(row["geometry"]), call.args[0].user_message)
 
-    def test_fast_keeps_one_batch_planning_call(self):
+    def test_fast_single_scene_keeps_one_combined_planning_call(self):
         rows = [scene()]
         result, session, _ = run(draft(amount=1, planning_mode="Fast"),
                                 [json.dumps(rows), "person_token attempts to juggle and drops an orange."])
@@ -156,7 +156,7 @@ class QualityPlanningTests(unittest.TestCase):
         with self.assertRaisesRegex(BackendGenerationError, "fixed idea"):
             ScenePlanner(lambda: None).repair_scene(session=session, data=draft(amount=1),
                 coverage=effective_coverage_plan(draft(amount=1)), row=scene(), progress=lambda _: None)
-        self.assertEqual(session.generate.call_count, 2)
+        self.assertEqual(session.generate.call_count, 3)
 
     def test_malformed_geometry_is_repaired_only_at_its_index(self):
         data = draft()
@@ -176,12 +176,13 @@ class QualityPlanningTests(unittest.TestCase):
         bad = scene(geometry={"camera_view": "direct rear", "face_visibility": "full frontal"})
         session, backend, partials = Mock(), Mock(), []
         session.generate.side_effect = [json.dumps([{"index": 1, "idea": bad["idea"]}]),
-                                       json.dumps([bad]), json.dumps([bad]), json.dumps([bad])]
+                                       json.dumps([bad]), json.dumps([bad]), json.dumps([bad]),
+                                       json.dumps([bad]), RuntimeError("planning interrupted")]
         @contextmanager
         def generation_session():
             yield session
         backend.generation_session = generation_session
-        with patch("goated_prompter.dataset.create_backend", return_value=backend), self.assertRaises(BackendGenerationError):
+        with patch("goated_prompter.dataset.create_backend", return_value=backend), self.assertRaisesRegex(RuntimeError, "planning interrupted"):
             DatasetService({"backend": "mock"}, lambda: None).run(GoatedPrompterRequest(idea=data["subject"]),
                 data, lambda _: None, partials.append)
         self.assertEqual(partials[0]["scene_plan"][0]["idea"], bad["idea"])
@@ -192,7 +193,7 @@ class QualityPlanningTests(unittest.TestCase):
         restored = {**data, "scene_plan": partials[-1]["scene_plan"],
                     "scene_plan_signature": partials[-1]["scene_plan_signature"]}
         self.assertEqual(validate_dataset_draft(restored), restored)
-        self.assertEqual(session.generate.call_count, 4)
+        self.assertEqual(session.generate.call_count, 6)
 
     def test_regenerate_idea_does_not_accept_same_idea_as_new(self):
         data = saved(draft(amount=1), [scene()])
@@ -303,8 +304,15 @@ class QualityPlanningTests(unittest.TestCase):
 
     def test_automatic_planning_failure_never_calls_writer(self):
         for mode in ("Fast", "Quality"):
-            with self.subTest(mode=mode), self.assertRaisesRegex(BackendGenerationError, "planning failed"):
-                run(draft(planning_mode=mode), ["[]", "[]"])
+            with self.subTest(mode=mode):
+                if mode == "Quality":
+                    with self.assertRaisesRegex(BackendGenerationError, "planning failed"):
+                        run(draft(planning_mode=mode), ["[]", "[]"])
+                else:
+                    result, session, _ = run(draft(planning_mode=mode), ["[]"] * 12)
+                    self.assertEqual(result["completed"], 0)
+                    self.assertTrue(all(row["scene_status"] == "failed" for row in result["scene_plan"]))
+                    self.assertFalse(any(call.args[0].diagnostic_stage in {"dataset:1", "dataset:2"} for call in session.generate.call_args_list))
 
     def test_quality_guided_fallback_retains_each_supplied_line(self):
         data = draft(source_mode="guided", inputs="reading a book\nwearing a hat")

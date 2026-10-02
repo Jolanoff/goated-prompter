@@ -7,6 +7,32 @@ const views = [
   ["Instruction presets", "directors"], ["Settings", "settings"],
 ];
 
+for (const [width, height] of [[1440, 900], [1024, 900], [390, 900], [1024, 480]]) {
+  test(`activity log is always accessible without a job at ${width}x${height}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await page.goto("/");
+    for (const [label] of views) {
+      await page.getByRole("navigation", { name: "Workspace" }).getByRole("button", { name: label, exact: true }).click();
+      await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight));
+      const button = page.getByRole("button", { name: "View LLM activity log", exact: true });
+      await expect(button).toBeVisible();
+      const box = await button.boundingBox();
+      expect(box.y).toBeGreaterThanOrEqual(0);
+      expect(box.y + box.height).toBeLessThanOrEqual(height);
+      if (width > 720) {
+        expect(box.x).toBeLessThan(width === 1440 ? 232 : 76);
+        expect(box.y).toBeGreaterThan(height - 180);
+      }
+      await button.click();
+      const dialog = page.getByRole("dialog", { name: "LLM activity log", exact: true });
+      await expect(dialog).toBeVisible();
+      await expect(dialog.getByText("No generation job is available.", { exact: true })).toBeVisible();
+      await page.getByRole("button", { name: "Close LLM activity log", exact: true }).click();
+      await expect(dialog).not.toBeVisible();
+    }
+  });
+}
+
 test.beforeEach(async ({ request }) => {
   await request.put("/api/settings", { data: { builder: {} } });
   for (const workflow of ["refine", "minimax", "dataset"]) {

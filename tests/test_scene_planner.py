@@ -79,14 +79,14 @@ class ScenePlannerTests(unittest.TestCase):
         rows = [{"index": i, "idea": idea, "scene": f"A woman {idea.lower()}, in a single readable moment with the necessary props in reach and her gaze supporting the action."}
                 for i, idea in enumerate(ideas, 1)]
         session = Mock()
-        session.generate.return_value = json.dumps(rows)
+        session.generate.side_effect = [json.dumps(rows[start:start + 4]) for start in range(0, 10, 4)]
         data = draft(subject="woman doing funny stuff", amount=10)
         planned = ScenePlanner(lambda: None).plan_batch(session=session, data=data,
             coverage=effective_coverage_plan(data), progress=lambda _: None)
         self.assertEqual(len(planned), 10)
         self.assertEqual(len({row["idea"] for row in planned}), 10)
         self.assertTrue(all(row["idea"] != row["scene"] for row in planned))
-        session.generate.assert_called_once()
+        self.assertEqual(session.generate.call_count, 3)
 
     def test_idea_similarity_distinguishes_broad_concept_from_expression_scope(self):
         from goated_prompter.dataset_coverage import analyze_idea_diversity
@@ -444,7 +444,9 @@ class ScenePlannerTests(unittest.TestCase):
         self.assertEqual(result, scene_rows())
         self.assertEqual(session.generate.call_count, 2)
         first, repair = [call.args[0] for call in session.generate.call_args_list]
-        self.assertEqual(first.user_message, repair.user_message)
+        repair_context = json.loads(repair.user_message)
+        self.assertEqual(repair_context.pop("previous_response"), "invalid")
+        self.assertEqual(json.loads(first.user_message), repair_context)
         self.assertIn("FORMAT CORRECTION", repair.system_message)
         self.assertEqual(repair.diagnostic_stage, "dataset:scene_planner:repair")
 
@@ -486,14 +488,14 @@ class ScenePlannerTests(unittest.TestCase):
                              inputs="\n".join(inputs), coverage_enabled=covered,
                              constraints="The woman must be the same in every prompt.")
                 session, progress = Mock(), []
-                session.generate.return_value = json.dumps(rows)
+                session.generate.side_effect = [json.dumps(rows[start:start + 4]) for start in range(0, 10, 4)]
                 planned = ScenePlanner(lambda: None).plan_batch(session=session, data=data,
                     coverage=effective_coverage_plan(data), progress=progress.append)
                 self.assertEqual(planned, rows)
-                self.assertEqual(session.generate.call_count, 1)
+                self.assertEqual(session.generate.call_count, 3)
                 self.assertFalse(any("failed" in message or "unavailable" in message for message in progress))
-                context = json.loads(session.generate.call_args.args[0].user_message)
-                self.assertEqual([row["input"] for row in context["assignments"]], inputs + inputs[:4])
+                contexts = [json.loads(call.args[0].user_message) for call in session.generate.call_args_list]
+                self.assertEqual([row["input"] for context in contexts for row in context["assignments"]], inputs + inputs[:4])
                 self.assertNotEqual(planned[2]["scene"], inputs[2])
                 self.assertNotEqual(planned[3]["idea"], inputs[3])
 
@@ -564,7 +566,7 @@ class ScenePlannerTests(unittest.TestCase):
             self.assertEqual(final["prompts"][index]["input"], "sitting on a table" if index in (0, 2) else "park")
         self.assertEqual(partial[0]["scene_plan"], data["scene_plan"])
 
-    def test_fallback_preserves_input_after_format_or_transport_failure(self):
+    def test_format_or_transport_failure_is_bounded_and_retains_guided_assignment(self):
         for guided in (False, True):
             for error in ("[]", BackendGenerationError("engine transport failed")):
                 data = draft(source_mode="guided" if guided else "random", inputs="lying on floor\nreading")
@@ -573,18 +575,14 @@ class ScenePlannerTests(unittest.TestCase):
                     session.generate.side_effect = error
                 else:
                     session.generate.return_value = error
-                if not guided:
-                    with self.assertRaisesRegex(BackendGenerationError, "planning failed"):
-                        ScenePlanner(lambda: None).plan_batch(session=session, data=data,
-                            coverage=effective_coverage_plan(data), progress=lambda _: None)
-                    self.assertEqual(session.generate.call_count, 2)
-                    continue
                 result = ScenePlanner(lambda: None).plan_batch(
                     session=session, data=data, coverage=effective_coverage_plan(data), progress=lambda _: None)
-                self.assertEqual(session.generate.call_count, 2)
-                self.assertEqual([row["scene"] for row in result],
-                                 ["lying on floor", "reading"] if guided else [data["subject"]] * 2)
-                self.assertEqual([row["idea"] for row in result], [row["scene"] for row in result])
+                self.assertEqual(session.generate.call_count, 12)
+                self.assertTrue(all(row["scene_status"] == "failed" and row["failure_reason"] for row in result))
+                contexts = [json.loads(call.args[0].user_message) for call in session.generate.call_args_list]
+                if guided:
+                    self.assertTrue(all(row["input"] == ("lying on floor" if row["index"] == 1 else "reading")
+                                        for context in contexts for row in context["assignments"]))
 
     def test_cancellation_is_not_swallowed_as_planner_failure(self):
         class Cancelled(Exception):
@@ -597,13 +595,13 @@ class ScenePlannerTests(unittest.TestCase):
                 coverage=effective_coverage_plan(data), progress=lambda _: None)
         self.assertEqual(session.generate.call_count, 1)
 
-    def test_instruction_validation_failure_also_retries_then_fails_planning(self):
+    def test_instruction_validation_failure_is_bounded_per_item(self):
         data, session = draft(), Mock()
         session.validate_instruction.side_effect = BackendGenerationError("unsupported planning response")
-        with self.assertRaisesRegex(BackendGenerationError, "planning failed"):
-            ScenePlanner(lambda: None).plan_batch(session=session, data=data,
-                coverage=effective_coverage_plan(data), progress=lambda _: None)
-        self.assertEqual(session.validate_instruction.call_count, 2)
+        result = ScenePlanner(lambda: None).plan_batch(session=session, data=data,
+            coverage=effective_coverage_plan(data), progress=lambda _: None)
+        self.assertEqual(session.validate_instruction.call_count, 12)
+        self.assertTrue(all(row["scene_status"] == "failed" for row in result))
         session.generate.assert_not_called()
 
     def test_no_second_planner_and_normal_builder_is_unchanged(self):
@@ -648,7 +646,8 @@ class ScenePlannerTests(unittest.TestCase):
     def test_failed_planning_still_completes_dataset_with_original_guided_input(self):
         data = draft(amount=1, source_mode="guided", inputs="lying on floor", coverage_enabled=True)
         session = Mock()
-        session.generate.side_effect = ["not json", "[]", "person_token lying on floor."]
+        session.generate.side_effect = ["not json", "[]", json.dumps([
+            {"index": 1, "idea": "Lying on floor", "scene": "lying on floor"}]), "person_token lying on floor."]
         backend = Mock()
         backend.name = "scene-test"
         @contextmanager

@@ -7,8 +7,9 @@ from unittest.mock import Mock, patch
 from goated_prompter.backends.base import BackendGenerationError
 from goated_prompter.dataset import validate_dataset_draft
 from goated_prompter.dataset_coverage import effective_coverage_plan
+from goated_prompter.dataset_geometry import CHARACTER_REQUIRED_FIELDS
 from goated_prompter.prompting.scene_planner import scene_composer_instruction, idea_planner_instruction
-from goated_prompter.scene_planner import SCENE_COMPOSER_CHUNK_SIZE, ScenePlanner, validate_scene_plan, reusable_scene_plan
+from goated_prompter.scene_planner import SCENE_COMPOSER_CHUNK_SIZE, ScenePlanner, validate_scene_plan, reusable_scene_plan, reconcile_scene_coverage
 from tests.test_dataset_geometry import character_geometry
 from tests.test_dataset_quality_planning import draft, run, saved
 
@@ -95,7 +96,7 @@ class SceneComposerTests(unittest.TestCase):
     def test_failed_chunk_preserves_fixed_ideas_and_validated_first_chunk_then_resumes(self):
         expected = rows()
         outputs = [json.dumps([{key: row[key] for key in ("index", "idea")} for row in expected]),
-                   json.dumps(expected[:4]), "1\nscene: broken", "1\nscene: broken"]
+                   json.dumps(expected[:4]), "1\nscene: broken", RuntimeError("planning interrupted")]
         # Test the actual service's partial callback, not just a private planner snapshot.
         partials = []
         from contextlib import contextmanager
@@ -108,7 +109,7 @@ class SceneComposerTests(unittest.TestCase):
             yield session
         backend.generation_session = generation_session
         data = draft(amount=10, source_mode="guided", inputs="\n".join(row["idea"] for row in expected))
-        with patch("goated_prompter.dataset.create_backend", return_value=backend), self.assertRaises(BackendGenerationError):
+        with patch("goated_prompter.dataset.create_backend", return_value=backend), self.assertRaisesRegex(RuntimeError, "planning interrupted"):
             DatasetService({"backend": "mock"}, lambda: None).run(GoatedPrompterRequest(idea=data["subject"]), data,
                                                 lambda _: None, partials.append)
         restored = validate_dataset_draft({**data, "scene_plan": partials[-1]["scene_plan"],
@@ -171,6 +172,45 @@ class SceneComposerTests(unittest.TestCase):
         self.assertIn(json.dumps(expected["geometry"]), writer.user_message)
         self.assertIn("Preserve custom pose_detail and expression_detail", writer.user_message)
 
+    def test_optional_helpers_and_normalizable_enums_never_request_repair(self):
+        for mode in ("Fast", "Quality"):
+            for changes in ({"pose_type": "custom"}, {"expression": "custom"},
+                            {"camera_view": "front three-quarter", "framing": "full body", "camera_height": "eye-level"}, {}):
+                with self.subTest(mode=mode, changes=changes):
+                    expected = rows(1)[0]
+                    expected["geometry"] = {key: value for key, value in expected["geometry"].items() if key in CHARACTER_REQUIRED_FIELDS}
+                    expected["geometry"].update(changes)
+                    data, session = draft(amount=1, planning_mode=mode), Mock()
+                    outputs = [json.dumps([expected])]
+                    if mode == "Quality":
+                        outputs.insert(0, json.dumps([{"index": 1, "idea": expected["idea"]}]))
+                    session.generate.side_effect = outputs
+                    result = ScenePlanner(lambda: None).plan_batch(session=session, data=data,
+                        coverage=effective_coverage_plan(data), progress=lambda _: None)
+                    self.assertEqual(session.generate.call_count, len(outputs))
+                    self.assertTrue(all(":repair" not in call.args[0].diagnostic_stage for call in session.generate.call_args_list))
+                    self.assertEqual(result[0]["geometry"]["camera_view"], "front_three_quarter")
+                    self.assertEqual(result[0]["idea"], expected["idea"])
+
+    def test_real_rear_conflict_repairs_only_the_scene_in_both_modes(self):
+        for mode in ("Fast", "Quality"):
+            with self.subTest(mode=mode):
+                expected = rows(2)
+                bad = {**expected[0], "geometry": {**expected[0]["geometry"], "camera_view": "direct_rear",
+                    "body_orientation": "direct_rear", "face_visibility": "full"}}
+                data, session = draft(planning_mode=mode), Mock()
+                outputs = [json.dumps([bad, expected[1]]), json.dumps([expected[0]])]
+                if mode == "Quality":
+                    outputs.insert(0, json.dumps([{key: row[key] for key in ("index", "idea")} for row in expected]))
+                session.generate.side_effect = outputs
+                result = ScenePlanner(lambda: None).plan_batch(session=session, data=data,
+                    coverage=effective_coverage_plan(data), progress=lambda _: None)
+                self.assertEqual(result, expected)
+                repair = session.generate.call_args.args[0]
+                self.assertEqual(repair.diagnostic_stage, "dataset:scene_composer:repair")
+                self.assertEqual([row["index"] for row in json.loads(repair.user_message)["assignments"]], [1])
+                self.assertIn("important action and required props", repair.system_message)
+
     def test_no_silent_yaml_fences_or_multi_array_salvage(self):
         for response in ("Here is the result:\n" + json.dumps(rows(1)), "```json\n" + json.dumps(rows(1)) + "\n```",
                          json.dumps(rows(1)) + json.dumps(rows(1))):
@@ -191,6 +231,119 @@ class SceneComposerTests(unittest.TestCase):
         self.assertEqual(session.generate.call_args_list[0].args[0].diagnostic_stage, "dataset:scene_composer:repair")
         self.assertEqual(result["scene_plan"][0]["idea"], expected["idea"])
 
+
+class FastChunkTests(unittest.TestCase):
+    def plan(self, outputs, amount=10, update=None, data=None):
+        data, session = data or draft(amount=amount, planning_mode="Fast"), Mock()
+        session.generate.side_effect = outputs
+        result = ScenePlanner(lambda: None).plan_batch(session=session, data=data, coverage=effective_coverage_plan(data),
+            progress=lambda _: None, plan_update=update)
+        return result, session
+
+    def test_ten_scenes_use_three_combined_chunks_with_prior_idea_context(self):
+        expected, snapshots = rows(), []
+        data = draft(amount=10, planning_mode="Fast", constraints="Keep the same jacket", coverage_enabled=True)
+        result, session = self.plan([json.dumps(expected[start:start + 4]) for start in range(0, 10, 4)],
+            update=snapshots.append, data=data)
+        self.assertEqual(result, [reconcile_scene_coverage(row, assignment) for row, assignment in
+                                 zip(expected, effective_coverage_plan(data)["plan"])])
+        contexts = [json.loads(call.args[0].user_message) for call in session.generate.call_args_list]
+        self.assertEqual([context["indexes"] for context in contexts], [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10]])
+        for context, count in zip(contexts, (0, 4, 8)):
+            self.assertEqual(context["subject"], data["subject"])
+            self.assertEqual(context["requested_amount"], 10)
+            self.assertEqual(context["constraints"], data["constraints"])
+            self.assertEqual(context["existing_ideas"], [{key: row[key] for key in ("index", "idea")} for row in expected[:count]])
+            self.assertTrue(all(row["facets"] for row in context["assignments"]))
+        self.assertEqual([row["scene_status"] for row in snapshots[0]], ["valid"] * 4 + ["not_generated"] * 6)
+        self.assertEqual([row["idea_status"] for row in snapshots[0]], ["valid"] * 4 + ["not_generated"] * 6)
+        self.assertTrue(all(call.args[0].diagnostic_stage == "dataset:scene_planner" for call in session.generate.call_args_list))
+
+    def test_middle_chunk_retry_leaves_first_and_last_chunks_untouched(self):
+        expected = rows()
+        result, session = self.plan([json.dumps(expected[:4]), "1\nscene: broken", json.dumps(expected[4:8]), json.dumps(expected[8:])])
+        self.assertEqual(result, expected)
+        contexts = [json.loads(call.args[0].user_message) for call in session.generate.call_args_list]
+        self.assertEqual([context["indexes"] for context in contexts], [[1, 2, 3, 4], [5, 6, 7, 8], [5, 6, 7, 8], [9, 10]])
+        self.assertEqual(contexts[1]["existing_ideas"], contexts[2]["existing_ideas"])
+        self.assertIn("SCENE OUTPUT FORMAT CORRECTION", session.generate.call_args_list[2].args[0].system_message)
+
+    def test_twenty_five_scenes_use_seven_chunks(self):
+        expected = rows(25)
+        result, session = self.plan([json.dumps(expected[start:start + 4]) for start in range(0, 25, 4)], amount=25)
+        self.assertEqual(result, expected)
+        self.assertEqual([json.loads(call.args[0].user_message)["amount"] for call in session.generate.call_args_list], [4] * 6 + [1])
+
+    def test_real_conflict_in_middle_chunk_repairs_only_that_scene(self):
+        expected = rows()
+        bad = {**expected[4], "geometry": {**expected[4]["geometry"], "camera_view": "direct_rear",
+            "body_orientation": "direct_rear", "face_visibility": "full"}}
+        result, session = self.plan([json.dumps(expected[:4]), json.dumps([bad, *expected[5:8]]),
+            json.dumps([expected[4]]), json.dumps(expected[8:])])
+        self.assertEqual(result, expected)
+        self.assertEqual([[row["index"] for row in json.loads(call.args[0].user_message)["assignments"]]
+                          for call in session.generate.call_args_list], [[1, 2, 3, 4], [5, 6, 7, 8], [5], [9, 10]])
+        self.assertEqual(session.generate.call_args_list[2].args[0].diagnostic_stage, "dataset:scene_composer:repair")
+
+    def test_guided_chunk_local_recovery_does_not_replace_previous_valid_chunk(self):
+        expected = rows()
+        data = draft(amount=10, planning_mode="Fast", source_mode="guided", inputs="\n".join(row["idea"] for row in expected))
+        result, session = self.plan([json.dumps(expected[:4]), "[]", "[]",
+            *[json.dumps([row]) for row in expected[4:8]], json.dumps(expected[8:])], data=data)
+        self.assertEqual(result[:4], expected[:4])
+        self.assertEqual(result[8:], expected[8:])
+        self.assertEqual(result[4:8], expected[4:8])
+        self.assertEqual(session.generate.call_count, 8)
+
+    def test_explicit_replanning_of_completed_fast_plan_still_generates_new_chunks(self):
+        expected = rows()
+        data = saved(draft(amount=10, planning_mode="Fast"), expected)
+        result, session, _ = run(data, [json.dumps(expected[start:start + 4]) for start in range(0, 10, 4)], scenes_only=True)
+        self.assertEqual(session.generate.call_count, 3)
+        self.assertEqual([row["idea"] for row in result["scene_plan"]], [row["idea"] for row in expected])
+
+    def test_failed_fast_chunk_saves_and_resumes_without_regenerating_accepted_ideas(self):
+        from contextlib import contextmanager
+        from goated_prompter.dataset import DatasetService
+        from goated_prompter.core import GoatedPrompterRequest
+        data, expected, partials = draft(amount=10, planning_mode="Fast"), rows(), []
+        session, backend = Mock(), Mock()
+        session.generate.side_effect = [json.dumps(expected[:4]), "[]", RuntimeError("planning interrupted")]
+        @contextmanager
+        def generation_session():
+            yield session
+        backend.generation_session = generation_session
+        with patch("goated_prompter.dataset.create_backend", return_value=backend), self.assertRaisesRegex(RuntimeError, "planning interrupted"):
+            DatasetService({"backend": "mock"}, lambda: None).run(GoatedPrompterRequest(idea=data["subject"]), data,
+                lambda _: None, partials.append, scenes_only=True)
+        restored = validate_dataset_draft({**data, "scene_plan": partials[-1]["scene_plan"],
+            "scene_plan_signature": partials[-1]["scene_plan_signature"]})
+        self.assertEqual([row["idea_status"] for row in restored["scene_plan"]], ["valid"] * 4 + ["not_generated"] * 6)
+        result, resumed, _ = run(restored, [json.dumps(expected[4:8]), json.dumps(expected[8:])], scenes_only=True)
+        self.assertEqual([json.loads(call.args[0].user_message)["indexes"] for call in resumed.generate.call_args_list], [[5, 6, 7, 8], [9, 10]])
+        self.assertEqual(result["scene_plan"][:4], restored["scene_plan"][:4])
+
+    def test_failed_fast_scene_repair_resumes_fixed_idea_and_preserves_good_siblings(self):
+        expected, snapshots = rows(), []
+        data, session = draft(amount=10, planning_mode="Fast"), Mock()
+        bad = {**expected[4], "geometry": {**expected[4]["geometry"], "camera_view": "direct_rear",
+            "body_orientation": "direct_rear", "face_visibility": "full"}}
+        session.generate.side_effect = [json.dumps(expected[:4]), json.dumps([bad, *expected[5:8]]),
+                                       json.dumps([bad]), json.dumps([bad]), json.dumps([bad]), RuntimeError("planning interrupted")]
+        with self.assertRaisesRegex(RuntimeError, "planning interrupted"):
+            ScenePlanner(lambda: None).plan_batch(session=session, data=data, coverage=effective_coverage_plan(data),
+                progress=lambda _: None, plan_update=snapshots.append)
+        from goated_prompter.scene_planner import scene_plan_signature
+        restored = validate_dataset_draft({**data, "scene_plan": [{**row, "input": "",
+            "scene_status": row.get("scene_status", "valid")} for row in snapshots[-1]],
+            "scene_plan_signature": scene_plan_signature(data, effective_coverage_plan(data))})
+        result, resumed = self.plan([json.dumps([expected[4]]), json.dumps(expected[8:])], data=restored)
+        self.assertEqual(result, expected)
+        self.assertEqual([call.args[0].diagnostic_stage for call in resumed.generate.call_args_list],
+                         ["dataset:scene_composer:repair", "dataset:scene_planner"])
+        repair_context = json.loads(resumed.generate.call_args_list[0].args[0].user_message)
+        self.assertEqual(repair_context["assignments"][0]["idea"], expected[4]["idea"])
+        self.assertEqual(repair_context["indexes"], [5])
 
 if __name__ == "__main__":
     unittest.main()

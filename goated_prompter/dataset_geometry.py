@@ -19,7 +19,7 @@ TORSO_ORIENTATION_VALUES = HIP_ORIENTATION_VALUES | frozenset("twisted_left twis
 BODY_ORIENTATION_VALUES = HIP_ORIENTATION_VALUES | frozenset("bent_forward leaning_backward lying_face_up lying_face_down lying_on_left_side lying_on_right_side".split())
 HEAD_DIRECTION_VALUES = frozenset("toward_camera away_from_camera left right up down up_left up_right down_left down_right toward_action toward_held_object toward_secondary_subject over_left_shoulder over_right_shoulder".split())
 GAZE_DIRECTION_VALUES = frozenset("toward_camera away_from_camera left right up down up_left up_right down_left down_right toward_action toward_held_object toward_secondary_subject toward_ground toward_reflection toward_background_object eyes_closed unfocused".split())
-EXPRESSION_VALUES = frozenset("neutral relaxed focused concentrating curious confused surprised shocked amused smiling laughing playful mischievous embarrassed awkward deadpan serious determined frustrated annoyed angry worried nervous fearful excited joyful ecstatic sad disappointed disgusted skeptical confident proud sleepy exhausted strained custom".split())
+EXPRESSION_VALUES = frozenset("neutral relaxed focused concentrating curious confused surprised shocked amused submissive dominant smiling laughing playful mischievous embarrassed awkward deadpan serious determined frustrated annoyed angry worried nervous fearful excited joyful ecstatic sad disappointed disgusted skeptical confident proud sleepy exhausted strained custom".split())
 POSE_TYPE_VALUES = frozenset("standing_neutral standing_relaxed standing_dynamic standing_balancing standing_leaning walking running jumping landing crouching squatting kneeling sitting_upright sitting_relaxed sitting_leaning sitting_on_floor lying_face_up lying_face_down lying_on_side reaching bending twisting dancing falling slipping climbing hanging balancing lifting carrying throwing catching pushing pulling holding gesturing selfie_pose posed_portrait custom".split())
 MOVEMENT_VALUES = frozenset("still subtle active fast explosive falling airborne".split())
 FACE_VISIBILITY_VALUES = frozenset("full three_quarter profile partial mostly_hidden hidden".split())
@@ -53,7 +53,7 @@ CUSTOM_DETAIL_FIELDS = {"pose_type": "pose_detail", "expression": "expression_de
 FREE_TEXT_FIELDS = {"action_focus", *CUSTOM_DETAIL_FIELDS.values()}
 COUNT_FIELDS = {"primary_subject_count", "secondary_subject_count"}
 GEOMETRY_FIELDS = {*GEOMETRY_ENUMS, *FREE_TEXT_FIELDS, *COUNT_FIELDS, "visibility_focus"}
-CHARACTER_REQUIRED_FIELDS = frozenset("framing camera_view body_orientation head_direction gaze_direction pose_type action_focus face_visibility visibility_focus".split())
+CHARACTER_REQUIRED_FIELDS = frozenset("framing camera_view body_orientation head_direction gaze_direction face_visibility".split())
 
 
 class GeometryValidationError(ValueError):
@@ -71,6 +71,11 @@ def _short_text(value):
     return value.strip()
 
 
+def normalize_geometry_value(value):
+    """Canonicalize enum spelling without guessing or translating its meaning."""
+    return re.sub(r"[\s_-]+", "_", value.strip().lower()) if isinstance(value, str) else value
+
+
 def validate_geometry(value, *, character=False):
     if not isinstance(value, dict) or value.keys() - GEOMETRY_FIELDS:
         raise GeometryValidationError("Geometry must be an object of supported staging fields.",
@@ -86,10 +91,11 @@ def validate_geometry(value, *, character=False):
                                               f"Use an integer for {key}, not an enum or text.")
             cleaned[key] = content
         elif key == "visibility_focus":
-            if not isinstance(content, list) or len(content) > 12 or (character and not content):
+            if not isinstance(content, list) or len(content) > 12:
                 raise ValueError("Geometry visibility_focus must be a short array of visible details.")
             cleaned[key] = [_short_text(text) for text in content]
         elif key in GEOMETRY_ENUMS:
+            content = normalize_geometry_value(content)
             if not isinstance(content, str) or content not in GEOMETRY_ENUMS[key]:
                 correction = ("The gaze_direction field describes where the eyes point, not emotion. "
                               "Choose an allowed gaze direction and move emotional state into expression."
@@ -98,21 +104,23 @@ def validate_geometry(value, *, character=False):
             cleaned[key] = content
         else:
             cleaned[key] = _short_text(content)
-    for key, detail in CUSTOM_DETAIL_FIELDS.items():
-        if cleaned.get(key) == "custom" and not cleaned.get(detail):
-            raise GeometryValidationError(f"Custom {key} requires {detail}.", f"Keep the unusual staging; supply a concise {detail} for custom {key}.")
     return cleaned
 
 
 def migrate_saved_geometry(value):
     """Map only obvious legacy spellings. Ambiguous facts are omitted, not invented.
 
-    New canonical records still validate strictly. The caller marks a changed
-    legacy scene for local repair, retaining its exact idea, prose and results.
+    Formatting-only normalization needs no repair. The caller marks semantic
+    legacy migrations for local repair, retaining exact ideas, prose and results.
     """
     legacy_fields = {"gaze", "pose"}
     if not isinstance(value, dict) or value.keys() - (GEOMETRY_FIELDS | legacy_fields):
         return validate_geometry(value), False
+    if not value.keys() & legacy_fields:
+        try:
+            return validate_geometry(value), False
+        except ValueError:
+            pass  # Retain conservative migration of old aliases below.
     legacy = bool(value.keys() & legacy_fields) or any(
         isinstance(value.get(key), str) and re.search(r"[ -]", value[key])
         for key in GEOMETRY_ENUMS)
@@ -125,7 +133,7 @@ def migrate_saved_geometry(value):
         if key in legacy_fields:
             _short_text(content)
             if key == "gaze":
-                direction = content.casefold().strip().replace(" ", "_")
+                direction = normalize_geometry_value(content)
                 if direction in GAZE_DIRECTION_VALUES:
                     cleaned["gaze_direction"] = direction
                 elif content.casefold().startswith("focused on "):
@@ -133,13 +141,13 @@ def migrate_saved_geometry(value):
                 elif content.casefold() in EXPRESSION_VALUES - {"custom"}:
                     cleaned["expression"] = content.casefold()
             else:
-                pose = content.casefold().strip().replace(" ", "_").replace("-", "_")
+                pose = normalize_geometry_value(content)
                 if pose in POSE_TYPE_VALUES - {"custom"}:
                     cleaned["pose_type"] = pose
             continue
         if key in GEOMETRY_ENUMS:
             _short_text(content)
-            canonical = content.casefold().strip().replace(" ", "_").replace("-", "_")
+            canonical = normalize_geometry_value(content)
             canonical = aliases.get(canonical, canonical)
             if canonical in GEOMETRY_ENUMS[key]:
                 cleaned[key] = canonical
@@ -152,7 +160,7 @@ def geometry_errors(row, *, character=False):
     """Flag explicit conflicts only; modest eye movement and unusual poses are valid."""
     geometry = row.get("geometry", {})
     try:
-        validate_geometry(geometry, character=character)
+        geometry = validate_geometry(geometry, character=character)
     except ValueError as exc:
         return [getattr(exc, "correction", str(exc))]
     scene = row.get("scene", "").casefold().replace("–", "-").replace("—", "-")
@@ -213,8 +221,7 @@ def geometry_errors(row, *, character=False):
     hand_action = re.search(r"\b(?:hold\w*|juggl\w*|throw\w*|selfie|paint\w*|carry\w*|carrying)\b", action)
     mouth_catch = re.search(r"\bcatch\w*\b", action) and re.search(r"\bmouth\b", action)
     if geometry and (hand_action or (re.search(r"\bcatch\w*\b", action) and not mouth_catch)):
-        if geometry.get("hand_visibility") == "none_visible" or (
-                "hand_visibility" not in geometry and not re.search(r"\bhands?\b", focus)):
+        if geometry.get("hand_visibility") == "none_visible":
             errors.append("This hand-dependent action needs at least one visible hand. Preserve the idea and make the interaction readable.")
         if re.search(r"\b(?:both hands|two.handed)\b", action) and geometry.get("hand_visibility") in {"left_visible", "right_visible"}:
             errors.append("The action explicitly depends on both hands; show both hands or their readable partial visibility.")
@@ -225,6 +232,10 @@ def geometry_errors(row, *, character=False):
             errors.append("When the phone is the camera it cannot also appear in the image; retain a visible phone only for a mirror/external-camera selfie.")
     if gaze == "eyes_closed" and asserted(r"\b(?:looking|gazing|staring) (?:directly |straight )?(?:at|toward|into)\b"):
         errors.append("Eyes closed cannot simultaneously gaze toward an object or camera. Keep expression separate from gaze direction.")
+    if gaze == "toward_camera" and asserted(r"\b(?:eyes (?:are )?closed|closed eyes)\b"):
+        errors.append("Closed eyes cannot simultaneously gaze toward camera. Preserve the scene action and choose a consistent gaze.")
+    if body == "direct_rear" and not reflected and asserted(r"\b(?:full(?:y)? frontal face|face (?:is )?fully frontal)\b"):
+        errors.append("Direct rear body cannot show a fully frontal face; preserve the action and use coherent camera/body/head staging.")
     if view in {"front", "front_three_quarter"} and asserted(r"camera directly behind|direct rear view"):
         errors.append("Scene prose contradicts the structured front camera view.")
     if view == "direct_rear" and asserted(r"camera (?:is )?directly in front|front camera view"):
@@ -234,6 +245,6 @@ def geometry_errors(row, *, character=False):
 
 def geometry_prompt_schema():
     """Compact core schema; optional enum vocabulary uses the same source of truth."""
-    core = CHARACTER_REQUIRED_FIELDS | {"expression", "movement", "hand_visibility", "feet_visibility", "body_visibility"}
+    core = CHARACTER_REQUIRED_FIELDS | {"pose_type", "expression", "movement", "hand_visibility", "feet_visibility", "body_visibility"}
     lines = [f"{key}: {', '.join(sorted(values))}" for key, values in GEOMETRY_ENUMS.items() if key in core]
     return "\n".join(lines)

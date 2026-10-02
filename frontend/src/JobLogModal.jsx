@@ -70,8 +70,8 @@ export default function JobLogModal({ open, job, engineLabel, onClose }) {
   const trace = job?.llm_trace;
 
   useEffect(() => {
-    if (open && job && !dialog.current?.open) dialog.current?.showModal();
-    else if ((!open || !job) && dialog.current?.open) dialog.current.close();
+    if (open && !dialog.current?.open) dialog.current?.showModal();
+    else if (!open && dialog.current?.open) dialog.current.close();
   }, [open, job]);
 
   useEffect(() => {

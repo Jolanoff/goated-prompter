@@ -1004,6 +1004,10 @@ function App() {
             Ideas, prompts, and creative direction. All in one place.
           </p>
         </div>
+        <button className={`${ui.navItem} sidebar-log mobile:hidden`} onClick={() => setLogOpen(true)}
+          aria-label="View LLM activity log" title="View LLM activity log">
+          <ScrollText size={19} aria-hidden="true" /><span className="nav-text">View log</span>
+        </button>
       </aside>
 
       <div className={ui.mainShell}>
@@ -1020,11 +1024,9 @@ function App() {
               onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}>
               {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
             </button>
-            {job && (
-              <button className={ui.button} onClick={() => setLogOpen(true)} aria-label="View LLM activity log">
+              <button className={`${ui.button} hidden mobile:inline-flex`} onClick={() => setLogOpen(true)} aria-label="View LLM activity log">
                 <ScrollText size={14} /><span className="mobile:hidden">View log</span>
               </button>
-            )}
             <span className={ui.connectionPill} data-offline={!bootstrap}>
               <span className={ui.statusDot} />
               {bootstrap ? "Local backend connected" : "Backend offline"}
