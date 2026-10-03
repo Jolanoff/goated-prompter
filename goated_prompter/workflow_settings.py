@@ -4,11 +4,11 @@ from copy import deepcopy
 import threading
 
 from .prompting.refine import builtin_refine_instructions
-from .prompting.target_models import TARGET_MODEL_NAMES
+from .prompting.target_models import TARGET_MODEL_NAMES, canonical_target
 from .workspace_store import WorkspaceConflict, locks, text
 from .minimax import default_minimax_draft, validate_minimax_draft
 from .dataset import default_dataset_draft, validate_dataset_draft
-from .dataset_coverage import effective_coverage_plan
+from .dataset_assignments import dataset_assignments
 from .scene_planner import reusable_scene_plan
 from .prompting.scene_planner import MAX_SCENE_CHARACTERS, MAX_SCENE_WORDS, MAX_IDEA_CHARACTERS, MAX_IDEA_WORDS
 
@@ -32,6 +32,7 @@ def validate_draft(operation, value):
     if not isinstance(value, dict) or value.keys() - defaults.keys():
         raise ValueError(f"Invalid {operation} settings fields.")
     result = {**defaults, **value}
+    result["target"] = canonical_target(result["target"])
     if result["target"] not in TARGET_MODEL_NAMES:
         raise ValueError("Invalid target model.")
     result["locks"] = locks(result["locks"])
@@ -87,7 +88,9 @@ class WorkflowSettingsStore:
     def _public(self, operation, record):
         defaults = builtin_refine_instructions() if operation == "refine" else {}
         draft = validate_draft(operation, record["draft"])
-        scene_state = ({"scene_plan_current": reusable_scene_plan(draft, effective_coverage_plan(draft)) is not None,
+        scene_state = ({"scene_plan_current": reusable_scene_plan(draft, dataset_assignments(draft)) is not None,
+                         "idea_plan_current": reusable_scene_plan(draft, dataset_assignments(draft), require_scenes=False) is not None,
+                         "scene_plan_matches_settings": reusable_scene_plan(draft, dataset_assignments(draft), require_scenes=False, allow_pending=True) is not None,
                          "scene_limits": {"characters": MAX_SCENE_CHARACTERS, "words": MAX_SCENE_WORDS},
                          "idea_limits": {"characters": MAX_IDEA_CHARACTERS, "words": MAX_IDEA_WORDS}}
                        if operation == "dataset" else {})

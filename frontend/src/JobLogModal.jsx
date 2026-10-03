@@ -70,8 +70,8 @@ export default function JobLogModal({ open, job, engineLabel, onClose }) {
   const trace = job?.llm_trace;
 
   useEffect(() => {
-    if (open && job && !dialog.current?.open) dialog.current?.showModal();
-    else if ((!open || !job) && dialog.current?.open) dialog.current.close();
+    if (open && !dialog.current?.open) dialog.current?.showModal();
+    else if (!open && dialog.current?.open) dialog.current.close();
   }, [open, job]);
 
   useEffect(() => {
@@ -103,50 +103,53 @@ export default function JobLogModal({ open, job, engineLabel, onClose }) {
   }
 
   return <dialog ref={dialog}
-    className="m-auto w-[720px] max-w-[calc(100vw-32px)] rounded-[15px] border border-[#514360] bg-[linear-gradient(130deg,#211e2d,#171720)] p-0 text-[#eee9f7] shadow-[0_25px_100px_#0009] backdrop:bg-[#06060bbd] backdrop:backdrop-blur-[5px]"
+    className="app-dialog log-dialog"
     aria-labelledby="llm-log-title" onCancel={(event) => { event.preventDefault(); onClose(); }} onClose={onClose}>
     <header className="flex items-start gap-4 border-b border-line px-6 py-5 mobile:px-4">
       <div className={ui.panelIcon}><ScrollText size={21} /></div>
       <div className="min-w-0 flex-1">
         <h2 id="llm-log-title" className="font-display text-xl font-bold">LLM activity log</h2>
-        <p className="mt-1 text-[11px] leading-relaxed text-muted">Exact request text, live response text, transport state, and validation events. Private reasoning is unavailable unless the engine explicitly returns it.</p>
+        <p className="mt-1 text-xs leading-relaxed text-muted">Requests, live responses, and validation events. Reasoning is shown only when returned by the engine.</p>
       </div>
       <button className={ui.iconButton} onClick={onClose} aria-label="Close LLM activity log"><X size={18} /></button>
     </header>
-    <div className="max-h-[78vh] overflow-y-auto px-6 py-5 mobile:px-4 [scrollbar-width:thin] [scrollbar-color:#65577a_#171923]">
-      <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 rounded-lg border border-line bg-[#11131b] p-4 text-[11px] mobile:grid-cols-1">
-        <strong>Status</strong><span className="capitalize text-[#d7c9ff]">{job?.status?.replaceAll("_", " ") || "Unavailable"}</span>
+    <div className="max-h-[72dvh] overflow-y-auto px-6 py-5 mobile:px-4">
+      <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 rounded-lg border border-line bg-canvas p-4 text-xs mobile:grid-cols-1">
+        <strong>Status</strong><span className="capitalize text-accent">{job?.status?.replaceAll("_", " ") || "Unavailable"}</span>
         <strong>Workflow</strong><span className="capitalize text-muted">{job?.kind?.replaceAll("_", " ") || "Unknown"}</span>
         <strong>Engine</strong><span className="text-muted">{engineLabel || "Unknown"}</span>
         {trace?.timeout_seconds && <><strong>Request timeout</strong><span className="text-muted">{trace.timeout_seconds} seconds</span></>}
         <strong>Current activity</strong><span className="leading-relaxed text-muted">{explanation(job, clock)}</span>
-        <strong>Job</strong><span className="truncate font-code text-[10px] text-muted" title={job?.id}>{job?.id || "None"}</span>
+        <strong>Job</strong><span className="truncate font-code text-xs text-muted" title={job?.id}>{job?.id || "None"}</span>
       </div>
       {trace && <section className="mt-4" aria-label="Current LLM request">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h3 className="text-xs font-semibold">Current LLM request · {trace.request_number}</h3>
-          <span className="rounded border border-line bg-[#11131b] px-2 py-1 text-[9px] uppercase tracking-wide text-[#b8a2f4]">{trace.status.replaceAll("_", " ")}</span>
+          <span className="rounded border border-line bg-selected px-2 py-1 text-xs text-accent">{trace.status.replaceAll("_", " ")}</span>
         </div>
-        <details className="mt-3 rounded-lg border border-line bg-[#0d0f16] p-3" open={trace.status === "waiting_first_token"}>
-          <summary className="cursor-pointer text-[11px] font-semibold">What the model is reading</summary>
+        <details className="mt-3 rounded-lg border border-line bg-canvas p-3" open={trace.status === "waiting_first_token"}>
+          <summary className="cursor-pointer text-xs font-semibold">What the model is reading</summary>
           <div className="mt-3 grid gap-3">
-            {(trace.messages || []).map((message, index) => <article key={`${message.role}-${index}`} className="rounded border border-line bg-[#11131b] p-3">
-              <strong className="text-[9px] uppercase tracking-[1px] text-[#a991df]">{message.role || "message"}</strong>
-              <pre className="mt-2 max-h-[280px] overflow-auto whitespace-pre-wrap wrap-anywhere font-code text-[10px] leading-relaxed text-[#c6c7d9]">{messageText(message.content)}</pre>
+            {(trace.messages || []).map((message, index) => <article key={`${message.role}-${index}`} className="rounded border border-line bg-surface p-3">
+              <strong className="text-xs capitalize text-accent">{message.role || "message"}</strong>
+              <pre tabIndex={0} role="region" aria-label={`Request message ${index + 1}: ${message.role || "message"}`}
+                className="mt-2 max-h-[280px] overflow-auto whitespace-pre-wrap wrap-anywhere font-code text-xs leading-relaxed text-ink">{messageText(message.content)}</pre>
             </article>)}
-            <details className="text-[10px] text-muted"><summary className="cursor-pointer">Request parameters</summary>
+            <details className="text-xs text-muted"><summary className="cursor-pointer">Request parameters</summary>
               <pre className="mt-2 whitespace-pre-wrap wrap-anywhere font-code">{JSON.stringify(trace.parameters || {}, null, 2)}</pre>
             </details>
           </div>
         </details>
-        {!!trace.reasoning && <details className="mt-3 rounded-lg border border-line bg-[#0d0f16] p-3">
-          <summary className="cursor-pointer text-[11px] font-semibold">Reasoning text explicitly returned by the engine</summary>
-          <pre className="mt-3 max-h-[240px] overflow-auto whitespace-pre-wrap wrap-anywhere font-code text-[10px] leading-relaxed text-[#c6c7d9]">{trace.reasoning}</pre>
+        {!!trace.reasoning && <details className="mt-3 rounded-lg border border-line bg-canvas p-3">
+          <summary className="cursor-pointer text-xs font-semibold">Reasoning text explicitly returned by the engine</summary>
+          <pre tabIndex={0} role="region" aria-label="Engine reasoning"
+            className="mt-3 max-h-[240px] overflow-auto whitespace-pre-wrap wrap-anywhere font-code text-xs leading-relaxed text-ink">{trace.reasoning}</pre>
         </details>}
-        <div className="mt-3 rounded-lg border border-line bg-[#0d0f16] p-3">
-          <div className="flex items-center justify-between gap-2"><strong className="text-[11px]">Live model response</strong>
-            <span className="text-[9px] text-muted">{trace.output.length} characters</span></div>
-          <pre className="mt-3 max-h-[320px] min-h-20 overflow-auto whitespace-pre-wrap wrap-anywhere font-code text-[10px] leading-relaxed text-[#d8d8e4]">{trace.output || "Waiting for the first response text…"}</pre>
+        <div className="mt-3 rounded-lg border border-line bg-canvas p-3">
+          <div className="flex items-center justify-between gap-2"><strong className="text-xs">Live model response</strong>
+            <span className="text-xs text-muted">{trace.output.length} characters</span></div>
+          <pre tabIndex={0} role="region" aria-label="Live model response text"
+            className="mt-3 max-h-[320px] min-h-20 overflow-auto whitespace-pre-wrap wrap-anywhere font-code text-xs leading-relaxed text-ink">{trace.output || "Waiting for the first response text…"}</pre>
           {trace.issue && <p className={ui.warningNote} role="alert">{trace.issue}</p>}
         </div>
       </section>}
@@ -156,13 +159,13 @@ export default function JobLogModal({ open, job, engineLabel, onClose }) {
           {copied ? <Check size={14} /> : <Copy size={14} />}{copied ? "Copied" : "Copy inspector"}
         </button>
       </div>
-      <ol className="mt-3 max-h-[36vh] overflow-y-auto overscroll-contain rounded-lg border border-line bg-[#0d0f16] p-2 [scrollbar-width:thin] [scrollbar-color:#65577a_#171923]" aria-label="LLM activity events">
+      <ol tabIndex={0} className="mt-3 max-h-[36vh] overflow-y-auto overscroll-contain rounded-lg border border-line bg-canvas p-2" aria-label="LLM activity events">
         {events.length ? events.map((event) => <li key={event.id}
-          className="group grid grid-cols-[72px_70px_1fr] gap-2 border-b border-line px-2 py-3 text-[10px] leading-relaxed last:border-0 mobile:grid-cols-[60px_1fr]"
+          className="group grid grid-cols-[85px_100px_1fr] gap-2 border-b border-line px-2 py-3 text-xs leading-relaxed last:border-0 mobile:grid-cols-[85px_1fr]"
           data-type={event.type}>
-          <time className="font-code text-[#777b91]">{timestamp(event.timestamp)}</time>
-          <span className="font-semibold uppercase tracking-wide text-[#a991df] group-data-[type=error]:text-[#e8a2a2] group-data-[type=success]:text-success group-data-[type=pause]:text-[#d5b879]">{event.type}</span>
-          <span className="wrap-anywhere text-[#c6c7d9] mobile:col-span-2">{event.message}</span>
+          <time className="font-code text-muted">{timestamp(event.timestamp)}</time>
+          <span className="font-semibold capitalize text-accent group-data-[type=error]:text-danger group-data-[type=success]:text-success group-data-[type=pause]:text-warning">{event.type}</span>
+          <span className="wrap-anywhere text-ink mobile:col-span-2">{event.message}</span>
         </li>) : <li className="p-5 text-center text-xs text-muted">No runtime events have been recorded.</li>}
       </ol>
     </div>

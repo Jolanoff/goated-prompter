@@ -4,11 +4,12 @@ import json
 from dataclasses import replace
 
 from ..core import PromptInstruction, assemble_instruction
-from ..dataset_coverage import AXES, effective_coverage_plan
 from ..dataset_triggers import trigger_terms
 from ..dataset_visible_content import VISIBLE_CONTENT_CONTRACT
 from ..presets import get_director_preset
-from .details import DATASET_OUTPUT_TOKEN_LIMITS, LENGTH_ADAPTERS
+from .details import (DATASET_OUTPUT_TOKEN_LIMITS, LENGTH_ADAPTERS,
+                      DATASET_DETAIL_DISCIPLINE, DATASET_LENGTH_ADAPTERS)
+from .target_models import resolve_target_length
 
 DATASET_TYPES = (
     "Character", "Multiple characters", "Animal", "Object / product", "Visual style",
@@ -37,13 +38,13 @@ PLANNED_SCENE_CONTRACT = (
     "Scene Planner owns scene creativity. Your task is to faithfully render this scene as a high-quality "
     "target-model prompt, not brainstorm or replace it. IDEA is authoritative for semantic purpose; "
     "SCENE is authoritative for physical staging. Preserve what makes this idea distinct, its core action, pose, expression, "
-    "setting, props, framing, viewpoint, lighting, mood and compatible requested coverage. "
+    "setting, props, framing, viewpoint, lighting and mood. "
     "Add only useful visual wording and supported detail within that scene; do not choose another "
     "activity, location, outfit, camera idea or lighting situation. User subject facts, guided input "
-    "and explicit constraints outrank planner additions; the planned scene outranks optional "
-    "coverage cues, Director embellishment, default framing and detail preferences. "
+    "and explicit constraints outrank planner additions; the planned scene outranks "
+    "Director embellishment, default framing and detail preferences. "
     "Director supplies rendering technique and emphasis only, never another competing scene idea. "
-    "GEOMETRY FIDELITY: Preserve camera direction, body/torso/hip orientation, head direction, gaze, "
+    "GEOMETRY FIDELITY: Preserve independent camera azimuth, elevation and distance. Preserve applicable subject/body/torso/hip orientation, head direction, gaze_direction and expression separately, "
     "crop and object/hand relationships. Do not reinterpret the pose, add a second body orientation or "
     "contradictory camera angle, independently force eye contact, or expose body regions hidden by the "
     "planned crop/viewpoint. Local descriptive enrichment must agree with the planned camera/body/action "
@@ -86,6 +87,7 @@ def dataset_instruction(request, data, index, previous=(), model_family="qwen", 
         structured_trigger,
         PLANNED_SCENE_CONTRACT,
         VISIBLE_CONTENT_CONTRACT,
+        DATASET_DETAIL_DISCIPLINE,
         "The concept and explicit rules outrank optional Director embellishments. Write only this one finished visual scene and stop when it is complete. Describe observable requirements, not claims that consistency was preserved. Batch planning, next-scene suggestions, and future camera changes do not belong in the finished prompt.",
         style_rule,
     ])
@@ -100,14 +102,16 @@ def dataset_instruction(request, data, index, previous=(), model_family="qwen", 
     idea = (plan_item or {}).get("idea") or "Unavailable for this legacy item; preserve the supplied scene's semantic purpose."
     content.append("PLANNED IDEA\n<idea>\n" + idea + "\n</idea>")
     content.append("PLANNED SCENE / CURRENT SCENE\n<scene>\n" + scene + "\n</scene>")
+    if (plan_item or {}).get("geometry"):
+        content.append("PLANNED GEOMETRY\n" + json.dumps(plan_item["geometry"], ensure_ascii=False)
+                       + "\nInternal canonical snake_case staging facts: render as readable visual descriptions, not field names or enum tokens. "
+                       "Camera azimuth/elevation/distance are separate. Use only the selected subject type's applicable staging. "
+                       "gaze_direction describes where eyes point; expression is facial emotion. Orientations are relative to camera, not pose. "
+                       "Preserve custom pose_detail and expression_detail when present.")
     if seed:
-        content.append(f"GUIDED INPUT\n<input>\n{seed}\n</input>\nPreserve these original anchors in the supplied scene; do not select another scene.")
+        content.append(f"GUIDED INPUT\n<input>\n{seed}\n</input>\nPreserve these original anchors in the supplied scene; do not select another scene. This input's outfit, setting, pose and action are local to this item. Shared identity does not imply a shared outfit unless explicitly locked in the concept or consistency rules.")
     if data["constraints"].strip():
         content.append(f"CONSISTENCY AND VARIATION RULES\n<constraints>\n{data['constraints'].strip()}\n</constraints>\nApply fixed requirements and preserve this scene's planned interpretation of variation rules; do not plan other items or new scene variants.")
-    if data["coverage_enabled"] and plan_item and plan_item.get("facets"):
-        content.append("COVERAGE ASSIGNMENT\n" + "\n".join(
-            f"- {AXES[key][0]}: {value}" for key, value in plan_item["facets"].items()
-        ) + "\nPreserve compatible coverage already interpreted in CURRENT SCENE. These cues cannot replace its action or override user constraints. Do not expose the labels.")
     builder_request = replace(
         request, idea="\n\n".join(content), mode="Enhance",
         director_preset=director.id, system_prompt_override="",
@@ -115,33 +119,28 @@ def dataset_instruction(request, data, index, previous=(), model_family="qwen", 
     )
     instruction = assemble_instruction(builder_request, model_family=model_family, text_only=True)
     token_limit = DATASET_OUTPUT_TOKEN_LIMITS[data["length"]]
-    return replace(instruction, diagnostic_stage=f"dataset:{index}",
+    system = instruction.system_message.replace(
+        resolve_target_length(data["target"], data["length"]),
+        resolve_target_length(data["target"], data["length"], dataset=True))
+    return replace(instruction, system_message=system, diagnostic_stage=f"dataset:{index}",
                    max_tokens=token_limit, unlimited_tokens=False, hard_max_tokens=token_limit)
 
 
-DEEP_CATEGORIES = {"identity_drift", "style_drift", "scene_drift", "constraint_conflict", "coverage_mismatch", "target_usability"}
+DEEP_CATEGORIES = {"identity_drift", "style_drift", "scene_drift", "constraint_conflict", "target_usability"}
 
 
 def deep_review_instruction(data, chunk, model_family="qwen", correction=""):
-    coverage = effective_coverage_plan(data) if data["coverage_enabled"] else {"plan": []}
-    planned = {item["index"]: item.get("facets", {}) for item in coverage["plan"]}
     prompts = []
     for item in chunk:
         text = item["prompt"] if len(item["prompt"]) <= 5000 else item["prompt"][:2500] + "\n[bounded excerpt]\n" + item["prompt"][-2500:]
-        assignment = planned.get(item["index"], {})
-        coverage_text = ("\nOPTIONAL COVERAGE EXPECTATION\n" + "; ".join(
-            f"{AXES[key][0]}: {value}" for key, value in assignment.items())
-            if assignment else "")
         scene = item.get("scene") or "Unavailable: legacy result has no saved originating scene. Do not infer one from the current plan."
         if len(scene) > 2000:
             scene = scene[:1000] + "\n[bounded scene excerpt]\n" + scene[-1000:]
         idea = item.get("idea") or "Unavailable: legacy result has no saved originating idea. Do not infer one from the current plan."
         if len(idea) > 1000:
             idea = idea[:500] + "\n[bounded idea excerpt]\n" + idea[-500:]
-        prompts.append(f"PROMPT {item['index']}\nPLANNED IDEA\n<idea>\n{idea}\n</idea>\nPLANNED SCENE\n<scene>\n{scene}\n</scene>\nFINAL PROMPT\n<prompt>\n{text}\n</prompt>{coverage_text}")
+        prompts.append(f"PROMPT {item['index']}\nPLANNED IDEA\n<idea>\n{idea}\n</idea>\nPLANNED SCENE\n<scene>\n{scene}\n</scene>\nFINAL PROMPT\n<prompt>\n{text}\n</prompt>")
     categories = "identity_drift, style_drift, scene_drift, constraint_conflict, target_usability"
-    if data["coverage_enabled"]:
-        categories += ", coverage_mismatch"
     schema = ('Return exactly one JSON array. Include one object per supplied prompt in the same order: '
               '{"index": 1, "issues": [{"category": "identity_drift", "severity": "warning", '
               '"message": "Concise concrete explanation"}]}. Use an empty issues array when the prompt passes. '
@@ -152,7 +151,6 @@ def deep_review_instruction(data, chunk, model_family="qwen", correction=""):
         "SCENE FIDELITY: Compare each saved PLANNED SCENE with its final prompt. Report scene_drift if the writer materially replaced or removed the central event, action, named objects, relationships or environment. Local descriptive enrichment is allowed; a shopping-cart chase becoming a supermarket portrait is not. Do not invent a scene or rewrite the prompt. For legacy results without a saved scene, do not report scene_drift based on an assumed plan.",
         "IDEA FIDELITY: Compare PLANNED IDEA, PLANNED SCENE and FINAL PROMPT. Report lost semantic purpose or idea drift under scene_drift, even if some scene nouns survive. A failed-juggling gag must not become a generic woman holding fruit. Do not assume idea provenance for legacy results missing idea.",
         "SCENE GEOMETRY: Flag target_usability for explicit contradictions already present in a scene or final prompt; flag scene_drift when the writer changes valid staging into incompatible geometry. Check camera direction, body/torso/hip orientation, head turn, gaze, visible body side, limb reach, hand/object placement, balance, action and framing together. Examples: direct rear body plus fully frontal face without a plausible turn; impossible head direction while looking at camera; tight face close-up plus clearly visible shoes/full body; contradictory camera positions or mutually exclusive poses; unreachable held objects. A rear three-quarter body with over-shoulder head turn and partial side of face is valid. Eyes following a falling orange during juggling is valid, and need not look at viewer. Do not flag merely unusual, dynamic, stylized or intentionally surreal poses if physically interpretable within the concept. Report concrete contradictions, not aesthetic preferences or speculative anatomy problems. Never invent a fix or rewrite scenes.",
-        "COVERAGE: Assigned facets describe planned coverage, not proof of achieved coverage. Check whether compatible expectations survived in both the saved scene and final prompt. User constraints and guided ideas outrank incompatible coverage cues.",
         "POSITIVE CONTENT AUDIT: Report target_usability when positive IDEA/SCENE/prompt prose leaks exclusion commands, negative-conditioning lists or internal quality slogans. Constraints should be fulfilled silently via composition and visible content, not echoed. Meaningful empty/deserted/bare/unoccupied scene states, literal in-image text and protected trigger tokens are valid; do not ban the word no universally. Inspect every positive JSON description field, not just the summary, and do not misclassify literal rendered text as a command.",
         f"DATASET TYPE\n{data['custom_type'] if data['trigger_type'] == 'Custom' else data['trigger_type']}",
         f"CONSISTENT CONCEPT\n{data['subject']}",
@@ -160,6 +158,8 @@ def deep_review_instruction(data, chunk, model_family="qwen", correction=""):
         f"VISUAL STYLE\n{data['custom_style'] if data['visual_style'] == 'Custom' else data['visual_style']}",
         "ADDITIONAL RULES\n" + (data["constraints"].strip() or "None"),
         f"TARGET MODEL\n{data['target']}", schema,
+        ("ANIMA QUALITY TAG EXCEPTION: Supported standalone positive quality/meta tags, including masterpiece, best quality and score tags, are valid target syntax; do not flag them as internal quality slogans. Negative conditioning remains separate."
+         if data["target"] == "Anima" else ""),
         correction,
     ])
     return PromptInstruction(system_message=system, user_message="\n\n".join(prompts),
@@ -176,12 +176,23 @@ def dataset_format_repair(system_message, error):
     )
 
 
+def dataset_content_repair(system_message):
+    return (
+        system_message
+        + "\n\nOUTPUT CONTENT CORRECTION: Render the same planned idea and scene again. "
+        "Describe only the intended visible image state. Apply restrictions silently instead of "
+        "verbalizing absent or prohibited content. Preserve the existing scene, geometry, "
+        "trigger anchors, literal rendered text and valid visual details."
+    )
+
+
 def dataset_loop_repair(system_message, error, retry=1):
     fallback_length = "Detailed" if retry == 1 else "Medium" if retry == 2 else "Short"
     levels = ("Short", "Medium", "Detailed", "Maximum Detail")
     for level in levels:
         if levels.index(level) > levels.index(fallback_length):
-            system_message = system_message.replace(LENGTH_ADAPTERS[level], LENGTH_ADAPTERS[fallback_length])
+            system_message = system_message.replace(LENGTH_ADAPTERS[level], DATASET_LENGTH_ADAPTERS[fallback_length])
+            system_message = system_message.replace(DATASET_LENGTH_ADAPTERS[level], DATASET_LENGTH_ADAPTERS[fallback_length])
     return (
         system_message
         + "\n\nLOOP CORRECTION: Write a shorter, finite final prompt for the same supplied scene. "

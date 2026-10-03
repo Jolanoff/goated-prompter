@@ -4,5 +4,6 @@ export function datasetJsonl(draft) {
     index: item.index, input: item.input || "", idea: item.idea || null, scene: item.scene || null,
     prompt: item.prompt, trigger: draft.trigger, target: draft.target,
     source: item.input || null,
+    ...(item.geometry ? { geometry: item.geometry } : {}),
   })).join("\n");
 }

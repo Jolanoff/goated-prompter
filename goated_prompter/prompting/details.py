@@ -10,7 +10,7 @@ DATASET_OUTPUT_TOKEN_LIMITS = {
     "Maximum Detail": 3072,
     "Maximum": 3072,
 }
-MAXIMUM_DETAIL_GUIDANCE = """Prompt length — Maximum Detail: produce a substantially longer, densely descriptive natural-language prompt. Exhaustively cover every relevant, supported visual decision: subject identity, count, age presentation when visually relevant, overall appearance, facial structure, eyes, expression, gaze, hair, skin, anatomy, body shape, pose, limbs, hands, gesture, and action; garment construction, seams, folds, fit, styling, accessories, fabrics, textures, finishes, roughness, reflectivity, translucency, and other material response; foreground, midground, background, meaningful objects, spatial relationships, scale, overlap, and occlusion; composition, framing, camera height, angle, perspective, lens behavior, depth, focus plane, and focus hierarchy; key, fill, rim, and practical light where supported, including direction, softness, contrast, shadows, highlights, reflections, and exposure; palette, color relationships, grading, atmosphere, mood, and the relevant photographic, commercial, editorial, cinematic, rendered, or artistic character. Clearly distinguish observable or user-specified facts from coherent creative additions, and keep every addition compatible with the central concept and active Reference Map and Preserve constraints. Do not repeat details, stack synonyms, use generic quality slogans, invent unsupported evidence, or pad with filler. Omit irrelevant or unavailable categories instead of hallucinating them; never force 35mm, film grain, or ControlNet terminology when it was not requested or observed."""
+MAXIMUM_DETAIL_GUIDANCE = """Prompt length — Maximum Detail: use the richest useful descriptive density within the target's practical envelope. Clarify supported subject/action, spatial relationships, composition, relevant materials and lighting without exhaustive unrelated inventories. Preserve the central concept, reference evidence and locks. Omit irrelevant or unavailable facts; do not repeat details, stack synonyms, invent evidence or pad with filler. Target structure and density limits take priority."""
 LENGTH_ADAPTERS = {
     "Short": "Prompt length — Short: one compact prompt focused on the most consequential visual information.",
     "Medium": "Prompt length — Medium: a balanced prompt with enough detail to direct subject, composition, lighting, and materials without bloat.",
@@ -18,6 +18,22 @@ LENGTH_ADAPTERS = {
     "Maximum Detail": MAXIMUM_DETAIL_GUIDANCE,
     # Saved workflows from the pre-release Maximum label remain executable.
     "Maximum": MAXIMUM_DETAIL_GUIDANCE,
+}
+
+# Dataset overrides are applied only by its final writer, never the Builder.
+DATASET_DETAIL_DISCIPLINE = """DATASET DETAIL DISCIPLINE
+Expand the planned scene only until its important visible relationships are clear and useful for
+the target model. Prompt length controls useful scene-specific richness, not an exhaustive inventory.
+Do not spend detail budget inventing unrelated garment construction, arbitrary clothing colors,
+background decoration, material microdetail, cinematic atmosphere, accessories or environmental
+objects unless they support the planned scene. Maximum Detail should be scene-dense, not filler-dense.
+State each important semantic fact once. Use additional words for new visual information rather
+than synonymous emphasis. Preserve the requested medium rather than adding stylistic defaults."""
+DATASET_LENGTH_ADAPTERS = {
+    "Short": LENGTH_ADAPTERS["Short"],
+    "Medium": LENGTH_ADAPTERS["Medium"],
+    "Detailed": "Prompt length — Detailed: enrich this scene's important visible action, relationships and composition with supported scene-specific detail. Stop when it is clearly described.",
+    "Maximum Detail": "Prompt length — Maximum Detail: give the planned scene dense, useful visual specificity. Clarify action, pose, contacts, spatial relationships, crop and scene-relevant rendering; do not expand irrelevant categories or repeat semantic facts.",
 }
 
 # Preserve (legacy booleans and linked reference-map output)

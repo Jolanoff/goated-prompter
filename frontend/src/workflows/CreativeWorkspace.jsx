@@ -30,6 +30,10 @@ export default function CreativeWorkspace(props) {
   const shared = { ...props, workspace, current, disabled, canGenerate: !props.noEngine,
     targets: props.inputs.target_model[0], lengths: props.inputs.prompt_length[0], onGenerate: generate };
   return <div hidden={!visible}>
+    <div className={ui.pageHeading}><div>
+      <h2>Refine your prompt</h2>
+      <p>Request a precise change, lock important details, and step back whenever you need.</p>
+    </div></div>
     {workspace.error && <div className={ui.message} role="alert"><span>{workspace.error}</span>
       <button className={ui.retryButton} onClick={async () => { if (await workspace.refresh()) workspace.setError(""); }}>Refresh workspace</button>
     </div>}
@@ -38,7 +42,7 @@ export default function CreativeWorkspace(props) {
       <PromptText text={props.job.result.recovery_prompt} label="Recovered prompt" />
       <button className={`${ui.button} mt-3`} onClick={() => props.onCopy(props.job.result.recovery_prompt)}>Copy recovered prompt</button>
     </section>}
-    <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line px-4 py-3 text-xs text-muted">
+    <div className={ui.workflowStatus}>
       <span>{props.noEngine ? "Choose a prompt engine in Builder or Settings to generate." : `Engine: ${props.engineLabel}`}</span>
       <span role="status">{props.active ? props.job.status === "cancelling" ? "Ending generation…" : props.job.progress || "Generating prompt…" : workspace.pending ? "Saving…" : "Versions saved locally"}</span>
       {props.active && <button className={ui.button} onClick={props.onCancel} disabled={props.job.status === "cancelling"}>End generation</button>}

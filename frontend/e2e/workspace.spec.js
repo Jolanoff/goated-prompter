@@ -92,7 +92,7 @@ test("desktop generation, ending work, saved prompt persistence and deletion", a
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Delete Forest at dawn" }).click();
   await expect(
-    page.getByRole("heading", { name: "A home for your best ideas." }),
+    page.getByRole("heading", { name: "Keep your best prompts here" }),
   ).toBeVisible();
   expect(errors).toEqual([]);
 });

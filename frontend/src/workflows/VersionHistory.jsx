@@ -8,10 +8,10 @@ export function VersionDiff({ before, after }) {
   return <details className="mt-4 rounded-lg border border-line p-3">
     <summary className="cursor-pointer text-xs font-semibold">What changed</summary>
     <p className="my-3 text-xs text-muted">Removed text is struck through; added text is highlighted.</p>
-    <div className="whitespace-pre-wrap wrap-anywhere text-xs leading-[1.9]" aria-label="Prompt changes">
+    <div className="whitespace-pre-wrap wrap-anywhere text-xs leading-[1.9]" role="region" aria-label="Prompt changes">
       {parts.map((part, index) => part.kind === "removed"
-        ? <del key={index} className="bg-[#702e3740] text-[#f3b3bf]">{part.text}</del>
-        : part.kind === "added" ? <ins key={index} className="bg-[#286b4640] text-[#a6eac2] no-underline">{part.text}</ins>
+        ? <del key={index} className="diff-removed">{part.text}</del>
+        : part.kind === "added" ? <ins key={index} className="diff-added">{part.text}</ins>
         : <span key={index}>{part.text}</span>)}
     </div>
   </details>;

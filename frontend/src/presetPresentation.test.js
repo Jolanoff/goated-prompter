@@ -14,10 +14,10 @@ test("all built-in display titles follow the requested order without mutating th
   Object.freeze(presets);
   const displayed = orderDisplayPresets(presets);
   assert.deepEqual(displayed.map(presetDisplayLabel), [
-    "General-Purpose Prompt", "Polish a Rough Prompt", "Detailed Scene Description",
+    "General-Purpose Prompt", "Polish a Rough Prompt", "Technical Visual Precision",
     "Recreate a Reference Image", "Describe Facial Features", "Describe Face & Body",
-    "Combine Reference Images", "Edit Only the Requested Details", "Krea 2 Identity Edit",
-    "Change the Visual Style", "Krea 2 Detailed Prompt", "Krea 2 Match Reference Pose",
+    "Combine Reference Images", "Edit Only the Requested Details", "Krea 2 Identity Edit v1.2 (Community)",
+    "Change the Visual Style", "Krea 2 Visual Precision", "Krea 2 Match Reference Pose",
     "Photography Director", "Casual Phone Photo", "Front-Camera Selfie", "Mirror Selfie",
     "First-Person View", "Fashion Photography", "Vintage Film Photography",
     "Boudoir Photography", "Krea 2 Phone Photo", "Character Director",

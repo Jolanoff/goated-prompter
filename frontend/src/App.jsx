@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { orderDisplayPresets, presetDisplayLabel } from "./presetPresentation.js";
 import { ui } from "./ui.js";
 import { api } from "./api.js";
+import { readTheme, saveTheme } from "./theme.js";
 import CreativeWorkspace from "./workflows/CreativeWorkspace.jsx";
 import MiniMaxTab from "./workflows/MiniMaxTab.jsx";
 import DatasetTab from "./workflows/DatasetTab.jsx";
@@ -20,6 +21,7 @@ import {
   Layers3,
   LoaderCircle,
   LockKeyhole,
+  Moon,
   Plus,
   RefreshCw,
   RotateCcw,
@@ -28,6 +30,7 @@ import {
   Settings2,
   SlidersHorizontal,
   Sparkles,
+  Sun,
   Trash2,
   WandSparkles,
   X,
@@ -71,11 +74,20 @@ const referenceOrder = [
   "materials",
   "mood",
 ];
+const workspaceViews = [
+  { id: "builder", label: "Prompt Builder", icon: SlidersHorizontal },
+  { id: "refine", label: "Refine", icon: WandSparkles },
+  { id: "minimax", label: "MiniMax H3", icon: Film },
+  { id: "dataset", label: "Dataset", icon: Database },
+  { id: "saved", label: "Saved Prompts", icon: Bookmark },
+  { id: "directors", label: "Instruction presets", icon: FileText },
+  { id: "settings", label: "Settings", icon: Settings2 },
+];
 
 function GoatMark({ small = false }) {
   return (
     <svg
-      className={`text-[#ad97e8] ${small ? "size-10" : "size-[49px]"}`}
+      className={`goat-mark ${small ? "size-10" : "size-[43px]"}`}
       viewBox="0 0 64 64"
       fill="none"
       aria-hidden="true"
@@ -91,7 +103,7 @@ function GoatMark({ small = false }) {
       <path d="m21 24-10-2 7 11 7-1m18-8 10-2-7 11-6-1" fill="currentColor" />
       <path
         d="m26 30 4 2m8-2-4 2m-4 8h5"
-        stroke="#171421"
+        stroke="#192d40"
         strokeWidth="2.5"
         strokeLinecap="round"
       />
@@ -106,10 +118,15 @@ function Panel({
   action,
   children,
   className = "",
+  collapsible = false,
+  open = false,
 }) {
+  const Container = collapsible ? "details" : "section";
+  const Header = collapsible ? "summary" : "header";
   return (
-    <section className={`${ui.panel} ${className}`}>
-      <header className={ui.panelHeader}>
+    <Container className={`${ui.panel} ${collapsible ? "collapsible-panel" : ""} ${className}`}
+      {...(collapsible ? { open: open || undefined } : {})}>
+      <Header className={ui.panelHeader}>
         <div className={ui.panelIcon}>
           <Icon size={21} />
         </div>
@@ -118,9 +135,9 @@ function Panel({
           <p>{subtitle}</p>
         </div>
         {action}
-      </header>
+      </Header>
       {children}
-    </section>
+    </Container>
   );
 }
 
@@ -144,6 +161,15 @@ function Toggle({ label, description, checked, onChange, disabled }) {
 }
 
 function App() {
+  const [theme, setTheme] = useState(() => {
+    try { return readTheme(window.localStorage); }
+    catch { return "dark"; }
+  });
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try { saveTheme(window.localStorage, theme); }
+    catch { /* Browser storage is optional. */ }
+  }, [theme]);
   const [bootstrap, setBootstrap] = useState(null);
   const [settings, setSettings] = useState({});
   const [settingsDraft, setSettingsDraft] = useState({});
@@ -206,6 +232,7 @@ function App() {
   const [dialogBusy, setDialogBusy] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
   const dialogRef = useRef(null);
+  const saveNameRef = useRef(null);
   const pendingPromptRef = useRef(null);
   const saveSourceRef = useRef(null);
   const submissionRef = useRef(false);
@@ -499,7 +526,10 @@ function App() {
   }, [notice]);
 
   useEffect(() => {
-    if (saveKind) dialogRef.current?.showModal();
+    if (saveKind) {
+      dialogRef.current?.showModal();
+      saveNameRef.current?.focus();
+    }
     else dialogRef.current?.close();
   }, [saveKind]);
 
@@ -936,6 +966,7 @@ function App() {
 
   return (
     <div className="min-h-screen">
+      <a className="skip-link" href="#workspace-content">Skip to workspace</a>
       <aside className={ui.sidebar}>
         <a
           className={ui.sidebarBrand}
@@ -948,89 +979,35 @@ function App() {
         >
           <GoatMark />
           <span>
-            GOATED<span className={ui.brandSub}>PROMPTER</span>
+            Goated<span className={ui.brandSub}>Prompter</span>
           </span>
         </a>
-        <div className={ui.navCaption}>WORKSPACE</div>
+        <div className={ui.navCaption}>Workspace</div>
         <nav aria-label="Workspace">
-          <button
-            className={ui.navItem}
-            data-active={view === "builder"}
-            onClick={() => navigate("builder")}
-          >
-            <SlidersHorizontal size={19} />
-            Prompt Builder
-          </button>
-          <button className={ui.navItem} data-active={view === "refine"}
-            onClick={() => navigate("refine")} disabled={!bootstrap}>
-            <WandSparkles size={19} />Refine
-          </button>
-          <button className={ui.navItem} data-active={view === "minimax"}
-            onClick={() => navigate("minimax")} disabled={!bootstrap}>
-            <Film size={19} />MiniMax H3
-          </button>
-          <button className={ui.navItem} data-active={view === "dataset"}
-            onClick={() => navigate("dataset")} disabled={!bootstrap}>
-            <Database size={19} />Dataset
-          </button>
-          <button
-            className={ui.navItem}
-            data-active={view === "saved"}
-            onClick={() => navigate("saved")}
-          >
-            <Bookmark size={19} />
-            Saved Prompts<span className={ui.navCount}>{saved.length}</span>
-          </button>
-          <button
-            className={ui.navItem}
-            data-active={view === "directors"}
-            onClick={() => navigate("directors")}
-            disabled={!bootstrap}
-          >
-            <WandSparkles size={19} />
-            Instruction presets
-          </button>
-          <button
-            className={ui.navItem}
-            data-active={view === "settings"}
-            onClick={() => navigate("settings")}
-          >
-            <Settings2 size={19} />
-            Settings
-          </button>
+          {workspaceViews.map(({ id, label, icon: Icon }) => (
+            <button key={id} className={ui.navItem} data-active={view === id}
+              aria-label={label} aria-current={view === id ? "page" : undefined}
+              onClick={() => navigate(id)}
+              disabled={!bootstrap && !["builder", "saved", "settings"].includes(id)}>
+              <Icon size={19} aria-hidden="true" />
+              <span className="nav-text">{label}</span>
+              {id === "saved" && <span className={ui.navCount} aria-hidden="true">{saved.length}</span>}
+            </button>
+          ))}
         </nav>
         <div className={ui.sidebarBottom}>
           <div className={ui.localLabel}>
             <span className={ui.statusDot} />
-            YOUR LOCAL WORKSPACE
+            Your local studio
           </div>
           <p>
-            Good prompts.
-            <br />
-            <span>Great possibilities.</span>
+            Ideas, prompts, and creative direction. All in one place.
           </p>
-          <svg
-            className="absolute bottom-0 left-0 w-full"
-            viewBox="0 0 240 145"
-            fill="none"
-            aria-hidden="true"
-          >
-            <path
-              d="m0 120 49-56 22 24 40-76 34 54 22-17 73 80v16H0Z"
-              fill="#262036"
-            />
-            <path
-              d="m37 140 74-128-18 87 31-20 22 64m-40-81 39 4 22-17-17 58 90 32"
-              fill="#3c3055"
-            />
-            <path d="m0 142 77-39 42 22 43-27 78 41v6H0Z" fill="#17151f" />
-            <path
-              d="m111 12 9 37-12-7-15 57M49 64l-4 35 13-13 13 2"
-              stroke="#71608f"
-              strokeOpacity=".6"
-            />
-          </svg>
         </div>
+        <button className={`${ui.navItem} sidebar-log mobile:hidden`} onClick={() => setLogOpen(true)}
+          aria-label="View LLM activity log" title="View LLM activity log">
+          <ScrollText size={19} aria-hidden="true" /><span className="nav-text">View log</span>
+        </button>
       </aside>
 
       <div className={ui.mainShell}>
@@ -1038,34 +1015,38 @@ function App() {
           <div className={ui.headerTitle}>
             <GoatMark small />
             <div>
-              <h1>Goated Prompter</h1>
-              <p>Sharper ideas. Better prompts.</p>
+              <h1><span>Workspace /</span>{workspaceViews.find((item) => item.id === view)?.label}</h1>
             </div>
           </div>
-          <div className="flex items-center gap-[22px] mobile:gap-0">
-            {job && (
-              <button className={ui.button} onClick={() => setLogOpen(true)} aria-label="View LLM activity log">
+          <div className="flex items-center gap-3 mobile:gap-2">
+            <button className={ui.iconButton} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+              title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+              onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}>
+              {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+              <button className={`${ui.button} hidden mobile:inline-flex`} onClick={() => setLogOpen(true)} aria-label="View LLM activity log">
                 <ScrollText size={14} /><span className="mobile:hidden">View log</span>
               </button>
-            )}
             <span className={ui.connectionPill} data-offline={!bootstrap}>
               <span className={ui.statusDot} />
               {bootstrap ? "Local backend connected" : "Backend offline"}
             </span>
             <span className={ui.localOnly}>
               <Zap size={14} />
-              LOCAL WORKSPACE
+              Local workspace
             </span>
           </div>
         </header>
 
-        <main className={ui.main} data-builder={view === "builder"}>
+        <main id="workspace-content" tabIndex={-1} className={ui.main} data-builder={view === "builder"} data-view={view}>
           {bootstrap && (
             <div
               className={ui.builderSave}
+              hidden={view !== "builder" && !builderError}
               aria-live="polite"
               aria-label="Builder save status"
             >
+              {builderStatus === "Saved" && <Check size={13} className="text-success" aria-hidden="true" />}
               <span>{builderStatus}</span>
               {builderError && (
                 <>
@@ -1154,13 +1135,9 @@ function App() {
             <>
               <div className={ui.pageHeading}>
                 <div>
-                  <div className={ui.eyebrow}>YOUR COLLECTION</div>
-                  <h2>
-                    Prompts worth keeping<span>.</span>
-                  </h2>
+                  <h2>Saved prompts</h2>
                   <p>
-                    Saved in a local JSON file on this server. Ready for your
-                    next creation.
+                    Your prompt library, saved on this server and ready to use again.
                   </p>
                 </div>
                 <button className={ui.button} onClick={() => setView("builder")}>
@@ -1182,9 +1159,9 @@ function App() {
                   <div className={ui.emptyIcon}>
                     <Bookmark size={30} />
                   </div>
-                  <h3>A home for your best ideas.</h3>
+                  <h3>Keep your best prompts here</h3>
                   <p>
-                    Generate a prompt, then hit Save Prompt to keep it here.
+                    Create a prompt in Builder, then choose Save Prompt to add it to your library.
                   </p>
                   <button
                     className={ui.primaryButton}
@@ -1257,10 +1234,7 @@ function App() {
             <>
               <div className={ui.pageHeading}>
                 <div>
-                  <div className={ui.eyebrow}>YOUR DIRECTION</div>
-                  <h2>
-                    Instruction presets<span>.</span>
-                  </h2>
+                  <h2>Instruction presets</h2>
                   <p>
                     Reusable instructions that guide how your prompt task is written.
                   </p>
@@ -1435,13 +1409,9 @@ function App() {
             <>
               <div className={ui.pageHeading}>
                 <div>
-                  <div className={ui.eyebrow}>YOUR LOCAL SETUP</div>
-                  <h2>
-                    Settings<span>.</span>
-                  </h2>
+                  <h2>Settings</h2>
                   <p>
-                    Model discovery and retention, saved in a local JSON file on
-                    this server.
+                    Connect your local models and choose how they run.
                   </p>
                 </div>
                 <button className={ui.button} onClick={() => setView("builder")}>
@@ -1548,13 +1518,9 @@ function App() {
             <>
               <div className={ui.pageHeading}>
                 <div>
-                  <div className={ui.eyebrow}>FROM A SPARK TO SOMETHING GREAT</div>
-                  <h2>
-                    Make your next idea <span>look better.</span>
-                  </h2>
+                  <h2>Start with an idea.</h2>
                   <p>
-                    Your vision, refined. Built for your image and video
-                    workflows.
+                    Shape a rough thought into a ready-to-use image or video prompt.
                   </p>
                 </div>
                 <span className={ui.workspaceTag}>
@@ -1618,7 +1584,7 @@ function App() {
                           })),
                         )}
                       </div>
-                      <div className="border-t border-[#ffffff07] pt-[15px]">
+                      <div className="mb-5 border-t border-line pt-3">
                         <p className={ui.subtleNote}>
                           Changing the task selects its matching instruction preset.
                           You can then choose another preset without changing the task.
@@ -1706,9 +1672,21 @@ function App() {
                     </Panel>
 
                     <Panel
+                      icon={FileText}
+                      title="Workflow rules / notes"
+                      subtitle="Add constraints or details the prompt should keep."
+                    >
+                      <textarea className={ui.notesInput} aria-label="Workflow rules"
+                        placeholder="e.g. Avoid text and watermarks. Keep natural lighting and realistic textures…"
+                        value={settings.custom_instructions}
+                        onChange={(event) => update("custom_instructions", event.target.value)} />
+                    </Panel>
+                  </div>
+                  <div className={ui.column}>
+                    <Panel
                       icon={WandSparkles}
                       title="Generated prompt"
-                      subtitle="Your next creation starts here. Edit it until it feels right."
+                      subtitle="Review, edit, and copy it into your creative workflow."
                       action={
                         <span
                           className={ui.resultStatus}
@@ -1728,7 +1706,7 @@ function App() {
                           onChange={(event) =>
                             update("generated_prompt", event.target.value)
                           }
-                          placeholder="A little direction. A lot of possibility.\n\nYour generated prompt will appear here."
+                          placeholder={"Your prompt will appear here.\n\nGenerate from your idea, then edit or copy the result."}
                           spellCheck={false}
                         />
                         <span className={ui.charCount}>
@@ -1772,12 +1750,10 @@ function App() {
                         </button>
                       </div>
                     </Panel>
-                  </div>
-                  <div className={ui.column}>
                     <Panel
                       icon={ImagePlus}
                       title="Reference images"
-                      subtitle="Bring your vision into focus. Up to four images."
+                      subtitle="Add up to four images to guide your prompt."
                       action={
                         <span className={ui.countChip}>
                           {images.filter(Boolean).length} / 4
@@ -1835,7 +1811,7 @@ function App() {
                                     event.target.value = "";
                                   }}
                                 />
-                                <span className="mb-[3px] text-[#b2a0d6] [&>svg]:inline [&>svg]:align-baseline">
+                                <span className="mb-[3px] text-accent [&>svg]:inline [&>svg]:align-baseline">
                                   <ImagePlus size={24} />
                                 </span>
                                 <strong>Add image {index + 1}</strong>
@@ -1855,6 +1831,8 @@ function App() {
                       icon={Settings2}
                       title="Keep from reference images"
                       subtitle="Choose which image supplies each attribute to keep."
+                      collapsible
+                      open={hasImages}
                     >
                       <div className={ui.referenceMap}>
                         {attributes.map(({ key: attribute, label }) => (
@@ -1906,21 +1884,6 @@ function App() {
                       )}
                     </Panel>
 
-                    <Panel
-                      icon={FileText}
-                      title="Workflow rules / notes"
-                      subtitle="Extra instructions, constraints, and finishing touches."
-                    >
-                      <textarea
-                        className={ui.notesInput}
-                        aria-label="Workflow rules"
-                        placeholder="e.g. Avoid text and watermarks. Keep natural lighting and focus on realistic textures..."
-                        value={settings.custom_instructions}
-                        onChange={(event) =>
-                          update("custom_instructions", event.target.value)
-                        }
-                      />
-                    </Panel>
                   </div>
                 </div>
               </fieldset>
@@ -2015,6 +1978,7 @@ function App() {
 
       <dialog
         className={ui.dialog}
+        aria-labelledby="save-prompt-title"
         ref={dialogRef}
         onCancel={(event) => {
           if (dialogBusy) event.preventDefault();
@@ -2037,7 +2001,7 @@ function App() {
               <X size={19} />
             </button>
           </div>
-          <h2>Keep this one.</h2>
+          <h2 id="save-prompt-title">Save your prompt</h2>
           <p>
             Give your prompt a name. It will be saved in a local JSON file on
             this server.
@@ -2051,6 +2015,7 @@ function App() {
             <span>Prompt name</span>
             <input
               className={ui.input}
+              ref={saveNameRef}
               autoFocus
               required
               maxLength={80}

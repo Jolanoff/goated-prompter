@@ -15,11 +15,11 @@ test("task and instruction preset lead the controls on desktop and mobile", asyn
   });
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });
-    await expect(controls.locator("select")).toHaveCount(7);
+    await expect(controls.locator("select")).toHaveCount(6);
     expect(await controls.locator("select").evaluateAll((items) =>
       items.map((item) => item.getAttribute("aria-label")),
     )).toEqual([
-      "Prompt task", "Instruction preset", "Target model", "Builder aspect ratio", "Creativity",
+      "Prompt task", "Instruction preset", "Target model", "Creativity",
       "Prompt length", "Prompt engine",
     ]);
     const task = await page.getByLabel("Prompt task", { exact: true }).boundingBox();
@@ -85,7 +85,7 @@ test("builder JSON restores text fields and resets unavailable reference sources
     .getByLabel("Instruction preset", { exact: true })
     .selectOption({ label: "Photography Director" });
   await page.getByLabel("Prompt task", { exact: true }).selectOption("Photography");
-  await page.getByLabel("Prompt length").selectOption("Maximum Detail");
+  await page.getByLabel("Prompt length", { exact: true }).selectOption("Maximum Detail");
   await page.getByLabel("Workflow rules").fill("Keep these rules");
   await page
     .getByLabel("Generated prompt", { exact: true })
@@ -131,7 +131,7 @@ test("builder JSON restores text fields and resets unavailable reference sources
   await expect(
     page.getByLabel("Generated prompt", { exact: true }),
   ).toHaveValue("  Exact output\n");
-  await expect(page.getByLabel("Prompt length")).toHaveValue("Maximum Detail");
+  await expect(page.getByLabel("Prompt length", { exact: true })).toHaveValue("Maximum Detail");
   await expect(page.getByLabel("Workflow rules")).toHaveValue(
     "Keep these rules",
   );
@@ -267,11 +267,11 @@ test("legacy Maximum hydrates once and generation flushes a linked snapshot firs
     await route.fulfill({ response, json: data });
   });
   await page.goto("/");
-  await expect(page.getByLabel("Prompt length")).toHaveValue("Maximum Detail");
+  await expect(page.getByLabel("Prompt length", { exact: true })).toHaveValue("Maximum Detail");
   await expect(page.getByLabel("Instruction preset", { exact: true })).toHaveValue(
     "photography_director",
   );
-  await expect(page.getByLabel("Prompt length").locator("option")).toHaveText([
+  await expect(page.getByLabel("Prompt length", { exact: true }).locator("option")).toHaveText([
     "Short",
     "Medium",
     "Detailed",

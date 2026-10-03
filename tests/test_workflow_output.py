@@ -1,6 +1,7 @@
 """Regression coverage for model-produced JSON leakage and bounded format repair."""
 
 import json
+from copy import deepcopy
 import unittest
 from unittest.mock import patch
 
@@ -8,7 +9,7 @@ from goated_prompter.backends.base import BackendGenerationError, GoatedPrompter
 from goated_prompter.core import GoatedPrompterRequest
 from goated_prompter.prompting.target_models import TARGET_MODEL_NAMES
 from goated_prompter.refinement import RefineService, refine_instruction
-from goated_prompter.workflow_output import WorkflowFormatError, normalize_workflow_output
+from goated_prompter.workflow_output import WorkflowFormatError, normalize_workflow_output, requested_visible_text
 
 
 CAPTION = {
@@ -35,6 +36,55 @@ class OutputFormatTests(unittest.TestCase):
         for invalid in ("A sunlit plaza", '{"prompt":"A sunlit plaza"}', '{"high_level_description":"Incomplete"}'):
             with self.subTest(invalid=invalid), self.assertRaises(WorkflowFormatError):
                 normalize_workflow_output(invalid, "Ideogram4")
+
+    def test_ideogram_bbox_palettes_and_order_are_strict(self):
+        valid = deepcopy(CAPTION)
+        valid["style_description"]["color_palette"] = ["#AABBCC"]
+        valid["compositional_deconstruction"]["elements"] = [
+            {"type": "text", "bbox": [0, 10, 500, 900], "text": '你好  "OPEN"!',
+             "desc": "Exact lettering", "color_palette": ["#FFFFFF"]}]
+        raw = json.dumps(valid, ensure_ascii=False)
+        self.assertEqual(normalize_workflow_output(raw, "Ideogram4"), raw)
+        self.assertEqual(json.loads(raw)["compositional_deconstruction"]["elements"][0]["text"], '你好  "OPEN"!')
+        for box in ([0, 0, 0, 10], [10, 20, 5, 30], [0, 10, 500, 10], [-1, 0, 50, 50],
+                    [0, 0, 1001, 1000], [False, 0, 50, 50], [0.0, 0, 50, 50], [0, 0, 50]):
+            invalid = deepcopy(valid)
+            invalid["compositional_deconstruction"]["elements"][0]["bbox"] = box
+            with self.subTest(box=box), self.assertRaises(WorkflowFormatError):
+                normalize_workflow_output(json.dumps(invalid), "Ideogram4")
+        for palette in (["#aabbcc"], ["red"], ["#ABC"], "#AABBCC", ["#FFFFFF"] * 17):
+            invalid = deepcopy(valid)
+            invalid["style_description"]["color_palette"] = palette
+            with self.subTest(palette=palette), self.assertRaises(WorkflowFormatError):
+                normalize_workflow_output(json.dumps(invalid), "Ideogram4")
+        invalid = deepcopy(valid)
+        invalid["style_description"]["photo"] = "Photographic camera"
+        wrong_order = {key: valid[key] for key in reversed(valid)}
+        unknown = {**valid, "unexpected": "value"}
+        for caption in (invalid, wrong_order, unknown):
+            with self.subTest(caption=caption), self.assertRaises(WorkflowFormatError):
+                normalize_workflow_output(json.dumps(caption), "Ideogram4")
+
+    def test_ideogram_photo_order_and_duplicate_keys(self):
+        photo = deepcopy(CAPTION)
+        photo["style_description"] = {"aesthetics": "Portrait", "lighting": "Daylight", "photo": "Eye-level view", "medium": "Photograph"}
+        raw = json.dumps(photo)
+        self.assertEqual(normalize_workflow_output(raw, "Ideogram4"), raw)
+        duplicate = raw.replace('"high_level_description":', '"high_level_description":"Duplicate", "high_level_description":', 1)
+        with self.assertRaises(WorkflowFormatError):
+            normalize_workflow_output(duplicate, "Ideogram4")
+
+    def test_ideogram_literal_text_must_match_requested_case_spacing_and_script(self):
+        caption = deepcopy(CAPTION)
+        literal = "你好  OPEN!"
+        caption["compositional_deconstruction"]["elements"] = [{"type": "text", "text": literal, "desc": "Printed title"}]
+        expected = requested_visible_text('A poster with the title "你好  OPEN!".')
+        self.assertEqual(expected, (literal,))
+        self.assertEqual(normalize_workflow_output(json.dumps(caption), "Ideogram4", expected_visible_text=expected), json.dumps(caption))
+        for changed in ("你好 OPEN!", "你好  open!", "OPEN!"):
+            caption["compositional_deconstruction"]["elements"][0]["text"] = changed
+            with self.subTest(changed=changed), self.assertRaisesRegex(WorkflowFormatError, "exactly"):
+                normalize_workflow_output(json.dumps(caption), "Ideogram4", expected_visible_text=expected)
 
     def test_qwen21_extracts_legacy_prompt_and_rejects_unusable_wrappers(self):
         payload = {

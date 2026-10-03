@@ -5,40 +5,60 @@ from aiohttp import web
 
 from .core import GoatedPrompterRequest, _as_bool
 from .prompting.details import PROMPT_LENGTH_NAMES
-from .prompting.target_models import TARGET_MODEL_NAMES
+from .prompting.target_models import TARGET_MODEL_NAMES, canonical_target
 from .refinement import RefineService
 from .workspace_store import WorkspaceConflict, locks, text
 from .minimax import MiniMaxService, validate_minimax_draft
 from .dataset import DatasetReviewService, DatasetService, validate_dataset_draft
-from .dataset_coverage import analyze_dataset_quality, build_coverage_plan, effective_coverage_plan
+from .dataset_assignments import dataset_assignments
+from .dataset_quality import analyze_dataset_quality
 from .presets import get_director_preset
+from .scene_planner import reusable_scene_plan, scene_is_usable
+from .dataset_staging import geometry_errors
 
 
 def register_workspace_routes(app, state_key, job_factory, json_object):
-    async def dataset_coverage_endpoint(request):
-        payload = await json_object(request)
-        if set(payload) != {"input"}:
-            raise ValueError("Expected Dataset input only.")
-        data = validate_dataset_draft(payload["input"])
-        return web.json_response(await asyncio.to_thread(build_coverage_plan, data))
-
     async def dataset_quality_endpoint(request):
         payload = await json_object(request)
         if set(payload) != {"input"}:
             raise ValueError("Expected Dataset input only.")
         data = validate_dataset_draft(payload["input"])
-        coverage = effective_coverage_plan(data)
         report = await asyncio.to_thread(
-            analyze_dataset_quality, data, data["results"], coverage["plan"])
-        return web.json_response({"report": report, "coverage": coverage})
+            analyze_dataset_quality, data, data["results"])
+        return web.json_response({"report": report})
 
     async def dataset_endpoint(request):
         state = request.app[state_key]
         payload = await json_object(request)
-        if set(payload) - {"input", "settings"}:
+        local_scene = request.path.endswith("/scene")
+        if set(payload) - ({"input", "settings", "action", "index"} if local_scene else {"input", "settings", "valid_only"}):
             raise ValueError("Expected Dataset input and prompt-engine settings.")
         scenes_only = request.path.endswith("/scenes")
+        valid_only = payload.get("valid_only", False)
+        if type(valid_only) is not bool or (valid_only and scenes_only):
+            raise ValueError("Valid-scenes-only generation must be a boolean for prompt generation.")
         data = validate_dataset_draft(payload.get("input"), generation=True, planning=scenes_only)
+        if valid_only:
+            rows = reusable_scene_plan(data, dataset_assignments(data), require_scenes=False, allow_pending=True)
+            if rows is None or not any(scene_is_usable(row, data) for row in rows):
+                raise ValueError("No valid scenes are available in the current saved plan.")
+        scene_action = None
+        if local_scene:
+            action, index = payload.get("action"), payload.get("index")
+            if (not isinstance(action, str) or action not in {"regenerate_idea", "repair_scene", "regenerate_prompt"}
+                    or type(index) is not int or not 1 <= index <= data["amount"]):
+                raise ValueError("Choose a valid scene index and regenerate_idea, repair_scene or regenerate_prompt.")
+            rows = reusable_scene_plan(data, dataset_assignments(data), require_scenes=False, allow_pending=True)
+            if rows is None:
+                raise ValueError("Per-scene actions require a current saved idea plan.")
+            if action == "repair_scene" and not rows[index - 1].get("idea", "").strip():
+                raise ValueError("Generate an idea for this item before repairing its scene.")
+            if action == "regenerate_prompt" and (not rows[index - 1]["scene"].strip()
+                     or rows[index - 1].get("scene_status") in {"not_generated", "geometry_warning", "failed"}
+                    or (rows[index - 1].get("scene_status") != "guided_fallback"
+                        and geometry_errors(rows[index - 1], dataset_type=data["trigger_type"]))):
+                raise ValueError("Repair this scene before regenerating its prompt.")
+            scene_action = (action, index)
         settings = payload.get("settings", {})
         if not isinstance(settings, dict) or set(settings) - {"director_profile"}:
             raise ValueError("Invalid Dataset prompt-engine settings.")
@@ -64,7 +84,8 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
             job.kind = "dataset_scenes" if scenes_only else "dataset"
             state.jobs[job.id] = job
             task = asyncio.create_task(state.run(
-                job, director_request, config, True, {"operation": job.kind, "input": data}))
+                job, director_request, config, True, {"operation": job.kind, "input": data,
+                                                      "scene_action": scene_action, "valid_only": valid_only}))
             state.tasks.add(task)
             task.add_done_callback(state.tasks.discard)
             return web.json_response(job.snapshot(), status=202)
@@ -147,7 +168,7 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
                 action = payload.get("action")
                 if request.path == "/api/workspace":
                     if action == "add":
-                        target = payload.get("target", "Generic")
+                        target = canonical_target(payload.get("target", "Generic"))
                         if target not in TARGET_MODEL_NAMES:
                             raise ValueError("Invalid target model.")
                         parent = current["current_id"] if payload.get("edit") is True else None
@@ -163,7 +184,7 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
                 settings = payload.get("settings", {})
                 if not isinstance(settings, dict):
                     raise ValueError("settings must be an object.")
-                target, length = settings.get("target_model", "Generic"), settings.get("prompt_length", "Medium")
+                target, length = canonical_target(settings.get("target_model", "Generic")), settings.get("prompt_length", "Medium")
                 if target not in TARGET_MODEL_NAMES or length not in PROMPT_LENGTH_NAMES:
                     raise ValueError("Invalid target model or prompt length.")
                 workflow = {"operation": "refine", "locks": locks(payload.get("locks", []))}
@@ -220,9 +241,8 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
     app.add_routes([web.post("/api/workspace/minimax", minimax_endpoint),
                     web.post("/api/workspace/dataset", dataset_endpoint),
                     web.post("/api/workspace/dataset/scenes", dataset_endpoint),
+                    web.post("/api/workspace/dataset/scene", dataset_endpoint),
                     web.post("/api/workspace/dataset/review", dataset_review_endpoint),
-                    web.post("/api/workspace/dataset/coverage", dataset_coverage_endpoint),
-                    web.post("/api/workspace/dataset/plan", dataset_coverage_endpoint),
                     web.post("/api/workspace/dataset/quality", dataset_quality_endpoint),
                     web.get("/api/workspace/settings/{operation:refine|minimax|dataset}", settings_endpoint),
                     web.put("/api/workspace/settings/{operation:refine|minimax|dataset}", settings_endpoint),
@@ -254,14 +274,17 @@ def execute_workflow(state, job, request, config, workflow):
                 job.result = result
                 job.record_event(
                     (f"Dataset prompt {result['completed']}/{result['total']} completed and is available."
-                     if result["completed"] else "Dataset scene plan is ready and available before prompt writing."),
+                     if result["completed"] else "Dataset planning stages saved; final prompts have not started."
+                     if any(row.get("scene_status") in {"not_generated", "geometry_warning"} for row in result["scene_plan"])
+                     else "Dataset scene plan is ready and available before prompt writing."),
                     "result",
                     revise=False,
                 )
                 job.revision += 1
         result = DatasetService(config, job.checkpoint).run(
             request, workflow["input"], progress, partial,
-            scenes_only=workflow["operation"] == "dataset_scenes")
+            scenes_only=workflow["operation"] == "dataset_scenes", scene_action=workflow.get("scene_action"),
+            valid_only=workflow.get("valid_only", False))
         job.commit(lambda: result, finish=True)
         return
 

@@ -10,3 +10,8 @@ frontend/playwright-report/
 .env
 .env.*
 *.gguf
+
+# Local AI-agent skills (not needed to run the app)
+/.agents/skills/
+/.opencode/skills/
+/skills-lock.json

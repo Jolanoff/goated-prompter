@@ -3,6 +3,8 @@
 import json
 import re
 
+from .prompting.target_models import canonical_target, get_target_capabilities
+
 
 class WorkflowFormatError(ValueError):
     """The model's output needs a format-correction pass before it can be saved."""
@@ -34,8 +36,8 @@ def _unfence(value):
 
 
 def _ideogram_caption(value):
-    required = {"high_level_description", "style_description", "compositional_deconstruction"}
-    if not isinstance(value, dict) or set(value) != required:
+    required = ["high_level_description", "style_description", "compositional_deconstruction"]
+    if not isinstance(value, dict) or list(value) != required:
         return False
     nonempty = lambda item: isinstance(item, str) and bool(item.strip())
     style, composition = value["style_description"], value["compositional_deconstruction"]
@@ -45,34 +47,85 @@ def _ideogram_caption(value):
         return False
     if ("photo" in style) == ("art_style" in style) or not nonempty(style.get("photo", style.get("art_style"))):
         return False
+    style_order = (["aesthetics", "lighting", "photo", "medium"] if "photo" in style
+                   else ["aesthetics", "lighting", "medium", "art_style"])
+    if list(style) != style_order + (["color_palette"] if "color_palette" in style else []):
+        return False
+    def palette(item, maximum):
+        return (isinstance(item, list) and len(item) <= maximum
+                and all(isinstance(color, str) and re.fullmatch(r"#[0-9A-F]{6}", color) for color in item))
+    if "color_palette" in style and not palette(style["color_palette"], 16):
+        return False
+    if list(composition) != ["background", "elements"]:
+        return False
     if not nonempty(composition.get("background")) or not isinstance(composition.get("elements"), list):
         return False
-    return all(isinstance(element, dict) and element.get("type") in ("obj", "text")
-               and nonempty(element.get("desc"))
-               and (element["type"] != "text" or nonempty(element.get("text")))
-               for element in composition["elements"])
+    for element in composition["elements"]:
+        if not isinstance(element, dict) or element.get("type") not in ("obj", "text") or not nonempty(element.get("desc")):
+            return False
+        keys = ["type"] + (["bbox"] if "bbox" in element else [])
+        if element["type"] == "text":
+            if not nonempty(element.get("text")):
+                return False
+            keys += ["text"]
+        keys += ["desc"] + (["color_palette"] if "color_palette" in element else [])
+        if list(element) != keys:
+            return False
+        if "bbox" in element:
+            box = element["bbox"]
+            if (not isinstance(box, list) or len(box) != 4
+                    or any(type(number) is not int or not 0 <= number <= 1000 for number in box)
+                    or box[0] >= box[2] or box[1] >= box[3]):
+                return False
+        if "color_palette" in element and not palette(element["color_palette"], 5):
+            return False
+    return True
 
 
-def normalize_workflow_output(raw, target):
+def _unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise WorkflowFormatError("Duplicate JSON keys are not allowed.")
+        result[key] = value
+    return result
+
+
+def requested_visible_text(text):
+    """Extract only explicitly labeled quoted lettering, not arbitrary quoted ideas."""
+    return tuple(match[1] if match[1] is not None else match[2] for match in re.finditer(
+        r'\b(?:text|lettering|inscription|sign|label|title|slogan|reads?|says?|printed|written)\b[^\n.;"“]{0,80}(?:"([^"\n]+)"|“([^”\n]+)”)',
+        text, re.I))
+
+
+def normalize_workflow_output(raw, target, *, expected_visible_text=()):
     """Unwrap simple containers; never flatten complex objects or salvage broken JSON."""
+    target = canonical_target(target)
+    structured = get_target_capabilities(target).output_format == "json"
     value = _unfence(str(raw or "").strip())
     for _ in range(3):
         if not value:
             raise WorkflowFormatError("The prompt engine returned an empty prompt.")
         try:
-            decoded = json.loads(value)
+            decoded = json.loads(value, object_pairs_hook=_unique_object)
+        except WorkflowFormatError:
+            raise
         except (ValueError, RecursionError):
-            if target == "Ideogram4":
+            if structured:
                 raise WorkflowFormatError("Ideogram4 requires a complete valid JSON caption.")
             # Catch incomplete wrappers and JSON preceded by a model-written heading.
             if value.startswith("{") or re.search(r'(?m)^\s*[\[{]\s*(?:["{\[]|$)', value) or "```" in value:
                 raise WorkflowFormatError("This target requires prompt text, but structured or incomplete output was returned.")
             return value
-        if target == "Ideogram4":
+        if structured:
             if not _ideogram_caption(decoded):
                 raise WorkflowFormatError("Ideogram4 output is missing the required caption fields or has invalid field types.")
+            rendered = [element["text"] for element in decoded["compositional_deconstruction"]["elements"]
+                        if element["type"] == "text"]
+            if any(literal not in rendered for literal in expected_visible_text):
+                raise WorkflowFormatError("Ideogram4 literal text fields must preserve the requested text exactly.")
             return value
-        if (target == "Qwen2.1" and isinstance(decoded, dict) and "rewritten_prompt" in decoded
+        if (target == "Qwen Image 2.1" and isinstance(decoded, dict) and "rewritten_prompt" in decoded
                 and set(decoded) <= {"rewritten_prompt", "wh_ratio", "ratio_follow"}
                 and isinstance(decoded["rewritten_prompt"], str)):
             # Older models/saved sources may still use Qwen's rewrite envelope.
