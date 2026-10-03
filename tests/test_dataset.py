@@ -44,7 +44,9 @@ class CaptureBackend(GoatedPrompterBackend):
         self.calls.append(instruction)
         if instruction.diagnostic_stage.startswith("dataset:scene_planner"):
             data = json.loads(instruction.user_message)
-            return json.dumps([{"index": index, "idea": f"Distinct activity {index}", "scene": f"Distinct adventure {index}"}
+            from tests.test_dataset_geometry import character_geometry
+            return json.dumps([{"index": index, "idea": f"Distinct activity {index}", "scene": f"Distinct adventure {index}",
+                                "geometry": character_geometry(action_focus=f"Distinct activity {index}")}
                                for index in data["indexes"]])
         if instruction.diagnostic_stage.startswith("dataset:idea_planner"):
             data = json.loads(instruction.user_message)
@@ -54,7 +56,7 @@ class CaptureBackend(GoatedPrompterBackend):
             data = json.loads(instruction.user_message)
             return json.dumps([{"index": row["index"], "idea": row["idea"],
                                 "scene": f"Composed physical scene {row['index']}", "geometry": {
-                                    "camera_view": "front", "framing": "full_body", "body_orientation": "front",
+                                     "camera_azimuth": "front", "framing": "full_body", "body_orientation": "front",
                                     "head_direction": "toward_action", "gaze_direction": "toward_action",
                                     "pose_type": "standing_neutral", "action_focus": row["idea"],
                                     "face_visibility": "full", "visibility_focus": ["face"]}}
@@ -283,7 +285,7 @@ class DatasetUnitTests(unittest.TestCase):
         self.assertEqual(len(partials[0]["scene_plan"]), 3)
         for partial in partials[1:]:
             self.assertTrue(all("idea" in item and "scene" in item for item in partial["prompts"]))
-        self.assertTrue(all(set(item) == {"index", "input", "idea", "scene", "prompt"}
+        self.assertTrue(all(set(item) == {"index", "input", "idea", "scene", "geometry", "prompt"}
                             for item in result["prompts"]))
 
     def test_service_reports_engine_waiting_and_validation_progress(self):
@@ -578,7 +580,9 @@ class DatasetEndpointTests(unittest.IsolatedAsyncioTestCase):
                 return original_generate(instruction)
             self.backend.calls.append(instruction)
             context = json.loads(instruction.user_message)
-            return json.dumps([{"index": row["index"], "idea": row["input"], "scene": expanded[row["input"]]}
+            from tests.test_dataset_geometry import character_geometry
+            return json.dumps([{"index": row["index"], "idea": row["input"], "scene": expanded[row["input"]],
+                                "geometry": character_geometry(action_focus=row["input"])}
                                for row in context["assignments"]])
 
         self.enterContext(patch.object(self.backend, "generate", side_effect=generate))

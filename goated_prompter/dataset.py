@@ -23,7 +23,7 @@ from .dataset_visible_content import PositiveContentError, positive_prompt_error
 from .scene_planner import (ScenePlanner, MAX_STORED_SCENE_CHARACTERS, MAX_STORED_IDEA_CHARACTERS,
                             reusable_scene_plan, scene_plan_signature, validate_saved_scene_plan, validate_plan_metadata,
                             failure_reason, failed_scene, scene_is_usable, FAILURE_METADATA)
-from .dataset_geometry import geometry_errors, migrate_saved_geometry, resolve_framing_conflicts
+from .dataset_staging import geometry_errors, migrate_saved_geometry, resolve_framing_conflicts
 
 
 DATASET_MAX_RETRIES = 3
@@ -69,11 +69,11 @@ def validate_dataset_draft(value, *, generation=False, planning=False):
     result["constraints"] = _text(result["constraints"], "Dataset constraints", 10000)
     result["result_job_id"] = _text(result["result_job_id"], "Result job id", 128).strip()
     result["scene_plan_signature"] = _text(result["scene_plan_signature"], "Scene plan signature", 128).strip()
-    result["scene_plan"] = validate_saved_scene_plan(result["scene_plan"])
     if not isinstance(result["planning_mode"], str) or result["planning_mode"] not in {"Fast", "Quality"}:
         raise ValueError("Dataset planning mode must be Fast or Quality.")
     if result["trigger_type"] not in DATASET_TYPES:
         raise ValueError("Invalid trigger subject kind.")
+    result["scene_plan"] = validate_saved_scene_plan(result["scene_plan"], dataset_type=result["trigger_type"])
     if result["visual_style"] not in DATASET_STYLES:
         raise ValueError("Invalid dataset visual style.")
     if result["source_mode"] not in DATASET_SOURCES:
@@ -117,7 +117,7 @@ def validate_dataset_draft(value, *, generation=False, planning=False):
         if "idea" in item:
             record["idea"] = _text(item["idea"], f"Dataset idea {index + 1}", MAX_STORED_IDEA_CHARACTERS)
         if "geometry" in item:
-            record["geometry"], _ = migrate_saved_geometry(item["geometry"])
+            record["geometry"], _ = migrate_saved_geometry(item["geometry"], dataset_type=result["trigger_type"])
         validate_plan_metadata(item)
         cleaned.append(record)
     result["results"] = cleaned
@@ -317,7 +317,7 @@ class DatasetService:
                     except BackendGenerationError as exc:
                         self.checkpoint()
                         scenes[index - 1] = failed_scene({**original, "replacement_attempted": True},
-                            "Requested new idea failed: " + failure_reason(exc), stage="idea")
+                            "Requested new idea failed: " + failure_reason(exc), stage="idea", dataset_type=data["trigger_type"])
                     else:
                         scenes[index - 1] = {**idea, "input": original["input"], "scene": "", "geometry": {},
                              "idea_status": "valid", "scene_status": "not_generated", "prompt_status": "not_generated"}
@@ -352,11 +352,15 @@ class DatasetService:
                 if row.get("scene_status") == "failed":
                     continue
                 try:
-                    row = scenes[index - 1] = resolve_framing_conflicts(row)
+                    row = scenes[index - 1] = resolve_framing_conflicts(row, dataset_type=data["trigger_type"])
                 except ValueError:
                     pass  # Unknown staging facts still need a scene-local repair.
-                errors = geometry_errors(row, character=data.get("planning_mode") == "Quality"
-                    and data["trigger_type"] == "Character" and row.get("scene_status") != "guided_fallback")
+                # Saved/manual scenes may intentionally have no structured
+                # staging. Validate their prose without rewriting it merely to
+                # fill metadata. New model output and supplied staging still
+                # enforce the same complete type profile in both modes.
+                errors = [] if row.get("scene_status") == "guided_fallback" else geometry_errors(
+                    row, dataset_type=data["trigger_type"], require_fields=bool(row.get("geometry")))
                 if errors or row.get("scene_status") in {"not_generated", "geometry_warning"}:
                     if scene_action and scene_action[0] == "regenerate_prompt":
                         raise ValueError("Repair this scene's geometry before regenerating its prompt.")

@@ -14,3 +14,19 @@ test("geometry debugging separates gaze and emotion and renders canonical labels
   assert.equal(geometry.gaze_direction, "toward_action");
   assert.deepEqual(geometryRows(), []);
 });
+
+test("geometry debugging renders independent camera axes and nonhuman staging without human fields", () => {
+  const geometry = { camera_azimuth: "front_three_quarter_left", camera_elevation: "eye_level",
+    camera_distance: "full", subject_orientation: "front_three_quarter_left", framing: "full_subject",
+    composition: "centered", visibility_focus: ["product label"] };
+  assert.deepEqual(geometryRows(geometry), [
+    { label: "camera azimuth", value: "front three quarter left" },
+    { label: "camera elevation", value: "eye level" },
+    { label: "camera distance", value: "full" },
+    { label: "subject orientation", value: "front three quarter left" },
+    { label: "framing", value: "full subject" },
+    { label: "composition", value: "centered" },
+    { label: "visibility focus", value: "product label" },
+  ]);
+  assert.equal(geometry.camera_azimuth, "front_three_quarter_left");
+});

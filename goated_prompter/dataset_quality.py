@@ -9,6 +9,8 @@ from .dataset_assignments import dataset_assignments
 from .workflow_output import WorkflowFormatError, normalize_workflow_output
 from .dataset_triggers import trigger_contract_error, trigger_presence_error, trigger_terms, trigger_text_target
 from .dataset_visible_content import visible_content_error, positive_prompt_error
+from .dataset_staging.rules.prose import explicit_geometry_issues  # Legacy report import compatibility.
+from .dataset_staging import geometry_issues
 
 
 LEAKED_LABELS = re.compile(
@@ -174,54 +176,6 @@ def analyze_idea_diversity(data, rows):
             "ideas": list(records.values()), "method": "concept-aware lexical hints; not semantic verification"}
 
 
-def explicit_geometry_issues(text):
-    """Narrow explicit contradictions only; not a body simulator or pose judge.
-
-    Negated requirements and mirror/multi-panel scenes are left to Deep Review.
-    Unusual actions, rear three-quarter head turns and non-viewer gaze are not errors.
-    """
-    text = text.casefold().replace("–", "-").replace("—", "-")
-    if re.search(r"\b(?:mirror|reflection|reflected|collage|inset|split.screen)\b", text):
-        return []
-
-    def asserted(pattern):
-        for match in re.finditer(pattern, text):
-            prefix = text[max(0, match.start() - 40):match.start()]
-            if not re.search(r"\b(?:no|not|never|without|avoid)\b[^,.;:]*$", prefix):
-                return True
-        return False
-
-    issues = []
-    rear = asserted(r"\b(?:direct|straight) rear view\b|\bcamera directly behind\b")
-    frontal = asserted(r"\bfull(?:y)? frontal face\b|\bface (?:is )?(?:clearly )?fully frontal\b")
-    turn = asserted(r"\bhead (?:is )?turned (?:back )?over (?:her |his |their |one )?shoulder\b")
-    if rear and frontal and not turn:
-        issues.append(_issue("rear_front_conflict", "warning",
-            "Explicit direct rear view and fully frontal face conflict without a plausible turn. Check camera/body/head geometry."))
-    elif rear and not turn and asserted(r"\blooking (?:straight |directly )?(?:at|into) (?:the )?(?:camera|viewer)\b"):
-        issues.append(_issue("rear_gaze_conflict", "warning",
-            "Direct rear view cannot support camera-directed gaze without a plausible over-shoulder head turn."))
-    if (asserted(r"\b(?:straight |side |direct )?profile view\b|\bin profile\b")
-            and asserted(r"\bboth sides of (?:the |her |his |their )?face (?:are )?equally visible\b")):
-        issues.append(_issue("profile_face_conflict", "warning",
-            "A profile camera view cannot show both sides of the face equally."))
-    if (asserted(r"\bbody (?:is )?fully facing away\b")
-            and asserted(r"\bhead (?:is )?fully frontal(?: toward (?:the )?camera)?\b")):
-        issues.append(_issue("body_head_conflict", "warning",
-            "A fully away body cannot support a fully frontal head toward the camera."))
-    close = asserted(r"\btight (?:face|facial) close[- ]up\b|\btight upper[- ]body crop\b")
-    feet = asserted(r"\b(?:shoes|feet) (?:are )?(?:clearly |fully )?visible\b|\b(?:clearly|fully) (?:showing|shows) (?:her |his |their )?(?:shoes|feet)\b")
-    if close and feet:
-        issues.append(_issue("crop_visibility_conflict", "warning",
-            "A tight face/upper-body crop cannot also clearly show feet or shoes in the same view."))
-    front_camera = asserted(r"\bcamera (?:is )?(?:directly )?in front\b")
-    rear_camera = asserted(r"\bcamera (?:is )?directly behind\b")
-    if front_camera and rear_camera:
-        issues.append(_issue("camera_direction_conflict", "warning",
-            "One camera is specified both directly in front and directly behind the subject."))
-    return issues
-
-
 def _prompt_trigger_valid(prompt, data):
     try:
         return trigger_presence_error(
@@ -252,7 +206,7 @@ def _prompt_trigger_preference(prompt, data):
 
 
 def quality_signature(data, results, plan):
-    value = {"version": 6, "trigger": data.get("trigger"), "target": data.get("target"),
+    value = {"version": 7, "trigger": data.get("trigger"), "target": data.get("target"), "trigger_type": data.get("trigger_type"),
              "trigger_connected": data.get("trigger_connected", True),
              "trigger_at_start": data.get("trigger_at_start", False),
              "amount": data.get("amount"), "results": results, "plan": plan}
@@ -312,15 +266,14 @@ def analyze_dataset_quality(data, results=None, plan=None):
             if leakage := visible_content_error(item.get(source, "")):
                 add(index, _issue(source + "_content_leakage", "warning", leakage))
         if item.get("geometry"):
-            from .dataset_geometry import geometry_errors
-            for message in geometry_errors(item):
-                add(index, _issue("structured_geometry", "warning", message))
+            for problem in geometry_issues(item, dataset_type=data.get("trigger_type", "Custom")):
+                add(index, _issue("structured_geometry", "warning", problem.message))
         try:
             final_text = trigger_text_target(prompt, target)
         except ValueError:
             final_text = prompt
         for source, text in (("scene", item.get("scene", "")), ("prompt", final_text)):
-            for issue in explicit_geometry_issues(text):
+            for issue in explicit_geometry_issues(text, dataset_type=data.get("trigger_type", "Custom")):
                 add(index, {**issue, "code": source + "_" + issue["code"],
                             "message": f"{source.title()} geometry: " + issue["message"]})
         event_words = set(_scene_event_words(item.get("scene", "")))

@@ -41,8 +41,8 @@ class SceneComposerTests(unittest.TestCase):
         data = draft(amount=1)
         system = scene_composer_instruction(data, dataset_assignments(data), rows(1)).system_message
         for phrase in ("Return ONLY one valid JSON array", "character must be [", "character must be ]", "double-quoted keys",
-                       "no YAML", "no numbered sections", "no trailing commas", "GAZE_DIRECTION", "not put emotions",
-                       "EXPRESSION", 'pose_type="custom"', "pose_detail", "relative"):
+                       "no YAML", "no numbered sections", "no trailing commas", "gaze_direction", "not put emotions",
+                       "expression", "custom", "pose_detail", "relative"):
             self.assertIn(phrase, system)
         self.assertIn("IDEA SPATIAL CLARITY", idea_planner_instruction(data, dataset_assignments(data)).system_message)
 
@@ -175,7 +175,7 @@ class SceneComposerTests(unittest.TestCase):
     def test_optional_helpers_and_normalizable_enums_never_request_repair(self):
         for mode in ("Fast", "Quality"):
             for changes in ({"pose_type": "custom"}, {"expression": "custom"},
-                            {"camera_view": "front three-quarter", "framing": "full body", "camera_height": "eye-level"},
+                            {"camera_azimuth": "front three-quarter left", "framing": "full body", "camera_elevation": "eye-level"},
                             {"framing": "closeup"}, {"framing": "medium close-up"}, {}):
                 with self.subTest(mode=mode, changes=changes):
                     expected = rows(1)[0]
@@ -190,7 +190,7 @@ class SceneComposerTests(unittest.TestCase):
                         assignments=dataset_assignments(data), progress=lambda _: None)
                     self.assertEqual(session.generate.call_count, len(outputs))
                     self.assertTrue(all(":repair" not in call.args[0].diagnostic_stage for call in session.generate.call_args_list))
-                    self.assertEqual(result[0]["geometry"]["camera_view"], "front_three_quarter")
+                    self.assertEqual(result[0]["geometry"]["camera_azimuth"], "front_three_quarter_left")
                     self.assertEqual(result[0]["idea"], expected["idea"])
 
     def test_multiline_scene_normalizes_in_both_modes_without_repair(self):
@@ -264,7 +264,7 @@ class SceneComposerTests(unittest.TestCase):
         for mode in ("Fast", "Quality"):
             with self.subTest(mode=mode):
                 expected = rows(2)
-                bad = {**expected[0], "geometry": {**expected[0]["geometry"], "camera_view": "direct_rear",
+                bad = {**expected[0], "geometry": {**expected[0]["geometry"], "camera_azimuth": "direct_rear",
                     "body_orientation": "direct_rear", "face_visibility": "full"}}
                 data, session = draft(planning_mode=mode), Mock()
                 outputs = [json.dumps([bad, expected[1]]), json.dumps([expected[0]])]
@@ -291,7 +291,8 @@ class SceneComposerTests(unittest.TestCase):
         data = validate_dataset_draft(saved(draft(amount=1), [legacy]))
         self.assertEqual(data["scene_plan"][0]["idea"], expected["idea"])
         self.assertEqual(data["scene_plan"][0]["scene"], expected["scene"])
-        self.assertEqual(data["scene_plan"][0]["geometry"], {"framing": "full_body", "expression": "shocked"})
+        self.assertEqual(data["scene_plan"][0]["geometry"], {"framing": "full_body", "expression": "shocked",
+                                                          "pose_type": "custom", "pose_detail": "strange balance"})
         self.assertEqual(data["scene_plan"][0]["scene_status"], "geometry_warning")
         self.assertIsNotNone(reusable_scene_plan(data, dataset_assignments(data), require_scenes=False))
         result, session, _ = run(data, [json.dumps([expected]), "person_token examines exhibit 1."])
@@ -343,7 +344,7 @@ class FastChunkTests(unittest.TestCase):
 
     def test_real_conflict_in_middle_chunk_repairs_only_that_scene(self):
         expected = rows()
-        bad = {**expected[4], "geometry": {**expected[4]["geometry"], "camera_view": "direct_rear",
+        bad = {**expected[4], "geometry": {**expected[4]["geometry"], "camera_azimuth": "direct_rear",
             "body_orientation": "direct_rear", "face_visibility": "full"}}
         result, session = self.plan([json.dumps(expected[:4]), json.dumps([bad, *expected[5:8]]),
             json.dumps([expected[4]]), json.dumps(expected[8:])])
@@ -393,7 +394,7 @@ class FastChunkTests(unittest.TestCase):
     def test_failed_fast_scene_repair_resumes_fixed_idea_and_preserves_good_siblings(self):
         expected, snapshots = rows(), []
         data, session = draft(amount=10, planning_mode="Fast"), Mock()
-        bad = {**expected[4], "geometry": {**expected[4]["geometry"], "camera_view": "direct_rear",
+        bad = {**expected[4], "geometry": {**expected[4]["geometry"], "camera_azimuth": "direct_rear",
             "body_orientation": "direct_rear", "face_visibility": "full"}}
         session.generate.side_effect = [json.dumps(expected[:4]), json.dumps([bad, *expected[5:8]]),
                                         json.dumps([bad]), json.dumps([bad]), RuntimeError("planning interrupted")]

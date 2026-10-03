@@ -23,9 +23,18 @@ def draft(**changes):
 
 
 def scene_rows(amount=2):
+    from tests.test_dataset_geometry import character_geometry
     return [{"index": index, "idea": f"Reading a different book {index}",
-             "scene": f"Reading on a red couch beside window {index}, face visible in soft daylight."}
+             "scene": f"Reading on a red couch beside window {index}, face visible in soft daylight.",
+             "geometry": character_geometry(action_focus="reading")}
             for index in range(1, amount + 1)]
+
+
+def with_staging(rows, dataset_type="Character"):
+    from tests.test_dataset_geometry import character_geometry
+    from goated_prompter.dataset_staging import CHARACTER_REQUIRED_FIELDS
+    return [{**row, "geometry": {key: value for key, value in character_geometry().items() if key in CHARACTER_REQUIRED_FIELDS}
+             if dataset_type == "Character" else {"framing": "full_subject", "camera_azimuth": "front"}} for row in rows]
 
 
 class ScenePlannerTests(unittest.TestCase):
@@ -61,6 +70,7 @@ class ScenePlannerTests(unittest.TestCase):
                 rows = [{"index": i, "idea": idea,
                          "scene": f"{idea}, with the recurring subject and necessary interaction visible together from one three-quarter viewpoint."}
                         for i, idea in enumerate(ideas, 1)]
+                rows = with_staging(rows, kind)
                 session = Mock()
                 session.generate.return_value = json.dumps(rows)
                 planned = ScenePlanner(lambda: None).plan_batch(session=session, data=data,
@@ -78,6 +88,7 @@ class ScenePlannerTests(unittest.TestCase):
                  "Wearing a sweater backwards"]
         rows = [{"index": i, "idea": idea, "scene": f"A woman {idea.lower()}, in a single readable moment with the necessary props in reach and her gaze supporting the action."}
                 for i, idea in enumerate(ideas, 1)]
+        rows = with_staging(rows)
         session = Mock()
         session.generate.side_effect = [json.dumps(rows[start:start + 4]) for start in range(0, 10, 4)]
         data = draft(subject="woman doing funny stuff", amount=10)
@@ -474,6 +485,7 @@ class ScenePlannerTests(unittest.TestCase):
         ]
         rows = [{"index": index + 1, "idea": examples[index % 6][0], "scene": examples[index % 6][1]}
                 for index in range(10)]
+        rows = with_staging(rows)
         data = draft(amount=10, source_mode="guided", subject="A woman doing funny stuff",
                      inputs="\n".join(inputs), constraints="The woman must be the same in every prompt.")
         session, progress = Mock(), []
@@ -510,6 +522,7 @@ class ScenePlannerTests(unittest.TestCase):
         from tests.test_dataset_geometry import character_geometry
         repeated = [{"index": index, "idea": "Reading a book", "scene": "She reads a book sitting on a red couch."}
                     for index in (1, 2)]
+        repeated = with_staging(repeated)
         repaired = {**repeated[1], "scene": "She reads a book seated on a park bench.",
                     "geometry": character_geometry(action_focus="reading")}
         for source, inputs in (("guided", "reading\npark"), ("random", "reading\nreading")):
@@ -531,6 +544,7 @@ class ScenePlannerTests(unittest.TestCase):
             {"index": 2, "idea": "Chasing a hat in a park", "scene": "She runs through a park after a windblown hat, gaze focused on it."},
             {"index": 3, "idea": "Sitting on a table juggling oranges", "scene": "She sits on a table juggling oranges, eyes tracking the fruit."},
         ]
+        rows = with_staging(rows)
         session = Mock()
         session.generate.side_effect = [json.dumps(rows)] + ["person_token in a coherent funny scene." for _ in rows]
         backend = Mock()
@@ -640,8 +654,8 @@ class ScenePlannerTests(unittest.TestCase):
     def test_failed_planning_still_completes_dataset_with_original_guided_input(self):
         data = draft(amount=1, source_mode="guided", inputs="lying on floor")
         session = Mock()
-        session.generate.side_effect = ["not json", "[]", json.dumps([
-            {"index": 1, "idea": "Lying on floor", "scene": "lying on floor"}]), "person_token lying on floor."]
+        session.generate.side_effect = ["not json", "[]", json.dumps(with_staging([
+            {"index": 1, "idea": "Lying on floor", "scene": "lying on floor"}])), "person_token lying on floor."]
         backend = Mock()
         backend.name = "scene-test"
         @contextmanager

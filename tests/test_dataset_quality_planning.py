@@ -10,13 +10,17 @@ from goated_prompter.core import GoatedPrompterRequest, assemble_instruction
 from goated_prompter.dataset import DatasetService, default_dataset_draft, validate_dataset_draft
 from goated_prompter.dataset_assignments import dataset_assignments
 from goated_prompter.dataset_quality import analyze_dataset_quality, analyze_idea_diversity
-from goated_prompter.dataset_geometry import geometry_errors, validate_geometry
+from goated_prompter.dataset_staging import geometry_errors as staging_geometry_errors, validate_geometry
 from goated_prompter.prompting.dataset import dataset_instruction
 from goated_prompter.prompting.details import MAXIMUM_DETAIL_GUIDANCE, DATASET_DETAIL_DISCIPLINE
 from goated_prompter.prompting.scene_planner import (idea_planner_instruction, scene_planner_instruction,
                                                     scene_composer_instruction)
 from goated_prompter.scene_planner import (ScenePlanner, scene_plan_signature, reusable_scene_plan,
                                          validate_idea_plan, validate_scene_plan)
+
+
+def geometry_errors(row):
+    return staging_geometry_errors(row, dataset_type="Character", require_fields=False)
 
 
 def draft(**changes):
@@ -27,7 +31,7 @@ def draft(**changes):
 def scene(index=1, idea="trying to juggle and failing", **changes):
     return {"index": index, "idea": idea,
             "scene": "She unsuccessfully juggles oranges, hands beneath the falling fruit and gaze tracking it.",
-            "geometry": {"framing": "full_body", "camera_view": "front_three_quarter",
+            "geometry": {"framing": "full_body", "camera_azimuth": "front_three_quarter_left",
                          "body_orientation": "front_three_quarter_left", "head_direction": "toward_action",
                          "gaze_direction": "toward_action", "pose_type": "standing_dynamic", "face_visibility": "three_quarter",
                          "action_focus": idea, "hand_visibility": "both_visible",
@@ -341,7 +345,7 @@ class GeometryAndQualityTests(unittest.TestCase):
                 self.assertTrue(geometry_errors(scene(geometry={}, scene=text)))
 
     def test_unusual_rear_shoulder_turn_is_valid(self):
-        geometry = {"camera_view": "rear_three_quarter_right", "body_orientation": "rear_three_quarter_right",
+        geometry = {"camera_azimuth": "rear_three_quarter_right", "body_orientation": "rear_three_quarter_right",
                     "head_direction": "over_left_shoulder", "gaze_direction": "toward_camera",
                     "face_visibility": "three_quarter"}
         self.assertFalse(geometry_errors(scene(idea="Looking back over her shoulder", geometry=geometry)))

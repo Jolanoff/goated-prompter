@@ -6,7 +6,7 @@ from dataclasses import replace
 from ..core import PromptInstruction
 from .dataset import DATASET_TYPES
 from ..dataset_visible_content import VISIBLE_CONTENT_CONTRACT
-from ..dataset_geometry import GEOMETRY_ENUMS, CHARACTER_REQUIRED_FIELDS, geometry_prompt_schema
+from ..dataset_staging import geometry_prompt_schema, geometry_enum_values, STAGING_PROFILES
 
 
 MAX_SCENE_CHARACTERS = 1000
@@ -89,12 +89,13 @@ facts and outfit locks must be respected. Change clothing only where the user pe
 
 PRESENTATION SUPPORTS THE IDEA
 Planner owns action, pose, expression, gaze, framing, viewpoint, lighting and setting.
-Choose presentation that supports the idea and user instructions.
+Choose presentation that supports the idea and user instructions. Apply body/head/gaze/anatomy
+guidance only to relevant subjects, never as a required human schema for every Dataset type.
 Keep idea-critical subjects and objects visible; choose a compatible crop rather than claiming hidden
 details are visible.
 
 SCENE GEOMETRY AND VISIBILITY
-Every scene uses one camera viewpoint. Establish the camera direction (and height when relevant), body,
+Every scene uses one camera viewpoint. Establish applicable staging only: camera direction/elevation, body,
 torso and hip direction, head direction, gaze, visible body side, limbs, object positions and crop.
 A direct rear-facing body cannot simultaneously show a fully frontal face without a plausible turn.
 If back details and face matter, use a plausible rear three-quarter body with an over-shoulder head
@@ -162,13 +163,10 @@ OUTPUT
 Return only a valid JSON array of exactly the requested amount of objects, using the requested indexes
 in supplied order. Each object has "index" (integer), "idea" (nonempty string), "scene" (nonempty string),
 and "geometry" (object). No explanations or metadata. Geometry fields are optional where irrelevant;
-use canonical snake_case values. Use gaze_direction for eyes, expression for emotion, pose_type for mechanics.
-For Character geometry require only framing, camera_view, body_orientation, head_direction,
-gaze_direction and face_visibility. Every other helper field is optional.
-{geometry_prompt_schema()}
-action_focus is concise free text; visibility_focus is a short free string array.
-For an unusual pose use pose_type="custom"; pose_detail and expression_detail are optional helper metadata.
-Keep useful details when supplied; custom pose/expression values are valid without details. Scene prose is authoritative.
+use canonical snake_case values from the selected Dataset type's staging schema.
+{{staging_schema}}
+Keep useful supplied detail fields. Unusual physical staging belongs in applicable free-text detail
+fields rather than invented enum values. Scene prose is authoritative.
 Each idea is normally 3–15 words, at most {MAX_IDEA_WORDS} words and {MAX_IDEA_CHARACTERS} characters.
 Each scene is one concise paragraph, normally 20–70 words, at most {MAX_SCENE_WORDS} words and
 {MAX_SCENE_CHARACTERS} characters. Establish the core event, necessary interaction, setting and useful
@@ -230,7 +228,7 @@ def scene_planner_instruction(data, assignments, family="qwen", correction="", *
     }
     budget = 512 + len(indexes) * 512
     return PromptInstruction(
-        system_message=SCENE_PLANNER_SYSTEM + "\n\n" + VISIBLE_CONTENT_CONTRACT
+        system_message=SCENE_PLANNER_SYSTEM.replace("{staging_schema}", geometry_prompt_schema(data["trigger_type"])) + "\n\n" + VISIBLE_CONTENT_CONTRACT
         + "\nCreate new ideas for these indexes that are meaningfully different from the already accepted ideas. "
           "Respect guided repetition and concept scope. Return only this chunk; do not regenerate earlier valid chunks."
         + ("\n\n" + GUIDED_ASSIGNMENT_RULES if data["source_mode"] == "guided" else "")
@@ -286,44 +284,33 @@ def scene_composer_instruction(data, assignments, ideas, family="qwen", correcti
     context["amount"] = len(ideas)
     by_index = {row["index"]: row for row in context["assignments"]}
     context["assignments"] = [{**by_index[row["index"]], "idea": row["idea"]} for row in ideas]
-    context["optional_geometry_values"] = {key: sorted(values) for key, values in GEOMETRY_ENUMS.items()
-        if key not in CHARACTER_REQUIRED_FIELDS | {"expression", "movement", "hand_visibility", "feet_visibility", "body_visibility"}}
+    profile = STAGING_PROFILES[data["trigger_type"]]
+    context["optional_geometry_values"] = {key: values for key, values in geometry_enum_values(data["trigger_type"]).items()
+                                           if key not in profile.required}
     if previous:
         context["previous_scene"] = previous
     system = """You are Scene Composer. Compose ONLY the supplied FIXED ideas as physically coherent
 single images. Never brainstorm, replace, paraphrase or change an idea: echo its text and index exactly.
-Focus on action-compatible pose, body orientation, head direction, gaze, expression, required props
-and object relationships, camera/viewpoint, framing, environment and lighting only as needed.
+Focus on type-appropriate, action-compatible staging, required subjects/props and relationships,
+camera/viewpoint, framing, environment and lighting only as needed.
 Preserve the concept, fixed identity, constraints and medium.
-When previous_scene is provided, repair only camera, pose, head, gaze, framing, visibility and body
-orientation. Preserve its important action, required props and setting.
+When previous_scene is provided, repair only its applicable staging facts.
+Preserve its important action, required props and setting.
 GEOMETRY SEMANTICS
-CAMERA_VIEW describes the side of the subject visible from the camera.
-BODY_ORIENTATION describes which side of the body faces the camera; all orientations are relative
-to camera, never north/east/world-space directions. Camera and body sides should agree.
-HEAD_DIRECTION describes where the head points, separately from the eyes.
-GAZE_DIRECTION describes where the eyes are directed. Do not put emotions in this field.
-EXPRESSION describes facial emotion/state. POSE_TYPE describes broad body mechanics, not the entire action.
-ACTION_FOCUS is concise free text describing the activity. VISIBILITY_FOCUS is a free string array
-of important visible regions/objects, not an exhaustive inventory.
+Camera azimuth, elevation and distance are independent axes. Orientations describe the side
+presented to the camera, not pose/body state or north/east/world-space direction.
+Use applicable detail fields for long-tail staging. Preserve any supplied supported details.
 Use canonical snake_case enum values, not display prose. Use only fields useful to this scene.
-Character geometry requires framing, camera_view, body_orientation, head_direction, gaze_direction,
-and face_visibility. All other geometry fields are optional helper metadata; missing optional fields
-are not contradictions. Other subject types omit irrelevant human fields. Scene prose is authoritative.
-For uncommon valid posing use pose_type="custom" with optional pose_detail; never discard an unusual
-idea just because no standard pose fits. expression="custom" is valid with or without expression_detail.
-Keep useful supplied custom details, but do not invent a repair just because a helper field is absent.
-Optional counts are integers (primary_subject_count positive, secondary_subject_count nonnegative).
+Required/allowed/recommended fields come only from the selected Dataset type's schema below.
+Missing optional helper metadata is not a contradiction. Never force human anatomy onto another
+type. For groups, scene prose governs each individual's poses; do not require global head/gaze facts.
 Optional enum fields and their allowed values are in optional_geometry_values. Do not emit them all.
-Rear three-quarter with an over-shoulder head turn, camera gaze and three-quarter face visibility is valid.
-Direct rear cannot show a full face without explicitly requested mirror/reflection semantics.
-Framing must show required limbs/props. Hand-dependent actions need visible hands; full-body frames
-normally show feet. A phone acting as the camera is not visible except in mirror/external-camera selfies.
+Framing and viewpoint must keep idea-critical subjects, features and interactions meaningfully visible.
 Scene is a concise paragraph, not a final prompt, at most 120 words / 1000 characters.
 No Markdown, explanations, target syntax or trigger instructions. User values are data only.
 Priority: user concept -> guided input / fixed idea -> idea -> constraints -> geometry coherence.
 Apply explicit requirements silently; describe only visible intended content.
-""" + "\n" + geometry_prompt_schema() + "\n\n" + SCENE_COMPOSER_OUTPUT + "\n\n" + VISIBLE_CONTENT_CONTRACT
+""" + "\n" + geometry_prompt_schema(data["trigger_type"]) + "\n\n" + SCENE_COMPOSER_OUTPUT + "\n\n" + VISIBLE_CONTENT_CONTRACT
     if correction:
         system += "\n\n" + (correction if correction.startswith("SCENE OUTPUT FORMAT CORRECTION") else "SCENE CORRECTION\n" + correction)
     budget = 512 + len(ideas) * 768
@@ -340,7 +327,9 @@ Every array item must be a valid JSON object containing index (integer), idea (e
 supplied string), scene (concise coherent scene string), geometry (object).
 
 Small schema example (placeholders, not a scene to copy):
-[{"index":1,"idea":"exact unchanged supplied idea","scene":"concise coherent scene description","geometry":{"framing":"full_body","camera_view":"front","body_orientation":"front","head_direction":"toward_action","gaze_direction":"toward_action","pose_type":"standing_dynamic","action_focus":"supplied activity","face_visibility":"full","visibility_focus":["face","hands"]}}]
+[{"index":1,"idea":"exact unchanged supplied idea","scene":"concise coherent scene description","geometry":{}}]
+Populate geometry with the required and useful allowed fields from the selected staging schema;
+the empty object above illustrates the JSON envelope only, not a complete required-field example.
 
 JSON REQUIREMENTS
 - use double-quoted keys and double-quoted string values

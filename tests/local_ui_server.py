@@ -15,6 +15,7 @@ from aiohttp import web
 from local_app import create_app
 from goated_prompter.core import GoatedPrompterService
 from goated_prompter.backends.mock import MockBackend
+from goated_prompter.dataset_staging import STAGING_PROFILES
 
 
 class DatasetUIMock(MockBackend):
@@ -35,11 +36,16 @@ class DatasetUIMock(MockBackend):
                     text = assignment["input"] or context["subject"]
                     if stage.startswith("dataset:scene_composer"):
                         text = idea
-                    rows.append({"index": index, "idea": idea, "scene": f"{text}; mock scene {index}.",
-                                 "geometry": {"camera_view": "front", "framing": "full_body",
-                                     "body_orientation": "front", "head_direction": "toward_action",
-                                     "gaze_direction": "toward_action", "pose_type": "standing_neutral",
-                                     "action_focus": idea, "face_visibility": "full", "visibility_focus": ["face"]}})
+                    geometry = {"camera_azimuth": "front", "framing": "full_body",
+                                      "body_orientation": "front", "head_direction": "toward_action",
+                                      "gaze_direction": "toward_action", "pose_type": "standing_neutral",
+                                      "action_focus": idea, "face_visibility": "full", "visibility_focus": ["face"]}
+                    kind = context["trigger_type"]
+                    if kind != "Character":
+                        geometry.update(framing="full_subject", visibility_focus=["ribbon"], composition="centered",
+                                        primary_subject_count=2, action_visibility="clear")
+                    geometry = {key: value for key, value in geometry.items() if key in STAGING_PROFILES[kind].allowed}
+                    rows.append({"index": index, "idea": idea, "scene": f"{text}; mock scene {index}.", "geometry": geometry})
             result = json.dumps(rows)
         elif re.match(r"dataset:\d+", stage):
             text = re.search(r"<scene>\n(.*?)\n</scene>", instruction.user_message, re.S).group(1)

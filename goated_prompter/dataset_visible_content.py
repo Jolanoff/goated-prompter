@@ -27,8 +27,7 @@ _LEAKAGE = re.compile(
     r"|correct\s+anatomy|extra\s+limbs|watermark|signature)\s*(?=[,;.\n]|$)"
     r"|\b(?:best|worst|low)\s+quality\b"
     r"|(?:^|[,\n])\s*(?:negative\s+prompt|negative\s+conditioning)\s*:"
-    r"|(?:^|[\n])\s*PLANNED\s+GEOMETRY\b"
-    r"|\b(?:camera_view|body_orientation|head_direction|visibility_focus|face_visibility|idea_status|scene_status|prompt_status)\s*[:=]",
+    r"|(?:^|[\n])\s*PLANNED\s+GEOMETRY\b",
     re.IGNORECASE,
 )
 _QUOTED = re.compile(r'"(?:\\.|[^"\\])*"|(?<!\w)\'(?:\\.|[^\'\\\n])+\'(?!\w)|“[^”]*”|‘[^’]*’')
@@ -167,7 +166,12 @@ def visible_content_error(text, protected_terms=()):
         return match.group(0)
 
     text = _QUOTED.sub(quoted_content, text)
-    if _LEAKAGE.search(text):
+    # Lazy import avoids initializing staging while this module is imported by
+    # its validator. New registry fields automatically get metadata protection.
+    from .dataset_staging.schema import GEOMETRY_FIELDS
+    metadata = (*GEOMETRY_FIELDS, "camera_view", "camera_height", "idea_status", "scene_status", "prompt_status")
+    staging_leakage = re.search(r"\b(?:" + "|".join(map(re.escape, metadata)) + r")\s*[:=]", text, re.I)
+    if _LEAKAGE.search(text) or staging_leakage:
         return "Exclusion or quality/meta language leaked into positive content. Describe the intended visible state affirmatively; apply exclusions silently."
     return None
 
