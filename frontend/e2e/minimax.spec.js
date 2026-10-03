@@ -29,7 +29,7 @@ test("defaults, structured generation, copy, regeneration and edited output pers
   await expect(page.getByLabel("Model", { exact: true })).toHaveValue("MiniMax H3");
   await expect(page.getByLabel("Mode", { exact: true })).toHaveValue("auto");
   await expect(page.getByLabel("Director Preset", { exact: true })).toHaveValue("minimax_director");
-  await expect(page.getByLabel("Director Preset").locator('option[value="anime_director"]')).toHaveCount(1);
+  await expect(page.getByLabel("Director Preset", { exact: true }).locator('option[value="anime_director"]')).toHaveCount(1);
   await page.getByLabel("Clip Length").selectOption("15");
   await page.getByLabel("Aspect Ratio", { exact: true }).selectOption("9:16");
   const requestText = "Use the person in <image1> for the dance from <video1> on a rooftop at night with energetic electronic music.";

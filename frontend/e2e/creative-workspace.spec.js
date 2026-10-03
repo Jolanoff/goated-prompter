@@ -16,7 +16,7 @@ test.beforeEach(async ({ request }) => {
 async function openRefine(page) {
   await page.goto("/");
   await page.getByRole("button", { name: "Refine", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Refine your prompt." })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Refine your prompt", exact: true })).toBeVisible();
 }
 
 test("refinement, manual edit, diff, undo/redo and branch history persist", async ({ page, request }) => {
@@ -24,7 +24,7 @@ test("refinement, manual edit, diff, undo/redo and branch history persist", asyn
   page.on("pageerror", (error) => errors.push(error.message));
   await openRefine(page);
   await page.getByLabel("Starting prompt", { exact: true }).fill("A traveler in a red coat under soft light.");
-  await page.getByLabel("Starting prompt target").selectOption("Qwen Image");
+  await page.getByLabel("Starting prompt target").selectOption("Qwen Image (original)");
   await page.getByRole("button", { name: "Start refining", exact: true }).click();
   await expect(page.getByLabel("Current refinement prompt")).toHaveText("A traveler in a red coat under soft light.");
   await page.getByRole("button", { name: "Wider shot", exact: true }).click();
@@ -52,7 +52,7 @@ test("refinement, manual edit, diff, undo/redo and branch history persist", asyn
   const stored = await (await request.get("/api/workspace")).json();
   expect(stored.versions).toHaveLength(3);
   expect(stored.versions[1].locks).toEqual(["identity", "outfit"]);
-  expect(stored.versions[1].target).toBe("Qwen Image");
+  expect(stored.versions[1].target).toBe("Qwen Image (original)");
   expect(stored.versions[2].parent_id).toBe(stored.versions[0].id);
   expect(errors).toEqual([]);
   await page.screenshot({ path: "test-results/refine-workspace.png", fullPage: true });

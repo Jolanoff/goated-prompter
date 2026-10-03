@@ -38,10 +38,10 @@ from .prompting.details import (
 from .prompting.evidence import EVIDENCE_ANALYSIS_SYSTEM_PROMPT, evidence_analysis_user_message
 from .prompting.modes import get_mode_adapter, get_vision_mode_adapter
 from .prompting.output import OUTPUT_CONTRACT, output_contract, qwen_format_repair
-from .prompting.target_models import QWEN21_EDIT_ADAPTER, get_model_adapter
+from .prompting.target_models import QWEN21_EDIT_ADAPTER, get_model_adapter, canonical_target, resolve_target_length, get_target_capabilities
 from .presets import DEFAULT_DIRECTOR_PRESET, get_director_preset, legacy_preset_for_mode
 from .reference_map import REFERENCE_IMAGE_SLOTS, reference_images, reference_map_from_mapping, resolve_reference_map
-from .workflow_output import WorkflowFormatError, normalize_workflow_output, sanitize_prompt_text
+from .workflow_output import WorkflowFormatError, normalize_workflow_output, sanitize_prompt_text, requested_visible_text
 
 
 def _qwen21_source_tokens(request, reference_map=None, text_only=False):
@@ -147,6 +147,9 @@ class GoatedPrompterRequest:
     image_3: object = None
     image_4: object = None
     linked_references: bool = False
+
+    def __post_init__(self):
+        object.__setattr__(self, "target_model", canonical_target(self.target_model))
 
     @property
     def selected_prompt_model(self):
@@ -296,7 +299,9 @@ def assemble_instruction(
     if has_raw_image and resolved_scene is None:
         _log_image_order(request)
     active_director_instructions = request.system_prompt_override.strip() or preset.instructions
-    qwen_images = _qwen21_source_tokens(request, resolved_reference_map, text_only) if request.target_model == "Qwen2.1" else ()
+    if preset.supported_targets and request.target_model not in preset.supported_targets:
+        active_director_instructions = "This target-specific Director is inactive for the selected target. Follow Mode and the target adapter without its specialist instructions."
+    qwen_images = _qwen21_source_tokens(request, resolved_reference_map, text_only) if request.target_model == "Qwen Image 2.1" else ()
     sections = [
         CORE_SYSTEM_PROMPT,
         TEXT_ONLY_PRIORITY_CONTRACT if text_only else LINKED_PRIORITY_CONTRACT if request.linked_references else PRIORITY_CONTRACT,
@@ -309,7 +314,7 @@ def assemble_instruction(
         "TARGET MODEL ADAPTER\n" + (QWEN21_EDIT_ADAPTER if qwen_images else get_model_adapter(request.target_model)),
         "USER SETTINGS",
         _CREATIVITY_ADAPTERS.get(request.creativity, _CREATIVITY_ADAPTERS["Balanced"]),
-        _LENGTH_ADAPTERS.get(request.prompt_length, _LENGTH_ADAPTERS["Medium"]),
+        resolve_target_length(request.target_model, request.prompt_length),
     ])
 
     sections.append(_preservation_section(
@@ -333,15 +338,16 @@ def assemble_instruction(
         print("[Goated Prompter DIRECTOR CONSTRAINTS]", flush=True)
         print(resolved_reference_map.director_constraints(), flush=True)
 
-    sections.append(OUTPUT_CONTRACT)
-    if request.target_model == "Qwen2.1":
-        sections.append(output_contract("Qwen2.1", qwen_task="edit" if qwen_images else "t2i", qwen_images=qwen_images))
+    if request.target_model == "Qwen Image 2.1":
         if qwen_images:
             sections.append("QWEN INPUT SOURCES\nSelected source tags, preserving the Reference Map's numbering: "
                             + ", ".join(qwen_images) + ". Image N evidence refers to <imageN>. "
                             "These sources are available through the selected evidence even if raw pixels are not attached to this final compiler call. "
                             "Do not reference unused or missing sources. Use natural language for a single image, "
-                            "and individual source tags for multiple images.")
+                             "and individual source tags for multiple images.")
+
+    sections.append(OUTPUT_CONTRACT)
+    sections.append(output_contract(request.target_model, qwen_task="edit" if qwen_images else "t2i", qwen_images=qwen_images))
 
     if has_visual_context:
         user_message = (
@@ -564,23 +570,25 @@ class GoatedPrompterService:
                     evidence_digest=resolved_scene_sha256(resolved_scene) if resolved_scene is not None else "NONE",
                 ),
             )
-            qwen_images = _qwen21_source_tokens(request, resolved_reference_map, text_only) if request.target_model == "Qwen2.1" else ()
+            qwen_images = _qwen21_source_tokens(request, resolved_reference_map, text_only) if request.target_model == "Qwen Image 2.1" else ()
             qwen_task = "edit" if qwen_images else "t2i"
-            for attempt in range(2 if request.target_model == "Qwen2.1" else 1):
+            validate_format = request.target_model == "Qwen Image 2.1" or get_target_capabilities(request.target_model).output_format == "json"
+            for attempt in range(2 if validate_format else 1):
                 session_backend.validate_instruction(instruction)
                 if self._checkpoint is not None:
                     self._checkpoint()
                 prompt = str(session_backend.generate(instruction) or "").strip()
                 if self._checkpoint is not None:
                     self._checkpoint()
-                if request.target_model != "Qwen2.1":
+                if not validate_format:
                     break
                 try:
-                    prompt = normalize_workflow_output(prompt, request.target_model)
+                    prompt = normalize_workflow_output(prompt, request.target_model,
+                                                       expected_visible_text=requested_visible_text(request.idea))
                     break
                 except WorkflowFormatError as exc:
                     if attempt:
-                        raise BackendGenerationError(f"Qwen2.1 returned an invalid prompt after one format-repair attempt: {exc}") from exc
+                        raise BackendGenerationError(f"{request.target_model} returned an invalid prompt after one format-repair attempt: {exc}") from exc
                     instruction = replace(instruction,
                         system_message=qwen_format_repair(
                             instruction.system_message,

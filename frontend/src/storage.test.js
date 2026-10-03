@@ -163,6 +163,26 @@ test("director hydration resolves legacy labels and defaults to stable IDs witho
   }
 });
 
+test("renamed targets and precision Directors hydrate without losing saved choices", () => {
+  const presets = [
+    { id: "maximum_detail_director", label: "Technical Visual Precision" },
+    { id: "krea_2_high_detail", label: "Krea 2 Visual Precision" },
+    { id: "krea_2_identity_edit", label: "Krea 2 Identity Edit v1.2 (Community)" },
+  ];
+  for (const [legacy, current] of [
+    ["Qwen2.1", "Qwen Image 2.1"], ["Qwen Image", "Qwen Image (original)"],
+    ["Z-Image", "Z-Image Base"], ["MiniMax", "MiniMax H3"],
+  ]) {
+    assert.equal(hydrateBuilder({}, { target_model: legacy }).target_model, current);
+  }
+  for (const [legacy, id] of [
+    ["Maximum Detail Director", "maximum_detail_director"],
+    ["Krea 2 High Detail", "krea_2_high_detail"], ["Krea 2 Identity Edit", "krea_2_identity_edit"],
+  ]) {
+    assert.equal(hydrateBuilder({}, { director_preset: legacy }, { presets }).director_preset, id);
+  }
+});
+
 test("reverting a pending edit returns autosave to Saved without a write", async () => {
   const statuses = [];
   let writes = 0;

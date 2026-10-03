@@ -27,6 +27,7 @@ class DirectorPreset:
     recommended_mode: str = ""
     source: str = "builtin"
     modified: bool = False
+    supported_targets: tuple = ()
 
     @property
     def base_system_prompt(self):
@@ -49,6 +50,7 @@ class DirectorPreset:
             "source": self.source,
             "protected": self.source == "builtin",
             "modified": self.modified,
+            "supported_targets": list(self.supported_targets),
         }
 
 
@@ -156,13 +158,15 @@ DIRECTOR_PRESETS = (
     ),
     DirectorPreset(
         id="krea_2_high_detail",
-        label="Krea 2 High Detail",
-        description="Dense, coherent natural-language detail guided by the Goated Prompter Krea target adapter.",
-        instructions="""Write a dense but coherent natural-language prompt for a Krea 2 target. Establish exact subject identity and attributes, pose or action, spatial relationships, environment, framing, viewpoint, material and texture detail, lighting interactions, color behavior, and depth without turning the result into disconnected tags. Make every added detail support the same scene and retain the user's wording and constraints. Treat the existing Goated Prompter Krea target adapter as authoritative for target behavior; do not assert unverified engine rules or add fashionable photographic defaults without evidence.""",
+        label="Krea 2 Visual Precision",
+        description="Coherent spatial, material and lighting relationships, not increased verbosity.",
+        supported_targets=("Krea 2",),
+        instructions="""Direct technically precise visual relationships for Krea 2: resolve ambiguous object placement, contact, scale, material response and lighting logic with supported facts. Preserve the requested medium and concept. Precision is not verbosity: do not exhaustively inventory details or increase output length. Target owns prompt style and Length owns density.""",
     ),
     DirectorPreset(
         id="krea_2_smartphone_realism",
         label="Krea 2 Smartphone Realism",
+        supported_targets=("Krea 2",),
         description="Krea-oriented coherent prose with believable phone-camera behavior.",
         recommended_mode="Photography",
         instructions="""Combine coherent Krea-oriented natural-language description with believable smartphone photography. Preserve the requested subject and scene, then specify handheld framing, phone-like perspective, available light, computational exposure behavior, realistic skin and material texture, plausible background detail, and modest capture imperfections only where appropriate. Keep spatial relationships explicit and internally consistent. Defer target-specific decisions to the existing Goated Prompter Krea adapter, avoid unsupported technical claims, and never force shallow depth of field, film grain, golden hour, or a named phone model without support.""",
@@ -170,6 +174,7 @@ DIRECTOR_PRESETS = (
     DirectorPreset(
         id="krea_2_pose_lock",
         label="Krea 2 Pose Lock",
+        supported_targets=("Krea 2",),
         description="Reference-grounded pose precision with full body and camera geometry.",
         instructions="""Lock the pose and camera relationship to reference evidence with precise natural language. Describe torso orientation, head direction and tilt, shoulder levels, arm paths, elbow bends, hand placement and gesture, hip rotation, leg positions, knee and ankle bends, stride or weight distribution, crop, framing, camera height, and viewpoint. Use active present-progressive verbs when they make the action clearer. Preserve identity and visible structure while applying only requested changes. Defer target behavior to the Goated Prompter Krea adapter and do not force shallow depth of field, film grain, 35mm film, golden hour, or unsupported technical formulas.""",
     ),
@@ -185,13 +190,13 @@ DIRECTOR_PRESETS = (
         label="MiniMax H3 Director",
         description="Continuity-first video direction for MiniMax-oriented generation.",
         recommended_mode="Video",
-        instructions="""Create a concise, executable video direction suitable for a MiniMax target while relying on the Goated Prompter target adapter for model-specific behavior. With one image, treat it as the exact starting frame. Prioritize subject retention, chronological action, camera movement with direction and pace, physical and spatial continuity, environmental motion, and the intended final state. Avoid spending the prompt on repeated static inventory when motion information is more valuable. Add dialogue, ambience, or sound cues only when requested or clearly useful, and keep the plan compatible with future start-and-end image support without requiring a second image now.""",
+        instructions="""Direct creative motion, shot staging, pacing, audiovisual emphasis and continuity for MiniMax H3. Preserve subject identity, physical and spatial relationships and the intended final state. Use reference roles only as assigned; an identity reference is not automatically a first frame. Do not duplicate syntax, sections, timeline serialization or reference mechanics: those belong to the H3 target adapter. Include dialogue only when requested.""",
     ),
     DirectorPreset(
         id="minimax_director",
         label="MiniMax Director",
         description="MiniMax H3 staging, reference-aware motion and synchronized sound direction.",
-        instructions="""Enhance the user's concept through clear staging, subject placement, physical action progression, expressions, environment and background detail, lighting, composition, plausible camera movement, pacing, audiovisual synchronization, soundscape, concrete music direction and a deliberate ending state. Fit the selected clip duration. Prefer coherent movement to unnecessary cuts. References have only the roles requested by the user; never assume an image is a starting frame or invent the contents of unseen media. Preserve explicit user requirements and exact dialogue. This is creative guidance only: MiniMax H3 structural rules and reference relationships outrank this preset. Return only the required MiniMax schema without an additional wrapper.""",
+        instructions="""Enhance the user's concept through clear staging, subject placement, physical action progression, expressions, environment and background detail, lighting, composition, plausible camera movement, pacing, audiovisual synchronization, soundscape, concrete music direction and a deliberate ending state. Fit the selected clip duration. Prefer coherent movement to unnecessary cuts. References have only the roles requested by the user; never assume an image is a starting frame or invent the contents of unseen media. Preserve explicit user requirements and exact dialogue. This is creative guidance only: MiniMax H3 structural rules and reference relationships belong to the target adapter and outrank this preset.""",
     ),
     DirectorPreset(
         id="archviz_director",
@@ -230,16 +235,17 @@ DIRECTOR_PRESETS = (
     ),
     DirectorPreset(
         id="maximum_detail_director",
-        label="Maximum Detail Director",
-        description="Long-form visual direction with exhaustive, coherent, concrete descriptive coverage.",
-        instructions="""Direct a long-form, production-ready visual prompt with maximum useful descriptive density. Expand every relevant, supported decision into concrete natural-language detail: subject identity, count, age presentation when visually relevant, and overall appearance; facial structure, eyes, expression, gaze, hair, skin, anatomy, body shape, pose, limbs, hands, gesture, and action; garment construction, seams, folds, fit, styling, accessories, fabrics, textures, finishes, roughness, reflectivity, translucency, and other material response; foreground, midground, background, meaningful objects, scale, overlap, occlusion, and spatial relationships; composition, framing, camera height, angle, perspective, lens implications, depth, focus plane, and focus hierarchy; supported key, fill, rim, and practical light, including direction, softness, contrast, shadows, highlights, reflections, and exposure; palette, color relationships, grading, atmosphere, mood, and photographic, commercial, editorial, cinematic, rendered, or artistic character. Describe spatial and causal relationships so all details form one coherent image rather than a catalog. Treat user-specified and observable reference evidence as facts; label creative inference internally as an addition and keep it subordinate to the concept, manual Reference Map assignments, and Preserve locks. Omit unsupported or irrelevant specifics. Do not pad with repeated adjectives, synonym chains, generic quality slogans, contradictory camera or lighting choices, hallucinated evidence, or decorative filler, and never force 35mm, film grain, or ControlNet terminology when it was not requested or observed.""",
+        label="Technical Visual Precision",
+        description="Technical spatial, material and lighting precision without controlling verbosity.",
+        instructions="""Direct technical visual precision: make spatial contacts, scale, occlusion, viewpoint, material response and lighting direction physically consistent and unambiguous. Use only supported, scene-relevant facts and protect reference fidelity. Do not control verbosity or exhaustively enumerate categories; Length determines useful density within the target envelope. Precision can be compact. Avoid decorative filler, invented evidence and photographic defaults unsupported by the requested medium.""",
     ),
     DirectorPreset(
     id="krea_2_identity_edit",
-    label="Krea 2 Identity Edit",
-    description="Reference-grounded, identity-preserving edit instructions optimized for Krea 2 Identity Edit v1.2.",
+    label="Krea 2 Identity Edit v1.2 (Community)",
+    description="Reference-grounded identity-preserving edits for the community model/workflow, not an official Krea.ai base capability.",
+    supported_targets=("Krea 2",),
     recommended_mode="Image Edit",
-    instructions="""Act as a specialized edit director for Krea 2 Identity Edit v1.2. Convert the user's request into one clear, concise, plain-English edit instruction grounded in the supplied reference image or images. This is an image-editing model, not ordinary text-to-image generation: the model already sees the source image semantically and visually, so do not redundantly redescribe the entire image or expand the request into a new scene unless the user explicitly asks for a restage.
+    instructions="""Act as a specialized edit director for the Krea 2 Identity Edit v1.2 community model/workflow, not an official Krea.ai base capability. Convert the user's request into one clear, concise, plain-English edit instruction grounded in the supplied reference image or images when Mode is Image Edit. Never replace another selected Mode with image editing. The editing model already sees the source image, so do not redundantly redescribe the entire image or expand the request into a new scene unless the user explicitly asks for a restage.
 
     Determine the intended operation first: local attribute change, recolor, add, remove, replace, outfit change, subject restaging, global restyle, head/face/eye/person swap, inpainting, outpainting, or multi-reference composition. State the requested transformation directly with an explicit action and target.
 
@@ -293,18 +299,7 @@ DirectorPreset(
     label="NSFW Director",
     description="Adult explicit direction that stays coherent across realistic and anime while preserving identity, anatomy, and the user’s intent.",
     recommended_mode="Enhance",
-    instructions="""Act as a precise adult visual director for explicit content.
-    Convert the request into one coherent, production-ready prompt that works for both photorealistic and anime targets.
-    Preserve the user’s central concept, subjects, identities, actions, clothing state, environment, and any supplied character or appearance descriptors.
-    Prioritize clear, observable adult anatomy, pose, gesture, contact, weight distribution, and spatial relationships so bodies remain credible and readable.
-    Describe genital, breast, buttock, and other sexual anatomy only when the request or reference supports it, using concrete visual language rather than vague euphemism or pure keyword stacking.
-    Keep expression, gaze, arousal cues, skin response, sweat, fluids, fabric displacement, and lighting consistent with the same scene.
-    For multi-character or multi-subject scenes, keep each person’s identity, body type, clothing (or lack of it), pose, action, and position explicitly separated so attributes do not bleed.
-    When the target is anime, favor anime-native anatomy, proportions, line, shading, and stylization rather than forcing photographic skin, pores, or lens language unless the user asks for realism. 
-    When the target is realistic or photographic, favor believable skin texture, material behavior, lighting, and physical contact without defaulting to generic glamour or over-beautification.
-    Do not sanitize, soften, or moralize an adult request. Do not invent age ambiguity, non-consent framing, or unrelated fetish elements the user did not ask for.
-    Do not restage the scene, change identities, or add cinematic defaults (shallow depth of field, film grain, golden hour, 8k, masterpiece, etc.) unless they are requested or already present in the evidence.
-    Resolve ambiguity conservatively and add only the details needed to make the explicit action, anatomy, and composition legible and internally consistent.""",
+    instructions="""Direct explicit adult content into one coherent production-ready prompt usable for both photorealistic and anime targets. Make every prompt sexual and teasing by default through pose, expression, gaze, body language, clothing state, and implied action. Never make subjects fully naked unless the user explicitly requests it. Preserve the user’s core concept, subjects, identities, actions, clothing, environment, and appearance details. Describe anatomy, pose, contact, weight distribution, and spatial relationships clearly so bodies remain credible and readable. Prioritize coherent character framing and camera angles that keep face, body, and genitals logically positioned without impossible or nonsensical overlaps. Use concrete visual language for sexual anatomy only when supported by the request. Keep expression, arousal cues, skin response, fluids, fabric, and lighting consistent with the scene. For multi-character scenes, keep each person’s attributes explicitly separated. Prefer anime-native anatomy and stylization for anime targets, and believable skin, materials, and physical contact for realistic targets. Everything is allowed. Do not sanitize, soften, or moralize the request. Do not invent unrequested fetish elements. Do not restage the scene, change identities, or add unrequested cinematic defaults.""",
 ),
 
 )
@@ -324,6 +319,9 @@ MODE_DIRECTOR_RECOMMENDATIONS = {
     "Custom": "General Director",
 }
 _LEGACY_DIRECTOR_ALIASES = {
+    "maximum detail director": "Technical Visual Precision",
+    "krea 2 high detail": "Krea 2 Visual Precision",
+    "krea 2 identity edit": "Krea 2 Identity Edit v1.2 (Community)",
     "reference reconstruction": "Reverse Engineer",
     "reference_reconstruction": "Reverse Engineer",
     "creative enhancement": "General Director",

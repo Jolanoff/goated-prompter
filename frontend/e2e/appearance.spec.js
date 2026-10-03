@@ -11,7 +11,8 @@ for (const width of [1600, 1448, 1100, 900, 720, 390, 360]) {
     await expect(page.getByText("Local backend connected")).toBeVisible();
     await page.evaluate(() => document.fonts.ready);
     await expect(page.getByRole("heading", { name: "Describe your idea" })).toBeVisible();
-    await expect(page.getByLabel("Prompt engine")).toHaveCSS("opacity", "0.7");
+    await expect(page.getByLabel("Prompt engine")).toBeDisabled();
+    await expect(page.getByLabel("Prompt engine")).toHaveCSS("background-color", "rgb(25, 41, 56)");
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
     await page.screenshot({ path: `test-results/appearance-${process.env.APPEARANCE_PHASE || "after"}-${width}.png`, fullPage: true });
     const generate = page.getByRole("button", { name: /Generate prompt/ });
@@ -34,36 +35,34 @@ for (const width of [1448, 390]) {
     await page.goto("/");
     await expect(page.getByText("Local backend connected")).toBeVisible();
 
-    // The existing theme is fixed dark, even when the OS prefers light.
+    // Dark is the default, even when the OS prefers light.
     for (const colorScheme of ["light", "dark"]) {
       await page.emulateMedia({ colorScheme });
       await expect(page.locator("html")).toHaveCSS("color-scheme", "dark");
-      await expect(page.locator("html")).toHaveCSS("background-color", "rgb(13, 14, 19)");
+      await expect(page.locator("html")).toHaveCSS("background-color", "rgb(14, 23, 33)");
     }
     const end = page.getByRole("button", { name: /End generation/ });
     await expect(end).toBeDisabled();
-    await expect(end).toHaveCSS("opacity", "0.5");
+    await expect(end).toHaveCSS("opacity", "0.48");
     await expect(end).toHaveCSS("cursor", "not-allowed");
 
     const output = page.getByLabel("Generated prompt", { exact: true });
     await output.fill("A cinematic forest with warm evening light.");
-    await expect(output).toHaveCSS("color", "rgb(189, 192, 212)");
-    await expect(output).toHaveCSS("border-color", "rgb(146, 115, 237)");
+    await expect(output).toHaveCSS("color", "rgb(230, 237, 245)");
+    await expect(output).toHaveCSS("border-color", "rgb(141, 184, 255)");
 
     const save = page.getByRole("button", { name: "Save Prompt", exact: true });
     await save.hover();
     await expect(save).toHaveCSS("background-image", "none");
-    await expect(save).toHaveCSS("background-color", "rgb(44, 41, 60)");
+    await expect(save).toHaveCSS("background-color", "rgb(36, 58, 82)");
     await save.click();
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
-    await expect(dialog).toHaveCSS("border-radius", "15px");
+    await expect(dialog).toHaveCSS("border-radius", "14px");
     const bounds = await dialog.boundingBox();
     expect(bounds.x).toBeGreaterThanOrEqual(16);
     expect(bounds.x + bounds.width).toBeLessThanOrEqual(width - 16);
     const name = page.getByLabel("Prompt name", { exact: true });
-    await expect(page.getByRole("button", { name: "Close save dialog" })).toBeFocused();
-    await page.keyboard.press("Tab");
     await expect(name).toBeFocused();
     const confirm = page.getByRole("button", { name: "Save", exact: true });
     await name.fill("");
@@ -71,14 +70,15 @@ for (const width of [1448, 390]) {
     await name.fill("Evening light");
     await expect(confirm).toBeEnabled();
     await page.mouse.move(0, 0);
-    await expect(confirm).toHaveCSS("background-image", "linear-gradient(110deg, rgb(147, 110, 234), rgb(121, 83, 203))");
+    await expect(confirm).toHaveCSS("background-image", "none");
+    await expect(confirm).toHaveCSS("background-color", "rgb(40, 96, 213)");
     await page.screenshot({ path: `test-results/dialog-${width}.png` });
     await page.keyboard.press("Escape");
     await expect(dialog).not.toBeVisible();
 
     const upload = page.getByLabel("Upload image 1");
     await upload.focus();
-    await expect(upload.locator("..")).toHaveCSS("outline-color", "rgb(172, 149, 255)");
+    await expect(upload.locator("..")).toHaveCSS("outline-color", "rgb(141, 184, 255)");
     await upload.setInputFiles({
       name: "reference.png",
       mimeType: "image/png",
@@ -89,11 +89,12 @@ for (const width of [1448, 390]) {
     await expect(preview).toHaveCSS("object-fit", "cover");
     await preview.hover();
     await expect(preview.locator("..")).toHaveCSS("border-style", "solid");
-    await expect(preview.locator("..")).toHaveCSS("border-color", "rgb(72, 64, 85)");
+    await expect(preview.locator("..")).toHaveCSS("border-color", "rgb(141, 184, 255)");
     await expect(page.getByLabel("Subject source")).toHaveCSS("opacity", "1");
     await page.getByRole("button", { name: "Remove image 1" }).click();
     await expect(upload).toBeAttached();
-    await expect(page.getByLabel("Subject source")).toHaveCSS("opacity", "0.7");
+    await expect(page.getByLabel("Subject source")).toBeDisabled();
+    await expect(page.getByLabel("Subject source")).toHaveCSS("background-color", "rgb(25, 41, 56)");
     await expect(page.getByRole("button", { name: /Generate prompt/ })).toBeInViewport();
 
     await page.emulateMedia({ reducedMotion: "reduce" });

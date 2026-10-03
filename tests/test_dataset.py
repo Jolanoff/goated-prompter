@@ -18,7 +18,8 @@ from goated_prompter.dataset import (
     DatasetService, dataset_instruction, default_dataset_draft, validate_dataset_draft,
     validate_trigger_contract,
 )
-from goated_prompter.dataset_coverage import analyze_dataset_quality, build_coverage_plan
+from goated_prompter.dataset_assignments import dataset_assignments
+from goated_prompter.dataset_quality import analyze_dataset_quality
 from goated_prompter.dataset_triggers import trigger_contract_error, trigger_presence_error, trigger_terms
 
 
@@ -43,8 +44,23 @@ class CaptureBackend(GoatedPrompterBackend):
         self.calls.append(instruction)
         if instruction.diagnostic_stage.startswith("dataset:scene_planner"):
             data = json.loads(instruction.user_message)
-            return json.dumps([{"index": index, "idea": f"Distinct activity {index}", "scene": f"Distinct adventure {index}"}
-                               for index in range(1, data["amount"] + 1)])
+            from tests.test_dataset_geometry import character_geometry
+            return json.dumps([{"index": index, "idea": f"Distinct activity {index}", "scene": f"Distinct adventure {index}",
+                                "geometry": character_geometry(action_focus=f"Distinct activity {index}")}
+                               for index in data["indexes"]])
+        if instruction.diagnostic_stage.startswith("dataset:idea_planner"):
+            data = json.loads(instruction.user_message)
+            return json.dumps([{"index": row["index"], "idea": f"Replacement concept {row['index']}"}
+                               for row in data["assignments"]])
+        if instruction.diagnostic_stage.startswith("dataset:scene_composer"):
+            data = json.loads(instruction.user_message)
+            return json.dumps([{"index": row["index"], "idea": row["idea"],
+                                "scene": f"Composed physical scene {row['index']}", "geometry": {
+                                     "camera_azimuth": "front", "framing": "full_body", "body_orientation": "front",
+                                    "head_direction": "toward_action", "gaze_direction": "toward_action",
+                                    "pose_type": "standing_neutral", "action_focus": row["idea"],
+                                    "face_visibility": "full", "visibility_focus": ["face"]}}
+                               for row in data["assignments"]])
         if instruction.diagnostic_stage == "dataset:deep_review":
             return json.dumps([{"index": int(index), "issues": []}
                                for index in re.findall(r"(?m)^PROMPT (\d+)$", instruction.user_message)])
@@ -131,10 +147,10 @@ class DatasetUnitTests(unittest.TestCase):
         self.assertIn("FRAME COMPLETENESS DEFAULT", instruction.system_message)
         self.assertIn("FRAME COMPLETENESS DEFAULT", builder.system_message)
         self.assertIn("Preserve explicit counts", builder.system_message)
-        self.assertIn("all one thousand", builder.system_message)
-        self.assertIn("reference locks still take priority", builder.system_message)
+        self.assertNotIn("one thousand", builder.system_message)
+        self.assertIn("Increase distance or field of view", builder.system_message)
 
-    def test_planner_rejects_invalid_rows_and_falls_back_without_failing_batch(self):
+    def test_planner_rejects_invalid_rows_and_records_failures_without_failing_batch(self):
         from goated_prompter.scene_planner import ScenePlanner
         planner = ScenePlanner(lambda: None)
         data = valid_draft(amount=2, source_mode="guided", inputs="cycling\ntennis")
@@ -142,11 +158,11 @@ class DatasetUnitTests(unittest.TestCase):
         session = Mock()
         session.generate.return_value = '[{"index": 2, "scene": "wrong order"}]'
         progress = []
-        rows = planner.plan_batch(session=session, data=data, coverage=build_coverage_plan(data),
+        rows = planner.plan_batch(session=session, data=data, assignments=dataset_assignments(data),
                                   family="qwen", progress=progress.append)
-        self.assertEqual(session.generate.call_count, 2)
-        self.assertEqual([row["scene"] for row in rows], ["cycling", "tennis"])
-        self.assertTrue(any("unavailable" in message for message in progress))
+        self.assertEqual(session.generate.call_count, 8)  # Chunk retry + 3 local attempts per item, never re-ideation.
+        self.assertTrue(all(row["scene_status"] == "failed" and row["failure_reason"] for row in rows))
+        self.assertFalse(any("new idea" in message for message in progress))
 
     def test_recovery_accepts_complete_valid_prefix_without_retry(self):
         from unittest.mock import Mock
@@ -180,11 +196,10 @@ class DatasetUnitTests(unittest.TestCase):
         self.assertNotIn("frame_mode", legacy)
 
     def test_instruction_is_category_style_target_and_trigger_aware(self):
-        data = valid_draft(visual_style="Anime / manga", target="Anima", amount=2,
-                           coverage_enabled=True)
-        coverage = build_coverage_plan(data)
+        data = valid_draft(visual_style="Anime / manga", target="Anima", amount=2)
+        assignments = dataset_assignments(data)
         instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"], target_model="Anima"),
-                                          data, 2, model_family="qwen", plan_item=coverage["plan"][1])
+                                          data, 2, model_family="qwen", plan_item=assignments[1])
         self.assertIn("MODE ADAPTER", instruction.system_message)
         self.assertIn("anime/manga", instruction.system_message)
         self.assertIn('"ohwx_person"', instruction.system_message)
@@ -192,42 +207,50 @@ class DatasetUnitTests(unittest.TestCase):
         self.assertIn("Anima target", instruction.system_message)
         self.assertIn("DATASET CONCEPT", instruction.user_message)
         self.assertNotIn("TRIGGER DESCRIPTION", instruction.user_message)
-        self.assertIn("COVERAGE ASSIGNMENT", instruction.user_message)
-        self.assertIn("Framing", instruction.user_message)
+        self.assertNotIn("COVERAGE ASSIGNMENT", instruction.user_message)
         self.assertFalse(instruction.unlimited_tokens)
         self.assertEqual(instruction.hard_max_tokens, 768)
         self.assertEqual(instruction.max_tokens, 768)
 
-    def test_coverage_plan_is_stable_balanced_and_category_aware(self):
-        data = valid_draft(amount=12, source_mode="guided", inputs="portrait\naction", variety="Wide",
-                           coverage_enabled=True)
-        first = build_coverage_plan(data)
-        self.assertEqual(first, build_coverage_plan(data))
-        shuffled = build_coverage_plan({**data, "plan_seed": 1})
-        self.assertNotEqual(first["plan"], shuffled["plan"])
-        self.assertEqual([row["input"] for row in first["plan"][:4]], ["portrait", "action", "portrait", "action"])
-        self.assertEqual(set(first["plan"][0]["facets"]),
-                         {"framing", "viewpoint", "pose_action", "expression", "lighting", "setting"})
-        style = build_coverage_plan(valid_draft(trigger_type="Visual style", variety="Focused",
-                                                 coverage_enabled=True))
-        self.assertEqual(set(style["plan"][0]["facets"]), {"subject_matter", "composition", "scale"})
+    def test_guided_assignments_cycle_without_prescribing_scene_details(self):
+        data = valid_draft(amount=12, source_mode="guided", inputs=" portrait\n\naction ", variety="Wide")
+        assignments = dataset_assignments(data)
+        self.assertEqual([row["input"] for row in assignments[:4]], ["portrait", "action", "portrait", "action"])
+        self.assertEqual([row["index"] for row in assignments], list(range(1, 13)))
+        self.assertTrue(all(set(row) == {"index", "input"} for row in assignments))
+        self.assertTrue(all(row["input"] == "" for row in dataset_assignments(valid_draft(inputs="ignored"))))
 
-    def test_coverage_is_off_by_default_and_does_not_direct_the_scene(self):
+    def test_obsolete_coverage_settings_are_discarded_without_losing_saved_content(self):
+        legacy = valid_draft(coverage_enabled=True, coverage_axes=["framing"], plan_seed=1,
+            plan_signature="old", coverage_plan=[{"index": 1, "input": "", "facets": {"framing": "face close-up"}}],
+            scene_plan=[{"index": 1, "input": "", "idea": "Reading", "scene": "Reading a book.",
+                         "coverage_conflicts": ["framing"]}],
+            results=[{"index": 1, "input": "", "prompt": "A finished prompt.", "coverage_conflicts": ["framing"]}],
+            quality_report={"signature": "old", "metrics": {"planned_coverage": 100}})
+        cleaned = validate_dataset_draft(legacy)
+        for key in ("coverage_enabled", "coverage_axes", "coverage_plan", "plan_seed", "plan_signature"):
+            self.assertNotIn(key, cleaned)
+            self.assertNotIn(key, default_dataset_draft())
+        self.assertEqual(cleaned["scene_plan"][0]["scene"], "Reading a book.")
+        self.assertEqual(cleaned["results"][0]["prompt"], "A finished prompt.")
+        self.assertNotIn("coverage_conflicts", cleaned["scene_plan"][0])
+        self.assertNotIn("coverage_conflicts", cleaned["results"][0])
+        self.assertEqual(cleaned["quality_report"], {})
+        legacy["quality_report"]["metrics"] = {"coverage": 100}
+        self.assertEqual(validate_dataset_draft(legacy)["quality_report"], {})
+
+    def test_user_rules_direct_the_scene_without_coverage_assignments(self):
         data = valid_draft(amount=2, constraints="Every scene must focus on romance.")
-        coverage = build_coverage_plan(data)
-        self.assertFalse(coverage["enabled"])
-        self.assertEqual(coverage["selected_axes"], [])
-        self.assertTrue(all(not row["facets"] for row in coverage["plan"]))
         instruction = dataset_instruction(
             GoatedPrompterRequest(idea=data["subject"], target_model=data["target"]),
-            data, 1, plan_item=coverage["plan"][0])
+            data, 1, plan_item=dataset_assignments(data)[0])
         self.assertIn("WORKFLOW RULES", instruction.system_message)
         self.assertIn("Every scene must focus on romance.", instruction.user_message)
         self.assertNotIn("COVERAGE ASSIGNMENT", instruction.user_message)
 
     def test_quality_report_finds_trigger_duplicates_format_and_leakage(self):
         data = valid_draft(amount=4)
-        plan = build_coverage_plan(data)["plan"]
+        plan = dataset_assignments(data)
         results = [
             {"index": 1, "input": "", "prompt": "ohwx_person, a distinct studio portrait with soft daylight and a red jacket"},
             {"index": 2, "input": "", "prompt": "ohwx_person, a distinct studio portrait with soft daylight and a red jacket"},
@@ -258,11 +281,11 @@ class DatasetUnitTests(unittest.TestCase):
         self.assertEqual([item["input"] for item in result["prompts"]], ["standing", "running", "standing"])
         self.assertTrue(all("ohwx_person" in item["prompt"] for item in result["prompts"]))
         self.assertTrue(all(not item["prompt"].startswith("ohwx_person") for item in result["prompts"]))
-        self.assertEqual([item["completed"] for item in partials], [0, 1, 2, 3])
+        self.assertEqual([item["completed"] for item in partials], [0, 0, 1, 2, 3])
         self.assertEqual(len(partials[0]["scene_plan"]), 3)
         for partial in partials[1:]:
             self.assertTrue(all("idea" in item and "scene" in item for item in partial["prompts"]))
-        self.assertTrue(all(set(item) == {"index", "input", "idea", "scene", "prompt"}
+        self.assertTrue(all(set(item) == {"index", "input", "idea", "scene", "geometry", "prompt"}
                             for item in result["prompts"]))
 
     def test_service_reports_engine_waiting_and_validation_progress(self):
@@ -275,7 +298,7 @@ class DatasetUnitTests(unittest.TestCase):
                 request, data, progress.append, lambda _result: None)
         self.assertEqual(progress, [
             "Starting the prompt engine for the dataset…",
-            "Scene Planner · planning dataset scenes…",
+            "Scene Planner · chunk 1–1 · planning…",
             "Waiting for prompt engine · dataset prompt 1/1",
             "Checking dataset prompt 1/1",
         ])
@@ -299,15 +322,17 @@ class DatasetUnitTests(unittest.TestCase):
         backend = AlwaysRunawayBackend()
         data = valid_draft(amount=1)
         request = GoatedPrompterRequest(idea=data["subject"], target_model=data["target"])
-        with patch("goated_prompter.dataset.create_backend", return_value=backend), \
-             self.assertRaisesRegex(Exception, "after 3 retries"):
-            DatasetService({"backend": "mock"}, lambda: None).run(
+        with patch("goated_prompter.dataset.create_backend", return_value=backend):
+            result = DatasetService({"backend": "mock"}, lambda: None).run(
                 request, data, lambda _message: None, lambda _result: None)
-        self.assertEqual(len(backend.calls), 5)
+        self.assertEqual(result["completed"], 0)
+        self.assertEqual(result["failed"], 1)
+        self.assertIn("exceeded", result["scene_plan"][0]["failure_reason"])
+        self.assertEqual(len(backend.calls), 5)  # Planner + four writer attempts, never replacement ideation.
         self.assertTrue(all(call.system_message.count("LOOP CORRECTION:") == 1
-                            for call in backend.calls[2:]))
-        self.assertIn("Prompt length — Short", backend.calls[-1].system_message)
-        self.assertLessEqual(backend.calls[-1].hard_max_tokens, backend.calls[1].hard_max_tokens)
+                            for call in backend.calls[2:5]))
+        self.assertIn("Prompt length — Short", backend.calls[4].system_message)
+        self.assertLessEqual(backend.calls[4].hard_max_tokens, backend.calls[1].hard_max_tokens)
 
     def test_connected_starting_and_distributed_trigger_contracts(self):
         self.assertEqual(trigger_terms("woman, cake", False), ("woman", "cake"))
@@ -401,7 +426,7 @@ class DatasetEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(any("Waiting for prompt engine" in message for message in messages))
         self.assertTrue(any("prompt 3/3 completed" in message for message in messages))
         self.assertEqual(result["events"][-1]["type"], "success")
-        self.assertEqual(len(result["result"]["coverage"]["plan"]), 3)
+        self.assertNotIn("coverage", result["result"])
         self.assertIn("quality_report", result["result"])
         self.assertEqual(self.backend.sessions, 1)
         record = await (await self.client.get("/api/workspace/settings/dataset")).json()
@@ -453,36 +478,155 @@ class DatasetEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 200, await response.text())
         self.assertEqual((await response.json())["draft"]["results"], final["result"]["prompts"])
 
-    async def test_coverage_endpoint_alias_remains_inference_free(self):
-        data = valid_draft(coverage_enabled=True)
-        old = await self.client.post("/api/workspace/dataset/plan", json={"input": data})
-        new = await self.client.post("/api/workspace/dataset/coverage", json={"input": data})
-        self.assertEqual(await old.json(), await new.json())
+    async def test_removed_coverage_endpoints_are_not_available(self):
+        for path in ("plan", "coverage"):
+            response = await self.client.post(f"/api/workspace/dataset/{path}", json={"input": valid_draft()})
+            self.assertEqual(response.status, 405, await response.text())  # Only the SPA's GET fallback remains.
         self.assertEqual(self.backend.calls, [])
 
-    async def test_plan_and_quality_endpoints_are_inference_free(self):
-        data = valid_draft(amount=4)
-        response = await self.client.post("/api/workspace/dataset/plan", json={"input": data})
+    async def test_per_scene_endpoint_preserves_other_items_and_stage_boundaries(self):
+        data = valid_draft(amount=2)
+        response = await self.client.post("/api/workspace/dataset", json={"input": data})
+        generated = (await self.terminal(await response.json()))["result"]
+        data.update(scene_plan=generated["scene_plan"], scene_plan_signature=generated["scene_plan_signature"],
+                    results=generated["prompts"])
+        for action, stages in (("regenerate_prompt", ["dataset:1"]),
+                               ("repair_scene", ["dataset:scene_composer:repair", "dataset:1"]),
+                               ("regenerate_idea", ["dataset:idea_planner", "dataset:scene_composer", "dataset:1"])):
+            self.backend.calls.clear()
+            response = await self.client.post("/api/workspace/dataset/scene",
+                json={"input": data, "action": action, "index": 1})
+            self.assertEqual(response.status, 202, await response.text())
+            job = await self.terminal(await response.json())
+            self.assertEqual(job["status"], "succeeded", job)
+            result = job["result"]
+            self.assertEqual([call.diagnostic_stage for call in self.backend.calls], stages)
+            self.assertEqual(result["scene_plan"][1], data["scene_plan"][1])
+            self.assertEqual(result["prompts"][1], data["results"][1])
+            if action != "regenerate_idea":
+                self.assertEqual(result["scene_plan"][0]["idea"], data["scene_plan"][0]["idea"])
+            self.assertEqual(validate_dataset_draft({**data, "scene_plan": result["scene_plan"],
+                                                    "results": result["prompts"]})["results"], result["prompts"])
+
+    async def test_invalid_per_scene_actions_do_not_start_inference(self):
+        data = valid_draft(amount=2)
+        for action, index in (("unknown", 1), ("repair_scene", True), ("repair_scene", 3), ("regenerate_prompt", 1)):
+            response = await self.client.post("/api/workspace/dataset/scene",
+                json={"input": data, "action": action, "index": index})
+            self.assertEqual(response.status, 400, await response.text())
+        self.assertEqual(self.backend.calls, [])
+
+    async def test_valid_only_api_writes_good_index_and_persists_failed_reason(self):
+        from tests.test_dataset_quality_planning import saved
+        from tests.test_scene_composer import rows
+        data = saved(valid_draft(amount=2), rows(2))
+        data["scene_plan"][0].update(idea="", scene="", geometry={}, idea_status="failed", scene_status="failed",
+            prompt_status="failed", failure_stage="scene", failure_reason="Direct rear camera cannot show a full face.", replacement_attempted=True)
+        data["results"] = []
+        settings = await (await self.client.get("/api/workspace/settings/dataset")).json()
+        response = await self.client.put("/api/workspace/settings/dataset",
+            json={"revision": settings["revision"], "draft": data})
         self.assertEqual(response.status, 200, await response.text())
-        coverage = await response.json()
-        self.assertEqual(len(coverage["plan"]), 4)
+        persisted = await response.json()
+        self.assertTrue(persisted["idea_plan_current"])
+        self.assertFalse(persisted["scene_plan_current"])
+        self.assertTrue(persisted["scene_plan_matches_settings"])
+        self.assertEqual(persisted["draft"]["scene_plan"][0]["failure_reason"], data["scene_plan"][0]["failure_reason"])
+        response = await self.client.post("/api/workspace/dataset", json={"input": data, "valid_only": True})
+        self.assertEqual(response.status, 202, await response.text())
+        job = await self.terminal(await response.json())
+        self.assertEqual(job["status"], "succeeded", job)
+        self.assertEqual([row["index"] for row in job["result"]["prompts"]], [2])
+        self.assertEqual(job["result"]["scene_plan"][0], data["scene_plan"][0])
+        self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:2"])
+
+    async def test_valid_only_api_rejects_invalid_flag_and_missing_valid_plan(self):
+        for path, flag in (("/api/workspace/dataset", "yes"), ("/api/workspace/dataset", True),
+                           ("/api/workspace/dataset/scenes", True)):
+            response = await self.client.post(path, json={"input": valid_draft(), "valid_only": flag})
+            self.assertEqual(response.status, 400, await response.text())
+        self.assertEqual(self.backend.calls, [])
+
+    async def test_manual_idea_edit_keeps_plan_current_for_local_scene_repair(self):
+        data = valid_draft(amount=2)
+        response = await self.client.post("/api/workspace/dataset", json={"input": data})
+        generated = (await self.terminal(await response.json()))["result"]
+        data.update(scene_plan=generated["scene_plan"], scene_plan_signature=generated["scene_plan_signature"],
+                    results=[generated["prompts"][1]])
+        data["scene_plan"][0].update(idea="Edited activity", scene="", geometry={}, scene_status="not_generated", prompt_status="not_generated")
+        settings = await (await self.client.get("/api/workspace/settings/dataset")).json()
+        response = await self.client.put("/api/workspace/settings/dataset",
+            json={"revision": settings["revision"], "draft": data})
+        self.assertEqual(response.status, 200, await response.text())
+        saved = await response.json()
+        self.assertTrue(saved["idea_plan_current"])
+        self.assertFalse(saved["scene_plan_current"])
+        response = await self.client.post("/api/workspace/dataset/scene",
+            json={"input": data, "action": "repair_scene", "index": 1})
+        self.assertEqual(response.status, 202, await response.text())
+        job = await self.terminal(await response.json())
+        self.assertEqual(job["status"], "succeeded", job)
+        self.assertEqual(job["result"]["scene_plan"][0]["idea"], "Edited activity")
+        self.assertEqual(job["result"]["prompts"][1], generated["prompts"][1])
+
+    async def test_guided_cycle_keeps_expanded_plan_through_api_save_and_generation(self):
+        data = valid_draft(amount=3, source_mode="guided", inputs="reading on a red couch\nlying on floor")
+        expanded = {"reading on a red couch": "She sits on a red couch reading a book, eyes focused on its open pages.",
+                    "lying on floor": "She lies on the floor holding a book above her, arms raised and gaze on the pages."}
+        original_generate = self.backend.generate
+
+        def generate(instruction):
+            if not instruction.diagnostic_stage.startswith("dataset:scene_planner"):
+                return original_generate(instruction)
+            self.backend.calls.append(instruction)
+            context = json.loads(instruction.user_message)
+            from tests.test_dataset_geometry import character_geometry
+            return json.dumps([{"index": row["index"], "idea": row["input"], "scene": expanded[row["input"]],
+                                "geometry": character_geometry(action_focus=row["input"])}
+                               for row in context["assignments"]])
+
+        self.enterContext(patch.object(self.backend, "generate", side_effect=generate))
+        response = await self.client.post("/api/workspace/dataset/scenes", json={"input": data})
+        self.assertEqual(response.status, 202, await response.text())
+        job = await self.terminal(await response.json())
+        self.assertEqual(job["status"], "succeeded", job)
+        self.assertEqual(len(self.backend.calls), 1)
+        self.assertFalse(any("failed validation" in event["message"] or "unavailable" in event["message"]
+                             for event in job["events"]))
+        data.update(scene_plan=job["result"]["scene_plan"], scene_plan_signature=job["result"]["scene_plan_signature"])
+        self.assertEqual(data["scene_plan"][0]["scene"], expanded["reading on a red couch"])
+        self.assertEqual(data["scene_plan"][2]["scene"], data["scene_plan"][0]["scene"])
+        settings = await (await self.client.get("/api/workspace/settings/dataset")).json()
+        response = await self.client.put("/api/workspace/settings/dataset",
+            json={"revision": settings["revision"], "draft": data})
+        self.assertEqual(response.status, 200, await response.text())
+        self.assertTrue((await response.json())["scene_plan_current"])
+        saved = await (await self.client.get("/api/workspace/settings/dataset")).json()
+        self.assertEqual(saved["draft"]["scene_plan"], data["scene_plan"])
+        response = await self.client.post("/api/workspace/dataset", json={"input": data})
+        final = await self.terminal(await response.json())
+        self.assertEqual(final["status"], "succeeded", final)
+        self.assertEqual(len(self.backend.calls), 4)  # No extra planner/repair call.
+        self.assertEqual(final["result"]["prompts"][2]["scene"], expanded["reading on a red couch"])
+
+    async def test_quality_endpoint_is_inference_free_without_coverage(self):
+        data = valid_draft(amount=4)
         prompts = [{"index": index, "input": "", "prompt": f"ohwx_person, distinct prompt number {index} with useful visual detail"}
                    for index in range(1, 5)]
-        data.update(coverage_plan=coverage["plan"], plan_signature=coverage["signature"],
-                    coverage_axes=coverage["selected_axes"], results=prompts)
+        data.update(results=prompts)
         response = await self.client.post("/api/workspace/dataset/quality", json={"input": data})
         self.assertEqual(response.status, 200, await response.text())
-        report = (await response.json())["report"]
+        payload = await response.json()
+        self.assertEqual(set(payload), {"report"})
+        report = payload["report"]
         self.assertEqual(len(report["prompts"]), 4)
         self.assertNotIn("coverage", report["metrics"])
+        self.assertNotIn("planned_coverage", report["metrics"])
         self.assertEqual(self.backend.calls, [])
 
     async def test_optional_deep_review_uses_bounded_chunks(self):
         data = valid_draft(amount=5)
-        coverage = build_coverage_plan(data)
-        data.update(coverage_plan=coverage["plan"], plan_signature=coverage["signature"],
-                    coverage_axes=coverage["selected_axes"],
-                    results=[{"index": index, "input": "", "prompt": f"ohwx_person, distinct visual prompt {index} with consistent black hair and red jacket"}
+        data.update(results=[{"index": index, "input": "", "prompt": f"ohwx_person, distinct visual prompt {index} with consistent black hair and red jacket"}
                              for index in range(1, 6)])
         response = await self.client.post("/api/workspace/dataset/review", json={"input": data})
         self.assertEqual(response.status, 202, await response.text())

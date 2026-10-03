@@ -31,11 +31,6 @@ export default function RefineTab({ workspace, current, disabled, canGenerate, b
     if (result) setSource("");
   }
   return <>
-    <div className={ui.pageHeading}><div>
-      <div className={ui.eyebrow}>KEEP THE GOOD. REFINE THE REST.</div>
-      <h2>Refine your prompt<span>.</span></h2>
-      <p>Request a precise change, lock important details, and step back whenever you need.</p>
-    </div></div>
     <div className="grid grid-cols-[minmax(0,2fr)_minmax(260px,1fr)] items-start gap-5 [@media(width<=1000px)]:grid-cols-1">
       <div className={ui.column}>
         <section className={ui.panel}>
