@@ -6,10 +6,10 @@ from unittest.mock import Mock, patch
 
 from goated_prompter.backends.base import BackendGenerationError
 from goated_prompter.dataset import validate_dataset_draft
-from goated_prompter.dataset_coverage import effective_coverage_plan
+from goated_prompter.dataset_assignments import dataset_assignments
 from goated_prompter.dataset_geometry import CHARACTER_REQUIRED_FIELDS
 from goated_prompter.prompting.scene_planner import scene_composer_instruction, idea_planner_instruction
-from goated_prompter.scene_planner import SCENE_COMPOSER_CHUNK_SIZE, ScenePlanner, validate_scene_plan, reusable_scene_plan, reconcile_scene_coverage
+from goated_prompter.scene_planner import SCENE_COMPOSER_CHUNK_SIZE, ScenePlanner, validate_scene_plan, reusable_scene_plan
 from tests.test_dataset_geometry import character_geometry
 from tests.test_dataset_quality_planning import draft, run, saved
 
@@ -25,7 +25,7 @@ class SceneComposerTests(unittest.TestCase):
         session = Mock()
         session.generate.side_effect = outputs
         data = draft(amount=amount)
-        result = ScenePlanner(lambda: None).compose(session=session, data=data, coverage=effective_coverage_plan(data),
+        result = ScenePlanner(lambda: None).compose(session=session, data=data, assignments=dataset_assignments(data),
             ideas=[{"index": row["index"], "idea": row["idea"]} for row in rows(amount)], progress=lambda _: None, plan_update=update)
         return result, session
 
@@ -39,12 +39,12 @@ class SceneComposerTests(unittest.TestCase):
 
     def test_output_contract_is_explicit_and_example_does_not_anchor_creativity(self):
         data = draft(amount=1)
-        system = scene_composer_instruction(data, effective_coverage_plan(data), rows(1)).system_message
+        system = scene_composer_instruction(data, dataset_assignments(data), rows(1)).system_message
         for phrase in ("Return ONLY one valid JSON array", "character must be [", "character must be ]", "double-quoted keys",
                        "no YAML", "no numbered sections", "no trailing commas", "GAZE_DIRECTION", "not put emotions",
                        "EXPRESSION", 'pose_type="custom"', "pose_detail", "relative"):
             self.assertIn(phrase, system)
-        self.assertIn("IDEA SPATIAL CLARITY", idea_planner_instruction(data, effective_coverage_plan(data)).system_message)
+        self.assertIn("IDEA SPATIAL CLARITY", idea_planner_instruction(data, dataset_assignments(data)).system_message)
 
     def test_yaml_failure_has_json_specific_repair_not_python_exception(self):
         bad = "1\nscene: A woman examines an exhibit\ngeometry:\n  framing: full body"
@@ -128,7 +128,7 @@ class SceneComposerTests(unittest.TestCase):
         bad = {**expected[0], "geometry": {**expected[0]["geometry"], "gaze_direction": "frustrated"}}
         data, session = draft(), Mock()
         session.generate.side_effect = [json.dumps([bad, expected[1]]), json.dumps([expected[0]])]
-        result = ScenePlanner(lambda: None).compose(session=session, data=data, coverage=effective_coverage_plan(data),
+        result = ScenePlanner(lambda: None).compose(session=session, data=data, assignments=dataset_assignments(data),
             ideas=[{key: row[key] for key in ("index", "idea")} for row in expected], progress=lambda _: None)
         self.assertEqual(result, expected)
         repair = session.generate.call_args_list[1].args[0]
@@ -142,22 +142,22 @@ class SceneComposerTests(unittest.TestCase):
         session = Mock()
         session.generate.side_effect = ["1\nscene: repaired", json.dumps([expected])]
         data = draft(amount=1)
-        repaired = ScenePlanner(lambda: None).repair_scene(session=session, data=data, coverage=effective_coverage_plan(data),
+        repaired = ScenePlanner(lambda: None).repair_scene(session=session, data=data, assignments=dataset_assignments(data),
             row=expected, errors=["Choose coherent staging."], progress=lambda _: None)
         self.assertEqual(repaired, expected)
         self.assertIn("SCENE OUTPUT FORMAT CORRECTION", session.generate.call_args.args[0].system_message)
 
-    def test_canonical_shoe_crop_gets_framing_specific_repair_with_idea_unchanged(self):
+    def test_canonical_shoe_crop_widens_without_llm_repair_or_idea_change(self):
         expected = rows(1)[0]
         expected.update(idea="walking in oversized shoes", scene="She walks through an exhibit wearing oversized shoes.")
         expected["geometry"] = character_geometry(action_focus="walking in oversized shoes", visibility_focus=["face", "shoes"])
         bad = {**expected, "geometry": {**expected["geometry"], "framing": "face_close_up"}}
         data, session = draft(amount=1), Mock()
-        session.generate.side_effect = [json.dumps([bad]), json.dumps([expected])]
-        result = ScenePlanner(lambda: None).compose(session=session, data=data, coverage=effective_coverage_plan(data),
+        session.generate.side_effect = [json.dumps([bad])]
+        result = ScenePlanner(lambda: None).compose(session=session, data=data, assignments=dataset_assignments(data),
             ideas=[{"index": 1, "idea": expected["idea"]}], progress=lambda _: None)
-        self.assertEqual(result, [expected])
-        self.assertIn("wider crop", session.generate.call_args.args[0].system_message)
+        self.assertEqual(result, [{**expected, "coverage_conflicts": ["framing"]}])
+        self.assertEqual(session.generate.call_count, 1)
         self.assertEqual(json.loads(session.generate.call_args.args[0].user_message)["assignments"][0]["idea"], expected["idea"])
 
     def test_custom_pose_survives_composition_and_validated_writer_handoff(self):
@@ -175,7 +175,8 @@ class SceneComposerTests(unittest.TestCase):
     def test_optional_helpers_and_normalizable_enums_never_request_repair(self):
         for mode in ("Fast", "Quality"):
             for changes in ({"pose_type": "custom"}, {"expression": "custom"},
-                            {"camera_view": "front three-quarter", "framing": "full body", "camera_height": "eye-level"}, {}):
+                            {"camera_view": "front three-quarter", "framing": "full body", "camera_height": "eye-level"},
+                            {"framing": "closeup"}, {"framing": "medium close-up"}, {}):
                 with self.subTest(mode=mode, changes=changes):
                     expected = rows(1)[0]
                     expected["geometry"] = {key: value for key, value in expected["geometry"].items() if key in CHARACTER_REQUIRED_FIELDS}
@@ -186,11 +187,78 @@ class SceneComposerTests(unittest.TestCase):
                         outputs.insert(0, json.dumps([{"index": 1, "idea": expected["idea"]}]))
                     session.generate.side_effect = outputs
                     result = ScenePlanner(lambda: None).plan_batch(session=session, data=data,
-                        coverage=effective_coverage_plan(data), progress=lambda _: None)
+                        assignments=dataset_assignments(data), progress=lambda _: None)
                     self.assertEqual(session.generate.call_count, len(outputs))
                     self.assertTrue(all(":repair" not in call.args[0].diagnostic_stage for call in session.generate.call_args_list))
                     self.assertEqual(result[0]["geometry"]["camera_view"], "front_three_quarter")
                     self.assertEqual(result[0]["idea"], expected["idea"])
+
+    def test_multiline_scene_normalizes_in_both_modes_without_repair(self):
+        for mode in ("Fast", "Quality"):
+            with self.subTest(mode=mode):
+                expected = rows(1)[0]
+                expected["scene"] = "She examines exhibit 1. Her arms are extended for balance."
+                multiline = {**expected, "scene": "  She examines exhibit 1.\r\n\tHer arms are extended for balance.  "}
+                outputs = [json.dumps([multiline])]
+                if mode == "Quality":
+                    outputs.insert(0, json.dumps([{key: expected[key] for key in ("index", "idea")}]))
+                data, session = draft(amount=1, planning_mode=mode), Mock()
+                session.generate.side_effect = outputs
+                result = ScenePlanner(lambda: None).plan_batch(session=session, data=data,
+                    assignments=dataset_assignments(data), progress=lambda _: None)
+                self.assertEqual(result, [expected])
+                self.assertEqual(session.generate.call_count, len(outputs))
+                self.assertFalse(any(":repair" in call.args[0].diagnostic_stage for call in session.generate.call_args_list))
+
+    def test_malformed_scene_repairs_locally_and_never_reideates_its_valid_idea(self):
+        for mode in ("Fast", "Quality"):
+            with self.subTest(mode=mode):
+                expected = rows(2)
+                bad = {**expected[0], "scene": ""}
+                outputs = [json.dumps([bad, expected[1]]), json.dumps([expected[0]])]
+                if mode == "Quality":
+                    outputs.insert(0, json.dumps([{key: row[key] for key in ("index", "idea")} for row in expected]))
+                data, session = draft(planning_mode=mode), Mock()
+                session.generate.side_effect = outputs
+                result = ScenePlanner(lambda: None).plan_batch(session=session, data=data,
+                    assignments=dataset_assignments(data), progress=lambda _: None)
+                self.assertEqual(result, expected)
+                self.assertEqual(session.generate.call_count, len(outputs))
+                self.assertEqual(session.generate.call_args.args[0].diagnostic_stage, "dataset:scene_composer:repair")
+                self.assertEqual(json.loads(session.generate.call_args.args[0].user_message)["indexes"], [1])
+
+    def test_multiple_bad_scenes_publish_loadable_local_recovery_state(self):
+        expected, snapshots = rows(2), []
+        bad = [{**row, "scene": ""} for row in expected]
+        data, session = draft(), Mock()
+        session.generate.side_effect = [json.dumps(bad), RuntimeError("interrupted")]
+        with self.assertRaisesRegex(RuntimeError, "interrupted"):
+            ScenePlanner(lambda: None).compose(session=session, data=data, assignments=dataset_assignments(data),
+                ideas=[{key: row[key] for key in ("index", "idea")} for row in expected],
+                progress=lambda _: None, plan_update=snapshots.append)
+        restored = validate_dataset_draft({**data, "scene_plan": [{**row, "input": ""} for row in snapshots[-1]]})
+        self.assertEqual([row["idea"] for row in restored["scene_plan"]], [row["idea"] for row in expected])
+        self.assertTrue(all("scene_error" not in row for row in restored["scene_plan"]))
+        self.assertTrue(all(row["scene_status"] == "geometry_warning" for row in restored["scene_plan"]))
+
+    def test_widened_framing_diagnostic_roundtrips_and_is_not_repaired_again(self):
+        expected = rows(1)[0]
+        expected.update(idea="walking in oversized shoes", scene="She walks in oversized shoes in a face close-up.")
+        expected["geometry"] = {**expected["geometry"], "framing": "close_up", "action_focus": expected["idea"],
+                                "feet_visibility": "none_visible"}
+        data, session = draft(amount=1), Mock()
+        session.generate.side_effect = [json.dumps([expected])]
+        result = ScenePlanner(lambda: None).compose(session=session, data=data, assignments=dataset_assignments(data),
+            ideas=[{key: expected[key] for key in ("index", "idea")}], progress=lambda _: None)
+        self.assertEqual(session.generate.call_count, 1)
+        self.assertEqual(result[0]["geometry"]["framing"], "full_body")
+        self.assertEqual(result[0]["geometry"]["feet_visibility"], "both_visible")
+        self.assertNotIn("close-up", result[0]["scene"])
+        data = validate_dataset_draft(saved(draft(amount=1), result))
+        self.assertEqual(data["scene_plan"][0]["coverage_conflicts"], ["framing"])
+        generated, writer, _ = run(data, ["person_token walks in oversized shoes."])
+        self.assertEqual(writer.generate.call_count, 1)
+        self.assertEqual(generated["scene_plan"][0]["idea"], expected["idea"])
 
     def test_real_rear_conflict_repairs_only_the_scene_in_both_modes(self):
         for mode in ("Fast", "Quality"):
@@ -204,7 +272,7 @@ class SceneComposerTests(unittest.TestCase):
                     outputs.insert(0, json.dumps([{key: row[key] for key in ("index", "idea")} for row in expected]))
                 session.generate.side_effect = outputs
                 result = ScenePlanner(lambda: None).plan_batch(session=session, data=data,
-                    coverage=effective_coverage_plan(data), progress=lambda _: None)
+                    assignments=dataset_assignments(data), progress=lambda _: None)
                 self.assertEqual(result, expected)
                 repair = session.generate.call_args.args[0]
                 self.assertEqual(repair.diagnostic_stage, "dataset:scene_composer:repair")
@@ -225,7 +293,7 @@ class SceneComposerTests(unittest.TestCase):
         self.assertEqual(data["scene_plan"][0]["scene"], expected["scene"])
         self.assertEqual(data["scene_plan"][0]["geometry"], {"framing": "full_body", "expression": "shocked"})
         self.assertEqual(data["scene_plan"][0]["scene_status"], "geometry_warning")
-        self.assertIsNotNone(reusable_scene_plan(data, effective_coverage_plan(data), require_scenes=False))
+        self.assertIsNotNone(reusable_scene_plan(data, dataset_assignments(data), require_scenes=False))
         result, session, _ = run(data, [json.dumps([expected]), "person_token examines exhibit 1."])
         self.assertEqual(session.generate.call_count, 2)
         self.assertEqual(session.generate.call_args_list[0].args[0].diagnostic_stage, "dataset:scene_composer:repair")
@@ -236,17 +304,16 @@ class FastChunkTests(unittest.TestCase):
     def plan(self, outputs, amount=10, update=None, data=None):
         data, session = data or draft(amount=amount, planning_mode="Fast"), Mock()
         session.generate.side_effect = outputs
-        result = ScenePlanner(lambda: None).plan_batch(session=session, data=data, coverage=effective_coverage_plan(data),
+        result = ScenePlanner(lambda: None).plan_batch(session=session, data=data, assignments=dataset_assignments(data),
             progress=lambda _: None, plan_update=update)
         return result, session
 
     def test_ten_scenes_use_three_combined_chunks_with_prior_idea_context(self):
         expected, snapshots = rows(), []
-        data = draft(amount=10, planning_mode="Fast", constraints="Keep the same jacket", coverage_enabled=True)
+        data = draft(amount=10, planning_mode="Fast", constraints="Keep the same jacket")
         result, session = self.plan([json.dumps(expected[start:start + 4]) for start in range(0, 10, 4)],
             update=snapshots.append, data=data)
-        self.assertEqual(result, [reconcile_scene_coverage(row, assignment) for row, assignment in
-                                 zip(expected, effective_coverage_plan(data)["plan"])])
+        self.assertEqual(result, expected)
         contexts = [json.loads(call.args[0].user_message) for call in session.generate.call_args_list]
         self.assertEqual([context["indexes"] for context in contexts], [[1, 2, 3, 4], [5, 6, 7, 8], [9, 10]])
         for context, count in zip(contexts, (0, 4, 8)):
@@ -254,7 +321,7 @@ class FastChunkTests(unittest.TestCase):
             self.assertEqual(context["requested_amount"], 10)
             self.assertEqual(context["constraints"], data["constraints"])
             self.assertEqual(context["existing_ideas"], [{key: row[key] for key in ("index", "idea")} for row in expected[:count]])
-            self.assertTrue(all(row["facets"] for row in context["assignments"]))
+            self.assertTrue(all(set(row) == {"index", "input"} for row in context["assignments"]))
         self.assertEqual([row["scene_status"] for row in snapshots[0]], ["valid"] * 4 + ["not_generated"] * 6)
         self.assertEqual([row["idea_status"] for row in snapshots[0]], ["valid"] * 4 + ["not_generated"] * 6)
         self.assertTrue(all(call.args[0].diagnostic_stage == "dataset:scene_planner" for call in session.generate.call_args_list))
@@ -329,14 +396,14 @@ class FastChunkTests(unittest.TestCase):
         bad = {**expected[4], "geometry": {**expected[4]["geometry"], "camera_view": "direct_rear",
             "body_orientation": "direct_rear", "face_visibility": "full"}}
         session.generate.side_effect = [json.dumps(expected[:4]), json.dumps([bad, *expected[5:8]]),
-                                       json.dumps([bad]), json.dumps([bad]), json.dumps([bad]), RuntimeError("planning interrupted")]
+                                        json.dumps([bad]), json.dumps([bad]), RuntimeError("planning interrupted")]
         with self.assertRaisesRegex(RuntimeError, "planning interrupted"):
-            ScenePlanner(lambda: None).plan_batch(session=session, data=data, coverage=effective_coverage_plan(data),
+            ScenePlanner(lambda: None).plan_batch(session=session, data=data, assignments=dataset_assignments(data),
                 progress=lambda _: None, plan_update=snapshots.append)
         from goated_prompter.scene_planner import scene_plan_signature
         restored = validate_dataset_draft({**data, "scene_plan": [{**row, "input": "",
             "scene_status": row.get("scene_status", "valid")} for row in snapshots[-1]],
-            "scene_plan_signature": scene_plan_signature(data, effective_coverage_plan(data))})
+            "scene_plan_signature": scene_plan_signature(data, dataset_assignments(data))})
         result, resumed = self.plan([json.dumps([expected[4]]), json.dumps(expected[8:])], data=restored)
         self.assertEqual(result, expected)
         self.assertEqual([call.args[0].diagnostic_stage for call in resumed.generate.call_args_list],

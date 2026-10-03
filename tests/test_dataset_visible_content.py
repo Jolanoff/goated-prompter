@@ -7,7 +7,8 @@ from unittest.mock import Mock, patch
 from goated_prompter.backends.base import BackendGenerationError, BackendRunawayError
 from goated_prompter.core import GoatedPrompterRequest, assemble_instruction
 from goated_prompter.dataset import DatasetService, default_dataset_draft
-from goated_prompter.dataset_coverage import analyze_dataset_quality, effective_coverage_plan
+from goated_prompter.dataset_assignments import dataset_assignments
+from goated_prompter.dataset_quality import analyze_dataset_quality
 from goated_prompter.dataset_visible_content import (
     VISIBLE_CONTENT_CONTRACT, positive_prompt_error, visible_content_error, sanitize_positive_prompt,
 )
@@ -86,7 +87,7 @@ class VisibleContentTests(unittest.TestCase):
 
     def test_contract_applies_only_to_dataset_across_all_targets_and_review(self):
         data = draft()
-        planner = scene_planner_instruction(data, effective_coverage_plan(data))
+        planner = scene_planner_instruction(data, dataset_assignments(data))
         self.assertIn(VISIBLE_CONTENT_CONTRACT, planner.system_message)
         for target in TARGET_MODEL_NAMES:
             with self.subTest(target=target):
@@ -101,7 +102,9 @@ class VisibleContentTests(unittest.TestCase):
         self.assertIn("POSITIVE CONTENT AUDIT", review.system_message)
 
     def test_planner_repairs_negative_prose_in_idea_or_scene(self):
-        valid = [{"index": 1, "idea": "Cooking alone", "scene": "A woman cooks in a quiet kitchen, her hands resting naturally on the counter."}]
+        from tests.test_dataset_geometry import character_geometry
+        valid = [{"index": 1, "idea": "Cooking alone", "scene": "A woman cooks in a quiet kitchen, her hands resting naturally on the counter.",
+                  "geometry": character_geometry(action_focus="cooking")}]
         for field in ("idea", "scene"):
             invalid = [{**valid[0], field: valid[0][field] + ", no other people"}]
             with self.subTest(field=field), self.assertRaises(ValueError):
@@ -110,7 +113,7 @@ class VisibleContentTests(unittest.TestCase):
             session.generate.side_effect = [json.dumps(invalid), json.dumps(valid)]
             data = draft()
             rows = ScenePlanner(lambda: None).plan_batch(session=session, data=data,
-                coverage=effective_coverage_plan(data), progress=lambda _: None)
+                assignments=dataset_assignments(data), progress=lambda _: None)
             self.assertEqual(rows, valid)
             self.assertEqual(session.generate.call_count, 2)
 
@@ -147,7 +150,9 @@ class VisibleContentTests(unittest.TestCase):
                     if target == "Ideogram4":
                         self.assertEqual(json.loads(result), good)
                     else:
-                        self.assertEqual(result, "A woman person_token at a kitchen table")
+                        suffix = (", best quality" if phrase == "best quality" else ", masterpiece"
+                                  if phrase == "masterpiece, correct anatomy" else "") if target == "Anima" else ""
+                        self.assertEqual(result, "A woman person_token at a kitchen table" + suffix)
                     self.assertIsNone(positive_prompt_error(result, target))
 
     def test_repeated_leakage_fails_boundedly_and_runaway_prefix_is_not_exempt(self):
@@ -344,8 +349,8 @@ class VisibleContentTests(unittest.TestCase):
     def test_saved_bad_plans_and_manually_edited_results_are_not_silent(self):
         data = draft(scene_plan=[{"index": 1, "input": "", "idea": "Cooking at home",
                                  "scene": "A woman cooks, no other people."}])
-        data["scene_plan_signature"] = scene_plan_signature(data, effective_coverage_plan(data))
-        self.assertIsNone(reusable_scene_plan(data, effective_coverage_plan(data)))
+        data["scene_plan_signature"] = scene_plan_signature(data, dataset_assignments(data))
+        self.assertIsNone(reusable_scene_plan(data, dataset_assignments(data)))
         results = [{"index": 1, "input": "", "idea": "Cooking, no text", "scene": "A woman cooks, no other people.",
                     "prompt": "A woman person_token in a kitchen, no watermark."}]
         report = analyze_dataset_quality(data, results)

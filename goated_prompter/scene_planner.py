@@ -5,8 +5,8 @@ import hashlib
 import logging
 from dataclasses import replace
 from .dataset_visible_content import visible_content_error
-from .dataset_geometry import validate_geometry, geometry_errors, migrate_saved_geometry
-from .dataset_coverage import analyze_idea_diversity, idea_action_error, AXES
+from .dataset_geometry import validate_geometry, geometry_errors, migrate_saved_geometry, resolve_framing_conflicts
+from .dataset_quality import analyze_idea_diversity, idea_action_error
 
 from .backends.base import BackendGenerationError
 from .prompting.scene_planner import (
@@ -16,7 +16,7 @@ from .prompting.scene_planner import (
 )
 
 
-SCENE_PLAN_VERSION = 4
+SCENE_PLAN_VERSION = 5
 SCENE_COMPOSER_CHUNK_SIZE = 4
 SCENE_REPAIR_ATTEMPTS = 3
 FAILURE_METADATA = {"failure_reason", "failure_stage", "replacement_attempted"}
@@ -32,13 +32,12 @@ MAX_STORED_SCENE_CHARACTERS = 10000
 MAX_STORED_IDEA_CHARACTERS = 10000
 
 
-def scene_plan_signature(data, coverage):
+def scene_plan_signature(data, assignments):
     semantic = {key: data.get(key) for key in (
         "subject", "amount", "source_mode", "inputs", "trigger_type", "custom_type",
         "variety", "constraints", "visual_style", "custom_style")}
     semantic["planning_mode"] = data.get("planning_mode", "Fast")
-    semantic.update(version=SCENE_PLAN_VERSION, coverage_enabled=coverage["enabled"],
-                    assignments=coverage["plan"])
+    semantic.update(version=SCENE_PLAN_VERSION, assignments=assignments)
     return hashlib.sha256(json.dumps(semantic, ensure_ascii=False, sort_keys=True,
                                     separators=(",", ":")).encode("utf-8")).hexdigest()[:20]
 
@@ -48,6 +47,12 @@ def validate_saved_scene_plan(rows):
         raise ValueError("Scene plan must contain at most 25 scenes.")
     cleaned = []
     for index, row in enumerate(rows, 1):
+        if isinstance(row, dict):
+            # Only new deterministic crop diagnostics survive obsolete coverage metadata.
+            conflicts = row.get("coverage_conflicts")
+            row = {key: value for key, value in row.items() if key != "coverage_conflicts"}
+            if conflicts == ["framing"] and isinstance(row.get("geometry"), dict) and row["geometry"].get("framing") == "full_body":
+                row["coverage_conflicts"] = conflicts
         if (not isinstance(row, dict) or not {"index", "input", "scene"} <= row.keys()
                 or row.keys() - {"index", "input", "idea", "scene", "geometry", "coverage_conflicts", *PLAN_STATUS_VALUES, *FAILURE_METADATA}
                 or type(row["index"]) is not int or row["index"] != index
@@ -58,6 +63,7 @@ def validate_saved_scene_plan(rows):
             raise ValueError("Saved idea must be text within the stored-input limit.")
         validate_plan_metadata(row)
         row = dict(row)
+        row["scene"] = " ".join(row["scene"].split())
         if "geometry" in row:
             row["geometry"], migrated = migrate_saved_geometry(row["geometry"])
             if migrated and row.get("scene_status") != "failed":
@@ -66,14 +72,15 @@ def validate_saved_scene_plan(rows):
     return cleaned
 
 
-def reusable_scene_plan(data, coverage, *, require_scenes=True, allow_pending=False):
+def reusable_scene_plan(data, assignments, *, require_scenes=True, allow_pending=False):
     rows = validate_saved_scene_plan(data.get("scene_plan", []))
-    if (data.get("scene_plan_signature") != scene_plan_signature(data, coverage)
+    if (data.get("scene_plan_signature") != scene_plan_signature(data, assignments)
             or len(rows) != data["amount"] or (not allow_pending and any(not row.get("idea", "").strip()
                 and row.get("scene_status") != "failed" for row in rows))
             or (require_scenes and any(not row["scene"].strip() or row.get("scene_status") in {"not_generated", "geometry_warning", "failed"} for row in rows))
-            or any(visible_content_error(row.get("idea", "")) or visible_content_error(row["scene"]) for row in rows)
-            or any(row["input"] != assignment["input"] for row, assignment in zip(rows, coverage["plan"]))):
+            or any(visible_content_error(row.get("idea", "")) or (row.get("scene_status") not in
+                {"not_generated", "geometry_warning", "failed"} and visible_content_error(row["scene"])) for row in rows)
+            or any(row["input"] != assignment["input"] for row, assignment in zip(rows, assignments))):
         return None
     return rows
 
@@ -88,10 +95,6 @@ def validate_plan_metadata(row):
     for key, allowed in PLAN_STATUS_VALUES.items():
         if key in row and (not isinstance(row[key], str) or row[key] not in allowed):
             raise ValueError(f"Invalid {key}.")
-    if "coverage_conflicts" in row and (not isinstance(row["coverage_conflicts"], list)
-            or len(row["coverage_conflicts"]) > len(AXES)
-            or any(not isinstance(key, str) or key not in AXES for key in row["coverage_conflicts"])):
-        raise ValueError("Coverage conflicts must be supported axis names.")
 
 
 def _unique_object(pairs):
@@ -131,7 +134,8 @@ def scene_is_usable(row, data):
             and data["trigger_type"] == "Character" and row.get("scene_status") != "guided_fallback")))
 
 
-def validate_scene_plan(raw, amount, *, guided_inputs=None, indexes=None, require_geometry=False, validate_geometry_fields=True):
+def validate_scene_plan(raw, amount, *, guided_inputs=None, indexes=None, require_geometry=False, validate_geometry_fields=True,
+                        allow_scene_errors=False):
     """Accept only the minimal JSON schema; never salvage fenced/broken output."""
     if guided_inputs is not None and (not isinstance(guided_inputs, list) or len(guided_inputs) != amount
                                      or any(not isinstance(value, str) for value in guided_inputs)):
@@ -145,37 +149,47 @@ def validate_scene_plan(raw, amount, *, guided_inputs=None, indexes=None, requir
     indexes = indexes or list(range(1, amount + 1))
     for position, (index, row) in enumerate(zip(indexes, rows)):
         if (not isinstance(row, dict) or not {"index", "idea", "scene"} <= row.keys()
-                or row.keys() - {"index", "idea", "scene", "geometry", "coverage_conflicts"}
+                or row.keys() - {"index", "idea", "scene", "geometry"}
                 or (require_geometry and "geometry" not in row)
                 or type(row["index"]) is not int or row["index"] != index):
-            raise ValueError("Scene Planner rows require requested integer indexes, idea, scene and optional geometry/coverage conflicts.")
+            raise ValueError("Scene Planner rows require requested integer indexes, idea, scene and optional geometry.")
         idea = row["idea"]
         if (not isinstance(idea, str) or not idea.strip()
                 or len(idea) > MAX_IDEA_CHARACTERS or len(idea.split()) > MAX_IDEA_WORDS
                 or "```" in idea or "\n" in idea.strip() or "\r" in idea.strip()):
             raise ValueError("Scene Planner ideas must be nonempty short concepts without markdown or multiple lines.")
         scene = row["scene"]
+        scene_error = ""
+        if isinstance(scene, str):
+            scene = " ".join(scene.split())
         if (not isinstance(scene, str) or not scene.strip()
                 or len(scene) > MAX_SCENE_CHARACTERS or len(scene.split()) > MAX_SCENE_WORDS
-                or "```" in scene or "\n" in scene.strip() or "\r" in scene.strip()):
-            raise ValueError("Scene Planner scenes must be nonempty concise paragraphs without markdown fences.")
+                or "```" in scene):
+            scene_error = "Scene Planner scenes must be nonempty concise paragraphs without markdown fences."
+            if not allow_scene_errors:
+                raise ValueError(scene_error)
+            scene = scene[:MAX_STORED_SCENE_CHARACTERS] if isinstance(scene, str) else ""
         scene = scene.strip()
-        if error := visible_content_error(idea) or visible_content_error(scene):
+        if error := visible_content_error(idea):
             raise ValueError(error)
+        if error := visible_content_error(scene):
+            if not allow_scene_errors:
+                raise ValueError(error)
+            scene_error = error
         signature = " ".join(scene.casefold().split())
         guided_input = " ".join(guided_inputs[position].split()) if guided_inputs is not None else ""
         if signature in seen:
             # Cycling/repeated authoritative guided lines may deliberately ask
             # for the same scene. Never exempt random or different guided inputs.
-            if not guided_input or guided_input != seen[signature]:
+            if (not guided_input or guided_input != seen[signature]) and not allow_scene_errors:
                 raise ValueError("Scene Planner returned identical scenes for different assignments; diversify while preserving each input. Exact repeats are allowed only for the same nonempty guided input.")
         seen[signature] = guided_input
         record = {"index": index, "idea": idea, "scene": scene}
+        if scene_error:
+            record["scene_error"] = scene_error
         if "geometry" in row:
             record["geometry"] = validate_geometry(row["geometry"]) if validate_geometry_fields else row["geometry"]
         validate_plan_metadata(row)
-        if "coverage_conflicts" in row:
-            record["coverage_conflicts"] = row["coverage_conflicts"]
         cleaned.append(record)
     return cleaned
 
@@ -204,24 +218,24 @@ class ScenePlanner:
     def __init__(self, checkpoint):
         self.checkpoint = checkpoint
 
-    def plan_batch(self, *, session, data, coverage, family="qwen", progress, plan_update=None):
+    def plan_batch(self, *, session, data, assignments, family="qwen", progress, plan_update=None):
         if data.get("planning_mode", "Fast") == "Quality":
             try:
-                ideas = self.plan_ideas(session=session, data=data, coverage=coverage, family=family, progress=progress)
+                ideas = self.plan_ideas(session=session, data=data, assignments=assignments, family=family, progress=progress)
             except BackendGenerationError:
-                return self._fallback(data, coverage, progress)
+                return self._fallback(data, assignments, progress)
             if plan_update:
                 plan_update([{**row, "scene": "", "geometry": {}, "scene_status": "not_generated"} for row in ideas])
-            return self.compose(session=session, data=data, coverage=coverage, ideas=ideas, family=family,
+            return self.compose(session=session, data=data, assignments=assignments, ideas=ideas, family=family,
                                 progress=progress, plan_update=plan_update)
         state = [{"index": row["index"], "idea": "", "scene": "", "geometry": {},
-                  "idea_status": "not_generated", "scene_status": "not_generated"} for row in coverage["plan"]]
-        if data.get("scene_plan_signature") == scene_plan_signature(data, coverage):
+                  "idea_status": "not_generated", "scene_status": "not_generated"} for row in assignments]
+        if data.get("scene_plan_signature") == scene_plan_signature(data, assignments):
             saved = validate_saved_scene_plan(data.get("scene_plan", []))
             incomplete = any(row.get("scene_status") == "failed" or not row.get("idea", "").strip() or not row["scene"].strip()
                 or row.get("scene_status") in {"not_generated", "geometry_warning"} for row in saved)
             if incomplete and len(saved) == len(state) and all(row["input"] == assignment["input"]
-                    for row, assignment in zip(saved, coverage["plan"])):
+                    for row, assignment in zip(saved, assignments)):
                 state = [dict(row) for row in saved]
         def publish_chunk(rows):
             for row in rows:
@@ -235,10 +249,10 @@ class ScenePlanner:
                      (not row["scene"].strip() or row.get("scene_status") in {"not_generated", "geometry_warning"})]
             for row in fixed:
                 if not row["scene"].strip():
-                    repaired = self.compose(session=session, data=data, coverage=coverage, ideas=[row],
+                    repaired = self.compose(session=session, data=data, assignments=assignments, ideas=[row],
                         family=family, progress=progress, plan_update=publish_chunk)[0]
                 else:
-                    repaired = self.recover_scene(session=session, data=data, coverage=coverage, row=row,
+                    repaired = self.recover_scene(session=session, data=data, assignments=assignments, row=row,
                         family=family, progress=progress, errors=geometry_errors(row),
                         existing_rows=[item for item in state if item.get("scene_status") == "valid"])
                 publish_chunk([{**repaired, "idea_status": repaired.get("idea_status", "valid"),
@@ -247,53 +261,48 @@ class ScenePlanner:
             if not indexes:
                 continue
             accepted = [row for row in state if row.get("idea", "").strip()]
-            inputs = [coverage["plan"][index - 1]["input"] for index in indexes] if data["source_mode"] == "guided" else None
+            inputs = [assignments[index - 1]["input"] for index in indexes] if data["source_mode"] == "guided" else None
             try:
                 rows = self._call(session,
-                    lambda correction: scene_planner_instruction(data, coverage, family, correction,
+                    lambda correction: scene_planner_instruction(data, assignments, family, correction,
                         indexes=indexes, existing=accepted),
                     lambda raw: validate_scene_plan(raw, len(indexes), indexes=indexes, guided_inputs=inputs,
-                                                    validate_geometry_fields=False),
+                                                    validate_geometry_fields=False, allow_scene_errors=True),
                     progress, f"Scene Planner · chunk {indexes[0]}–{indexes[-1]}", scene_output=True)
             except BackendGenerationError as exc:
                 # Isolate an unreadable chunk into bounded single-item requests.
                 rows = []
                 for index in indexes:
-                    local_inputs = [coverage["plan"][index - 1]["input"]] if inputs is not None else None
+                    local_inputs = [assignments[index - 1]["input"]] if inputs is not None else None
                     try:
                         local = self._call(session,
-                            lambda correction: scene_planner_instruction(data, coverage, family, correction,
+                            lambda correction: scene_planner_instruction(data, assignments, family, correction,
                                 indexes=[index], existing=accepted + rows),
                             lambda raw: validate_scene_plan(raw, 1, indexes=[index], guided_inputs=local_inputs,
-                                validate_geometry_fields=False), progress, f"Scene Planner · scene {index}",
+                                validate_geometry_fields=False, allow_scene_errors=True), progress, f"Scene Planner · scene {index}",
                             scene_output=True, attempts=SCENE_REPAIR_ATTEMPTS)
-                        local = self._check_scenes(session, data, coverage, local, family, progress,
+                        local = self._check_scenes(session, data, assignments, local, family, progress,
                             existing_rows=accepted + rows)
                         row = local[0]
                     except BackendGenerationError as local_error:
-                        row = self.replace_failed_scene(session=session, data=data, coverage=coverage,
-                            row=state[index - 1], family=family, progress=progress,
-                            reason=failure_reason(local_error), existing_rows=accepted + rows)
+                        row = failed_scene(state[index - 1], failure_reason(local_error))
                     rows.append(row)
                     publish_chunk([{**row, "scene_status": row.get("scene_status", "valid")}])
             else:
-                rows = self._check_scenes(session, data, coverage, rows, family, progress,
+                rows = self._check_scenes(session, data, assignments, rows, family, progress,
                     plan_update=publish_chunk, existing_rows=[row for row in accepted if row.get("scene_status") == "valid"])
             publish_chunk([{**row, "idea_status": row.get("idea_status", "valid"), "scene_status": row.get("scene_status", (
-                "guided_fallback" if data["source_mode"] == "guided" and row["scene"] == coverage["plan"][row["index"] - 1]["input"]
+                "guided_fallback" if data["source_mode"] == "guided" and row["scene"] == assignments[row["index"] - 1]["input"]
                 else "valid"))} for row in rows])
         return [{key: value for key, value in row.items() if key != "input"
                  and (key not in PLAN_STATUS_VALUES or row.get("scene_status") == "failed")} for row in state]
 
-    def _fallback(self, data, coverage, progress):
+    def _fallback(self, data, assignments, progress):
         if data["source_mode"] != "guided":
             raise BackendGenerationError("Dataset planning failed after retries. No useful automatic ideas were produced; revise the concept or retry planning.")
         progress("Scene Planner unavailable; using each supplied guided input directly.")
-        # Do not guess whether a coverage facet conflicts with natural-language
-        # constraints. Keep the original input intact; coverage remains separately
-        # available to the writer as subordinate, compatible formatting context.
         return [{"index": row["index"], "idea": row["input"] or data["subject"], "scene": row["input"] or data["subject"]}
-                for row in coverage["plan"]]
+                for row in assignments]
 
     def _call(self, session, build, validate, progress, label, *, scene_output=False, attempts=2):
         correction = ""
@@ -327,7 +336,7 @@ class ScenePlanner:
                 progress(f"{label} failed validation: {correction}")
         raise BackendGenerationError(f"Dataset {label} failed after retries. {correction}") from last_error
 
-    def plan_ideas(self, *, session, data, coverage, family="qwen", progress, indexes=None, existing=()):
+    def plan_ideas(self, *, session, data, assignments, family="qwen", progress, indexes=None, existing=()):
         indexes = indexes or list(range(1, data["amount"] + 1))
         previous = {row["index"]: row["idea"] for row in existing if row["index"] in indexes}
         def validate_initial(raw):
@@ -339,7 +348,7 @@ class ScenePlanner:
                         raise ValueError("Create a genuinely new idea rather than repeating the replaced idea.")
             return result
         rows = self._call(session,
-            lambda correction: idea_planner_instruction(data, coverage, family, correction, indexes=indexes, existing=existing),
+            lambda correction: idea_planner_instruction(data, assignments, family, correction, indexes=indexes, existing=existing),
             validate_initial, progress, "Idea Planner")
         # Audit locally, then replace only later members of duplicate groups.
         # Guided/Focused scope exemptions live in the diversity checker.
@@ -355,13 +364,13 @@ class ScenePlanner:
                         raise ValueError("Replacement idea still repeats an existing idea's meaning.")
                     return new
                 rows[position] = self._call(session,
-                    lambda correction: idea_planner_instruction(data, coverage, family, correction,
+                    lambda correction: idea_planner_instruction(data, assignments, family, correction,
                         indexes=[row["index"]], existing=exclusions),
                     validate_new, progress, f"Idea Planner · replace idea {row['index']}")[0]
             accepted.append(rows[position])
         return rows
 
-    def compose(self, *, session, data, coverage, ideas, family="qwen", progress, plan_update=None):
+    def compose(self, *, session, data, assignments, ideas, family="qwen", progress, plan_update=None):
         # Always publish a loadable state with every fixed idea, including pending
         # chunks. A retry/reload can compose only unfinished rows, never re-ideate.
         state = [{**row, "scene": "", "geometry": {}, "scene_status": "not_generated"} for row in ideas]
@@ -375,55 +384,60 @@ class ScenePlanner:
         for start in range(0, len(ideas), SCENE_COMPOSER_CHUNK_SIZE):
             chunk = ideas[start:start + SCENE_COMPOSER_CHUNK_SIZE]
             indexes = [row["index"] for row in chunk]
-            inputs = [coverage["plan"][index - 1]["input"] for index in indexes] if data["source_mode"] == "guided" else None
+            inputs = [assignments[index - 1]["input"] for index in indexes] if data["source_mode"] == "guided" else None
             existing = {row["index"]: row for row in [*data.get("scene_plan", []), *state[:start]]
                          if row["index"] not in indexes and row.get("scene", "").strip()
                          and row.get("scene_status", "valid") == "valid"}
             recovery_context = [*existing.values(), *[row for row in state if row["index"] not in indexes and not row["scene"].strip()]]
             try:
                 rows = self._call(session,
-                    lambda correction: scene_composer_instruction(data, coverage, chunk, family, correction),
+                    lambda correction: scene_composer_instruction(data, assignments, chunk, family, correction),
                     lambda raw: validate_scene_plan(raw, len(chunk), indexes=indexes, guided_inputs=inputs,
-                                                    validate_geometry_fields=False),
+                                                    validate_geometry_fields=False, allow_scene_errors=True),
                     progress, f"Scene Composer · chunk {indexes[0]}–{indexes[-1]}", scene_output=True)
             except BackendGenerationError as exc:
                 rows = []
                 for idea in chunk:
-                    row = self.recover_scene(session=session, data=data, coverage=coverage,
+                    row = self.recover_scene(session=session, data=data, assignments=assignments,
                         row={"index": idea["index"], "idea": idea["idea"], "scene": "", "geometry": {}},
                         family=family, progress=progress, errors=[failure_reason(exc)],
                         existing_rows=[*recovery_context, *rows])
                     rows.append(row)
                     publish_chunk([{**row, "scene_status": row.get("scene_status", "valid")}])
             else:
-                rows = self._check_scenes(session, data, coverage, rows, family, progress, chunk, publish_chunk,
+                rows = self._check_scenes(session, data, assignments, rows, family, progress, chunk, publish_chunk,
                                           existing_rows=recovery_context)
             publish_chunk([{**row, "scene_status": row.get("scene_status", "valid")} for row in rows])
         return [{key: value for key, value in row.items() if key != "scene_status"
                  or row.get("scene_status") == "failed"} for row in state]
 
-    def _check_scenes(self, session, data, coverage, rows, family, progress, ideas=None, plan_update=None, existing_rows=()):
+    def _check_scenes(self, session, data, assignments, rows, family, progress, ideas=None, plan_update=None, existing_rows=()):
         fixed = {row["index"]: row["idea"] for row in (ideas or rows)}
+        scene_errors = {row["index"]: row.pop("scene_error", "") for row in rows}
         replaced = {row["index"] for row in (ideas or rows) if row.get("replacement_attempted")}
         checked = list(existing_rows)
         for position, row in enumerate(rows):
+            scene_error = scene_errors[row["index"]]
             if row["index"] in replaced:
                 row["replacement_attempted"] = True
             try:
                 if "geometry" in row:
-                    row["geometry"] = validate_geometry(row["geometry"], character=ideas is not None and data["trigger_type"] == "Character")
+                    row["geometry"] = validate_geometry(row["geometry"], character=data["trigger_type"] == "Character")
+                    row = rows[position] = resolve_framing_conflicts(row)
                 elif ideas is not None:
                     raise ValueError("Scene Composer must include a structured geometry object.")
                 errors = geometry_errors(row)
             except ValueError as exc:
                 logger.warning("Scene %s geometry validation failure: %s", row["index"], exc)
                 errors = [getattr(exc, "correction", str(exc))]
+            if scene_error:
+                errors.append(scene_error)
             if data.get("planning_mode") == "Quality":
                 if error := idea_action_error(fixed[row["index"]], row["scene"]):
                     errors.append(error)
             if row["idea"] != fixed[row["index"]]:
                 errors.append("Echo the fixed idea unchanged; compose it instead of replacing it.")
-            if error := duplicate_scene_error(row, checked, data, coverage):
+            if error := duplicate_scene_error(row, checked, data, assignments):
                 errors.append(error)
             if errors:
                 if plan_update:
@@ -437,72 +451,55 @@ class ScenePlanner:
                             item["scene_status"] = "geometry_warning"
                         if geometry_errors(item, character=ideas is not None and data["trigger_type"] == "Character"):
                             item["scene_status"] = "geometry_warning"
+                        if scene_errors[item["index"]]:
+                            item["scene_status"] = "geometry_warning"
                     pending[position]["scene_status"] = "geometry_warning"
                     plan_update(pending)
-                rows[position] = self.recover_scene(session=session, data=data, coverage=coverage,
+                rows[position] = self.recover_scene(session=session, data=data, assignments=assignments,
                     row={**row, "idea": fixed[row["index"]]}, family=family, progress=progress, errors=errors,
                     existing_rows=[*checked, *rows[position + 1:]])
-            rows[position] = reconcile_scene_coverage(rows[position], coverage["plan"][row["index"] - 1])
             if rows[position].get("scene_status") != "failed":
                 checked.append(rows[position])
         return rows
 
-    def recover_scene(self, *, session, data, coverage, row, family="qwen", progress, errors=(), existing_rows=()):
+    def recover_scene(self, *, session, data, assignments, row, family="qwen", progress, errors=(), existing_rows=()):
         try:
-            return self.repair_scene(session=session, data=data, coverage=coverage, row=row,
+            return self.repair_scene(session=session, data=data, assignments=assignments, row=row,
                 family=family, progress=progress, errors=errors, existing_rows=existing_rows,
                 attempts=SCENE_REPAIR_ATTEMPTS)
         except BackendGenerationError as exc:
-            return self.replace_failed_scene(session=session, data=data, coverage=coverage, row=row,
-                family=family, progress=progress, reason=failure_reason(exc), existing_rows=existing_rows)
-
-    def replace_failed_scene(self, *, session, data, coverage, row, family="qwen", progress, reason, existing_rows=()):
-        """One replacement per item; preserve guided anchors and never restart the batch."""
-        if row.get("replacement_attempted"):
+            reason = failure_reason(exc)
+            progress(f"Scene {row['index']} needs a local retry: {reason}")
             return failed_scene(row, reason)
-        progress(f"Scene {row['index']} could not be fixed; trying one new idea within the original constraints.")
-        replacement = {**row, "replacement_attempted": True}
-        stage = "idea"
-        try:
-            others = {item["index"]: item for item in [*data.get("scene_plan", []), *existing_rows]
-                      if item["index"] != row["index"] and item.get("idea", "").strip()}
-            idea = self.plan_ideas(session=session, data=data, coverage=coverage, family=family, progress=progress,
-                indexes=[row["index"]], existing=[*others.values(), row])[0]
-            replacement = {**idea, "scene": "", "geometry": {}, "replacement_attempted": True}
-            stage = "scene"
-            result = self.repair_scene(session=session, data=data, coverage=coverage, row=replacement,
-                family=family, progress=progress, existing_rows=existing_rows, attempts=1)
-            return {**result, "replacement_attempted": True}
-        except BackendGenerationError as exc:
-            message = f"Original attempt: {reason} Replacement {stage} failed: {failure_reason(exc)}"
-            progress(f"Skipping scene {row['index']}: {message}")
-            return failed_scene(replacement, message, stage=stage)
 
-    def repair_scene(self, *, session, data, coverage, row, family="qwen", progress, errors=(), existing_rows=(), attempts=SCENE_REPAIR_ATTEMPTS):
+    def repair_scene(self, *, session, data, assignments, row, family="qwen", progress, errors=(), existing_rows=(), attempts=SCENE_REPAIR_ATTEMPTS):
         def validate(raw):
             result = validate_scene_plan(raw, 1, indexes=[row["index"]], require_geometry=True)[0]
             result["geometry"] = validate_geometry(result["geometry"], character=data["trigger_type"] == "Character")
+            result = resolve_framing_conflicts(result)
             if result["idea"] != row["idea"]:
                 raise ValueError("Repair must preserve the fixed idea exactly.")
             if problems := geometry_errors(result):
                 raise ValueError(" ".join(problems))
-            if error := duplicate_scene_error(result, existing_rows, data, coverage):
+            if error := duplicate_scene_error(result, existing_rows, data, assignments):
                 raise ValueError(error)
             if data.get("planning_mode") == "Quality" and (error := idea_action_error(row["idea"], result["scene"])):
                 raise ValueError(error)
             return result
         result = self._call(session,
-            lambda correction: scene_composer_instruction(data, coverage, [row], family,
+            lambda correction: scene_composer_instruction(data, assignments, [row], family,
                 (correction + "\n" + " ".join(errors) if correction.startswith("SCENE OUTPUT FORMAT CORRECTION")
                  else " ".join(errors) + " " + correction)
                 + " Preserve the fixed idea, important action and required props.", previous=row),
             validate, progress, f"Scene Composer · repair scene {row['index']}", scene_output=True, attempts=attempts)
         if row.get("replacement_attempted"):
             result["replacement_attempted"] = True
-        return reconcile_scene_coverage(result, coverage["plan"][row["index"] - 1])
+        if row.get("coverage_conflicts"):
+            result["coverage_conflicts"] = row["coverage_conflicts"]
+        return result
 
 
-def duplicate_scene_error(row, existing, data, coverage):
+def duplicate_scene_error(row, existing, data, assignments):
     """Retain the old batch duplicate guard across chunk boundaries."""
     signature = " ".join(row["scene"].casefold().split())
     for other in existing:
@@ -510,24 +507,9 @@ def duplicate_scene_error(row, existing, data, coverage):
             continue
         if other["index"] == row["index"] or " ".join(other["scene"].casefold().split()) != signature:
             continue
-        source = coverage["plan"][row["index"] - 1]["input"]
-        previous = coverage["plan"][other["index"] - 1]["input"]
+        source = assignments[row["index"] - 1]["input"]
+        previous = assignments[other["index"] - 1]["input"]
         if data["source_mode"] == "guided" and source.strip() and " ".join(source.split()) == " ".join(previous.split()):
             continue
         return "This scene duplicates another assignment. Compose only this fixed idea as a distinct scene; do not change or brainstorm ideas."
     return ""
-
-
-def reconcile_scene_coverage(row, assignment):
-    """Record omitted framing rather than forcing it back into the writer."""
-    conflicts = set(row.get("coverage_conflicts", []))
-    requested = assignment.get("facets", {}).get("framing", "")
-    actual = row.get("geometry", {}).get("framing", "").casefold()
-    focus = " ".join(row.get("geometry", {}).get("visibility_focus", [])).casefold()
-    if requested in {"face close-up", "head-and-shoulders"} and (
-            actual in {"full_body", "full_body_with_environment", "three_quarter_body", "wide", "extreme_wide"}
-            or any(word in focus.split() for word in ("feet", "shoes"))):
-        conflicts.add("framing")
-    if conflicts:
-        row = {**row, "coverage_conflicts": sorted(conflicts)}
-    return row

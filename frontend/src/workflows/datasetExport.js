@@ -5,6 +5,5 @@ export function datasetJsonl(draft) {
     prompt: item.prompt, trigger: draft.trigger, target: draft.target,
     source: item.input || null,
     ...(item.geometry ? { geometry: item.geometry } : {}),
-    ...(item.coverage_conflicts?.length ? { coverage_conflicts: item.coverage_conflicts } : {}),
   })).join("\n");
 }

@@ -54,7 +54,18 @@ export function hydrateBuilder(inputs, saved = {}, library) {
     ),
     ...builderSnapshot(saved),
   });
+  const targetAliases = {
+    "Z-Image": "Z-Image Base", "Qwen Image": "Qwen Image (original)",
+    "Qwen2.1": "Qwen Image 2.1", "MiniMax": "MiniMax H3",
+  };
+  result.target_model = targetAliases[result.target_model] ?? result.target_model;
   if (library) {
+    const directorAliases = {
+      "Maximum Detail Director": "maximum_detail_director",
+      "Krea 2 High Detail": "krea_2_high_detail",
+      "Krea 2 Identity Edit": "krea_2_identity_edit",
+    };
+    result.director_preset = directorAliases[result.director_preset] ?? result.director_preset;
     const find = (value) =>
       library.presets.find((item) => item.id === value || item.label === value);
     result.director_preset =

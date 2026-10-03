@@ -3,8 +3,8 @@
 # Creativity and prompt length
 CREATIVITY_NAMES = ("Strict", "Balanced", "Creative", "Dice")
 CREATIVITY_ADAPTERS = {
-    "Strict": "Creativity — Strict: preserve the user's concept closely. Add only information required for clarity and coherence; do not invent important content or change the camera.",
-    "Balanced": "Creativity — Balanced: fill reasonable missing visual information while preserving the concept and avoiding conspicuous invention.",
-    "Creative": "Creativity — Creative: add tasteful, coherent visual direction where unspecified, but respect every active preservation constraint.",
-    "Dice": "Creativity — Dice (v0.1 soft level): invent one coherent visual concept from minimal input. Make decisive but internally consistent choices while respecting explicit preservation constraints. This adapter is structured for future Soft, Wild, and Total Chaos levels.",
+    "Strict": "Creativity — Strict: preserve the user's concept closely. Do not invent a new primary subject, action, location or camera concept. Add only information required for coherence. Semantic invention never changes required target syntax or output format.",
+    "Balanced": "Creativity — Balanced: fill secondary visual specifics such as environment details, lighting, material behavior and minor staging. Preserve the concept; do not introduce a new central event. Semantic invention never changes required target syntax or output format.",
+    "Creative": "Creativity — Creative: make meaningful unspecified creative decisions about supporting props, styling, atmosphere, environment and composition while preserving the central subject, action and concept and all preservation constraints. Semantic invention never changes required target syntax or output format.",
+    "Dice": "Creativity — Dice: decide major unspecified visual choices from minimal input while explicit subjects, relationships, actions, text and preservation constraints remain fixed. Semantic invention never changes required target syntax or output format.",
 }

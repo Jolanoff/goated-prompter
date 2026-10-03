@@ -144,9 +144,6 @@ for (const theme of ["dark", "light"]) {
     await page.getByText("Training trigger & controls", { exact: true }).click();
     await page.getByLabel(/Provide my own scene ideas/).check();
     await page.getByLabel("Guided dataset inputs").fill("standing on a platform\nreading a map");
-    await page.getByText("Advanced coverage planning (optional)", { exact: true }).click();
-    await page.getByLabel("Use coverage plan").check();
-    await page.getByRole("button", { name: "Create plan", exact: true }).click();
     await page.getByRole("button", { name: "Generate 2 prompts", exact: true }).click();
     await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/ohwx_traveler/);
     const quality = page.getByRole("region", { name: "Dataset quality report" });

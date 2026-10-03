@@ -3,6 +3,8 @@
 import json
 import re
 
+from .prompting.target_models import canonical_target
+
 
 VISIBLE_CONTENT_CONTRACT = """VISIBLE CONTENT ONLY
 Describe only the visible intended image state.
@@ -128,6 +130,8 @@ def sanitize_positive_prompt(prompt, target, protected_terms=()):
     Call after target normalization. JSON required fields are left intact if
     cleanup would empty them so the validator can request content repair.
     """
+    if canonical_target(target) == "Anima":
+        protected_terms = (*protected_terms, *_anima_quality_tags(prompt))
     if target != "Ideogram4":
         return _sanitize_positive_text(prompt, protected_terms)
     value = json.loads(prompt)
@@ -170,6 +174,8 @@ def visible_content_error(text, protected_terms=()):
 
 def positive_prompt_error(prompt, target, protected_terms=()):
     """Check all Ideogram prose fields, not its keys, palettes or literal text."""
+    if canonical_target(target) == "Anima":
+        protected_terms = (*protected_terms, *_anima_quality_tags(prompt))
     if target != "Ideogram4":
         return visible_content_error(prompt, protected_terms)
     value = json.loads(prompt)
@@ -178,3 +184,9 @@ def positive_prompt_error(prompt, target, protected_terms=()):
     descriptions.extend(element["desc"] for element in value["compositional_deconstruction"]["elements"])
     return next((error for text in descriptions
                  if (error := visible_content_error(text, protected_terms))), None)
+
+
+def _anima_quality_tags(text):
+    """Allow supported standalone positive tags, not arbitrary quality prose."""
+    return tuple(match[1] for match in re.finditer(
+        r"(?:^|[,\n])\s*(masterpiece|best quality|score_\d+(?:_up)?)\s*(?=[,\n]|$)", text, re.I))

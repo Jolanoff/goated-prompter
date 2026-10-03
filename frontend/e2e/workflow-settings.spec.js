@@ -65,7 +65,7 @@ test("Save prompt uses the selected Refine output and target", async ({ page, re
   await page.getByRole("button", { name: "Save", exact: true }).click();
   const records = (await (await request.get("/api/prompts")).json()).prompts;
   expect(records.find((item) => item.title === "Workflow saved refine"))
-    .toMatchObject({ prompt: "The exact Refine result to save.", target: "Qwen Image" });
+    .toMatchObject({ prompt: "The exact Refine result to save.", target: "Qwen Image (original)" });
 });
 
 test("failed Refine autosave retains input and retries", async ({ page }) => {

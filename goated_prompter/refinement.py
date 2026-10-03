@@ -8,11 +8,13 @@ from .core import PromptInstruction, _effective_model_family
 from .director_profiles import resolve_director_config
 from .prompting.refine import build_refine_messages, refine_format_repair
 from .prompting.output import output_contract
-from .prompting.target_models import get_model_adapter
+from .prompting.target_models import get_model_adapter, resolve_target_length
+from .prompting.creativity import CREATIVITY_ADAPTERS
 from .workflow_output import (
     WorkflowFormatError,
     normalize_workflow_output,
     sanitize_prompt_text,
+    requested_visible_text,
 )
 
 
@@ -26,6 +28,8 @@ def refine_instruction(request, base, changes, detail_locks, model_family="qwen"
         contract,
         instructions,
     )
+    system += "\n\n" + resolve_target_length(request.target_model, request.prompt_length)
+    system += "\n\n" + CREATIVITY_ADAPTERS.get(request.creativity, CREATIVITY_ADAPTERS["Balanced"])
     return PromptInstruction(
         system_message=system,
         user_message=user,
@@ -40,7 +44,7 @@ class RefineService:
     def __init__(self, config, checkpoint):
         self.config, self.checkpoint = config, checkpoint
 
-    def _generate_prompt(self, session, instruction, target, progress):
+    def _generate_prompt(self, session, instruction, target, progress, *, expected_visible_text=()):
         """Validate before persistence; allow one format-repair inference."""
         for attempt in range(2):
             self.checkpoint()
@@ -48,7 +52,8 @@ class RefineService:
             raw = session.generate(instruction)
             self.checkpoint()
             try:
-                prompt = normalize_workflow_output(raw, target)
+                prompt = normalize_workflow_output(raw, target,
+                    expected_visible_text=expected_visible_text)
                 if target != "Ideogram4":
                     prompt = sanitize_prompt_text(prompt)
                     if not prompt:
@@ -85,5 +90,6 @@ class RefineService:
         with backend.generation_session() as session:
             self.checkpoint()
             progress("Writing refinement")
-            prompt = self._generate_prompt(session, instruction, request.target_model, progress)
+            prompt = self._generate_prompt(session, instruction, request.target_model, progress,
+                expected_visible_text=requested_visible_text(workflow["changes"]))
         return {"ok": True, "kind": "refine", "prompt": prompt, "backend": backend.name}

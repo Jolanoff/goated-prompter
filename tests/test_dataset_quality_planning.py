@@ -8,8 +8,8 @@ from unittest.mock import Mock, patch
 from goated_prompter.backends.base import BackendGenerationError
 from goated_prompter.core import GoatedPrompterRequest, assemble_instruction
 from goated_prompter.dataset import DatasetService, default_dataset_draft, validate_dataset_draft
-from goated_prompter.dataset_coverage import (analyze_dataset_quality, analyze_idea_diversity,
-                                             effective_coverage_plan, selected_axes)
+from goated_prompter.dataset_assignments import dataset_assignments
+from goated_prompter.dataset_quality import analyze_dataset_quality, analyze_idea_diversity
 from goated_prompter.dataset_geometry import geometry_errors, validate_geometry
 from goated_prompter.prompting.dataset import dataset_instruction
 from goated_prompter.prompting.details import MAXIMUM_DETAIL_GUIDANCE, DATASET_DETAIL_DISCIPLINE
@@ -37,7 +37,7 @@ def scene(index=1, idea="trying to juggle and failing", **changes):
 def saved(data, rows):
     data = {**data, "scene_plan": [{**row, "input": "", "idea_status": "valid", "scene_status": "valid",
                                   "prompt_status": "valid"} for row in rows]}
-    data["scene_plan_signature"] = scene_plan_signature(data, effective_coverage_plan(data))
+    data["scene_plan_signature"] = scene_plan_signature(data, dataset_assignments(data))
     data["results"] = [{**{key: value for key, value in row.items() if key not in {"idea_status", "scene_status", "prompt_status"}},
                         "input": "", "prompt": "person_token. " + row["scene"]} for row in rows]
     return data
@@ -88,12 +88,12 @@ class QualityPlanningTests(unittest.TestCase):
 
     def test_planner_system_prompts_have_abstract_diversity_not_concept_answers(self):
         data = draft()
-        coverage = effective_coverage_plan(data)
-        for instruction in (scene_planner_instruction(data, coverage), idea_planner_instruction(data, coverage),
-                            scene_composer_instruction(data, coverage, [scene()])):
+        assignments = dataset_assignments(data)
+        for instruction in (scene_planner_instruction(data, assignments), idea_planner_instruction(data, assignments),
+                            scene_composer_instruction(data, assignments, [scene()])):
             for answer in ("clown", "juggling", "oversized shoes", "bedsheet", "popcorn", "funny stuff"):
                 self.assertNotIn(answer, instruction.system_message.casefold())
-        first = idea_planner_instruction(data, coverage)
+        first = idea_planner_instruction(data, assignments)
         context = json.loads(first.user_message)
         for key in ("camera", "lighting", "facets", "target", "visual_style", "director_preset"):
             self.assertNotIn(key, context)
@@ -116,7 +116,7 @@ class QualityPlanningTests(unittest.TestCase):
             with self.subTest(mode=mode), self.assertRaises(ValueError):
                 validate_dataset_draft({**data, "planning_mode": mode})
         for patch_data in ({"idea_status": "unknown"}, {"scene_status": True},
-                           {"coverage_conflicts": ["invalid_axis"]}):
+                           {"failure_stage": "invalid"}):
             with self.subTest(patch_data=patch_data), self.assertRaises(ValueError):
                 validate_dataset_draft({**data, "scene_plan": [{**data["scene_plan"][0], **patch_data}]})
 
@@ -128,7 +128,7 @@ class QualityPlanningTests(unittest.TestCase):
         session = Mock()
         session.generate.side_effect = [json.dumps(ideas), json.dumps([wrong, good]), json.dumps([scene()])]
         rows = ScenePlanner(lambda: None).plan_batch(session=session, data=data,
-            coverage=effective_coverage_plan(data), progress=lambda _: None)
+            assignments=dataset_assignments(data), progress=lambda _: None)
         self.assertEqual(rows[0]["idea"], ideas[0]["idea"])
         self.assertEqual(rows[1], good)
         repair = session.generate.call_args_list[-1].args[0]
@@ -155,7 +155,7 @@ class QualityPlanningTests(unittest.TestCase):
         session.generate.return_value = json.dumps([scene(idea="wearing clown clothes")])
         with self.assertRaisesRegex(BackendGenerationError, "fixed idea"):
             ScenePlanner(lambda: None).repair_scene(session=session, data=draft(amount=1),
-                coverage=effective_coverage_plan(draft(amount=1)), row=scene(), progress=lambda _: None)
+                assignments=dataset_assignments(draft(amount=1)), row=scene(), progress=lambda _: None)
         self.assertEqual(session.generate.call_count, 3)
 
     def test_malformed_geometry_is_repaired_only_at_its_index(self):
@@ -164,7 +164,7 @@ class QualityPlanningTests(unittest.TestCase):
         good = scene(2, "wearing giant shoes", scene="She poses in giant shoes.")
         session = Mock()
         session.generate.side_effect = [json.dumps([bad, good]), json.dumps([scene()])]
-        result = ScenePlanner(lambda: None).compose(session=session, data=data, coverage=effective_coverage_plan(data),
+        result = ScenePlanner(lambda: None).compose(session=session, data=data, assignments=dataset_assignments(data),
             ideas=[{"index": row["index"], "idea": row["idea"]} for row in (bad, good)], progress=lambda _: None)
         self.assertEqual(result, [scene(), good])
         repair = json.loads(session.generate.call_args_list[1].args[0].user_message)
@@ -177,23 +177,24 @@ class QualityPlanningTests(unittest.TestCase):
         session, backend, partials = Mock(), Mock(), []
         session.generate.side_effect = [json.dumps([{"index": 1, "idea": bad["idea"]}]),
                                        json.dumps([bad]), json.dumps([bad]), json.dumps([bad]),
-                                       json.dumps([bad]), RuntimeError("planning interrupted")]
+                                       json.dumps([bad])]
         @contextmanager
         def generation_session():
             yield session
         backend.generation_session = generation_session
-        with patch("goated_prompter.dataset.create_backend", return_value=backend), self.assertRaisesRegex(RuntimeError, "planning interrupted"):
-            DatasetService({"backend": "mock"}, lambda: None).run(GoatedPrompterRequest(idea=data["subject"]),
+        with patch("goated_prompter.dataset.create_backend", return_value=backend):
+            result = DatasetService({"backend": "mock"}, lambda: None).run(GoatedPrompterRequest(idea=data["subject"]),
                 data, lambda _: None, partials.append)
         self.assertEqual(partials[0]["scene_plan"][0]["idea"], bad["idea"])
         self.assertEqual(partials[0]["scene_plan"][0]["scene_status"], "not_generated")
-        self.assertEqual(partials[-1]["scene_plan"][0]["scene_status"], "geometry_warning")
-        self.assertEqual(partials[-1]["scene_plan"][0]["prompt_status"], "not_generated")
+        self.assertEqual(partials[-1]["scene_plan"][0]["scene_status"], "failed")
+        self.assertEqual(partials[-1]["scene_plan"][0]["prompt_status"], "failed")
+        self.assertEqual(result["failed"], 1)
         self.assertEqual(partials[-1]["prompts"], [])
         restored = {**data, "scene_plan": partials[-1]["scene_plan"],
                     "scene_plan_signature": partials[-1]["scene_plan_signature"]}
         self.assertEqual(validate_dataset_draft(restored), restored)
-        self.assertEqual(session.generate.call_count, 6)
+        self.assertEqual(session.generate.call_count, 5)
 
     def test_regenerate_idea_does_not_accept_same_idea_as_new(self):
         data = saved(draft(amount=1), [scene()])
@@ -216,7 +217,7 @@ class QualityPlanningTests(unittest.TestCase):
         session = Mock()
         session.generate.side_effect = [json.dumps(ideas), json.dumps([replacement]), json.dumps(rows)]
         planned = ScenePlanner(lambda: None).plan_batch(session=session, data=data,
-            coverage=effective_coverage_plan(data), progress=lambda _: None)
+            assignments=dataset_assignments(data), progress=lambda _: None)
         context = json.loads(session.generate.call_args_list[1].args[0].user_message)
         self.assertEqual(context["amount"], 1)
         self.assertEqual([row["index"] for row in context["assignments"]], [2])
@@ -296,10 +297,10 @@ class QualityPlanningTests(unittest.TestCase):
         data = saved(draft(amount=1), [scene()])
         for patch_data in ({"target": "Qwen Image"}, {"length": "Maximum Detail"}, {"director_preset": "photography_director"}):
             changed = {**data, **patch_data}
-            self.assertEqual(reusable_scene_plan(changed, effective_coverage_plan(changed)), data["scene_plan"])
+            self.assertEqual(reusable_scene_plan(changed, dataset_assignments(changed)), data["scene_plan"])
         for patch_data in ({"subject": "different"}, {"constraints": "only indoors"}, {"inputs": "new input"}, {"planning_mode": "Fast"}):
             changed = {**data, **patch_data}
-            self.assertIsNone(reusable_scene_plan(changed, effective_coverage_plan(changed)))
+            self.assertIsNone(reusable_scene_plan(changed, dataset_assignments(changed)))
         self.assertEqual(validate_dataset_draft(json.loads(json.dumps(data))), data)
 
     def test_automatic_planning_failure_never_calls_writer(self):
@@ -354,7 +355,7 @@ class GeometryAndQualityTests(unittest.TestCase):
         session.generate.side_effect = [json.dumps([row]), json.dumps([scene()])]
         data = draft(amount=1, planning_mode="Fast")
         planned = ScenePlanner(lambda: None).plan_batch(session=session, data=data,
-            coverage=effective_coverage_plan(data), progress=lambda _: None)
+            assignments=dataset_assignments(data), progress=lambda _: None)
         self.assertEqual(planned[0]["idea"], row["idea"])
         self.assertEqual(session.generate.call_count, 2)
 
@@ -366,22 +367,22 @@ class GeometryAndQualityTests(unittest.TestCase):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 validate_geometry(invalid)
 
-    def test_coverage_allows_popcorn_closeup_but_omits_shoe_closeup(self):
-        for idea, framing, focus, expected in (("trying to catch popcorn in mouth", "face close-up", ["face", "popcorn"], []),
-                                              ("walking in giant shoes", "full body", ["face", "shoes"], ["framing"])):
-            data = draft(amount=1, coverage_enabled=True)
-            coverage = effective_coverage_plan(data)
-            coverage["plan"][0]["facets"]["framing"] = "face close-up"
+    def test_composer_chooses_action_compatible_framing_without_coverage(self):
+        for idea, framing, focus in (("trying to catch popcorn in mouth", "face close-up", ["face", "popcorn"]),
+                                     ("walking in giant shoes", "full body", ["face", "shoes"])):
+            data = draft(amount=1)
+            assignments = dataset_assignments(data)
             row = scene(idea=idea, scene="A woman " + idea + ".",
                          geometry={**scene(idea=idea)["geometry"], "framing": framing.replace(" ", "_").replace("-", "_"), "visibility_focus": focus})
             session = Mock()
             session.generate.return_value = json.dumps([row])
-            planned = ScenePlanner(lambda: None).compose(session=session, data=data, coverage=coverage,
+            planned = ScenePlanner(lambda: None).compose(session=session, data=data, assignments=assignments,
                 ideas=[{"index": 1, "idea": idea}], progress=lambda _: None)[0]
-            self.assertEqual(planned.get("coverage_conflicts", []), expected)
+            self.assertNotIn("coverage_conflicts", planned)
             writer = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1,
-                                         plan_item={**coverage["plan"][0], **planned})
-            self.assertEqual("Framing: face close-up" in writer.user_message, not expected)
+                                         plan_item={**assignments[0], **planned})
+            self.assertNotIn("COVERAGE ASSIGNMENT", writer.user_message)
+            self.assertEqual(planned["geometry"]["framing"], framing.replace(" ", "_").replace("-", "_"))
             self.assertEqual(session.generate.call_count, 1)
 
     def test_invalid_shoe_crop_repairs_locally_without_changing_idea(self):
@@ -390,14 +391,10 @@ class GeometryAndQualityTests(unittest.TestCase):
         good = {**bad, "geometry": {**scene(idea=bad["idea"])["geometry"], "framing": "full_body", "visibility_focus": ["shoes"]}}
         session = Mock()
         session.generate.side_effect = [json.dumps([bad]), json.dumps([good])]
-        result = ScenePlanner(lambda: None).compose(session=session, data=data, coverage=effective_coverage_plan(data),
+        result = ScenePlanner(lambda: None).compose(session=session, data=data, assignments=dataset_assignments(data),
             ideas=[{"index": 1, "idea": bad["idea"]}], progress=lambda _: None)
         self.assertEqual(result[0], good)
         self.assertEqual(session.generate.call_count, 2)
-
-    def test_character_coverage_defaults_and_legacy_optional_axes(self):
-        self.assertEqual(set(selected_axes(draft())), {"framing", "viewpoint", "lighting", "setting"})
-        self.assertEqual(selected_axes(draft(coverage_axes=["pose_action", "expression"])), ("pose_action", "expression"))
 
     def test_semantic_paraphrases_form_one_duplicate_cluster(self):
         rows = [{"index": i, "idea": idea} for i, idea in enumerate(("trying to juggle oranges and failing",
