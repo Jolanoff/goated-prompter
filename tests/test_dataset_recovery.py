@@ -13,7 +13,7 @@ from tests.test_scene_composer import rows
 
 
 def rear_conflict(row):
-    return {**row, "geometry": {**row["geometry"], "camera_view": "direct_rear",
+    return {**row, "geometry": {**row["geometry"], "camera_azimuth": "direct_rear",
                                "body_orientation": "direct_rear", "face_visibility": "full"}}
 
 
@@ -167,10 +167,12 @@ class DatasetRecoveryTests(unittest.TestCase):
             with self.subTest(data=data), self.assertRaisesRegex(ValueError, "No valid scenes"):
                 run(data, [], valid_only=True)
 
-    def test_valid_only_checks_manual_scene_geometry_without_discarding_edited_idea(self):
+    def test_incomplete_manual_scene_geometry_repairs_without_discarding_edited_idea(self):
         data = saved(draft(amount=1), rows(1))
-        data["scene_plan"][0]["geometry"] = {}
-        result, session, _ = run(data, [json.dumps(rows(1)), "person_token examines exhibit 1."], valid_only=True)
+        # Omitted saved/manual metadata is loadable; supplied but incomplete
+        # staging still needs a local repair under the selected profile.
+        data["scene_plan"][0]["geometry"] = {"framing": "full_body"}
+        result, session, _ = run(data, [json.dumps(rows(1)), "person_token examines exhibit 1."])
         self.assertEqual(result["completed"], 1)
         self.assertEqual(result["scene_plan"][0]["idea"], data["scene_plan"][0]["idea"])
         self.assertEqual([call.args[0].diagnostic_stage for call in session.generate.call_args_list],

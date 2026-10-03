@@ -44,7 +44,7 @@ PLANNED_SCENE_CONTRACT = (
     "and explicit constraints outrank planner additions; the planned scene outranks "
     "Director embellishment, default framing and detail preferences. "
     "Director supplies rendering technique and emphasis only, never another competing scene idea. "
-    "GEOMETRY FIDELITY: Preserve camera direction, body/torso/hip orientation, head direction, gaze_direction and expression separately, "
+    "GEOMETRY FIDELITY: Preserve independent camera azimuth, elevation and distance. Preserve applicable subject/body/torso/hip orientation, head direction, gaze_direction and expression separately, "
     "crop and object/hand relationships. Do not reinterpret the pose, add a second body orientation or "
     "contradictory camera angle, independently force eye contact, or expose body regions hidden by the "
     "planned crop/viewpoint. Local descriptive enrichment must agree with the planned camera/body/action "
@@ -105,7 +105,8 @@ def dataset_instruction(request, data, index, previous=(), model_family="qwen", 
     if (plan_item or {}).get("geometry"):
         content.append("PLANNED GEOMETRY\n" + json.dumps(plan_item["geometry"], ensure_ascii=False)
                        + "\nInternal canonical snake_case staging facts: render as readable visual descriptions, not field names or enum tokens. "
-                       "gaze_direction describes where eyes point; expression is facial emotion. Orientations are relative to camera. "
+                       "Camera azimuth/elevation/distance are separate. Use only the selected subject type's applicable staging. "
+                       "gaze_direction describes where eyes point; expression is facial emotion. Orientations are relative to camera, not pose. "
                        "Preserve custom pose_detail and expression_detail when present.")
     if seed:
         content.append(f"GUIDED INPUT\n<input>\n{seed}\n</input>\nPreserve these original anchors in the supplied scene; do not select another scene. This input's outfit, setting, pose and action are local to this item. Shared identity does not imply a shared outfit unless explicitly locked in the concept or consistency rules.")

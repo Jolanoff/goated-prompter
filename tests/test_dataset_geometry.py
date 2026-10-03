@@ -2,14 +2,20 @@
 
 import unittest
 
-from goated_prompter.dataset_geometry import (
-    CHARACTER_REQUIRED_FIELDS, CUSTOM_DETAIL_FIELDS, GEOMETRY_ENUMS, FRAMING_ALIASES,
-    GeometryValidationError, geometry_errors, migrate_saved_geometry, normalize_geometry_value, validate_geometry,
+from goated_prompter.dataset_staging import (
+    CHARACTER_REQUIRED_FIELDS, CUSTOM_DETAIL_FIELDS, GEOMETRY_ENUMS,
+    GeometryValidationError, geometry_errors as staging_geometry_errors, migrate_saved_geometry, validate_geometry,
 )
+from goated_prompter.dataset_staging.normalize import FRAMING_ALIASES, normalize_geometry_value
+
+
+def geometry_errors(row, *, dataset_type="Character"):
+    """Isolate physical rules on partial fixtures; required-field tests are separate."""
+    return staging_geometry_errors(row, dataset_type=dataset_type, require_fields=False)
 
 
 def character_geometry(**changes):
-    return {"framing": "full_body", "camera_view": "front_three_quarter",
+    return {"framing": "full_body", "camera_azimuth": "front_three_quarter_left",
             "body_orientation": "front_three_quarter_left", "head_direction": "toward_action",
             "gaze_direction": "toward_action", "expression": "focused", "pose_type": "standing_dynamic",
             "action_focus": "juggling oranges", "face_visibility": "three_quarter",
@@ -31,7 +37,7 @@ class GeometrySchemaTests(unittest.TestCase):
             for value in ("not_an_enum", "arbitrary descriptive prose", [], {}, 1, True, None):
                 with self.subTest(field=field, value=value), self.assertRaisesRegex(GeometryValidationError, f"Invalid {field}"):
                     validate_geometry({field: value})
-        for field in ("framing", "camera_view", "body_orientation", "gaze_direction"):
+        for field in ("framing", "camera_azimuth", "body_orientation", "gaze_direction"):
             with self.subTest(field=field), self.assertRaises(ValueError):
                 validate_geometry({field: "custom"})
 
@@ -42,15 +48,15 @@ class GeometrySchemaTests(unittest.TestCase):
                 with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                     validate_geometry(invalid)
         geometry = character_geometry(pose_type="custom", pose_detail="one-foot balance while leaning sideways")
-        self.assertEqual(validate_geometry(geometry, character=True), geometry)
+        self.assertEqual(validate_geometry(geometry, dataset_type="Character"), geometry)
         self.assertFalse(geometry_errors({"geometry": geometry, "scene": "Balancing with a readable action."}))
 
     def test_enum_formatting_is_normalized_before_validation(self):
         for value, expected in ((" front three-quarter ", "front_three_quarter"), ("full body", "full_body"),
                                 ("eye-level", "eye_level"), ("REAR three  quarter__left", "rear_three_quarter_left")):
             self.assertEqual(normalize_geometry_value(value), expected)
-        raw = {"framing": "Full body", "camera_view": "front three-quarter", "camera_height": "eye-level"}
-        canonical = {"framing": "full_body", "camera_view": "front_three_quarter", "camera_height": "eye_level"}
+        raw = {"framing": "Full body", "camera_azimuth": "front three-quarter", "camera_elevation": "eye-level"}
+        canonical = {"framing": "full_body", "camera_azimuth": "front_three_quarter", "camera_elevation": "eye_level"}
         self.assertEqual(validate_geometry(raw), canonical)
         self.assertEqual(validate_geometry({"body_orientation": "front three-quarter"}), {"body_orientation": "front_three_quarter"})
         self.assertEqual(migrate_saved_geometry(raw), (canonical, False))
@@ -66,19 +72,19 @@ class GeometrySchemaTests(unittest.TestCase):
                 self.assertTrue(migrated)
 
     def test_required_character_fields_and_optional_nonhuman_geometry(self):
-        self.assertEqual(CHARACTER_REQUIRED_FIELDS, {"framing", "camera_view", "body_orientation",
+        self.assertEqual(CHARACTER_REQUIRED_FIELDS, {"framing", "camera_azimuth", "body_orientation",
                                                     "head_direction", "gaze_direction", "face_visibility"})
         base = character_geometry()
         for field in CHARACTER_REQUIRED_FIELDS:
             with self.subTest(field=field), self.assertRaisesRegex(ValueError, "missing"):
-                validate_geometry({key: value for key, value in base.items() if key != field}, character=True)
+                validate_geometry({key: value for key, value in base.items() if key != field}, dataset_type="Character")
         self.assertEqual(validate_geometry({"framing": "wide", "composition": "environmental"}),
                          {"framing": "wide", "composition": "environmental"})
         self.assertEqual(validate_geometry({}), {})  # Loadable pending/manual/legacy state.
         minimal = {key: value for key, value in base.items() if key in CHARACTER_REQUIRED_FIELDS}
-        self.assertEqual(validate_geometry(minimal, character=True), minimal)
+        self.assertEqual(validate_geometry(minimal, dataset_type="Character"), minimal)
         self.assertFalse(geometry_errors({"geometry": minimal, "idea": "juggling oranges",
-                                         "scene": "She juggles oranges with her hands visible."}, character=True))
+                                          "scene": "She juggles oranges with her hands visible."}, dataset_type="Character"))
 
     def test_counts_are_integers_not_enums_or_booleans(self):
         self.assertEqual(validate_geometry({"primary_subject_count": 1, "secondary_subject_count": 0}),
@@ -117,13 +123,13 @@ class GeometrySchemaTests(unittest.TestCase):
         migrated, changed = migrate_saved_geometry({"framing": "full body", "camera_view": "profile",
             "gaze": "focused on pigeons", "pose": "invented pose description"})
         self.assertTrue(changed)
-        self.assertEqual(migrated, {"framing": "full_body", "gaze_direction": "toward_action", "expression": "focused"})
+        self.assertEqual(migrated, {"framing": "full_body", "gaze_direction": "toward_action", "expression": "focused",
+                                   "view_detail": "profile", "pose_type": "custom", "pose_detail": "invented pose description"})
         self.assertEqual(migrate_saved_geometry({"gaze": "shocked"}), ({"expression": "shocked"}, True))
         self.assertEqual(migrate_saved_geometry({"gaze": "aggressive"}), ({}, True))
         canonical = character_geometry()
         self.assertEqual(migrate_saved_geometry(canonical), (canonical, False))
-        with self.assertRaises(ValueError):
-            migrate_saved_geometry({"gaze_direction": "aggressive"})
+        self.assertEqual(migrate_saved_geometry({"gaze_direction": "aggressive"}), ({}, True))
 
 
 class GeometryCompatibilityTests(unittest.TestCase):
@@ -131,14 +137,14 @@ class GeometryCompatibilityTests(unittest.TestCase):
         return geometry_errors({"geometry": geometry, "scene": "One coherent scene."})
 
     def test_direct_rear_and_valid_over_shoulder(self):
-        self.assertTrue(self.errors(camera_view="direct_rear", face_visibility="full", gaze_direction="toward_camera"))
-        self.assertFalse(self.errors(camera_view="direct_rear", face_visibility="hidden", head_direction="away_from_camera"))
-        self.assertFalse(self.errors(camera_view="rear_three_quarter_right", body_orientation="rear_three_quarter_right",
+        self.assertTrue(self.errors(camera_azimuth="direct_rear", face_visibility="full", gaze_direction="toward_camera"))
+        self.assertFalse(self.errors(camera_azimuth="direct_rear", face_visibility="hidden", head_direction="away_from_camera"))
+        self.assertFalse(self.errors(camera_azimuth="rear_three_quarter_right", body_orientation="rear_three_quarter_right",
             head_direction="over_left_shoulder", gaze_direction="toward_camera", face_visibility="three_quarter"))
-        self.assertTrue(self.errors(camera_view="rear_three_quarter_right", face_visibility="full"))
-        self.assertTrue(self.errors(camera_view="direct_rear", face_visibility="partial", head_direction="toward_action"))
-        self.assertFalse(self.errors(camera_view="direct_rear", face_visibility="partial", head_direction="over_left_shoulder"))
-        self.assertFalse(geometry_errors({"geometry": {"camera_view": "direct_rear", "face_visibility": "full"},
+        self.assertTrue(self.errors(camera_azimuth="rear_three_quarter_right", face_visibility="full"))
+        self.assertTrue(self.errors(camera_azimuth="direct_rear", face_visibility="partial", head_direction="toward_action"))
+        self.assertFalse(self.errors(camera_azimuth="direct_rear", face_visibility="partial", head_direction="over_left_shoulder"))
+        self.assertFalse(geometry_errors({"geometry": {"camera_azimuth": "direct_rear", "face_visibility": "full"},
                                          "scene": "Her face is visible in a mirror reflection."}))
 
     def test_crop_feet_and_body_visibility(self):
@@ -155,10 +161,10 @@ class GeometryCompatibilityTests(unittest.TestCase):
     def test_camera_body_torso_relative_sides(self):
         for view, body in (("front", "direct_rear"), ("direct_rear", "front"), ("profile_left", "profile_right")):
             with self.subTest(view=view, body=body):
-                self.assertTrue(self.errors(camera_view=view, body_orientation=body))
+                self.assertTrue(self.errors(camera_azimuth=view, body_orientation=body))
         self.assertTrue(self.errors(torso_orientation="front", hip_orientation="direct_rear"))
-        self.assertFalse(self.errors(camera_view="front_three_quarter", body_orientation="front_three_quarter_left",
-                                     torso_orientation="twisted_left", hip_orientation="front"))
+        self.assertFalse(self.errors(camera_azimuth="front_three_quarter", body_orientation="front_three_quarter_left",
+                                      torso_orientation="front_three_quarter_left", hip_orientation="front", pose_type="twisting"))
         self.assertFalse(self.errors(head_direction="down", gaze_direction="up"))  # Subtle eye motion is allowed.
 
     def test_action_visibility_and_two_handed_actions(self):

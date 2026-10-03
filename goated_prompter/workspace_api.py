@@ -14,7 +14,7 @@ from .dataset_assignments import dataset_assignments
 from .dataset_quality import analyze_dataset_quality
 from .presets import get_director_preset
 from .scene_planner import reusable_scene_plan, scene_is_usable
-from .dataset_geometry import geometry_errors
+from .dataset_staging import geometry_errors
 
 
 def register_workspace_routes(app, state_key, job_factory, json_object):
@@ -55,8 +55,8 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
                 raise ValueError("Generate an idea for this item before repairing its scene.")
             if action == "regenerate_prompt" and (not rows[index - 1]["scene"].strip()
                      or rows[index - 1].get("scene_status") in {"not_generated", "geometry_warning", "failed"}
-                    or geometry_errors(rows[index - 1], character=data["planning_mode"] == "Quality"
-                        and data["trigger_type"] == "Character" and rows[index - 1].get("scene_status") != "guided_fallback")):
+                    or (rows[index - 1].get("scene_status") != "guided_fallback"
+                        and geometry_errors(rows[index - 1], dataset_type=data["trigger_type"]))):
                 raise ValueError("Repair this scene before regenerating its prompt.")
             scene_action = (action, index)
         settings = payload.get("settings", {})
