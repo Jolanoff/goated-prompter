@@ -53,6 +53,29 @@ class StagingProfileTests(unittest.TestCase):
             with self.subTest(missing=missing), self.assertRaisesRegex(ValueError, "missing"):
                 validate_geometry({key: value for key, value in geometry.items() if key != missing}, dataset_type="Multiple characters")
 
+    def test_multi_character_recommended_contact_state_is_allowed_and_advertised(self):
+        kind = "Multiple characters"
+        geometry = {**staging(kind), "contact_state": "touching"}
+        self.assertIn("contact_state", STAGING_PROFILES[kind].recommended)
+        self.assertIn("contact_state", STAGING_PROFILES[kind].allowed)
+        self.assertEqual(validate_geometry(geometry, dataset_type=kind), geometry)
+        self.assertIn("contact_state:", geometry_prompt_schema(kind))
+        self.assertFalse(geometry_errors({"geometry": geometry}, dataset_type=kind))
+
+    def test_added_body_state_fields_validate_and_migrate_for_selected_profiles(self):
+        body_state = {"leg_position": "knees_bent", "pelvis_tilt": "tilted_up", "back_arch": "slight"}
+        for kind in ("Character", "Custom"):
+            with self.subTest(kind=kind):
+                geometry = {**staging(kind), **body_state}
+                self.assertEqual(validate_geometry(geometry, dataset_type=kind), geometry)
+                self.assertEqual(migrate_saved_geometry(geometry, dataset_type=kind), (geometry, False))
+                for name in body_state:
+                    self.assertIn(name + ":", geometry_prompt_schema(kind))
+        for kind in set(DATASET_TYPES) - {"Character", "Custom"}:
+            for name, value in body_state.items():
+                with self.subTest(kind=kind, field=name), self.assertRaisesRegex(ValueError, "not applicable"):
+                    validate_geometry({**staging(kind), name: value}, dataset_type=kind)
+
     def test_animal_staging_never_requires_human_anatomy(self):
         geometry = {"framing": "full_subject", "camera_azimuth": "profile_left", "subject_orientation": "profile_left",
                     "movement": "active", "pose_detail": "a dog bounding through shallow water"}
