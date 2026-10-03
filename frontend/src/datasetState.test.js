@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { editDatasetPlan, invalidateDatasetPrompts, isDatasetSceneUsable } from "./workflows/datasetState.js";
+import { editDatasetPlan, invalidateDatasetPrompts, isDatasetSceneUsable, datasetRetryStage } from "./workflows/datasetState.js";
 
 const draft = { scene_plan: [1, 2].map((index) => ({ index, idea: `idea ${index}`, scene: `scene ${index}`,
   geometry: { camera_view: "front" }, idea_status: "valid", scene_status: "valid", prompt_status: "valid" })),
@@ -61,6 +61,13 @@ test("manual idea/scene edits clear stale failure metadata only for the edited i
     assert.equal(changed.scene_plan[0].replacement_attempted, undefined);
     assert.equal(changed.scene_plan[1], failed.scene_plan[1]);
   }
+});
+
+test("retrying a failed scene keeps its good idea and never requests idea replacement", () => {
+  assert.equal(datasetRetryStage({ ...draft.scene_plan[0], scene_status: "failed" }), "scene");
+  assert.equal(datasetRetryStage({ ...draft.scene_plan[0], scene: "", scene_status: "not_generated" }), "scene");
+  assert.equal(datasetRetryStage({ ...draft.scene_plan[0], prompt_status: "failed" }), "prompt");
+  assert.equal(datasetRetryStage({ idea: "", scene: "", scene_status: "failed" }), "idea");
 });
 
 test("writer settings keep scene failure reasons but clear obsolete prompt-only errors", () => {

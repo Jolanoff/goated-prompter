@@ -1,4 +1,4 @@
-"""Bounded item recovery, one replacement, durable errors and valid-only writing."""
+"""Bounded scene-only recovery, durable local errors and valid-only writing."""
 
 import json
 import unittest
@@ -6,7 +6,7 @@ from unittest.mock import Mock
 
 from goated_prompter.backends.base import BackendGenerationError
 from goated_prompter.dataset import validate_dataset_draft
-from goated_prompter.dataset_coverage import effective_coverage_plan
+from goated_prompter.dataset_assignments import dataset_assignments
 from goated_prompter.scene_planner import ScenePlanner, reusable_scene_plan
 from tests.test_dataset_quality_planning import draft, run, saved, scene
 from tests.test_scene_composer import rows
@@ -26,7 +26,7 @@ class DatasetRecoveryTests(unittest.TestCase):
         session, partials = Mock(), []
         session.generate.side_effect = outputs
         result = ScenePlanner(lambda: None).plan_batch(session=session, data=data,
-            coverage=effective_coverage_plan(data), progress=lambda _: None, plan_update=partials.append)
+            assignments=dataset_assignments(data), progress=lambda _: None, plan_update=partials.append)
         return result, session, partials
 
     def test_third_scene_repair_succeeds_without_replacing_idea(self):
@@ -43,79 +43,82 @@ class DatasetRecoveryTests(unittest.TestCase):
                 self.assertEqual(stages.count("dataset:scene_composer:repair"), 3)
                 self.assertEqual(stages.count("dataset:idea_planner"), int(mode == "Quality"))
 
-    def test_three_failed_scene_repairs_replace_only_bad_index_once(self):
+    def test_three_failed_scene_repairs_keep_idea_and_fail_only_bad_index(self):
         for mode in ("Fast", "Quality"):
             with self.subTest(mode=mode):
-                expected, data, new = rows(2), draft(planning_mode=mode), replacement()
+                expected, data = rows(2), draft(planning_mode=mode)
                 bad = rear_conflict(expected[0])
-                outputs = [json.dumps([bad, expected[1]]), *[json.dumps([bad])] * 3,
-                    json.dumps([{"index": 1, "idea": new["idea"]}]), json.dumps([new])]
+                outputs = [json.dumps([bad, expected[1]]), *[json.dumps([bad])] * 3]
                 if mode == "Quality":
                     outputs.insert(0, json.dumps([{key: row[key] for key in ("index", "idea")} for row in expected]))
                 result, session, _ = self.plan(data, outputs)
-                self.assertEqual(result[0], {**new, "replacement_attempted": True})
+                self.assertEqual(result[0]["idea"], expected[0]["idea"])
+                self.assertEqual(result[0]["scene_status"], "failed")
+                self.assertEqual(result[0]["failure_stage"], "scene")
+                self.assertNotIn("replacement_attempted", result[0])
                 self.assertEqual(result[1], expected[1])
-                idea_call = session.generate.call_args_list[-2].args[0]
-                context = json.loads(idea_call.user_message)
-                self.assertEqual([row["index"] for row in context["assignments"]], [1])
-                self.assertIn({"index": 1, "idea": expected[0]["idea"]}, context["existing_ideas"])
+                stages = [call.args[0].diagnostic_stage for call in session.generate.call_args_list]
+                self.assertEqual(stages.count("dataset:idea_planner"), int(mode == "Quality"))
+                self.assertEqual(session.generate.call_count, len(outputs))
 
-    def test_failed_replacement_skips_item_and_continues_later_composer_chunk(self):
-        expected, new, data = rows(5), replacement(), draft(amount=5, source_mode="guided", inputs="\n".join(row["idea"] for row in rows(5)))
-        bad, bad_new = rear_conflict(expected[0]), rear_conflict(new)
+    def test_failed_repair_skips_item_and_continues_later_composer_chunk(self):
+        expected, data = rows(5), draft(amount=5, source_mode="guided", inputs="\n".join(row["idea"] for row in rows(5)))
+        bad = rear_conflict(expected[0])
         result, session, partials = self.plan(data, [
             json.dumps([{key: row[key] for key in ("index", "idea")} for row in expected]),
-            json.dumps([bad, *expected[1:4]]), *[json.dumps([bad])] * 3,
-            json.dumps([{"index": 1, "idea": new["idea"]}]), json.dumps([bad_new]), json.dumps(expected[4:])])
+            json.dumps([bad, *expected[1:4]]), *[json.dumps([bad])] * 3, json.dumps(expected[4:])])
         self.assertEqual(result[0]["scene_status"], "failed")
         self.assertEqual(result[0]["prompt_status"], "failed")
-        self.assertEqual(result[0]["idea"], new["idea"])
+        self.assertEqual(result[0]["idea"], expected[0]["idea"])
         self.assertIn("Direct rear", result[0]["failure_reason"])
-        self.assertIn("Replacement scene failed", result[0]["failure_reason"])
+        self.assertNotIn("Replacement", result[0]["failure_reason"])
         self.assertEqual(result[1:], expected[1:])
         self.assertEqual(len(partials[-1]), 5)
         last_context = json.loads(session.generate.call_args.args[0].user_message)
         self.assertEqual(last_context["indexes"], [5])
 
-    def test_failed_replacement_idea_is_visible_and_does_not_call_writer(self):
+    def test_failed_scene_is_visible_and_does_not_call_its_writer(self):
         good = rows(2)
         bad = rear_conflict(good[0])
         result, session, _ = run(draft(planning_mode="Fast"), [json.dumps([bad, good[1]]),
-            *[json.dumps([bad])] * 3, "[]", "[]", "person_token examines exhibit 2."])
+            *[json.dumps([bad])] * 3, "person_token examines exhibit 2."])
         self.assertEqual(result["completed"], 1)
         self.assertEqual(result["failed"], 1)
         self.assertEqual(result["prompts"][0]["index"], 2)
-        self.assertEqual(result["scene_plan"][0]["failure_stage"], "idea")
-        self.assertIn("Replacement idea failed", result["scene_plan"][0]["failure_reason"])
+        self.assertEqual(result["scene_plan"][0]["failure_stage"], "scene")
+        self.assertIn("Direct rear", result["scene_plan"][0]["failure_reason"])
+        self.assertEqual(result["scene_plan"][0]["idea"], good[0]["idea"])
+        self.assertEqual(session.generate.call_count, 5)
         self.assertFalse(any(call.args[0].diagnostic_stage == "dataset:1" for call in session.generate.call_args_list))
         validate_dataset_draft({**draft(planning_mode="Fast"), "scene_plan": result["scene_plan"],
             "scene_plan_signature": result["scene_plan_signature"], "results": result["prompts"]})
 
-    def test_writer_exhaustion_replaces_once_then_skips_and_continues(self):
-        data, new = saved(draft(planning_mode="Fast"), rows(2)), replacement()
-        result, session, partials = run(data, [""] * 4 + [json.dumps([{"index": 1, "idea": new["idea"]}]),
-            json.dumps([new]), "", "person_token examines exhibit 2."])
-        self.assertEqual(session.generate.call_count, 8)
+    def test_writer_exhaustion_keeps_scene_and_skips_only_its_prompt(self):
+        data = saved(draft(planning_mode="Fast"), rows(2))
+        result, session, partials = run(data, [""] * 4 + ["person_token examines exhibit 2."])
+        self.assertEqual(session.generate.call_count, 5)
         self.assertEqual(result["completed"], 1)
         self.assertEqual(result["failed"], 1)
         failed = result["scene_plan"][0]
         self.assertEqual(failed["scene_status"], "valid")
         self.assertEqual(failed["prompt_status"], "failed")
         self.assertEqual(failed["failure_stage"], "prompt")
-        self.assertIn("Replacement prompt failed", failed["failure_reason"])
+        self.assertEqual(failed["idea"], data["scene_plan"][0]["idea"])
+        self.assertEqual(failed["scene"], data["scene_plan"][0]["scene"])
+        self.assertNotIn("replacement_attempted", failed)
         self.assertEqual([row["index"] for row in result["prompts"]], [2])
         self.assertEqual(partials[-1]["scene_plan"][0], failed)
 
-    def test_writer_replacement_can_succeed_and_preserves_other_scene(self):
-        data, new = saved(draft(planning_mode="Fast"), rows(2)), replacement()
-        result, session, _ = run(data, [""] * 4 + [json.dumps([{"index": 1, "idea": new["idea"]}]),
-            json.dumps([new]), "person_token balances a spoon on her nose.", "person_token examines exhibit 2."])
+    def test_failed_writer_can_retry_same_scene_without_touching_other_scene(self):
+        data = saved(draft(planning_mode="Fast"), rows(2))
+        data["scene_plan"][0].update(prompt_status="failed", failure_stage="prompt", failure_reason="Empty output")
+        result, session, _ = run(data, ["person_token examines exhibit 1.", "person_token examines exhibit 2."])
         self.assertEqual(result["completed"], 2)
         self.assertEqual(result["failed"], 0)
-        self.assertEqual(result["scene_plan"][0]["idea"], new["idea"])
+        self.assertEqual(result["scene_plan"][0]["idea"], data["scene_plan"][0]["idea"])
         self.assertEqual(result["scene_plan"][1]["scene"], data["scene_plan"][1]["scene"])
         self.assertNotIn("failure_reason", result["scene_plan"][0])
-        self.assertEqual(session.generate.call_count, 8)
+        self.assertEqual(session.generate.call_count, 2)
 
     def test_scene_replacement_is_not_replaced_again_after_writer_failure(self):
         data = saved(draft(planning_mode="Fast"), rows(2))
@@ -127,12 +130,12 @@ class DatasetRecoveryTests(unittest.TestCase):
         self.assertTrue(all(call.args[0].diagnostic_stage.startswith("dataset:1") or call.args[0].diagnostic_stage == "dataset:2"
                             for call in session.generate.call_args_list))
 
-    def test_transport_failure_gets_three_retries_before_replacement(self):
-        data, new = saved(draft(planning_mode="Fast"), rows(2)), replacement()
-        result, session, _ = run(data, [BackendGenerationError("Engine timed out.")] * 4 + [
-            json.dumps([{"index": 1, "idea": new["idea"]}]), json.dumps([new]),
-            "person_token balances a spoon on her nose.", "person_token examines exhibit 2."])
-        self.assertEqual(result["completed"], 2)
+    def test_transport_failure_gets_three_retries_without_replacement(self):
+        data = saved(draft(planning_mode="Fast"), rows(2))
+        result, session, _ = run(data, [BackendGenerationError("Engine timed out.")] * 4 + ["person_token examines exhibit 2."])
+        self.assertEqual(result["completed"], 1)
+        self.assertEqual(result["failed"], 1)
+        self.assertEqual(result["scene_plan"][0]["idea"], data["scene_plan"][0]["idea"])
         self.assertEqual([call.args[0].diagnostic_stage for call in session.generate.call_args_list[:4]],
             ["dataset:1", "dataset:1:transport_retry_1", "dataset:1:transport_retry_2", "dataset:1:transport_retry_3"])
 
@@ -185,21 +188,34 @@ class DatasetRecoveryTests(unittest.TestCase):
     def test_normal_generation_reuses_failed_plan_and_only_writes_good_scenes(self):
         data = saved(draft(planning_mode="Fast"), rows(2))
         data["scene_plan"][0].update(scene_status="failed", prompt_status="failed", failure_reason="Rear/face conflict.", failure_stage="scene")
-        self.assertIsNotNone(reusable_scene_plan(data, effective_coverage_plan(data), require_scenes=False))
-        self.assertIsNone(reusable_scene_plan(data, effective_coverage_plan(data)))
+        self.assertIsNotNone(reusable_scene_plan(data, dataset_assignments(data), require_scenes=False))
+        self.assertIsNone(reusable_scene_plan(data, dataset_assignments(data)))
         result, session, _ = run(data, ["person_token examines exhibit 2."])
         self.assertEqual(session.generate.call_count, 1)
         self.assertEqual(result["scene_plan"][0], data["scene_plan"][0])
 
-    def test_guided_replacement_keeps_authoritative_input_and_constraints(self):
+    def test_failed_content_scene_preserves_plan_and_local_retry_keeps_fixed_idea(self):
+        data = saved(draft(planning_mode="Fast"), rows(2))
+        data["scene_plan"][0].update(scene="She examines exhibit 1, no other people.",
+            scene_status="failed", prompt_status="failed", failure_stage="scene", failure_reason="Positive content needs repair.")
+        self.assertIsNotNone(reusable_scene_plan(data, dataset_assignments(data), require_scenes=False))
+        result, session, _ = run(data, [json.dumps(rows(1))], scene_action=("repair_scene", 1), scenes_only=True)
+        self.assertEqual(session.generate.call_count, 1)
+        self.assertEqual(session.generate.call_args.args[0].diagnostic_stage, "dataset:scene_composer:repair")
+        self.assertEqual(result["scene_plan"][0]["idea"], data["scene_plan"][0]["idea"])
+        self.assertEqual(result["scene_plan"][0]["scene_status"], "valid")
+        self.assertEqual(result["scene_plan"][1], data["scene_plan"][1])
+        self.assertNotIn("failure_reason", result["scene_plan"][0])
+
+    def test_guided_scene_repair_keeps_idea_authoritative_input_and_constraints(self):
         data = draft(amount=1, source_mode="guided", inputs="posing on a park bench", constraints="Same jacket in every scene.")
         row = scene(idea="Relaxing on a park bench", scene="She relaxes on a park bench.")
-        new = scene(idea="Stretching on a park bench", scene="She stretches while seated on the park bench.")
+        new = scene(idea=row["idea"], scene="She relaxes while seated on the park bench.")
         session = Mock()
-        session.generate.side_effect = [json.dumps([{"index": 1, "idea": new["idea"]}]), json.dumps([new])]
-        result = ScenePlanner(lambda: None).replace_failed_scene(session=session, data=data,
-            coverage=effective_coverage_plan(data), row=row, progress=lambda _: None, reason="Camera conflict.")
-        self.assertEqual(result["idea"], new["idea"])
+        session.generate.side_effect = [json.dumps([new])]
+        result = ScenePlanner(lambda: None).recover_scene(session=session, data=data,
+            assignments=dataset_assignments(data), row=row, progress=lambda _: None, errors=["Camera conflict."])
+        self.assertEqual(result["idea"], row["idea"])
         for call in session.generate.call_args_list:
             context = json.loads(call.args[0].user_message)
             self.assertEqual(context["constraints"], data["constraints"])
@@ -219,7 +235,7 @@ class DatasetRecoveryTests(unittest.TestCase):
         session.generate.side_effect = Cancelled()
         with self.assertRaises(Cancelled):
             ScenePlanner(lambda: None).recover_scene(session=session, data=draft(amount=1),
-                coverage=effective_coverage_plan(draft(amount=1)), row=rear_conflict(rows(1)[0]), progress=lambda _: None)
+                assignments=dataset_assignments(draft(amount=1)), row=rear_conflict(rows(1)[0]), progress=lambda _: None)
         self.assertEqual(session.generate.call_count, 1)
 
 

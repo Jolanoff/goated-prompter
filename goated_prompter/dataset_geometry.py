@@ -6,21 +6,27 @@ This is a staging validator, not an anatomy or inverse-kinematics solver.
 
 import re
 
-from .dataset_coverage import explicit_geometry_issues
+from .dataset_quality import explicit_geometry_issues
 from .dataset_visible_content import visible_content_error
 
 
 FRAMING_VALUES = frozenset("extreme_close_up face_close_up head_and_shoulders upper_body waist_up three_quarter_body full_body full_body_with_environment wide extreme_wide".split())
-CAMERA_VIEW_VALUES = frozenset("front front_three_quarter profile_left profile_right rear_three_quarter_left rear_three_quarter_right direct_rear overhead high_angle low_angle ground_level birds_eye worms_eye".split())
-CAMERA_HEIGHT_VALUES = frozenset("ground_level knee_level waist_level chest_level eye_level slightly_above_eye_level high overhead".split())
-CAMERA_DISTANCE_VALUES = frozenset("extreme_close close medium_close medium medium_full full long very_long".split())
-HIP_ORIENTATION_VALUES = frozenset("front front_three_quarter_left front_three_quarter_right profile_left profile_right rear_three_quarter_left rear_three_quarter_right direct_rear".split())
-TORSO_ORIENTATION_VALUES = HIP_ORIENTATION_VALUES | frozenset("twisted_left twisted_right bent_forward leaning_backward".split())
-BODY_ORIENTATION_VALUES = HIP_ORIENTATION_VALUES | frozenset("bent_forward leaning_backward lying_face_up lying_face_down lying_on_left_side lying_on_right_side".split())
-HEAD_DIRECTION_VALUES = frozenset("toward_camera away_from_camera left right up down up_left up_right down_left down_right toward_action toward_held_object toward_secondary_subject over_left_shoulder over_right_shoulder".split())
+FRAMING_ALIASES = {
+    "close_up": "face_close_up", "closeup": "face_close_up",
+    "medium_close_up": "upper_body", "medium_shot": "waist_up",
+    "medium_full": "three_quarter_body", "cowboy_shot": "three_quarter_body",
+    "long_shot": "full_body_with_environment",
+}
+CAMERA_VIEW_VALUES = frozenset("front front_three_quarter profile_left profile_right rear_three_quarter_left rear_three_quarter_right direct_rear overhead high_angle low_angle extreme_close_genital close_genital between_legs from_below_crotch over_shoulder_intimate looking_down_body looking_up_body side_intimate rear_intimate top_down_intimate under_table through_legs ground_level birds_eye worms_eye ".split())
+CAMERA_HEIGHT_VALUES = frozenset("ground_level knee_level waist_level chest_level eye_level slightly_above_eye_level high overhead crotch_level hip_level between_legs_level floor_looking_up".split())
+CAMERA_DISTANCE_VALUES = frozenset("extreme_close close medium_close medium medium_full full long very_long macro extreme_close_detail".split())
+HIP_ORIENTATION_VALUES = frozenset("front front_three_quarter front_three_quarter_left front_three_quarter_right profile_left profile_right rear_three_quarter_left rear_three_quarter_right direct_rear tilted_up tilted_down arched thrust_forward spread thrust_back closed raised_left raised_right".split())
+TORSO_ORIENTATION_VALUES = HIP_ORIENTATION_VALUES | frozenset("twisted_left twisted_right bent_forward leaning_backward arched_back hunched pressed_flat twisted_strong_left twisted_strong_right leaning_over".split())
+BODY_ORIENTATION_VALUES = HIP_ORIENTATION_VALUES | frozenset("bent_forward leaning_backward lying_face_up lying_face_down lying_on_left_side lying_on_right_side on_all_fours on_all_fours_arched kneeling_upright kneeling_forward bent_over bent_over_deep legs_up legs_spread legs_together one_leg_raised missionary doggy cowgirl reverse_cowgirl spooning prone_bone standing_bent_over standing_facing sitting_straddle lying_legs_open lying_legs_closed side_lying_open".split())
+HEAD_DIRECTION_VALUES = frozenset("toward_camera away_from_camera left right up down up_left up_right down_left down_right toward_action toward_held_object toward_secondary_subject over_left_shoulder over_right_shoulder looking_at_partner looking_at_genital looking_down_at_self eyes_rolled head_thrown_back chin_to_chest".split())
 GAZE_DIRECTION_VALUES = frozenset("toward_camera away_from_camera left right up down up_left up_right down_left down_right toward_action toward_held_object toward_secondary_subject toward_ground toward_reflection toward_background_object eyes_closed unfocused".split())
 EXPRESSION_VALUES = frozenset("neutral relaxed focused concentrating curious confused surprised shocked amused submissive dominant smiling laughing playful mischievous embarrassed awkward deadpan serious determined frustrated annoyed angry worried nervous fearful excited joyful ecstatic sad disappointed disgusted skeptical confident proud sleepy exhausted strained custom".split())
-POSE_TYPE_VALUES = frozenset("standing_neutral standing_relaxed standing_dynamic standing_balancing standing_leaning walking running jumping landing crouching squatting kneeling sitting_upright sitting_relaxed sitting_leaning sitting_on_floor lying_face_up lying_face_down lying_on_side reaching bending twisting dancing falling slipping climbing hanging balancing lifting carrying throwing catching pushing pulling holding gesturing selfie_pose posed_portrait custom".split())
+POSE_TYPE_VALUES = frozenset("standing_neutral standing_relaxed standing_dynamic standing_balancing standing_leaning walking running jumping landing crouching squatting kneeling sitting_upright sitting_relaxed sitting_leaning sitting_on_floor lying_face_up lying_face_down lying_on_side reaching bending twisting dancing falling slipping climbing hanging cowgirl_leaning balancing reverse_cowgirl reverse_cowgirl_leaning spooning standing_sex side_lying straddle against_wall_lifted against_wall oral_giving oral_receiving oral_69 handjob fingering fellatio cunnilingus bent_over_table bent_over_furniture on_all_fours presenting legs_spread_sitting legs_spread_lying legs_up_lying kneeling_presenting kneeling_oral arching_back thrusting grinding riding restrained being_ridden bound spread_eagle froggy pile_driver full_nelson mating_press amazon reverse_amazon lap_sitting sitting_sex standing_lifted standing_bent_over lifting carrying throwing catching pushing pulling holding gesturing selfie_pose posed_portrait missionary missionary_legs_up missionary_legs_on_shoulders doggy_arched doggy_face_down prone_bone cowgirl doggy custom".split())
 MOVEMENT_VALUES = frozenset("still subtle active fast explosive falling airborne".split())
 FACE_VISIBILITY_VALUES = frozenset("full three_quarter profile partial mostly_hidden hidden".split())
 BODY_VISIBILITY_VALUES = frozenset("face_only head_and_shoulders upper_body waist_up three_quarter_body full_body partial_body".split())
@@ -96,6 +102,8 @@ def validate_geometry(value, *, character=False):
             cleaned[key] = [_short_text(text) for text in content]
         elif key in GEOMETRY_ENUMS:
             content = normalize_geometry_value(content)
+            if key == "framing" and isinstance(content, str):
+                content = FRAMING_ALIASES.get(content, content)
             if not isinstance(content, str) or content not in GEOMETRY_ENUMS[key]:
                 correction = ("The gaze_direction field describes where the eyes point, not emotion. "
                               "Choose an allowed gaze direction and move emotional state into expression."
@@ -148,12 +156,37 @@ def migrate_saved_geometry(value):
         if key in GEOMETRY_ENUMS:
             _short_text(content)
             canonical = normalize_geometry_value(content)
+            if key == "framing":
+                canonical = FRAMING_ALIASES.get(canonical, canonical)
             canonical = aliases.get(canonical, canonical)
             if canonical in GEOMETRY_ENUMS[key]:
                 cleaned[key] = canonical
         else:
             cleaned[key] = content
     return validate_geometry(cleaned), True
+
+
+def resolve_framing_conflicts(row):
+    """The fixed action wins over an incidental crop; never change the idea."""
+    geometry = validate_geometry(row.get("geometry", {}))
+    action = " ".join((row.get("idea", ""), geometry.get("action_focus", ""),
+                       " ".join(geometry.get("visibility_focus", [])))).casefold()
+    tight = geometry.get("framing") in {
+        "extreme_close_up", "face_close_up", "head_and_shoulders", "upper_body", "waist_up", "three_quarter_body"}
+    if not tight or not re.search(r"\b(?:shoes?|feet|foot|full.body)\b", action):
+        return {**row, "geometry": geometry} if "geometry" in row else row
+    geometry["framing"] = "full_body"
+    if "camera_distance" in geometry:
+        geometry["camera_distance"] = "full"
+    if "body_visibility" in geometry:
+        geometry["body_visibility"] = "full_body"
+    if "feet_visibility" in geometry and geometry.get("occlusion", "none") == "none":
+        geometry["feet_visibility"] = "both_visible"
+    # Align only incidental crop wording, not the action, props or staging.
+    scene = re.sub(r"\b(?:extreme\s+close[- ]?up|face\s+close[- ]?up|close[- ]?up|head[- ]and[- ]shoulders|upper[- ]body|waist[- ]up|three[- ]quarter[- ]body)(?:\s+(?:crop|framing|shot|view))?\b",
+                   "full-body view", row.get("scene", ""), flags=re.IGNORECASE)
+    return {**row, "scene": scene, "geometry": geometry,
+            "coverage_conflicts": list(dict.fromkeys([*row.get("coverage_conflicts", []), "framing"]))}
 
 
 def geometry_errors(row, *, character=False):

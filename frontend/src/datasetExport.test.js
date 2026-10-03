@@ -23,3 +23,11 @@ test("legacy Dataset exports distinguish missing originating scenes", () => {
   assert.equal(row.input, "");
   assert.equal(datasetJsonl(null), "");
 });
+
+test("Dataset exports omit retired coverage metadata from legacy results", () => {
+  const row = JSON.parse(datasetJsonl({ results: [
+    { index: 1, input: "", prompt: "Saved prompt", coverage_conflicts: ["framing"] },
+  ] }));
+  assert.equal(row.prompt, "Saved prompt");
+  assert.equal("coverage_conflicts" in row, false);
+});

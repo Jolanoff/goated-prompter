@@ -3,7 +3,7 @@
 import unittest
 
 from goated_prompter.dataset_geometry import (
-    CHARACTER_REQUIRED_FIELDS, CUSTOM_DETAIL_FIELDS, GEOMETRY_ENUMS,
+    CHARACTER_REQUIRED_FIELDS, CUSTOM_DETAIL_FIELDS, GEOMETRY_ENUMS, FRAMING_ALIASES,
     GeometryValidationError, geometry_errors, migrate_saved_geometry, normalize_geometry_value, validate_geometry,
 )
 
@@ -52,8 +52,18 @@ class GeometrySchemaTests(unittest.TestCase):
         raw = {"framing": "Full body", "camera_view": "front three-quarter", "camera_height": "eye-level"}
         canonical = {"framing": "full_body", "camera_view": "front_three_quarter", "camera_height": "eye_level"}
         self.assertEqual(validate_geometry(raw), canonical)
+        self.assertEqual(validate_geometry({"body_orientation": "front three-quarter"}), {"body_orientation": "front_three_quarter"})
         self.assertEqual(migrate_saved_geometry(raw), (canonical, False))
         self.assertFalse(geometry_errors({"geometry": raw, "scene": "One coherent view."}))
+
+    def test_all_common_framing_aliases_normalize_before_enum_validation(self):
+        for alias, expected in FRAMING_ALIASES.items():
+            with self.subTest(alias=alias):
+                self.assertEqual(validate_geometry({"framing": alias.replace("_", "-")}), {"framing": expected})
+                self.assertEqual(migrate_saved_geometry({"framing": alias}), ({"framing": expected}, False))
+                geometry, migrated = migrate_saved_geometry({"framing": alias, "gaze": "toward camera"})
+                self.assertEqual(geometry["framing"], expected)
+                self.assertTrue(migrated)
 
     def test_required_character_fields_and_optional_nonhuman_geometry(self):
         self.assertEqual(CHARACTER_REQUIRED_FIELDS, {"framing", "camera_view", "body_orientation",

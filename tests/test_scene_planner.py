@@ -9,7 +9,7 @@ from goated_prompter.backends.base import BackendGenerationError
 from goated_prompter.backends.openai_compatible import OpenAICompatibleBackend
 from goated_prompter.core import GoatedPrompterRequest, assemble_instruction
 from goated_prompter.dataset import DatasetService, default_dataset_draft, validate_dataset_draft, _parse_deep_review
-from goated_prompter.dataset_coverage import effective_coverage_plan
+from goated_prompter.dataset_assignments import dataset_assignments
 from goated_prompter.prompting import dataset as dataset_prompts
 from goated_prompter.prompting.scene_planner import (scene_planner_instruction, MAX_SCENE_CHARACTERS,
                                                     MAX_SCENE_WORDS, MAX_IDEA_CHARACTERS, MAX_IDEA_WORDS, TYPE_GUIDANCE)
@@ -31,7 +31,7 @@ def scene_rows(amount=2):
 class ScenePlannerTests(unittest.TestCase):
     def test_planning_process_separates_concept_ideas_scenes_and_silent_audit(self):
         data = draft()
-        system = scene_planner_instruction(data, effective_coverage_plan(data)).system_message
+        system = scene_planner_instruction(data, dataset_assignments(data)).system_message
         steps = ["STEP 1 — UNDERSTAND", "STEP 2 — GENERATE", "STEP 3 — COMPOSE",
                  "STEP 4 — CHECK GEOMETRY", "STEP 5 — REPAIR", "STEP 6 — RETURN"]
         self.assertEqual([system.index(step) for step in steps], sorted(system.index(step) for step in steps))
@@ -64,7 +64,7 @@ class ScenePlannerTests(unittest.TestCase):
                 session = Mock()
                 session.generate.return_value = json.dumps(rows)
                 planned = ScenePlanner(lambda: None).plan_batch(session=session, data=data,
-                    coverage=effective_coverage_plan(data), progress=lambda _: None)
+                    assignments=dataset_assignments(data), progress=lambda _: None)
                 self.assertEqual(planned, rows)
                 self.assertEqual(len([row["idea"] for row in planned]), data["amount"])
                 self.assertEqual(len([row["scene"] for row in planned]), data["amount"])
@@ -82,14 +82,14 @@ class ScenePlannerTests(unittest.TestCase):
         session.generate.side_effect = [json.dumps(rows[start:start + 4]) for start in range(0, 10, 4)]
         data = draft(subject="woman doing funny stuff", amount=10)
         planned = ScenePlanner(lambda: None).plan_batch(session=session, data=data,
-            coverage=effective_coverage_plan(data), progress=lambda _: None)
+            assignments=dataset_assignments(data), progress=lambda _: None)
         self.assertEqual(len(planned), 10)
         self.assertEqual(len({row["idea"] for row in planned}), 10)
         self.assertTrue(all(row["idea"] != row["scene"] for row in planned))
         self.assertEqual(session.generate.call_count, 3)
 
     def test_idea_similarity_distinguishes_broad_concept_from_expression_scope(self):
-        from goated_prompter.dataset_coverage import analyze_idea_diversity
+        from goated_prompter.dataset_quality import analyze_idea_diversity
         rows = [{"index": i, "idea": idea} for i, idea in enumerate(
             ("laughing indoors", "laughing outside", "laughing at night"), 1)]
         quality = analyze_idea_diversity(draft(subject="woman doing funny stuff"), rows)
@@ -107,7 +107,7 @@ class ScenePlannerTests(unittest.TestCase):
         session = Mock()
         session.generate.return_value = json.dumps(rows)
         planned = ScenePlanner(lambda: None).plan_batch(session=session, data=data,
-            coverage=effective_coverage_plan(data), progress=lambda _: None)
+            assignments=dataset_assignments(data), progress=lambda _: None)
         self.assertIn("clown costume", planned[0]["idea"])
         self.assertIn("clown costume", planned[0]["scene"])
         self.assertNotIn("juggling", planned[0]["scene"])
@@ -115,14 +115,14 @@ class ScenePlannerTests(unittest.TestCase):
 
     def test_legacy_plans_remain_loadable_but_are_not_reused_without_ideas(self):
         data = draft(scene_plan=[{"index": i, "input": "", "scene": f"Reading beside window {i}."} for i in (1, 2)])
-        data["scene_plan_signature"] = scene_plan_signature(data, effective_coverage_plan(data))
+        data["scene_plan_signature"] = scene_plan_signature(data, dataset_assignments(data))
         self.assertEqual(validate_dataset_draft(data)["scene_plan"], data["scene_plan"])
-        self.assertIsNone(reusable_scene_plan(data, effective_coverage_plan(data)))
+        self.assertIsNone(reusable_scene_plan(data, dataset_assignments(data)))
         data["results"] = [{"index": 1, "input": "", "scene": "An old scene.", "prompt": "An old prompt."}]
         self.assertNotIn("idea", validate_dataset_draft(data)["results"][0])
 
     def test_geometry_hints_flag_explicit_conflicts_without_policing_valid_poses(self):
-        from goated_prompter.dataset_coverage import explicit_geometry_issues, analyze_dataset_quality
+        from goated_prompter.dataset_quality import explicit_geometry_issues, analyze_dataset_quality
         cases = [
             ("Direct rear view of woman, looking directly into the camera, full frontal face clearly visible.", "rear_front_conflict"),
             ("Tight face close-up with shoes clearly visible.", "crop_visibility_conflict"),
@@ -209,9 +209,9 @@ class ScenePlannerTests(unittest.TestCase):
 
     def test_idea_first_and_still_image_contract(self):
         data = draft(subject="A woman doing funny stuff")
-        instruction = scene_planner_instruction(data, effective_coverage_plan(data))
+        instruction = scene_planner_instruction(data, dataset_assignments(data))
         for section in ("SCENE IDEA FIRST", "VISUAL DEPICTABILITY", "ONE PRIMARY EVENT",
-                        "CONTROLLED VARIATION", "COVERAGE SUPPORTS THE IDEA"):
+                        "CONTROLLED VARIATION", "PRESENTATION SUPPORTS THE IDEA"):
             self.assertIn(section, instruction.system_message)
         self.assertIn("SEMANTIC DIVERSITY FIRST", instruction.system_message)
         self.assertIn("normally 20–70 words", instruction.system_message)
@@ -225,10 +225,10 @@ class ScenePlannerTests(unittest.TestCase):
         session.generate.return_value = json.dumps([{"index": i, "idea": idea, "scene": scene}
             for i, (idea, scene) in enumerate(zip(ideas, scenes), 1)])
         rows = ScenePlanner(lambda: None).plan_batch(session=session, data=data,
-            coverage=effective_coverage_plan(data), progress=lambda _: None)
+            assignments=dataset_assignments(data), progress=lambda _: None)
         self.assertEqual(len(rows), 3)
         self.assertTrue(all("woman" in row["scene"].lower() for row in rows))
-        from goated_prompter.dataset_coverage import analyze_scene_diversity
+        from goated_prompter.dataset_quality import analyze_scene_diversity
         self.assertEqual(analyze_scene_diversity(rows)["uniqueness"], 100)
 
     def test_guided_plan_retains_original_action_and_named_objects(self):
@@ -237,7 +237,7 @@ class ScenePlannerTests(unittest.TestCase):
         session.generate.return_value = json.dumps([{"index": 1, "idea": "Sitting on a red couch reading a book",
             "scene": "Sitting sideways on a red couch reading an open book, with a relaxed posture beside a window."}])
         rows = ScenePlanner(lambda: None).plan_batch(session=session, data=data,
-            coverage=effective_coverage_plan(data), progress=lambda _: None)
+            assignments=dataset_assignments(data), progress=lambda _: None)
         context = json.loads(session.generate.call_args.args[0].user_message)
         self.assertEqual(context["assignments"][0]["input"], data["inputs"])
         for anchor in ("sitting", "red couch", "reading", "book"):
@@ -245,31 +245,25 @@ class ScenePlannerTests(unittest.TestCase):
 
     def test_plan_signature_excludes_writer_settings_and_invalidates_semantic_changes(self):
         data = draft(scene_plan=[{**row, "input": ""} for row in scene_rows()])
-        coverage = effective_coverage_plan(data)
-        data["scene_plan_signature"] = scene_plan_signature(data, coverage)
-        self.assertEqual(reusable_scene_plan(data, coverage), data["scene_plan"])
+        assignments = dataset_assignments(data)
+        data["scene_plan_signature"] = scene_plan_signature(data, assignments)
+        self.assertEqual(reusable_scene_plan(data, assignments), data["scene_plan"])
         for changes in ({"target": "Anima"}, {"target": "Ideogram4", "length": "Detailed"},
                         {"director_preset": "other"}, {"trigger": "new_token", "trigger_at_start": True}):
             changed = {**data, **changes}
-            self.assertEqual(reusable_scene_plan(changed, effective_coverage_plan(changed)), data["scene_plan"])
+            self.assertEqual(reusable_scene_plan(changed, dataset_assignments(changed)), data["scene_plan"])
         for changes in ({"subject": "A dog having adventures"}, {"inputs": "running"}, {"amount": 3},
                         {"constraints": "No outdoors"}, {"variety": "Wide"}, {"trigger_type": "Animal"},
-                        {"coverage_enabled": True}, {"visual_style": "Illustration"}):
+                        {"visual_style": "Illustration"}):
             changed = {**data, **changes}
-            self.assertIsNone(reusable_scene_plan(changed, effective_coverage_plan(changed)))
-        covered = {**data, "coverage_enabled": True}
-        coverage = effective_coverage_plan(covered)
-        covered["scene_plan_signature"] = scene_plan_signature(covered, coverage)
-        self.assertEqual(reusable_scene_plan(covered, coverage), data["scene_plan"])
-        changed_coverage = json.loads(json.dumps(coverage))
-        changed_coverage["plan"][0]["facets"]["framing"] = "full view"
-        if changed_coverage == coverage:
-            changed_coverage["plan"][0]["facets"]["framing"] = "medium shot"
-        self.assertIsNone(reusable_scene_plan(covered, changed_coverage))
+            self.assertIsNone(reusable_scene_plan(changed, dataset_assignments(changed)))
+        changed_assignments = dataset_assignments(data)
+        changed_assignments[0]["input"] = "a different guided idea"
+        self.assertIsNone(reusable_scene_plan(data, changed_assignments))
 
     def test_scene_plan_and_new_and_legacy_results_roundtrip(self):
         data = draft(scene_plan=[{**row, "input": ""} for row in scene_rows()])
-        data["scene_plan_signature"] = scene_plan_signature(data, effective_coverage_plan(data))
+        data["scene_plan_signature"] = scene_plan_signature(data, dataset_assignments(data))
         data["results"] = [{"index": 1, "input": "", "idea": data["scene_plan"][0]["idea"],
                            "scene": data["scene_plan"][0]["scene"], "prompt": "A readable prompt."},
                            {"index": 2, "input": "", "prompt": "A legacy prompt."}]
@@ -281,7 +275,7 @@ class ScenePlannerTests(unittest.TestCase):
 
     def test_valid_saved_plan_skips_scene_llm_for_different_targets(self):
         data = draft(scene_plan=[{**row, "input": ""} for row in scene_rows()])
-        data["scene_plan_signature"] = scene_plan_signature(data, effective_coverage_plan(data))
+        data["scene_plan_signature"] = scene_plan_signature(data, dataset_assignments(data))
         session = Mock()
         session.generate.return_value = "A clear person_token scene with a red couch and an open book."
         backend = Mock()
@@ -303,7 +297,7 @@ class ScenePlannerTests(unittest.TestCase):
 
     def test_changed_concept_replans_and_plan_only_does_not_write_prompts(self):
         data = draft(scene_plan=[{**row, "input": ""} for row in scene_rows()])
-        data["scene_plan_signature"] = scene_plan_signature(data, effective_coverage_plan(data))
+        data["scene_plan_signature"] = scene_plan_signature(data, dataset_assignments(data))
         data["subject"] = "A woman doing funny stuff"
         session = Mock()
         session.generate.return_value = json.dumps(scene_rows())
@@ -331,29 +325,29 @@ class ScenePlannerTests(unittest.TestCase):
         self.assertEqual(session.generate.call_args_list[0].args[0].diagnostic_stage, "dataset:scene_planner")
 
     def test_deep_review_sees_originating_scene_and_accepts_scene_drift(self):
-        data = draft(amount=1, coverage_enabled=True)
+        data = draft(amount=1)
         chunk = [{"index": 1, "input": "", "scene": "Chasing a runaway shopping cart across a parking lot.",
                   "prompt": "A smiling woman portrait in a supermarket."}]
         instruction = dataset_prompts.deep_review_instruction(data, chunk)
         self.assertIn(chunk[0]["scene"], instruction.user_message)
         self.assertIn(chunk[0]["prompt"], instruction.user_message)
         self.assertIn("scene_drift", instruction.system_message)
-        self.assertIn("not proof of achieved coverage", instruction.system_message)
+        self.assertNotIn("coverage_mismatch", instruction.system_message)
         result = _parse_deep_review(json.dumps([{"index": 1, "issues": [{"category": "scene_drift",
-            "severity": "error", "message": "The chase was replaced by a portrait."}]}]), chunk, True)
+            "severity": "error", "message": "The chase was replaced by a portrait."}]}]), chunk)
         self.assertEqual(result[0]["issues"][0]["code"], "deep_scene_drift")
         legacy = [{key: value for key, value in chunk[0].items() if key != "scene"}]
         self.assertIn("legacy result", dataset_prompts.deep_review_instruction(data, legacy).user_message)
 
-    def test_quality_distinguishes_planned_coverage_and_scene_similarity(self):
-        from goated_prompter.dataset_coverage import analyze_dataset_quality, analyze_scene_diversity
-        data = draft(coverage_enabled=True)
+    def test_quality_checks_scene_similarity_without_planned_coverage(self):
+        from goated_prompter.dataset_quality import analyze_dataset_quality, analyze_scene_diversity
+        data = draft()
         results = [{"index": 1, "input": "", "scene": "A woman stands laughing in a bedroom under soft daylight.",
                     "prompt": "person_token enjoys a well-described clear scene at home."},
                    {"index": 2, "input": "", "scene": "A woman stands laughing in a kitchen under warm light.",
                     "prompt": "An entirely different written prompt of person_token elsewhere."}]
         report = analyze_dataset_quality(data, results)
-        self.assertIn("planned_coverage", report["metrics"])
+        self.assertNotIn("planned_coverage", report["metrics"])
         self.assertNotIn("coverage", report["metrics"])
         self.assertLess(report["metrics"]["scene_uniqueness"], 100)
         codes = {issue["code"] for row in report["prompts"] for issue in row["issues"]}
@@ -364,15 +358,15 @@ class ScenePlannerTests(unittest.TestCase):
     def test_whole_batch_context_preserves_guided_inputs_and_all_settings(self):
         data = draft(amount=3, source_mode="guided", inputs="sitting on a red couch reading a book\nlying on floor",
                      constraints="No outdoor scenes; only neutral expressions; same outfit in every image.",
-                     coverage_enabled=True, variety="Wide", target="Ideogram4", visual_style="Custom",
+                     variety="Wide", target="Ideogram4", visual_style="Custom",
                      custom_style="Ink drawing", trigger_type="Custom", custom_type="A recurring adult character")
-        coverage = effective_coverage_plan(data)
-        instruction = scene_planner_instruction(data, coverage, "gemma")
+        assignments = dataset_assignments(data)
+        instruction = scene_planner_instruction(data, assignments, "gemma")
         context = json.loads(instruction.user_message)
         for key in ("amount", "subject", "source_mode", "trigger_type", "custom_type", "visual_style",
                     "custom_style", "variety", "constraints"):
             self.assertEqual(context[key], data[key])
-        self.assertEqual(context["assignments"], coverage["plan"])
+        self.assertEqual(context["assignments"], assignments)
         self.assertEqual(context["assignments"][2]["input"], context["assignments"][0]["input"])
         self.assertNotIn("target_context", context)
         self.assertNotIn("subject_definition", context)
@@ -384,25 +378,23 @@ class ScenePlannerTests(unittest.TestCase):
         for key in ("trigger_at_start", "trigger_connected", "director_preset", "results", "quality_report"):
             self.assertNotIn(key, context)
         self.assertNotIn("high_level_description", instruction.system_message)
-        other = scene_planner_instruction({**data, "target": "Generic"}, coverage, "gemma")
+        other = scene_planner_instruction({**data, "target": "Generic"}, assignments, "gemma")
         self.assertEqual(other.system_message, instruction.system_message)
         self.assertEqual(other.user_message, instruction.user_message)
 
-    def test_disabled_coverage_has_no_hidden_facet_assignments(self):
+    def test_assignments_do_not_prescribe_scene_facets(self):
         data = draft()
-        coverage = effective_coverage_plan(data)
-        coverage["plan"][0]["facets"] = {"setting": "urban street"}
-        context = json.loads(scene_planner_instruction(data, coverage).user_message)
-        self.assertTrue(all(row["facets"] == {} for row in context["assignments"]))
+        context = json.loads(scene_planner_instruction(data, dataset_assignments(data)).user_message)
+        self.assertTrue(all(set(row) == {"index", "input"} for row in context["assignments"]))
 
     def test_guidance_is_type_specific_and_variety_uses_existing_values(self):
         self.assertEqual(set(dataset_prompts.DATASET_TYPES), set(TYPE_GUIDANCE))
         for kind in dataset_prompts.DATASET_TYPES:
             data = draft(trigger_type=kind)
-            context = json.loads(scene_planner_instruction(data, effective_coverage_plan(data)).user_message)
+            context = json.loads(scene_planner_instruction(data, dataset_assignments(data)).user_message)
             self.assertTrue(context["type_guidance"])
         data = draft(trigger_type="Object / product")
-        instruction = scene_planner_instruction(data, effective_coverage_plan(data))
+        instruction = scene_planner_instruction(data, dataset_assignments(data))
         self.assertIn("Do not impose human poses or expressions", json.loads(instruction.user_message)["type_guidance"])
         for variety in dataset_prompts.DATASET_VARIETY:
             self.assertIn(variety, instruction.system_message)
@@ -423,7 +415,7 @@ class ScenePlannerTests(unittest.TestCase):
                    raw_row(scene=" "), raw_row(scene=None),
                    raw_row(scene="x" * (MAX_SCENE_CHARACTERS + 1)),
                    raw_row(scene="w " * (MAX_SCENE_WORDS + 1)),
-                   raw_row(scene="Reading\nExplanation"), raw_row(scene="```Reading```"),
+                    raw_row(scene="```Reading```"),
                    raw_row(idea=""), raw_row(idea=None), raw_row(idea=3),
                    raw_row(idea="x" * (MAX_IDEA_CHARACTERS + 1)),
                    raw_row(idea="w " * (MAX_IDEA_WORDS + 1)),
@@ -440,7 +432,7 @@ class ScenePlannerTests(unittest.TestCase):
         data, session, progress = draft(), Mock(), []
         session.generate.side_effect = ["invalid", json.dumps(scene_rows())]
         result = ScenePlanner(lambda: None).plan_batch(
-            session=session, data=data, coverage=effective_coverage_plan(data), progress=progress.append)
+            session=session, data=data, assignments=dataset_assignments(data), progress=progress.append)
         self.assertEqual(result, scene_rows())
         self.assertEqual(session.generate.call_count, 2)
         first, repair = [call.args[0] for call in session.generate.call_args_list]
@@ -482,27 +474,24 @@ class ScenePlannerTests(unittest.TestCase):
         ]
         rows = [{"index": index + 1, "idea": examples[index % 6][0], "scene": examples[index % 6][1]}
                 for index in range(10)]
-        for covered in (False, True):
-            with self.subTest(coverage=covered):
-                data = draft(amount=10, source_mode="guided", subject="A woman doing funny stuff",
-                             inputs="\n".join(inputs), coverage_enabled=covered,
-                             constraints="The woman must be the same in every prompt.")
-                session, progress = Mock(), []
-                session.generate.side_effect = [json.dumps(rows[start:start + 4]) for start in range(0, 10, 4)]
-                planned = ScenePlanner(lambda: None).plan_batch(session=session, data=data,
-                    coverage=effective_coverage_plan(data), progress=progress.append)
-                self.assertEqual(planned, rows)
-                self.assertEqual(session.generate.call_count, 3)
-                self.assertFalse(any("failed" in message or "unavailable" in message for message in progress))
-                contexts = [json.loads(call.args[0].user_message) for call in session.generate.call_args_list]
-                self.assertEqual([row["input"] for context in contexts for row in context["assignments"]], inputs + inputs[:4])
-                self.assertNotEqual(planned[2]["scene"], inputs[2])
-                self.assertNotEqual(planned[3]["idea"], inputs[3])
+        data = draft(amount=10, source_mode="guided", subject="A woman doing funny stuff",
+                     inputs="\n".join(inputs), constraints="The woman must be the same in every prompt.")
+        session, progress = Mock(), []
+        session.generate.side_effect = [json.dumps(rows[start:start + 4]) for start in range(0, 10, 4)]
+        planned = ScenePlanner(lambda: None).plan_batch(session=session, data=data,
+            assignments=dataset_assignments(data), progress=progress.append)
+        self.assertEqual(planned, rows)
+        self.assertEqual(session.generate.call_count, 3)
+        self.assertFalse(any("failed" in message or "unavailable" in message for message in progress))
+        contexts = [json.loads(call.args[0].user_message) for call in session.generate.call_args_list]
+        self.assertEqual([row["input"] for context in contexts for row in context["assignments"]], inputs + inputs[:4])
+        self.assertNotEqual(planned[2]["scene"], inputs[2])
+        self.assertNotEqual(planned[3]["idea"], inputs[3])
 
     def test_guided_instructions_fill_missing_actions_without_spreading_local_clothing(self):
         data = draft(amount=2, source_mode="guided", subject="A woman doing funny stuff",
                      inputs="outdoors wearing only a t-shirt\nindoors", constraints="Same woman in every image.")
-        instruction = scene_planner_instruction(data, effective_coverage_plan(data))
+        instruction = scene_planner_instruction(data, dataset_assignments(data))
         self.assertIn("GUIDED ASSIGNMENT MODE", instruction.system_message)
         self.assertIn("full scene OR a partial anchor", instruction.system_message)
         self.assertIn("Creativity fills gaps, not overrides", instruction.system_message)
@@ -514,21 +503,26 @@ class ScenePlannerTests(unittest.TestCase):
             plan_item={"input": "indoors", "idea": "Juggling indoors", "scene": "She juggles rubber chickens indoors."})
         self.assertNotIn("wearing only a t-shirt", writer.user_message)
         self.assertIn("local to this item", writer.user_message)
-        random = scene_planner_instruction({**data, "source_mode": "random"}, effective_coverage_plan({**data, "source_mode": "random"}))
+        random = scene_planner_instruction({**data, "source_mode": "random"}, dataset_assignments({**data, "source_mode": "random"}))
         self.assertNotIn("GUIDED ASSIGNMENT MODE", random.system_message)
 
     def test_different_guided_inputs_and_random_repetition_still_trigger_repair(self):
+        from tests.test_dataset_geometry import character_geometry
         repeated = [{"index": index, "idea": "Reading a book", "scene": "She reads a book sitting on a red couch."}
                     for index in (1, 2)]
+        repaired = {**repeated[1], "scene": "She reads a book seated on a park bench.",
+                    "geometry": character_geometry(action_focus="reading")}
         for source, inputs in (("guided", "reading\npark"), ("random", "reading\nreading")):
             with self.subTest(source=source):
                 data = draft(source_mode=source, inputs=inputs)
                 session = Mock()
-                session.generate.side_effect = [json.dumps(repeated), json.dumps(scene_rows())]
+                session.generate.side_effect = [json.dumps(repeated), json.dumps([repaired])]
                 result = ScenePlanner(lambda: None).plan_batch(session=session, data=data,
-                    coverage=effective_coverage_plan(data), progress=lambda _: None)
-                self.assertEqual(result, scene_rows())
+                    assignments=dataset_assignments(data), progress=lambda _: None)
+                self.assertEqual(result, [repeated[0], repaired])
                 self.assertEqual(session.generate.call_count, 2)
+                self.assertEqual(json.loads(session.generate.call_args.args[0].user_message)["indexes"], [2])
+                self.assertEqual(result[1]["idea"], repeated[1]["idea"])
 
     def test_cycled_guided_plan_is_persisted_and_reused_by_writer_not_raw_fallback(self):
         data = draft(amount=3, source_mode="guided", inputs="sitting on a table\npark")
@@ -553,7 +547,7 @@ class ScenePlannerTests(unittest.TestCase):
             data.update(scene_plan=planned["scene_plan"], scene_plan_signature=planned["scene_plan_signature"])
             data = validate_dataset_draft(data)
             self.assertEqual(data["scene_plan"][0]["scene"], rows[0]["scene"])
-            self.assertEqual(reusable_scene_plan(data, effective_coverage_plan(data)), data["scene_plan"])
+            self.assertEqual(reusable_scene_plan(data, dataset_assignments(data)), data["scene_plan"])
             final = service.run(request, data, progress.append, partial.append)
         self.assertEqual(session.generate.call_count, 4)  # One planner + three writers, no repair.
         self.assertFalse(any("unavailable" in message for message in progress))
@@ -576,8 +570,8 @@ class ScenePlannerTests(unittest.TestCase):
                 else:
                     session.generate.return_value = error
                 result = ScenePlanner(lambda: None).plan_batch(
-                    session=session, data=data, coverage=effective_coverage_plan(data), progress=lambda _: None)
-                self.assertEqual(session.generate.call_count, 12)
+                    session=session, data=data, assignments=dataset_assignments(data), progress=lambda _: None)
+                self.assertEqual(session.generate.call_count, 8)
                 self.assertTrue(all(row["scene_status"] == "failed" and row["failure_reason"] for row in result))
                 contexts = [json.loads(call.args[0].user_message) for call in session.generate.call_args_list]
                 if guided:
@@ -592,15 +586,15 @@ class ScenePlannerTests(unittest.TestCase):
         session.generate.return_value = json.dumps(scene_rows())
         with self.assertRaises(Cancelled):
             ScenePlanner(checkpoint).plan_batch(session=session, data=data,
-                coverage=effective_coverage_plan(data), progress=lambda _: None)
+                assignments=dataset_assignments(data), progress=lambda _: None)
         self.assertEqual(session.generate.call_count, 1)
 
     def test_instruction_validation_failure_is_bounded_per_item(self):
         data, session = draft(), Mock()
         session.validate_instruction.side_effect = BackendGenerationError("unsupported planning response")
         result = ScenePlanner(lambda: None).plan_batch(session=session, data=data,
-            coverage=effective_coverage_plan(data), progress=lambda _: None)
-        self.assertEqual(session.validate_instruction.call_count, 12)
+            assignments=dataset_assignments(data), progress=lambda _: None)
+        self.assertEqual(session.validate_instruction.call_count, 8)
         self.assertTrue(all(row["scene_status"] == "failed" for row in result))
         session.generate.assert_not_called()
 
@@ -644,7 +638,7 @@ class ScenePlannerTests(unittest.TestCase):
         self.assertEqual(result["prompts"][0]["idea"], planned[0]["idea"])
 
     def test_failed_planning_still_completes_dataset_with_original_guided_input(self):
-        data = draft(amount=1, source_mode="guided", inputs="lying on floor", coverage_enabled=True)
+        data = draft(amount=1, source_mode="guided", inputs="lying on floor")
         session = Mock()
         session.generate.side_effect = ["not json", "[]", json.dumps([
             {"index": 1, "idea": "Lying on floor", "scene": "lying on floor"}]), "person_token lying on floor."]
@@ -660,12 +654,12 @@ class ScenePlannerTests(unittest.TestCase):
         self.assertEqual(result["completed"], 1)
         writer = session.generate.call_args_list[-1].args[0]
         self.assertIn("<scene>\nlying on floor\n</scene>", writer.user_message)
-        self.assertIn("COVERAGE ASSIGNMENT", writer.user_message)
+        self.assertNotIn("COVERAGE ASSIGNMENT", writer.user_message)
         self.assertEqual(result["prompts"][0]["input"], "lying on floor")
 
     def test_large_batch_can_stream_past_single_prompt_limit_but_remains_bounded(self):
         data = draft(amount=25)
-        instruction = scene_planner_instruction(data, effective_coverage_plan(data))
+        instruction = scene_planner_instruction(data, dataset_assignments(data))
         rows = [{"index": index, "idea": f"Reading book {index}", "scene": " ".join(f"detail{index}x{word}" for word in range(40))}
                 for index in range(1, 26)]
         text = json.dumps(rows)

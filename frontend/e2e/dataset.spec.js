@@ -80,10 +80,11 @@ test("failed scenes show persistent reasons and do not block writing valid scene
   await expect(page.getByLabel("Planned scene 3")).toHaveValue(/mock scene 3/);
   await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
   const settings = await (await request.get("/api/workspace/settings/dataset")).json();
-  const reason = "Direct rear camera cannot show a full face. Replacement scene failed after bounded recovery.";
-  settings.draft.scene_plan[0] = { ...settings.draft.scene_plan[0], idea: "", scene: "", geometry: {},
-    idea_status: "failed", scene_status: "failed", prompt_status: "failed", failure_reason: reason,
-    failure_stage: "scene", replacement_attempted: true };
+  const reason = "Direct rear camera cannot show a full face. Scene repair failed after bounded recovery.";
+  const fixedIdea = settings.draft.scene_plan[0].idea;
+  settings.draft.scene_plan[0] = { ...settings.draft.scene_plan[0], scene: "", geometry: {},
+    idea_status: "valid", scene_status: "failed", prompt_status: "failed", failure_reason: reason,
+    failure_stage: "scene" };
   settings.draft.scene_plan[2] = { ...settings.draft.scene_plan[2], idea: "", scene: "", geometry: {},
     idea_status: "not_generated", scene_status: "not_generated", prompt_status: "not_generated" };
   settings.draft.trigger = "ohwx_traveler";
@@ -96,6 +97,8 @@ test("failed scenes show persistent reasons and do not block writing valid scene
   await expect(plan.getByLabel("Prompt 1 failure reason")).toContainText(reason);
   const results = page.getByRole("region", { name: "Dataset results", exact: true });
   await expect(results.getByLabel("Prompt 1 failure reason")).toContainText(reason);
+  await expect(results.getByRole("button", { name: "Retry failed scene", exact: true })).toBeVisible();
+  await expect(results.getByRole("button", { name: "Retry failed idea", exact: true })).toHaveCount(0);
   expect((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze()).violations).toEqual([]);
   const accepted = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset") && response.status() === 202);
   await page.getByRole("button", { name: "Generate prompts from 1 valid scene", exact: true }).click();
@@ -113,6 +116,12 @@ test("failed scenes show persistent reasons and do not block writing valid scene
   await page.reload();
   await page.getByRole("button", { name: "Dataset", exact: true }).click();
   await expect(page.getByRole("region", { name: "Dataset results", exact: true }).getByLabel("Prompt 1 failure reason")).toContainText(reason);
+  const retry = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset/scene") && response.status() === 202);
+  await page.getByRole("button", { name: "Retry failed scene", exact: true }).click();
+  const repaired = await retry;
+  expect(repaired.request().postDataJSON().action).toBe("repair_scene");
+  await expect(page.getByLabel("Planned scene 1")).toHaveValue(/mock scene 1/);
+  await expect(page.getByLabel("Planned idea 1")).toHaveValue(fixedIdea);
 });
 
 test("Dataset builds, persists and exports a trigger-ready batch", async ({ page }) => {
@@ -133,14 +142,8 @@ test("Dataset builds, persists and exports a trigger-ready batch", async ({ page
   await page.getByLabel("Guided dataset inputs").fill(
     "standing portrait in a city at night\nrunning through a sunlit field",
   );
-  await page.getByText("Advanced coverage planning (optional)").click();
-  await page.getByLabel("Use coverage plan").check();
-  await page.getByRole("button", { name: "Create plan" }).click();
-  const planner = page.getByRole("region", { name: "Coverage planner" });
-  await expect(planner.getByRole("row")).toHaveCount(4);
-  await expect(planner.getByText("standing portrait in a city at night", { exact: true })).toHaveCount(2);
-  await expect(planner.getByText("standing portrait in a city at night", { exact: true }).first()).toBeVisible();
-  await expect(planner.getByText("running through a sunlit field", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Use coverage plan")).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Coverage planner" })).toHaveCount(0);
   await page.getByRole("button", { name: "Generate 3 prompts" }).click();
   await expect(page.getByLabel("Dataset prompt 3")).toHaveValue(/ohwx_person/);
   await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(/standing portrait/);
@@ -162,8 +165,8 @@ test("Dataset builds, persists and exports a trigger-ready batch", async ({ page
   await page.reload();
   await page.getByRole("button", { name: "Dataset", exact: true }).click();
   await expect(page.getByLabel("Dataset prompt 3")).toHaveValue(/ohwx_person/);
-  await page.getByText("Advanced coverage planning (optional)", { exact: true }).click();
-  await expect(page.getByRole("region", { name: "Coverage planner" }).getByRole("row")).toHaveCount(4);
+  await expect(page.getByLabel("Planned scene 1")).toHaveValue(/standing portrait/);
+  await expect(page.getByLabel("Planned scene 3")).toHaveValue(/standing portrait/);
   await expect(page.getByRole("region", { name: "Dataset quality report" }).getByText("Overall", { exact: true })).toBeVisible();
   expect(errors).toEqual([]);
 });
@@ -250,7 +253,7 @@ test("plan first, edit and persist ideas, reuse across targets, and invalidate s
   await expect(page.getByLabel("Planned idea 1")).toHaveValue(idea);
   await page.getByText("Training trigger & controls", { exact: true }).click();
   await page.getByLabel("Trigger text or terms").fill("ohwx_woman");
-  await page.getByLabel("Dataset target model").selectOption("Qwen Image");
+  await page.getByLabel("Dataset target model").selectOption("Qwen Image (original)");
   const accepted = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset") && response.status() === 202);
   await page.getByRole("button", { name: "Generate prompts from these scenes", exact: true }).click();
   const job = await (await accepted).json();

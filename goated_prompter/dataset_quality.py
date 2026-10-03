@@ -1,124 +1,22 @@
-"""Deterministic coverage plans and local quality checks for Dataset batches."""
+"""Local quality checks for Dataset batches."""
 
 from collections import Counter
 import hashlib
 import json
-import random
 import re
 
+from .dataset_assignments import dataset_assignments
 from .workflow_output import WorkflowFormatError, normalize_workflow_output
 from .dataset_triggers import trigger_contract_error, trigger_presence_error, trigger_terms, trigger_text_target
 from .dataset_visible_content import visible_content_error, positive_prompt_error
 
 
-AXES = {
-    "framing": ("Framing", ("face close-up", "head-and-shoulders", "medium shot", "three-quarter shot", "full view", "wide environmental view")),
-    "viewpoint": ("Viewpoint", ("eye level", "three-quarter view", "side profile", "low angle", "high angle", "overhead view")),
-    "pose_action": ("Pose / action", ("relaxed standing pose", "seated pose", "walking", "running", "reaching", "looking back", "crouching")),
-    "expression": ("Expression", ("neutral expression", "warm smile", "focused expression", "contemplative expression", "surprised expression", "determined expression")),
-    "lighting": ("Lighting", ("soft window daylight", "golden-hour light", "clean studio lighting", "dramatic low-key light", "colored practical light", "overcast diffuse light")),
-    "setting": ("Setting", ("minimal studio", "quiet interior", "urban street", "natural landscape", "workplace context", "night environment")),
-    "subject_matter": ("Subject matter", ("character portrait", "architecture", "product still life", "nature scene", "fashion scene", "vehicle", "food composition", "abstract forms")),
-    "composition": ("Composition", ("centered composition", "rule-of-thirds composition", "strong negative space", "layered depth", "symmetrical layout", "diagonal composition")),
-    "scale": ("Scale", ("intimate detail", "human scale", "room scale", "environmental scale", "monumental scale")),
-    "palette": ("Palette", ("restrained neutral palette", "warm palette", "cool palette", "high-contrast palette", "pastel palette", "limited accent-color palette")),
-    "context": ("Use context", ("isolated presentation", "in active use", "editorial presentation", "retail context", "domestic context", "outdoor context")),
-    "surface": ("Surface", ("matte seamless surface", "natural wood", "polished stone", "brushed metal", "textured fabric", "reflective glass")),
-    "background": ("Background", ("plain neutral background", "tonal gradient", "contextual interior", "outdoor environment", "graphic color field", "dark controlled backdrop")),
-    "application": ("Application", ("packaging", "storefront signage", "apparel", "digital interface", "vehicle graphics", "printed campaign", "product marking")),
-    "material": ("Material", ("paper print", "embossed card", "painted metal", "fabric embroidery", "glass decal", "digital screen", "three-dimensional signage")),
-    "placement": ("Placement", ("central hero placement", "small corner placement", "repeating pattern", "edge-aligned placement", "environment-integrated placement", "label placement")),
-    "layout": ("Layout", ("single focal layout", "editorial grid", "stacked layout", "asymmetrical layout", "modular system", "poster layout")),
-    "hierarchy": ("Hierarchy", ("single headline", "headline and subhead", "multi-level editorial hierarchy", "oversized display type", "small refined typography", "repeating typographic system")),
-}
-
-CATEGORY_AXES = {
-    "Character": ("framing", "viewpoint", "lighting", "setting", "pose_action", "expression"),
-    "Multiple characters": ("framing", "viewpoint", "lighting", "setting", "pose_action", "expression"),
-    "Animal": ("framing", "viewpoint", "pose_action", "context", "lighting", "setting"),
-    "Visual style": ("subject_matter", "composition", "scale", "palette", "lighting", "setting"),
-    "Object / product": ("framing", "viewpoint", "context", "surface", "lighting", "background"),
-    "Location / environment": ("viewpoint", "composition", "scale", "lighting", "setting", "context"),
-    "Brand / logo": ("application", "material", "placement", "layout", "lighting", "setting"),
-    "Typography / text": ("layout", "hierarchy", "material", "placement", "background", "lighting"),
-    "Concept": ("framing", "viewpoint", "composition", "context", "lighting", "setting"),
-    "Custom": ("framing", "viewpoint", "composition", "context", "lighting", "setting"),
-}
-
-VARIETY_AXIS_COUNTS = {"Focused": 3, "Balanced": 5, "Wide": 6}
 LEAKED_LABELS = re.compile(
     r"(?im)^\s*(?:ITEM|TRIGGER TYPE|TRIGGER DESCRIPTION|REQUIRED TRIGGER TEXT|DATASET CONCEPT|"
     r"SOURCE MODE|GUIDED INPUT|ADDITIONAL CONSISTENCY RULES|CONSISTENCY AND VARIATION RULES|"
-    r"EARLIER ITEM|OUTPUT FORMAT|CURRENT SCENE|PLANNED IDEA|PLANNED GEOMETRY|PLANNED SCENE(?: / CURRENT SCENE)?|FINAL PROMPT|COVERAGE ASSIGNMENT)\s*(?:\d+[^\n]*)?$|"
+    r"EARLIER ITEM|OUTPUT FORMAT|CURRENT SCENE|PLANNED IDEA|PLANNED GEOMETRY|PLANNED SCENE(?: / CURRENT SCENE)?|FINAL PROMPT)\s*(?:\d+[^\n]*)?$|"
     r"</?(?:data|trigger|input|constraints|example|idea|scene)>",
 )
-
-
-def available_axes(trigger_type):
-    keys = CATEGORY_AXES.get(trigger_type, CATEGORY_AXES["Custom"])
-    return [{"key": key, "label": AXES[key][0], "options": list(AXES[key][1])} for key in keys]
-
-
-def selected_axes(data):
-    allowed = CATEGORY_AXES.get(data.get("trigger_type"), CATEGORY_AXES["Custom"])
-    explicit = data.get("coverage_axes") or []
-    if explicit:
-        selected = tuple(key for key in explicit if key in allowed)
-        return selected or allowed[:VARIETY_AXIS_COUNTS.get(data.get("variety"), 5)]
-    if data.get("trigger_type") in {"Character", "Multiple characters"}:
-        # Legacy explicit pose/expression axes remain available as soft requests.
-        # Automatic coverage no longer invents actions independently of ideas.
-        return allowed[:4]
-    return allowed[:VARIETY_AXIS_COUNTS.get(data.get("variety"), 5)]
-
-
-def plan_signature(data):
-    relevant = {
-        "trigger_type": data.get("trigger_type"), "custom_type": data.get("custom_type"),
-        "amount": data.get("amount"), "visual_style": data.get("visual_style"),
-        "source_mode": data.get("source_mode"), "inputs": data.get("inputs"),
-        "variety": data.get("variety"), "coverage_axes": data.get("coverage_axes") or [],
-    }
-    encoded = json.dumps(relevant, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()[:20]
-
-
-def build_coverage_plan(data, seed=None):
-    signature = plan_signature(data)
-    seed = data.get("plan_seed", 0) if seed is None else seed
-    if type(seed) is not int or not 0 <= seed <= 2147483647:
-        raise ValueError("Coverage plan seed must be between 0 and 2147483647.")
-    enabled = data.get("coverage_enabled") is True
-    axes = selected_axes(data) if enabled else ()
-    lines = [line.strip() for line in str(data.get("inputs") or "").splitlines() if line.strip()]
-    amount = int(data.get("amount", 1))
-    columns = {}
-    for position, key in enumerate(axes):
-        values = list(AXES[key][1])
-        rng = random.Random(f"{signature}:{seed}:{key}")
-        rng.shuffle(values)
-        offset = position % len(values)
-        columns[key] = [values[(index + offset) % len(values)] for index in range(amount)]
-    plan = []
-    for index in range(amount):
-        guided = lines[index % len(lines)] if data.get("source_mode") == "guided" and lines else ""
-        plan.append({"index": index + 1, "input": guided,
-                     "facets": {key: columns[key][index] for key in axes}})
-    return {"enabled": enabled, "plan": plan, "signature": signature, "seed": seed,
-            "selected_axes": list(axes), "available_axes": available_axes(data.get("trigger_type"))}
-
-
-def effective_coverage_plan(data):
-    if data.get("coverage_enabled") is not True:
-        return build_coverage_plan(data)
-    expected = plan_signature(data)
-    plan = data.get("coverage_plan")
-    if (data.get("plan_signature") == expected and isinstance(plan, list)
-            and len(plan) == data.get("amount")):
-        return {"enabled": True, "plan": plan, "signature": expected, "seed": data.get("plan_seed", 0),
-                "selected_axes": list(selected_axes(data)),
-                "available_axes": available_axes(data.get("trigger_type"))}
-    return build_coverage_plan(data)
 
 
 def _normalized_words(prompt, trigger, target="Generic", connected=True):
@@ -354,7 +252,7 @@ def _prompt_trigger_preference(prompt, data):
 
 
 def quality_signature(data, results, plan):
-    value = {"version": 5, "trigger": data.get("trigger"), "target": data.get("target"),
+    value = {"version": 6, "trigger": data.get("trigger"), "target": data.get("target"),
              "trigger_connected": data.get("trigger_connected", True),
              "trigger_at_start": data.get("trigger_at_start", False),
              "amount": data.get("amount"), "results": results, "plan": plan}
@@ -364,7 +262,7 @@ def quality_signature(data, results, plan):
 
 def analyze_dataset_quality(data, results=None, plan=None):
     results = list(results if results is not None else data.get("results") or [])
-    plan = list(plan if plan is not None else effective_coverage_plan(data)["plan"])
+    plan = list(plan if plan is not None else dataset_assignments(data))
     trigger, target = data.get("trigger", ""), data.get("target", "Generic")
     records = {item["index"]: {"index": item["index"], "status": "pass", "issues": []}
                for item in results}
@@ -413,9 +311,6 @@ def analyze_dataset_quality(data, results=None, plan=None):
         for source in ("idea", "scene"):
             if leakage := visible_content_error(item.get(source, "")):
                 add(index, _issue(source + "_content_leakage", "warning", leakage))
-        for facet in item.get("coverage_conflicts", []):
-            add(index, _issue("coverage_incompatible", "warning",
-                f"Coverage {facet} was omitted to preserve the idea and coherent staging."))
         if item.get("geometry"):
             from .dataset_geometry import geometry_errors
             for message in geometry_errors(item):
@@ -476,26 +371,12 @@ def analyze_dataset_quality(data, results=None, plan=None):
             batch_issues.append(_issue("guided_coverage", "error",
                                        f"{len(missing)} planned guided input assignments are missing from the results."))
 
-    coverage_enabled = data.get("coverage_enabled") is True
-    coverage_parts = []
-    if coverage_enabled:
-        for key in selected_axes(data):
-            by_index = {item["index"]: item for item in results}
-            values = [item.get("facets", {}).get(key) for item in plan if item.get("facets", {}).get(key)
-                      and key not in by_index.get(item["index"], {}).get("coverage_conflicts", [])]
-            expected = min(len(values), len(AXES[key][1]))
-            planned_count = sum(bool(item.get("facets", {}).get(key)) for item in plan)
-            coverage_parts.append((len(set(values)) / expected * len(values) / planned_count)
-                                  if expected and planned_count else 0)
-    coverage_score = round(100 * sum(coverage_parts) / len(coverage_parts)) if coverage_parts else 100
     total = max(1, len(results))
     metrics = {
         "trigger": round(100 * trigger_passes / total),
         "format": round(100 * format_passes / total),
         "uniqueness": _cluster_uniqueness(results, duplicate_pairs),
     }
-    if coverage_enabled:
-        metrics["planned_coverage"] = coverage_score
     scene_quality = analyze_scene_diversity(results)
     if scene_quality["count"]:
         metrics["scene_uniqueness"] = scene_quality["uniqueness"]
@@ -513,7 +394,7 @@ def analyze_dataset_quality(data, results=None, plan=None):
         record["status"] = "error" if "error" in severities else "warning" if severities else "pass"
     all_issues = batch_issues + [issue for record in records.values() for issue in record["issues"]]
     weights = {"idea_uniqueness": .30, "scene_uniqueness": .20, "uniqueness": .15,
-               "trigger": .15, "format": .10, "planned_coverage": .10}
+               "trigger": .15, "format": .10}
     # Legacy results without planning provenance remain diagnosable, not fabricated.
     active_weights = {key: weight for key, weight in weights.items() if key in metrics}
     score = round(sum(metrics[key] * weight for key, weight in active_weights.items()) / sum(active_weights.values()))

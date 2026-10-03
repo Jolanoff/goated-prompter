@@ -13,17 +13,17 @@ from .prompting.dataset import (
     dataset_format_repair, dataset_content_repair, dataset_loop_repair, deep_review_correction,
 )
 from .prompting.details import PROMPT_LENGTH_NAMES
-from .prompting.target_models import TARGET_MODEL_NAMES
-from .workflow_output import WorkflowFormatError, normalize_workflow_output, sanitize_prompt_text
-from .dataset_coverage import (AXES, analyze_dataset_quality, analyze_idea_diversity,
-                               effective_coverage_plan, idea_action_error)
+from .prompting.target_models import TARGET_MODEL_NAMES, canonical_target
+from .workflow_output import WorkflowFormatError, normalize_workflow_output, sanitize_prompt_text, requested_visible_text
+from .dataset_assignments import dataset_assignments
+from .dataset_quality import analyze_dataset_quality, analyze_idea_diversity, idea_action_error
 from .dataset_triggers import trigger_text_target
 from .dataset_triggers import trigger_presence_error, trigger_terms
 from .dataset_visible_content import PositiveContentError, positive_prompt_error, sanitize_positive_prompt
 from .scene_planner import (ScenePlanner, MAX_STORED_SCENE_CHARACTERS, MAX_STORED_IDEA_CHARACTERS,
                             reusable_scene_plan, scene_plan_signature, validate_saved_scene_plan, validate_plan_metadata,
                             failure_reason, failed_scene, scene_is_usable, FAILURE_METADATA)
-from .dataset_geometry import geometry_errors, migrate_saved_geometry
+from .dataset_geometry import geometry_errors, migrate_saved_geometry, resolve_framing_conflicts
 
 
 DATASET_MAX_RETRIES = 3
@@ -40,7 +40,6 @@ def default_dataset_draft():
         "amount": 12, "visual_style": "Photorealistic", "custom_style": "",
         "source_mode": "random", "inputs": "", "target": "Generic", "length": "Medium",
         "director_preset": "general_director", "variety": "Balanced", "constraints": "",
-        "coverage_enabled": False, "coverage_axes": [], "coverage_plan": [], "plan_seed": 0, "plan_signature": "",
         "quality_report": {}, "results": [], "result_job_id": "",
         "scene_plan": [], "scene_plan_signature": "",
         "planning_mode": "Fast",
@@ -69,7 +68,6 @@ def validate_dataset_draft(value, *, generation=False, planning=False):
     result["inputs"] = _text(result["inputs"], "Guided inputs", 50000)
     result["constraints"] = _text(result["constraints"], "Dataset constraints", 10000)
     result["result_job_id"] = _text(result["result_job_id"], "Result job id", 128).strip()
-    result["plan_signature"] = _text(result["plan_signature"], "Coverage plan signature", 128).strip()
     result["scene_plan_signature"] = _text(result["scene_plan_signature"], "Scene plan signature", 128).strip()
     result["scene_plan"] = validate_saved_scene_plan(result["scene_plan"])
     if not isinstance(result["planning_mode"], str) or result["planning_mode"] not in {"Fast", "Quality"}:
@@ -82,25 +80,18 @@ def validate_dataset_draft(value, *, generation=False, planning=False):
         raise ValueError("Invalid dataset source mode.")
     if result["variety"] not in DATASET_VARIETY:
         raise ValueError("Invalid dataset variety.")
+    result["target"] = canonical_target(result["target"])
     if result["target"] not in TARGET_MODEL_NAMES or result["length"] not in PROMPT_LENGTH_NAMES:
         raise ValueError("Invalid target model or prompt length.")
     if not isinstance(result["director_preset"], str) or len(result["director_preset"]) > 256:
         raise ValueError("Director preset must be a string of at most 256 characters.")
     if type(result["amount"]) is not int or not 1 <= result["amount"] <= 25:
         raise ValueError("Dataset prompt amount must be between 1 and 25.")
-    if type(result["coverage_enabled"]) is not bool:
-        raise ValueError("Coverage planning must be enabled or disabled.")
     for key, label in (("trigger_at_start", "Trigger starting placement"),
                        ("trigger_connected", "Connected trigger text"),
                        ("expand_trigger", "Trigger expansion")):
         if type(result[key]) is not bool:
             raise ValueError(f"{label} must be enabled or disabled.")
-    if type(result["plan_seed"]) is not int or not 0 <= result["plan_seed"] <= 2147483647:
-        raise ValueError("Coverage plan seed must be between 0 and 2147483647.")
-    if (not isinstance(result["coverage_axes"], list) or len(result["coverage_axes"]) > len(AXES)
-            or any(not isinstance(key, str) or key not in AXES for key in result["coverage_axes"])
-            or len(set(result["coverage_axes"])) != len(result["coverage_axes"])):
-        raise ValueError("Invalid Dataset coverage axes.")
     if result["trigger_type"] == "Custom" and generation and not result["custom_type"]:
         raise ValueError("Describe the custom subject kind before generating.")
     if result["visual_style"] == "Custom" and generation and not result["custom_style"]:
@@ -111,8 +102,10 @@ def validate_dataset_draft(value, *, generation=False, planning=False):
         raise ValueError("Dataset results must be an array of at most 25 prompts.")
     cleaned = []
     for index, item in enumerate(result["results"]):
+        if isinstance(item, dict):
+            item = {key: value for key, value in item.items() if key != "coverage_conflicts"}
         if (not isinstance(item, dict) or not {"index", "prompt", "input"} <= set(item)
-                or set(item) - {"index", "prompt", "input", "idea", "scene", "geometry", "coverage_conflicts"}):
+                or set(item) - {"index", "prompt", "input", "idea", "scene", "geometry"}):
             raise ValueError("Each Dataset result requires index, prompt and input, with optional idea and scene text.")
         if type(item["index"]) is not int or item["index"] < 1 or item["index"] > 25:
             raise ValueError("Invalid Dataset result index.")
@@ -126,32 +119,16 @@ def validate_dataset_draft(value, *, generation=False, planning=False):
         if "geometry" in item:
             record["geometry"], _ = migrate_saved_geometry(item["geometry"])
         validate_plan_metadata(item)
-        if "coverage_conflicts" in item:
-            record["coverage_conflicts"] = list(item["coverage_conflicts"])
         cleaned.append(record)
     result["results"] = cleaned
-    if not isinstance(result["coverage_plan"], list) or len(result["coverage_plan"]) > 25:
-        raise ValueError("Coverage plan must contain at most 25 rows.")
-    plan = []
-    for item in result["coverage_plan"]:
-        if not isinstance(item, dict) or set(item) != {"index", "input", "facets"}:
-            raise ValueError("Each coverage row requires index, input and facets only.")
-        if type(item["index"]) is not int or not 1 <= item["index"] <= 25:
-            raise ValueError("Invalid coverage row index.")
-        if not isinstance(item["facets"], dict) or len(item["facets"]) > len(AXES):
-            raise ValueError("Invalid coverage row facets.")
-        facets = {}
-        for key, value in item["facets"].items():
-            if key not in AXES or not isinstance(value, str) or value not in AXES[key][1]:
-                raise ValueError("Invalid coverage facet value.")
-            facets[key] = value
-        plan.append({"index": item["index"], "input": _text(item["input"], "Coverage input", 10000),
-                     "facets": facets})
-    result["coverage_plan"] = plan
     if not isinstance(result["quality_report"], dict):
         raise ValueError("Dataset quality report must be an object.")
     if len(json.dumps(result["quality_report"], ensure_ascii=False)) > 500000:
         raise ValueError("Dataset quality report is too large.")
+    metrics = result["quality_report"].get("metrics")
+    if isinstance(metrics, dict) and metrics.keys() & {"coverage", "planned_coverage"}:
+        # Recompute cached diagnostics from older builds without the removed metric.
+        result["quality_report"] = {}
     return result
 
 
@@ -179,6 +156,7 @@ class DatasetService:
         self.config, self.checkpoint = config, checkpoint
 
     def _generate(self, session, instruction, data, index, progress, plan_item=None, *, retries=DATASET_MAX_RETRIES):
+        expected_text = requested_visible_text("\n".join((data["subject"], data["constraints"], (plan_item or {}).get("input", ""))))
         def check_fidelity(prompt):
             if data.get("planning_mode") == "Quality" and plan_item:
                 text = trigger_text_target(prompt, data["target"])
@@ -205,7 +183,8 @@ class DatasetService:
                 content_failure = False
                 if recovered and len(recovered.split()) >= 30 and recovered.rstrip().endswith((".", "!", "?", "}")):
                     try:
-                        prompt = normalize_workflow_output(recovered, data["target"])
+                        prompt = normalize_workflow_output(recovered, data["target"],
+                            expected_visible_text=expected_text)
                         prompt = validate_trigger_contract(prompt, data, progress)
                         prompt = validate_positive_content(prompt, data)
                         prompt = check_fidelity(prompt)
@@ -250,7 +229,8 @@ class DatasetService:
             self.checkpoint()
             progress(f"Checking dataset prompt {index}/{data['amount']}")
             try:
-                prompt = normalize_workflow_output(raw, data["target"])
+                prompt = normalize_workflow_output(raw, data["target"],
+                    expected_visible_text=expected_text)
                 prompt = validate_trigger_contract(prompt, data, progress)
                 return check_fidelity(validate_positive_content(prompt, data))
             except (WorkflowFormatError, ValueError, KeyError, TypeError) as exc:
@@ -283,14 +263,13 @@ class DatasetService:
         effective, profile = resolve_director_config(self.config, request)
         backend = create_backend(effective)
         family = _effective_model_family(request, profile, effective)
-        coverage = effective_coverage_plan(data)
-        plan = coverage["plan"]
+        assignments = dataset_assignments(data)
         results = list(data["results"]) if scene_action else []
-        signature = scene_plan_signature(data, coverage)
+        signature = scene_plan_signature(data, assignments)
         progress("Starting the prompt engine for the dataset…")
         with backend.generation_session() as session:
             planner = ScenePlanner(self.checkpoint)
-            scenes = reusable_scene_plan(data, coverage, require_scenes=False, allow_pending=valid_only or scene_action is not None)
+            scenes = reusable_scene_plan(data, assignments, require_scenes=False, allow_pending=valid_only or scene_action is not None)
             if valid_only and (scenes is None or not any(scene_is_usable(row, data) for row in scenes)):
                 raise ValueError("No valid scenes are available in the current saved plan.")
             if scenes_only and scenes and all(scene_is_usable(row, data) for row in scenes):
@@ -301,26 +280,26 @@ class DatasetService:
                 nonlocal scenes
                 scenes = [{**row, "input": assignment["input"], "idea_status": row.get("idea_status", "valid"),
                            "scene_status": row.get("scene_status", "valid"), "prompt_status": row.get("prompt_status", "not_generated")}
-                          for row, assignment in zip(rows, plan)]
+                          for row, assignment in zip(rows, assignments)]
                 partial({"ok": True, "kind": "dataset_scenes" if scenes_only else "dataset",
                          "prompts": list(results), "completed": len(results), "total": data["amount"],
-                         "target": data["target"], "coverage": coverage,
+                         "target": data["target"],
                          "scene_plan": [dict(row) for row in scenes], "scene_plan_signature": signature})
             if scenes is None:
                 planned = planner.plan_batch(
-                    session=session, data=data, coverage=coverage, family=family, progress=progress,
+                    session=session, data=data, assignments=assignments, family=family, progress=progress,
                     plan_update=save_planning_stage)
                 scenes = [{**row, "input": assignment["input"], "idea_status": row.get("idea_status", "valid"),
                             "scene_status": row.get("scene_status", ("guided_fallback" if data["source_mode"] == "guided"
                                              and row["scene"] == assignment["input"] else "valid")),
                             "prompt_status": row.get("prompt_status", "not_generated")}
-                          for row, assignment in zip(planned, plan)]
+                          for row, assignment in zip(planned, assignments)]
             else:
                 scenes = [dict(row) for row in scenes]
                 progress("Reusing saved Scene Planner ideas for the selected target.")
             def publish():
                 partial({"ok": True, "kind": "dataset", "prompts": list(results), "completed": len(results),
-                         "total": data["amount"], "target": data["target"], "coverage": coverage,
+                         "total": data["amount"], "target": data["target"],
                          "scene_plan": [dict(row) for row in scenes], "scene_plan_signature": signature})
             selected = [row["index"] for row in scenes if scene_is_usable(row, data)] if valid_only else list(range(1, data["amount"] + 1))
             if scene_action:
@@ -333,7 +312,7 @@ class DatasetService:
                 scenes[index - 1] = {**original, "prompt_status": "not_generated"}
                 if action == "regenerate_idea":
                     try:
-                        idea = planner.plan_ideas(session=session, data=data, coverage=coverage, family=family,
+                        idea = planner.plan_ideas(session=session, data=data, assignments=assignments, family=family,
                             progress=progress, indexes=[index], existing=scenes)[0]
                     except BackendGenerationError as exc:
                         self.checkpoint()
@@ -346,7 +325,7 @@ class DatasetService:
                 elif action == "repair_scene":
                     scenes[index - 1] = {**original, "scene_status": "not_generated", "prompt_status": "not_generated"}
                     publish()
-                    repaired = planner.recover_scene(session=session, data=data, coverage=coverage,
+                    repaired = planner.recover_scene(session=session, data=data, assignments=assignments,
                         row=original, family=family, progress=progress,
                         existing_rows=[row for row in scenes if row["index"] != index])
                     scenes[index - 1] = {**repaired, "input": original["input"], "idea_status": repaired.get("idea_status", "valid"),
@@ -365,13 +344,17 @@ class DatasetService:
                         scenes[composed["index"] - 1] = {**original, **composed,
                              "idea_status": composed.get("idea_status", "valid"), "prompt_status": composed.get("prompt_status", "not_generated")}
                     publish()
-                composed = planner.compose(session=session, data=data, coverage=coverage, ideas=pending,
+                composed = planner.compose(session=session, data=data, assignments=assignments, ideas=pending,
                     family=family, progress=progress, plan_update=save_composed)
                 save_composed([{**row, "scene_status": row.get("scene_status", "valid")} for row in composed])
             for index in selected:
                 row = scenes[index - 1]
                 if row.get("scene_status") == "failed":
                     continue
+                try:
+                    row = scenes[index - 1] = resolve_framing_conflicts(row)
+                except ValueError:
+                    pass  # Unknown staging facts still need a scene-local repair.
                 errors = geometry_errors(row, character=data.get("planning_mode") == "Quality"
                     and data["trigger_type"] == "Character" and row.get("scene_status") != "guided_fallback")
                 if errors or row.get("scene_status") in {"not_generated", "geometry_warning"}:
@@ -379,7 +362,7 @@ class DatasetService:
                         raise ValueError("Repair this scene's geometry before regenerating its prompt.")
                     scenes[index - 1] = {**row, "scene_status": "geometry_warning", "prompt_status": "not_generated"}
                     publish()
-                    repaired = planner.recover_scene(session=session, data=data, coverage=coverage,
+                    repaired = planner.recover_scene(session=session, data=data, assignments=assignments,
                         row=row, family=family, progress=progress, errors=errors,
                         existing_rows=[item for item in scenes if item["index"] != index])
                     scenes[index - 1] = {**row, **repaired, "scene_status": repaired.get("scene_status", "valid"),
@@ -396,7 +379,7 @@ class DatasetService:
             scene_state = {"scene_plan": scenes, "scene_plan_signature": signature}
             if scenes_only:
                 return {"ok": True, "kind": "dataset_scenes", **scene_state,
-                        "coverage": coverage, "backend": backend.name}
+                        "backend": backend.name}
             # Publish the full plan before any final prompt, retaining it even if
             # the writer subsequently fails or the user ends generation.
             publish()
@@ -404,44 +387,22 @@ class DatasetService:
                 self.checkpoint()
                 if scenes[index - 1].get("scene_status") == "failed":
                     continue
-                plan_item = {**plan[index - 1], **scenes[index - 1]}
+                plan_item = {**assignments[index - 1], **scenes[index - 1]}
                 instruction = dataset_instruction(request, data, index, (), family, plan_item)
                 try:
                     prompt = self._generate(session, instruction, data, index, progress, plan_item)
                 except BackendGenerationError as exc:
                     self.checkpoint()
                     original_reason = failure_reason(exc)
-                    if scenes[index - 1].get("replacement_attempted"):
-                        scenes[index - 1].update(prompt_status="failed", failure_stage="prompt",
-                            failure_reason=original_reason)
-                        progress(f"Skipping prompt {index}: {original_reason}")
-                        publish()
-                        continue
-                    replacement = planner.replace_failed_scene(session=session, data=data, coverage=coverage,
-                        row=scenes[index - 1], family=family, progress=progress, reason=original_reason,
-                        existing_rows=[row for row in scenes if row["index"] != index])
-                    scenes[index - 1] = {**replacement, "input": plan_item["input"],
-                        "scene_status": replacement.get("scene_status", "valid"),
-                        "idea_status": replacement.get("idea_status", "valid"),
-                        "prompt_status": replacement.get("prompt_status", "not_generated")}
+                    scenes[index - 1].update(prompt_status="failed", failure_stage="prompt",
+                        failure_reason=original_reason)
+                    progress(f"Skipping prompt {index}: {original_reason}")
                     publish()
-                    if replacement.get("scene_status") == "failed":
-                        continue
-                    plan_item = {**plan[index - 1], **scenes[index - 1]}
-                    instruction = dataset_instruction(request, data, index, (), family, plan_item)
-                    try:
-                        prompt = self._generate(session, instruction, data, index, progress, plan_item, retries=0)
-                    except BackendGenerationError as replacement_error:
-                        self.checkpoint()
-                        scenes[index - 1].update(prompt_status="failed", failure_stage="prompt",
-                            failure_reason=f"Original prompt: {original_reason} Replacement prompt failed: {failure_reason(replacement_error)}"[:2000])
-                        progress(f"Skipping prompt {index}: {scenes[index - 1]['failure_reason']}")
-                        publish()
-                        continue
+                    continue
                 seed = plan_item["input"]
                 results.append({"index": index, "prompt": prompt, "input": seed,
                                 "idea": plan_item["idea"], "scene": plan_item["scene"],
-                                **{key: plan_item[key] for key in ("geometry", "coverage_conflicts") if key in plan_item}})
+                                **{key: plan_item[key] for key in ("geometry",) if key in plan_item}})
                 results.sort(key=lambda row: row["index"])
                 if "prompt_status" in scenes[index - 1]:
                     scenes[index - 1] = {**scenes[index - 1], "prompt_status": "valid"}
@@ -449,14 +410,14 @@ class DatasetService:
                                     if key not in {"failure_reason", "failure_stage"}}
                 publish()
             scene_state = {"scene_plan": scenes, "scene_plan_signature": signature}
-        report = analyze_dataset_quality(data, results, plan)
+        report = analyze_dataset_quality(data, results, assignments)
         return {"ok": True, "kind": "dataset", "prompts": results,
                 "failed": sum(row.get("prompt_status") == "failed" for row in scenes),
                 "completed": len(results), "total": data["amount"], "target": data["target"],
-                "coverage": coverage, **scene_state, "quality_report": report, "backend": backend.name}
+                **scene_state, "quality_report": report, "backend": backend.name}
 
 
-def _parse_deep_review(raw, chunk, coverage_enabled=False):
+def _parse_deep_review(raw, chunk):
     text = str(raw or "").strip()
     if text.startswith("```") and text.endswith("```"):
         lines = text.splitlines()
@@ -468,7 +429,6 @@ def _parse_deep_review(raw, chunk, coverage_enabled=False):
     expected = [item["index"] for item in chunk]
     if not isinstance(value, list) or len(value) != len(expected):
         raise WorkflowFormatError("Deep review must return one record per supplied prompt.")
-    allowed_categories = DEEP_CATEGORIES if coverage_enabled else DEEP_CATEGORIES - {"coverage_mismatch"}
     cleaned = []
     for position, item in enumerate(value):
         if not isinstance(item, dict) or set(item) != {"index", "issues"} or item["index"] != expected[position] or not isinstance(item["issues"], list) or len(item["issues"]) > 5:
@@ -476,7 +436,7 @@ def _parse_deep_review(raw, chunk, coverage_enabled=False):
         issues = []
         for issue in item["issues"]:
             if (not isinstance(issue, dict) or set(issue) != {"category", "severity", "message"}
-                    or issue["category"] not in allowed_categories or issue["severity"] not in {"warning", "error"}
+                    or issue["category"] not in DEEP_CATEGORIES or issue["severity"] not in {"warning", "error"}
                     or not isinstance(issue["message"], str) or not issue["message"].strip()
                     or len(issue["message"]) > 500):
                 raise WorkflowFormatError("A deep review issue is invalid.")
@@ -530,7 +490,7 @@ class DatasetReviewService:
                     self.checkpoint()
                     progress(f"Checking review for prompts {chunk[0]['index']}–{chunk[-1]['index']}")
                     try:
-                        reviewed.extend(_parse_deep_review(raw, chunk, data["coverage_enabled"]))
+                        reviewed.extend(_parse_deep_review(raw, chunk))
                         break
                     except WorkflowFormatError as exc:
                         if attempt:
@@ -542,8 +502,7 @@ class DatasetReviewService:
                         instruction = deep_review_instruction(
                             data, chunk, family, deep_review_correction(exc)
                         )
-        coverage = effective_coverage_plan(data)
-        report = analyze_dataset_quality(data, data["results"], coverage["plan"])
+        report = analyze_dataset_quality(data, data["results"])
         merge_deep_review(report, reviewed)
         return {"ok": True, "kind": "dataset_review", "report": report,
                 "reviewed": len(data["results"]), "backend": backend.name}
