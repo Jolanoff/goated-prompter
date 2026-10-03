@@ -14,7 +14,8 @@ def geometry_prompt_schema(dataset_type):
     for name, spec in GEOMETRY_FIELDS.items():
         if name not in profile.allowed:
             continue
-        kind = (", ".join(sorted(spec.values)) if spec.values is not None else
+        values = profile.values_for(name)
+        kind = (", ".join(sorted(values)) if values is not None else
                 f"integer >= {spec.minimum}" if spec.count else
                 f"array of up to {spec.max_items} short strings" if spec.text_array else
                 f"free text, at most {spec.max_length} characters")
@@ -26,5 +27,5 @@ def geometry_prompt_schema(dataset_type):
 
 def geometry_enum_values(dataset_type):
     profile = get_profile(dataset_type)
-    return {name: sorted(spec.values) for name, spec in GEOMETRY_FIELDS.items()
+    return {name: sorted(profile.values_for(name)) for name, spec in GEOMETRY_FIELDS.items()
             if name in profile.allowed and spec.values is not None}

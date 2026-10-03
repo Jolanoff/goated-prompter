@@ -400,10 +400,11 @@ class GeometryAndQualityTests(unittest.TestCase):
         self.assertEqual(result[0], good)
         self.assertEqual(session.generate.call_count, 2)
 
-    def test_semantic_paraphrases_form_one_duplicate_cluster(self):
+    def test_explicit_lexical_duplicates_cluster_but_nuanced_paraphrases_defer_to_review(self):
         rows = [{"index": i, "idea": idea} for i, idea in enumerate(("trying to juggle oranges and failing",
                 "dropping fruit while attempting to juggle", "losing control of three airborne oranges"), 1)]
-        self.assertEqual(analyze_idea_diversity(draft(), rows)["uniqueness"], 0)
+        self.assertEqual(analyze_idea_diversity(draft(), rows)["uniqueness"], 50)
+        self.assertFalse(analyze_idea_diversity(draft(), rows)["ideas"][2]["issues"])
         for constrained in ({"source_mode": "guided"}, {"variety": "Focused"}):
             self.assertEqual(analyze_idea_diversity(draft(**constrained), rows)["uniqueness"], 100)
         exact = [rows[0], {**rows[0], "index": 2}]

@@ -64,6 +64,8 @@ export function hydrateBuilder(inputs, saved = {}, library) {
       "Maximum Detail Director": "maximum_detail_director",
       "Krea 2 High Detail": "krea_2_high_detail",
       "Krea 2 Identity Edit": "krea_2_identity_edit",
+      "minimax_h3_director": "minimax_director",
+      "MiniMax Director": "minimax_director",
     };
     result.director_preset = directorAliases[result.director_preset] ?? result.director_preset;
     const find = (value) =>

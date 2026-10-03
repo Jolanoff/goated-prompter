@@ -7,6 +7,16 @@ full_body_with_environment full_subject full_subject_with_environment
 wide extreme_wide
 """.split())
 
+FRAMING_ALIASES = {
+    "medium": "waist_up", "medium_shot": "waist_up",
+    "medium_full": "three_quarter_body", "cowboy_shot": "three_quarter_body",
+    "close_up": "face_close_up", "closeup": "face_close_up", "face_closeup": "face_close_up",
+    "medium_close_up": "upper_body", "long_shot": "full_body_with_environment", "wide_shot": "wide",
+}
+
+CHARACTER_FRAMING_VALUES = FRAMING_VALUES - {"detail_close_up", "full_subject", "full_subject_with_environment"}
+PRODUCT_FRAMING_VALUES = frozenset("detail_close_up full_subject full_subject_with_environment wide extreme_wide".split())
+
 # The unsided three-quarter fact is intentionally retained: never guess a side
 # when loading a saved plan that specified only front_three_quarter.
 CAMERA_AZIMUTH_VALUES = frozenset("""

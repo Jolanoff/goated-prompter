@@ -109,10 +109,11 @@ class GeometrySchemaTests(unittest.TestCase):
 
     def test_gaze_directions_never_accept_emotions_and_correction_is_compact(self):
         for emotion in ("shocked", "aggressive", "ecstatic", "stoic", "focused"):
+            # Conflicting expression facts are never overwritten by a remap.
             with self.subTest(emotion=emotion), self.assertRaises(GeometryValidationError) as caught:
-                validate_geometry({"gaze_direction": emotion})
+                validate_geometry({"gaze_direction": emotion, "expression": "neutral"})
             self.assertIn("Expected one of", str(caught.exception))
-            self.assertIn("not emotion", caught.exception.correction)
+            self.assertIn("not an emotion", caught.exception.correction)
             self.assertNotIn("Expected one of", caught.exception.correction)
         self.assertEqual(validate_geometry({"gaze_direction": "toward_action", "expression": "shocked"}),
                          {"gaze_direction": "toward_action", "expression": "shocked"})

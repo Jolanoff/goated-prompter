@@ -2,13 +2,8 @@
 
 import re
 from .schema import GEOMETRY_FIELDS
+from .vocabulary import FRAMING_ALIASES
 
-FRAMING_ALIASES = {
-    "close_up": "face_close_up", "closeup": "face_close_up", "face_closeup": "face_close_up",
-    "medium_close_up": "upper_body", "medium_shot": "waist_up",
-    "medium_full": "three_quarter_body", "cowboy_shot": "three_quarter_body",
-    "long_shot": "full_body_with_environment",
-}
 FIELD_ALIASES = {
     "framing": FRAMING_ALIASES,
     "camera_azimuth": {"front_facing": "front", "rear": "direct_rear"},
@@ -30,5 +25,38 @@ def normalize_field(name, value):
     return value
 
 
-def normalize_geometry(value):
-    return {name: normalize_field(name, content) for name, content in value.items()}
+GAZE_PROSE = {
+    "eyes_closed": r"\b(?:eyes (?:are )?closed|closed eyes)\b",
+    "toward_camera": r"\b(?:eyes (?:are )?(?:directed|looking)|looking|gazing|staring) (?:directly |straight )?(?:at|toward|into) (?:the )?(?:camera|viewer)\b",
+    "toward_ground": r"\b(?:looking|gazing|staring) (?:down )?(?:at|toward) (?:the )?ground\b",
+}
+
+
+def normalize_geometry(value, *, profile=None, scene=""):
+    """Correct only lexical aliases and unambiguous category mistakes.
+
+    Head orientation alone never establishes an eye direction. Conflicting
+    expression/head facts stay invalid for local repair instead of being lost.
+    """
+    cleaned = {name: normalize_field(name, content) for name, content in value.items()}
+    gaze = cleaned.get("gaze_direction")
+    if not isinstance(gaze, str) or gaze == "custom" or gaze in GEOMETRY_FIELDS["gaze_direction"].values:
+        return cleaned
+    for destination in ("expression", "head_direction"):
+        if profile is not None and destination not in profile.allowed:
+            continue
+        values = profile.values_for(destination) if profile is not None else GEOMETRY_FIELDS[destination].values
+        if gaze not in values or cleaned.get(destination, gaze) != gaze:
+            continue
+        cleaned[destination] = gaze
+        del cleaned["gaze_direction"]
+        text = scene.casefold()
+        if re.search(r"\b(?:mirror|reflection|collage|inset|split.screen)\b", text):
+            break
+        directions = {direction for direction, pattern in GAZE_PROSE.items()
+                      for match in re.finditer(pattern, text)
+                      if not re.search(r"\b(?:no|not|never|without|avoid)\b[^,.;:]*$", text[max(0, match.start() - 40):match.start()])}
+        if len(directions) == 1:
+            cleaned["gaze_direction"] = directions.pop()
+        break
+    return cleaned

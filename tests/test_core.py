@@ -23,6 +23,22 @@ reference_map = importlib.import_module(f"{PACKAGE}.reference_map")
 
 
 class CoreTests(unittest.TestCase):
+    def test_minimax_structured_capability_dispatches_format_repair(self):
+        valid = 'integrated_multimodal_description: [Shot 1] A runner shouts "Go!" (quietly).\noverall_soundscape: Footsteps.\nnon_diegetic_music: None.'
+        self.session.generate.side_effect = ["A runner moves.", valid]
+        result = self.service.generate(self.request("Off", mode="Video", target_model="MiniMax H3"))
+        self.assertEqual(result.prompt, valid)
+        self.assertEqual(self.session.generate.call_count, 2)
+        repair = self.session.generate.call_args_list[1].args[0]
+        self.assertIn("MINIMAX H3 FORMAT CORRECTION", repair.system_message)
+        self.assertEqual(repair.user_message, self.session.generate.call_args_list[0].args[0].user_message)
+
+    def test_minimax_nonvideo_mode_retains_plain_image_task(self):
+        self.session.generate.side_effect = ["A runner beside a sign."]
+        result = self.service.generate(self.request("Off", mode="Enhance", target_model="MiniMax H3"))
+        self.assertEqual(result.prompt, "A runner beside a sign.")
+        self.assertEqual(self.session.generate.call_count, 1)
+
     def setUp(self):
         self.stack = ExitStack()
         self.addCleanup(self.stack.close)

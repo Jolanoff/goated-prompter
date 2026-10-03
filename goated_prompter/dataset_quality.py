@@ -74,9 +74,6 @@ def idea_concepts(text):
     text = text.casefold()
     for family, pattern in _CONCEPT_FAMILIES.items():
         text = re.sub(r"\b(?:" + pattern + r")\b", family, text)
-    # Object control in flight is a common paraphrase of failed juggling.
-    if "failure" in text and "fruit" in text and re.search(r"\b(?:airborne|air|flight)\b", text):
-        text += " juggle"
     text = re.sub(r"\b(?:trying|attempting|attempt|control|airborne|air|flight|three|two|one|and|to)\b", "", text)
     text = re.sub(r"\b(?:at (?:night|dawn|dusk|sunset)|in (?:warm|soft|bright) light|from a low angle)\b", "", text)
     return set(_scene_event_words(text))
@@ -84,8 +81,14 @@ def idea_concepts(text):
 
 def idea_action_error(idea, description):
     """High-confidence action loss only; unknown paraphrases remain review hints."""
-    actions = idea_concepts(idea) & {"juggle", "walk", "run", "laugh", "catch", "read"}
-    if actions and not actions & idea_concepts(description):
+    # Inspect the entire prose, not a truncated diversity/event prefix. Unknown
+    # paraphrases are Deep Review's job, not reasons to replace valid staging.
+    action_families = {"juggle", "walk", "run", "laugh", "catch", "read"}
+    def explicit_actions(text):
+        return {name for name in action_families if re.search(r"\b(?:" + _CONCEPT_FAMILIES[name] + r")\b", text, re.I)}
+    actions, described = explicit_actions(idea), explicit_actions(description)
+    static_replacement = re.search(r"\b(?:portrait|posing|poses|standing|stands|wears|wearing|dressed)\b", description, re.I)
+    if actions and not actions & described and (described or static_replacement):
         return "The planned primary action disappeared. Preserve the fixed idea and its important action."
     return None
 
@@ -165,7 +168,7 @@ def analyze_idea_diversity(data, rows):
                 continue
             elif focused:
                 continue  # Narrow family variants are valid, but exact copies are not.
-            elif aw and bw and (_similarity(aw, bw) >= .75 or (facial and not expression_scope)):
+            elif (aw and aw == bw and not facial) or (min(len(aw), len(bw)) >= 3 and _similarity(aw, bw) >= .85):
                 code = "similar_idea_category"
             if code:
                 pairs.add((left["index"], right["index"]))
@@ -248,7 +251,7 @@ def analyze_dataset_quality(data, results=None, plan=None):
             issue = _prompt_trigger_issue(prompt, data)
             add(index, _issue("trigger_missing", "warning", issue or "Requested trigger wording is missing."))
         try:
-            normalize_workflow_output(prompt, target)
+            normalize_workflow_output(prompt, target, mode="Enhance")
             format_passes += 1
         except WorkflowFormatError as exc:
             add(index, _issue("target_format", "error", f"Target format is invalid: {exc}"))

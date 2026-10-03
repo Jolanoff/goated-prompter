@@ -4,6 +4,7 @@ import json
 import re
 
 from .prompting.target_models import canonical_target, get_target_capabilities
+from .minimax_format import normalize_h3_sections
 
 
 class WorkflowFormatError(ValueError):
@@ -98,11 +99,21 @@ def requested_visible_text(text):
         text, re.I))
 
 
-def normalize_workflow_output(raw, target, *, expected_visible_text=()):
+def normalize_workflow_output(raw, target, *, expected_visible_text=(), mode=None):
     """Unwrap simple containers; never flatten complex objects or salvage broken JSON."""
     target = canonical_target(target)
-    structured = get_target_capabilities(target).output_format == "json"
+    capabilities = get_target_capabilities(target)
+    structured = capabilities.supports_structured_output
     value = _unfence(str(raw or "").strip())
+    if structured and capabilities.output_format == "minimax_fields":
+        # The adapter preserves non-video tasks; do not turn Dataset images or
+        # captions into videos simply because H3 is selected.
+        if mode is None or mode == "Video":
+            try:
+                return normalize_h3_sections(value)
+            except ValueError as exc:
+                raise WorkflowFormatError(str(exc)) from exc
+        structured = False
     for _ in range(3):
         if not value:
             raise WorkflowFormatError("The prompt engine returned an empty prompt.")

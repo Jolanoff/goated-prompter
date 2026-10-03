@@ -37,7 +37,7 @@ from .prompting.details import (
 )
 from .prompting.evidence import EVIDENCE_ANALYSIS_SYSTEM_PROMPT, evidence_analysis_user_message
 from .prompting.modes import get_mode_adapter, get_vision_mode_adapter
-from .prompting.output import OUTPUT_CONTRACT, output_contract, qwen_format_repair
+from .prompting.output import OUTPUT_CONTRACT, output_contract, qwen_format_repair, minimax_format_repair
 from .prompting.target_models import QWEN21_EDIT_ADAPTER, get_model_adapter, canonical_target, resolve_target_length, get_target_capabilities
 from .presets import DEFAULT_DIRECTOR_PRESET, get_director_preset, legacy_preset_for_mode
 from .reference_map import REFERENCE_IMAGE_SLOTS, reference_images, reference_map_from_mapping, resolve_reference_map
@@ -572,7 +572,7 @@ class GoatedPrompterService:
             )
             qwen_images = _qwen21_source_tokens(request, resolved_reference_map, text_only) if request.target_model == "Qwen Image 2.1" else ()
             qwen_task = "edit" if qwen_images else "t2i"
-            validate_format = request.target_model == "Qwen Image 2.1" or get_target_capabilities(request.target_model).output_format == "json"
+            validate_format = request.target_model == "Qwen Image 2.1" or get_target_capabilities(request.target_model).supports_structured_output
             for attempt in range(2 if validate_format else 1):
                 session_backend.validate_instruction(instruction)
                 if self._checkpoint is not None:
@@ -584,13 +584,13 @@ class GoatedPrompterService:
                     break
                 try:
                     prompt = normalize_workflow_output(prompt, request.target_model,
-                                                       expected_visible_text=requested_visible_text(request.idea))
+                                                        expected_visible_text=requested_visible_text(request.idea), mode=request.mode)
                     break
                 except WorkflowFormatError as exc:
                     if attempt:
                         raise BackendGenerationError(f"{request.target_model} returned an invalid prompt after one format-repair attempt: {exc}") from exc
                     instruction = replace(instruction,
-                        system_message=qwen_format_repair(
+                        system_message=minimax_format_repair(instruction.system_message, exc) if request.target_model == "MiniMax H3" else qwen_format_repair(
                             instruction.system_message,
                             exc,
                             output_contract(request.target_model, qwen_task=qwen_task, qwen_images=qwen_images),
@@ -598,7 +598,7 @@ class GoatedPrompterService:
                         diagnostic_stage="final:format_retry")
         if not prompt:
             raise RuntimeError("Goated Prompter backend returned an empty prompt.")
-        if request.target_model != "Ideogram4":
+        if request.target_model != "Ideogram4" and not (request.target_model == "MiniMax H3" and request.mode == "Video"):
             prompt = sanitize_prompt_text(prompt)
         if not prompt:
             raise RuntimeError("Goated Prompter backend returned only removable metadata.")

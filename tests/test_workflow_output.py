@@ -20,6 +20,24 @@ CAPTION = {
 
 
 class OutputFormatTests(unittest.TestCase):
+    def test_minimax_named_sections_normalize_and_require_complete_structure(self):
+        valid = 'integrated_multimodal_description: A runner shouts "Go!".\noverall_soundscape: Footsteps.\nnon_diegetic_music: None.'
+        self.assertEqual(normalize_workflow_output(valid.upper(), "MiniMax H3").splitlines()[0],
+                         'integrated_multimodal_description: A RUNNER SHOUTS "GO!".')
+        self.assertEqual(normalize_workflow_output("```text\n" + valid + "\n```", "MiniMax H3"), valid)
+        invalid = ("A runner moves.", json.dumps({"prompt": valid}),
+                   valid.replace("overall_soundscape: Footsteps.\n", ""),
+                   valid.replace("non_diegetic_music: None.", "non_diegetic_music:"),
+                   valid + "\noverall_soundscape: Duplicate.",
+                   "Here is your prompt:\n" + valid,
+                   "\n".join(reversed(valid.splitlines())))
+        for raw in invalid:
+            with self.subTest(raw=raw), self.assertRaises(WorkflowFormatError):
+                normalize_workflow_output(raw, "MiniMax H3")
+        reference = "\n".join(f"{field}: Preserved content." for field in
+            ("subject_definitions", "summary", "retention_analysis", "detailed_description", "overall_soundscape", "non_diegetic_music"))
+        self.assertEqual(normalize_workflow_output(reference, "MiniMax H3"), reference)
+
     def test_every_plain_text_target_unwraps_prompt_without_changing_text(self):
         prompt = 'mira, red_hair, blue_jacket\nMira waits beside a sign reading "OPEN" in the sunlit plaza.'
         for target in TARGET_MODEL_NAMES:
@@ -27,7 +45,7 @@ class OutputFormatTests(unittest.TestCase):
                 continue
             for raw in (prompt, json.dumps({"prompt": prompt}), "```json\n" + json.dumps({"prompt": prompt}) + "\n```", json.dumps(prompt)):
                 with self.subTest(target=target, raw=raw):
-                    self.assertEqual(normalize_workflow_output(raw, target), prompt)
+                    self.assertEqual(normalize_workflow_output(raw, target, mode="Enhance"), prompt)
 
     def test_ideogram_keeps_caption_json_and_rejects_prompt_wrappers(self):
         raw = json.dumps(CAPTION, ensure_ascii=False, indent=2)
@@ -139,6 +157,14 @@ class ScriptedBackend(GoatedPrompterBackend):
 
 
 class FormatRepairTests(unittest.TestCase):
+    def test_minimax_malformed_sections_are_repaired_and_not_sanitized(self):
+        valid = 'integrated_multimodal_description: [Shot 1] A runner shouts "Go!" (quietly).\noverall_soundscape: Footsteps.\nnon_diegetic_music: None.'
+        backend = ScriptedBackend(["A runner moves.", valid])
+        result = self.run_workflow(backend, target="MiniMax H3")
+        self.assertEqual(result["prompt"], valid)
+        self.assertEqual(len(backend.calls), 2)
+        self.assertIn("MiniMax H3 requires", backend.calls[1].system_message)
+
     def run_workflow(self, backend, target="Anima", checkpoint=lambda: None, progress=None):
         progress = progress if progress is not None else []
         workflow = {"operation": "refine", "base": "Mira waits in a sunlit urban plaza. Anime illustration.",

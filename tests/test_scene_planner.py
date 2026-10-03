@@ -45,12 +45,12 @@ class ScenePlannerTests(unittest.TestCase):
                  "STEP 4 — CHECK GEOMETRY", "STEP 5 — REPAIR", "STEP 6 — RETURN"]
         self.assertEqual([system.index(step) for step in steps], sorted(system.index(step) for step in steps))
         for heading in ("IDEA DUPLICATION CHECK", "SCENE GEOMETRY AND VISIBILITY", "VISIBLE DETAIL RULE",
-                        "BODY AND POSE LOGIC", "ACTION LOGIC", "GAZE LOGIC", "EXPRESSION LOGIC", "SCENE COHERENCE AUDIT"):
+                        "ACTION LOGIC", "SCENE COHERENCE AUDIT"):
             self.assertIn(heading, system)
         self.assertIn("Do not mechanically use every category", system)
-        self.assertIn("Do not automatically force eye contact", system)
+        self.assertIn("fields supplied by the selected staging schema", system)
         self.assertIn("normally 3–15 words", system)
-        self.assertIn("14. NO ANATOMY HACKS", system)
+        self.assertIn("14. NO STAGING HACKS", system)
         self.assertIn('"geometry" (object)', system)
 
     def test_broad_and_narrow_concepts_produce_matching_idea_scene_counts_in_one_call(self):
@@ -107,7 +107,7 @@ class ScenePlannerTests(unittest.TestCase):
         self.assertLess(quality["uniqueness"], 100)
         faces = [{"index": i, "idea": idea} for i, idea in enumerate(
             ("funny face with tongue out", "funny face crossing eyes", "funny face puffing cheeks"), 1)]
-        self.assertLess(analyze_idea_diversity(draft(subject="woman doing funny stuff"), faces)["uniqueness"], 100)
+        self.assertEqual(analyze_idea_diversity(draft(subject="woman doing funny stuff"), faces)["uniqueness"], 100)
         self.assertEqual(analyze_idea_diversity(draft(subject="woman doing funny facial expressions"), faces)["uniqueness"], 100)
         self.assertEqual(analyze_idea_diversity(draft(source_mode="guided"), faces)["uniqueness"], 100)
 
