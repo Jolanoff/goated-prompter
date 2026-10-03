@@ -64,14 +64,14 @@ class StagingProfileTests(unittest.TestCase):
 
     def test_added_body_state_fields_validate_and_migrate_for_selected_profiles(self):
         body_state = {"leg_position": "knees_bent", "pelvis_tilt": "tilted_up", "back_arch": "slight"}
-        for kind in ("Character", "Custom"):
+        for kind in ("Character",):
             with self.subTest(kind=kind):
                 geometry = {**staging(kind), **body_state}
                 self.assertEqual(validate_geometry(geometry, dataset_type=kind), geometry)
                 self.assertEqual(migrate_saved_geometry(geometry, dataset_type=kind), (geometry, False))
                 for name in body_state:
                     self.assertIn(name + ":", geometry_prompt_schema(kind))
-        for kind in set(DATASET_TYPES) - {"Character", "Custom"}:
+        for kind in set(DATASET_TYPES) - {"Character"}:
             for name, value in body_state.items():
                 with self.subTest(kind=kind, field=name), self.assertRaisesRegex(ValueError, "not applicable"):
                     validate_geometry({**staging(kind), name: value}, dataset_type=kind)
@@ -85,7 +85,7 @@ class StagingProfileTests(unittest.TestCase):
             self.assertNotIn(field, STAGING_PROFILES["Animal"].allowed)
 
     def test_product_example_validates_without_any_human_fields(self):
-        geometry = {"framing": "full_body_with_environment", "camera_azimuth": "front_three_quarter_left",
+        geometry = {"framing": "full_subject_with_environment", "camera_azimuth": "front_three_quarter_left",
                     "camera_elevation": "eye_level", "subject_scale": "large", "composition": "centered"}
         self.assertEqual(validate_geometry(geometry, dataset_type="Object / product"), geometry)
         self.assertFalse(geometry_errors({"geometry": geometry}, dataset_type="Object / product"))

@@ -423,7 +423,7 @@ class ScenePlanner:
                 row["replacement_attempted"] = True
             try:
                 if "geometry" in row:
-                    row["geometry"] = validate_geometry(row["geometry"], dataset_type=data["trigger_type"])
+                    row["geometry"] = validate_geometry(row["geometry"], dataset_type=data["trigger_type"], scene=row["scene"])
                     row = rows[position] = resolve_framing_conflicts(row, dataset_type=data["trigger_type"])
                 elif ideas is not None or STAGING_PROFILES[data["trigger_type"]].required:
                     raise ValueError("Scene Composer must include a structured geometry object.")
@@ -475,7 +475,8 @@ class ScenePlanner:
 
     def repair_scene(self, *, session, data, assignments, row, family="qwen", progress, errors=(), existing_rows=(), attempts=SCENE_REPAIR_ATTEMPTS):
         def validate(raw):
-            result = validate_scene_plan(raw, 1, indexes=[row["index"]], require_geometry=True, dataset_type=data["trigger_type"])[0]
+            result = validate_scene_plan(raw, 1, indexes=[row["index"]], require_geometry=True, validate_geometry_fields=False)[0]
+            result["geometry"] = validate_geometry(result["geometry"], dataset_type=data["trigger_type"], scene=result["scene"])
             result = resolve_framing_conflicts(result, dataset_type=data["trigger_type"])
             if result["idea"] != row["idea"]:
                 raise ValueError("Repair must preserve the fixed idea exactly.")

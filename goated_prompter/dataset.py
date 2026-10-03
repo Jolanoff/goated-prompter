@@ -183,7 +183,7 @@ class DatasetService:
                 content_failure = False
                 if recovered and len(recovered.split()) >= 30 and recovered.rstrip().endswith((".", "!", "?", "}")):
                     try:
-                        prompt = normalize_workflow_output(recovered, data["target"],
+                        prompt = normalize_workflow_output(recovered, data["target"], mode="Enhance",
                             expected_visible_text=expected_text)
                         prompt = validate_trigger_contract(prompt, data, progress)
                         prompt = validate_positive_content(prompt, data)
@@ -229,7 +229,7 @@ class DatasetService:
             self.checkpoint()
             progress(f"Checking dataset prompt {index}/{data['amount']}")
             try:
-                prompt = normalize_workflow_output(raw, data["target"],
+                prompt = normalize_workflow_output(raw, data["target"], mode="Enhance",
                     expected_visible_text=expected_text)
                 prompt = validate_trigger_contract(prompt, data, progress)
                 return check_fidelity(validate_positive_content(prompt, data))

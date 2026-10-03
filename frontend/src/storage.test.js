@@ -168,6 +168,7 @@ test("renamed targets and precision Directors hydrate without losing saved choic
     { id: "maximum_detail_director", label: "Technical Visual Precision" },
     { id: "krea_2_high_detail", label: "Krea 2 Visual Precision" },
     { id: "krea_2_identity_edit", label: "Krea 2 Identity Edit v1.2 (Community)" },
+    { id: "minimax_director", label: "MiniMax H3 Director" },
   ];
   for (const [legacy, current] of [
     ["Qwen2.1", "Qwen Image 2.1"], ["Qwen Image", "Qwen Image (original)"],
@@ -178,6 +179,8 @@ test("renamed targets and precision Directors hydrate without losing saved choic
   for (const [legacy, id] of [
     ["Maximum Detail Director", "maximum_detail_director"],
     ["Krea 2 High Detail", "krea_2_high_detail"], ["Krea 2 Identity Edit", "krea_2_identity_edit"],
+    ["minimax_h3_director", "minimax_director"], ["MiniMax Director", "minimax_director"],
+    ["MiniMax H3 Director", "minimax_director"],
   ]) {
     assert.equal(hydrateBuilder({}, { director_preset: legacy }, { presets }).director_preset, id);
   }

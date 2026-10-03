@@ -28,7 +28,7 @@ def output_contract(target, *, qwen_task="t2i", qwen_images=None):
             + "Apply the selected length as writing guidance, not a token cutoff."
         )
     if target == "MiniMax H3":
-        return "OUTPUT FORMAT — MiniMax H3: In Video mode return only the required H3 named sections and applicable reference/frame instructions, not a JSON wrapper. In other modes preserve the selected task. Target structure wins over Director and Length."
+        return "OUTPUT FORMAT — MiniMax H3: In Video mode return integrated_multimodal_description, overall_soundscape, non_diegetic_music as nonempty named sections exactly once in that order. Full-reference output instead requires subject_definitions, summary, retention_analysis, detailed_description, overall_soundscape, non_diegetic_music in order. Only applicable frame instructions may precede the fields; no JSON or commentary. In other modes preserve the selected task. Target structure wins over Director and Length."
     return (
         f"OUTPUT FORMAT — {target}: Return only the complete prompt text in the target adapter's writing style. "
         "Do not output a JSON object, JSON array, key/value wrapper, markdown fence, field names or direction label. "
@@ -46,3 +46,7 @@ def qwen_format_repair(system_message, error, contract):
         "Preserve source facts and locks. "
         + contract
     )
+
+
+def minimax_format_repair(system_message, error):
+    return system_message + "\n\nMINIMAX H3 FORMAT CORRECTION: " + str(error) + "\nKeep the original staging, motion, pacing, reference roles and exact dialogue. Repair only the required H3 named-section format. Do not invent media or change the selected task.\n" + output_contract("MiniMax H3")

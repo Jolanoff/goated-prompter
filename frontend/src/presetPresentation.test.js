@@ -22,7 +22,7 @@ test("all built-in display titles follow the requested order without mutating th
     "First-Person View", "Fashion Photography", "Vintage Film Photography",
     "Boudoir Photography", "Krea 2 Phone Photo", "Character Director",
     "Architecture & Interiors", "Product Photography", "Dataset & LoRA Caption",
-    "Video Action & Camera Movement", "MiniMax H3 Video Shot", "MiniMax Director",
+    "Video Action & Camera Movement", "MiniMax H3 Director",
     "Anime Director", "NSFW Director",
   ]);
   assert.deepEqual(presets, original);

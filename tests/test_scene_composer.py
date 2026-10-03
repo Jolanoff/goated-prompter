@@ -132,7 +132,7 @@ class SceneComposerTests(unittest.TestCase):
             ideas=[{key: row[key] for key in ("index", "idea")} for row in expected], progress=lambda _: None)
         self.assertEqual(result, expected)
         repair = session.generate.call_args_list[1].args[0]
-        self.assertIn("not emotion", repair.system_message)
+        self.assertIn("not an emotion", repair.system_message)
         self.assertNotIn("Expected one of", repair.system_message)
         self.assertEqual(json.loads(repair.user_message)["assignments"][0]["idea"], expected[0]["idea"])
         self.assertEqual(session.generate.call_count, 2)

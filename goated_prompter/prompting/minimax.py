@@ -8,6 +8,7 @@ import re
 
 from ..core import PromptInstruction
 from ..presets import get_director_preset
+from ..minimax_format import BASE_SECTIONS, REF_SECTIONS, normalize_h3_sections
 
 MODELS = ("MiniMax H3",)
 MODES = ("auto", "T2VA", "I2VA", "FL2VA", "L2VA", "Ref2VA")
@@ -18,8 +19,6 @@ TOKEN = re.compile(r"<(image|video|audio)(\d+)>", re.I)
 SHOT_TAG = re.compile(r"\[Shot\s*(\d+)\]", re.I)
 SHOT_INPUT = re.compile(r"<shot(\d+)>", re.I)
 SHOT_RANGE = re.compile(r"^\s*(\d{1,2}(?:\.\d{1,3})?)\s*[-–—]\s*(\d{1,2}(?:\.\d{1,3})?)\s*s\b", re.I)
-BASE_SECTIONS = ("integrated_multimodal_description", "overall_soundscape", "non_diegetic_music")
-REF_SECTIONS = ("subject_definitions", "summary", "retention_analysis", "detailed_description", "overall_soundscape", "non_diegetic_music")
 VISUAL_ROLES = {"identity", "appearance", "character", "object", "product", "environment", "style", "first frame",
                 "last frame", "keyframe", "storyboard", "motion", "dance", "pose", "expression", "camera movement",
                 "editing source", "video continuation", "cut structure", "timing", "pacing"}
@@ -538,7 +537,7 @@ def normalize_outlined_shots(timeline, headings, outline, plan, request):
 def validate_output(raw, data, plan):
     if not isinstance(raw, str) or not raw.strip():
         raise ValueError("MiniMax returned an empty prompt.")
-    prompt = raw.strip()
+    prompt = normalize_h3_sections(raw, reference=plan["mode"] == "Ref2VA")
     allowed = set(plan["label_map"].values()) | set(plan["video_audio_tracks"])
     prompt = re.sub(r"<(subject|picture|video|audio) ([1-9]\d*)>",
                     lambda match: f"<{match[1].title()} {match[2]}>", prompt, flags=re.I)

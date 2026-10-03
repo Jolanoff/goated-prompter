@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import AxeBuilder from "@axe-core/playwright";
 
-test("Quality composes in small chunks and geometry stays behind a readable disclosure", async ({ page, request }) => {
+test("Quality composes in small chunks and geometry opens in an accessible modal", async ({ page, request }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/");
   await page.getByRole("button", { name: "Dataset", exact: true }).click();
@@ -18,33 +18,58 @@ test("Quality composes in small chunks and geometry stays behind a readable disc
   expect(finished.status).toBe("succeeded");
   expect(finished.llm_trace.request_number).toBe(8); // Full-batch ideas + 2 chunks + 5 writers.
   const plan = page.getByRole("region", { name: "Scene Planner ideas", exact: true });
-  const disclosure = plan.locator("details").filter({ has: page.getByText("Geometry 1", { exact: true }) });
-  await expect(disclosure).not.toHaveAttribute("open");
-  await expect(disclosure.getByText("gaze direction", { exact: true })).not.toBeVisible();
+  const geometryButton = plan.getByRole("button", { name: "View geometry 1", exact: true });
+  const modal = page.getByRole("dialog", { name: "Geometry 1", exact: true });
+  await expect(modal).not.toBeVisible();
+  await expect(geometryButton).toHaveAttribute("aria-haspopup", "dialog");
+  await expect(geometryButton).toHaveAttribute("title", "View geometry 1");
   const neighboringScene = plan.getByLabel("Planned scene 2").locator("../..");
   const sceneBefore = await neighboringScene.boundingBox();
-  await disclosure.locator("summary").click();
-  await expect(disclosure.getByText("gaze direction", { exact: true })).toBeVisible();
-  await expect(disclosure.getByText("toward action", { exact: true })).toHaveCount(2); // Head and eyes are separate facts.
-  await expect(disclosure.getByText("standing neutral", { exact: true })).toBeVisible();
+  await geometryButton.focus();
+  await page.keyboard.press("Enter");
+  await expect(modal).toBeVisible();
+  await expect(modal.getByRole("button", { name: "Close geometry", exact: true })).toBeFocused();
+  await expect(modal.getByText("gaze direction", { exact: true })).toBeVisible();
+  await expect(modal.getByText("toward action", { exact: true })).toHaveCount(2); // Head and eyes are separate facts.
+  await expect(modal.getByText("standing neutral", { exact: true })).toBeVisible();
+  await page.keyboard.press("Tab");
+  expect(await modal.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+  await page.keyboard.press("Tab");
+  await expect(modal.getByRole("button", { name: "Close geometry", exact: true })).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(modal.locator("dl")).toBeFocused();
   const sceneAfter = await neighboringScene.boundingBox();
   expect(sceneAfter.height).toBe(sceneBefore.height);
   expect(sceneAfter.width).toBe(sceneBefore.width);
   expect(sceneAfter.x).toBe(sceneBefore.x);
-  const fields = disclosure.locator("dl");
-  expect(await fields.evaluate((element) => getComputedStyle(element).gridTemplateRows.split(" ").length)).toBe(2);
-  expect(await fields.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
+  const fields = modal.locator("dl");
+  expect(await fields.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  expect((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze()).violations).toEqual([]);
+  await page.keyboard.press("Escape");
+  await expect(modal).not.toBeVisible();
+  await expect(geometryButton).toBeFocused();
   const results = page.getByRole("region", { name: "Dataset results", exact: true });
   const neighboringPrompt = results.getByLabel("Dataset prompt 2").locator("..");
   const promptBefore = await neighboringPrompt.boundingBox();
-  await results.getByText("Geometry 1", { exact: true }).click();
+  const resultGeometryButton = results.getByRole("button", { name: "View geometry 1", exact: true });
+  await resultGeometryButton.click();
+  await expect(modal).toBeVisible();
   const promptAfter = await neighboringPrompt.boundingBox();
   expect(promptAfter.height).toBe(promptBefore.height);
   expect(promptAfter.width).toBe(promptBefore.width);
   expect(promptAfter.x).toBe(promptBefore.x);
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  expect(await fields.evaluate((element) => getComputedStyle(element).gridTemplateRows.split(" ").length)).toBe(2);
+  const modalBox = await modal.boundingBox();
+  expect(modalBox.x).toBeGreaterThanOrEqual(0);
+  expect(modalBox.x + modalBox.width).toBeLessThanOrEqual(390);
+  expect(modalBox.y).toBeGreaterThanOrEqual(0);
+  expect(modalBox.y + modalBox.height).toBeLessThanOrEqual(844);
+  expect(await fields.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  expect((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze()).violations).toEqual([]);
+  await modal.getByRole("button", { name: "Close geometry", exact: true }).click();
+  await expect(modal).not.toBeVisible();
+  await expect(resultGeometryButton).toBeFocused();
   expect(finished.result.scene_plan.every((row) => row.geometry.gaze_direction === "toward_action" && !("gaze" in row.geometry))).toBe(true);
 });
 
@@ -99,6 +124,10 @@ test("failed scenes show persistent reasons and do not block writing valid scene
   await expect(results.getByLabel("Prompt 1 failure reason")).toContainText(reason);
   await expect(results.getByRole("button", { name: "Retry failed scene", exact: true })).toBeVisible();
   await expect(results.getByRole("button", { name: "Retry failed idea", exact: true })).toHaveCount(0);
+  // Measure final-state contrast, not a transient entrance-fade frame.
+  await page.evaluate(() => Promise.all(document.getAnimations()
+    .filter((animation) => Number.isFinite(animation.effect.getTiming().iterations))
+    .map((animation) => animation.finished.catch(() => {}))));
   expect((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze()).violations).toEqual([]);
   const accepted = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset") && response.status() === 202);
   await page.getByRole("button", { name: "Generate prompts from 1 valid scene", exact: true }).click();

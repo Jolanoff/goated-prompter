@@ -21,9 +21,9 @@ export function DetailLocks({ value, onChange, disabled, prefix }) {
   </fieldset>;
 }
 
-export function TargetSelect({ value, onChange, targets, disabled, label = "Target model" }) {
+export function TargetSelect({ value, onChange, targets, disabled, label = "Target model", icon }) {
   return <label className={ui.field}>
-    <span>{label}</span>
+    <span>{icon}{label}</span>
     <select className={ui.select} aria-label={label} value={value} onChange={(event) => onChange(event.target.value)} disabled={disabled}>
       {targets.map((target) => <option key={target}>{target}</option>)}
     </select>
