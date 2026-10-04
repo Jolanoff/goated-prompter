@@ -43,6 +43,7 @@ def repair_instruction(original, raw, error):
 
 def default_minimax_draft():
     return {"model": MODELS[0], "duration_seconds": 10, "mode": "auto", "aspect_ratio": "Auto",
+            "planning_mode": "Auto",
             "director_preset": "minimax_director", "references": [], "user_request": "",
             "generated_prompt": "", "result_job_id": ""}
 
@@ -108,7 +109,8 @@ def validate_minimax_draft(value, *, generation=False):
     if not isinstance(value, dict) or value.keys() - defaults.keys():
         raise ValueError("Invalid MiniMax settings fields.")
     result = {**defaults, **value}
-    for key, choices in (("model", MODELS), ("mode", MODES), ("aspect_ratio", RATIOS)):
+    from ..planning import PLANNING_MODES
+    for key, choices in (("model", MODELS), ("mode", MODES), ("aspect_ratio", RATIOS), ("planning_mode", PLANNING_MODES)):
         if result[key] not in choices:
             raise ValueError(f"Invalid MiniMax {key}.")
     if type(result["duration_seconds"]) is not int or not 4 <= result["duration_seconds"] <= 15:
@@ -310,7 +312,7 @@ def reference_scaffold(plan):
     return "\n".join(definitions), "\n".join(retention)
 
 
-def generation_instruction(data, plan, director, family):
+def generation_instruction(data, plan, director, family, video_scene_plan=None):
     mode = plan["mode"]
     context = {key: data[key] for key in ("model", "duration_seconds", "mode", "references")}
     context.update(resolved_mode=mode, reference_analysis=plan)
@@ -354,7 +356,8 @@ def generation_instruction(data, plan, director, family):
     ]), user_message="\n\n".join([
         "STRUCTURED SETTINGS\n" + json.dumps(context, ensure_ascii=False),
         "DIRECTOR PRESET — CREATIVE GUIDANCE ONLY\n" + json.dumps({"name": director.label, "instructions": director.instructions}, ensure_ascii=False),
-        "USER REQUEST\n" + data["user_request"],
+        *([video_scene_plan.supporting_input()] if video_scene_plan is not None else []),
+        "USER REQUEST\n" + (video_scene_plan.compiled_request.writer_request(include_constraints=False) if video_scene_plan is not None else data["user_request"]),
         f"Write the complete {mode} prompt for exactly {data['duration_seconds']} seconds. Return only the final prompt.",
     ]), model_family=family, diagnostic_stage="minimax:prompt", unlimited_tokens=True)
 

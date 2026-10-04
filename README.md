@@ -82,7 +82,7 @@ Auto distinguishes identity/motion/style references from explicit first/last-fra
 - Settings, references, request, and edited output autosave independently in `workflow_settings.json`. Shared job controls support cancellation.
 - Local prompting knowledge and source links live in [`goated_prompter/minimax_knowledge`](goated_prompter/minimax_knowledge/SOURCES.md). No documentation fetch is needed during generation.
 - Output validation checks H3 section order, exact frame alignment, shot timing, reference IDs, retention markers and dialogue syntax before delivery. Invalid output gets one repair attempt; a failed attempt leaves your previous output intact.
-- MiniMax analysis, prompt writing, and repair requests have no application output-token cap. Local llama.cpp runs until EOS (`max_tokens: -1`); remote OpenAI-compatible requests omit `max_tokens`. Engine context capacity and provider-side limits still apply.
+- MiniMax reference analysis, prompt writing, and repair requests have no application output-token cap. Optional supporting video planning has a small bounded response budget. Engine context capacity and provider-side limits still apply.
 
 This page writes **prompt text only**. It does not upload/analyze media, render videos, or call MiniMax's video-generation API. It requires a configured language-model prompt engine; the generic mock backend is for plumbing tests and does not perform H3 semantic rewriting.
 
@@ -221,11 +221,20 @@ Use your own absolute model directory in Settings. The browser workflow is the s
 | **Prompt task** | Chooses the type of work and selects its matching instruction preset. You can then choose a different preset. |
 | **Instruction preset** | Adds reusable specialist instructions. Changing it does not change the task. |
 | **Target model** | Shapes the prompt for the image/video generator you will use afterward. |
+| **Planning** | Auto (default) stages structurally complex requests. Direct preserves the original workflow. Always requests one supporting planning pass. |
 | **Creativity** | Controls how much new visual detail the writer may introduce. |
 | **Prompt length** | Controls descriptive density. Maximum Detail requests a larger output budget, not a guaranteed word count. |
 | **Prompt engine** | The language/vision model that actually writes the prompt. |
 | **Keep from reference images** | Selects the source for each attribute you want to preserve. |
 | **Workflow rules / notes** | Adds constraints for the current request. |
+
+### Optional scene planning
+
+Builder and MiniMax have independent **Auto / Direct / Always** selectors. Direct adds no planning calls or contracts. Simple Auto requests (an apple on a table, a car driving down a street) normally follow Direct. Complex contact, unusual poses, interacting subjects and video sequences can receive **one** compact semantic/staging pass—not a new idea or batch workflow.
+
+Builder plans **after selected reference evidence** and before the unchanged final compiler's target, Director, Creativity and Length controls. MiniMax plans **after its existing symbolic-reference analysis** and before its H3 writer, normalization and repair. Supplied shot order/timing and exact dialogue stay authoritative. Without supplied shots, planning describes continuous progression, not additional cuts.
+
+High-confidence standalone exclusions are compiled internally and applied silently; quoted text, names and ambiguous rules remain intact. Auto logs planning failures and uses the original direct workflow; Always reports a planning failure rather than pretending it succeeded. A small status marks generations that used planning. Internal plans have no separate saved workflow or default geometry UI; the existing live request inspector can show planning activity. Model inference can still misinterpret mechanics or unseen references—planning is supporting guidance, not a semantic guarantee.
 
 ### Reference images
 
@@ -347,6 +356,7 @@ goated-prompter/
 │   ├── config.example.json     # Portable configuration template
 │   └── config.json             # Backend / llama-server configuration
 ├── goated_prompter/
+│   ├── planning/               # Shared constraints and optional single-pass scene/video staging
 │   ├── prompting/              # Prompt content split by concern
 │   │   ├── modes.py            # Prompt task modes
 │   │   ├── directors.py        # Built-in Directors

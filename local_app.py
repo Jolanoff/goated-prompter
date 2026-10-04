@@ -102,7 +102,7 @@ def validate_settings(payload):
     if "builder" in payload:
         builder = payload["builder"]
         strings = {"idea", "system_prompt_override", "custom_instructions", "generated_prompt", "director_preset"}
-        combos = {"mode", "target_model", "creativity", "prompt_length"}
+        combos = {"mode", "target_model", "creativity", "prompt_length", "planning_mode"}
         sources = {f"reference_{key}_source" for key, _ in REFERENCE_ATTRIBUTES}
         if not isinstance(builder, dict):
             raise ValueError("builder must be an object.")
@@ -119,6 +119,10 @@ def validate_settings(payload):
             elif key in sources and value not in REFERENCE_SOURCES:
                 raise ValueError(f"Invalid reference source for {key}.")
             elif key in combos:
+                if key == "planning_mode":
+                    from goated_prompter.planning import planning_mode
+                    planning_mode(value)
+                    continue
                 if key == "prompt_length" and value == "Maximum":
                     value = builder[key] = "Maximum Detail"
                 if value not in schema[key][0]:
@@ -305,6 +309,10 @@ class Job:
                     f"'{self.llm_trace['finish_reason']}'.",
                     "response",
                 )
+            elif event_type == "planning":
+                self.progress = str(event.get("message") or "Planning scene…")
+                self.progress_at = now
+                self._append_event(self.progress, "planning")
             elif event_type == "error":
                 message = str(event.get("message") or "The model transport failed.")
                 if self.llm_trace is not None:
@@ -584,6 +592,7 @@ class LocalState:
             result = {"ok": True, "prompt": generated.prompt, "backend": generated.backend_name,
                       "director_profile": generated.director_profile,
                       "prompt_model": generated.prompt_model, "director_preset": generated.director_preset}
+            result["planning_status"] = getattr(generated, "planning_status", "direct")
             def save_result():
                 try:
                     snapshot = self.workspace.add_version(generated.prompt, director_request.target_model, "Builder generation")

@@ -22,6 +22,10 @@ class DatasetUIMock(MockBackend):
     """Schema-aware Dataset fixture; automatic planning cannot rely on fallback."""
     def generate(self, instruction):
         stage = instruction.diagnostic_stage
+        if stage == "builder:scene_planning":
+            context = json.loads(instruction.user_message)
+            return json.dumps({"primary_action": context["user_request"],
+                               "staging": "Keep the requested subjects and relationships."})
         if stage.startswith(("dataset:idea_planner", "dataset:scene_planner", "dataset:scene_composer")):
             context = json.loads(instruction.user_message)
             rows = []
@@ -75,7 +79,8 @@ if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as data:
         os.environ["GOATED_PROMPTER_USER_DIR"] = str(Path(data) / "directors")
         port = int(os.environ.get("GOATED_UI_TEST_PORT", "8190"))
-        with patch("goated_prompter.dataset.create_backend", side_effect=dataset_ui_backend):
+        with patch("goated_prompter.dataset.create_backend", side_effect=dataset_ui_backend), \
+                patch("goated_prompter.core.create_backend", side_effect=dataset_ui_backend):
             web.run_app(create_app(port=port, config_loader=lambda: {"backend": "mock"}, settings_path=Path(data) / "settings.json",
                                    service_factory=DelayedMockService), host="127.0.0.1",
                         port=port)

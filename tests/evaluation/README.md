@@ -69,3 +69,26 @@ with/without-history trials or a baseline revision; one favorable run is only
 exploratory evidence. The syntax compiler deliberately retains conditionals and
 unsupported negative rules as unresolved data and flags them for review. It is
 not a general English reasoner or synonym detector.
+
+## Builder / MiniMax supporting-planning probe
+
+`run_supporting_planning.py` compares **Direct** and **Auto** on the same engine
+for sideways hoop suspension, shared counterbalance, dance progression, explicit
+shots/dialogue and symbolic image-identity/video-motion roles. It is independent
+of Dataset's batch evaluation and never downloads models or changes saved engine
+settings.
+
+```powershell
+.\.venv\Scripts\python.exe tests/evaluation/run_supporting_planning.py --dry-run
+.\.venv\Scripts\python.exe tests/evaluation/run_supporting_planning.py --config engine.json --artifacts supporting-results.json
+.\.venv\Scripts\python.exe tests/evaluation/run_supporting_planning.py --config engine.json --case hoop --target "Krea 2" --artifacts krea-results.json
+```
+
+Content-bearing artifacts require explicit `--artifacts`. Review each case's
+`review` checklist against the **final prompt** and inspect planner outputs and
+actual call stages. Valid JSON/H3 or a successful request is not proof of pose,
+dialogue, role or continuity fidelity. Direct uses the current unchanged final
+writers, not an older model or different system prompt. Repeat trials and obtain
+independent annotations before claiming a general improvement. This runner
+unloads only its owned local process on exit. See `SUPPORTING_PLANNING_RESULTS.md`
+for the exploratory local probe and limitations.

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Copy, Film, RefreshCw, SlidersHorizontal, Sparkles, Trash2 } from "lucide-react";
 import { ui } from "../ui.js";
 import { orderDisplayPresets, presetDisplayLabel } from "../presetPresentation.js";
-import { TargetSelect } from "./WorkflowControls.jsx";
+import { TargetSelect, PlanningSelect } from "./WorkflowControls.jsx";
 import { useWorkflowSettings } from "./useWorkflowSettings.js";
 import WorkflowSettingsStatus from "./WorkflowSettingsStatus.jsx";
 import { insertReference, insertShot, nextReference, nextShot, parseReferences, parseShots, referenceLimits } from "./minimaxReferences.js";
@@ -111,6 +111,7 @@ export default function MiniMaxTab({ visible, job, busy, active, noEngine, engin
         </header>
         <div className={ui.fields}>
           <TargetSelect label="Model" value={draft.model} targets={models} disabled={disabled} onChange={(model) => update({ model })} />
+          <PlanningSelect video value={draft.planning_mode} disabled={disabled} onChange={(planning_mode) => update({ planning_mode })} />
           <label className={ui.field}><span>Clip Length</span>
             <select className={ui.select} aria-label="Clip Length" value={draft.duration_seconds} disabled={disabled} onChange={(event) => update({ duration_seconds: Number(event.target.value) })}>
               {Array.from(new Set([4, 5, 6, 8, 10, 12, 15, draft.duration_seconds])).sort((a, b) => a - b).map((duration) => <option key={duration} value={duration}>{duration} seconds</option>)}
@@ -186,6 +187,8 @@ export default function MiniMaxTab({ visible, job, busy, active, noEngine, engin
           <textarea id="minimax-output" className={ui.outputInput} style={{ minHeight: 360 }} value={draft.generated_prompt}
             maxLength={100000} disabled={disabled} onChange={(event) => update({ generated_prompt: event.target.value })}
             placeholder="Your MiniMax H3 prompt will appear here." />
+          {job?.kind === "minimax" && job?.result?.planning_status === "planned" &&
+            <p className={ui.subtleNote} role="status">Supporting video scene planning used for the latest generation.</p>}
           <div className={ui.outputActions}>
             <button className={ui.button} disabled={!draft.generated_prompt} onClick={() => onCopy(draft.generated_prompt)}><Copy size={14} />Copy</button>
             <button className={ui.button} disabled={!canGenerate} onClick={generate}><RefreshCw size={14} />Regenerate</button>

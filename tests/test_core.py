@@ -463,7 +463,8 @@ class LinkedCoreTests(unittest.TestCase):
         nodes = importlib.import_module(f"{PACKAGE}.comfy_node")
         schema = nodes.GoatedPrompter.INPUT_TYPES()
         self.assertEqual(reference_map.REFERENCE_SOURCE_NAMES[:4], ("Auto", "Image 1", "Image 2", "Blend"))
-        self.assertEqual(list(schema["optional"]), ["image", "image_2", "image_3", "image_4", "linked_references"])
+        self.assertEqual(list(schema["optional"])[:5], ["image", "image_2", "image_3", "image_4", "linked_references"])
+        self.assertEqual(schema["optional"]["planning_mode"][0], ["Auto", "Direct", "Always"])
         self.assertFalse(schema["optional"]["linked_references"][1]["default"])
 
     def test_node_appended_kwargs_reach_request_without_cached_shortcut(self):

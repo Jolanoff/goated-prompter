@@ -23,11 +23,13 @@ test("defaults, structured generation, copy, regeneration and edited output pers
   });
   await page.route("**/api/jobs/minimax-fixture-*", (route) => route.fulfill({ json: {
     id: route.request().url().split("/").at(-1), kind: "minimax", status: "succeeded", revision: 1,
-    result: { prompt: output, warnings: [], mode: "Ref2VA" },
+    result: { prompt: output, warnings: [], mode: "Ref2VA", planning_status: "planned" },
   } }));
   await open(page);
   await expect(page.getByLabel("Model", { exact: true })).toHaveValue("MiniMax H3");
   await expect(page.getByLabel("Mode", { exact: true })).toHaveValue("auto");
+  await expect(page.getByLabel("MiniMax planning")).toHaveValue("Auto");
+  await page.getByLabel("MiniMax planning").selectOption("Always");
   await expect(page.getByLabel("Director Preset", { exact: true })).toHaveValue("minimax_director");
   await expect(page.getByLabel("Director Preset", { exact: true }).locator('option[value="anime_director"]')).toHaveCount(1);
   await page.getByLabel("Clip Length").selectOption("15");
@@ -38,7 +40,8 @@ test("defaults, structured generation, copy, regeneration and edited output pers
   const result = page.getByLabel("Generated MiniMax H3 Prompt", { exact: true });
   await expect(result).toHaveValue(output);
   expect(submitted[0].input).toEqual({ model: "MiniMax H3", duration_seconds: 15, mode: "auto", aspect_ratio: "9:16",
-    director_preset: "minimax_director", references: ["image1", "video1"], user_request: requestText });
+    planning_mode: "Always", director_preset: "minimax_director", references: ["image1", "video1"], user_request: requestText });
+  await expect(page.getByText("Supporting video scene planning used for the latest generation.")).toBeVisible();
   expect(Object.keys(submitted[0]).sort()).toEqual(["input", "settings"]);
   await page.getByRole("button", { name: "Copy", exact: true }).click();
   await expect.poll(() => page.evaluate(() => window.copiedPrompt)).toBe(output);
@@ -52,6 +55,7 @@ test("defaults, structured generation, copy, regeneration and edited output pers
   await expect(result).toHaveValue(output + "\nEdited ending.");
   await expect(page.getByLabel("Clip Length")).toHaveValue("15");
   await expect(page.getByLabel("Aspect Ratio", { exact: true })).toHaveValue("9:16");
+  await expect(page.getByLabel("MiniMax planning")).toHaveValue("Always");
   await page.getByRole("button", { name: "Prompt Builder", exact: true }).click();
   await expect(page.getByLabel("Generated prompt", { exact: true })).not.toHaveValue(output);
   await page.getByRole("button", { name: "MiniMax H3", exact: true }).click();

@@ -26,6 +26,7 @@ const builderKeys = [
   "mode",
   "target_model",
   "creativity",
+  "planning_mode",
   "prompt_length",
   "director_preset",
   "custom_instructions",
@@ -48,6 +49,7 @@ export function builderSnapshot(settings) {
 
 export function hydrateBuilder(inputs, saved = {}, library) {
   const result = builderSnapshot({
+    planning_mode: "Auto",
     ...inputDefaults(inputs),
     ...Object.fromEntries(
       referenceAttributes.map((key) => [`reference_${key}_source`, "Off"]),

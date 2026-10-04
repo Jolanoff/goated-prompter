@@ -92,6 +92,7 @@ DANCE_PLAN = plan_json(role("image1", "identity", "appearance"), role("video1", 
 
 def dance_input(**overrides):
     return validate_minimax_draft({"references": ["image1", "video1"], "duration_seconds": 15,
+                                  "planning_mode": "Direct",  # Freeze the pre-planning writer/repair contract.
                                   "user_request": REQUEST, **overrides}, generation=True)
 
 
@@ -157,6 +158,7 @@ class MiniMaxContractTests(unittest.TestCase):
 
     def test_image_only_shot_outline_converts_to_guide_fields_and_keeps_speech(self):
         data = validate_minimax_draft({"references": ["image1", "image2", "image3"],
+                                       "planning_mode": "Direct",
                                        "user_request": APPLE_SHOTS.replace("<shot1> apple", "<shot1> 0-3s apple")}, generation=True)
         roles = plan_json(role("image1", "character"), role("image2", "character"), role("image3", "environment"))
         plan = validate_analysis(roles, data)

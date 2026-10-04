@@ -8,6 +8,28 @@ test.beforeEach(async ({ request }) => {
   ).toBe(true);
 });
 
+test("planning mode autosaves, submits and reports supporting planning without exposing geometry", async ({ page, request }) => {
+  await page.goto("/");
+  const planning = page.getByLabel("Builder planning");
+  await expect(planning).toHaveValue("Auto");
+  await planning.selectOption("Always");
+  await expect(page.getByLabel("Builder save status")).toHaveText("Saved");
+  expect((await (await request.get("/api/settings")).json()).builder.planning_mode).toBe("Always");
+  await page.reload();
+  await expect(planning).toHaveValue("Always");
+  await page.getByLabel("Describe your idea", { exact: true }).fill("red apple on a wooden table");
+  const generation = page.waitForRequest("**/api/generate");
+  await page.getByRole("button", { name: /^Generate prompt/ }).click();
+  expect((await generation).postDataJSON().settings.planning_mode).toBe("Always");
+  await expect(page.getByLabel("Generated prompt", { exact: true })).toHaveValue(/red apple/);
+  await expect(page.getByText("Supporting scene planning used for the latest generation.")).toBeVisible();
+  await planning.selectOption("Direct");
+  await expect(page.getByLabel("Builder save status")).toHaveText("Saved");
+  await page.getByRole("button", { name: /^Generate prompt/ }).click();
+  await expect(page.getByText("Supporting scene planning used for the latest generation.")).not.toBeVisible();
+  await expect(page.getByLabel("Generated prompt", { exact: true })).toHaveValue(/red apple/);
+});
+
 test("task and instruction preset lead the controls on desktop and mobile", async ({ page }) => {
   await page.goto("/");
   const controls = page.locator(".panel").filter({
@@ -15,11 +37,11 @@ test("task and instruction preset lead the controls on desktop and mobile", asyn
   });
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });
-    await expect(controls.locator("select")).toHaveCount(6);
+    await expect(controls.locator("select")).toHaveCount(7);
     expect(await controls.locator("select").evaluateAll((items) =>
       items.map((item) => item.getAttribute("aria-label")),
     )).toEqual([
-      "Prompt task", "Instruction preset", "Target model", "Creativity",
+      "Prompt task", "Instruction preset", "Target model", "Builder planning", "Creativity",
       "Prompt length", "Prompt engine",
     ]);
     const task = await page.getByLabel("Prompt task", { exact: true }).boundingBox();
@@ -115,7 +137,7 @@ test("builder JSON restores text fields and resets unavailable reference sources
   const saved = await (await request.get("/api/settings")).json();
   expect(saved.builder.idea).toBe("Persistent idea");
   expect(saved.builder.prompt_length).toBe("Maximum Detail");
-  expect(Object.keys(saved.builder)).toHaveLength(19);
+  expect(Object.keys(saved.builder)).toHaveLength(20);
   expect(saved.builder).not.toHaveProperty("lock_generated_prompt");
   expect(saved.builder.mode).toBe("Photography");
   for (const [index, key] of referenceAttributes.entries())

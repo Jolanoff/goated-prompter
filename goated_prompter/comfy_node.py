@@ -56,6 +56,7 @@ class GoatedPrompter:
                 "image_3": ("IMAGE",),
                 "image_4": ("IMAGE",),
                 "linked_references": ("BOOLEAN", {"default": False}),
+                "planning_mode": (["Auto", "Direct", "Always"], {"default": "Auto"}),
             },
         }
 
@@ -111,6 +112,7 @@ class GoatedPrompter:
         image_3=None,
         image_4=None,
         linked_references=False,
+        planning_mode="Auto",
     ):
         cached = str(generated_prompt or "").strip()
         if cached and image is None and image_2 is None and image_3 is None and image_4 is None:
@@ -118,6 +120,7 @@ class GoatedPrompter:
 
         request = GoatedPrompterRequest(
             idea=str(idea or ""), mode=mode, target_model=target_model, creativity=creativity,
+            planning_mode=planning_mode,
             preserve_subject=preserve_subject, preserve_composition=preserve_composition,
             preserve_camera=preserve_camera, preserve_materials=preserve_materials,
             preserve_lighting=preserve_lighting, preserve_colors=preserve_colors,

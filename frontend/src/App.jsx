@@ -8,6 +8,7 @@ import CreativeWorkspace from "./workflows/CreativeWorkspace.jsx";
 import MiniMaxTab from "./workflows/MiniMaxTab.jsx";
 import DatasetTab from "./workflows/DatasetTab.jsx";
 import JobLogModal from "./JobLogModal.jsx";
+import { PlanningSelect } from "./workflows/WorkflowControls.jsx";
 import {
   ArrowLeft,
   ArrowUpRight,
@@ -1582,6 +1583,10 @@ function App() {
                         </button>
                       </div>
                       {field("target_model", "Target model")}
+                      <PlanningSelect value={settings.planning_mode} disabled={busy || actionBusy || settingsBusy}
+                        onChange={(planning_mode) => update("planning_mode", planning_mode)} />
+                      {job?.kind === "builder" && job?.result?.planning_status === "planned" &&
+                        <p className={ui.subtleNote} role="status">Supporting scene planning used for the latest generation.</p>}
                       <div className={`${ui.fields} ${ui.threeFields} mt-5`}>
                         {field("creativity", "Creativity")}
                         {field(

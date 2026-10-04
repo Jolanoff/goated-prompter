@@ -45,7 +45,13 @@ class MiniMaxService:
                 plan = self._call(session, analysis_instruction(data, family), lambda raw: validate_analysis(raw, data), progress, retry_budget)
             else:
                 plan = validate_analysis('{"references": [], "first_frame": null, "last_frame": null}', data)
+            video_scene_plan, planning_status = None, "direct"
+            if data["planning_mode"] != "Direct":
+                from .planning.video_planner import plan_video_scene
+                video_scene_plan, planning_status = plan_video_scene(session, data, plan,
+                    family=family, checkpoint=self.checkpoint, progress=progress)
             progress("Writing MiniMax H3 prompt")
-            prompt = self._call(session, generation_instruction(data, plan, director, family), lambda raw: validate_output(raw, data, plan), progress, retry_budget)
+            prompt = self._call(session, generation_instruction(data, plan, director, family,
+                **({"video_scene_plan": video_scene_plan} if video_scene_plan is not None else {})), lambda raw: validate_output(raw, data, plan), progress, retry_budget)
         return {"ok": True, "kind": "minimax", "prompt": prompt, "mode": plan["mode"],
-                "warnings": reference_warnings(data), "backend": backend.name}
+                "warnings": reference_warnings(data), "backend": backend.name, "planning_status": planning_status}

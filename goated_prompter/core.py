@@ -42,6 +42,7 @@ from .prompting.target_models import QWEN21_EDIT_ADAPTER, get_model_adapter, can
 from .presets import DEFAULT_DIRECTOR_PRESET, get_director_preset, legacy_preset_for_mode
 from .reference_map import REFERENCE_IMAGE_SLOTS, reference_images, reference_map_from_mapping, resolve_reference_map
 from .workflow_output import WorkflowFormatError, normalize_workflow_output, sanitize_prompt_text, requested_visible_text
+from .planning import planning_mode
 
 
 def _qwen21_source_tokens(request, reference_map=None, text_only=False):
@@ -147,9 +148,11 @@ class GoatedPrompterRequest:
     image_3: object = None
     image_4: object = None
     linked_references: bool = False
+    planning_mode: str = "Auto"
 
     def __post_init__(self):
         object.__setattr__(self, "target_model", canonical_target(self.target_model))
+        planning_mode(self.planning_mode)
 
     @property
     def selected_prompt_model(self):
@@ -191,6 +194,7 @@ class GoatedPrompterRequest:
             image_1_role=_reference_role(values.get("image_1_role")),
             image_2_role=_reference_role(values.get("image_2_role")),
             linked_references=_as_bool(values.get("linked_references", False)),
+            planning_mode=str(values.get("planning_mode", "Auto")),
         )
 
 
@@ -220,7 +224,7 @@ class PromptInstruction:
     # Optional bounded stream ceiling for structured batch planning. Individual
     # prompt workflows retain the transport's default runaway-output ceiling.
     stream_character_limit: int = None
-    # Request-local sampling; only Dataset ideation supplies exploratory values.
+    # Request-local sampling; supporting planners use conservative values.
     temperature: float = None
     top_p: float = None
 
@@ -261,6 +265,7 @@ class GenerationResult:
     director_profile: str = ""
     prompt_model: str = ""
     director_preset: str = ""
+    planning_status: str = "direct"
 
 
 def assemble_instruction(
@@ -269,10 +274,11 @@ def assemble_instruction(
     resolved_scene=None,
     resolved_reference_map=None,
     text_only=False,
+    prompt_scene_plan=None,
 ):
     if text_only:
         resolved_scene = None
-    idea = request.idea.strip()
+    idea = (prompt_scene_plan.compiled_request.writer_request(include_constraints=False) if prompt_scene_plan is not None else request.idea).strip()
     if request.linked_references and not text_only:
         resolved_reference_map = (
             resolved_reference_map
@@ -326,11 +332,21 @@ def assemble_instruction(
     ))
 
     sections.append(f"DIRECTOR BEHAVIOR — {preset.label}\n{active_director_instructions}")
-    if request.custom_instructions.strip():
-        sections.append(f"WORKFLOW RULES\n{request.custom_instructions.strip()}")
+    if prompt_scene_plan is not None:
+        sections.append(prompt_scene_plan.supporting_input())
+    workflow_rules = request.custom_instructions
+    if prompt_scene_plan is not None and prompt_scene_plan.compiled_request.workflow_rules is not None:
+        workflow_rules = prompt_scene_plan.compiled_request.workflow_rules
+    if workflow_rules.strip():
+        sections.append(f"WORKFLOW RULES\n{workflow_rules.strip()}")
 
     if resolved_scene is not None:
-        compiler_input = resolved_scene.compiler_input(request.target_model)
+        compiler_scene = resolved_scene
+        if prompt_scene_plan is not None:
+            compiler_scene = replace(resolved_scene, attributes=tuple(
+                replace(item, evidence="User-requested transformation: " + prompt_scene_plan.compiled_request.positive_request)
+                if item.source == "User Prompt" else item for item in resolved_scene.attributes))
+        compiler_input = compiler_scene.compiler_input(request.target_model)
         sections.append(compiler_input)
         if debug_prompts_enabled():
             print("[Goated Prompter FINAL COMPILER INPUT]", flush=True)
@@ -467,6 +483,7 @@ class GoatedPrompterService:
         resolved_scene=None,
         resolved_reference_map=None,
         text_only=False,
+        prompt_scene_plan=None,
     ):
         return assemble_instruction(
             request,
@@ -474,6 +491,7 @@ class GoatedPrompterService:
             resolved_scene=resolved_scene,
             resolved_reference_map=resolved_reference_map,
             text_only=text_only,
+            **({"prompt_scene_plan": prompt_scene_plan} if prompt_scene_plan is not None else {}),
         )
 
     def generate(self, request):
@@ -558,12 +576,21 @@ class GoatedPrompterService:
                 if debug_prompts_enabled():
                     print("[Goated Prompter RESOLVED SCENE]", flush=True)
                     print(resolved_scene.diagnostic_text(), flush=True)
+            prompt_scene_plan, planning_status = None, "direct"
+            if request.planning_mode != "Direct":
+                from .planning.scene_planner import plan_prompt_scene
+                def planning_progress(message):
+                    session_backend.emit_activity("planning", message=message)
+                prompt_scene_plan, planning_status = plan_prompt_scene(
+                    session_backend, request, resolved_scene=resolved_scene,
+                    family=model_family, checkpoint=self._checkpoint, progress=planning_progress)
             instruction = self.assemble(
                 request,
                 model_family=model_family,
                 resolved_scene=resolved_scene,
                 resolved_reference_map=resolved_reference_map,
                 text_only=text_only,
+                **({"prompt_scene_plan": prompt_scene_plan} if prompt_scene_plan is not None else {}),
             )
             instruction = replace(
                 instruction,
@@ -612,4 +639,5 @@ class GoatedPrompterService:
             director_profile=profile.label if profile else "",
             prompt_model=profile.prompt_model if profile else request.selected_prompt_model,
             director_preset=instruction.director_preset,
+            planning_status=planning_status,
         )
