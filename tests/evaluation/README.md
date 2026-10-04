@@ -92,3 +92,57 @@ writers, not an older model or different system prompt. Repeat trials and obtain
 independent annotations before claiming a general improvement. This runner
 unloads only its owned local process on exit. See `SUPPORTING_PLANNING_RESULTS.md`
 for the exploratory local probe and limitations.
+
+## Dataset Scene → Writer parity
+
+`run_dataset_writer_parity.py` uses three fixed hand-authored scenes: pottery,
+sideways hoop suspension and reciprocal counterbalance. It bypasses all planning
+and geometry repair. Normal Builder and Dataset receive the same concept, guided
+anchors, idea/scene, target, Director, medium and Length; Builder keeps its normal
+adapters. Sampling is matched at `.25/.85` to isolate instruction ownership.
+Dataset alone receives internal geometry. `sampling` changes only final writing
+to `.45/.9`; existing correction calls stay `.25/.85`. Token caps are unchanged.
+
+Freeze old instructions **before editing the writer**, then compare them on the
+same engine; never regenerate the baseline after changes or call it an old revision:
+
+```powershell
+.\.venv\Scripts\python.exe tests/evaluation/run_dataset_writer_parity.py --snapshot-only --baseline-instructions before.json --suite parity --suite length --suite creativity --suite director
+.\.venv\Scripts\python.exe tests/evaluation/run_dataset_writer_parity.py --config engine.json --baseline-instructions before.json --artifacts writer-results.json --suite parity --suite length --suite creativity --suite director
+.\.venv\Scripts\python.exe tests/evaluation/run_dataset_writer_parity.py --config engine.json --artifacts sampling-results.json --suite sampling --conditions dataset sampling --repeats 2
+```
+
+Repeat `--target` for target envelopes; use `--case` to narrow parity/sampling.
+Creativity uses the same hoop scene at all four levels; Length uses the same
+pottery scene; Director uses identical pottery staging with three treatments.
+All cases have trigger expansion OFF. `--repeats` alternates condition order;
+trials remain unseeded. Completion text is retokenized using the engine tokenizer,
+not a word-count token estimate; this excludes hidden reasoning and is not billed
+usage. Finish reasons, raw streamed output, correction calls and truncation hints
+are retained. Content is saved only with explicit artifact/snapshot paths.
+For an already loaded llama.cpp server, use a temporary OpenAI-compatible config
+and `--tokenizer-url http://127.0.0.1:PORT/tokenize`. This does not change or stop
+the external server; do not load a second copy of the model unnecessarily.
+
+### Semantic review and regression gates
+
+```powershell
+.\.venv\Scripts\python.exe tests/evaluation/review_dataset_writer.py writer-results.json --template labels.json
+.\.venv\Scripts\python.exe tests/evaluation/review_dataset_writer.py writer-results.json --annotations labels.json --output scores.json
+```
+
+Review every anchor (contacts, limbs, orientation, action, count, objects, framing)
+against final text, not schema validity. Separately review constraints, stable
+identity invention and filler/repetition. Categorize **concrete useful visual
+facts** under action, composition, environment, materials, lighting, depth and
+treatment. Reuse the same fact ID for paraphrases; synonyms are not new detail.
+Exclude generic slogans, repeated facts, irrelevant inventories and contradictions.
+Counts/density are rubric-dependent supporting metrics, not automatic quality truth.
+
+The scorer fails incomplete annotations, final-writer fidelity/identity/format
+regressions, filler, and non-increasing useful detail across available Lengths.
+Maximum must add at least two new useful facts in two categories beyond Medium;
+longer paraphrases fail. Controls are reported even when they fail. Compare
+category richness, useful density, target usability, repairs and token counts
+before making a parity or sampling claim. Obtain independent/blinded review for
+strong conclusions; agent-authored annotations are exploratory evidence only.

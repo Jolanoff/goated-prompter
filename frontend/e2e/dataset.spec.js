@@ -2,6 +2,39 @@ import { test, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import AxeBuilder from "@axe-core/playwright";
 
+test("descriptive creativity persists independently and reuses the exact planned scene", async ({ page, request }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  await expect(page.getByLabel("Dataset descriptive creativity")).toHaveValue("Balanced");
+  await page.getByLabel("Dataset idea", { exact: true }).fill("One performer balancing inside an aerial hoop.");
+  await page.getByLabel("Number of prompts").selectOption("1");
+  await page.getByRole("button", { name: "Plan scenes first", exact: true }).click();
+  await expect(page.getByLabel("Planned scene 1")).toHaveValue(/mock scene/);
+  await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
+  const before = (await (await request.get("/api/workspace/settings/dataset")).json()).draft;
+  await page.getByLabel("Dataset descriptive creativity").selectOption("Dice");
+  await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
+  const changed = (await (await request.get("/api/workspace/settings/dataset")).json()).draft;
+  expect(changed.creativity).toBe("Dice");
+  expect(changed.scene_plan_signature).toBe(before.scene_plan_signature);
+  expect(changed.scene_plan.map(({ idea, scene, geometry }) => ({ idea, scene, geometry })))
+    .toEqual(before.scene_plan.map(({ idea, scene, geometry }) => ({ idea, scene, geometry })));
+  await page.reload();
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  await expect(page.getByLabel("Dataset descriptive creativity")).toHaveValue("Dice");
+  await page.getByLabel("Trigger text or terms").fill("ohwx_performer");
+  const accepted = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset") && response.status() === 202);
+  await page.getByRole("button", { name: "Generate prompts from these scenes", exact: true }).click();
+  const response = await accepted;
+  expect(response.request().postDataJSON().input.creativity).toBe("Dice");
+  const job = await response.json();
+  await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(/ohwx_performer/);
+  const finished = await (await request.get(`/api/jobs/${job.id}`)).json();
+  expect(finished.llm_trace.request_number).toBe(1);
+  expect(finished.llm_trace.messages[0].content).toContain("Dataset Creativity — Dice");
+  expect(finished.result.scene_plan[0].geometry).toEqual(before.scene_plan[0].geometry);
+});
+
 test("Quality composes in small chunks and geometry opens in an accessible modal", async ({ page, request }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/");

@@ -423,13 +423,13 @@ class GeometryAndQualityTests(unittest.TestCase):
         self.assertEqual(quality["metrics"]["scene_uniqueness"], 0)
         self.assertLess(quality["score"], 50)
 
-    def test_irrelevant_maximum_inventory_is_replaced_only_for_dataset(self):
+    def test_normal_maximum_length_is_retained_with_scene_detail_discipline(self):
         data = draft(length="Maximum Detail", amount=1)
         request = GoatedPrompterRequest(idea=data["subject"], prompt_length=data["length"])
         writer = dataset_instruction(request, data, 1, plan_item=scene())
-        self.assertNotIn(MAXIMUM_DETAIL_GUIDANCE, writer.system_message)
+        self.assertIn(MAXIMUM_DETAIL_GUIDANCE, writer.system_message)
         self.assertIn(DATASET_DETAIL_DISCIPLINE, writer.system_message)
-        self.assertIn("State each important semantic fact once", writer.system_message)
+        self.assertIn("non-redundant visual", writer.system_message)
         self.assertIn(MAXIMUM_DETAIL_GUIDANCE, assemble_instruction(request, text_only=True).system_message)
 
     def test_krea_preserves_anime_and_photographic_styles(self):

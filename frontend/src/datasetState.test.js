@@ -28,8 +28,8 @@ test("scene edits keep idea and discard stale geometry and only its prompt", () 
   assert.deepEqual(patch.results, [draft.results[1]]);
 });
 
-test("target, length and director changes preserve idea, scene and geometry", () => {
-  for (const settings of [{ target: "Qwen Image" }, { length: "Detailed" }, { director_preset: "photography_director" }]) {
+test("target, length, director and descriptive creativity preserve idea, scene and geometry", () => {
+  for (const settings of [{ target: "Qwen Image" }, { length: "Detailed" }, { director_preset: "photography_director" }, { creativity: "Dice" }]) {
     const patch = invalidateDatasetPrompts(draft, settings);
     assert.deepEqual(patch.results, []);
     patch.scene_plan.forEach((row, index) => {

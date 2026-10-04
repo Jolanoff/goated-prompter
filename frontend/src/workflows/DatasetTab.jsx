@@ -433,6 +433,13 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
               </label>
             </div>
 
+            <label className={`${ui.field} mt-4`}><span><Sparkles size={14} aria-hidden="true" />Descriptive creativity</span>
+              <select className={ui.select} aria-label="Dataset descriptive creativity" value={draft.creativity || "Balanced"} onChange={(event) => updateWriterSettings({ creativity: event.target.value })}>
+                {["Strict", "Balanced", "Creative", "Dice"].map((item) => <option key={item}>{item}</option>)}
+              </select>
+              <small className="text-[10px] leading-relaxed text-muted">Enriches visual treatment only. The planned action, pose and relationships stay fixed.</small>
+            </label>
+
             <fieldset className="mt-5 border-t border-line pt-4">
               <legend className="pr-2 text-xs font-semibold">Scene source</legend>
               <div className="mt-2 grid grid-cols-2 gap-2 tiny:grid-cols-1">

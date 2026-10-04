@@ -139,9 +139,10 @@ class DatasetUnitTests(unittest.TestCase):
             [{"index": 1, "prompt": "contaminating previous prose"}],
             plan_item={"scene": "Cycling together along a country road"})
         builder = assemble_instruction(request, text_only=True)
-        self.assertTrue(instruction.system_message.startswith(builder.system_message.split("USER SETTINGS")[0]))
-        self.assertIn("Creativity — Strict", instruction.system_message)
-        self.assertIn("Scene Planner owns scene creativity", instruction.system_message)
+        from goated_prompter.prompting.base import CORE_SYSTEM_PROMPT
+        self.assertTrue(instruction.system_message.startswith(CORE_SYSTEM_PROMPT))
+        self.assertIn("Dataset Creativity — Balanced", instruction.system_message)
+        self.assertIn("Semantic decisions are locked; descriptive enrichment is allowed", instruction.system_message)
         self.assertNotIn("contaminating previous prose", instruction.user_message)
         self.assertIn("Cycling together", instruction.user_message)
         self.assertIn("FRAME COMPLETENESS DEFAULT", instruction.system_message)

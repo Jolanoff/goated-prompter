@@ -223,7 +223,8 @@ def _prompt_trigger_preference(prompt, data):
 
 
 def quality_signature(data, results, plan):
-    value = {"version": 9, "trigger": data.get("trigger"), "target": data.get("target"), "trigger_type": data.get("trigger_type"),
+    value = {"version": 10, "trigger": data.get("trigger"), "target": data.get("target"), "trigger_type": data.get("trigger_type"),
+             "creativity": data.get("creativity", "Balanced"),
              "constraints": data.get("constraints", ""),
              "expand_trigger": data.get("expand_trigger", False),
              "trigger_connected": data.get("trigger_connected", True),

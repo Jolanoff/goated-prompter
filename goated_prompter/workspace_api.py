@@ -80,6 +80,7 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
             configured = config.get("backend") in {"mock", "openai_compatible"}
             director_request = GoatedPrompterRequest(
                 idea=data["subject"], mode="Custom", target_model=data["target"],
+                creativity=data["creativity"],
                 prompt_length=data["length"], prompt_model="Custom",
                 director_preset=director.id if director else "general_director",
                 director_profile="" if configured else text(

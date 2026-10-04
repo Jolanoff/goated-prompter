@@ -13,6 +13,7 @@ from .prompting.dataset import (
     dataset_format_repair, dataset_content_repair, dataset_loop_repair, deep_review_correction,
 )
 from .prompting.details import PROMPT_LENGTH_NAMES
+from .prompting.creativity import CREATIVITY_NAMES
 from .prompting.target_models import TARGET_MODEL_NAMES, canonical_target
 from .workflow_output import WorkflowFormatError, normalize_workflow_output, sanitize_prompt_text, requested_visible_text
 from .dataset_assignments import dataset_assignments
@@ -41,6 +42,7 @@ def default_dataset_draft():
         "amount": 12, "visual_style": "Photorealistic", "custom_style": "",
         "source_mode": "random", "inputs": "", "target": "Generic", "length": "Medium",
         "director_preset": "general_director", "variety": "Balanced", "constraints": "",
+        "creativity": "Balanced",
         "quality_report": {}, "results": [], "result_job_id": "",
         "scene_plan": [], "scene_plan_signature": "",
         "planning_mode": "Fast",
@@ -81,6 +83,8 @@ def validate_dataset_draft(value, *, generation=False, planning=False):
         raise ValueError("Invalid dataset source mode.")
     if result["variety"] not in DATASET_VARIETY:
         raise ValueError("Invalid dataset variety.")
+    if result["creativity"] not in CREATIVITY_NAMES:
+        raise ValueError("Invalid Dataset descriptive creativity.")
     result["target"] = canonical_target(result["target"])
     if result["target"] not in TARGET_MODEL_NAMES or result["length"] not in PROMPT_LENGTH_NAMES:
         raise ValueError("Invalid target model or prompt length.")
@@ -228,6 +232,7 @@ class DatasetService:
                     max_tokens=max(384, int(original.max_tokens * (0.8 ** (attempt + 1)))),
                     hard_max_tokens=max(384, int(original.hard_max_tokens * (0.8 ** (attempt + 1)))),
                     diagnostic_stage=original.diagnostic_stage + f":loop_retry_{attempt + 1}",
+                    temperature=.25, top_p=.85,
                 )
                 continue
             except BackendGenerationError as exc:
@@ -272,6 +277,7 @@ class DatasetService:
                                     else dataset_format_repair(retry_system, exc)),
                     max_tokens=instruction.max_tokens,
                     hard_max_tokens=instruction.hard_max_tokens,
+                    temperature=.25, top_p=.85,
                     diagnostic_stage=original.diagnostic_stage
                     + f":{'trigger' if trigger_failure else 'scene' if fidelity_failure else 'content' if content_failure else 'format'}_retry_{attempt + 1}")
 
