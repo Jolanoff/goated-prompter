@@ -17,14 +17,15 @@ const quickActions = [
 export default function RefineTab({ workspace, current, disabled, canGenerate, builderPrompt, builderTarget, targets,
   onGenerate, onCopy, onUsePrompt, preferences, onSavePrompt, canSavePrompt }) {
   const { changes, locks, source, target, editing, lock_version_id } = preferences.draft;
+  const updatePreferences = preferences.update;
   const setChanges = (value) => preferences.update({ changes: typeof value === "function" ? value(changes) : value });
   const setLocks = (value) => preferences.update({ locks: value });
   const setSource = (value) => preferences.update({ source: value });
   const setTarget = (value) => preferences.update({ target: value });
   const setEditing = (value) => preferences.update({ editing: value });
   useEffect(() => {
-    if (lock_version_id !== (current?.id || null)) preferences.update({ locks: current ? current.locks : ["identity"], lock_version_id: current?.id || null });
-  }, [current?.id, lock_version_id]);
+    if (lock_version_id !== (current?.id || null)) updatePreferences({ locks: current ? current.locks : ["identity"], lock_version_id: current?.id || null });
+  }, [current, lock_version_id, updatePreferences]);
   const parent = workspace.snapshot.versions.find((version) => version.id === current?.parent_id);
   async function addSource(prompt, model) {
     const result = await workspace.mutate({ action: "add", prompt, target: model });

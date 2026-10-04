@@ -584,8 +584,56 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         await self.client.post(f"/api/jobs/{job['id']}/pause")
         self.release.set()
         await self.wait_status(job["id"], "paused")
+        retained = self.app[local.STATE].jobs[job["id"]]
         await asyncio.wait_for(self.client.close(), 3)
-        self.assertEqual(self.app[local.STATE].jobs[job["id"]].status, "failed")
+        self.assertEqual(retained.status, "failed")
+        self.assertEqual(self.app[local.STATE].jobs, {})
+        self.assertIsNone(retained.result)
+        self.assertIsNone(retained.llm_trace)
+        self.assertEqual(retained.events, [])
+
+    async def test_checkpoint_cleanup_is_scoped_memory_only_and_preserves_saved_content(self):
+        state = self.app[local.STATE]
+        completed = local.Job()
+        completed.kind = "dataset"
+        completed.deliver({"prompts": ["private checkpoint"]})
+        completed.record_llm_activity({"type": "request", "messages": [{"content": "private request"}]})
+        active = local.Job()
+        active.kind = "dataset_scenes"
+        other = local.Job()
+        other.kind = "minimax"
+        other.deliver({"prompt": "other workflow"})
+        for job in (completed, active, other):
+            state.jobs[job.id] = job
+        before = {path: path.read_bytes() for path in Path(self.temp.name).rglob("*.json")}
+        response = await self.client.delete("/api/jobs?kind=dataset")
+        self.assertEqual(await response.json(), {"ok": True, "released": [completed.id]})
+        self.assertIsNone(completed.result)
+        self.assertIsNone(completed.llm_trace)
+        self.assertEqual(completed.events, [])
+        self.assertEqual((await self.client.get(f"/api/jobs/{completed.id}")).status, 404)
+        self.assertIn(active.id, state.jobs)
+        self.assertIn(other.id, state.jobs)
+        self.assertEqual(before, {path: path.read_bytes() for path in Path(self.temp.name).rglob("*.json")})
+        self.assertEqual((await self.client.delete("/api/jobs?kind=unknown")).status, 400)
+        self.assertEqual((await self.client.delete("/api/jobs")).status, 400)
+        self.assertEqual((await self.client.delete("/api/jobs?kind=dataset", headers={"Origin": "https://evil.example"})).status, 403)
+        active.deliver({"scene_plan": []})
+
+    async def test_local_prompt_regeneration_accepts_manual_scene_without_geometry(self):
+        from goated_prompter.dataset import default_dataset_draft
+        from goated_prompter.dataset_assignments import dataset_assignments
+        from goated_prompter.scene_planner import scene_plan_signature
+        data = {**default_dataset_draft(), "amount": 1, "subject": "A traveler", "trigger": "person_token"}
+        data["scene_plan"] = [{"index": 1, "input": "", "idea": "Reading on a bench",
+                               "scene": "She reads a book on a park bench.", "geometry": {},
+                               "idea_status": "valid", "scene_status": "valid", "prompt_status": "not_generated"}]
+        data["scene_plan_signature"] = scene_plan_signature(data, dataset_assignments(data))
+        response = await self.client.post("/api/workspace/dataset/scene", json={"input": data, "index": 1, "action": "regenerate_prompt"})
+        self.assertEqual(response.status, 202, await response.text())
+        finished = await self.wait_status((await response.json())["id"], "succeeded")
+        self.assertEqual(finished["result"]["scene_plan"][0]["scene"], data["scene_plan"][0]["scene"])
+        self.assertEqual(finished["result"]["scene_plan"][0]["geometry"], {})
 
     async def test_preset_crud_and_unload_shapes(self):
         director = SimpleNamespace(to_public_mapping=lambda: {"id": "user:test", "label": "Test"})

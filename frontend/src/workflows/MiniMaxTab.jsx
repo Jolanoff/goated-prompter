@@ -12,18 +12,27 @@ const modes = [["auto", "Auto"], ["T2VA", "Text to Video"], ["I2VA", "First Fram
 const models = ["MiniMax H3"];
 const ratios = ["Auto", "16:9", "9:16", "1:1", "4:3", "3:4", "21:9"];
 
-export default function MiniMaxTab({ visible, job, busy, active, noEngine, engineLabel, presets, onGenerate, onCancel, onCopy }) {
+export default function MiniMaxTab({ visible, job, busy, active, noEngine, engineLabel, presets, onGenerate, onCancel, onCopy, onReleaseJobs }) {
   const preferences = useWorkflowSettings("minimax");
   const { draft, update } = preferences;
   const textarea = useRef(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState("");
   const submission = useRef(false);
+
+  async function clearDraft() {
+    // Retain the acknowledgement ID until cleanup finishes so a still-visible
+    // terminal snapshot cannot rehydrate the output we just discarded.
+    update({ user_request: "", generated_prompt: "", references: [] });
+    setError("");
+    try { await preferences.flush(); await onReleaseJobs?.("minimax"); }
+    catch (err) { setError(`Could not release temporary job checkpoints. ${err.message}`); }
+  }
   useEffect(() => {
     if (draft && job?.kind === "minimax" && job.status === "succeeded" && draft.result_job_id !== job.id) {
       update({ generated_prompt: job.result.prompt, result_job_id: job.id });
     }
-  }, [draft, job]);
+  }, [draft, job, update]);
 
   const disabled = busy || starting || preferences.working;
   const parsed = parseReferences(draft?.user_request || "");
@@ -180,7 +189,7 @@ export default function MiniMaxTab({ visible, job, busy, active, noEngine, engin
           <div className={ui.outputActions}>
             <button className={ui.button} disabled={!draft.generated_prompt} onClick={() => onCopy(draft.generated_prompt)}><Copy size={14} />Copy</button>
             <button className={ui.button} disabled={!canGenerate} onClick={generate}><RefreshCw size={14} />Regenerate</button>
-            <button className={ui.button} disabled={disabled} onClick={() => { update({ user_request: "", generated_prompt: "", references: [] }); setError(""); }}><Trash2 size={14} />Clear</button>
+            <button className={ui.button} disabled={disabled} onClick={clearDraft}><Trash2 size={14} />Clear</button>
           </div>
         </section>
       </div>

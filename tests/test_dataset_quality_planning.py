@@ -230,7 +230,7 @@ class QualityPlanningTests(unittest.TestCase):
 
     def test_final_writer_retries_only_prompt_if_action_disappears(self):
         data = saved(draft(amount=1), [scene()])
-        result, session, _ = run(data, ["person_token wears clown clothes in a studio.",
+        result, session, _ = run(data, ["person_token stands motionless in a studio.",
                                       "person_token tries to juggle oranges and fails."])
         self.assertEqual(session.generate.call_count, 2)
         calls = [call.args[0] for call in session.generate.call_args_list]

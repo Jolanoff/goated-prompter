@@ -23,6 +23,7 @@ from aiohttp import web
 from PIL import Image, UnidentifiedImageError
 
 from goated_prompter.backends.base import GoatedPrompterError
+from goated_prompter.job_lifecycle import release_completed_checkpoints
 from goated_prompter.backends.llama_cpp_process import get_process_manager, _resolve_server_executable
 from goated_prompter.config import load_config
 from goated_prompter.core import GoatedPrompterRequest, GoatedPrompterService, _as_bool
@@ -211,6 +212,7 @@ class Job:
         self.stopping = False
         self.cancel_requested = False
         self.interrupt = None
+        self.transport_interrupts = set()
         self.kind = "builder"
         self.progress = ""
         self.progress_at = self.created_at
@@ -219,6 +221,7 @@ class Job:
         self._event_sequence = 0
         self._llm_request_sequence = 0
         self.llm_trace = None
+        self.released = False
         self._append_event(self.status_reason, "status")
 
     def _append_event(self, message, event_type="info"):
@@ -252,6 +255,8 @@ class Job:
             return
         event_type = event.get("type")
         with self.lock:
+            if self.released:
+                return
             now = time.time()
             if event_type == "request":
                 self._llm_request_sequence += 1
@@ -319,6 +324,15 @@ class Job:
                     "status_reason": self.status_reason, "events": list(self.events),
                     "llm_trace": copy.deepcopy(self.llm_trace)}
 
+    def clear_private_data(self):
+        """Release our references; this is not a secure RAM-erasure guarantee."""
+        with self.lock:
+            self.released = True
+            self.result = self.llm_trace = self.error = self.interrupt = None
+            self.events.clear()
+            self.transport_interrupts.clear()
+            self.progress = self.status_reason = ""
+
     def checkpoint(self):
         while True:
             with self.lock:
@@ -342,6 +356,25 @@ class Job:
         if cancelled:
             interrupt()
 
+    def register_interrupt(self, interrupt):
+        with self.lock:
+            self.transport_interrupts.add(interrupt)
+            stopped = self.cancel_requested or self.stopping
+        if stopped:
+            interrupt()
+
+    def unregister_interrupt(self, interrupt):
+        with self.lock:
+            self.transport_interrupts.discard(interrupt)
+
+    def interrupt_requests(self):
+        with self.lock:
+            interrupts = list(self.transport_interrupts)
+            if self.interrupt is not None:
+                interrupts.append(self.interrupt)
+        for interrupt in interrupts:
+            interrupt()
+
     def cancel(self):
         with self.lock:
             if self.status in TERMINAL:
@@ -354,10 +387,8 @@ class Job:
             self._append_event(self.status_reason, "cancel")
             self.gate.set()
             self.revision += 1
-            interrupt = self.interrupt
             snapshot = self.snapshot()
-        if interrupt is not None:
-            interrupt()
+        self.interrupt_requests()
         return snapshot
 
     def deliver(self, result):
@@ -515,10 +546,22 @@ class LocalState:
                 return snapshot
         return None
 
+    def start_job(self, kind, request, config, text_only, workflow=None, *, job_factory=Job):
+        """Called under admission; all routes share task registration/lifecycle."""
+        job = job_factory()
+        job.kind = kind
+        self.jobs[job.id] = job
+        task = asyncio.create_task(self.run(job, request, config, text_only, workflow))
+        self.tasks.add(task)
+        task.add_done_callback(self.tasks.discard)
+        return job.snapshot()
+
     def execute(self, job, director_request, config, text_only, workflow=None):
         try:
             job.checkpoint()
-            config = {**config, "_activity_callback": job.record_llm_activity}
+            config = {**config, "_activity_callback": job.record_llm_activity,
+                      "_register_interrupt": job.register_interrupt,
+                      "_unregister_interrupt": job.unregister_interrupt}
             effective, _ = resolve_director_config(config, director_request)
             local_settings = effective.get("local_llama_cpp", {})
             validate_local_paths(local_settings)
@@ -576,7 +619,7 @@ class LocalState:
         await asyncio.to_thread(self.execute, job, *args)
         completed = [key for key, record in self.jobs.items() if record.status in TERMINAL]
         for key in completed[:-COMPLETED_LIMIT]:
-            del self.jobs[key]
+            self.jobs.pop(key).clear_private_data()
 
 
 async def json_object(request):
@@ -655,12 +698,7 @@ async def generate(request):
             encoded = await asyncio.to_thread(lambda: [decode_image(value, dimension) for value in slots])
             director_request = replace(director_request, image=encoded[0], image_2=encoded[1],
                                        image_3=encoded[2], image_4=encoded[3])
-        job = Job()
-        state.jobs[job.id] = job
-        task = asyncio.create_task(state.run(job, director_request, config, text_only))
-        state.tasks.add(task)
-        task.add_done_callback(state.tasks.discard)
-        return web.json_response(job.snapshot(), status=202)
+        return web.json_response(state.start_job("builder", director_request, config, text_only), status=202)
 
 
 async def job_endpoint(request):
@@ -693,6 +731,14 @@ async def job_endpoint(request):
                 job._append_event(job.status_reason, "status")
             job.revision += 1
         return web.json_response(job.snapshot())
+
+
+async def release_job_checkpoints(request):
+    family = request.query.get("kind")
+    if not family:
+        raise ValueError("Choose the workflow whose completed checkpoints should be released.")
+    released = release_completed_checkpoints(request.app[STATE].jobs, family=family)
+    return web.json_response({"ok": True, "released": released})
 
 
 async def models(request):
@@ -807,6 +853,7 @@ def create_app(*, port=8190, dist=None, config_loader=load_config, service_facto
                             settings_path if settings_path is not None else Path(__file__).parent / "data" / "settings.json",
                             prompts_path)
     app.add_routes([web.get("/api/bootstrap", bootstrap), web.post("/api/generate", generate),
+                     web.delete("/api/jobs", release_job_checkpoints),
                     web.get("/api/jobs/{id}", job_endpoint),
                     web.post("/api/jobs/{id}/{action:pause|resume|cancel}", job_endpoint),
                     web.get("/api/models", models), web.get("/api/presets", presets),
@@ -840,9 +887,11 @@ def create_app(*, port=8190, dist=None, config_loader=load_config, service_facto
             with job.lock:
                 job.stopping = True
                 job.gate.set()
+            await asyncio.to_thread(job.interrupt_requests)
         if state.tasks:
             await asyncio.gather(*state.tasks)
         await asyncio.to_thread(get_process_manager().request_unload)
+        release_completed_checkpoints(state.jobs)
 
     app.on_shutdown.append(shutdown)
     return app

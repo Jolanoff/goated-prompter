@@ -5,7 +5,7 @@ from .schema import GEOMETRY_FIELDS
 from .rules import COMMON_RULES, rules_for
 
 
-def geometry_prompt_schema(dataset_type):
+def geometry_prompt_schema(dataset_type, *, optional_values_in_context=False):
     profile = get_profile(dataset_type)
     lines = [f"STAGING SCHEMA — {dataset_type}",
              "Required fields: " + (", ".join(sorted(profile.required)) or "none; use only applicable staging"),
@@ -15,7 +15,8 @@ def geometry_prompt_schema(dataset_type):
         if name not in profile.allowed:
             continue
         values = profile.values_for(name)
-        kind = (", ".join(sorted(values)) if values is not None else
+        kind = ("enum; allowed values in optional_geometry_values" if optional_values_in_context and values is not None and name not in profile.required else
+                ", ".join(sorted(values)) if values is not None else
                 f"integer >= {spec.minimum}" if spec.count else
                 f"array of up to {spec.max_items} short strings" if spec.text_array else
                 f"free text, at most {spec.max_length} characters")

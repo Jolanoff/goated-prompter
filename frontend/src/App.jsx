@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { orderDisplayPresets, presetDisplayLabel } from "./presetPresentation.js";
 import { ui } from "./ui.js";
 import { api } from "./api.js";
+import { activeJobStatuses as activeStatuses, useJobPolling } from "./useJobPolling.js";
 import { readTheme, saveTheme } from "./theme.js";
 import CreativeWorkspace from "./workflows/CreativeWorkspace.jsx";
 import MiniMaxTab from "./workflows/MiniMaxTab.jsx";
@@ -46,7 +47,6 @@ import {
   loadSaved,
   SAVED_KEY,
 } from "./storage.js";
-const activeStatuses = ["running", "pause_requested", "paused", "cancelling"];
 const titleCase = (text) =>
   text.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 const taskLabels = {
@@ -260,12 +260,12 @@ function App() {
   const sources = bootstrap?.reference_sources || referenceSources;
   const hasImages = images.some(Boolean);
   const imageCount = images.filter(Boolean).length;
-  const sourceAvailable = (source) => {
+  const sourceAvailable = useCallback((source) => {
     if (!source || source === "Off") return true;
     if (source === "Blend") return imageCount >= 2;
     const slot = Number(source.replace(/\D/g, "")) - 1;
     return slot >= 0 && slot < images.length && !!images[slot];
-  };
+  }, [imageCount, images]);
   const hasInvalidReferenceMappings = referenceAttributes.some(
     (key) => !sourceAvailable(settings[`reference_${key}_source`]),
   );
@@ -368,8 +368,9 @@ function App() {
     }
   }
 
+  const initialConnect = useEffectEvent(connect);
   useEffect(() => {
-    connect();
+    initialConnect();
     try {
       const id = sessionStorage.getItem(JOB_KEY);
       if (id) receiveJob({ id, status: "running", revision: -1 });
@@ -396,7 +397,7 @@ function App() {
         }),
       ),
     }));
-  }, [images, hasInvalidReferenceMappings]);
+  }, [images, hasInvalidReferenceMappings, sourceAvailable]);
 
   useEffect(() => {
     if (!bootstrap?.presets || !hydrated.current) return;
@@ -479,45 +480,21 @@ function App() {
     };
   }, [storageReload]);
 
-  useEffect(() => {
-    if (!active || !job?.id) return;
-    let disposed = false;
-    let timer;
-    async function poll() {
-      try {
-        const next = await api(`/jobs/${job.id}`);
-        if (disposed) return;
-        receiveJob(next);
-        if (!activeStatuses.includes(next.status)) {
-          return;
-        }
-      } catch (err) {
-        if (disposed) return;
-        if (err.status === 404) {
-          setJob(null);
-          latestJobRef.current = null;
-          try {
-            sessionStorage.removeItem(JOB_KEY);
-          } catch {
-            /* Optional reload recovery. */
-          }
-          setError(
-            "This job is no longer available. The backend may have restarted; generate again.",
-          );
-          return;
-        }
-        setError(
-          `Connection interrupted; still checking the current job. ${err.message}`,
-        );
-      }
-      if (!disposed) timer = setTimeout(poll, 700);
+  useJobPolling(job?.id, active, receiveJob, () => {
+    setJob(null);
+    latestJobRef.current = null;
+    try { sessionStorage.removeItem(JOB_KEY); } catch { /* Optional recovery. */ }
+    setError("This job is no longer available. The backend may have restarted; generate again.");
+  }, (err) => setError(`Connection interrupted; still checking the current job. ${err.message}`));
+
+  async function releaseJobs(kind) {
+    const result = await api(`/jobs?kind=${encodeURIComponent(kind)}`, undefined, "DELETE");
+    if (result.released.includes(latestJobRef.current?.id)) {
+      latestJobRef.current = null;
+      setJob(null);
+      setLogOpen(false);
     }
-    poll();
-    return () => {
-      disposed = true;
-      clearTimeout(timer);
-    };
-  }, [job?.id, active]);
+  }
 
   useEffect(() => {
     if (!notice) return;
@@ -1117,13 +1094,13 @@ function App() {
           {bootstrap && <MiniMaxTab visible={view === "minimax"} job={job}
             busy={busy || actionBusy || settingsBusy || !!uploading} active={active} noEngine={noEngine}
             engineLabel={configuredBackend ? `Configured backend (${bootstrap.backend})` : selectedProfile?.label}
-               presets={bootstrap.presets.presets} onGenerate={startWorkflow} onCancel={endGeneration} onCopy={copy} />}
+               presets={bootstrap.presets.presets} onGenerate={startWorkflow} onCancel={endGeneration} onCopy={copy} onReleaseJobs={releaseJobs} />}
           {bootstrap && <DatasetTab visible={view === "dataset"} job={job}
             busy={busy || actionBusy || settingsBusy || !!uploading} active={active} noEngine={noEngine}
             engineLabel={configuredBackend ? `Configured backend (${bootstrap.backend})` : selectedProfile?.label}
             presets={bootstrap.presets.presets} targets={bootstrap.inputs.target_model[0]}
             lengths={bootstrap.inputs.prompt_length[0]} onGenerate={startWorkflow}
-            onCancel={endGeneration} onCopy={copy} />}
+             onCancel={endGeneration} onCopy={copy} onReleaseJobs={releaseJobs} />}
           {active && view !== "builder" && view !== "refine" && view !== "minimax" && view !== "dataset" && (
             <div className={`${ui.panel} mb-5 flex flex-wrap items-center justify-between gap-3`} role="status">
               <span>{job.progress || "Generating prompt…"}</span>

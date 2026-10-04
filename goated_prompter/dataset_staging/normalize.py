@@ -32,6 +32,34 @@ GAZE_PROSE = {
 }
 
 
+def primary_subject_gaze(scene, dataset_type):
+    """Infer only a single-subject Character assertion, never another actor's eyes.
+
+    A tiny explicit grammar is intentionally incomplete. Unknown subjects,
+    possessive eyes and multi-clause/multi-subject prose defer to local repair.
+    """
+    if dataset_type != "Character":
+        return None
+    text = scene.casefold().strip()
+    if re.search(r"\b(?:mirror|reflection|reflected|collage|inset|split.screen|no|not|never|without|avoid)\b", text):
+        return None
+    subject = r"(?:she|he|the (?:woman|man|character|person|subject))"
+    if not re.fullmatch(subject + r"\b[^.!?;]*[.!?]?", text):
+        return None
+    # A new actor, even inside a relative clause, makes ownership uncertain.
+    remainder = re.sub(r"^" + subject + r"\b", "", text)
+    if re.search(r"\b(?:she|he|they|whose|who|his|her|their|dog|cat|animal|child|children|woman|man|person|people|character|subject)\b", remainder):
+        return None
+    directions = {direction for direction, pattern in GAZE_PROSE.items() if re.search(pattern, text)}
+    if len(directions) != 1:
+        return None
+    direction = next(iter(directions))
+    pattern = GAZE_PROSE[direction]
+    # Gaze must be the main predicate or a subject-preserving participle.
+    owned = r"(?:^" + subject + r" (?:is )?|\bwhile )" + pattern
+    return direction if re.search(owned, text) else None
+
+
 def normalize_geometry(value, *, profile=None, scene=""):
     """Correct only lexical aliases and unambiguous category mistakes.
 
@@ -50,13 +78,10 @@ def normalize_geometry(value, *, profile=None, scene=""):
             continue
         cleaned[destination] = gaze
         del cleaned["gaze_direction"]
-        text = scene.casefold()
-        if re.search(r"\b(?:mirror|reflection|collage|inset|split.screen)\b", text):
-            break
-        directions = {direction for direction, pattern in GAZE_PROSE.items()
-                      for match in re.finditer(pattern, text)
-                      if not re.search(r"\b(?:no|not|never|without|avoid)\b[^,.;:]*$", text[max(0, match.start() - 40):match.start()])}
-        if len(directions) == 1:
-            cleaned["gaze_direction"] = directions.pop()
+        direction = primary_subject_gaze(scene, "Character" if profile is not None and profile.rule_groups == ("character",) else None)
+        if cleaned.get("secondary_subject_count", 0) or cleaned.get("primary_subject_count", 1) != 1:
+            direction = None
+        if direction:
+            cleaned["gaze_direction"] = direction
         break
     return cleaned

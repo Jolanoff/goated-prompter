@@ -22,8 +22,8 @@ from .dataset_triggers import trigger_presence_error, trigger_terms
 from .dataset_visible_content import PositiveContentError, positive_prompt_error, sanitize_positive_prompt
 from .scene_planner import (ScenePlanner, MAX_STORED_SCENE_CHARACTERS, MAX_STORED_IDEA_CHARACTERS,
                             reusable_scene_plan, scene_plan_signature, validate_saved_scene_plan, validate_plan_metadata,
-                            failure_reason, failed_scene, scene_is_usable, FAILURE_METADATA)
-from .dataset_staging import geometry_errors, migrate_saved_geometry, resolve_framing_conflicts
+                            failure_reason, failed_scene, scene_is_usable, scene_geometry_errors, FAILURE_METADATA)
+from .dataset_staging import migrate_saved_geometry, resolve_framing_conflicts
 
 
 DATASET_MAX_RETRIES = 3
@@ -132,9 +132,15 @@ def validate_dataset_draft(value, *, generation=False, planning=False):
     return result
 
 
+class TriggerContractError(ValueError):
+    """Exact protected wording requires writer-only repair."""
+
+
 def validate_trigger_contract(prompt, data, progress=None):
     cleaned = prompt if data["target"] == "Ideogram4" else sanitize_prompt_text(prompt)
-    error = trigger_presence_error(cleaned, data["trigger"], data["target"])
+    error = trigger_presence_error(cleaned, data["trigger"], data["target"], expand=data.get("expand_trigger", False))
+    if error and not data.get("expand_trigger", False):
+        raise TriggerContractError(error)
     if error and progress:
         progress(f"Trigger warning: {error} Keeping the finished prompt without rewriting it.")
     return cleaned
@@ -250,14 +256,17 @@ class DatasetService:
                     retry_system = dataset_loop_repair(retry_system, exc, attempt + 1)
                 content_failure = isinstance(exc, PositiveContentError)
                 fidelity_failure = isinstance(exc, SceneFidelityError)
+                trigger_failure = isinstance(exc, TriggerContractError)
                 instruction = replace(original,
-                    system_message=(retry_system + "\n\nSCENE FIDELITY CORRECTION: Render the same fixed idea, primary action, props and geometry; do not replace the event with generic presentation."
+                    system_message=(retry_system + "\n\nTRIGGER WORDING CORRECTION: " + str(exc)
+                                    + " Include each exact case-sensitive trigger term as supplied. Preserve the fixed idea, scene, action and geometry; change only the final wording."
+                                    if trigger_failure else retry_system + "\n\nSCENE FIDELITY CORRECTION: Render the same fixed idea, primary action, props and geometry; do not replace the event with generic presentation."
                                     if fidelity_failure else dataset_content_repair(retry_system) if content_failure
                                     else dataset_format_repair(retry_system, exc)),
                     max_tokens=instruction.max_tokens,
                     hard_max_tokens=instruction.hard_max_tokens,
                     diagnostic_stage=original.diagnostic_stage
-                    + f":{'scene' if fidelity_failure else 'content' if content_failure else 'format'}_retry_{attempt + 1}")
+                    + f":{'trigger' if trigger_failure else 'scene' if fidelity_failure else 'content' if content_failure else 'format'}_retry_{attempt + 1}")
 
     def run(self, request, data, progress, partial, *, scenes_only=False, scene_action=None, valid_only=False):
         effective, profile = resolve_director_config(self.config, request)
@@ -359,8 +368,7 @@ class DatasetService:
                 # staging. Validate their prose without rewriting it merely to
                 # fill metadata. New model output and supplied staging still
                 # enforce the same complete type profile in both modes.
-                errors = [] if row.get("scene_status") == "guided_fallback" else geometry_errors(
-                    row, dataset_type=data["trigger_type"], require_fields=bool(row.get("geometry")))
+                errors = scene_geometry_errors(row, data)
                 if errors or row.get("scene_status") in {"not_generated", "geometry_warning"}:
                     if scene_action and scene_action[0] == "regenerate_prompt":
                         raise ValueError("Repair this scene's geometry before regenerating its prompt.")

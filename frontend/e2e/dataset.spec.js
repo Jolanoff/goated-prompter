@@ -153,7 +153,7 @@ test("failed scenes show persistent reasons and do not block writing valid scene
   await expect(page.getByLabel("Planned idea 1")).toHaveValue(fixedIdea);
 });
 
-test("Dataset builds, persists and exports a trigger-ready batch", async ({ page }) => {
+test("Dataset builds, persists and exports a trigger-ready batch", async ({ page, request }) => {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.setViewportSize({ width: 390, height: 844 });
@@ -179,12 +179,17 @@ test("Dataset builds, persists and exports a trigger-ready batch", async ({ page
   await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/running through/);
   await expect(page.getByLabel("Planned scene 1")).toHaveValue(/standing portrait/);
   await expect(page.getByRole("button", { name: "TXT", exact: true })).toBeEnabled();
+  await expect(page.getByLabel("Planned scene 1")).toBeEnabled();
   const downloaded = page.waitForEvent("download");
+  const cleanup = page.waitForResponse((response) => response.url().endsWith("/api/jobs?kind=dataset") && response.request().method() === "DELETE");
   await page.getByRole("button", { name: "JSONL", exact: true }).click();
   const exported = (await readFile(await (await downloaded).path(), "utf8")).split("\n").map(JSON.parse);
   expect(exported[0].scene).toContain("standing portrait");
   expect(exported[0].idea).toContain("standing portrait");
   expect(exported[0].index).toBe(1);
+  const released = await (await cleanup).json();
+  expect(released.released.length).toBeGreaterThan(0);
+  for (const id of released.released) expect((await request.get(`/api/jobs/${id}`)).status()).toBe(404);
   const quality = page.getByRole("region", { name: "Dataset quality report" });
   await expect(quality.getByText("Overall", { exact: true })).toBeVisible();
   await expect(quality.getByText(/Prompt checks · \d\/3 passed/)).toBeVisible();
@@ -310,6 +315,62 @@ test("plan first, edit and persist ideas, reuse across targets, and invalidate s
   expect(changed.scene_plan).toEqual([]);
   expect(changed.scene_plan_signature).toBe("");
   expect(errors).toEqual([]);
+});
+
+test("expanded fruit wording passes subject checks while protected wording stays exact", async ({ page, request }) => {
+  const path = "/api/workspace/settings/dataset";
+  const record = await (await request.get(path)).json();
+  const prompt = "A muscular anthropomorphic banana in a suit punches the apple character in a dress on a padded dojo mat.";
+  const input = { ...record.draft, amount: 1, trigger: "a banana, an apple", trigger_connected: false,
+    trigger_at_start: false, expand_trigger: true, subject: "Fruit characters in combat.", target: "Generic",
+    source_mode: "random", scene_plan: [], scene_plan_signature: "", quality_report: {},
+    results: [{ index: 1, input: "", prompt }], result_job_id: "" };
+  const expanded = await (await request.post("/api/workspace/dataset/quality", { data: { input } })).json();
+  expect(expanded.report.prompts[0].issues.filter((issue) => issue.code.startsWith("trigger"))).toEqual([]);
+  const protectedReport = await (await request.post("/api/workspace/dataset/quality", {
+    data: { input: { ...input, expand_trigger: false } },
+  })).json();
+  expect(protectedReport.report.prompts[0].issues.some((issue) => issue.code === "trigger_missing")).toBe(true);
+  expect(protectedReport.report.signature).not.toBe(expanded.report.signature);
+  expect((await request.put(path, { data: { revision: record.revision, draft: input } })).ok()).toBe(true);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  await expect(page.getByLabel("Allow trigger expansion")).toBeChecked();
+  await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(prompt);
+  const quality = page.getByRole("region", { name: "Dataset quality report", exact: true });
+  await quality.getByText("Prompt checks · 1/1 passed", { exact: true }).click();
+  await expect(quality.getByText("All automatic checks passed.")).toBeVisible();
+  await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
+  const latest = await (await request.get(path)).json();
+  expect((await request.put(path, { data: { revision: latest.revision, draft: record.draft } })).ok()).toBe(true);
+});
+
+test("manual scenes regenerate locally and clearing results releases only job checkpoints", async ({ page, request }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  await page.getByLabel("Dataset idea", { exact: true }).fill("A traveler visiting exhibits.");
+  await page.getByLabel("Trigger text or terms").fill("ohwx_traveler");
+  await page.getByLabel("Number of prompts").selectOption("2");
+  await page.getByRole("button", { name: "Generate 2 prompts", exact: true }).click();
+  await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/ohwx_traveler/);
+  await expect(page.getByLabel("Planned scene 1")).toBeEnabled();
+  const manual = "She reads a book on a park bench.";
+  await page.getByLabel("Planned scene 1").fill(manual);
+  const plan = page.getByRole("region", { name: "Scene Planner ideas", exact: true });
+  await plan.getByRole("button", { name: "Regenerate prompt", exact: true }).first().click();
+  await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(/park bench/);
+  await expect(page.getByLabel("Planned scene 1")).toHaveValue(manual);
+  await expect(plan.getByRole("button", { name: "View geometry 1", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Clear", exact: true })).toBeEnabled();
+  const cleanup = page.waitForResponse((response) => response.url().endsWith("/api/jobs?kind=dataset") && response.request().method() === "DELETE");
+  await page.getByRole("button", { name: "Clear", exact: true }).click();
+  for (const id of (await (await cleanup).json()).released) expect((await request.get(`/api/jobs/${id}`)).status()).toBe(404);
+  await expect(page.getByLabel("Dataset prompt 1")).toHaveCount(0);
+  await expect(page.getByText("Dataset settings: Saved")).toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  await expect(page.getByLabel("Planned scene 1")).toHaveValue(manual);
+  await expect(page.getByLabel("Dataset prompt 1")).toHaveCount(0);
 });
 
 test("Quality planning and per-scene controls preserve the rest of the batch", async ({ page, request }) => {

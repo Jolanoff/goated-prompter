@@ -94,6 +94,20 @@ class StagingCleanupTests(unittest.TestCase):
             geometry = {"gaze_direction": value}
             self.assertEqual(normalize_staging(geometry, dataset_type="Character", scene="Looking at the camera."), geometry)
 
+    def test_secondary_or_unowned_gaze_never_fills_primary_subject_metadata(self):
+        for scene in (
+            "She displays a ribbon while a dog is looking at the camera.",
+            "She stands beside a man who is looking at the camera.",
+            "She holds a doll with eyes closed.",
+            "A dog is looking at the camera.",
+            "She watches as someone is looking at the camera.",
+        ):
+            with self.subTest(scene=scene):
+                self.assertEqual(normalize_staging({"gaze_direction": "ecstatic"}, dataset_type="Character", scene=scene),
+                                 {"expression": "ecstatic"})
+        raw = {"gaze_direction": "ecstatic", "secondary_subject_count": 1}
+        self.assertNotIn("gaze_direction", normalize_staging(raw, dataset_type="Character", scene="She is looking at the camera."))
+
     def test_profiles_constrain_both_validation_and_schema_values(self):
         for kind, profile in STAGING_PROFILES.items():
             advertised = geometry_enum_values(kind)

@@ -98,7 +98,7 @@ class DatasetUnitTests(unittest.TestCase):
 
     def test_long_trigger_paraphrase_is_kept_without_retry_and_reported(self):
         from unittest.mock import Mock
-        data = valid_draft(amount=1, trigger_connected=False,
+        data = valid_draft(amount=1, trigger_connected=False, expand_trigger=True,
             trigger="Two adult characters spending a private romantic weekend together",
             subject="A couple's romantic evening.")
         request = GoatedPrompterRequest(idea=data["subject"], target_model=data["target"])

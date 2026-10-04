@@ -50,24 +50,25 @@ export function useWorkflowSettings(operation) {
 
   useEffect(() => {
     mounted.current = true;
+    const loadSequence = loading;
     load();
     const leave = () => { saver.current.flush(true).catch(() => {}); };
     window.addEventListener("pagehide", leave);
     return () => {
       mounted.current = false;
-      loading.current++;
+      loadSequence.current++;
       window.removeEventListener("pagehide", leave);
       saver.current.dispose();
     };
   }, [load]);
 
-  function update(patch) {
+  const update = useCallback((patch) => {
     if (!currentDraft.current) return;
     const next = { ...currentDraft.current, ...patch };
     currentDraft.current = next;
     setDraft(next);
     saver.current.stage(next);
-  }
+  }, []);
 
   async function saveInstructions(instructions, reset = false) {
     if (instructionWrite.current || !latest.current) return false;

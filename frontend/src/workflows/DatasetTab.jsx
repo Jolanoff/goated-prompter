@@ -95,7 +95,7 @@ function download(name, content, type) {
 }
 
 export default function DatasetTab({ visible, job, busy, active, noEngine, engineLabel, presets,
-  targets, lengths, onGenerate, onCancel, onCopy }) {
+  targets, lengths, onGenerate, onCancel, onCopy, onReleaseJobs }) {
   const preferences = useWorkflowSettings("dataset");
   const { draft, update } = preferences;
   const [starting, setStarting] = useState(false);
@@ -127,7 +127,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
   useEffect(() => {
     if (!datasetJob || job.status !== "failed") return;
     setError(`${job.kind === "dataset_review" ? "Dataset review" : job.kind === "dataset_scenes" ? "Scene planning" : "Dataset generation"} failed. ${job.error || "The prompt engine did not return a usable result."}`);
-  }, [datasetJob, job?.id, job?.revision, job?.status]);
+  }, [datasetJob, job?.id, job?.revision, job?.status, job?.kind, job?.error]);
 
   useEffect(() => {
     if (!draft || !["dataset", "dataset_scenes"].includes(job?.kind) || !job.result?.scene_plan) return;
@@ -142,7 +142,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
       scene_plan_signature: job.result.scene_plan_signature,
       ...(job.result.quality_report ? { quality_report: job.result.quality_report } : {}),
     });
-  }, [job?.id, job?.revision, !!draft]);
+  }, [job, draft, update]);
 
   useEffect(() => {
     if (!draft || job?.kind !== "dataset_review" || job.status !== "succeeded" || !job.result?.report) return;
@@ -150,7 +150,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
     if (synced.current === key) return;
     synced.current = key;
     update({ quality_report: job.result.report });
-  }, [job?.id, job?.revision, !!draft]);
+  }, [job, draft, update]);
 
   const disabled = busy || starting || preferences.working;
   const availablePresets = orderDisplayPresets(presets || []);
@@ -175,6 +175,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
 
   useEffect(() => {
     const attempt = ++qualityAttempt.current;
+    let disposed = false;
     setQualityBusy(false);
     if (!draft?.results.length || workflowActive) return;
     if (draft.quality_report?.signature && draft.quality_report.idea_quality) return;
@@ -182,16 +183,16 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
       setQualityBusy(true);
       try {
         const result = await api("/workspace/dataset/quality", { input: { ...draft, quality_report: {} } });
-        if (qualityAttempt.current !== attempt) return;
+        if (disposed || qualityAttempt.current !== attempt) return;
         update({ quality_report: result.report });
       } catch (err) {
-        if (qualityAttempt.current === attempt) setError(`Could not analyze dataset quality. ${err.message}`);
+        if (!disposed && qualityAttempt.current === attempt) setError(`Could not analyze dataset quality. ${err.message}`);
       } finally {
-        if (qualityAttempt.current === attempt) setQualityBusy(false);
+        if (!disposed && qualityAttempt.current === attempt) setQualityBusy(false);
       }
     }, 500);
-    return () => { clearTimeout(timer); qualityAttempt.current++; };
-  }, [draft?.results, draft?.quality_report?.signature, workflowActive]);
+    return () => { disposed = true; clearTimeout(timer); };
+  }, [draft, workflowActive, update]);
 
   function updateSceneSettings(patch) {
     update({ ...patch, scene_plan: [], scene_plan_signature: "", quality_report: {}, results: [] });
@@ -244,6 +245,25 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
 
   function editResult(index, prompt) {
     update({ results: draft.results.map((item) => item.index === index ? { ...item, prompt } : item), quality_report: {} });
+  }
+
+  async function releaseCheckpoints() {
+    try {
+      // Preserve existing draft autosave. Only disposable job checkpoints/logs
+      // are released; exports never delete the editable scene plan or history.
+      await preferences.flush();
+      await onReleaseJobs?.("dataset");
+    } catch (err) { setError(`Could not release temporary job checkpoints. ${err.message}`); }
+  }
+
+  function exportDataset(name, content, type) {
+    download(name, content, type);
+    if (!workflowActive) void releaseCheckpoints();
+  }
+
+  async function clearResults() {
+    update({ results: [], result_job_id: "", quality_report: {} });
+    await releaseCheckpoints();
   }
 
   const allText = draft?.results.map((item) => item.prompt).join("\n\n") || "";
@@ -343,7 +363,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                <label className={ui.choiceCard}>
                  <input type="checkbox" className="mt-0.5" aria-label="Keep trigger text connected"
                   checked={draft.trigger_connected !== false} onChange={(event) => updateWriterSettings({ trigger_connected: event.target.checked })} />
-                 <span title="Turn off to distribute comma-, line-, or ‘and’-separated terms. Missing wording or grouping produces a warning, not a discarded prompt."><strong className="block">Keep trigger connected</strong>
+                 <span title="Turn off to distribute comma-, line-, or ‘and’-separated terms. Grouping is a preference; exact wording is required when trigger expansion is off."><strong className="block">Keep trigger connected</strong>
                    <small className="mt-1 block leading-relaxed text-muted">Keep terms together, or distribute them.</small></span>
               </label>
               {draft.trigger_connected === false && triggerParts.length > 0 && <p className={ui.subtleNote}>
@@ -353,8 +373,8 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                <label className={ui.choiceCard}>
                  <input type="checkbox" className="mt-0.5" aria-label="Allow trigger expansion"
                   checked={draft.expand_trigger === true} onChange={(event) => updateWriterSettings({ expand_trigger: event.target.checked })} />
-                 <span title="Turn off to avoid unsolicited identity, appearance, design, material or style details. Explicit concept and rule requirements remain allowed."><strong className="block">Allow trigger expansion</strong>
-                   <small className="mt-1 block leading-relaxed text-muted">Allow additional descriptive details.</small></span>
+                 <span title="On: natural articles, capitalization and added descriptors are allowed while each subject stays mentioned. Off: preserve each trigger term exactly as typed and avoid unsolicited identity, appearance, design, material or style details. Explicit concept and rule requirements remain allowed."><strong className="block">Allow trigger expansion</strong>
+                    <small className="mt-1 block leading-relaxed text-muted">On: expand wording. Off: keep exact trigger terms.</small></span>
               </label>
             </div>
               </div>
@@ -464,7 +484,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
             onClick={() => generate(false, true)}>{validSceneCount === draft.amount ? "Generate prompts from these scenes" : `Generate prompts from ${validSceneCount} valid ${validSceneCount === 1 ? "scene" : "scenes"}`}</button>
           <button className={ui.button} disabled={!canPlanScenes} onClick={() => generate(true)}><RefreshCw size={14} />Replan scenes</button>
           <button className={ui.button} disabled={!draft.scene_plan.length}
-            onClick={() => download("dataset-scenes.json", JSON.stringify(draft.scene_plan, null, 2), "application/json")}><FileJson size={14} />Scenes JSON</button>
+             onClick={() => exportDataset("dataset-scenes.json", JSON.stringify(draft.scene_plan, null, 2), "application/json")}><FileJson size={14} />Scenes JSON</button>
         </div>
       </section>}
 
@@ -515,9 +535,9 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
             <p className="mt-1 text-xs text-muted">Completed prompts appear as the batch runs and remain editable.</p></div>
           <div className="flex flex-wrap gap-2">
             <button className={ui.button} disabled={!draft.results.length} onClick={() => onCopy(allText)}><Copy size={15} />Copy all</button>
-            <button className={ui.button} disabled={!draft.results.length} onClick={() => download("dataset-prompts.txt", allText, "text/plain;charset=utf-8")}><Download size={15} />TXT</button>
-            <button className={ui.button} disabled={!draft.results.length} onClick={() => download("dataset-prompts.jsonl", jsonl, "application/x-ndjson;charset=utf-8")}><FileJson size={15} />JSONL</button>
-            <button className={ui.button} disabled={disabled || !draft.results.length} onClick={() => update({ results: [], result_job_id: "", quality_report: {} })}><Trash2 size={15} />Clear</button>
+            <button className={ui.button} disabled={!draft.results.length} onClick={() => exportDataset("dataset-prompts.txt", allText, "text/plain;charset=utf-8")}><Download size={15} />TXT</button>
+            <button className={ui.button} disabled={!draft.results.length} onClick={() => exportDataset("dataset-prompts.jsonl", jsonl, "application/x-ndjson;charset=utf-8")}><FileJson size={15} />JSONL</button>
+            <button className={ui.button} disabled={disabled || !draft.results.length} onClick={clearResults}><Trash2 size={15} />Clear</button>
           </div>
         </div>
         {!displayedResults.length ? <div className={`${ui.emptyState} min-h-[260px]`}>

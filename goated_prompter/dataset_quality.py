@@ -87,8 +87,17 @@ def idea_action_error(idea, description):
     def explicit_actions(text):
         return {name for name in action_families if re.search(r"\b(?:" + _CONCEPT_FAMILIES[name] + r")\b", text, re.I)}
     actions, described = explicit_actions(idea), explicit_actions(description)
-    static_replacement = re.search(r"\b(?:portrait|posing|poses|standing|stands|wears|wearing|dressed)\b", description, re.I)
-    if actions and not actions & described and (described or static_replacement):
+    # Clothing, portrait language and unfamiliar verbs do not prove an action
+    # disappeared. Only an explicit stillness assertion contradicts movement;
+    # unknown paraphrases belong to review, not an automatic rewrite.
+    movement = actions & {"juggle", "walk", "run", "catch"}
+    primary_subject = r"(?:she|he|they|(?:the |a )?(?:woman|man|person|character|subject)|[\w-]+_token)"
+    static_replacement = re.match(
+        primary_subject + r"\s+(?:stands? (?:completely )?still|standing (?:completely )?still|(?:stands?|standing|poses?|posing) motionless)\b",
+        description.strip(), re.I)
+    if re.search(r"\b(?:while|as|and|who|although)\b", description, re.I):
+        static_replacement = None  # Multiple clauses can refer to another actor.
+    if movement and not actions & described and static_replacement:
         return "The planned primary action disappeared. Preserve the fixed idea and its important action."
     return None
 
@@ -183,6 +192,7 @@ def _prompt_trigger_valid(prompt, data):
     try:
         return trigger_presence_error(
             prompt, data.get("trigger", ""), data.get("target", "Generic"),
+            expand=data.get("expand_trigger", False),
         ) is None
     except ValueError:
         return False
@@ -192,6 +202,7 @@ def _prompt_trigger_issue(prompt, data):
     try:
         return trigger_presence_error(
             prompt, data.get("trigger", ""), data.get("target", "Generic"),
+            expand=data.get("expand_trigger", False),
         )
     except ValueError as exc:
         return str(exc)
@@ -203,13 +214,15 @@ def _prompt_trigger_preference(prompt, data):
             prompt, data.get("trigger", ""), data.get("target", "Generic"),
             connected=data.get("trigger_connected", True),
             at_start=data.get("trigger_at_start", False),
+            expand=data.get("expand_trigger", False),
         )
     except ValueError:
         return None
 
 
 def quality_signature(data, results, plan):
-    value = {"version": 7, "trigger": data.get("trigger"), "target": data.get("target"), "trigger_type": data.get("trigger_type"),
+    value = {"version": 8, "trigger": data.get("trigger"), "target": data.get("target"), "trigger_type": data.get("trigger_type"),
+             "expand_trigger": data.get("expand_trigger", False),
              "trigger_connected": data.get("trigger_connected", True),
              "trigger_at_start": data.get("trigger_at_start", False),
              "amount": data.get("amount"), "results": results, "plan": plan}

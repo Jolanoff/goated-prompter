@@ -13,6 +13,7 @@ from urllib.request import Request, urlopen
 
 from .base import BackendConfigurationError, BackendGenerationError, BackendRunawayError, GoatedPrompterBackend
 from ..diagnostics import debug_prompts_enabled, log_request, log_response, payload_without_binary_images
+from .interruptible_http import interruptible_urlopen
 
 
 RUNAWAY_STREAM_CHARACTER_LIMIT = 7000
@@ -73,7 +74,8 @@ def _chat_completions_url(base_url):
 
 def _response_text(payload, *, unlimited_tokens=False, hard_max_tokens=None):
     try:
-        if payload["choices"][0].get("finish_reason") == "length":
+        finish_reason = payload["choices"][0].get("finish_reason")
+        if finish_reason == "length":
             if hard_max_tokens:
                 raise BackendRunawayError(
                     f"The prompt engine reached the workflow safety limit of {hard_max_tokens} tokens without "
@@ -89,6 +91,8 @@ def _response_text(payload, *, unlimited_tokens=False, hard_max_tokens=None):
                 "Generation was truncated at the token limit. Increase max_tokens and context size, "
                 "shorten the input, or select a shorter prompt length, then retry."
             )
+        if finish_reason not in {None, "stop"}:
+            raise BackendGenerationError(f"The prompt engine ended with unsupported finish reason {finish_reason!r}; the output was not accepted.")
         content = payload["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as exc:
         raise BackendGenerationError("OpenAI-compatible response did not contain choices[0].message.content.") from exc
@@ -152,6 +156,8 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
         self.api_key = str(settings.get("api_key") or os.environ.get(api_key_env, "")).strip()
         self.runtime_diagnostics = dict(settings.get("_runtime_diagnostics") or {})
         self.activity_callback = settings.get("_activity_callback")
+        self.register_interrupt = settings.get("_register_interrupt")
+        self.unregister_interrupt = settings.get("_unregister_interrupt")
         # Set by the owned llama.cpp adapter, not inferred from arbitrary URLs.
         self.is_llama_cpp = settings.get("_is_llama_cpp") is True
 
@@ -193,30 +199,33 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
                 payload.pop("max_tokens")
         elif isinstance(override, int) and override > 0:
             budget = max(self.max_tokens, override)
-            if self.context_size:
-                # No model tokenizer is available: this is a coarse text estimate
-                # plus explicit headroom, not an exact token-capacity guarantee.
-                text_chars = 0
-                image_count = 0
-                for message in payload["messages"]:
-                    content = message.get("content", "")
-                    if isinstance(content, str):
-                        text_chars += len(content)
-                    else:
-                        for part in content:
-                            text_chars += len(part.get("text", ""))
-                            image_count += int(part.get("type") == "image_url")
-                estimated_input = math.ceil(text_chars / 4) + image_count * self.image_min_tokens
-                available = self.context_size - estimated_input - self.context_reserve_tokens
-                if available < override:
-                    raise BackendConfigurationError(
-                        f"Maximum Detail needs at least {override} output tokens, but context_size={self.context_size} "
-                        f"leaves approximately {max(0, available)} after a coarse input estimate and "
-                        f"{self.context_reserve_tokens} reserve tokens (no model tokenizer available). "
-                        "Increase context size, shorten input/workflow rules, or select a shorter prompt length."
-                    )
-                budget = min(budget, available)
             payload["max_tokens"] = budget
+        # Hard ceilings are also output requirements. Never silently shrink a
+        # structured planner chunk: fail preflight if it cannot fit intact.
+        minimum_output = hard_limit or (override if isinstance(override, int) and override > 0 and not unlimited else None)
+        if self.context_size and not (unlimited and hard_limit is None):
+            # No model tokenizer is available: this is a coarse text estimate
+            # plus explicit headroom, not an exact token-capacity guarantee.
+            text_chars = 0
+            image_count = 0
+            for message in payload["messages"]:
+                content = message.get("content", "")
+                if isinstance(content, str):
+                    text_chars += len(content)
+                else:
+                    for part in content:
+                        text_chars += len(part.get("text", ""))
+                        image_count += int(part.get("type") == "image_url")
+            estimated_input = math.ceil(text_chars / 4) + image_count * self.image_min_tokens
+            available = self.context_size - estimated_input - self.context_reserve_tokens
+            if available < (minimum_output or 1):
+                raise BackendConfigurationError(
+                    f"This workflow needs at least {minimum_output or 1} output tokens, but context_size={self.context_size} "
+                    f"leaves approximately {max(0, available)} after a coarse input estimate and "
+                    f"{self.context_reserve_tokens} reserve tokens (no model tokenizer available). "
+                    "Increase context size, shorten input/workflow rules, or select a shorter prompt length."
+                )
+            payload["max_tokens"] = min(payload["max_tokens"], available)
         streaming = self.activity_callback is not None
         if streaming:
             payload["stream"] = True
@@ -245,7 +254,10 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
             method="POST",
         )
         try:
-            with urlopen(request, timeout=self.timeout) as response:
+            transport = (interruptible_urlopen(request, timeout=self.timeout,
+                         register=self.register_interrupt, unregister=self.unregister_interrupt)
+                         if self.register_interrupt and self.unregister_interrupt else urlopen(request, timeout=self.timeout))
+            with transport as response:
                 content_type = str(getattr(response, "headers", {}).get("Content-Type", "")).casefold()
                 if streaming and ("text/event-stream" in content_type or "ndjson" in content_type):
                     character_limit = getattr(instruction, "stream_character_limit", None)
@@ -334,12 +346,14 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
         hard_character_limit = hard_max_tokens * 12 if hard_max_tokens else None
         next_repetition_check = 1200
         finish_reason = None
+        done = False
         for raw_line in response:
             line = raw_line.decode("utf-8", errors="replace").strip()
             if not line or line.startswith(":") or line.startswith("event:"):
                 continue
             data = line[5:].strip() if line.startswith("data:") else line
             if data == "[DONE]":
+                done = True
                 break
             try:
                 chunk = json.loads(data)
@@ -394,6 +408,8 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
                     )
                 next_repetition_check = output_characters + 400
             finish_reason = chunk_finish_reason or finish_reason
+            if finish_reason:
+                break  # Do not wait for a trailing marker after explicit completion.
         result = "".join(pieces).strip()
         if finish_reason == "length":
             if hard_max_tokens:
@@ -413,5 +429,12 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
             )
         if not result:
             raise BackendGenerationError("OpenAI-compatible backend returned an empty prompt.")
-        self.emit_activity("response_complete", finish_reason=finish_reason or "stop")
+        if not finish_reason and not done:
+            raise BackendGenerationError(
+                "The prompt engine connection ended before a completion marker. "
+                "The incomplete output was not accepted; retry this request."
+            )
+        if finish_reason not in {None, "stop"}:
+            raise BackendGenerationError(f"The prompt engine ended with unsupported finish reason {finish_reason!r}; the output was not accepted.")
+        self.emit_activity("response_complete", finish_reason=finish_reason or "done")
         return result

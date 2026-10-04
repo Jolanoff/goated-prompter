@@ -127,11 +127,24 @@ def failed_scene(row, reason, *, stage="scene", dataset_type=None):
     return result
 
 
+def scene_geometry_errors(row, data):
+    """One geometry policy for batches and local actions; manual prose is valid."""
+    if row.get("scene_status") == "guided_fallback":
+        return []
+    return geometry_errors(row, dataset_type=data["trigger_type"], require_fields=bool(row.get("geometry")))
+
+
+def scene_unusable_reason(row, data):
+    if not row.get("idea", "").strip():
+        return "Generate an idea for this item first."
+    if not row.get("scene", "").strip() or row.get("scene_status") in {"not_generated", "geometry_warning", "failed"}:
+        return "Compose or repair this scene before regenerating its prompt."
+    errors = scene_geometry_errors(row, data)
+    return errors[0] if errors else None
+
+
 def scene_is_usable(row, data):
-    return bool(row.get("idea", "").strip() and row.get("scene", "").strip()
-        and row.get("scene_status") not in {"not_generated", "geometry_warning", "failed"}
-        and (row.get("scene_status") == "guided_fallback" or not row.get("geometry")
-             or not geometry_errors(row, dataset_type=data["trigger_type"])))
+    return scene_unusable_reason(row, data) is None
 
 
 def validate_scene_plan(raw, amount, *, guided_inputs=None, indexes=None, require_geometry=False, validate_geometry_fields=True,

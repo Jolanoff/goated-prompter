@@ -13,8 +13,7 @@ from .dataset import DatasetReviewService, DatasetService, validate_dataset_draf
 from .dataset_assignments import dataset_assignments
 from .dataset_quality import analyze_dataset_quality
 from .presets import get_director_preset
-from .scene_planner import reusable_scene_plan, scene_is_usable
-from .dataset_staging import geometry_errors
+from .scene_planner import reusable_scene_plan, scene_is_usable, scene_unusable_reason
 
 
 def register_workspace_routes(app, state_key, job_factory, json_object):
@@ -53,11 +52,8 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
                 raise ValueError("Per-scene actions require a current saved idea plan.")
             if action == "repair_scene" and not rows[index - 1].get("idea", "").strip():
                 raise ValueError("Generate an idea for this item before repairing its scene.")
-            if action == "regenerate_prompt" and (not rows[index - 1]["scene"].strip()
-                     or rows[index - 1].get("scene_status") in {"not_generated", "geometry_warning", "failed"}
-                    or (rows[index - 1].get("scene_status") != "guided_fallback"
-                        and geometry_errors(rows[index - 1], dataset_type=data["trigger_type"]))):
-                raise ValueError("Repair this scene before regenerating its prompt.")
+            if action == "regenerate_prompt" and (reason := scene_unusable_reason(rows[index - 1], data)):
+                raise ValueError(reason)
             scene_action = (action, index)
         settings = payload.get("settings", {})
         if not isinstance(settings, dict) or set(settings) - {"director_profile"}:
@@ -80,15 +76,10 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
                 director_keep_model_loaded=_as_bool(
                     config.get("local_llama_cpp", {}).get("keep_model_loaded", False)),
             )
-            job = job_factory()
-            job.kind = "dataset_scenes" if scenes_only else "dataset"
-            state.jobs[job.id] = job
-            task = asyncio.create_task(state.run(
-                job, director_request, config, True, {"operation": job.kind, "input": data,
-                                                      "scene_action": scene_action, "valid_only": valid_only}))
-            state.tasks.add(task)
-            task.add_done_callback(state.tasks.discard)
-            return web.json_response(job.snapshot(), status=202)
+            kind = "dataset_scenes" if scenes_only else "dataset"
+            return web.json_response(state.start_job(kind, director_request, config, True,
+                {"operation": kind, "input": data, "scene_action": scene_action, "valid_only": valid_only},
+                job_factory=job_factory), status=202)
 
     async def dataset_review_endpoint(request):
         state = request.app[state_key]
@@ -116,14 +107,8 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
                 director_keep_model_loaded=_as_bool(
                     config.get("local_llama_cpp", {}).get("keep_model_loaded", False)),
             )
-            job = job_factory()
-            job.kind = "dataset_review"
-            state.jobs[job.id] = job
-            task = asyncio.create_task(state.run(
-                job, director_request, config, True, {"operation": "dataset_review", "input": data}))
-            state.tasks.add(task)
-            task.add_done_callback(state.tasks.discard)
-            return web.json_response(job.snapshot(), status=202)
+            return web.json_response(state.start_job("dataset_review", director_request, config, True,
+                {"operation": "dataset_review", "input": data}, job_factory=job_factory), status=202)
 
     async def minimax_endpoint(request):
         state = request.app[state_key]
@@ -145,13 +130,8 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
                 director_profile="" if configured else text(settings.get("director_profile", state.saved_settings.get("selected_profile", "")), "Prompt engine", 512, optional=True),
                 director_keep_model_loaded=_as_bool(config.get("local_llama_cpp", {}).get("keep_model_loaded", False)),
             )
-            job = job_factory()
-            job.kind = "minimax"
-            state.jobs[job.id] = job
-            task = asyncio.create_task(state.run(job, director_request, config, True, {"operation": "minimax", "input": data}))
-            state.tasks.add(task)
-            task.add_done_callback(state.tasks.discard)
-            return web.json_response(job.snapshot(), status=202)
+            return web.json_response(state.start_job("minimax", director_request, config, True,
+                {"operation": "minimax", "input": data}, job_factory=job_factory), status=202)
 
     async def endpoint(request):
         state = request.app[state_key]
@@ -204,13 +184,8 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
                     director_profile="" if configured else text(settings.get("director_profile", state.saved_settings.get("selected_profile", "")), "Prompt engine", 512, optional=True),
                     director_keep_model_loaded=_as_bool(config.get("local_llama_cpp", {}).get("keep_model_loaded", False)),
                 )
-                job = job_factory()
-                job.kind = "refine"
-                state.jobs[job.id] = job
-                task = asyncio.create_task(state.run(job, director_request, config, True, workflow))
-                state.tasks.add(task)
-                task.add_done_callback(state.tasks.discard)
-                return web.json_response(job.snapshot(), status=202)
+                return web.json_response(state.start_job("refine", director_request, config, True,
+                    workflow, job_factory=job_factory), status=202)
             except WorkspaceConflict as exc:
                 return web.json_response({"error": str(exc)}, status=409)
 

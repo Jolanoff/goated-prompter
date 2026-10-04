@@ -14,7 +14,7 @@ async function open(page) {
   await expect(page.getByLabel("Clip Length", { exact: true })).toHaveValue("10");
 }
 
-test("defaults, structured generation, copy, regeneration and edited output persistence stay isolated", async ({ page, request }) => {
+test("defaults, structured generation, copy, regeneration and edited output persistence stay isolated", async ({ page }) => {
   await page.addInitScript(() => Object.defineProperty(navigator, "clipboard", { value: { writeText: async (text) => { window.copiedPrompt = text; } } }));
   const submitted = [];
   await page.route("**/api/workspace/minimax", async (route) => {

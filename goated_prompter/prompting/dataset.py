@@ -61,7 +61,12 @@ def dataset_instruction(request, data, index, previous=(), model_family="qwen", 
     director = get_director_preset(data["director_preset"], strict=True)
     terms = trigger_terms(data["trigger"], data["trigger_connected"])
     target_field = 'the value of "high_level_description"' if request.target_model == "Ideogram4" else "the final prompt text"
-    if data["trigger_connected"] or len(terms) == 1:
+    if data["expand_trigger"]:
+        grouping = ("Keep the trigger subjects together in one meaningful phrase." if data["trigger_connected"] else
+                    "Distribute the trigger subjects through meaningful positions near the things they identify.")
+        grouping += " Required subjects/attributes: " + ", ".join(json.dumps(term, ensure_ascii=False) for term in trigger_terms(data["trigger"], False))
+        grouping += ". Natural articles, capitalization and inserted descriptive words may vary; retain each subject and its specified attributes. Do not rename custom identifier tokens."
+    elif data["trigger_connected"] or len(terms) == 1:
         grouping = (
             f"Keep the complete trigger connected as the exact uninterrupted text {json.dumps(terms[0], ensure_ascii=False)}."
         )
@@ -78,9 +83,9 @@ def dataset_instruction(request, data, index, previous=(), model_family="qwen", 
         f"Prefer a natural visual introduction before placing the trigger later in {target_field}."
     )
     expansion = (
-        "TRIGGER EXPANSION ENABLED: You may add compatible descriptive properties to the trigger subject or style when they support the dataset concept. Keep recurring invented identity properties stable across the batch."
+        "TRIGGER EXPANSION ENABLED: Exact descriptive phrase matching is not required: 'a banana' may become 'A muscular anthropomorphic banana'. Every subject must remain mentioned. You may add compatible descriptive properties to the trigger subject or style when they support the dataset concept. Keep recurring invented identity properties stable across the batch."
         if data["expand_trigger"] else
-        "TRIGGER EXPANSION DISABLED: Treat every trigger term as a protected anchor, not an invitation to elaborate it. Do not invent or restate intrinsic identity, face, hair, body, age, species, markings, object design, material, brand, style, or location-defining properties. You may describe actions, poses, interactions, scene-relevant clothing or use, composition, and lighting. Attributes explicitly requested by the dataset concept, consistency rules, guided input, or trigger itself remain allowed. Omit detail categories that would violate this protection even when the selected length or Director normally requests them."
+        "TRIGGER EXPANSION DISABLED: Include every trigger term exactly as typed, including capitalization and word order; do not insert adjectives inside it. Treat every trigger term as a protected anchor, not an invitation to elaborate it. Do not invent or restate intrinsic identity, face, hair, body, age, species, markings, object design, material, brand, style, or location-defining properties. You may describe actions, poses, interactions, scene-relevant clothing or use, composition, and lighting. Attributes explicitly requested by the dataset concept, consistency rules, guided input, or trigger itself remain allowed. Omit detail categories that would violate this protection even when the selected length or Director normally requests them."
     )
     structured_trigger = f"{grouping} {placement} Include the requested trigger wording naturally; prioritize a complete coherent scene over awkward repetition. {expansion}"
     rules = "\n".join([
