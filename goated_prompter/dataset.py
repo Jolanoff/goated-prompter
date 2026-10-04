@@ -20,6 +20,7 @@ from .dataset_quality import analyze_dataset_quality, analyze_idea_diversity, id
 from .dataset_triggers import trigger_text_target
 from .dataset_triggers import trigger_presence_error, trigger_terms
 from .dataset_visible_content import PositiveContentError, positive_prompt_error, sanitize_positive_prompt
+from .dataset_constraints import compile_constraints, constraint_issues, positive_descriptions
 from .scene_planner import (ScenePlanner, MAX_STORED_SCENE_CHARACTERS, MAX_STORED_IDEA_CHARACTERS,
                             reusable_scene_plan, scene_plan_signature, validate_saved_scene_plan, validate_plan_metadata,
                             failure_reason, failed_scene, scene_is_usable, scene_geometry_errors, FAILURE_METADATA)
@@ -154,12 +155,18 @@ def validate_positive_content(prompt, data):
         error = "Positive content cleanup left no visible image description."
     if error:
         raise PositiveContentError(error)
+    compiled = compile_constraints(data.get("constraints", ""))
+    problems = [issue for text in positive_descriptions(prompt, data["target"])
+                for issue in constraint_issues(text, compiled, terms) if issue["severity"] == "error"]
+    if problems:
+        raise PositiveContentError(problems[0]["message"])
     return prompt
 
 
 class DatasetService:
-    def __init__(self, config, checkpoint):
+    def __init__(self, config, checkpoint, idea_history=None):
         self.config, self.checkpoint = config, checkpoint
+        self.idea_history = idea_history
 
     def _generate(self, session, instruction, data, index, progress, plan_item=None, *, retries=DATASET_MAX_RETRIES):
         expected_text = requested_visible_text("\n".join((data["subject"], data["constraints"], (plan_item or {}).get("input", ""))))
@@ -277,7 +284,7 @@ class DatasetService:
         signature = scene_plan_signature(data, assignments)
         progress("Starting the prompt engine for the dataset…")
         with backend.generation_session() as session:
-            planner = ScenePlanner(self.checkpoint)
+            planner = ScenePlanner(self.checkpoint, idea_history=self.idea_history)
             scenes = reusable_scene_plan(data, assignments, require_scenes=False, allow_pending=valid_only or scene_action is not None)
             if valid_only and (scenes is None or not any(scene_is_usable(row, data) for row in scenes)):
                 raise ValueError("No valid scenes are available in the current saved plan.")

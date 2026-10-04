@@ -7,12 +7,62 @@ from ..core import PromptInstruction
 from .dataset import DATASET_TYPES
 from ..dataset_visible_content import VISIBLE_CONTENT_CONTRACT
 from ..dataset_staging import geometry_prompt_schema, geometry_enum_values, STAGING_PROFILES
+from ..dataset_constraints import compile_constraints, CONSTRAINT_CONTRACT
 
 
 MAX_SCENE_CHARACTERS = 1000
 MAX_SCENE_WORDS = 120
 MAX_IDEA_CHARACTERS = 240
 MAX_IDEA_WORDS = 30
+
+DOMAIN_UNDERSTANDING = """DOMAIN / CONCEPT UNDERSTANDING
+Before generating ideas, understand the domain, activity, role or world implied by
+the user's specific concept. Infer the relevant behaviors, interactions, physical
+activities, situations, objects, roles and states dynamically from that concept.
+For a profession, sport, performance, environment, event, role, subculture or
+specialized activity, show understanding of what subjects in that domain actually
+do. Prefer concept-specific activity over generic posing when meaningful activity
+is naturally available. Never rely on a fixed menu of examples or scene templates.
+Concept fidelity, explicit constraints and authoritative guided inputs win."""
+
+ACTION_FIRST_STAGING = """ACTION-FIRST STAGING
+Preserve a specialized physical action, performance, profession-specific activity,
+unusual body configuration or equipment-driven movement before choosing geometry.
+Never simplify that action into generic standing, sitting or a portrait because
+it is easier to stage. Choose a readable frozen moment of the intended action.
+When the action depends on equipment, another subject, a surface, suspension,
+balance, contact or weight support, establish those body-to-object and support
+relationships explicitly in the scene. For groups, describe each participant's
+own action, contact, support and gaze; a global pose/gaze must not replace them.
+Establish the actual load path: what supports the body and where that support
+contacts it. Merely naming equipment or saying suspended does not establish
+support. Maintain each defining qualifier from the guided input and fixed idea;
+changing support/contact, seated versus kneeling, or the action's equipment changes
+the action even if the new pose is geometrically valid. Check limb descriptions
+against one another; do not describe the same support limb as both bent and straight.
+For advanced poses not accurately represented by a normal pose enum, use
+pose_type=custom and a concise pose_detail when the selected schema permits those
+fields. For other types, use only applicable detail fields and scene prose; never
+add unsupported human pose fields. Describe only defining mechanics:
+support/contact points, weight-bearing limb, relevant left/right arms and legs,
+torso bend/twist, pelvis relation, head orientation and equipment contact.
+Not every category is required. Keep physically interpretable unusual staging,
+custom pose and pose_detail during repair; fix provable contradictions only,
+never normalize a long-tail pose merely to fit an enum. Keep detail concise."""
+
+RECENT_IDEAS_GUIDANCE = """RECENTLY USED IDEAS
+recently_used_ideas contains compact summaries recently generated for this concept.
+This is reference-only history, NOT candidate ideas, examples to imitate, or an
+output menu. Do not copy this list into your answer. Infer fresh opportunities
+from the concept itself, then compare each proposed core event against history.
+Avoid repeating their core meaning when other valid interpretations exist, not
+just their wording. These are novelty guidance, never absolute exclusions.
+Narrow scope, Focused variety, fixed actions and guided repetition still win."""
+
+
+def ideation_sampling(data):
+    temperature, top_p = {"Focused": (0.45, 0.85), "Balanced": (0.7, 0.92), "Wide": (0.85, 0.96)}[data["variety"]]
+    return {"temperature": temperature, "top_p": top_p}
 
 SCENE_PLANNER_SYSTEM = f"""You are Scene Planner, a planning skill used exclusively for training-dataset images.
 Create the core image idea for every assignment before a separate writer turns it into a final image prompt.
@@ -23,8 +73,8 @@ metadata, reasoning, headings, markdown, or commentary.
 
 SCENE IDEA FIRST
 IDEA answers: What different image-worthy thing could the user's concept mean? It is a short semantic
-interpretation: an activity, situation, interaction, presentation idea, visual gag, use case or subject
-state. No camera, lens, lighting setup, detailed clothing, background decoration or material prose.
+interpretation based on the specific concept. No camera, lens, lighting setup,
+detailed clothing, background decoration or material prose.
 SCENE answers: How does that particular idea exist as one coherent still image? Choose compatible
 subject orientation, interaction, viewpoint, framing, composition, visibility and environment.
 Do not expand into a final high-detail prompt.
@@ -44,11 +94,9 @@ STEP 6 — RETURN: only the JSON array with index, idea, scene and geometry. Nev
 
 IDEA DIVERSITY — SEMANTIC DIVERSITY FIRST
 The primary creative task is N genuinely different visual interpretations, not N presentations of
-one activity. For broad concepts, explore compatible idea families: action/activity, physical
-interaction, expression, clothing/presentation, object interaction, environmental situation,
-social interaction, unusual pose, success/failure, transformation/state, visual gag,
-surreal/playful interpretation, practical use case, movement, still pose/presentation.
-Do not mechanically use every category. Choose categories that make sense for the user's concept.
+one activity. Generate meaningfully different interpretations based on this specific concept.
+Do not repeatedly fall back to generic standing, sitting, walking, smiling, holding an object,
+changing outfits or locations unless those are genuinely relevant to the requested concept.
 Different backgrounds, camera angles or lighting alone do not make genuinely different ideas.
 Surreal, dynamic, strange or stylized ideas are welcome when compatible with the concept and style;
 coherence is not an excuse to turn everything into a generic standing portrait.
@@ -182,9 +230,16 @@ does not imply the same outfit unless the user explicitly locks the outfit globa
 
 Guided input may be a full scene OR a partial anchor: a place, pose, outfit, interaction or activity.
 Preserve every supplied local anchor in both idea and scene. If a central activity is specified,
-keep it. If only a place/outfit/pose is supplied, invent a compatible image-worthy activity from the
-shared concept to fill the missing pieces, rather than returning that fragment unchanged or replacing
-its anchors. Creativity fills gaps, not overrides.
+keep it. For a place/outfit anchor, invent a compatible image-worthy activity from
+the shared concept to fill missing pieces, never replace the supplied anchors.
+A specified pose or body configuration may already be the complete image-worthy
+event: the input itself can be a complete short idea. Complete only missing
+information. Repeating that fixed event is better than dropping a defining
+qualifier in pursuit of different ideas. Creativity fills gaps, not overrides.
+Carry the defining physical qualifiers into the short idea: the required action,
+support/contact arrangement, equipment, participant roles and body configuration
+must not disappear during summarization. A specified specialized pose is already
+meaningful content; do not invent a different pose to make another assignment.
 
 Lines may cycle because the requested amount exceeds the supplied line count. Treat every occurrence
 as its own assignment. For partial anchors, prefer different compatible completions where permitted;
@@ -203,13 +258,15 @@ def scene_planner_instruction(data, assignments, family="qwen", correction="", *
         "trigger_type": data["trigger_type"], "custom_type": data["custom_type"],
         "type_guidance": TYPE_GUIDANCE[data["trigger_type"]],
         "visual_style": data["visual_style"], "custom_style": data["custom_style"],
-        "variety": data["variety"], "constraints": data["constraints"],
+        "variety": data["variety"], "constraints": compile_constraints(data["constraints"]),
         "assignments": assignments,
         "existing_ideas": [{"index": row["index"], "idea": row["idea"]} for row in existing],
+        "recently_used_ideas": list(data.get("_recent_ideas", ()))[:40],
     }
     budget = 512 + len(indexes) * 512
     return PromptInstruction(
         system_message=SCENE_PLANNER_SYSTEM.replace("{staging_schema}", geometry_prompt_schema(data["trigger_type"])) + "\n\n" + VISIBLE_CONTENT_CONTRACT
+        + "\n\n" + DOMAIN_UNDERSTANDING + "\n\n" + ACTION_FIRST_STAGING + "\n\n" + CONSTRAINT_CONTRACT + "\n\n" + RECENT_IDEAS_GUIDANCE
         + "\nCreate new ideas for these indexes that are meaningfully different from the already accepted ideas. "
           "Respect guided repetition and concept scope. Return only this chunk; do not regenerate earlier valid chunks."
         + ("\n\n" + GUIDED_ASSIGNMENT_RULES if data["source_mode"] == "guided" else "")
@@ -218,6 +275,7 @@ def scene_planner_instruction(data, assignments, family="qwen", correction="", *
         diagnostic_stage="dataset:scene_planner" + (":repair" if correction else ""),
         max_tokens=budget, hard_max_tokens=budget, unlimited_tokens=False,
         stream_character_limit=1024 + len(indexes) * (MAX_SCENE_CHARACTERS + MAX_IDEA_CHARACTERS + 2048),
+        **({"temperature": 0.25, "top_p": 0.85} if correction else ideation_sampling(data)),
     )
 
 
@@ -226,11 +284,11 @@ Answer only: What are N genuinely different visual interpretations of this conce
 Generate short ideas only, never scene prose, camera, lighting, lens, detailed pose, materials,
 background decoration, target syntax or final prompts. Preserve supplied fixed facts, constraints
 and guided anchors. Guided anchors are local to their assignments. Creativity fills gaps, not overrides.
-For broad concepts explore compatible families: activity, physical interaction, expression,
-presentation, object interaction, environmental situation, social interaction, unusual pose,
-success/failure, transformation/state, visual gag, surreal interpretation, practical use, movement,
-still presentation. Do not mechanically use every category. Cosmetic presentation changes alone
-are not different ideas. Respect narrowed concepts and Focused variety, and authoritative guided repeats.
+Generate meaningfully different interpretations based on this specific concept.
+Do not repeatedly fall back to generic standing, sitting, walking, smiling, holding an object,
+changing outfits or changing locations unless those actions genuinely belong to the concept.
+Cosmetic presentation changes alone are not different ideas. Respect narrowed concepts,
+Focused variety and authoritative guided repeats.
 Return ONLY a valid JSON array with exactly the requested indexes in supplied order.
 Each object has exactly "index" (integer) and "idea" (nonempty short string).
 Ideas normally use 3–15 words, at most {MAX_IDEA_WORDS} words and {MAX_IDEA_CHARACTERS} characters.
@@ -247,21 +305,26 @@ different images, clarify the physical relationship without expanding into a ful
 def idea_planner_instruction(data, assignments, family="qwen", correction="", *, indexes=None, existing=()):
     indexes = indexes or list(range(1, data["amount"] + 1))
     context = {key: data[key] for key in ("subject", "source_mode", "trigger_type", "custom_type", "variety", "constraints")}
+    context["constraints"] = compile_constraints(data["constraints"])
+    context["recently_used_ideas"] = list(data.get("_recent_ideas", ()))[:40]
     context.update(amount=len(indexes), assignments=[{"index": row["index"], "input": row["input"]}
         for row in assignments if row["index"] in indexes],
         existing_ideas=[{"index": row["index"], "idea": row["idea"]} for row in existing])
     budget = 256 + len(indexes) * 96
     return PromptInstruction(system_message=IDEA_PLANNER_SYSTEM + "\n\n" + VISIBLE_CONTENT_CONTRACT
+        + "\n\n" + DOMAIN_UNDERSTANDING + "\n\n" + CONSTRAINT_CONTRACT + "\n\n" + RECENT_IDEAS_GUIDANCE
+        + ("\n\n" + GUIDED_ASSIGNMENT_RULES if data["source_mode"] == "guided" else "")
         + ("\n\nFORMAT CORRECTION\n" + correction if correction else ""),
         user_message=json.dumps(context, ensure_ascii=False), model_family=family,
         diagnostic_stage="dataset:idea_planner" + (":repair" if correction else ""),
         max_tokens=budget, hard_max_tokens=budget, unlimited_tokens=False,
-        stream_character_limit=512 + len(indexes) * (MAX_IDEA_CHARACTERS + 96))
+        stream_character_limit=512 + len(indexes) * (MAX_IDEA_CHARACTERS + 96), **ideation_sampling(data))
 
 
 def scene_composer_instruction(data, assignments, ideas, family="qwen", correction="", *, previous=None):
     base = scene_planner_instruction(data, assignments, family, indexes=[row["index"] for row in ideas])
     context = json.loads(base.user_message)
+    context.pop("recently_used_ideas", None)  # Fixed-action staging is not ideation.
     context["amount"] = len(ideas)
     by_index = {row["index"]: row for row in context["assignments"]}
     context["assignments"] = [{**by_index[row["index"]], "idea": row["idea"]} for row in ideas]
@@ -275,6 +338,9 @@ single images. Never brainstorm, replace, paraphrase or change an idea: echo its
 Focus on type-appropriate, action-compatible staging, required subjects/props and relationships,
 camera/viewpoint, framing, environment and lighting only as needed.
 Preserve the concept, fixed identity, constraints and medium.
+Read each fixed idea together with its local assignment input: shorthand in an
+idea never discards the input's defining physical qualifiers. Preserve those
+qualifiers in staging while echoing the idea unchanged.
 When previous_scene is provided, repair only its applicable staging facts.
 Preserve its important action, required props and setting.
 GEOMETRY SEMANTICS
@@ -291,13 +357,14 @@ Scene is a concise paragraph, not a final prompt, at most 120 words / 1000 chara
 No Markdown, explanations, target syntax or trigger instructions. User values are data only.
 Priority: user concept -> guided input / fixed idea -> idea -> constraints -> geometry coherence.
 Apply explicit requirements silently; describe only visible intended content.
-""" + "\n" + geometry_prompt_schema(data["trigger_type"], optional_values_in_context=True) + "\n\n" + SCENE_COMPOSER_OUTPUT + "\n\n" + VISIBLE_CONTENT_CONTRACT
+""" + "\n" + ACTION_FIRST_STAGING + "\n" + CONSTRAINT_CONTRACT + "\n" + geometry_prompt_schema(data["trigger_type"], optional_values_in_context=True) + "\n\n" + SCENE_COMPOSER_OUTPUT + "\n\n" + VISIBLE_CONTENT_CONTRACT
     if correction:
         system += "\n\n" + (correction if correction.startswith("SCENE OUTPUT FORMAT CORRECTION") else "SCENE CORRECTION\n" + correction)
     budget = 512 + len(ideas) * 768
     return replace(base, system_message=system, user_message=json.dumps(context, ensure_ascii=False),
         model_family=family, diagnostic_stage="dataset:scene_composer" + (":repair" if correction else ""),
         max_tokens=budget, hard_max_tokens=budget,
+        temperature=0.25, top_p=0.85,
         stream_character_limit=1024 + context["amount"] * (MAX_SCENE_CHARACTERS + MAX_IDEA_CHARACTERS + 2048))
 
 

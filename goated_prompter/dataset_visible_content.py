@@ -27,7 +27,7 @@ _LEAKAGE = re.compile(
     r"|correct\s+anatomy|extra\s+limbs|watermark|signature)\s*(?=[,;.\n]|$)"
     r"|\b(?:best|worst|low)\s+quality\b"
     r"|(?:^|[,\n])\s*(?:negative\s+prompt|negative\s+conditioning)\s*:"
-    r"|(?:^|[\n])\s*PLANNED\s+GEOMETRY\b",
+    r"|(?:^|[\n])\s*(?:PLANNED\s+GEOMETRY|REQUIRED FACTS|FORBIDDEN FACTS|VARIATION ALLOWED|UNRESOLVED RULES)\b",
     re.IGNORECASE,
 )
 _QUOTED = re.compile(r'"(?:\\.|[^"\\])*"|(?<!\w)\'(?:\\.|[^\'\\\n])+\'(?!\w)|“[^”]*”|‘[^’]*’')

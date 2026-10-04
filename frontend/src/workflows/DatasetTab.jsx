@@ -102,6 +102,8 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
   const [qualityBusy, setQualityBusy] = useState(false);
   const [error, setError] = useState("");
   const [geometryItem, setGeometryItem] = useState(null);
+  const [resettingIdeas, setResettingIdeas] = useState(false);
+  const [noveltyNotice, setNoveltyNotice] = useState("");
   const submission = useRef(false);
   const synced = useRef("");
   const qualityAttempt = useRef(0);
@@ -266,6 +268,16 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
     await releaseCheckpoints();
   }
 
+  async function resetRecentIdeas() {
+    setResettingIdeas(true);
+    setNoveltyNotice("");
+    try {
+      await api("/workspace/dataset/novelty/reset", { input: draft });
+      setNoveltyNotice("Recent ideas reset for this concept. Current scenes and prompts are unchanged.");
+    } catch (err) { setError(err.message); }
+    finally { setResettingIdeas(false); }
+  }
+
   const allText = draft?.results.map((item) => item.prompt).join("\n\n") || "";
   const jsonl = datasetJsonl(draft);
   const quality = draft?.quality_report;
@@ -337,6 +349,13 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                 value={draft.constraints} onChange={(event) => updateSceneSettings({ constraints: event.target.value })}
                 placeholder="Same hairstyle and outfit. No outdoor scenes. Each image shows a different mishap…" />
             </label>
+            <div className="flex flex-wrap items-center gap-2">
+              <button className={ui.button} disabled={disabled || resettingIdeas || !draft.subject.trim()} onClick={resetRecentIdeas}>
+                <RefreshCw size={14} />{resettingIdeas ? "Resetting…" : "Reset recent ideas"}
+              </button>
+              <small className="text-muted">Novelty hints stay in RAM, expire automatically, and never override fixed ideas.</small>
+            </div>
+            {noveltyNotice && <p className={ui.subtleNote} role="status">{noveltyNotice}</p>}
             <label className={ui.field}><span>{draft.planning_mode === "Quality" ? <ShieldCheck size={14} aria-hidden="true" /> : <Zap size={14} aria-hidden="true" />}Planning mode</span>
               <select className={ui.select} aria-label="Dataset planning mode" value={draft.planning_mode || "Fast"}
                 onChange={(event) => updateSceneSettings({ planning_mode: event.target.value })}>
@@ -344,7 +363,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
               </select>
                <small className={ui.directorDescription}>Fast — ideas and scenes together. Quality — ideas first, scenes second.</small>
             </label>
-            <HelpDetails>Planning saves valid scenes as it goes. Failed items use local repair; valid siblings remain unchanged. You can retry skipped items individually.</HelpDetails>
+            <HelpDetails>Plan scenes first creates a fresh idea run with recent-idea novelty hints. Generate reuses your current valid plan, including manual edits. Failed items use local repair; valid siblings remain unchanged. You can retry skipped items individually.</HelpDetails>
              <label className={ui.field}><span><Tag size={14} aria-hidden="true" />Trigger text or terms</span>
               <textarea className={ui.notesInput} style={{ minHeight: 82 }} aria-label="Trigger text or terms" maxLength={200} value={draft.trigger}
                 onChange={(event) => updateWriterSettings({ trigger: event.target.value })} placeholder="e.g. old lady with dark hair · or woman, cake" />

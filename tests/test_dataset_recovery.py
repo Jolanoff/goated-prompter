@@ -220,7 +220,8 @@ class DatasetRecoveryTests(unittest.TestCase):
         self.assertEqual(result["idea"], row["idea"])
         for call in session.generate.call_args_list:
             context = json.loads(call.args[0].user_message)
-            self.assertEqual(context["constraints"], data["constraints"])
+            from goated_prompter.dataset_constraints import compile_constraints
+            self.assertEqual(context["constraints"], compile_constraints(data["constraints"]))
             self.assertEqual(context["assignments"][0]["input"], data["inputs"])
 
     def test_failure_metadata_is_bounded_and_typed(self):

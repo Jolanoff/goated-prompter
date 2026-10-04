@@ -7,6 +7,7 @@ from dataclasses import replace
 from .dataset_visible_content import visible_content_error
 from .dataset_staging import validate_geometry, geometry_errors, migrate_saved_geometry, resolve_framing_conflicts, STAGING_PROFILES
 from .dataset_quality import analyze_idea_diversity, idea_action_error
+from .dataset_constraints import compile_constraints, constraint_issues
 
 from .backends.base import BackendGenerationError
 from .prompting.scene_planner import (
@@ -228,10 +229,13 @@ def validate_idea_plan(raw, indexes):
 class ScenePlanner:
     """Chunked Fast planning or Quality composition, with bounded local repairs."""
 
-    def __init__(self, checkpoint):
+    def __init__(self, checkpoint, idea_history=None):
         self.checkpoint = checkpoint
+        self.idea_history = idea_history
 
     def plan_batch(self, *, session, data, assignments, family="qwen", progress, plan_update=None):
+        if self.idea_history is not None:
+            data = {**data, "_recent_ideas": self.idea_history.recent(data)}
         if data.get("planning_mode", "Fast") == "Quality":
             try:
                 ideas = self.plan_ideas(session=session, data=data, assignments=assignments, family=family, progress=progress)
@@ -253,6 +257,8 @@ class ScenePlanner:
         def publish_chunk(rows):
             for row in rows:
                 state[row["index"] - 1] = dict(row)
+            if self.idea_history is not None:
+                self.idea_history.remember(data, rows)
             if plan_update:
                 plan_update([dict(row) for row in state])
         for start in range(0, len(state), SCENE_COMPOSER_CHUNK_SIZE):
@@ -351,6 +357,8 @@ class ScenePlanner:
         raise BackendGenerationError(f"Dataset {label} failed after retries. {correction}") from last_error
 
     def plan_ideas(self, *, session, data, assignments, family="qwen", progress, indexes=None, existing=()):
+        if self.idea_history is not None:
+            data = {**data, "_recent_ideas": self.idea_history.recent(data)}
         indexes = indexes or list(range(1, data["amount"] + 1))
         previous = {row["index"]: row["idea"] for row in existing if row["index"] in indexes}
         def validate_initial(raw):
@@ -358,7 +366,7 @@ class ScenePlanner:
             for row in result:
                 if row["index"] in previous:
                     comparison = [{"index": 0, "idea": previous[row["index"]]}, row]
-                    if analyze_idea_diversity(data, comparison)["uniqueness"] < 100:
+                    if any(issue["code"] == "exact_duplicate_idea" for record in analyze_idea_diversity(data, comparison)["ideas"] for issue in record["issues"]):
                         raise ValueError("Create a genuinely new idea rather than repeating the replaced idea.")
             return result
         rows = self._call(session,
@@ -369,12 +377,12 @@ class ScenePlanner:
         accepted = [dict(row) for row in existing if row["index"] not in indexes]
         for position, row in enumerate(rows):
             audit = analyze_idea_diversity(data, accepted + [row])
-            if any(record["issues"] for record in audit["ideas"] if record["index"] == row["index"]):
+            if any(issue["code"] == "exact_duplicate_idea" for record in audit["ideas"] if record["index"] == row["index"] for issue in record["issues"]):
                 exclusions = accepted + rows[position + 1:]
                 def validate_new(raw):
                     new = validate_idea_plan(raw, [row["index"]])
                     audit = analyze_idea_diversity(data, exclusions + new)
-                    if any(record["issues"] for record in audit["ideas"] if record["index"] == row["index"]):
+                    if any(issue["code"] == "exact_duplicate_idea" for record in audit["ideas"] if record["index"] == row["index"] for issue in record["issues"]):
                         raise ValueError("Replacement idea still repeats an existing idea's meaning.")
                     return new
                 rows[position] = self._call(session,
@@ -382,6 +390,8 @@ class ScenePlanner:
                         indexes=[row["index"]], existing=exclusions),
                     validate_new, progress, f"Idea Planner · replace idea {row['index']}")[0]
             accepted.append(rows[position])
+        if self.idea_history is not None:
+            self.idea_history.remember(data, rows)
         return rows
 
     def compose(self, *, session, data, assignments, ideas, family="qwen", progress, plan_update=None):
@@ -446,6 +456,9 @@ class ScenePlanner:
                 errors = [getattr(exc, "correction", str(exc))]
             if scene_error:
                 errors.append(scene_error)
+            compiled = compile_constraints(data.get("constraints", ""))
+            errors.extend(issue["message"] for text in (row["idea"], row["scene"])
+                          for issue in constraint_issues(text, compiled) if issue["severity"] == "error")
             if data.get("planning_mode") == "Quality":
                 if error := idea_action_error(fixed[row["index"]], row["scene"]):
                     errors.append(error)
@@ -497,6 +510,10 @@ class ScenePlanner:
                 raise ValueError(" ".join(problems))
             if error := duplicate_scene_error(result, existing_rows, data, assignments):
                 raise ValueError(error)
+            compiled = compile_constraints(data.get("constraints", ""))
+            for text in (result["idea"], result["scene"]):
+                if problems := [issue for issue in constraint_issues(text, compiled) if issue["severity"] == "error"]:
+                    raise ValueError(problems[0]["message"])
             if data.get("planning_mode") == "Quality" and (error := idea_action_error(row["idea"], result["scene"])):
                 raise ValueError(error)
             return result

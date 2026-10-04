@@ -1,6 +1,7 @@
 """Prompt construction and editable guidance for Dataset workflows."""
 
 import json
+from ..dataset_constraints import constraint_sections, CONSTRAINT_CONTRACT
 from dataclasses import replace
 
 from ..core import PromptInstruction, assemble_instruction
@@ -45,6 +46,7 @@ PLANNED_SCENE_CONTRACT = (
     "Director embellishment, default framing and detail preferences. "
     "Director supplies rendering technique and emphasis only, never another competing scene idea. "
     "GEOMETRY FIDELITY: Preserve independent camera azimuth, elevation and distance. Preserve applicable subject/body/torso/hip orientation, head direction, gaze_direction and expression separately, "
+    "ACTION-FIRST FIDELITY: Preserve the specialized action's defining support/contact, equipment, body configuration and individual participant roles. Never trade them for a simpler valid pose. "
     "crop and object/hand relationships. Do not reinterpret the pose, add a second body orientation or "
     "contradictory camera angle, independently force eye contact, or expose body regions hidden by the "
     "planned crop/viewpoint. Local descriptive enrichment must agree with the planned camera/body/action "
@@ -92,6 +94,7 @@ def dataset_instruction(request, data, index, previous=(), model_family="qwen", 
         structured_trigger,
         PLANNED_SCENE_CONTRACT,
         VISIBLE_CONTENT_CONTRACT,
+        CONSTRAINT_CONTRACT,
         DATASET_DETAIL_DISCIPLINE,
         "The concept and explicit rules outrank optional Director embellishments. Write only this one finished visual scene and stop when it is complete. Describe observable requirements, not claims that consistency was preserved. Batch planning, next-scene suggestions, and future camera changes do not belong in the finished prompt.",
         style_rule,
@@ -116,7 +119,7 @@ def dataset_instruction(request, data, index, previous=(), model_family="qwen", 
     if seed:
         content.append(f"GUIDED INPUT\n<input>\n{seed}\n</input>\nPreserve these original anchors in the supplied scene; do not select another scene. This input's outfit, setting, pose and action are local to this item. Shared identity does not imply a shared outfit unless explicitly locked in the concept or consistency rules.")
     if data["constraints"].strip():
-        content.append(f"CONSISTENCY AND VARIATION RULES\n<constraints>\n{data['constraints'].strip()}\n</constraints>\nApply fixed requirements and preserve this scene's planned interpretation of variation rules; do not plan other items or new scene variants.")
+        content.append("CONSISTENCY AND VARIATION RULES\n<constraints>\n" + constraint_sections(data["constraints"]) + "\n</constraints>\nApply fixed requirements and preserve this scene's planned interpretation of variation rules; do not plan other items or new scene variants.")
     builder_request = replace(
         request, idea="\n\n".join(content), mode="Enhance",
         director_preset=director.id, system_prompt_override="",
@@ -128,7 +131,8 @@ def dataset_instruction(request, data, index, previous=(), model_family="qwen", 
         resolve_target_length(data["target"], data["length"]),
         resolve_target_length(data["target"], data["length"], dataset=True))
     return replace(instruction, system_message=system, diagnostic_stage=f"dataset:{index}",
-                   max_tokens=token_limit, unlimited_tokens=False, hard_max_tokens=token_limit)
+                   max_tokens=token_limit, unlimited_tokens=False, hard_max_tokens=token_limit,
+                   temperature=0.25, top_p=0.85)
 
 
 DEEP_CATEGORIES = {"identity_drift", "style_drift", "scene_drift", "constraint_conflict", "target_usability"}
@@ -161,7 +165,9 @@ def deep_review_instruction(data, chunk, model_family="qwen", correction=""):
         f"CONSISTENT CONCEPT\n{data['subject']}",
         f"TRIGGER CONTRACT\nConnected: {data['trigger_connected']}; required at start: {data['trigger_at_start']}; expansion allowed: {data['expand_trigger']}; text: {data['trigger']}",
         f"VISUAL STYLE\n{data['custom_style'] if data['visual_style'] == 'Custom' else data['visual_style']}",
-        "ADDITIONAL RULES\n" + (data["constraints"].strip() or "None"),
+        "ADDITIONAL RULES\n" + constraint_sections(data["constraints"]),
+        "SPECIALIZED ACTION FIDELITY: Audit the defining support, balance, equipment contact and participant roles of complex poses. Generic valid geometry is not enough if the planned action disappeared. Do not flag unfamiliar but physically interpretable custom poses just because an enum cannot express them. Distinguish forbidden positive content from verbalized exclusions. Uncertain action paraphrases are review warnings, not proven contradictions.",
+        "FIXED PROPERTY REVIEW: Compare concrete values across this chunk for properties explicitly locked by required facts. Inventing different values for an unspecified fixed property is still drift. Omission alone is not evidence of contradiction; do not invent a required value or flag allowed variation as drift.",
         f"TARGET MODEL\n{data['target']}", schema,
         ("ANIMA QUALITY TAG EXCEPTION: Supported standalone positive quality/meta tags, including masterpiece, best quality and score tags, are valid target syntax; do not flag them as internal quality slogans. Negative conditioning remains separate."
          if data["target"] == "Anima" else ""),

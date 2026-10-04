@@ -24,6 +24,7 @@ from PIL import Image, UnidentifiedImageError
 
 from goated_prompter.backends.base import GoatedPrompterError
 from goated_prompter.job_lifecycle import release_completed_checkpoints
+from goated_prompter.dataset_idea_history import RecentIdeaHistory
 from goated_prompter.backends.llama_cpp_process import get_process_manager, _resolve_server_executable
 from goated_prompter.config import load_config
 from goated_prompter.core import GoatedPrompterRequest, GoatedPrompterService, _as_bool
@@ -447,6 +448,7 @@ class LocalState:
             raise ValueError("Workflow settings require a separate JSON path.")
         self.workflow_settings = WorkflowSettingsStore(workflow_settings_path, read_store, atomic_json)
         self.jobs = OrderedDict()
+        self.idea_history = RecentIdeaHistory()
         self.tasks = set()
         self.admission = asyncio.Lock()
         self.storage_lock = asyncio.Lock()
@@ -892,6 +894,7 @@ def create_app(*, port=8190, dist=None, config_loader=load_config, service_facto
             await asyncio.gather(*state.tasks)
         await asyncio.to_thread(get_process_manager().request_unload)
         release_completed_checkpoints(state.jobs)
+        state.idea_history.clear()
 
     app.on_shutdown.append(shutdown)
     return app

@@ -620,6 +620,29 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.client.delete("/api/jobs?kind=dataset", headers={"Origin": "https://evil.example"})).status, 403)
         active.deliver({"scene_plan": []})
 
+    async def test_recent_idea_reset_is_private_scoped_and_preserves_drafts(self):
+        from goated_prompter.dataset import default_dataset_draft
+        state = self.app[local.STATE]
+        data = {**default_dataset_draft(), "subject": "A performer at a rehearsal"}
+        other = {**data, "subject": "A different concept"}
+        state.idea_history.remember(data, [{"idea": "Private recent activity"}])
+        state.idea_history.remember(other, [{"idea": "Another private activity"}])
+        before = {path: path.read_bytes() for path in Path(self.temp.name).rglob("*.json")}
+        response = await self.client.post("/api/workspace/dataset/novelty/reset", json={"input": data})
+        self.assertEqual(await response.json(), {"ok": True})
+        self.assertEqual(state.idea_history.recent(data), [])
+        self.assertEqual(state.idea_history.recent(other), ["Another private activity"])
+        self.assertEqual(before, {path: path.read_bytes() for path in Path(self.temp.name).rglob("*.json")})
+        response = await self.client.post("/api/workspace/dataset/novelty/reset", json={"input": data}, headers={"Origin": "https://evil.example"})
+        self.assertEqual(response.status, 403)
+        active = local.Job()
+        state.jobs[active.id] = active
+        state.idea_history.remember(data, [{"idea": "An active run's recent idea"}])
+        response = await self.client.post("/api/workspace/dataset/novelty/reset", json={"input": data})
+        self.assertEqual(response.status, 409)
+        self.assertEqual(state.idea_history.recent(data), ["An active run's recent idea"])
+        active.deliver({"ok": True})
+
     async def test_local_prompt_regeneration_accepts_manual_scene_without_geometry(self):
         from goated_prompter.dataset import default_dataset_draft
         from goated_prompter.dataset_assignments import dataset_assignments

@@ -220,6 +220,9 @@ class PromptInstruction:
     # Optional bounded stream ceiling for structured batch planning. Individual
     # prompt workflows retain the transport's default runaway-output ceiling.
     stream_character_limit: int = None
+    # Request-local sampling; only Dataset ideation supplies exploratory values.
+    temperature: float = None
+    top_p: float = None
 
     def _user_content(self, text):
         if not reference_images(self):

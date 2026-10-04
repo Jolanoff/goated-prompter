@@ -179,6 +179,12 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
         }
+        for name, ceiling in (("temperature", 2.0), ("top_p", 1.0)):
+            value = getattr(instruction, name, None)
+            if value is not None:
+                if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= ceiling:
+                    raise BackendConfigurationError(f"Request-local {name} must be between 0 and {ceiling}.")
+                payload[name] = value
         override = getattr(instruction, "max_tokens", None)
         requested_hard_limit = getattr(instruction, "hard_max_tokens", None)
         hard_limit = (
@@ -235,6 +241,7 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
             safe = payload_without_binary_images(payload)
             self.emit_activity(
                 "request",
+                stage=getattr(instruction, "diagnostic_stage", "final"),
                 model=self.model,
                 messages=safe.get("messages", []),
                 parameters={key: value for key, value in safe.items() if key not in {"messages", "model"}},

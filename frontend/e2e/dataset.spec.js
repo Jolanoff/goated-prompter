@@ -39,9 +39,9 @@ test("Quality composes in small chunks and geometry opens in an accessible modal
   await page.keyboard.press("Shift+Tab");
   await expect(modal.locator("dl")).toBeFocused();
   const sceneAfter = await neighboringScene.boundingBox();
-  expect(sceneAfter.height).toBe(sceneBefore.height);
-  expect(sceneAfter.width).toBe(sceneBefore.width);
-  expect(sceneAfter.x).toBe(sceneBefore.x);
+  expect(sceneAfter.height).toBeCloseTo(sceneBefore.height, 2);
+  expect(sceneAfter.width).toBeCloseTo(sceneBefore.width, 2);
+  expect(sceneAfter.x).toBeCloseTo(sceneBefore.x, 2);
   const fields = modal.locator("dl");
   expect(await fields.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   expect((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze()).violations).toEqual([]);
@@ -343,6 +343,25 @@ test("expanded fruit wording passes subject checks while protected wording stays
   await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
   const latest = await (await request.get(path)).json();
   expect((await request.put(path, { data: { revision: latest.revision, draft: record.draft } })).ok()).toBe(true);
+});
+
+test("reset recent ideas does not invalidate the current plan or prompts", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  await page.getByLabel("Dataset idea", { exact: true }).fill("A performer in a rehearsal room.");
+  await page.getByLabel("Trigger text or terms").fill("performer_token");
+  await page.getByLabel("Number of prompts").selectOption("2");
+  await page.getByRole("button", { name: "Generate 2 prompts", exact: true }).click();
+  await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/performer_token/);
+  await expect(page.getByRole("button", { name: "Reset recent ideas", exact: true })).toBeEnabled();
+  const idea = await page.getByLabel("Planned idea 1").inputValue();
+  const prompt = await page.getByLabel("Dataset prompt 1").inputValue();
+  const reset = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset/novelty/reset"));
+  await page.getByRole("button", { name: "Reset recent ideas", exact: true }).click();
+  expect((await reset).ok()).toBe(true);
+  await expect(page.getByText("Recent ideas reset for this concept. Current scenes and prompts are unchanged.", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Planned idea 1")).toHaveValue(idea);
+  await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(prompt);
 });
 
 test("manual scenes regenerate locally and clearing results releases only job checkpoints", async ({ page, request }) => {

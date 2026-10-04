@@ -245,7 +245,7 @@ class DatasetUnitTests(unittest.TestCase):
             GoatedPrompterRequest(idea=data["subject"], target_model=data["target"]),
             data, 1, plan_item=dataset_assignments(data)[0])
         self.assertIn("WORKFLOW RULES", instruction.system_message)
-        self.assertIn("Every scene must focus on romance.", instruction.user_message)
+        self.assertIn("Every scene must focus on romance", instruction.user_message)
         self.assertNotIn("COVERAGE ASSIGNMENT", instruction.user_message)
 
     def test_quality_report_finds_trigger_duplicates_format_and_leakage(self):

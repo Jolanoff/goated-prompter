@@ -320,7 +320,8 @@ class FastChunkTests(unittest.TestCase):
         for context, count in zip(contexts, (0, 4, 8)):
             self.assertEqual(context["subject"], data["subject"])
             self.assertEqual(context["requested_amount"], 10)
-            self.assertEqual(context["constraints"], data["constraints"])
+            from goated_prompter.dataset_constraints import compile_constraints
+            self.assertEqual(context["constraints"], compile_constraints(data["constraints"]))
             self.assertEqual(context["existing_ideas"], [{key: row[key] for key in ("index", "idea")} for row in expected[:count]])
             self.assertTrue(all(set(row) == {"index", "input"} for row in context["assignments"]))
         self.assertEqual([row["scene_status"] for row in snapshots[0]], ["valid"] * 4 + ["not_generated"] * 6)

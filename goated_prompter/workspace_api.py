@@ -17,6 +17,18 @@ from .scene_planner import reusable_scene_plan, scene_is_usable, scene_unusable_
 
 
 def register_workspace_routes(app, state_key, job_factory, json_object):
+    async def reset_dataset_novelty(request):
+        payload = await json_object(request)
+        if set(payload) != {"input"}:
+            raise ValueError("Expected Dataset input only.")
+        data = validate_dataset_draft(payload["input"])
+        state = request.app[state_key]
+        async with state.admission:
+            if active := state.active_job():
+                return web.json_response({"error": "Wait for active generation before resetting recent ideas.", "active_job": active}, status=409)
+            state.idea_history.clear(data)
+        return web.json_response({"ok": True})
+
     async def dataset_quality_endpoint(request):
         payload = await json_object(request)
         if set(payload) != {"input"}:
@@ -219,6 +231,7 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
                     web.post("/api/workspace/dataset/scene", dataset_endpoint),
                     web.post("/api/workspace/dataset/review", dataset_review_endpoint),
                     web.post("/api/workspace/dataset/quality", dataset_quality_endpoint),
+                    web.post("/api/workspace/dataset/novelty/reset", reset_dataset_novelty),
                     web.get("/api/workspace/settings/{operation:refine|minimax|dataset}", settings_endpoint),
                     web.put("/api/workspace/settings/{operation:refine|minimax|dataset}", settings_endpoint),
                     web.post("/api/workspace/settings/{operation:refine}/instructions", settings_endpoint),
@@ -256,7 +269,7 @@ def execute_workflow(state, job, request, config, workflow):
                     revise=False,
                 )
                 job.revision += 1
-        result = DatasetService(config, job.checkpoint).run(
+        result = DatasetService(config, job.checkpoint, idea_history=state.idea_history).run(
             request, workflow["input"], progress, partial,
             scenes_only=workflow["operation"] == "dataset_scenes", scene_action=workflow.get("scene_action"),
             valid_only=workflow.get("valid_only", False))

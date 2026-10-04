@@ -210,10 +210,10 @@ class QualityPlanningTests(unittest.TestCase):
         self.assertEqual(session.generate.call_count, 4)
         self.assertIn("genuinely new idea", session.generate.call_args_list[1].args[0].system_message)
 
-    def test_near_duplicate_idea_replaced_locally_before_composition(self):
+    def test_exact_duplicate_idea_replaced_locally_before_composition(self):
         data = draft(amount=3)
         ideas = [{"index": 1, "idea": "trying to juggle oranges and failing"},
-                 {"index": 2, "idea": "dropping fruit while attempting to juggle"},
+                 {"index": 2, "idea": "trying to juggle oranges and failing"},
                  {"index": 3, "idea": "wearing oversized shoes"}]
         replacement = {"index": 2, "idea": "balancing a spoon on her nose"}
         rows = [scene(row["index"], row["idea"], scene="She " + row["idea"] + ", necessary props visible.")

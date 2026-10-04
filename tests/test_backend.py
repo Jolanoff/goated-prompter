@@ -178,7 +178,7 @@ class OpenAITimeoutTests(unittest.TestCase):
                 if requested is not None:
                     settings["timeout"] = requested
                 backend = openai.OpenAICompatibleBackend(settings)
-                instruction = Mock(image=None, image_2=None)
+                instruction = Mock(image=None, image_2=None, temperature=None, top_p=None)
                 instruction.to_messages.return_value = [{"role": "user", "content": "test"}]
                 response = MagicMock()
                 response.__enter__.return_value.read.return_value = b'{"choices":[{"message":{"content":"result"}}]}'

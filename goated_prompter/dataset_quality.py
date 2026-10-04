@@ -11,11 +11,13 @@ from .dataset_triggers import trigger_contract_error, trigger_presence_error, tr
 from .dataset_visible_content import visible_content_error, positive_prompt_error
 from .dataset_staging.rules.prose import explicit_geometry_issues  # Legacy report import compatibility.
 from .dataset_staging import geometry_issues
+from .dataset_constraints import compile_constraints, constraint_issues, positive_descriptions
 
 
 LEAKED_LABELS = re.compile(
     r"(?im)^\s*(?:ITEM|TRIGGER TYPE|TRIGGER DESCRIPTION|REQUIRED TRIGGER TEXT|DATASET CONCEPT|"
     r"SOURCE MODE|GUIDED INPUT|ADDITIONAL CONSISTENCY RULES|CONSISTENCY AND VARIATION RULES|"
+    r"REQUIRED FACTS|FORBIDDEN FACTS|VARIATION ALLOWED|UNRESOLVED RULES|"
     r"EARLIER ITEM|OUTPUT FORMAT|CURRENT SCENE|PLANNED IDEA|PLANNED GEOMETRY|PLANNED SCENE(?: / CURRENT SCENE)?|FINAL PROMPT)\s*(?:\d+[^\n]*)?$|"
     r"</?(?:data|trigger|input|constraints|example|idea|scene)>",
 )
@@ -221,7 +223,8 @@ def _prompt_trigger_preference(prompt, data):
 
 
 def quality_signature(data, results, plan):
-    value = {"version": 8, "trigger": data.get("trigger"), "target": data.get("target"), "trigger_type": data.get("trigger_type"),
+    value = {"version": 9, "trigger": data.get("trigger"), "target": data.get("target"), "trigger_type": data.get("trigger_type"),
+             "constraints": data.get("constraints", ""),
              "expand_trigger": data.get("expand_trigger", False),
              "trigger_connected": data.get("trigger_connected", True),
              "trigger_at_start": data.get("trigger_at_start", False),
@@ -237,6 +240,9 @@ def analyze_dataset_quality(data, results=None, plan=None):
     records = {item["index"]: {"index": item["index"], "status": "pass", "issues": []}
                for item in results}
     batch_issues = []
+    compiled = compile_constraints(data.get("constraints", ""))
+    if compiled["unresolved"]:
+        batch_issues.append(_issue("unresolved_constraints", "warning", "Some consistency rules have conditional or unsupported syntax. Review their interpretation; they have not been silently discarded."))
 
     def add(index, issue):
         records[index]["issues"].append(issue)
@@ -278,6 +284,13 @@ def analyze_dataset_quality(data, results=None, plan=None):
             leakage = None  # Already reported by the target-format check above.
         if leakage:
             add(index, _issue("positive_content_leakage", "warning", leakage))
+        try:
+            for text in positive_descriptions(prompt, target):
+                for issue in constraint_issues(text, compiled, trigger_terms(trigger, data.get("trigger_connected", True))):
+                    if issue not in records[index]["issues"]:
+                        add(index, issue)
+        except (ValueError, KeyError, TypeError):
+            pass  # Target-format issues are reported separately.
         for source in ("idea", "scene"):
             if leakage := visible_content_error(item.get(source, "")):
                 add(index, _issue(source + "_content_leakage", "warning", leakage))

@@ -47,7 +47,7 @@ class ScenePlannerTests(unittest.TestCase):
         for heading in ("IDEA DUPLICATION CHECK", "SCENE GEOMETRY AND VISIBILITY", "VISIBLE DETAIL RULE",
                         "ACTION LOGIC", "SCENE COHERENCE AUDIT"):
             self.assertIn(heading, system)
-        self.assertIn("Do not mechanically use every category", system)
+        self.assertNotIn("explore compatible idea families", system)
         self.assertIn("fields supplied by the selected staging schema", system)
         self.assertIn("normally 3–15 words", system)
         self.assertIn("14. NO STAGING HACKS", system)
@@ -375,8 +375,10 @@ class ScenePlannerTests(unittest.TestCase):
         instruction = scene_planner_instruction(data, assignments, "gemma")
         context = json.loads(instruction.user_message)
         for key in ("amount", "subject", "source_mode", "trigger_type", "custom_type", "visual_style",
-                    "custom_style", "variety", "constraints"):
+                    "custom_style", "variety"):
             self.assertEqual(context[key], data[key])
+        from goated_prompter.dataset_constraints import compile_constraints
+        self.assertEqual(context["constraints"], compile_constraints(data["constraints"]))
         self.assertEqual(context["assignments"], assignments)
         self.assertEqual(context["assignments"][2]["input"], context["assignments"][0]["input"])
         self.assertNotIn("target_context", context)
