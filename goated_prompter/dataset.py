@@ -180,7 +180,7 @@ class DatasetService:
                 if data["target"] == "Ideogram4":
                     caption = json.loads(prompt)
                     text += " " + " ".join(element["desc"] for element in caption["compositional_deconstruction"]["elements"])
-                if error := idea_action_error(plan_item["idea"], text):
+                if error := idea_action_error(plan_item.get("idea") or plan_item["scene"], text):
                     raise SceneFidelityError(error)
             return prompt
         original = instruction
@@ -216,7 +216,8 @@ class DatasetService:
                 if attempt >= retries:
                     raise BackendGenerationError(
                         f"Dataset prompt {index}/{data['amount']} produced runaway output after "
-                        f"{retries} retries. {exc}"
+                        f"{retries} retries. {exc}", completion_state=exc.completion_state,
+                        partial_text=exc.partial_text, finish_reason=exc.finish_reason,
                     ) from exc
                 progress(
                     f"Dataset prompt {index}/{data['amount']} entered a repetition/output-limit loop: "
@@ -239,7 +240,8 @@ class DatasetService:
                 self.checkpoint()
                 if attempt >= retries:
                     raise BackendGenerationError(
-                        f"Dataset prompt {index}/{data['amount']} could not be generated after {retries} retries. {exc}"
+                        f"Dataset prompt {index}/{data['amount']} could not be generated after {retries} retries. {exc}",
+                        completion_state=exc.completion_state, partial_text=exc.partial_text, finish_reason=exc.finish_reason,
                     ) from exc
                 progress(f"Dataset prompt {index}/{data['amount']} engine request failed: {exc} Retrying ({attempt + 1}/{retries}).")
                 instruction = replace(original, diagnostic_stage=original.diagnostic_stage + f":transport_retry_{attempt + 1}")
@@ -308,9 +310,10 @@ class DatasetService:
                          "target": data["target"],
                          "scene_plan": [dict(row) for row in scenes], "scene_plan_signature": signature})
             if scenes is None:
-                planned = planner.plan_batch(
+                planned_result = planner.plan_result(
                     session=session, data=data, assignments=assignments, family=family, progress=progress,
                     plan_update=save_planning_stage)
+                planned = planned_result.plan
                 scenes = [{**row, "input": assignment["input"], "idea_status": row.get("idea_status", "valid"),
                             "scene_status": row.get("scene_status", ("guided_fallback" if data["source_mode"] == "guided"
                                              and row["scene"] == assignment["input"] else "valid")),
@@ -410,7 +413,7 @@ class DatasetService:
             publish()
             for index in selected:
                 self.checkpoint()
-                if scenes[index - 1].get("scene_status") == "failed":
+                if not scene_is_usable(scenes[index - 1], data):
                     continue
                 plan_item = {**assignments[index - 1], **scenes[index - 1]}
                 instruction = dataset_instruction(request, data, index, (), family, plan_item)
@@ -426,7 +429,8 @@ class DatasetService:
                     continue
                 seed = plan_item["input"]
                 results.append({"index": index, "prompt": prompt, "input": seed,
-                                "idea": plan_item["idea"], "scene": plan_item["scene"],
+                                "scene": plan_item["scene"],
+                                **({"idea": plan_item["idea"]} if "idea" in plan_item else {}),
                                 **{key: plan_item[key] for key in ("geometry",) if key in plan_item}})
                 results.sort(key=lambda row: row["index"])
                 if "prompt_status" in scenes[index - 1]:

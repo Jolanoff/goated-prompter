@@ -149,7 +149,8 @@ def dataset_instruction(request, data, index, previous=(), model_family="qwen", 
         preserve_subject=False, preserve_composition=False, preserve_camera=False,
         preserve_materials=False, preserve_lighting=False, preserve_colors=False,
     )
-    instruction = assemble_instruction(builder_request, model_family=model_family, text_only=True)
+    instruction = assemble_instruction(builder_request, model_family=model_family, text_only=True,
+                                       compile_user_constraints=False)  # Dataset already owns compiled semantic rules.
     token_limit = DATASET_OUTPUT_TOKEN_LIMITS[data["length"]]
     creativity = builder_request.creativity if builder_request.creativity in CREATIVITY_ADAPTERS else "Balanced"
     system = instruction.system_message.replace(CREATIVITY_ADAPTERS[creativity], DATASET_DESCRIPTIVE_CREATIVITY[creativity])

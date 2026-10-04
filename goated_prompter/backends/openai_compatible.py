@@ -75,26 +75,31 @@ def _chat_completions_url(base_url):
 def _response_text(payload, *, unlimited_tokens=False, hard_max_tokens=None):
     try:
         finish_reason = payload["choices"][0].get("finish_reason")
+        content = payload["choices"][0]["message"]["content"]
+        partial = _stream_part_text(content)
         if finish_reason == "length":
             if hard_max_tokens:
                 raise BackendRunawayError(
                     f"The prompt engine reached the workflow safety limit of {hard_max_tokens} tokens without "
-                    "finishing. The model may be looping. Shorten the requested output or use a different engine."
+                    "finishing. The model may be looping. Shorten the requested output or use a different engine.",
+                    completion_state="token_limit", partial_text=partial, finish_reason=finish_reason,
                 )
             if unlimited_tokens:
                 raise BackendGenerationError(
                     "The prompt engine stopped at its context or server output limit. This request had no "
                     "application token cap. Increase the engine's context size or server output allowance, "
-                    "or shorten the input, then retry. The incomplete prompt was not accepted."
+                    "or shorten the input, then retry. The incomplete prompt was not accepted.",
+                    completion_state="token_limit", partial_text=partial, finish_reason=finish_reason,
                 )
             raise BackendGenerationError(
                 "Generation was truncated at the token limit. Increase max_tokens and context size, "
-                "shorten the input, or select a shorter prompt length, then retry."
+                "shorten the input, or select a shorter prompt length, then retry.",
+                completion_state="token_limit", partial_text=partial, finish_reason=finish_reason,
             )
         if finish_reason not in {None, "stop"}:
-            raise BackendGenerationError(f"The prompt engine ended with unsupported finish reason {finish_reason!r}; the output was not accepted.")
-        content = payload["choices"][0]["message"]["content"]
-    except (KeyError, IndexError, TypeError) as exc:
+            raise BackendGenerationError(f"The prompt engine ended with unsupported finish reason {finish_reason!r}; the output was not accepted.",
+                                         partial_text=partial, finish_reason=finish_reason)
+    except (KeyError, IndexError, TypeError, AttributeError) as exc:
         raise BackendGenerationError("OpenAI-compatible response did not contain choices[0].message.content.") from exc
 
     if isinstance(content, str):
@@ -110,6 +115,9 @@ def _response_text(payload, *, unlimited_tokens=False, hard_max_tokens=None):
 
     if not text:
         raise BackendGenerationError("OpenAI-compatible backend returned an empty prompt.")
+    if finish_reason is None:
+        raise BackendGenerationError("The prompt engine returned text without a completion reason; the incomplete output was not accepted.",
+                                     completion_state="interrupted", partial_text=text)
     return text
 
 
@@ -304,7 +312,8 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
             self.emit_activity("error", message=message)
             raise BackendGenerationError(message) from exc
         except BackendGenerationError as exc:
-            self.emit_activity("error", message=str(exc))
+            self.emit_activity("error", message=str(exc), completion_state=exc.completion_state,
+                               partial_text=exc.partial_text, finish_reason=exc.finish_reason)
             raise
 
         try:
@@ -320,7 +329,8 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
                 hard_max_tokens=hard_limit,
             )
         except BackendGenerationError as exc:
-            self.emit_activity("error", message=str(exc))
+            self.emit_activity("error", message=str(exc), completion_state=exc.completion_state,
+                               partial_text=exc.partial_text, finish_reason=exc.finish_reason)
             raise
         if streaming:
             self.emit_activity("response_delta", text=result)
@@ -346,26 +356,37 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
         return result
 
     def _stream_response(self, response, unlimited, hard_max_tokens=None,
-                         stream_character_limit=RUNAWAY_STREAM_CHARACTER_LIMIT):
+                          stream_character_limit=RUNAWAY_STREAM_CHARACTER_LIMIT):
         pieces = []
+        try:
+            return self._consume_stream(response, unlimited, hard_max_tokens, stream_character_limit, pieces)
+        except BackendGenerationError as exc:
+            exc.partial_text = "".join(pieces)
+            raise
+        except (ValueError, TypeError, KeyError, AttributeError, IndexError) as exc:
+            raise BackendGenerationError("OpenAI-compatible backend returned an invalid streaming event.",
+                completion_state="malformed_stream", partial_text="".join(pieces)) from exc
+        except (OSError, EOFError) as exc:
+            raise BackendGenerationError("The prompt engine disconnected before completion; partial text was not accepted.",
+                completion_state="interrupted", partial_text="".join(pieces)) from exc
+
+    def _consume_stream(self, response, unlimited, hard_max_tokens, stream_character_limit, pieces):
         streamed_characters = 0
         output_characters = 0
         hard_character_limit = hard_max_tokens * 12 if hard_max_tokens else None
         next_repetition_check = 1200
         finish_reason = None
-        done = False
         for raw_line in response:
-            line = raw_line.decode("utf-8", errors="replace").strip()
-            if not line or line.startswith(":") or line.startswith("event:"):
+            line = raw_line.decode("utf-8").strip()
+            if not line or line.startswith((":", "event:", "id:", "retry:")):
                 continue
             data = line[5:].strip() if line.startswith("data:") else line
             if data == "[DONE]":
-                done = True
                 break
             try:
                 chunk = json.loads(data)
             except json.JSONDecodeError as exc:
-                raise BackendGenerationError("OpenAI-compatible backend returned an invalid streaming event.") from exc
+                raise BackendGenerationError("OpenAI-compatible backend returned an invalid streaming event.", completion_state="malformed_stream") from exc
             if chunk.get("error"):
                 detail = chunk["error"].get("message") if isinstance(chunk["error"], dict) else chunk["error"]
                 raise BackendGenerationError(f"OpenAI-compatible backend stream failed: {detail}")
@@ -422,26 +443,30 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
             if hard_max_tokens:
                 raise BackendRunawayError(
                     f"The prompt engine reached the workflow safety limit of {hard_max_tokens} tokens without "
-                    "finishing. The model may be looping. Shorten the requested output or use a different engine."
+                    "finishing. The model may be looping. Shorten the requested output or use a different engine.",
+                    completion_state="token_limit", finish_reason=finish_reason,
                 )
             if unlimited:
                 raise BackendGenerationError(
                     "The prompt engine stopped at its context or server output limit. This request had no "
                     "application token cap. Increase the engine's context size or server output allowance, "
-                    "or shorten the input, then retry. The incomplete prompt was not accepted."
+                    "or shorten the input, then retry. The incomplete prompt was not accepted.",
+                    completion_state="token_limit", finish_reason=finish_reason,
                 )
             raise BackendGenerationError(
                 "Generation was truncated at the token limit. Increase max_tokens and context size, "
-                "shorten the input, or select a shorter prompt length, then retry."
+                "shorten the input, or select a shorter prompt length, then retry.",
+                completion_state="token_limit", finish_reason=finish_reason,
             )
         if not result:
             raise BackendGenerationError("OpenAI-compatible backend returned an empty prompt.")
-        if not finish_reason and not done:
+        if not finish_reason:
             raise BackendGenerationError(
-                "The prompt engine connection ended before a completion marker. "
-                "The incomplete output was not accepted; retry this request."
+                "The prompt engine connection ended before an explicit completion reason. "
+                "The incomplete output was not accepted; retry this request.", completion_state="interrupted"
             )
         if finish_reason not in {None, "stop"}:
-            raise BackendGenerationError(f"The prompt engine ended with unsupported finish reason {finish_reason!r}; the output was not accepted.")
-        self.emit_activity("response_complete", finish_reason=finish_reason or "done")
+            raise BackendGenerationError(f"The prompt engine ended with unsupported finish reason {finish_reason!r}; the output was not accepted.",
+                                         finish_reason=finish_reason)
+        self.emit_activity("response_complete", finish_reason=finish_reason)
         return result

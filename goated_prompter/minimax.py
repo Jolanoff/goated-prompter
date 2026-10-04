@@ -26,7 +26,7 @@ class MiniMaxService:
                     raise BackendGenerationError(f"MiniMax prompt validation failed after {REPAIR_ATTEMPTS} repair attempts: {exc}") from exc
                 retry_budget[0] -= 1
                 progress(
-                    f"MiniMax output failed validation: {exc} Correcting the format "
+                    f"MiniMax output failed validation: {exc} Correcting the output "
                     f"(retry {REPAIR_ATTEMPTS - retry_budget[0]}/{REPAIR_ATTEMPTS})."
                 )
                 instruction = repair_instruction(original, raw, exc)

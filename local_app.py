@@ -23,8 +23,9 @@ from aiohttp import web
 from PIL import Image, UnidentifiedImageError
 
 from goated_prompter.backends.base import GoatedPrompterError
-from goated_prompter.job_lifecycle import release_completed_checkpoints
+from goated_prompter.job_lifecycle import release_completed_checkpoints, daemon_work
 from goated_prompter.dataset_idea_history import RecentIdeaHistory
+from goated_prompter.dataset_checkpoints import DatasetCheckpointStore
 from goated_prompter.backends.llama_cpp_process import get_process_manager, _resolve_server_executable
 from goated_prompter.config import load_config
 from goated_prompter.core import GoatedPrompterRequest, GoatedPrompterService, _as_bool
@@ -32,7 +33,7 @@ from goated_prompter.director_profiles import discover_director_profiles, resolv
 from goated_prompter.image_utils import EncodedImage
 from goated_prompter.comfy_node import GoatedPrompter
 from goated_prompter.reference_map import REFERENCE_ATTRIBUTES
-from goated_prompter.workspace_store import WorkspaceStore
+from goated_prompter.workspace_store import WorkspaceStore, WorkspaceConflict
 from goated_prompter.workspace_api import register_workspace_routes, execute_workflow
 from goated_prompter.workflow_settings import WorkflowSettingsStore
 from goated_prompter.presets import (
@@ -44,7 +45,7 @@ from goated_prompter.presets import (
 MAX_IMAGE_BYTES = 20 * 1024 * 1024
 MAX_IMAGE_PIXELS = 40_000_000
 COMPLETED_LIMIT = 32
-TERMINAL = {"succeeded", "failed", "cancelled"}
+TERMINAL = {"succeeded", "failed", "cancelled", "interrupted"}
 STATE = web.AppKey("local_state", object)
 MAX_STORE_BYTES = 16 * 1024 * 1024
 MAX_PROMPTS = 10000
@@ -206,6 +207,7 @@ class Job:
     def __init__(self):
         self.id = uuid.uuid4().hex
         self.status = "running"
+        self.completion_state = None
         self.revision = 0
         self.created_at = time.time()
         self.finished_at = None
@@ -226,7 +228,10 @@ class Job:
         self._event_sequence = 0
         self._llm_request_sequence = 0
         self.llm_trace = None
+        self.partial_responses = []
         self.released = False
+        self.workflow_revision = None
+        self.input_signature = None
         self._append_event(self.status_reason, "status")
 
     def _append_event(self, message, event_type="info"):
@@ -269,6 +274,7 @@ class Job:
                     "request_number": self._llm_request_sequence,
                     "status": "waiting_first_token",
                     "model": str(event.get("model") or "unknown"),
+                    "stage": event.get("stage"),
                     "messages": copy.deepcopy(event.get("messages") or []),
                     "parameters": copy.deepcopy(event.get("parameters") or {}),
                     "timeout_seconds": event.get("timeout_seconds"),
@@ -300,8 +306,9 @@ class Job:
                             "response",
                         )
             elif self.llm_trace is not None and event_type == "response_complete":
-                self.llm_trace["status"] = "complete"
-                self.llm_trace["finish_reason"] = str(event.get("finish_reason") or "stop")
+                self.llm_trace["status"] = "complete" if event.get("finish_reason") == "stop" else "interrupted"
+                self.llm_trace["completion_state"] = "completed" if event.get("finish_reason") == "stop" else "interrupted"
+                self.llm_trace["finish_reason"] = event.get("finish_reason")
                 self.llm_trace["updated_at"] = now
                 self.llm_trace["finished_at"] = now
                 self._append_event(
@@ -317,9 +324,18 @@ class Job:
                 message = str(event.get("message") or "The model transport failed.")
                 if self.llm_trace is not None:
                     self.llm_trace["status"] = "error"
+                    self.llm_trace["completion_state"] = event.get("completion_state", "provider_error")
+                    self.llm_trace["partial_text"] = event.get("partial_text", self.llm_trace["output"])
+                    self.llm_trace["finish_reason"] = event.get("finish_reason")
                     self.llm_trace["issue"] = message
                     self.llm_trace["updated_at"] = now
                     self.llm_trace["finished_at"] = now
+                    if self.llm_trace["partial_text"]:
+                        diagnostic = {key: self.llm_trace.get(key) for key in
+                            ("request_number", "stage", "completion_state", "finish_reason", "partial_text", "issue")}
+                        self.partial_responses = [row for row in self.partial_responses if row["request_number"] != diagnostic["request_number"]]
+                        self.partial_responses.append(diagnostic)
+                        del self.partial_responses[:-5]
                 self._append_event(message, "error")
             else:
                 return
@@ -327,11 +343,13 @@ class Job:
 
     def snapshot(self):
         with self.lock:
-            return {"id": self.id, "status": self.status, "revision": self.revision, "created_at": self.created_at,
-                    "finished_at": self.finished_at, "result": self.result, "error": self.error,
+            return {"id": self.id, "status": self.status, "completion_state": self.completion_state, "revision": self.revision, "created_at": self.created_at,
+                    "finished_at": self.finished_at, "result": copy.deepcopy(self.result), "error": self.error,
                     "kind": self.kind, "progress": self.progress, "progress_at": self.progress_at,
                     "status_reason": self.status_reason, "events": list(self.events),
-                    "llm_trace": copy.deepcopy(self.llm_trace)}
+                    "llm_trace": copy.deepcopy(self.llm_trace),
+                    "partial_responses": copy.deepcopy(self.partial_responses),
+                    "workflow_revision": self.workflow_revision, "input_signature": self.input_signature}
 
     def clear_private_data(self):
         """Release our references; this is not a secure RAM-erasure guarantee."""
@@ -339,6 +357,7 @@ class Job:
             self.released = True
             self.result = self.llm_trace = self.error = self.interrupt = None
             self.events.clear()
+            self.partial_responses.clear()
             self.transport_interrupts.clear()
             self.progress = self.status_reason = ""
 
@@ -379,7 +398,7 @@ class Job:
     def interrupt_requests(self):
         with self.lock:
             interrupts = list(self.transport_interrupts)
-            if self.interrupt is not None:
+            if not interrupts and self.interrupt is not None:
                 interrupts.append(self.interrupt)
         for interrupt in interrupts:
             interrupt()
@@ -410,6 +429,7 @@ class Job:
                 self.checkpoint()
                 self.result = result() if callable(result) else result
                 self.status = "succeeded"
+                self.completion_state = "completed"
                 self.status_reason = "Generation completed successfully."
                 self._append_event(self.status_reason, "success")
                 self.finished_at = time.time()
@@ -455,6 +475,12 @@ class LocalState:
         if workflow_settings_path in {self.settings_path, self.prompts_path}:
             raise ValueError("Workflow settings require a separate JSON path.")
         self.workflow_settings = WorkflowSettingsStore(workflow_settings_path, read_store, atomic_json)
+        checkpoint_path = self.settings_path.parent / "dataset_checkpoints.json"
+        if checkpoint_path in {self.settings_path, self.prompts_path}:
+            raise ValueError("Dataset checkpoints require a separate JSON path.")
+        self.dataset_checkpoints = DatasetCheckpointStore(checkpoint_path, read_store, atomic_json)
+        self.dataset_checkpoints.recover()
+        self.workflow_settings.dataset_checkpoints = self.dataset_checkpoints
         self.jobs = OrderedDict()
         self.idea_history = RecentIdeaHistory()
         self.tasks = set()
@@ -560,6 +586,8 @@ class LocalState:
         """Called under admission; all routes share task registration/lifecycle."""
         job = job_factory()
         job.kind = kind
+        if kind in {"dataset", "dataset_scenes", "dataset_review"}:
+            self.workflow_settings.begin_dataset(job, workflow["input"], workflow.get("workflow_revision"))
         self.jobs[job.id] = job
         task = asyncio.create_task(self.run(job, request, config, text_only, workflow))
         self.tasks.add(task)
@@ -603,31 +631,50 @@ class LocalState:
             job.commit(save_result, finish=True)
         except JobCancelled:
             with job.lock:
+                if job.released:
+                    return
                 job.status = "cancelled"
+                job.completion_state = "cancelled"
                 job.status_reason = "Generation stopped because cancellation was requested."
                 job._append_event(job.status_reason, "cancel")
                 job.finished_at = time.time()
                 job.revision += 1
         except Exception as exc:
             with job.lock:
+                if job.released:
+                    return
                 cancelled = job.cancel_requested
                 if cancelled:
                     job.status = "cancelled"
+                    job.completion_state = "cancelled"
                     job.status_reason = "Generation stopped because cancellation was requested."
                     job._append_event(job.status_reason, "cancel")
+                elif job.stopping:
+                    job.status = "interrupted"
+                    job.completion_state = "interrupted"
+                    job.error = "Server stopped. Completed Dataset checkpoints remain recoverable."
+                    job.status_reason = job.error
+                    job._append_event(job.error, "error")
                 else:
                     job.error = str(exc) if isinstance(exc, (ValueError, GoatedPrompterError)) else (
                         "Generation failed unexpectedly. Check the server console and model configuration, then retry.")
-                    job.status = "failed"
+                    job.completion_state = getattr(exc, "completion_state", "provider_error")
+                    job.status = "interrupted" if job.completion_state == "interrupted" else "failed"
                     job.status_reason = job.error
                     job._append_event(job.error, "error")
                 job.finished_at = time.time()
                 job.revision += 1
             if not cancelled:
                 logging.exception("Local generation failed")
+        finally:
+            if not job.released and job.kind in {"dataset", "dataset_scenes", "dataset_review"}:
+                try:
+                    self.workflow_settings.checkpoint_dataset(job)
+                except (ValueError, OSError):
+                    logging.exception("Could not persist final Dataset job status; prior checkpoints remain intact")
 
     async def run(self, job, *args):
-        await asyncio.to_thread(self.execute, job, *args)
+        await daemon_work(self.execute, job, *args)
         completed = [key for key, record in self.jobs.items() if record.status in TERMINAL]
         for key in completed[:-COMPLETED_LIMIT]:
             self.jobs.pop(key).clear_private_data()
@@ -715,13 +762,22 @@ async def generate(request):
 async def job_endpoint(request):
     job = request.app[STATE].jobs.get(request.match_info["id"])
     if job is None:
+        recovered = await asyncio.to_thread(request.app[STATE].dataset_checkpoints.find, request.match_info["id"])
+        if recovered is not None and request.method == "GET":
+            return web.json_response(recovered)
         raise web.HTTPNotFound(reason="Job not found or expired. Generate again.")
     if request.method == "POST" and request.match_info["action"] == "cancel":
         with job.lock:
             if job.status in TERMINAL:
                 raise web.HTTPConflict(reason="This job has already finished.")
         # Process termination can briefly wait; keep the HTTP event loop free.
-        return web.json_response(await asyncio.to_thread(job.cancel))
+        try:
+            snapshot = await asyncio.wait_for(daemon_work(job.cancel), timeout=2)
+        except asyncio.TimeoutError:
+            # Admission stays occupied until the worker reaches its cancellable
+            # checkpoint; a stalled transport must not stall the HTTP response.
+            snapshot = job.snapshot()
+        return web.json_response(snapshot)
     with job.lock:
         if request.method == "POST":
             if job.status in TERMINAL:
@@ -749,6 +805,8 @@ async def release_job_checkpoints(request):
     if not family:
         raise ValueError("Choose the workflow whose completed checkpoints should be released.")
     released = release_completed_checkpoints(request.app[STATE].jobs, family=family)
+    if family == "dataset":
+        await asyncio.to_thread(request.app[STATE].dataset_checkpoints.release, released)
     return web.json_response({"ok": True, "released": released})
 
 
@@ -848,6 +906,8 @@ def create_app(*, port=8190, dist=None, config_loader=load_config, service_facto
             response = await handler(request)
         except web.HTTPException as exc:
             response = web.json_response({"ok": False, "error": exc.reason}, status=exc.status)
+        except WorkspaceConflict as exc:
+            response = web.json_response({"ok": False, "error": str(exc)}, status=409)
         except (ValueError, TypeError, GoatedPrompterError, DirectorLibraryError) as exc:
             response = web.json_response({"ok": False, "error": str(exc)}, status=400)
         except Exception:
@@ -894,14 +954,33 @@ def create_app(*, port=8190, dist=None, config_loader=load_config, service_facto
 
     async def shutdown(app):
         state = app[STATE]
+        interrupts = []
         for job in state.jobs.values():
             with job.lock:
                 job.stopping = True
                 job.gate.set()
-            await asyncio.to_thread(job.interrupt_requests)
-        if state.tasks:
-            await asyncio.gather(*state.tasks)
-        await asyncio.to_thread(get_process_manager().request_unload)
+            interrupts.append(asyncio.create_task(daemon_work(job.interrupt_requests)))
+        waiting = set(state.tasks) | set(interrupts)
+        if waiting:
+            done, pending = await asyncio.wait(waiting, timeout=3)
+            for task in pending:
+                task.cancel()
+            for task in done:
+                if not task.cancelled() and task.exception():
+                    logging.error("Shutdown cancellation failed: %s", task.exception())
+            for job in state.jobs.values():
+                with job.lock:
+                    if job.status not in TERMINAL:
+                        job.status = "interrupted"
+                        job.completion_state = "interrupted"
+                        job.error = "Shutdown timeout. Completed checkpoints remain recoverable."
+                        job.finished_at = time.time()
+                if job.kind in {"dataset", "dataset_scenes", "dataset_review"}:
+                    await asyncio.to_thread(state.workflow_settings.checkpoint_dataset, job)
+        unload_task = asyncio.create_task(daemon_work(get_process_manager().request_unload))
+        _done, pending = await asyncio.wait({unload_task}, timeout=1)
+        for task in pending:
+            task.cancel()
         release_completed_checkpoints(state.jobs)
         state.idea_history.clear()
 

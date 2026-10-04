@@ -40,7 +40,7 @@ class _ResponseSocket:
             def readinto(self, buffer):
                 while True:
                     if owner.cancelled.is_set():
-                        raise BackendGenerationError("The model request was interrupted.")
+                        raise BackendGenerationError("The model request was interrupted.", completion_state="cancelled")
                     pending = getattr(owner.sock, "pending", None)
                     if (pending and pending()) or select.select([owner.sock], [], [], .1)[0]:
                         previous_timeout = owner.sock.gettimeout()
@@ -102,14 +102,14 @@ def interruptible_urlopen(request, *, timeout, register, unregister):
 
             def connect(self):
                 if self.cancelled.is_set() or timed_out.is_set():
-                    raise BackendGenerationError("The model request was interrupted.")
+                    raise BackendGenerationError("The model request was interrupted.", completion_state="cancelled")
                 super().connect()
                 self.sock = _ResponseSocket(self.sock, self.cancelled)
                 self.active_socket = self.sock
                 if self.cancelled.is_set() or timed_out.is_set():
                     self.stop_request()
                     self.close()
-                    raise BackendGenerationError("The model request was interrupted.")
+                    raise BackendGenerationError("The model request was interrupted.", completion_state="cancelled")
 
         return Connection
 

@@ -7,7 +7,7 @@ import { TargetSelect } from "./WorkflowControls.jsx";
 import { useWorkflowSettings } from "./useWorkflowSettings.js";
 import WorkflowSettingsStatus from "./WorkflowSettingsStatus.jsx";
 import { datasetJsonl } from "./datasetExport.js";
-import { editDatasetPlan, invalidateDatasetPrompts, isDatasetSceneUsable, datasetRetryStage } from "./datasetState.js";
+import { editDatasetPlan, invalidateDatasetPrompts, datasetRetryStage } from "./datasetState.js";
 import { geometryRows } from "./datasetGeometry.js";
 
 const triggerTypes = ["Character", "Multiple characters", "Animal", "Object / product", "Visual style",
@@ -97,7 +97,7 @@ function download(name, content, type) {
 export default function DatasetTab({ visible, job, busy, active, noEngine, engineLabel, presets,
   targets, lengths, onGenerate, onCancel, onCopy, onReleaseJobs }) {
   const preferences = useWorkflowSettings("dataset");
-  const { draft, update } = preferences;
+  const { draft, update, refreshGenerated } = preferences;
   const [starting, setStarting] = useState(false);
   const [qualityBusy, setQualityBusy] = useState(false);
   const [error, setError] = useState("");
@@ -127,7 +127,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
   }, [workflowActive, job?.id, job?.progress_at]);
 
   useEffect(() => {
-    if (!datasetJob || job.status !== "failed") return;
+    if (!datasetJob || !["failed", "interrupted"].includes(job.status)) return;
     setError(`${job.kind === "dataset_review" ? "Dataset review" : job.kind === "dataset_scenes" ? "Scene planning" : "Dataset generation"} failed. ${job.error || "The prompt engine did not return a usable result."}`);
   }, [datasetJob, job?.id, job?.revision, job?.status, job?.kind, job?.error]);
 
@@ -136,23 +136,16 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
     const key = `${job.id}:${job.revision}`;
     if (synced.current === key) return;
     synced.current = key;
-    update({
-      ...(job.kind === "dataset" && Array.isArray(job.result.prompts) ? {
-        results: job.result.prompts, result_job_id: job.id,
-      } : {}),
-      scene_plan: job.result.scene_plan,
-      scene_plan_signature: job.result.scene_plan_signature,
-      ...(job.result.quality_report ? { quality_report: job.result.quality_report } : {}),
-    });
-  }, [job, draft, update]);
+    refreshGenerated().catch((err) => setError(`Could not recover saved progress. ${err.message}`));
+  }, [job, draft, refreshGenerated]);
 
   useEffect(() => {
     if (!draft || job?.kind !== "dataset_review" || job.status !== "succeeded" || !job.result?.report) return;
     const key = `review:${job.id}:${job.revision}`;
     if (synced.current === key) return;
     synced.current = key;
-    update({ quality_report: job.result.report });
-  }, [job, draft, update]);
+    refreshGenerated().catch((err) => setError(err.message));
+  }, [job, draft, refreshGenerated]);
 
   const disabled = busy || starting || preferences.working;
   const availablePresets = orderDisplayPresets(presets || []);
@@ -165,7 +158,13 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
     draft.subject.trim() && customReady && styleReady && sourceReady;
   const staleScenePlan = !!draft?.scene_plan_signature && (preferences.record?.scene_plan_matches_settings ?? preferences.record?.idea_plan_current) === false &&
     preferences.record?.draft.scene_plan_signature === draft.scene_plan_signature;
-  const validSceneCount = draft?.scene_plan?.filter(isDatasetSceneUsable).length || 0;
+  const sceneUsable = (row) => {
+    const saved = preferences.record?.draft.scene_plan.find((item) => item.index === row.index);
+    const current = draft?.scene_plan?.find((item) => item.index === row.index);
+    return JSON.stringify(saved) === JSON.stringify(current) && preferences.record?.scene_eligibility?.[row.index]?.usable === true;
+  };
+  const validSceneCount = draft?.scene_plan?.filter(sceneUsable).length || 0;
+  const retryStage = (row) => datasetRetryStage(row, { usable: sceneUsable(row) });
   const scenePlanReady = !staleScenePlan && !!draft?.scene_plan_signature && validSceneCount > 0;
   const canWrite = canPlanScenes && director && draft.trigger.trim();
   const canGenerate = canWrite && !draft.scene_plan?.some((item) => item.scene_status !== "failed" && item.idea !== undefined && !item.idea.trim());
@@ -211,7 +210,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
     setError("");
     try {
       await preferences.flush();
-      await onGenerate("dataset/scene", { input: draft, index, action });
+      await onGenerate("dataset/scene", { input: draft, index, action, workflow_revision: preferences.revision() });
     } catch (err) { setError(err.message); }
     finally { submission.current = false; setStarting(false); }
   }
@@ -228,7 +227,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
         update({ results: [], result_job_id: "", quality_report: {} });
       }
       await preferences.flush();
-      await onGenerate(scenesOnly ? "dataset/scenes" : "dataset", { input, ...(validOnly ? { valid_only: true } : {}) });
+      await onGenerate(scenesOnly ? "dataset/scenes" : "dataset", { input, workflow_revision: preferences.revision(), ...(validOnly ? { valid_only: true } : {}) });
     } catch (err) { setError(err.message); }
     finally { submission.current = false; setStarting(false); }
   }
@@ -240,7 +239,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
     setError("");
     try {
       await preferences.flush();
-      await onGenerate("dataset/review", { input: draft });
+      await onGenerate("dataset/review", { input: draft, workflow_revision: preferences.revision() });
     } catch (err) { setError(err.message); }
     finally { submission.current = false; setStarting(false); }
   }
@@ -500,7 +499,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                 onClick={() => sceneAction(item.index, "regenerate_idea")}><RefreshCw size={14} aria-hidden="true" />Idea</button>
               <button className={ui.button} title="Repair scene" aria-label="Repair scene" disabled={!canWrite || staleScenePlan || !item.idea?.trim()}
                 onClick={() => sceneAction(item.index, "repair_scene")}><Wrench size={14} aria-hidden="true" />Scene</button>
-              <button className={ui.button} title="Regenerate prompt" aria-label="Regenerate prompt" disabled={!canWrite || staleScenePlan || !isDatasetSceneUsable(item)}
+              <button className={ui.button} title="Regenerate prompt" aria-label="Regenerate prompt" disabled={!canWrite || staleScenePlan || !sceneUsable(item)}
                 onClick={() => sceneAction(item.index, "regenerate_prompt")}><WandSparkles size={14} aria-hidden="true" />Prompt</button>
             </div>
           </div>)}
@@ -587,7 +586,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
               </details> : <p className={`${ui.subtleNote} mb-3`}>Legacy result: no originating scene was saved.</p>}
               <FailureReason item={item} />
               {item.failed ? <button className={`${ui.button} mt-3`} disabled={!canWrite || staleScenePlan}
-                onClick={() => sceneAction(item.index, datasetRetryStage(item) === "scene" ? "repair_scene" : `regenerate_${datasetRetryStage(item)}`)}><RefreshCw size={14} aria-hidden="true" />Retry failed {datasetRetryStage(item)}</button> : <>
+                onClick={() => sceneAction(item.index, retryStage(item) === "scene" ? "repair_scene" : `regenerate_${retryStage(item)}`)}><RefreshCw size={14} aria-hidden="true" />Retry failed {retryStage(item)}</button> : <>
               <label htmlFor={`dataset-prompt-${item.index}`} className="dataset-final-label">Final prompt</label>
               <textarea className={ui.outputInput} style={{ minHeight: 220 }} aria-label={`Dataset prompt ${item.index}`}
                id={`dataset-prompt-${item.index}`}

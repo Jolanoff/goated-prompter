@@ -586,11 +586,40 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         await self.wait_status(job["id"], "paused")
         retained = self.app[local.STATE].jobs[job["id"]]
         await asyncio.wait_for(self.client.close(), 3)
-        self.assertEqual(retained.status, "failed")
+        self.assertEqual(retained.status, "interrupted")
         self.assertEqual(self.app[local.STATE].jobs, {})
         self.assertIsNone(retained.result)
         self.assertIsNone(retained.llm_trace)
         self.assertEqual(retained.events, [])
+
+    async def test_shutdown_is_bounded_when_provider_and_interrupt_do_not_cooperate(self):
+        self.release.clear()
+        accepted = await self.start()
+        self.assertTrue(await asyncio.to_thread(self.entered.wait, 2))
+        retained = self.app[local.STATE].jobs[accepted["id"]]
+        retained.set_interrupt(lambda: self.release.wait(30))
+        try:
+            await asyncio.wait_for(self.client.close(), 4.5)
+            self.assertEqual(retained.status, "interrupted")
+            self.assertTrue(retained.released)
+            self.assertIsNone(retained.result)
+        finally:
+            self.release.set()
+
+    async def test_cancel_response_is_bounded_when_transport_does_not_cooperate(self):
+        self.release.clear()
+        accepted = await self.start()
+        self.assertTrue(await asyncio.to_thread(self.entered.wait, 2))
+        retained = self.app[local.STATE].jobs[accepted["id"]]
+        retained.set_interrupt(lambda: self.release.wait(30))
+        try:
+            response = await asyncio.wait_for(self.client.post(f"/api/jobs/{accepted['id']}/cancel"), 3)
+            self.assertEqual(response.status, 200)
+            self.assertEqual((await response.json())["status"], "cancelling")
+            self.assertTrue(retained.cancel_requested)
+        finally:
+            self.release.set()
+        await self.wait_status(accepted["id"], "cancelled")
 
     async def test_checkpoint_cleanup_is_scoped_memory_only_and_preserves_saved_content(self):
         state = self.app[local.STATE]

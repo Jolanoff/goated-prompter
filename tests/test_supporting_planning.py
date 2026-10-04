@@ -74,6 +74,14 @@ class ScriptedBackend(GoatedPrompterBackend):
 
 
 class SupportingPlanningTests(unittest.TestCase):
+    def test_direct_constraint_repair_is_low_sampling_and_never_replaces_the_user_action(self):
+        result, backend = self.builder(GoatedPrompterRequest(idea="A person runs beside a bus. no hats", planning_mode="Direct"),
+            "A person runs beside a bus wearing a red hat.", "A person runs beside a bus.")
+        self.assertEqual(result.prompt, "A person runs beside a bus.")
+        self.assertEqual([call.diagnostic_stage for call in backend.calls], ["final", "final:constraint_retry"])
+        self.assertEqual((backend.calls[1].temperature, backend.calls[1].top_p), (.25, .85))
+        self.assertEqual(backend.calls[0].user_message, backend.calls[1].user_message)
+
     def setUp(self):
         directory = self.enterContext(tempfile.TemporaryDirectory())
         self.enterContext(patch.dict(os.environ, {"GOATED_PROMPTER_USER_DIR": directory}))
@@ -131,7 +139,8 @@ class SupportingPlanningTests(unittest.TestCase):
         self.assertEqual(len(backend.calls), 1)
         self.assertEqual(result.instruction.to_messages(), assemble_instruction(request).to_messages())
         self.assertNotIn("SUPPORTING INTERPRETATION", result.instruction.system_message)
-        self.assertIn("no hat", result.instruction.user_message)
+        self.assertNotIn("no hat", result.instruction.user_message)
+        self.assertIn('"forbidden": ["hat"]', result.instruction.system_message)
         self.assertEqual(result.planning_status, "direct")
 
     def test_auto_simple_is_exact_direct_without_added_call(self):
@@ -396,7 +405,7 @@ class SupportingPlanningTests(unittest.TestCase):
 
     def test_minimax_real_reference_analysis_precedes_supporting_pass_in_one_session(self):
         # Reuse the existing verified H3/reference fixtures, not an alternate validator.
-        from test_minimax import REF, DANCE_PLAN, REQUEST
+        from tests.test_minimax import REF, DANCE_PLAN, REQUEST
         data = validate_minimax_draft({"planning_mode": "Always", "user_request": REQUEST, "references": ["image1", "video1"], "duration_seconds": 15})
         payload = {"subjects": ["requested target person"], "action_progression": ["Identity from <image1> performs requested movement characteristics from <video1>."]}
         result, backend = self.minimax(data, DANCE_PLAN, json.dumps(payload), REF)

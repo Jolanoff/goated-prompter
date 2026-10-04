@@ -2,6 +2,7 @@
 
 import base64
 from dataclasses import dataclass, replace
+import json
 import hashlib
 
 from .backends.factory import create_backend
@@ -275,6 +276,7 @@ def assemble_instruction(
     resolved_reference_map=None,
     text_only=False,
     prompt_scene_plan=None,
+    compile_user_constraints=True,
 ):
     if text_only:
         resolved_scene = None
@@ -356,6 +358,19 @@ def assemble_instruction(
         sections.append(reference_constraints)
         print("[Goated Prompter DIRECTOR CONSTRAINTS]", flush=True)
         print(resolved_reference_map.director_constraints(), flush=True)
+
+    if prompt_scene_plan is None and compile_user_constraints:
+        from .planning.constraints import compile_prompt_request, COMPILED_CONTRACT
+        compiled = compile_prompt_request(request, has_context=has_visual_context)
+        if compiled.forbidden or compiled.variable:
+            # Direct still performs no planning call. Only safely compiled rule
+            # clauses move from positive prose to compiler-owned restrictions.
+            idea = compiled.positive_request
+            if workflow_rules.strip() and compiled.workflow_rules != workflow_rules:
+                sections = [section for section in sections if section != f"WORKFLOW RULES\n{workflow_rules.strip()}"]
+                if compiled.workflow_rules.strip():
+                    sections.append(f"WORKFLOW RULES\n{compiled.workflow_rules.strip()}")
+            sections.append(COMPILED_CONTRACT + "\n" + json.dumps(compiled.workflow_data(), ensure_ascii=False))
 
     if request.target_model == "Qwen Image 2.1":
         if qwen_images:
@@ -603,29 +618,41 @@ class GoatedPrompterService:
             qwen_images = _qwen21_source_tokens(request, resolved_reference_map, text_only) if request.target_model == "Qwen Image 2.1" else ()
             qwen_task = "edit" if qwen_images else "t2i"
             validate_format = request.target_model == "Qwen Image 2.1" or get_target_capabilities(request.target_model).supports_structured_output
-            for attempt in range(2 if validate_format else 1):
+            from .planning.constraints import compile_prompt_request
+            from .planning.constraint_validation import output_constraint_issues
+            compiled_constraints = compile_prompt_request(request, has_context=resolved_scene is not None or bool(reference_images(request)))
+            validate_constraints = bool(compiled_constraints.forbidden)
+            for attempt in range(2 if validate_format or validate_constraints else 1):
                 session_backend.validate_instruction(instruction)
                 if self._checkpoint is not None:
                     self._checkpoint()
                 prompt = str(session_backend.generate(instruction) or "").strip()
                 if self._checkpoint is not None:
                     self._checkpoint()
-                if not validate_format:
+                if not validate_format and not validate_constraints:
                     break
+                problems = []
                 try:
-                    prompt = normalize_workflow_output(prompt, request.target_model,
-                                                        expected_visible_text=requested_visible_text(request.idea), mode=request.mode)
+                    if validate_format:
+                        prompt = normalize_workflow_output(prompt, request.target_model,
+                                                            expected_visible_text=requested_visible_text(request.idea), mode=request.mode)
+                    problems = [issue for issue in output_constraint_issues(prompt, request.target_model,
+                        compiled_constraints.workflow_data()) if issue["severity"] == "error"] if validate_constraints else []
+                    if problems:
+                        raise WorkflowFormatError(problems[0]["message"])
                     break
                 except WorkflowFormatError as exc:
                     if attempt:
                         raise BackendGenerationError(f"{request.target_model} returned an invalid prompt after one format-repair attempt: {exc}") from exc
                     instruction = replace(instruction,
-                        system_message=minimax_format_repair(instruction.system_message, exc) if request.target_model == "MiniMax H3" else qwen_format_repair(
+                        system_message=(instruction.system_message + "\n\nCONSTRAINT CORRECTION: " + str(exc)
+                            + " Preserve the original scene/action and all supplied facts. Apply exclusions silently; change only invalid final wording."
+                            if problems else minimax_format_repair(instruction.system_message, exc) if request.target_model == "MiniMax H3" else qwen_format_repair(
                             instruction.system_message,
                             exc,
                             output_contract(request.target_model, qwen_task=qwen_task, qwen_images=qwen_images),
-                        ),
-                        diagnostic_stage="final:format_retry")
+                        )), temperature=.25, top_p=.85,
+                        diagnostic_stage="final:constraint_retry" if problems else "final:format_retry")
         if not prompt:
             raise RuntimeError("Goated Prompter backend returned an empty prompt.")
         if request.target_model != "Ideogram4" and not (request.target_model == "MiniMax H3" and request.mode == "Video"):

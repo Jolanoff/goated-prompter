@@ -181,7 +181,7 @@ class OpenAITimeoutTests(unittest.TestCase):
                 instruction = Mock(image=None, image_2=None, temperature=None, top_p=None)
                 instruction.to_messages.return_value = [{"role": "user", "content": "test"}]
                 response = MagicMock()
-                response.__enter__.return_value.read.return_value = b'{"choices":[{"message":{"content":"result"}}]}'
+                response.__enter__.return_value.read.return_value = b'{"choices":[{"message":{"content":"result"},"finish_reason":"stop"}]}'
                 with patch.object(openai, "urlopen", return_value=response) as request, \
                      patch.object(openai, "log_request"), patch.object(openai, "log_response"), \
                      patch.object(openai, "_log_multimodal_messages"):

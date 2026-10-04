@@ -4,6 +4,7 @@ import json
 import re
 
 from .prompting.target_models import canonical_target
+from .planning.rule_compiler import QUOTED as _QUOTED
 
 
 VISIBLE_CONTENT_CONTRACT = """VISIBLE CONTENT ONLY
@@ -30,7 +31,6 @@ _LEAKAGE = re.compile(
     r"|(?:^|[\n])\s*(?:PLANNED\s+GEOMETRY|REQUIRED FACTS|FORBIDDEN FACTS|VARIATION ALLOWED|UNRESOLVED RULES)\b",
     re.IGNORECASE,
 )
-_QUOTED = re.compile(r'"(?:\\.|[^"\\])*"|(?<!\w)\'(?:\\.|[^\'\\\n])+\'(?!\w)|“[^”]*”|‘[^’]*’')
 
 # Full-clause allowlist: detection above is deliberately broader than cleanup.
 # Unknown qualifiers, useful actions or scene details must be repaired by the LLM,

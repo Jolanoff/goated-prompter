@@ -86,6 +86,19 @@ class AlwaysRunawayBackend(CaptureBackend):
 
 
 class DatasetUnitTests(unittest.TestCase):
+    def test_legacy_prose_writer_reuses_scene_without_fabricating_idea_provenance(self):
+        from goated_prompter.scene_planner import scene_plan_signature
+        data = valid_draft(amount=1, planning_mode="Quality",
+            scene_plan=[{"index": 1, "input": "", "scene": "A person reads a book on a bench."}])
+        data["scene_plan_signature"] = scene_plan_signature(data, dataset_assignments(data))
+        backend = CaptureBackend()
+        with patch("goated_prompter.dataset.create_backend", return_value=backend):
+            result = DatasetService({"backend": "mock"}, lambda: None).run(GoatedPrompterRequest(idea=data["subject"]),
+                data, lambda _message: None, lambda _result: None)
+        self.assertEqual([call.diagnostic_stage for call in backend.calls], ["dataset:1"])
+        self.assertNotIn("idea", result["prompts"][0])
+        self.assertEqual(result["prompts"][0]["scene"], data["scene_plan"][0]["scene"])
+
     def test_obsolete_fields_are_removed_without_losing_supported_draft(self):
         data = valid_draft(results=[{"index": 1, "prompt": "A studio portrait.", "input": "portrait"}])
         legacy = {**data, "discarded_experiment": {"enabled": True}, "frame_mode": "Close-up"}
@@ -474,6 +487,8 @@ class DatasetEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(data["scene_plan"][0]["idea"], self.backend.calls[1].user_message)
         self.assertIn(data["scene_plan"][0]["scene"], self.backend.calls[1].user_message)
         data["results"] = final["result"]["prompts"]
+        saved = await (await self.client.get("/api/workspace/settings/dataset")).json()
+        self.assertEqual(saved["draft"]["results"], final["result"]["prompts"])
         response = await self.client.put("/api/workspace/settings/dataset",
             json={"revision": saved["revision"], "draft": data})
         self.assertEqual(response.status, 200, await response.text())

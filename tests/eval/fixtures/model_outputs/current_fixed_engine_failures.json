@@ -1,0 +1,450 @@
+{
+  "run_id": "current-fixed-engine-failures-20261004",
+  "revision": "d0ba3cf0625bed94e1b067f71bb45d0d10708da4",
+  "code_digest": "899ac1f17e82c24e6fff7852287c405496aad310ef5c73422f426c401b304f59",
+  "corpus_digest": "f114a111a3f9864e4c453105f7f8bb28b3547039652db48a9a8f74ffdc2633a3",
+  "dirty": true,
+  "engine": {
+    "model": "quality-verification-27b",
+    "context_size": 16384
+  },
+  "source_run_id": "2026-10-04T18:13:00.481559+00:00",
+  "source_artifact": "quality-verification-20261004/corpus-auto.json",
+  "source_sha256": "614acfa134ab6462240c29ed6abc230e645cf7e1fbe69bda7b2fb841c3198503",
+  "review_provenance": "GPT-6.1 Sol exploratory non-blinded text review; not independent or image/video validation",
+  "source_records": 39,
+  "selection": "Seven strong observed text/validation failures; not the failure-rate denominator.",
+  "records": [
+    {
+      "sample_id": "live20261004:portrait|dataset|Generic|Detailed|general_director|Photorealistic|Balanced|Auto|1",
+      "case_id": "portrait",
+      "workflow": "dataset",
+      "run": 1,
+      "request": "Close portrait of a person with short black hair and brown eyes, lit by a window. No jewelry.",
+      "anchors": {
+        "scene": [
+          "close portrait",
+          "window illumination"
+        ],
+        "action": [],
+        "pose": [],
+        "constraint": [
+          "short black hair",
+          "brown eyes"
+        ]
+      },
+      "rules": "same short black hair; no jewelry\nno jewelry",
+      "target": "Generic",
+      "length": "Detailed",
+      "director": "general_director",
+      "style": "Photorealistic",
+      "creativity": "Balanced",
+      "planning": "Auto",
+      "effective_request": "eval_subject represents Close portrait of a person with short black hair and brown eyes, lit by a window. No jewelry.",
+      "calls": [
+        {
+          "stage": "dataset:1",
+          "parameters": {
+            "temperature": 0.25,
+            "max_tokens": 1536,
+            "top_p": 0.85,
+            "stream": true
+          },
+          "raw": "A close-up portrait of a person with short black hair and brown eyes, framed from the shoulders up. The subject faces slightly off-center, their gaze directed toward the viewer with a calm, neutral expression. Soft, diffused natural light enters from a window on the left, casting a gentle gradient across the face and creating a subtle rim light on the hair. The skin texture is visible with natural pores and faint shadows under the brow and nose, emphasizing the depth of the facial features. The background is a soft, out-of-focus interior wall in muted neutral tones, providing a clean backdrop that isolates the subject. The lighting creates a gentle chiaroscuro effect, with the right side of the face falling into soft shadow, while the left side is illuminated by the cool, ambient daylight. The overall atmosphere is quiet and introspective, with a shallow depth of field that blurs the surroundings into a smooth bokeh.",
+          "finish_reason": "stop",
+          "completion_state": "completed",
+          "latency_seconds": 3.5243493000161834,
+          "request_messages_sha256": "9d30dc6b7691bb4a3e064d3e6d5af026d14e4663bcca036d63ed208429519ef4"
+        },
+        {
+          "stage": "dataset:1:trigger_retry_1",
+          "parameters": {
+            "temperature": 0.25,
+            "max_tokens": 1536,
+            "top_p": 0.85,
+            "stream": true
+          },
+          "raw": "A close-up portrait of eval_subject, featuring short black hair and brown eyes, captured in a tight head-and-shoulders framing. Soft, diffused natural light streams in from a window on the left, casting gentle highlights across the face and creating subtle, natural shadows that define the facial structure. The subject wears a simple, unadorned garment with no visible jewelry, allowing the focus to remain entirely on the expression and the interplay of light and shadow. The background is softly blurred, suggesting an indoor setting with neutral tones, while the skin texture appears realistic and detailed under the natural illumination.",
+          "finish_reason": "stop",
+          "completion_state": "completed",
+          "latency_seconds": 2.330919100000756,
+          "request_messages_sha256": "4ae6580e43e27af57f55ccc29d793d0ceca8b8f1c65561c593f09ec46a0a9bbd"
+        },
+        {
+          "stage": "dataset:1:content_retry_2",
+          "parameters": {
+            "temperature": 0.25,
+            "max_tokens": 1536,
+            "top_p": 0.85,
+            "stream": true
+          },
+          "raw": "A close-up portrait of a person with short black hair and brown eyes, positioned near a window that serves as the primary light source. Soft, directional daylight enters from the side, illuminating one side of the face while casting gentle, natural shadows on the opposite side, creating a three-dimensional depth to the features. The skin texture appears realistic with subtle pores and natural imperfections, catching the light to highlight the contours of the cheekbones and jawline. The short black hair has a matte finish with individual strands visible, catching faint highlights where the window light strikes. The brown eyes are clear and focused, reflecting the ambient light with a soft glint. The subject wears a simple, neutral-toned garment that blends into the background, ensuring the focus remains on the facial features. The background is softly blurred, suggesting an indoor setting with muted tones that complement the warm, natural lighting. The composition is tight, framing the head and shoulders, with the subject’s gaze directed slightly off-camera, creating a contemplative and intimate atmosphere. The overall color palette is warm and earthy, dominated by the natural tones of the skin, hair, and the diffused daylight.",
+          "finish_reason": "stop",
+          "completion_state": "completed",
+          "latency_seconds": 4.080386999994516,
+          "request_messages_sha256": "6466ccc123d4bd44d0d5a7aedd3a0c5488cbe89fe49fbe8d4e580c8143785070"
+        },
+        {
+          "stage": "dataset:1:trigger_retry_3",
+          "parameters": {
+            "temperature": 0.25,
+            "max_tokens": 1536,
+            "top_p": 0.85,
+            "stream": true
+          },
+          "raw": "eval_subject is captured in a close portrait, their short black hair catching the soft directional light from a nearby window. Brown eyes are clearly visible, reflecting the ambient glow, while the absence of jewelry keeps the focus on the natural texture of their skin and the subtle details of their facial features. The lighting creates a gentle gradient across the face, highlighting the contours of the nose and cheekbones with a warm, natural tone. The background remains softly blurred, ensuring the subject remains the central point of interest, with the window light providing a clean, realistic illumination that emphasizes the depth and clarity of the close-up framing.",
+          "finish_reason": "stop",
+          "completion_state": "completed",
+          "latency_seconds": 2.3110003999900073,
+          "request_messages_sha256": "4ae6580e43e27af57f55ccc29d793d0ceca8b8f1c65561c593f09ec46a0a9bbd"
+        }
+      ],
+      "error": "Dataset prompt 1/1 remained invalid after 3 retries. A forbidden fact was stated in positive content: jewelry. Apply compiled restrictions silently.",
+      "completion_state": "provider_error",
+      "partial_text": "",
+      "latency_seconds": 12.250643900013529,
+      "finish_reason": "stop",
+      "known_failure": "No accepted prompt. Initial raw portrait is constraint-compatible but lacks trigger; later retries verbalize/introduce jewelry, exhausting repairs. Final raw diagnostics are not accepted output."
+    },
+    {
+      "sample_id": "live20261004:combat|builder|Generic|Detailed|general_director|Photorealistic|Balanced|Auto|1",
+      "case_id": "combat",
+      "workflow": "builder",
+      "run": 1,
+      "request": "Two athletes practice a controlled grappling throw on a mat; one grips the other's sleeve and rotates their hips underneath, partner balanced over the hip.",
+      "anchors": {
+        "scene": [
+          "two athletes",
+          "mat"
+        ],
+        "action": [
+          "controlled grappling throw"
+        ],
+        "pose": [
+          "sleeve grip",
+          "hips beneath partner",
+          "partner supported over hip"
+        ],
+        "constraint": []
+      },
+      "rules": "",
+      "target": "Generic",
+      "length": "Detailed",
+      "director": "general_director",
+      "style": "Photorealistic",
+      "creativity": "Balanced",
+      "planning": "Auto",
+      "effective_request": "eval_subject represents Two athletes practice a controlled grappling throw on a mat; one grips the other's sleeve and rotates their hips underneath, partner balanced over the hip.",
+      "calls": [
+        {
+          "stage": "builder:scene_planning",
+          "parameters": {
+            "temperature": 0.25,
+            "max_tokens": 1200,
+            "top_p": 0.85,
+            "stream": true
+          },
+          "raw": "{\n  \"intent\": \"Capture two athletes executing a controlled grappling throw on a mat.\",\n  \"primary_action\": \"One athlete grips the partner's sleeve and rotates their hips underneath, while the partner remains balanced over the hip.\",\n  \"subjects\": [\n    \"eval_subject: Two athletes in athletic grappling attire\",\n    \"eval_subject: Athlete A, executing the throw with hip rotation\",\n    \"eval_subject: Athlete B, receiving the throw, balanced over the hip\"\n  ],\n  \"interactions\": [\n    \"Athlete A grips Athlete B's sleeve with one hand, maintaining a firm hold.\",\n    \"Athlete A rotates their hips underneath Athlete B, creating a base for the throw.\",\n    \"Athlete B maintains balance over Athlete A's hip, adjusting their center of gravity.\"\n  ],\n  \"environment\": \"A padded grappling mat in a training facility.\",\n  \"staging\": \"Mid-action shot capturing the dynamic rotation and balance.\",\n  \"pose_detail\": \"Athlete A is low to the ground, hips twisted sharply to one side, one knee bent for support, the other leg extended for leverage. Their torso is angled, driving the hip rotation. Athlete B is positioned above Athlete A's hip, feet planted on the mat, knees bent, torso upright but leaning slightly to counterbalance the rotation. Athlete B's weight is centered over Athlete A's hip, maintaining stability without falling.\",\n  \"important_visibility\": [\n    \"Clear view of the sleeve grip between the athletes.\",\n    \"Visible hip rotation of Athlete A.\",\n    \"Athlete B's balanced posture over the hip.\",\n    \"Contact points between feet and mat for both athletes.\"\n  ],\n  \"uncertainties\": [\n    \"Specific clothing details beyond standard athletic wear are unspecified.\",\n    \"Exact lighting conditions are not defined, assuming natural training facility light.\"\n  ]\n}",
+          "finish_reason": "stop",
+          "completion_state": "completed",
+          "latency_seconds": 7.110207999998238,
+          "request_messages_sha256": "87bf8f123d1162d69d084e42595d9da04115c9dba0ee1898319ccc3698804646"
+        },
+        {
+          "stage": "final",
+          "parameters": {
+            "temperature": 0.3,
+            "stream": true
+          },
+          "raw": "Mid-action photograph of two athletes in athletic grappling attire executing a controlled throw on a padded training mat. Athlete A is low to the ground, hips twisted sharply to one side, one knee bent for support and the other leg extended for leverage, driving the rotation with an angled torso. With one hand, Athlete A maintains a firm grip on Athlete B's sleeve. Athlete B is positioned directly above Athlete A's hip, feet planted firmly on the mat, knees bent, and torso upright but leaning slightly to counterbalance the rotation, maintaining stability with weight centered over the hip. The scene captures the dynamic tension of the throw, highlighting the clear sleeve grip, the visible hip rotation, and the contact points between feet and mat. The environment is a professional training facility with a textured, high-density foam mat. Lighting is even and diffused, typical of an indoor gym, casting soft shadows that define the athletes' musculature and the mat's surface. The composition uses a medium shot at a slightly elevated angle, ensuring both subjects remain fully within the frame while emphasizing the spatial relationship and mechanical leverage of the throw. The image features realistic skin textures, natural fabric folds in the athletic wear, and coherent depth of field that keeps the interaction sharp against a softly blurred background.",
+          "finish_reason": "stop",
+          "completion_state": "completed",
+          "latency_seconds": 4.875277799990727,
+          "request_messages_sha256": "93beb020e31ac18a85dd08ae5dd3320fa3d8b3547dc6b5a578fa762c375941d5"
+        }
+      ],
+      "prompt": "Mid-action photograph of two athletes in athletic grappling attire executing a controlled throw on a padded training mat. Athlete A is low to the ground, hips twisted sharply to one side, one knee bent for support and the other leg extended for leverage, driving the rotation with an angled torso. With one hand, Athlete A maintains a firm grip on Athlete B's sleeve. Athlete B is positioned directly above Athlete A's hip, feet planted firmly on the mat, knees bent, and torso upright but leaning slightly to counterbalance the rotation, maintaining stability with weight centered over the hip. The scene captures the dynamic tension of the throw, highlighting the clear sleeve grip, the visible hip rotation, and the contact points between feet and mat. The environment is a professional training facility with a textured, high-density foam mat. Lighting is even and diffused, typical of an indoor gym, casting soft shadows that define the athletes' musculature and the mat's surface. The composition uses a medium shot at a slightly elevated angle, ensuring both subjects remain fully within the frame while emphasizing the spatial relationship and mechanical leverage of the throw. The image features realistic skin textures, natural fabric folds in the athletic wear, and coherent depth of field that keeps the interaction sharp against a softly blurred background.",
+      "completion_state": "completed",
+      "latency_seconds": 11.987768500024686,
+      "finish_reason": "stop",
+      "known_failure": "Partner's feet are firmly planted with torso upright and weight centered, instead of visibly supported over the thrower's hip. Requested throw mechanics are weakened."
+    },
+    {
+      "sample_id": "live20261004:combat|dataset|Generic|Detailed|general_director|Photorealistic|Balanced|Auto|1",
+      "case_id": "combat",
+      "workflow": "dataset",
+      "run": 1,
+      "request": "Two athletes practice a controlled grappling throw on a mat; one grips the other's sleeve and rotates their hips underneath, partner balanced over the hip.",
+      "anchors": {
+        "scene": [
+          "two athletes",
+          "mat"
+        ],
+        "action": [
+          "controlled grappling throw"
+        ],
+        "pose": [
+          "sleeve grip",
+          "hips beneath partner",
+          "partner supported over hip"
+        ],
+        "constraint": []
+      },
+      "rules": "",
+      "target": "Generic",
+      "length": "Detailed",
+      "director": "general_director",
+      "style": "Photorealistic",
+      "creativity": "Balanced",
+      "planning": "Auto",
+      "effective_request": "eval_subject represents Two athletes practice a controlled grappling throw on a mat; one grips the other's sleeve and rotates their hips underneath, partner balanced over the hip.",
+      "calls": [
+        {
+          "stage": "dataset:1",
+          "parameters": {
+            "temperature": 0.25,
+            "max_tokens": 1536,
+            "top_p": 0.85,
+            "stream": true
+          },
+          "raw": "A controlled grappling throw captured mid-motion on a thick, padded wrestling mat in a dimly lit training gym. One athlete, wearing a dark rash guard and compression shorts, executes a hip throw, rotating their hips underneath while gripping the partner's sleeve with a firm overhand grip. The second athlete, clad in a contrasting rash guard, is balanced horizontally over the first athlete's hip, their body suspended in a controlled arc with knees bent and core engaged. The mat's surface shows subtle creases and wear, grounding the dynamic pose. Soft, directional overhead lighting casts defined shadows that emphasize the tension in the athletes' muscles and the texture of the fabric. The background is softly blurred, revealing the indistinct shapes of gym equipment and a high ceiling, keeping the focus entirely on the precise mechanics of the throw and the interaction between the two subjects.",
+          "finish_reason": "stop",
+          "completion_state": "completed",
+          "latency_seconds": 3.3276669000042602,
+          "request_messages_sha256": "fe25f8269dcbb9b300f0e7c65da5edcfeb489d6dc8a1d4a316fb3ca3ca057c03"
+        },
+        {
+          "stage": "dataset:1:trigger_retry_1",
+          "parameters": {
+            "temperature": 0.25,
+            "max_tokens": 1536,
+            "top_p": 0.85,
+            "stream": true
+          },
+          "raw": "eval_subject, a focused BJJ practitioner, executes a controlled hip throw on a partner in a well-lit training gym. The thrower, clad in a dark blue gi, grips their partner's sleeve with a firm underhook, rotating their hips underneath to lift the opponent. The partner, wearing a white gi, is balanced precariously over the thrower's hip, their body angled mid-rotation with knees bent and core engaged. The thick, padded tatami mat beneath them shows subtle creases from the movement, while the background features blurred gym equipment and soft overhead lighting that casts natural shadows, emphasizing the tension in the fabric and the athletes' muscular definition.",
+          "finish_reason": "stop",
+          "completion_state": "completed",
+          "latency_seconds": 2.576268499979051,
+          "request_messages_sha256": "c2d30a832a22ce29af264e13a4a1940754c08daca591150b9bfa75994ed348f2"
+        }
+      ],
+      "prompt": "eval_subject, a focused BJJ practitioner, executes a controlled hip throw on a partner in a well-lit training gym. The thrower, clad in a dark blue gi, grips their partner's sleeve with a firm underhook, rotating their hips underneath to lift the opponent. The partner, wearing a white gi, is balanced precariously over the thrower's hip, their body angled mid-rotation with knees bent and core engaged. The thick, padded tatami mat beneath them shows subtle creases from the movement, while the background features blurred gym equipment and soft overhead lighting that casts natural shadows, emphasizing the tension in the fabric and the athletes' muscular definition.",
+      "completion_state": "completed",
+      "latency_seconds": 5.905728800018551,
+      "finish_reason": "stop",
+      "known_failure": "'Grips their partner's sleeve with a firm underhook' conflates distinct contacts. The requested sleeve contact is not mechanically clear."
+    },
+    {
+      "sample_id": "live20261004:climb|builder|Generic|Detailed|general_director|Photorealistic|Balanced|Auto|1",
+      "case_id": "climb",
+      "workflow": "builder",
+      "run": 1,
+      "request": "A climber reaches across an overhang, left toe and right heel hooked on separate holds, one arm locked off while the other reaches a chalked edge.",
+      "anchors": {
+        "scene": [
+          "overhang",
+          "separate holds",
+          "chalked edge"
+        ],
+        "action": [
+          "reaching across overhang"
+        ],
+        "pose": [
+          "left toe hook",
+          "right heel hook",
+          "one arm locked off"
+        ],
+        "constraint": []
+      },
+      "rules": "",
+      "target": "Generic",
+      "length": "Detailed",
+      "director": "general_director",
+      "style": "Photorealistic",
+      "creativity": "Balanced",
+      "planning": "Auto",
+      "effective_request": "eval_subject represents A climber reaches across an overhang, left toe and right heel hooked on separate holds, one arm locked off while the other reaches a chalked edge.",
+      "calls": [
+        {
+          "stage": "final",
+          "parameters": {
+            "temperature": 0.3,
+            "stream": true
+          },
+          "raw": "eval_subject, a rock climber, suspended on a steep granite overhang, executing a dynamic reach. The left toe is precisely hooked onto a small protrusion, while the right heel is locked into a separate, slightly higher hold, creating a tension-filled body angle. One arm is fully extended and locked off on a high hold, bearing the body's weight, while the other arm stretches upward, fingertips brushing a chalk-dusted edge to secure the next grip. The climber's muscles are taut, conveying intense physical effort and balance. The rock face is textured with natural grain, dust, and scattered patches of white chalk residue. Natural daylight filters through, casting soft shadows that define the depth of the overhang and the contours of the holds. The composition is a medium shot from a slightly low angle, emphasizing the height and the precarious nature of the hold. The background is a blurred, out-of-focus rock wall, ensuring the focus remains entirely on the climber's interaction with the stone. The lighting is realistic, highlighting the texture of the skin, the fabric of the climbing gear, and the gritty surface of the rock.",
+          "finish_reason": "stop",
+          "completion_state": "completed",
+          "latency_seconds": 4.030755299987504,
+          "request_messages_sha256": "7393d7f6255f4598e8a2ed06575f250ce18664ae5b0e3a87668e878357e0de6a"
+        }
+      ],
+      "prompt": "eval_subject, a rock climber, suspended on a steep granite overhang, executing a dynamic reach. The left toe is precisely hooked onto a small protrusion, while the right heel is locked into a separate, slightly higher hold, creating a tension-filled body angle. One arm is fully extended and locked off on a high hold, bearing the body's weight, while the other arm stretches upward, fingertips brushing a chalk-dusted edge to secure the next grip. The climber's muscles are taut, conveying intense physical effort and balance. The rock face is textured with natural grain, dust, and scattered patches of white chalk residue. Natural daylight filters through, casting soft shadows that define the depth of the overhang and the contours of the holds. The composition is a medium shot from a slightly low angle, emphasizing the height and the precarious nature of the hold. The background is a blurred, out-of-focus rock wall, ensuring the focus remains entirely on the climber's interaction with the stone. The lighting is realistic, highlighting the texture of the skin, the fabric of the climbing gear, and the gritty surface of the rock.",
+      "completion_state": "completed",
+      "latency_seconds": 4.032283799984725,
+      "finish_reason": "stop",
+      "known_failure": "'Fully extended and locked off' confuses straight-arm hanging with an elbow-flexed climbing lock-off."
+    },
+    {
+      "sample_id": "live20261004:climb|dataset|Generic|Detailed|general_director|Photorealistic|Balanced|Auto|1",
+      "case_id": "climb",
+      "workflow": "dataset",
+      "run": 1,
+      "request": "A climber reaches across an overhang, left toe and right heel hooked on separate holds, one arm locked off while the other reaches a chalked edge.",
+      "anchors": {
+        "scene": [
+          "overhang",
+          "separate holds",
+          "chalked edge"
+        ],
+        "action": [
+          "reaching across overhang"
+        ],
+        "pose": [
+          "left toe hook",
+          "right heel hook",
+          "one arm locked off"
+        ],
+        "constraint": []
+      },
+      "rules": "",
+      "target": "Generic",
+      "length": "Detailed",
+      "director": "general_director",
+      "style": "Photorealistic",
+      "creativity": "Balanced",
+      "planning": "Auto",
+      "effective_request": "eval_subject represents A climber reaches across an overhang, left toe and right heel hooked on separate holds, one arm locked off while the other reaches a chalked edge.",
+      "calls": [
+        {
+          "stage": "dataset:1",
+          "parameters": {
+            "temperature": 0.25,
+            "max_tokens": 1536,
+            "top_p": 0.85,
+            "stream": true
+          },
+          "raw": "A dynamic low-angle shot captures a climber suspended on a steep, overhanging rock face, their body stretched horizontally across the frame. The climber, identified as eval_subject, is in a tense, extended pose: their left toe is hooked onto a small, protruding hold while their right heel is locked into a separate, lower foothold, creating a wide base of support. One arm is fully extended and locked off, fingers gripping a high hold with visible strain in the forearm muscles, while the other arm reaches across the gap toward a distant, chalk-dusted edge. The climber wears a fitted, breathable athletic shirt and compression shorts, with a chalk bag strapped to the hip, the fabric stretching taut across the back and shoulders to emphasize the physical effort. The rock surface is textured with natural grain, featuring scattered patches of white chalk residue on the holds and edges, contrasting with the warm, earthy tones of the stone. Bright, directional sunlight from the upper left casts sharp, defined shadows beneath the climber, highlighting the depth of the overhang and the separation between the body and the wall. The background reveals a blurred expanse of rugged terrain and distant peaks, establishing a high-altitude environment. The composition focuses on the tension of the limbs and the precarious balance, with the camera positioned slightly below to accentuate the verticality and the dramatic reach of the movement.",
+          "finish_reason": "stop",
+          "completion_state": "completed",
+          "latency_seconds": 4.890397200011648,
+          "request_messages_sha256": "79b70201f53c86bcf340230e536b153ef07ce34e1b121f865e7013a8c22c2116"
+        }
+      ],
+      "prompt": "A dynamic low-angle shot captures a climber suspended on a steep, overhanging rock face, their body stretched horizontally across the frame. The climber, identified as eval_subject, is in a tense, extended pose: their left toe is hooked onto a small, protruding hold while their right heel is locked into a separate, lower foothold, creating a wide base of support. One arm is fully extended and locked off, fingers gripping a high hold with visible strain in the forearm muscles, while the other arm reaches across the gap toward a distant, chalk-dusted edge. The climber wears a fitted, breathable athletic shirt and compression shorts, with a chalk bag strapped to the hip, the fabric stretching taut across the back and shoulders to emphasize the physical effort. The rock surface is textured with natural grain, featuring scattered patches of white chalk residue on the holds and edges, contrasting with the warm, earthy tones of the stone. Bright, directional sunlight from the upper left casts sharp, defined shadows beneath the climber, highlighting the depth of the overhang and the separation between the body and the wall. The background reveals a blurred expanse of rugged terrain and distant peaks, establishing a high-altitude environment. The composition focuses on the tension of the limbs and the precarious balance, with the camera positioned slightly below to accentuate the verticality and the dramatic reach of the movement.",
+      "completion_state": "completed",
+      "latency_seconds": 4.892466499994043,
+      "finish_reason": "stop",
+      "known_failure": "'Fully extended and locked off' repeats the same specialized-action contradiction."
+    },
+    {
+      "sample_id": "live20261004:literal|minimax|Generic|Detailed|general_director|Photorealistic|Balanced|Auto|1",
+      "case_id": "literal",
+      "workflow": "minimax",
+      "run": 1,
+      "request": "A guard holds a sign reading \"NO ENTRY\". No hats. Outfit can change.",
+      "anchors": {
+        "scene": [
+          "guard",
+          "sign"
+        ],
+        "action": [
+          "holding sign"
+        ],
+        "pose": [],
+        "constraint": [
+          "exact NO ENTRY lettering"
+        ]
+      },
+      "rules": "no hats; outfit can change; sign must say \"NO ENTRY\"\nno hats",
+      "target": "MiniMax H3",
+      "length": "Detailed",
+      "director": "general_director",
+      "style": "Photorealistic",
+      "creativity": "Balanced",
+      "planning": "Auto",
+      "effective_request": "A guard holds a sign reading \"NO ENTRY\". No hats. Outfit can change.",
+      "calls": [
+        {
+          "stage": "minimax:prompt",
+          "parameters": {
+            "temperature": 0.3,
+            "stream": true
+          },
+          "raw": "integrated_multimodal_description: [Shot 1] The scene opens on a low-angle medium shot of a stern, middle-aged security guard standing rigidly in the center of a dimly lit, concrete corridor. He wears a crisp, dark navy blue uniform with brass buttons and a peaked cap, his posture rigid and authoritative. In his right hand, he holds a rectangular white sign with bold, black capital letters reading \"NO ENTRY\". The lighting is cool and industrial, casting sharp shadows against the textured concrete walls behind him. The camera remains static, focusing on the guard's unwavering gaze as he stares directly into the lens, his expression serious and unyielding. The air is still, and the only movement is the subtle, steady breathing of the guard, emphasizing his immovable stance.\n\noverall_soundscape: A low, ambient hum of industrial ventilation fills the space, accompanied by the faint, rhythmic sound of the guard's controlled breathing.\n\nnon_diegetic_music: N/A",
+          "finish_reason": "stop",
+          "completion_state": "completed",
+          "latency_seconds": 3.7249549999833107,
+          "request_messages_sha256": "cb7fbeb50ee9d46efe89701561ef1dec87a58db00bb201fcf52f7d0ae280bc55"
+        }
+      ],
+      "prompt": "integrated_multimodal_description: [Shot 1] The scene opens on a low-angle medium shot of a stern, middle-aged security guard standing rigidly in the center of a dimly lit, concrete corridor. He wears a crisp, dark navy blue uniform with brass buttons and a peaked cap, his posture rigid and authoritative. In his right hand, he holds a rectangular white sign with bold, black capital letters reading \"NO ENTRY\". The lighting is cool and industrial, casting sharp shadows against the textured concrete walls behind him. The camera remains static, focusing on the guard's unwavering gaze as he stares directly into the lens, his expression serious and unyielding. The air is still, and the only movement is the subtle, steady breathing of the guard, emphasizing his immovable stance.\n\noverall_soundscape: A low, ambient hum of industrial ventilation fills the space, accompanied by the faint, rhythmic sound of the guard's controlled breathing.\n\nnon_diegetic_music: N/A",
+      "completion_state": "completed",
+      "latency_seconds": 3.7262434999865945,
+      "finish_reason": "stop",
+      "known_failure": "Explicit peaked cap violates no hats. The lexical constraint validator misses this synonym. Exact NO ENTRY lettering is preserved; anchor-only fidelity must not hide the violation."
+    },
+    {
+      "sample_id": "live20261004:dialogue|minimax|Generic|Detailed|general_director|Photorealistic|Balanced|Auto|1",
+      "case_id": "dialogue",
+      "workflow": "minimax",
+      "run": 1,
+      "request": "<shot1> 0-4s Two people counterbalance holding one hand. Person A says \"No, don't stop—go!\" <shot2> 4-10s They release hands and recover balance.",
+      "anchors": {
+        "scene": [
+          "two people"
+        ],
+        "action": [
+          "counterbalance then release and recovery"
+        ],
+        "pose": [
+          "one shared hand contact"
+        ],
+        "constraint": [
+          "exact dialogue",
+          "shot boundaries 0-4s and 4-10s"
+        ]
+      },
+      "rules": "",
+      "target": "MiniMax H3",
+      "length": "Detailed",
+      "director": "general_director",
+      "style": "Photorealistic",
+      "creativity": "Balanced",
+      "planning": "Auto",
+      "effective_request": "<shot1> 0-4s Two people counterbalance holding one hand. Person A says \"No, don't stop—go!\" <shot2> 4-10s They release hands and recover balance.",
+      "calls": [
+        {
+          "stage": "minimax:video_planning",
+          "parameters": {
+            "temperature": 0.25,
+            "max_tokens": 1600,
+            "top_p": 0.85,
+            "stream": true
+          },
+          "raw": "{\n  \"core_intent\": \"Two individuals counterbalance on a single hand, with Person A encouraging continued motion before they release and stabilize.\",\n  \"subjects\": [\n    \"Person A\",\n    \"Person B\"\n  ],\n  \"action_progression\": [\n    \"Person A and Person B stand facing each other, each supporting their full body weight on one hand while holding the other's free hand to maintain counterbalance.\",\n    \"Person A speaks while maintaining the one-hand support, urging Person B to continue moving.\",\n    \"They release their held hands simultaneously.\",\n    \"Person A and Person B adjust their stances to recover independent balance on their single supporting hand.\"\n  ],\n  \"interactions\": [\n    \"Hand-to-hand contact between Person A and Person B for mutual stabilization.\",\n    \"Verbal encouragement from Person A to Person B.\"\n  ],\n  \"continuity\": [\n    \"Identity and appearance of Person A and Person B remain stable throughout the sequence.\",\n    \"The single-hand support mechanic is maintained until the release moment.\"\n  ],\n  \"camera_intent\": [\n    \"Medium shot capturing both subjects' upper bodies and supporting hands to clearly show the counterbalance mechanic and hand release.\",\n    \"Static or slight follow to keep both subjects centered as they adjust balance.\"\n  ],\n  \"audio_intent\": [\n    \"Person A's dialogue: \\\"No, don't stop—go!\\\"\"\n  ],\n  \"reference_constraints\": [],\n  \"protected_dialogue\": [\n    \"No, don't stop—go!\"\n  ],\n  \"shot_details\": [\n    {\n      \"number\": 1,\n      \"start_ms\": 0,\n      \"end_ms\": 4000,\n      \"action\": \"Person A and Person B counterbalance on one hand each, holding one hand together. Person A says \\\"No, don't stop—go!\\\"\"\n    },\n    {\n      \"number\": 2,\n      \"start_ms\": 4000,\n      \"end_ms\": 10000,\n      \"action\": \"They release their held hands and adjust their posture to recover independent balance on their single supporting hand.\"\n    }\n  ]\n}",
+          "finish_reason": "stop",
+          "completion_state": "completed",
+          "latency_seconds": 8.216017400001874,
+          "request_messages_sha256": "799f9316b260f4f9a436df70a2a68423f274fbe0f4b5d04ff95b7a2b72b35c52"
+        },
+        {
+          "stage": "minimax:prompt",
+          "parameters": {
+            "temperature": 0.3,
+            "stream": true
+          },
+          "raw": "integrated_multimodal_description: [Shot 1] A medium shot captures Person A and Person B standing face-to-face in a sunlit, open outdoor space with a soft-focus background of green foliage. Both individuals are balancing on one foot, supporting their full body weight on a single hand planted firmly on the ground, while their free hands are clasped together at chest height to maintain mutual counterbalance. Person A, positioned on the left, leans slightly forward with a focused expression, while Person B, on the right, mirrors the posture. The lighting is natural and bright, casting soft shadows on the ground. Person A (S1) says: <d>[English] No, don't stop—go!</d> with a tone of urgent encouragement. The camera remains static, keeping both subjects centered in the frame.\n\n[Shot 2] At 00:04.000, the shot continues seamlessly as Person A and Person B simultaneously release their clasped hands. Their arms drop slightly as they adjust their stances, widening their supporting bases and shifting their weight to stabilize on their single supporting hand. They maintain eye contact for a brief moment before settling into a steady, independent balance. The camera holds its medium framing, capturing the subtle shift in their posture and the settling of their movements. The ambient light remains consistent, highlighting the tension in their muscles as they achieve equilibrium.\n\noverall_soundscape: The scene features a quiet outdoor ambience with the faint sound of wind rustling through leaves. The primary auditory elements are the subtle thud of feet adjusting on the ground and the synchronized release of hands, accompanied by Person A's clear, urgent vocalization.\n\nnon_diegetic_music: N/A",
+          "finish_reason": "stop",
+          "completion_state": "completed",
+          "latency_seconds": 6.431679200002691,
+          "request_messages_sha256": "13b47f6be321b3fe1a235be73bf739ae55906f2dd5d84dd2ac5344a03d3397df"
+        }
+      ],
+      "prompt": "integrated_multimodal_description:\n[Shot 1] The target video follows the requested visual style and reference roles. A medium shot captures Person A and Person B standing face-to-face in a sunlit, open outdoor space with a soft-focus background of green foliage. Both individuals are balancing on one foot, supporting their full body weight on a single hand planted firmly on the ground, while their free hands are clasped together at chest height to maintain mutual counterbalance. Person A, positioned on the left, leans slightly forward with a focused expression, while Person B, on the right, mirrors the posture. The lighting is natural and bright, casting soft shadows on the ground. Person A (S1) says: <d>[English] No, don't stop—go!</d> with a tone of urgent encouragement. The camera remains static, keeping both subjects centered in the frame.\n[Shot 2] At 00:04.000, the shot continues seamlessly as Person A and Person B simultaneously release their clasped hands. Their arms drop slightly as they adjust their stances, widening their supporting bases and shifting their weight to stabilize on their single supporting hand. They maintain eye contact for a brief moment before settling into a steady, independent balance. The camera holds its medium framing, capturing the subtle shift in their posture and the settling of their movements. The ambient light remains consistent, highlighting the tension in their muscles as they achieve equilibrium.\n\noverall_soundscape:\nThe scene features a quiet outdoor ambience with the faint sound of wind rustling through leaves. The primary auditory elements are the subtle thud of feet adjusting on the ground and the synchronized release of hands, accompanied by Person A's clear, urgent vocalization.\n\nnon_diegetic_music:\nN/A",
+      "completion_state": "completed",
+      "latency_seconds": 14.650166999985231,
+      "finish_reason": "stop",
+      "known_failure": "Invents weight-bearing floor-hand balances while feet also support; requested shared-hand counterbalance is transformed. Dialogue text preserved. Shot 2 begins at 4s but end at 10s is omitted."
+    }
+  ]
+}

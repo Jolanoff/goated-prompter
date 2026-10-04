@@ -124,11 +124,11 @@ class ScenePlannerTests(unittest.TestCase):
         self.assertNotIn("juggling", planned[0]["scene"])
         self.assertNotIn("clown costume", session.generate.call_args.args[0].system_message.casefold())
 
-    def test_legacy_plans_remain_loadable_but_are_not_reused_without_ideas(self):
+    def test_legacy_prose_remains_authoritative_without_separate_ideas(self):
         data = draft(scene_plan=[{"index": i, "input": "", "scene": f"Reading beside window {i}."} for i in (1, 2)])
         data["scene_plan_signature"] = scene_plan_signature(data, dataset_assignments(data))
         self.assertEqual(validate_dataset_draft(data)["scene_plan"], data["scene_plan"])
-        self.assertIsNone(reusable_scene_plan(data, dataset_assignments(data)))
+        self.assertEqual(reusable_scene_plan(data, dataset_assignments(data)), data["scene_plan"])
         data["results"] = [{"index": 1, "input": "", "scene": "An old scene.", "prompt": "An old prompt."}]
         self.assertNotIn("idea", validate_dataset_draft(data)["results"][0])
 

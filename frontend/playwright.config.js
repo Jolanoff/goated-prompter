@@ -1,5 +1,7 @@
 import { defineConfig } from "@playwright/test";
 
+const apiPort = process.env.GOATED_UI_TEST_PORT || "8190";
+
 export default defineConfig({
   testDir: "./e2e",
   timeout: 30000,
@@ -13,7 +15,7 @@ export default defineConfig({
   webServer: [
     {
       command: "python ../tests/local_ui_server.py",
-      url: "http://127.0.0.1:8190/api/bootstrap",
+      url: `http://127.0.0.1:${apiPort}/api/bootstrap`,
       reuseExistingServer: false,
     },
     {

@@ -33,6 +33,15 @@ jobs:
       - run: npm run build
         working-directory: frontend
       - run: python -m unittest discover -s tests -v
+      - name: Replay frozen quality corpus (no inference)
+        run: |
+          mkdir -p quality-artifacts
+          python -m tests.eval.runner --replay tests/eval/fixtures/model_outputs --output quality-artifacts/run.json
+          python -m tests.eval.report quality-artifacts/run.json --output quality-artifacts/report.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frozen-quality-python-${{ matrix.python }}
+          path: quality-artifacts/
       - run: node --test tests/test_comfy_frontend.cjs tests/test_ui_shared.cjs
       - run: npx playwright install --with-deps chromium
         working-directory: frontend

@@ -136,7 +136,11 @@ def main():
             request, data, plan = inputs(row)
             instruction = dataset_instruction(request, data, 1, plan_item=plan)
             snapshot[row["id"]] = {field: getattr(instruction, field) for field in FIELDS}
-        args.baseline_instructions.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
+        try:
+            with args.baseline_instructions.open("x", encoding="utf-8") as output:
+                output.write(json.dumps(snapshot, ensure_ascii=False, indent=2))
+        except FileExistsError:
+            parser.error("Refusing to overwrite frozen baseline instructions. Choose a new snapshot path.")
         print(f"Froze {len(snapshot)} instructions without loading a model.")
         return
     if args.config is None:
@@ -200,6 +204,9 @@ def main():
                     if args.artifacts:
                         args.artifacts.write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
                     print(json.dumps({key: record.get(key) for key in ("id", "condition", "final_text_tokens", "repair_calls", "error")}), flush=True)
+                    if "Could not reach the OpenAI-compatible backend" in str(record.get("error", "")):
+                        print("Stopped comparison: the engine endpoint is no longer reachable; retained prior results.", flush=True)
+                        return
     finally:
         get_process_manager().request_unload()
 

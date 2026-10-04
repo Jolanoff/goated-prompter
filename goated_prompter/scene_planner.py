@@ -8,6 +8,8 @@ from .dataset_visible_content import visible_content_error
 from .dataset_staging import validate_geometry, geometry_errors, migrate_saved_geometry, resolve_framing_conflicts, STAGING_PROFILES
 from .dataset_quality import analyze_idea_diversity, idea_action_error
 from .dataset_constraints import compile_constraints, constraint_issues
+from .scene_eligibility import scene_eligibility, scene_geometry_errors
+from .planning.result import PlanningResult
 
 from .backends.base import BackendGenerationError
 from .prompting.scene_planner import (
@@ -76,9 +78,9 @@ def validate_saved_scene_plan(rows, *, dataset_type=None):
 def reusable_scene_plan(data, assignments, *, require_scenes=True, allow_pending=False):
     rows = validate_saved_scene_plan(data.get("scene_plan", []), dataset_type=data["trigger_type"])
     if (data.get("scene_plan_signature") != scene_plan_signature(data, assignments)
-            or len(rows) != data["amount"] or (not allow_pending and any(not row.get("idea", "").strip()
+            or len(rows) != data["amount"] or (not allow_pending and any("idea" in row and not row["idea"].strip()
                 and row.get("scene_status") != "failed" for row in rows))
-            or (require_scenes and any(not row["scene"].strip() or row.get("scene_status") in {"not_generated", "geometry_warning", "failed"} for row in rows))
+            or (require_scenes and any(not scene_eligibility(row, data).usable for row in rows))
             or any(visible_content_error(row.get("idea", "")) or (row.get("scene_status") not in
                 {"not_generated", "geometry_warning", "failed"} and visible_content_error(row["scene"])) for row in rows)
             or any(row["input"] != assignment["input"] for row, assignment in zip(rows, assignments))):
@@ -128,24 +130,12 @@ def failed_scene(row, reason, *, stage="scene", dataset_type=None):
     return result
 
 
-def scene_geometry_errors(row, data):
-    """One geometry policy for batches and local actions; manual prose is valid."""
-    if row.get("scene_status") == "guided_fallback":
-        return []
-    return geometry_errors(row, dataset_type=data["trigger_type"], require_fields=bool(row.get("geometry")))
-
-
 def scene_unusable_reason(row, data):
-    if not row.get("idea", "").strip():
-        return "Generate an idea for this item first."
-    if not row.get("scene", "").strip() or row.get("scene_status") in {"not_generated", "geometry_warning", "failed"}:
-        return "Compose or repair this scene before regenerating its prompt."
-    errors = scene_geometry_errors(row, data)
-    return errors[0] if errors else None
+    return scene_eligibility(row, data).reason
 
 
 def scene_is_usable(row, data):
-    return scene_unusable_reason(row, data) is None
+    return scene_eligibility(row, data).usable
 
 
 def validate_scene_plan(raw, amount, *, guided_inputs=None, indexes=None, require_geometry=False, validate_geometry_fields=True,
@@ -227,6 +217,12 @@ def validate_idea_plan(raw, indexes):
 
 
 class ScenePlanner:
+    def plan_result(self, **kwargs):
+        rows = self.plan_batch(**kwargs)
+        warnings = tuple(row.get("failure_reason", "Scene planning needs repair.") for row in rows if row.get("scene_status") == "failed")
+        return PlanningResult(not warnings, rows, warnings=warnings, fallback_allowed=False,
+                              status="partial" if warnings else "planned")
+
     """Chunked Fast planning or Quality composition, with bounded local repairs."""
 
     def __init__(self, checkpoint, idea_history=None):
@@ -354,7 +350,9 @@ class ScenePlanner:
                 correction = getattr(exc, "correction", str(exc))
                 logger.warning("%s validation failure: %s", label, exc)
                 progress(f"{label} failed validation: {correction}")
-        raise BackendGenerationError(f"Dataset {label} failed after retries. {correction}") from last_error
+        raise BackendGenerationError(f"Dataset {label} failed after retries. {correction}",
+            completion_state=getattr(last_error, "completion_state", "provider_error"),
+            partial_text=getattr(last_error, "partial_text", ""), finish_reason=getattr(last_error, "finish_reason", None)) from last_error
 
     def plan_ideas(self, *, session, data, assignments, family="qwen", progress, indexes=None, existing=()):
         if self.idea_history is not None:

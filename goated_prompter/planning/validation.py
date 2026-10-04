@@ -2,6 +2,7 @@
 
 import json
 import re
+from .constraint_validation import constraint_issues
 
 
 SCENE_STRINGS = {"intent", "primary_action", "environment", "staging", "pose_detail"}
@@ -57,6 +58,9 @@ def _silent_exclusions(value, compiled):
             phrase = re.escape(fact)
             if re.search(r"\b(?:no|without)\s+(?:(?:a|an|the|any)\s+)?" + phrase + r"\b|\b" + phrase + r"[- ]free\b", text, re.I):
                 raise ValueError("Planning verbalized a safely compiled exclusion.")
+        problems = [issue for issue in constraint_issues(text, compiled.workflow_data()) if issue["severity"] == "error"]
+        if problems:
+            raise ValueError(problems[0]["message"])
 
 
 def _symbolic_provenance(value, compiled):

@@ -23,13 +23,15 @@ class ReliabilityTests(unittest.TestCase):
 
     def test_abrupt_eof_cannot_emit_a_success_event(self):
         events = []
-        with self.assertRaisesRegex(BackendGenerationError, "completion marker"):
+        with self.assertRaisesRegex(BackendGenerationError, "completion reason"):
             self.backend(_activity_callback=events.append)._stream_response(self.stream(), False)
         self.assertFalse(any(event["type"] == "response_complete" for event in events))
 
     def test_provider_completion_conventions_and_failures(self):
-        for finish, done in (("stop", False), (None, True), ("stop", True)):
+        for finish, done in (("stop", False), ("stop", True)):
             self.assertEqual(self.backend()._stream_response(self.stream("complete", finish, done), False), "complete")
+        with self.assertRaises(BackendGenerationError):
+            self.backend()._stream_response(self.stream("partial", None, True), False)
         for finish in ("length", "content_filter", "tool_calls"):
             with self.subTest(finish=finish), self.assertRaises(BackendGenerationError):
                 self.backend()._stream_response(self.stream(finish=finish, done=True), False)

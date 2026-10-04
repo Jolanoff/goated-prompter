@@ -16,6 +16,8 @@ export function useWorkflowSettings(operation) {
   const loading = useRef(0);
   const instructionWrite = useRef(false);
   const saver = useRef(null);
+  const editSequence = useRef(0);
+  const refreshSequence = useRef(0);
   const path = `/workspace/settings/${operation}`;
   if (!saver.current) saver.current = createBuilderSaver(async (next, keepalive) => {
     try {
@@ -64,11 +66,26 @@ export function useWorkflowSettings(operation) {
 
   const update = useCallback((patch) => {
     if (!currentDraft.current) return;
+    editSequence.current++;
     const next = { ...currentDraft.current, ...patch };
     currentDraft.current = next;
     setDraft(next);
     saver.current.stage(next);
   }, []);
+
+  const refreshGenerated = useCallback(async () => {
+    const sequence = editSequence.current;
+    const attempt = ++refreshSequence.current;
+    await saver.current.flush();
+    const saved = await api(path);
+    // A completed old job must never replace a newer unsaved edit.
+    if (!mounted.current || sequence !== editSequence.current || attempt !== refreshSequence.current) return;
+    latest.current = saved;
+    currentDraft.current = saved.draft;
+    saver.current.hydrate(saved.draft);
+    setRecord(saved);
+    setDraft(saved.draft);
+  }, [path]);
 
   async function saveInstructions(instructions, reset = false) {
     if (instructionWrite.current || !latest.current) return false;
@@ -96,6 +113,6 @@ export function useWorkflowSettings(operation) {
     await load();
   }
 
-  return { record, draft, update, status, error, working, conflict, reload, saveInstructions,
-    flush: () => saver.current.flush() };
+  return { record, draft, update, status, error, working, conflict, reload, saveInstructions, refreshGenerated,
+    revision: () => latest.current?.revision, flush: () => saver.current.flush() };
 }

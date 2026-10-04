@@ -4,7 +4,7 @@ from dataclasses import dataclass, replace
 import json
 import re
 
-from .rule_compiler import compile_rules as compile_constraints
+from .rule_compiler import QUOTED, compile_rules as compile_constraints
 
 
 @dataclass(frozen=True)
@@ -16,9 +16,12 @@ class CompiledRequest:
     variable: tuple = ()
     protected_literals: tuple = ()
     workflow_rules: str = None
+    provenance: tuple = ()
+    unresolved: tuple = ()
+    soft_preferences: tuple = ()
 
     def workflow_data(self):
-        return {key: list(getattr(self, key)) for key in ("required", "forbidden", "variable", "protected_literals")}
+        return {key: list(getattr(self, key)) for key in ("required", "forbidden", "variable", "protected_literals", "soft_preferences", "unresolved")}
 
     def writer_request(self, *, include_constraints=True):
         text = self.positive_request
@@ -30,15 +33,18 @@ class CompiledRequest:
         return text + "\n\nCOMPILED USER REQUIREMENTS (internal, not image text)\n" + json.dumps(self.workflow_data(), ensure_ascii=False)
 
 
-def compile_request(text, *, has_context=False):
+def compile_request(text, *, has_context=False, source="user_request"):
     # Match only rule clauses delimited outside opaque literals and dialogue tags.
     literals = []
     def mask(match):
         literals.append(match[0])
         return f"PROTECTEDLITERAL{len(literals) - 1}TOKEN"
-    masked = re.sub(r'<d>.*?</d>|"[^"\n]*"|“[^”\n]*”|(?<!\w)\'[^\'\n]*\'(?!\w)', mask, text, flags=re.S)
+    masked = re.sub(r'<d>.*?</d>', mask, text, flags=re.S)
+    masked = QUOTED.sub(mask, masked)
     parts = re.split(r"((?<!\d)\.(?!\d)|[;,\n]+|\s+but\s+)", masked, flags=re.I)
     accepted, positive, retained = [], [], []
+    all_rules = compile_constraints(text, source=source)
+    fixed = tuple(fact for fact in all_rules["required"] if re.match(r"(?:same|keep|require|must)\b", fact, re.I))
     for index in range(0, len(parts), 2):
         clause = parts[index]
         value = clause.strip()
@@ -67,28 +73,35 @@ def compile_request(text, *, has_context=False):
     # An exclusion can itself be the subject ('no smoking sign'). Without another
     # positive clause or existing evidence, retain the original request verbatim.
     if not accepted or not positive and not has_context:
-        return CompiledRequest(text, text, protected_literals=tuple(literals))
+        return CompiledRequest(text, text, required=fixed, protected_literals=tuple(literals),
+            provenance=tuple(all_rules["provenance"]),
+            unresolved=tuple(all_rules["unresolved"]), soft_preferences=tuple(all_rules["soft_preferences"]))
     def restore(value):
         for index, literal in enumerate(literals):
             value = value.replace(f"PROTECTEDLITERAL{index}TOKEN", literal)
         return value
     positive_request = restore(re.sub(r"(?:[;,\s]+|\s+but\s*)+$", "", "".join(retained), flags=re.I).strip())
-    required = []
+    required = list(fixed)
     for clause in positive:
         match = re.search(r"\bwith\s+(.+)$", clause, re.I)
         if match and "PROTECTEDLITERAL" not in match[1]:
             required.append(match[1].strip())
     return CompiledRequest(text, positive_request, tuple(required),
         tuple(dict.fromkeys(fact for rules in accepted for fact in rules["forbidden"])),
-        tuple(dict.fromkeys(fact for rules in accepted for fact in rules["variable"])), tuple(literals))
+        tuple(dict.fromkeys(fact for rules in accepted for fact in rules["variable"])), tuple(literals),
+        provenance=tuple(all_rules["provenance"]),
+        unresolved=tuple(restore(clause.strip()) for clause in positive if compile_constraints(clause)["unresolved"]),
+        soft_preferences=tuple(all_rules["soft_preferences"]))
 
 
 def compile_prompt_request(request, *, has_context=False):
-    compiled = compile_request(request.idea, has_context=has_context)
-    rules = compile_request(request.custom_instructions, has_context=has_context or bool(request.idea.strip()))
+    compiled = compile_request(request.idea, has_context=has_context, source="builder_request")
+    rules = compile_request(request.custom_instructions, has_context=has_context or bool(request.idea.strip()), source="builder_workflow_rules")
     merged = {key: tuple(dict.fromkeys((*getattr(compiled, key), *getattr(rules, key))))
-              for key in ("required", "forbidden", "variable", "protected_literals")}
-    return replace(compiled, **merged, workflow_rules=rules.positive_request)
+              for key in ("required", "forbidden", "variable", "protected_literals", "soft_preferences")}
+    return replace(compiled, **merged, workflow_rules=rules.positive_request,
+                   provenance=compiled.provenance + rules.provenance,
+                   unresolved=tuple(dict.fromkeys(compiled.unresolved + rules.unresolved)))
 
 
 COMPILED_CONTRACT = """Compiled required facts remain fixed; forbidden facts are internal

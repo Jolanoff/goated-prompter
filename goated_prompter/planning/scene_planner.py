@@ -8,6 +8,8 @@ from .complexity import needs_planning
 from .constraints import compile_prompt_request, COMPILED_CONTRACT
 from .scene_plan import PromptScenePlan
 from .validation import validate_plan
+from .result import PlanningResult
+from .semantics import ACTION_MECHANICS
 
 logger = logging.getLogger(__name__)
 
@@ -19,15 +21,8 @@ Priority: explicit user requirement > preserved reference facts > planned
 interpretation > optional Director embellishment. Reference evidence is observed
 data: never rewrite identity or preservation facts. Explicit requested changes win.
 
-DYNAMIC UNDERSTANDING / ACTION-FIRST PLANNING
-Understand the requested domain/activity and what the subjects actually do.
-Infer mechanics dynamically, not from a fixed menu of activities. Do not brainstorm
-another idea. Action > pose mechanics > interaction > visibility > camera.
-Camera must support the action, never simplify the action to fit a convenient view.
-For complex poses describe only defining mechanics: support/contact, load-bearing
-limb, relevant arm/leg placement, torso bend/twist, balance, equipment relation,
-body-to-object/subject contact, head direction and important visible limbs.
-Resolve each participant's role/contact separately; do not impose one global pose.
+""" + ACTION_MECHANICS + """
+Do not brainstorm another idea.
 Use concise pose_detail and interaction/visibility descriptions, not anatomy enums.
 No final prompt prose, target syntax, Director language, quality tags, lens or
 lighting decoration unless explicitly requested. No explanations or reasoning.
@@ -74,7 +69,7 @@ def scene_planning_instruction(request, compiled, *, resolved_scene=None, family
 def supporting_pass(session, mode, text, build, validate, *, checkpoint=None, progress=None, video=False):
     mode = planning_mode(mode)
     if mode == "Direct" or mode == "Auto" and not needs_planning(text, video=video):
-        return None, "direct"
+        return PlanningResult(True, status="direct", fallback_allowed=mode != "Always")
     if checkpoint:
         checkpoint()
     if progress:
@@ -96,10 +91,13 @@ def supporting_pass(session, mode, text, build, validate, *, checkpoint=None, pr
                        "video" if video else "scene", type(exc).__name__)
         if progress:
             progress("Planning unavailable; using the original direct workflow.")
-        return None, "fallback"
+        session.emit_activity("planning", message="Optional planning failed; direct fallback retained the original request.",
+                              diagnostic=type(exc).__name__, fallback_allowed=True)
+        return PlanningResult(False, warnings=("Optional planning failed; original direct workflow used.",),
+                              status="fallback", error=type(exc).__name__)
     if progress:
         progress("Writing the final prompt with supporting scene planning…")
-    return result, "planned"
+    return PlanningResult(True, result, fallback_allowed=mode != "Always", status="planned")
 
 
 def plan_prompt_scene(session, request, *, resolved_scene=None, family="qwen", checkpoint=None, progress=None):

@@ -57,6 +57,7 @@ class DatasetUIMock(MockBackend):
             result = f"{trigger}: {text}"
         else:
             return super().generate(instruction)
+        time.sleep(.02)  # Leaves a real disconnect window without using inference.
         self.emit_activity("request", model="dataset-ui-mock", messages=instruction.to_messages(), parameters={})
         self.emit_activity("response_delta", text=result)
         self.emit_activity("response_complete", finish_reason="stop")

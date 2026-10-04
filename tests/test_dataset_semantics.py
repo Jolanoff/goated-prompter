@@ -28,7 +28,7 @@ CORPUS = json.loads(Path(__file__).with_name("evaluation").joinpath("dataset_sem
 class SemanticContractTests(unittest.TestCase):
     def test_fragment_rules_compile_without_echoing_negative_prefixes(self):
         compiled = compile_constraints(CORPUS["constraints"][0]["rules"])
-        self.assertEqual(compiled, {"required": ["same dark hair"], "forbidden": ["hat", "jewelry", "outdoor scenes"],
+        self.assertEqual({key: compiled[key] for key in ("required", "forbidden", "variable", "unresolved")}, {"required": ["same dark hair"], "forbidden": ["hat", "jewelry", "outdoor scenes"],
                                    "variable": ["clothing"], "unresolved": []})
         data = draft(constraints=CORPUS["constraints"][0]["rules"])
         instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1)

@@ -8,6 +8,7 @@ from .dataset import DATASET_TYPES
 from ..dataset_visible_content import VISIBLE_CONTENT_CONTRACT
 from ..dataset_staging import geometry_prompt_schema, geometry_enum_values, STAGING_PROFILES
 from ..dataset_constraints import compile_constraints, CONSTRAINT_CONTRACT
+from ..planning.semantics import DOMAIN_UNDERSTANDING, ACTION_MECHANICS
 
 
 MAX_SCENE_CHARACTERS = 1000
@@ -15,17 +16,7 @@ MAX_SCENE_WORDS = 120
 MAX_IDEA_CHARACTERS = 240
 MAX_IDEA_WORDS = 30
 
-DOMAIN_UNDERSTANDING = """DOMAIN / CONCEPT UNDERSTANDING
-Before generating ideas, understand the domain, activity, role or world implied by
-the user's specific concept. Infer the relevant behaviors, interactions, physical
-activities, situations, objects, roles and states dynamically from that concept.
-For a profession, sport, performance, environment, event, role, subculture or
-specialized activity, show understanding of what subjects in that domain actually
-do. Prefer concept-specific activity over generic posing when meaningful activity
-is naturally available. Never rely on a fixed menu of examples or scene templates.
-Concept fidelity, explicit constraints and authoritative guided inputs win."""
-
-ACTION_FIRST_STAGING = """ACTION-FIRST STAGING
+ACTION_FIRST_STAGING = ACTION_MECHANICS + "\n" + """ACTION-FIRST STAGING
 Preserve a specialized physical action, performance, profession-specific activity,
 unusual body configuration or equipment-driven movement before choosing geometry.
 Never simplify that action into generic standing, sitting or a portrait because

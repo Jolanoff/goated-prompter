@@ -42,7 +42,7 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
         state = request.app[state_key]
         payload = await json_object(request)
         local_scene = request.path.endswith("/scene")
-        if set(payload) - ({"input", "settings", "action", "index"} if local_scene else {"input", "settings", "valid_only"}):
+        if set(payload) - ({"input", "settings", "action", "index", "workflow_revision"} if local_scene else {"input", "settings", "valid_only", "workflow_revision"}):
             raise ValueError("Expected Dataset input and prompt-engine settings.")
         scenes_only = request.path.endswith("/scenes")
         valid_only = payload.get("valid_only", False)
@@ -91,13 +91,14 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
             )
             kind = "dataset_scenes" if scenes_only else "dataset"
             return web.json_response(state.start_job(kind, director_request, config, True,
-                {"operation": kind, "input": data, "scene_action": scene_action, "valid_only": valid_only},
+                {"operation": kind, "input": data, "scene_action": scene_action, "valid_only": valid_only,
+                 "workflow_revision": payload.get("workflow_revision")},
                 job_factory=job_factory), status=202)
 
     async def dataset_review_endpoint(request):
         state = request.app[state_key]
         payload = await json_object(request)
-        if set(payload) - {"input", "settings"}:
+        if set(payload) - {"input", "settings", "workflow_revision"}:
             raise ValueError("Expected Dataset input and prompt-engine settings.")
         data = validate_dataset_draft(payload.get("input"), generation=True)
         if not data["results"]:
@@ -121,7 +122,7 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
                     config.get("local_llama_cpp", {}).get("keep_model_loaded", False)),
             )
             return web.json_response(state.start_job("dataset_review", director_request, config, True,
-                {"operation": "dataset_review", "input": data}, job_factory=job_factory), status=202)
+                {"operation": "dataset_review", "input": data, "workflow_revision": payload.get("workflow_revision")}, job_factory=job_factory), status=202)
 
     async def minimax_endpoint(request):
         state = request.app[state_key]
@@ -258,6 +259,15 @@ def execute_workflow(state, job, request, config, workflow):
         return
 
     if workflow["operation"] in {"dataset", "dataset_scenes"}:
+        def checkpoint_result():
+            try:
+                state.workflow_settings.checkpoint_dataset(job)
+            except (ValueError, OSError) as exc:
+                raise ValueError(f"Dataset progress could not be saved. Earlier durable checkpoints remain intact; copy unsaved output from this job's diagnostics before leaving. {exc}") from exc
+        def durable_result(result):
+            job.result = result
+            checkpoint_result()
+            return result
         def partial(result):
             with job.lock:
                 job.result = result
@@ -270,17 +280,23 @@ def execute_workflow(state, job, request, config, workflow):
                     revise=False,
                 )
                 job.revision += 1
+                # Disk owns progress before it becomes available to a browser poll.
+                checkpoint_result()
         result = DatasetService(config, job.checkpoint, idea_history=state.idea_history).run(
             request, workflow["input"], progress, partial,
             scenes_only=workflow["operation"] == "dataset_scenes", scene_action=workflow.get("scene_action"),
             valid_only=workflow.get("valid_only", False))
-        job.commit(lambda: result, finish=True)
+        job.commit(lambda: durable_result(result), finish=True)
         return
 
     if workflow["operation"] == "dataset_review":
         result = DatasetReviewService(config, job.checkpoint).run(
             request, workflow["input"], progress)
-        job.commit(lambda: result, finish=True)
+        def durable_review():
+            job.result = result
+            state.workflow_settings.checkpoint_dataset(job)
+            return result
+        job.commit(durable_review, finish=True)
         return
 
     service = RefineService(config, job.checkpoint)

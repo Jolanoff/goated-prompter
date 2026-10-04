@@ -38,6 +38,7 @@ def repair_instruction(original, raw, error):
         "Return only the corrected complete response.\n\nPREVIOUS RESPONSE:\n"
         + str(raw)[:24000],
         diagnostic_stage=original.diagnostic_stage + ":repair",
+        temperature=.25, top_p=.85,
     )
 
 
@@ -313,6 +314,9 @@ def reference_scaffold(plan):
 
 
 def generation_instruction(data, plan, director, family, video_scene_plan=None):
+    from ..planning.constraints import compile_request, COMPILED_CONTRACT
+    compiled = video_scene_plan.compiled_request if video_scene_plan is not None else compile_request(
+        data["user_request"], has_context=bool(plan["references"]))
     mode = plan["mode"]
     context = {key: data[key] for key in ("model", "duration_seconds", "mode", "references")}
     context.update(resolved_mode=mode, reference_analysis=plan)
@@ -357,7 +361,9 @@ def generation_instruction(data, plan, director, family, video_scene_plan=None):
         "STRUCTURED SETTINGS\n" + json.dumps(context, ensure_ascii=False),
         "DIRECTOR PRESET — CREATIVE GUIDANCE ONLY\n" + json.dumps({"name": director.label, "instructions": director.instructions}, ensure_ascii=False),
         *([video_scene_plan.supporting_input()] if video_scene_plan is not None else []),
-        "USER REQUEST\n" + (video_scene_plan.compiled_request.writer_request(include_constraints=False) if video_scene_plan is not None else data["user_request"]),
+        *([COMPILED_CONTRACT + "\n" + json.dumps(compiled.workflow_data(), ensure_ascii=False)]
+          if video_scene_plan is None and (compiled.forbidden or compiled.variable) else []),
+        "USER REQUEST\n" + compiled.writer_request(include_constraints=False),
         f"Write the complete {mode} prompt for exactly {data['duration_seconds']} seconds. Return only the final prompt.",
     ]), model_family=family, diagnostic_stage="minimax:prompt", unlimited_tokens=True)
 
@@ -649,6 +655,13 @@ def validate_output(raw, data, plan):
     for match in re.finditer(r"says in an off-screen voiceover[^<]*<d>.*?</d>([^.]*\.)?", timeline, re.S):
         if not re.search(r"lips.*closed", match[1] or "", re.I):
             raise ValueError("State that lips remain closed immediately after every voiceover block.")
+    from ..planning.constraints import compile_request
+    from ..planning.constraint_validation import output_constraint_issues
+    compiled = compile_request(data["user_request"], has_context=bool(plan["references"]))
+    problems = [issue for issue in output_constraint_issues(prompt, "MiniMax H3", compiled.workflow_data())
+                if issue["severity"] == "error"]
+    if problems:
+        raise ValueError(problems[0]["message"])
     return prompt
 
 

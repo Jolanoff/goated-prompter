@@ -1,0 +1,12 @@
+{
+  "run_id": "frozen-supporting-planning-final-builder",
+  "provenance": "Exact Direct response from supporting-planning-final.json; existing local 27B evaluation. The old runner did not retain completion reasons or latency, so these remain unknown.",
+  "records": [{
+    "sample_id": "hoop|builder|1", "case_id": "hoop", "workflow": "builder", "target": "Generic",
+    "rules": "no hat", "completion_state": "unknown", "finish_reason": null,
+    "known_failure": "Explicit no hat leakage in a positive prompt.",
+    "anchors": {"scene":["sideways suspension"],"action":["aerial suspension"],"pose":["knee hooked on upper rim","opposite leg downward","torso twist toward camera"],"constraint":["no exclusion-language leakage"]},
+    "prompt": "A contortionist performer suspended sideways from a metallic aerial hoop, one knee hooked securely over the upper rim while the opposite leg extends straight down toward the floor. The torso is twisted sharply toward the camera, creating a dynamic diagonal line across the frame. The performer is bareheaded, with no hat, showcasing their hair and facial features clearly. The lighting is dramatic and focused, highlighting the tension in the muscles and the sleek surface of the hoop against a dark, neutral background. The composition centers on the suspended figure, capturing the balance and flexibility of the pose with high clarity and sharp detail.",
+    "calls": []
+  }]
+}

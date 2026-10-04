@@ -1,10 +1,37 @@
 """Memory-only checkpoint cleanup, independent of saved drafts and history."""
 
-TERMINAL_JOB_STATUSES = frozenset({"succeeded", "failed", "cancelled"})
+import asyncio
+import threading
+
+TERMINAL_JOB_STATUSES = frozenset({"succeeded", "failed", "cancelled", "interrupted"})
 JOB_FAMILIES = {
     "builder": {"builder"}, "refine": {"refine"}, "minimax": {"minimax"},
     "dataset": {"dataset", "dataset_scenes", "dataset_review"},
 }
+
+
+async def daemon_work(operation, *args):
+    """Cooperative workers with an exit fallback independent of executor shutdown."""
+    loop = asyncio.get_running_loop()
+    finished = loop.create_future()
+    def complete(value, error):
+        if not finished.done():
+            if error is None:
+                finished.set_result(value)
+            else:
+                finished.set_exception(error)
+    def worker():
+        value, error = None, None
+        try:
+            value = operation(*args)
+        except Exception as exc:
+            error = exc
+        try:
+            loop.call_soon_threadsafe(complete, value, error)
+        except RuntimeError:
+            pass
+    threading.Thread(target=worker, name="generation-worker", daemon=True).start()
+    return await finished
 
 
 def release_completed_checkpoints(jobs, *, family=None):

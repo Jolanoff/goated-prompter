@@ -10,6 +10,10 @@ def needs_planning(text, *, video=False):
     mechanics = r"\b(?:suspended|inverted|counterbalanc\w*|weight[- ]bearing|cartwheel|backbend|mid[- ]throw|grappl\w*|acrobat\w*|choreograph\w*)\b"
     if re.search(mechanics, text):
         return True
+    if re.search(r"\b(?:one|left|right)\s+(?:hand|foot|arm|leg)\b[^.;\n]{0,140}\b(?:other|opposite|left|right)\s+(?:hand|foot|arm|leg)\b", text):
+        return True
+    if re.search(r"\b(?:each|another|partner)\b[^.;\n]{0,60}\b(?:supports?|grips?|contacts?|bears?\s+weight)\b", text):
+        return True
     if re.search(r"\b(?:torso|pelvis|knee|limb|leg|arm)\b[^.;\n]{0,60}\b(?:twist\w*|hook\w*|opposite|extend\w*|lean\w*)\b", text):
         return True
     if re.search(r"\b(?:two|three|four|2|3|4)\s+(?:\w+\s+){0,2}(?:people|persons|performers|dancers|wrestlers|subjects|characters)\b", text):

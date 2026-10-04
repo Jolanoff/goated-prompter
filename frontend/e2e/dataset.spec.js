@@ -2,6 +2,30 @@ import { test, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import AxeBuilder from "@axe-core/playwright";
 
+test("backend completes and persists Dataset after the generating browser closes", async ({ page, context, browser, request }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  await page.getByLabel("Dataset idea", { exact: true }).fill("A craftsperson working with clay.");
+  await page.getByLabel("Trigger text or terms").fill("durable_person");
+  await page.getByLabel("Number of prompts").selectOption("5");
+  const accepted = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset") && response.status() === 202);
+  await page.getByRole("button", { name: "Generate 5 prompts", exact: true }).click();
+  const job = await (await accepted).json();
+  const appUrl = page.url();
+  await context.close();
+  await expect.poll(async () => (await (await request.get(`/api/jobs/${job.id}`)).json()).status).toBe("succeeded");
+  const saved = await (await request.get("/api/workspace/settings/dataset")).json();
+  expect(saved.draft.results).toHaveLength(5);
+  expect(saved.checkpoint.job_id).toBe(job.id);
+  const recovered = await browser.newContext();
+  try {
+    const newPage = await recovered.newPage();
+    await newPage.goto(appUrl);
+    await newPage.getByRole("button", { name: "Dataset", exact: true }).click();
+    await expect(newPage.getByLabel("Dataset prompt 5")).toHaveValue(/durable_person/);
+  } finally { await recovered.close(); }
+});
+
 test("descriptive creativity persists independently and reuses the exact planned scene", async ({ page, request }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Dataset", exact: true }).click();
@@ -33,6 +57,30 @@ test("descriptive creativity persists independently and reuses the exact planned
   expect(finished.llm_trace.request_number).toBe(1);
   expect(finished.llm_trace.messages[0].content).toContain("Dataset Creativity — Dice");
   expect(finished.result.scene_plan[0].geometry).toEqual(before.scene_plan[0].geometry);
+});
+
+test("a writer failure retries the prompt using backend scene eligibility, not scene repair", async ({ page, request }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  await page.getByLabel("Dataset idea", { exact: true }).fill("A craftsperson working with clay.");
+  await page.getByLabel("Trigger text or terms").fill("retry_person");
+  await page.getByLabel("Number of prompts").selectOption("1");
+  await page.getByRole("button", { name: "Plan scenes first", exact: true }).click();
+  await expect(page.getByLabel("Planned scene 1")).toHaveValue(/mock scene/);
+  const saved = await (await request.get("/api/workspace/settings/dataset")).json();
+  saved.draft.scene_plan[0] = { ...saved.draft.scene_plan[0], prompt_status: "failed",
+    failure_stage: "prompt", failure_reason: "Writer disconnected; the scene is valid." };
+  expect((await request.put("/api/workspace/settings/dataset", { data: { revision: saved.revision, draft: saved.draft } })).ok()).toBe(true);
+  await page.reload();
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  const accepted = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset/scene") && response.status() === 202);
+  await page.getByRole("button", { name: "Retry failed prompt", exact: true }).click();
+  const response = await accepted;
+  expect(response.request().postDataJSON().action).toBe("regenerate_prompt");
+  const job = await response.json();
+  await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(/retry_person/);
+  const finished = await (await request.get(`/api/jobs/${job.id}`)).json();
+  expect(finished.llm_trace.request_number).toBe(1);
 });
 
 test("Quality composes in small chunks and geometry opens in an accessible modal", async ({ page, request }) => {
