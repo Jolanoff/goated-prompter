@@ -1,4 +1,4 @@
-"""Core orchestration tests without ComfyUI, Pillow, models, or network access."""
+"""Core orchestration tests without Pillow, models, or network access."""
 
 from contextlib import ExitStack, nullcontext, redirect_stdout
 from dataclasses import replace
@@ -7,12 +7,12 @@ from io import StringIO
 import json
 from pathlib import Path
 import sys
-from types import ModuleType, SimpleNamespace
+from types import ModuleType
 import unittest
 from unittest.mock import Mock, call, patch
 
 
-# Load core without running the node package's ComfyUI route registration.
+# Isolate core module state from the other test suites.
 PACKAGE = "_goated_core_tests"
 package = ModuleType(PACKAGE)
 package.__path__ = [str(Path(__file__).resolve().parents[1] / "goated_prompter")]
@@ -57,12 +57,8 @@ class CoreTests(unittest.TestCase):
         self.stack.enter_context(patch.object(core, "debug_prompts_enabled", return_value=False))
         self.cache_get = self.stack.enter_context(patch.object(core, "get_cached_evidence", return_value=None))
         self.stack.enter_context(patch.object(core, "cache_evidence"))
-        self.encode = self.stack.enter_context(patch.object(
-            core, "encode_comfy_image", side_effect=lambda image, **kwargs: core.EncodedImage(
-                "b25l" if image is self.first else "dHdv", "image/png", 16, 16,
-            ),
-        ))
-        self.first, self.second = object(), object()
+        self.first = core.EncodedImage("b25l", "image/png", 16, 16)
+        self.second = core.EncodedImage("dHdv", "image/png", 16, 16)
         self.service = core.GoatedPrompterService(config={})
 
     def request(self, source="Image 1", **kwargs):
@@ -72,10 +68,10 @@ class CoreTests(unittest.TestCase):
             **kwargs,
         )
 
-    def test_only_selected_source_is_encoded_and_analyzed(self):
+    def test_only_selected_source_is_validated_and_analyzed(self):
         for source, image in (("Image 1", self.first), ("Image 2", self.second)):
             with self.subTest(source=source):
-                self.encode.reset_mock()
+                self.backend.validate_vision_input.reset_mock()
                 self.session.reset_mock()
                 request = self.request(source)
                 with patch.object(core, "resolve_reference_map", wraps=core.resolve_reference_map) as resolve:
@@ -83,7 +79,7 @@ class CoreTests(unittest.TestCase):
                 self.assertIs(resolve.call_args.args[0], request)
 
                 resolve.assert_called_once()
-                self.encode.assert_called_once_with(image, max_dimension=1344)
+                self.backend.validate_vision_input.assert_called_once_with(image)
                 self.assertEqual(self.session.generate.call_count, 2)
                 analysis, final = [entry.args[0] for entry in self.session.generate.call_args_list]
                 self.assertEqual(analysis.image_label, source)
@@ -116,7 +112,7 @@ class CoreTests(unittest.TestCase):
         request = self.request()
         request.reference_map["colors"] = "Blend"
         result = self.service.generate(request)
-        self.assertEqual(self.encode.call_count, 2)
+        self.assertEqual(self.backend.validate_vision_input.call_count, 2)
         instructions = [entry.args[0] for entry in self.session.generate.call_args_list]
         self.assertEqual([item.image_label for item in instructions[:-1]], ["Image 1", "Image 2"])
         self.assertEqual(len(instructions), 3)
@@ -125,7 +121,7 @@ class CoreTests(unittest.TestCase):
 
     def test_auto_resolution_keeps_both_connected_sources(self):
         result = self.service.generate(replace(self.request(), reference_map=None))
-        self.assertEqual(self.encode.call_count, 2)
+        self.assertEqual(self.backend.validate_vision_input.call_count, 2)
         self.assertEqual(result.instruction.reference_map.source_for("subject"), "Image 1")
         self.assertEqual(result.instruction.reference_map.source_for("colors"), "Image 2")
 
@@ -136,7 +132,7 @@ class CoreTests(unittest.TestCase):
         ))
         with patch.object(core, "resolve_reference_map", return_value=resolved):
             result = self.service.generate(self.request())
-        self.encode.assert_not_called()
+        self.backend.validate_vision_input.assert_not_called()
         self.cache_get.assert_not_called()
         self.session.generate.assert_called_once()
         self.assertIs(result.instruction.reference_map, resolved)
@@ -171,7 +167,7 @@ class CoreTests(unittest.TestCase):
                 self.assertIsNone(result.instruction.image)
                 self.session.generate.assert_called_once_with(result.instruction)
                 self.session.validate_instruction.assert_called_once_with(result.instruction)
-        self.encode.assert_not_called()
+        self.backend.validate_vision_input.assert_not_called()
         self.cache_get.assert_not_called()
         with self.assertRaisesRegex(ValueError, "Enter a text prompt first"):
             self.service.generate_text_only(replace(self.request(), idea=""))
@@ -281,7 +277,7 @@ class CoreTests(unittest.TestCase):
         self.session.generate.return_value = json.dumps({"rewritten_prompt": 'A sign reads "你好".', "wh_ratio": "3:2", "ratio_follow": ""})
         result = self.service.generate(self.request("Off", linked_references=True, target_model="Qwen2.1"))
         self.assertEqual(result.prompt, 'A sign reads "你好".')
-        self.encode.assert_not_called()
+        self.backend.validate_vision_input.assert_not_called()
         self.assertIn('TEXT TO IMAGE', result.instruction.system_message)
 
     def test_qwen21_format_repair_uses_same_session_and_original_request(self):
@@ -305,7 +301,7 @@ class CoreTests(unittest.TestCase):
         calls = [entry.args[0] for entry in self.session.generate.call_args_list]
         self.assertEqual(len(calls), 3)
         self.assertIs(calls[1].resolved_scene, calls[2].resolved_scene)
-        self.encode.assert_called_once()
+        self.backend.validate_vision_input.assert_called_once()
 
     def test_qwen21_cancellation_stops_format_retry(self):
         class Cancelled(Exception):
@@ -354,7 +350,7 @@ class LinkedCoreTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Image 4 is not connected"):
                 self.service.generate(request)
         self.session.generate.assert_not_called()
-        self.encode.assert_not_called()
+        self.backend.validate_vision_input.assert_not_called()
 
     def test_selected_image_four_only_and_cache_identity(self):
         fourth = core.EncodedImage("Zm91cg==", "image/png", 16, 16)
@@ -370,7 +366,6 @@ class LinkedCoreTests(unittest.TestCase):
         self.assertIn("No reference evidence", final.resolved_scene.value_for("face"))
         self.backend.validate_vision_input.assert_called_once_with(fourth)
         self.cache_get.assert_called_once()
-        self.encode.assert_not_called()
         self.assertIn("strict source lock wins", final.system_message)
         self.assertNotIn("explicit current WHAT DO YOU WANT? transformation", final.system_message)
 
@@ -400,7 +395,7 @@ class LinkedCoreTests(unittest.TestCase):
         request = self.linked_request(image_3=object(), image_4=object())
         result = self.service.generate(request)
         self.session.generate.assert_called_once()
-        self.encode.assert_not_called()
+        self.backend.validate_vision_input.assert_not_called()
         self.cache_get.assert_not_called()
         self.assertFalse(reference_map.reference_images(result.instruction))
         self.assertNotIn("VISUAL GROUNDING", result.instruction.system_message)
@@ -452,7 +447,7 @@ class LinkedCoreTests(unittest.TestCase):
         for length in ("Short", "Medium", "Detailed"):
             self.assertIsNone(core.assemble_instruction(replace(self.request(), prompt_length=length)).max_tokens)
 
-    def test_raw_message_order_and_node_schema_prefix(self):
+    def test_raw_message_order_and_reference_source_prefix(self):
         images = {field: core.EncodedImage(str(index), "image/png", 16, 16)
                   for index, (field, _label) in enumerate(reference_map.REFERENCE_IMAGE_SLOTS)}
         for family in ("qwen", "gemma"):
@@ -462,45 +457,24 @@ class LinkedCoreTests(unittest.TestCase):
                              [image.data_url for image in images.values()])
             for index, (_field, label) in enumerate(reference_map.REFERENCE_IMAGE_SLOTS):
                 self.assertIn(label.upper(), parts[index * 2]["text"])
-        nodes = importlib.import_module(f"{PACKAGE}.comfy_node")
-        schema = nodes.GoatedPrompter.INPUT_TYPES()
         self.assertEqual(reference_map.REFERENCE_SOURCE_NAMES[:4], ("Auto", "Image 1", "Image 2", "Blend"))
-        self.assertEqual(list(schema["optional"])[:5], ["image", "image_2", "image_3", "image_4", "linked_references"])
-        self.assertEqual(schema["optional"]["planning_mode"][0], ["Auto", "Direct", "Always"])
-        self.assertFalse(schema["optional"]["linked_references"][1]["default"])
 
-    def test_node_appended_kwargs_reach_request_without_cached_shortcut(self):
-        nodes = importlib.import_module(f"{PACKAGE}.comfy_node")
-        required = nodes.GoatedPrompter.INPUT_TYPES()["required"]
-        values = {key: specification[1]["default"] for key, specification in required.items()}
-        values.update(idea="portrait", generated_prompt="stale cached result", image_3=object(),
-                      image_4=object(), linked_references=True, reference_subject_source="Image 4")
-        with patch.object(nodes, "GoatedPrompterService") as service:
-            service.return_value.generate.return_value.prompt = "fresh"
-            result = nodes.GoatedPrompter().direct(**values)
-        self.assertEqual(result["result"], ("fresh",))
-        request = service.return_value.generate.call_args.args[0]
-        self.assertTrue(request.linked_references)
-        self.assertIs(request.image_3, values["image_3"])
-        self.assertIs(request.image_4, values["image_4"])
-        self.assertEqual(request.reference_map["subject"], "Image 4")
+    def test_selected_reference_must_be_a_decoded_upload(self):
+        request = replace(self.request(), image=object())
+        with self.assertRaisesRegex(ValueError, "decoded uploads"):
+            self.service.generate(request)
+        self.session.generate.assert_not_called()
+
+    def test_unselected_invalid_reference_does_not_block_generation(self):
+        result = self.service.generate(replace(self.request("Image 2"), image=object()))
+        self.assertEqual(result.prompt, "final prompt")
+        self.backend.validate_vision_input.assert_called_once_with(self.second)
 
 
 class ImageUtilsTests(unittest.TestCase):
-    def test_batch_is_sliced_before_cpu_transfer(self):
-        batch = Mock(ndim=4, shape=(8, 16, 16, 3))
-        first = Mock(ndim=3, shape=(16, 16, 3))
-        batch.__getitem__ = Mock(return_value=first)
-        image = Mock()
-        image.detach.return_value = batch
-        # Stop at transfer so no torch, numpy, or Pillow implementation is needed.
-        first.to.side_effect = RuntimeError("stop at transfer")
-        with patch.dict(sys.modules, {"PIL": SimpleNamespace(Image=Mock())}):
-            with self.assertRaises(image_utils.ImageEncodingError):
-                image_utils.encode_comfy_image(image)
-        batch.__getitem__.assert_called_once_with(0)
-        batch.to.assert_not_called()
-        first.to.assert_called_once_with(device="cpu")
+    def test_encoded_upload_exposes_data_url(self):
+        image = image_utils.EncodedImage("b25l", "image/png", 16, 16)
+        self.assertEqual(image.data_url, "data:image/png;base64,b25l")
 
 
 if __name__ == "__main__":

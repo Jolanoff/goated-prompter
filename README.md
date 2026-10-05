@@ -23,7 +23,7 @@ Bring your ideas and reference images. Shape the result. Copy it into your favor
 Goated Prompter pairs a **React + Tailwind interface** with a **Python backend** and a language/vision model. Control the task, target model, creativity, detail, and exactly which parts of your references to preserve—all from your browser.
 
 > [!NOTE]
-> **This app writes prompts, not images or videos.** Copy the output into your preferred generation tool. ComfyUI is optional; model weights are downloaded separately.
+> **This app writes prompts, not images or videos.** Copy the output into your preferred generation tool. Model weights are downloaded separately.
 
 ## Features
 
@@ -380,6 +380,7 @@ goated-prompter/
 │   ├── workspace_store.py      # Atomic versions and branching undo/redo
 │   ├── reference_map.py        # Attribute-to-image source mapping
 │   ├── evidence.py             # Image analysis and resolved scene evidence
+│   ├── input_schema.py         # Website input options and bootstrap defaults
 │   └── backends/               # llama.cpp and OpenAI-compatible clients
 ├── frontend/
 │   ├── src/                    # React UI, Tailwind utilities and presentation labels
@@ -392,8 +393,7 @@ goated-prompter/
 │   ├── workflow_settings.json  # Workflow drafts and custom instructions
 │   └── directors/              # Custom instruction presets
 │       └── .overrides/         # Edits to built-in instruction presets
-├── tests/                      # Python and optional canvas tests
-└── comfyui_web/                # Optional ComfyUI integration assets
+└── tests/                      # Python, frontend, and browser workflow tests
 ```
 
 Keep downloaded models and llama.cpp outside this source tree, as in the installation examples. Back up **`data/` and your configuration** to preserve your setup. Wait for the builder's **Saved** status before closing; stop the server before manually editing its JSON stores.
@@ -435,7 +435,7 @@ For an existing OpenAI-compatible server, replace the configuration with your en
 
 Set `GOATED_PROMPTER_API_KEY` in the environment if authentication is required. The endpoint and model must support vision for reference images. Local model discovery is not required for this backend. `{"backend": "mock"}` is available for text-only UI/assembly checks without an LLM; its output is intentionally just a marked mock result.
 
-`GOATED_PROMPTER_CONFIG` selects an alternative config file. Configuration otherwise uses the ComfyUI user config when available, then `config/config.json`. `GOATED_PROMPTER_USER_DIR` overrides instruction-preset storage. `GOATED_PROMPTER_DEBUG_PROMPTS=1` enables full prompt diagnostics in the server console.
+`GOATED_PROMPTER_CONFIG` selects an alternative config file. Configuration otherwise uses `config/config.json`. `GOATED_PROMPTER_USER_DIR` overrides instruction-preset storage, which defaults to `data/directors/`. `GOATED_PROMPTER_DEBUG_PROMPTS=1` enables full prompt diagnostics in the server console.
 
 ## Development and verification
 
@@ -477,7 +477,6 @@ Run the checks from the project root:
 npm --prefix frontend run build
 npm --prefix frontend run lint
 .\.venv\Scripts\python.exe -m unittest discover -s tests
-node --test tests/test_comfy_frontend.cjs tests/test_ui_shared.cjs
 npm --prefix frontend test
 ```
 
@@ -499,11 +498,7 @@ The reusable quality corpus, frozen real responses, annotation rubric and JSON/M
 
 </details>
 
-## Optional ComfyUI integration
-
-The original node remains available under the stable ID `GoatedPrompter`. To use it, place one copy of this repository at `ComfyUI/custom_nodes/goated-prompter`, configure the backend, and restart ComfyUI and reload its browser. The node exposes four optional IMAGE sockets and a prompt STRING output. Queue the graph for image-grounded generation; the canvas preview button is text-only.
-
-The website remains the main installation path. There is no claimed ComfyUI Registry/Manager listing or bundled desktop installer. Installing only the Python package does not build or bundle the website.
+Goated Prompter is a standalone browser-based application, not a node extension or bundled desktop installer. Installing only the Python package does not build or bundle the website.
 
 ---
 

@@ -1,4 +1,4 @@
-"""Prompt assembly and backend orchestration, independent of ComfyUI UI code."""
+"""Prompt assembly and backend orchestration for the standalone website."""
 
 import base64
 from dataclasses import dataclass, replace
@@ -17,7 +17,7 @@ from .evidence import (
     get_cached_evidence,
     parse_image_evidence,
 )
-from .image_utils import EncodedImage, encode_comfy_image
+from .image_utils import EncodedImage
 from .prompting.base import (
     CONTROL_CONTRACT,
     CORE_SYSTEM_PROMPT,
@@ -541,15 +541,11 @@ class GoatedPrompterService:
         config = self._config if self._config is not None else load_config(self._config_path)
         effective_config, profile = resolve_director_config(config, request)
         backend = create_backend(effective_config)
-        vision_config = effective_config.get("vision", {}) if isinstance(effective_config, dict) else {}
-        if not isinstance(vision_config, dict):
-            vision_config = {}
-        max_dimension = vision_config.get("max_image_dimension", 1344)
         resolved_reference_map = None
         selected_sources = set()
         if not text_only:
             preset = get_director_preset(request.director_preset)
-            # Resolve before encoding without dropping connected-image identity.
+            # Resolve before analysis without dropping uploaded-image identity.
             resolved_reference_map = resolve_reference_map(request, preset.label)
             selected_sources = {item.source for item in resolved_reference_map.attributes}
             if "Blend" in selected_sources:
@@ -565,7 +561,7 @@ class GoatedPrompterService:
             if label in selected_sources:
                 backend.validate_vision_input(image)
                 if not isinstance(image, EncodedImage):
-                    request = replace(request, **{field: encode_comfy_image(image, max_dimension=max_dimension)})
+                    raise ValueError("Reference images must be decoded uploads before generation.")
         model_family = _effective_model_family(request, profile, effective_config)
 
         # One lifecycle session covers the complete operation. This keeps a

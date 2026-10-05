@@ -374,7 +374,7 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         await self.wait_status(job["id"], "succeeded")
 
     async def test_builder_snapshot_persistence_validation_and_active_job(self):
-        schema = local.GoatedPrompter.INPUT_TYPES()["required"]
+        schema = local.builder_input_schema()
         builder = {key: schema[key][0][0] for key in ("mode", "target_model", "creativity", "prompt_length")}
         builder.update(idea="  exact\n", custom_instructions="instructions", system_prompt_override="system",
                        generated_prompt="output", lock_generated_prompt=True, director_preset="general_director")

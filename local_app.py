@@ -24,7 +24,7 @@ from goated_prompter.backends.llama_cpp_process import get_process_manager, _res
 from goated_prompter.config import load_config
 from goated_prompter.core import GoatedPrompterRequest, GoatedPrompterService, _as_bool
 from goated_prompter.director_profiles import discover_director_profiles, resolve_director_config
-from goated_prompter.comfy_node import GoatedPrompter
+from goated_prompter.input_schema import builder_input_schema
 from goated_prompter.reference_map import REFERENCE_ATTRIBUTES
 from goated_prompter.workspace_store import WorkspaceStore, WorkspaceConflict
 from goated_prompter.workspace_api import register_workspace_routes, execute_workflow
@@ -70,7 +70,7 @@ def validate_settings(payload):
         unknown = builder.keys() - strings - combos - sources
         if unknown:
             raise ValueError("Unknown builder settings: " + ", ".join(sorted(unknown)))
-        schema = GoatedPrompter.INPUT_TYPES()["required"]
+        schema = builder_input_schema()
         for key, value in builder.items():
             if not isinstance(value, str) or len(value) > 100000:
                 raise ValueError(f"builder {key} must be a string of at most 100000 characters.")
@@ -380,7 +380,7 @@ async def bootstrap(request):
     state = request.app[STATE]
     models = await models_payload(state)
     presets = await presets_payload()
-    inputs = {key: value for key, value in GoatedPrompter.INPUT_TYPES()["required"].items()
+    inputs = {key: value for key, value in builder_input_schema().items()
               if key != "system_prompt_override"}
     return web.json_response({"inputs": inputs,
                               "presets": presets, "models": models,

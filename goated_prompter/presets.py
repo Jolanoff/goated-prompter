@@ -42,14 +42,6 @@ def resolve_user_director_directory():
     configured = os.environ.get(USER_DIRECTOR_DIR_ENV, "").strip()
     if configured:
         return Path(configured).expanduser().resolve()
-    try:
-        import folder_paths
-
-        getter = getattr(folder_paths, "get_user_directory", None)
-        if callable(getter):
-            return Path(getter()).resolve() / "GoatedPrompter" / "directors"
-    except (ImportError, AttributeError, OSError):
-        pass
     return PROJECT_ROOT / "data" / "directors"
 
 

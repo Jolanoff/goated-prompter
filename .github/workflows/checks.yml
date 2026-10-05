@@ -43,7 +43,6 @@ jobs:
         with:
           name: frozen-quality-python-${{ matrix.python }}
           path: quality-artifacts/
-      - run: node --test tests/test_comfy_frontend.cjs tests/test_ui_shared.cjs
       - run: npx playwright install --with-deps chromium
         working-directory: frontend
         if: matrix.python == '3.13'

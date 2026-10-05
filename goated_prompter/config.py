@@ -11,26 +11,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "config" / "config.json"
 
 
-def _user_config_path():
-    """Return the Goated Prompter-owned ComfyUI user config location when available."""
-    try:
-        import folder_paths
-
-        getter = getattr(folder_paths, "get_user_directory", None)
-        if callable(getter):
-            return Path(getter()).resolve() / "GoatedPrompter" / "config.json"
-    except (ImportError, AttributeError, OSError):
-        pass
-    return None
-
-
 def resolve_config_path():
     override = os.environ.get(CONFIG_ENV_VAR, "").strip()
     if override:
         return Path(override).expanduser()
-    user_path = _user_config_path()
-    if user_path is not None and user_path.is_file():
-        return user_path
     return DEFAULT_CONFIG_PATH
 
 

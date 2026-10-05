@@ -36,7 +36,7 @@ class BackendCapabilityError(GoatedPrompterError):
 
 
 class ImageEncodingError(GoatedPrompterError):
-    """A ComfyUI image could not be prepared safely for a vision backend."""
+    """A reference image could not be prepared safely for a vision backend."""
 
 
 class GoatedPrompterBackend(ABC):
@@ -60,7 +60,7 @@ class GoatedPrompterBackend(ABC):
     def validate_vision_input(self, image):
         if image is not None and not self.supports_vision:
             raise BackendCapabilityError(
-                f"Goated Prompter backend '{self.name}' does not support vision; disconnect IMAGE or select a vision-capable backend."
+                f"Goated Prompter backend '{self.name}' does not support vision; remove reference images or select a vision-capable backend."
             )
 
     def validate_instruction(self, instruction):

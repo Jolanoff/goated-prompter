@@ -80,18 +80,6 @@ def _resolve_model_file(value, models_dir, label):
     return path
 
 
-def _resolve_comfyui_root():
-    try:
-        import folder_paths
-
-        value = getattr(folder_paths, "base_path", None)
-        if value:
-            return Path(value).resolve()
-    except (ImportError, AttributeError, OSError):
-        pass
-    return None
-
-
 def _resolve_server_executable(value, runtime_root=None):
     text = str(value or "").strip()
     candidates = [text] if text else ["llama-server.exe", "llama-server"]
@@ -102,7 +90,7 @@ def _resolve_server_executable(value, runtime_root=None):
         if path.is_file():
             return path.resolve()
         if not path.is_absolute():
-            base = Path(runtime_root).expanduser().resolve() if runtime_root else _resolve_comfyui_root()
+            base = Path(runtime_root).expanduser().resolve() if runtime_root else None
             if base is not None:
                 portable = base / path
                 if portable.is_file():

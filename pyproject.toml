@@ -1,7 +1,7 @@
 [project]
 name = "goated-prompter"
 version = "1.0.1"
-description = "Local prompt-generation website with a shared Python engine and optional ComfyUI integration."
+description = "Standalone local prompt-generation website with a Python engine."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }

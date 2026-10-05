@@ -1,35 +1,35 @@
-"""Regression checks for the website-first layout and standalone data paths."""
+"""Regression checks for standalone layout, input metadata, and data paths."""
 
-import importlib.util
 import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
-import types
 import unittest
 from unittest.mock import patch
 
 from goated_prompter import config, presets
+from goated_prompter.director_profiles import resolve_models_directory
+from goated_prompter.input_schema import builder_input_schema
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class PackageLayoutTests(unittest.TestCase):
-    def test_standalone_layout_has_no_legacy_nodes_directory(self):
-        self.assertFalse((ROOT / "nodes").exists())
-        # Machine-specific configuration is optional and must not be shipped.
+    def test_standalone_layout_has_no_node_integration(self):
+        for path in ("nodes", "comfyui_web", "__init__.py", ".comfyignore",
+                     "goated_prompter/comfy_node.py", "goated_prompter/comfy_routes.py"):
+            self.assertFalse((ROOT / path).exists(), path)
         self.assertTrue((ROOT / "config/config.example.json").is_file())
 
-    def test_shared_import_does_not_load_comfy_adapters_or_server(self):
+    def test_package_import_is_lazy_and_does_not_load_host_modules(self):
         result = subprocess.run(
             [sys.executable, "-c", (
                 "import sys; import goated_prompter; "
                 "assert not any(name.startswith('goated_prompter.') for name in sys.modules); "
                 "from goated_prompter import config; "
-                "assert 'goated_prompter.comfy_node' not in sys.modules; "
-                "assert 'goated_prompter.comfy_routes' not in sys.modules; "
+                "assert 'folder_paths' not in sys.modules; "
                 "assert 'server' not in sys.modules"
             )],
             cwd=ROOT, capture_output=True, text=True, check=True,
@@ -37,42 +37,33 @@ class PackageLayoutTests(unittest.TestCase):
         self.assertEqual(result.stdout, "")
         self.assertEqual(result.stderr, "")
 
-    def test_standalone_data_defaults_without_comfyui(self):
-        with patch.dict(os.environ, {}, clear=True), patch.dict(sys.modules, {"folder_paths": None}):
+    def test_standalone_data_defaults(self):
+        with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(config.resolve_config_path(), ROOT / "config/config.json")
-            self.assertEqual(
-                presets.resolve_user_director_directory(),
-                ROOT / "data/directors",
-            )
+            self.assertEqual(presets.resolve_user_director_directory(), ROOT / "data/directors")
+            self.assertEqual(resolve_models_directory(), (Path.cwd() / "models").resolve())
 
-    def test_comfyui_and_environment_path_precedence(self):
+    def test_environment_path_precedence(self):
         with tempfile.TemporaryDirectory() as directory:
-            user_root = Path(directory)
-            comfy_config = user_root / "GoatedPrompter/config.json"
-            folder_paths = types.SimpleNamespace(get_user_directory=lambda: directory)
-            with patch.dict(os.environ, {}, clear=True), patch.dict(sys.modules, {"folder_paths": folder_paths}):
-                with patch.object(Path, "is_file", return_value=True):
-                    self.assertEqual(config.resolve_config_path(), comfy_config)
-                with patch.object(Path, "is_file", return_value=False):
-                    self.assertEqual(config.resolve_config_path(), config.DEFAULT_CONFIG_PATH)
-                self.assertEqual(presets.resolve_user_director_directory(), user_root / "GoatedPrompter/directors")
-                with patch.dict(os.environ, {
-                    "GOATED_PROMPTER_CONFIG": str(user_root / "custom.json"),
-                    "GOATED_PROMPTER_USER_DIR": str(user_root / "custom-directors"),
-                }):
-                    self.assertEqual(config.resolve_config_path(), user_root / "custom.json")
-                    self.assertEqual(presets.resolve_user_director_directory(), user_root / "custom-directors")
+            root = Path(directory)
+            with patch.dict(os.environ, {
+                "GOATED_PROMPTER_CONFIG": str(root / "custom.json"),
+                "GOATED_PROMPTER_USER_DIR": str(root / "custom-directors"),
+                "GOATED_PROMPTER_MODELS_DIR": str(root / "custom-models"),
+            }, clear=True):
+                self.assertEqual(config.resolve_config_path(), root / "custom.json")
+                self.assertEqual(presets.resolve_user_director_directory(), root / "custom-directors")
+                self.assertEqual(resolve_models_directory(), root / "custom-models")
+                self.assertEqual(resolve_models_directory({"models_dir": str(root / "explicit")}), root / "explicit")
 
-    def test_comfy_entry_point_registers_routes_and_exports_existing_node(self):
-        name = "_goated_comfy_layout_test"
-        spec = importlib.util.spec_from_file_location(name, ROOT / "__init__.py", submodule_search_locations=[str(ROOT)])
-        entry = importlib.util.module_from_spec(spec)
-        routes = types.ModuleType(f"{name}.goated_prompter.comfy_routes")
-        with patch.object(routes, "register_routes", return_value=True, create=True) as register:
-            with patch.dict(sys.modules, {name: entry, routes.__name__: routes}):
-                spec.loader.exec_module(entry)
-                register.assert_called_once_with()
-                self.assertEqual(set(entry.NODE_CLASS_MAPPINGS), {"GoatedPrompter"})
-                self.assertEqual(entry.NODE_DISPLAY_NAME_MAPPINGS, {"GoatedPrompter": "Goated Prompter"})
-                self.assertEqual(entry.WEB_DIRECTORY, "./comfyui_web")
-                self.assertTrue((ROOT / entry.WEB_DIRECTORY / "goated_prompter/goated_prompter.js").is_file())
+    def test_website_schema_keeps_defaults_and_fresh_metadata(self):
+        schema = builder_input_schema()
+        self.assertEqual(len(schema), 38)
+        for key, default in (("mode", "Enhance"), ("target_model", "Generic"),
+                             ("creativity", "Balanced"), ("prompt_length", "Medium"),
+                             ("prompt_model", "Qwen 3.5 9B"), ("director_context_size", 32768)):
+            self.assertEqual(schema[key][1]["default"], default)
+        self.assertEqual(len([key for key in schema if key.startswith("reference_")]), 11)
+        self.assertEqual(schema["reference_subject_source"][1]["default"], "Auto")
+        schema["mode"][1]["default"] = "Custom"
+        self.assertEqual(builder_input_schema()["mode"][1]["default"], "Enhance")

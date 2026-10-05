@@ -176,13 +176,7 @@ def resolve_models_directory(settings=None):
     env_value = os.environ.get("GOATED_PROMPTER_MODELS_DIR", "").strip()
     if env_value:
         return Path(env_value).expanduser().resolve()
-    try:
-        import folder_paths
-
-        return Path(folder_paths.models_dir).resolve()
-    except (ImportError, AttributeError):
-        candidate = Path.cwd() / "models"
-        return candidate.resolve()
+    return (Path.cwd() / "models").resolve()
 
 
 def _normal_name(*parts):

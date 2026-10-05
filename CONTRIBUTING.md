@@ -60,7 +60,6 @@ npm --prefix frontend run lint
 npm --prefix frontend test
 npm --prefix frontend run build
 .\.venv\Scripts\python.exe -m unittest discover -s tests
-node --test tests/test_comfy_frontend.cjs tests/test_ui_shared.cjs
 ```
 
 Build before Python tests so built-site checks can exercise the compiled assets. For UI/workflow changes, also run the [isolated browser tests](README.md#development-and-verification). Put your virtual environment's Python on PATH in that terminal, install Chromium once, and run:
@@ -72,7 +71,7 @@ npm --prefix frontend run test:e2e -- --config e2e/isolated.config.js
 
 On Windows, an installed Edge can be used instead of downloading Chromium by setting `$env:PLAYWRIGHT_CHANNEL = "msedge"` before the test command. Isolated tests use temporary data and ports 8191/5191; they refuse to reuse running servers.
 
-CI runs lint, frontend/Python tests, builds, frozen quality replay, ComfyUI JavaScript tests, and Chromium workflows. Mock and frozen-replay tests are not proof of live-model fidelity or GPU performance. For evaluation guidance, see [the quality corpus](tests/eval/README.md).
+CI runs lint, frontend/Python tests, builds, frozen quality replay, and Chromium workflows. Mock and frozen-replay tests are not proof of live-model fidelity or GPU performance. For evaluation guidance, see [the quality corpus](tests/eval/README.md).
 
 For documentation-only changes, check links, commands, spelling, and template syntax; explain why runtime tests were not needed.
 

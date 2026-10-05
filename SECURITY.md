@@ -13,7 +13,7 @@ Security fixes target the latest code on `master`. Older releases, historical co
 
 In the private report, include:
 
-- Affected commit/version, OS, Python version, and installation type (standalone or ComfyUI).
+- Affected commit/version, OS, Python version, and installation/setup details.
 - Backend and relevant runtime/dependency versions.
 - A minimal, sanitized reproduction and any required configuration.
 - Expected versus observed behavior, security impact, and prerequisites for exploitation.
@@ -25,7 +25,7 @@ Ordinary crashes, installation problems, and output-quality issues without a sec
 
 ## Deployment and privacy boundaries
 
-- The standalone website is intended for local loopback use. Do not expose it directly to the internet or an untrusted LAN; it is not designed as a hardened, authenticated multi-user service. ComfyUI integrations also inherit their host's exposure and security configuration.
+- The website is intended for local loopback use. Do not expose it directly to the internet or an untrusted LAN; it is not designed as a hardened, authenticated multi-user service.
 - Local llama.cpp inference stays on your machine. An OpenAI-compatible remote endpoint receives generation inputs, including selected reference images; review the provider's policies before sending private material.
 - Local configuration, saved prompts, autosaved drafts, history, presets, and Dataset checkpoints can contain sensitive content. Protect and back up `config/` and `data/`; do not attach them wholesale to reports.
 - Keep `GOATED_PROMPTER_DEBUG_PROMPTS` disabled unless needed for troubleshooting. Debug logs, screenshots, exports, browser traces, and clipboard contents can reveal private inputs or outputs. Redact before sharing.

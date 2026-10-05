@@ -27,7 +27,6 @@ body:
         - Dataset
         - Saved Prompts or instruction presets
         - Settings or model loading
-        - ComfyUI integration
         - Other
     validations:
       required: true
@@ -41,7 +40,7 @@ body:
         Browser/version:
         Python/version:
         Node.js/version (if building the frontend):
-        Installation: standalone / ComfyUI
+        Installation/setup details:
         Backend: local_llama_cpp / openai_compatible / mock
         llama.cpp build or remote server software/version:
         Exact model and projector filenames (if relevant):

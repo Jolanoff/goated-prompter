@@ -2,6 +2,13 @@
 
 ## Scope
 
+This document records an earlier refactoring checkpoint. The current application
+is standalone-only: the former ComfyUI node, canvas assets, routes, tensor image
+adapter, and integration tests have been removed. Website input metadata now
+lives in `goated_prompter/input_schema.py`; reference images enter through
+`goated_prompter/uploaded_images.py`. Historical test counts below are not current
+suite counts.
+
 This is a behavior-preserving first pass at the two largest application modules.
 `App.jsx` decreased from 2,022 to 1,090 lines; `local_app.py` from 996 to 667.
 API routes, response/error shapes, generation budgets, job revisions, storage
@@ -60,7 +67,6 @@ Run:
 npm.cmd --prefix frontend run lint
 npm.cmd --prefix frontend test
 npm.cmd --prefix frontend run build
-node --test tests/test_comfy_frontend.cjs tests/test_ui_shared.cjs
 ```
 
 For isolated browser tests, run `npm run test:e2e -- --config e2e/isolated.config.js`

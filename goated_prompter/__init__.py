@@ -1,1 +1,1 @@
-"""Shared prompt engine for the website and optional ComfyUI integration."""
+"""Prompt engine for the standalone Goated Prompter website."""

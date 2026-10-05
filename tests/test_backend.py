@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, Mock, patch
 from urllib.error import URLError
 
 
-# Import backend modules without running ComfyUI node/route registration.
+# Import backend modules with isolated test state.
 PACKAGE = "_goated_backend_tests"
 package = ModuleType(PACKAGE)
 package.__path__ = [str(Path(__file__).resolve().parents[1] / "goated_prompter")]
