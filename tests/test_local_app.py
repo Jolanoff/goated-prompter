@@ -122,6 +122,44 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(trace["timeout_seconds"], 45)
         self.assertEqual(trace["status"], "complete")
 
+    async def test_job_snapshots_isolate_mutable_result_and_trace(self):
+        job = local.Job()
+        messages = [{"role": "user", "content": "original"}]
+        job.record_llm_activity({"type": "request", "messages": messages})
+        messages[0]["content"] = "changed by caller"
+        job.deliver({"prompts": ["original result"]})
+        snapshot = job.snapshot()
+        snapshot["result"]["prompts"].append("changed by reader")
+        snapshot["llm_trace"]["messages"][0]["content"] = "changed by reader"
+        self.assertEqual(job.snapshot()["result"], {"prompts": ["original result"]})
+        self.assertEqual(job.snapshot()["llm_trace"]["messages"],
+                         [{"role": "user", "content": "original"}])
+
+    async def test_job_events_are_bounded_and_release_ignores_late_activity(self):
+        job = local.Job()
+        for index in range(250):
+            job.record_event(f"Event {index}")
+        self.assertEqual(len(job.snapshot()["events"]), 200)
+        self.assertEqual(job.snapshot()["events"][0]["message"], "Event 50")
+        job.clear_private_data()
+        revision = job.revision
+        job.record_llm_activity({"type": "request", "messages": [{"content": "late private text"}]})
+        self.assertEqual(job.revision, revision)
+        self.assertIsNone(job.snapshot()["llm_trace"])
+        self.assertEqual(job.snapshot()["events"], [])
+
+    async def test_http_errors_keep_security_headers_and_no_store(self):
+        for url in ("/api/settings", "/api/jobs/missing", "/api/no-such-route"):
+            response = await self.client.get(url)
+            self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+            self.assertEqual(response.headers["Referrer-Policy"], "same-origin")
+            self.assertEqual(response.headers["Cache-Control"], "no-store")
+        for body in ("not json", "[]"):
+            response = await self.client.post("/api/generate", data=body,
+                                              headers={"Content-Type": "application/json"})
+            self.assertEqual(response.status, 400)
+            self.assertFalse((await response.json())["ok"])
+
     async def test_director_updates_reset_and_generation_authority(self):
         from goated_prompter import presets as library
         source = Path(library.__file__).read_bytes()
@@ -760,6 +798,16 @@ class JsonStorageTests(unittest.TestCase):
 
 
 class UploadTests(unittest.TestCase):
+    def test_declared_format_must_match_content_and_invalid_dimension_uses_default(self):
+        buffer = BytesIO()
+        Image.new("RGB", (1600, 800)).save(buffer, "PNG")
+        raw = base64.b64encode(buffer.getvalue()).decode()
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            local.decode_image("data:image/jpeg;base64," + raw)
+        encoded = local.decode_image("data:image/png;base64," + raw, "invalid")
+        self.assertEqual((encoded.width, encoded.height), (1344, 672))
+        self.assertIsNone(local.decode_image(None))
+
     def test_formats_and_limits(self):
         for fmt, mime in (("PNG", "png"), ("JPEG", "jpeg"), ("WEBP", "webp")):
             buffer = BytesIO()
