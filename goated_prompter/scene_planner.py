@@ -19,7 +19,7 @@ from .backends.base import BackendGenerationError
 from .prompting.scene_planner import (
     MAX_SCENE_CHARACTERS, MAX_SCENE_WORDS, MAX_IDEA_CHARACTERS, MAX_IDEA_WORDS, scene_planner_instruction,
     idea_planner_instruction, scene_composer_instruction,
-    SCENE_FORMAT_CORRECTION,
+    SCENE_FORMAT_CORRECTION, IDEA_FORMAT_CORRECTION,
 )
 
 
@@ -403,7 +403,7 @@ class ScenePlanner:
                 instruction = build(state.correction)
                 if state.phase == "transport_retry":
                     instruction = replace(instruction, diagnostic_stage=instruction.diagnostic_stage + f":transport_retry_{attempt}")
-                if scene_output and state.previous_output:
+                if state.previous_output:
                     context = json.loads(instruction.user_message)
                     context["previous_response"] = state.previous_output[:instruction.stream_character_limit]
                     instruction = replace(instruction, user_message=json.dumps(context, ensure_ascii=False))
@@ -417,7 +417,7 @@ class ScenePlanner:
                 state.last_error = exc
                 state.phase = "repair"
                 logger.warning("%s JSON parse failure: %s", label, exc, exc_info=True)
-                state.correction = SCENE_FORMAT_CORRECTION if scene_output else "Return only one valid JSON array of the requested ideas. No YAML, Markdown or commentary."
+                state.correction = SCENE_FORMAT_CORRECTION if scene_output else IDEA_FORMAT_CORRECTION
                 progress(f"{label} returned invalid JSON; repairing output format only.")
             except BackendGenerationError as exc:
                 self.checkpoint()

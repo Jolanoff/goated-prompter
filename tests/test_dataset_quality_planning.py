@@ -65,6 +65,72 @@ def run(data, outputs, **kwargs):
 
 
 class QualityPlanningTests(unittest.TestCase):
+    def test_idea_json_repair_receives_previous_candidate_before_direct_writing(self):
+        data = draft(amount=1)
+        expected = scene()
+        malformed = '[{"index":1,"idea" "trying to juggle and failing"}]'
+        result, session, _ = run(data, [malformed,
+            json.dumps([{"index": 1, "idea": expected["idea"]}]),
+            json.dumps([expected]), "person_token tries to juggle oranges and fails."])
+        self.assertEqual(result["completed"], 1)
+        repair = session.generate.call_args_list[1].args[0]
+        context = json.loads(repair.user_message)
+        self.assertEqual(context.get("previous_response"), malformed)
+        self.assertIn("Preserve", repair.system_message)
+        self.assertIn("previous_response", repair.system_message)
+        self.assertEqual(repair.diagnostic_stage, "dataset:idea_planner:repair")
+        self.assertEqual([call.args[0].diagnostic_stage for call in session.generate.call_args_list[2:]],
+                         ["dataset:scene_composer", "dataset:1"])
+
+    def test_malformed_ideas_block_both_generation_paths_before_writer(self):
+        malformed = '[{"index":1,"idea" "trying to juggle and failing"}]'
+        for scenes_only in (False, True):
+            with self.subTest(scenes_only=scenes_only):
+                session, backend = Mock(), Mock()
+                session.generate.return_value = malformed
+                @contextmanager
+                def generation_session():
+                    yield session
+                backend.generation_session = generation_session
+                data = draft(amount=1)
+                with patch("goated_prompter.dataset.create_backend", return_value=backend), self.assertRaises(BackendGenerationError):
+                    DatasetService({"backend": "mock"}, lambda: None).run(
+                        GoatedPrompterRequest(idea=data["subject"]), data, lambda _: None, lambda _: None,
+                        scenes_only=scenes_only)
+                self.assertEqual(session.generate.call_count, 2)
+                self.assertTrue(all(call.args[0].diagnostic_stage.startswith("dataset:idea_planner")
+                                    for call in session.generate.call_args_list))
+
+    def test_direct_and_plan_first_recover_same_malformed_ideas_into_same_writer_input(self):
+        data = draft(amount=1)
+        expected = scene()
+        malformed = '[{"index":1,"idea" "trying to juggle and failing"}]'
+        planning = [malformed, json.dumps([{"index": 1, "idea": expected["idea"]}]), json.dumps([expected])]
+        output = "person_token tries to juggle oranges and fails."
+        direct, direct_session, _ = run(data, planning + [output])
+        plan, plan_session, _ = run(data, planning, scenes_only=True)
+        restored = validate_dataset_draft({**data, "scene_plan": plan["scene_plan"],
+                                          "scene_plan_signature": plan["scene_plan_signature"]})
+        staged, staged_session, _ = run(restored, [output])
+        self.assertEqual(direct["prompts"], staged["prompts"])
+        self.assertEqual(direct["completed"], 1)
+        self.assertEqual(direct_session.generate.call_args.args[0], staged_session.generate.call_args.args[0])
+        for session in (direct_session, plan_session):
+            self.assertNotIn("previous_response", json.loads(session.generate.call_args_list[0].args[0].user_message))
+            self.assertEqual(json.loads(session.generate.call_args_list[1].args[0].user_message)["previous_response"], malformed)
+
+    def test_idea_format_repair_retains_candidate_when_transport_fails(self):
+        data, session = draft(amount=1), Mock()
+        malformed = '[{"index":1,"idea" "trying to juggle and failing"}]'
+        session.generate.side_effect = [malformed, BackendGenerationError("temporary transport failure")]
+        with self.assertRaises(BackendGenerationError):
+            ScenePlanner(lambda: None).plan_ideas(session=session, data=data,
+                assignments=dataset_assignments(data), progress=lambda _: None)
+        self.assertEqual(session.generate.call_count, 2)
+        retry = session.generate.call_args.args[0]
+        self.assertEqual(json.loads(retry.user_message)["previous_response"], malformed)
+        self.assertIn("IDEA OUTPUT FORMAT CORRECTION", retry.system_message)
+
     def test_ten_prompts_use_full_batch_ideas_then_three_composer_chunks_plus_ten_writers(self):
         ideas = ["trying to juggle and failing", "walking in giant shoes", "making a funny face",
                  "getting tangled in a bedsheet", "catching popcorn in her mouth", "taking a ridiculous selfie",
