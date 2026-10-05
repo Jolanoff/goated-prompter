@@ -41,16 +41,16 @@ class ScenePlannerTests(unittest.TestCase):
     def test_planning_process_separates_concept_ideas_scenes_and_silent_audit(self):
         data = draft()
         system = scene_planner_instruction(data, dataset_assignments(data)).system_message
-        steps = ["STEP 1 — UNDERSTAND", "STEP 2 — GENERATE", "STEP 3 — COMPOSE",
+        steps = ["STEP 1 — UNDERSTAND", "STEP 2 — GENERATE", "STEP 3 — ESTABLISH MECHANICS",
                  "STEP 4 — CHECK GEOMETRY", "STEP 5 — REPAIR", "STEP 6 — RETURN"]
         self.assertEqual([system.index(step) for step in steps], sorted(system.index(step) for step in steps))
         for heading in ("IDEA DUPLICATION CHECK", "SCENE GEOMETRY AND VISIBILITY", "VISIBLE DETAIL RULE",
-                        "BODY AND POSE LOGIC", "ACTION LOGIC", "GAZE LOGIC", "EXPRESSION LOGIC", "SCENE COHERENCE AUDIT"):
+                        "ACTION LOGIC", "SCENE COHERENCE AUDIT"):
             self.assertIn(heading, system)
-        self.assertIn("Do not mechanically use every category", system)
-        self.assertIn("Do not automatically force eye contact", system)
+        self.assertNotIn("explore compatible idea families", system)
+        self.assertIn("fields supplied by the selected staging schema", system)
         self.assertIn("normally 3–15 words", system)
-        self.assertIn("14. NO ANATOMY HACKS", system)
+        self.assertIn("14. NO STAGING HACKS", system)
         self.assertIn('"geometry" (object)', system)
 
     def test_broad_and_narrow_concepts_produce_matching_idea_scene_counts_in_one_call(self):
@@ -107,7 +107,7 @@ class ScenePlannerTests(unittest.TestCase):
         self.assertLess(quality["uniqueness"], 100)
         faces = [{"index": i, "idea": idea} for i, idea in enumerate(
             ("funny face with tongue out", "funny face crossing eyes", "funny face puffing cheeks"), 1)]
-        self.assertLess(analyze_idea_diversity(draft(subject="woman doing funny stuff"), faces)["uniqueness"], 100)
+        self.assertEqual(analyze_idea_diversity(draft(subject="woman doing funny stuff"), faces)["uniqueness"], 100)
         self.assertEqual(analyze_idea_diversity(draft(subject="woman doing funny facial expressions"), faces)["uniqueness"], 100)
         self.assertEqual(analyze_idea_diversity(draft(source_mode="guided"), faces)["uniqueness"], 100)
 
@@ -124,11 +124,11 @@ class ScenePlannerTests(unittest.TestCase):
         self.assertNotIn("juggling", planned[0]["scene"])
         self.assertNotIn("clown costume", session.generate.call_args.args[0].system_message.casefold())
 
-    def test_legacy_plans_remain_loadable_but_are_not_reused_without_ideas(self):
+    def test_legacy_prose_remains_authoritative_without_separate_ideas(self):
         data = draft(scene_plan=[{"index": i, "input": "", "scene": f"Reading beside window {i}."} for i in (1, 2)])
         data["scene_plan_signature"] = scene_plan_signature(data, dataset_assignments(data))
         self.assertEqual(validate_dataset_draft(data)["scene_plan"], data["scene_plan"])
-        self.assertIsNone(reusable_scene_plan(data, dataset_assignments(data)))
+        self.assertEqual(reusable_scene_plan(data, dataset_assignments(data)), data["scene_plan"])
         data["results"] = [{"index": 1, "input": "", "scene": "An old scene.", "prompt": "An old prompt."}]
         self.assertNotIn("idea", validate_dataset_draft(data)["results"][0])
 
@@ -136,7 +136,7 @@ class ScenePlannerTests(unittest.TestCase):
         from goated_prompter.dataset_quality import explicit_geometry_issues, analyze_dataset_quality
         cases = [
             ("Direct rear view of woman, looking directly into the camera, full frontal face clearly visible.", "rear_front_conflict"),
-            ("Tight face close-up with shoes clearly visible.", "crop_visibility_conflict"),
+            ("Tight face close-up with shoes clearly visible.", None),
             ("Camera directly in front of her; camera directly behind her.", "camera_direction_conflict"),
             ("Rear three-quarter body orientation, head turned over shoulder toward camera, one side of face visible.", None),
             ("Juggling oranges, eyes following one falling orange, hands ready beneath it.", None),
@@ -375,8 +375,10 @@ class ScenePlannerTests(unittest.TestCase):
         instruction = scene_planner_instruction(data, assignments, "gemma")
         context = json.loads(instruction.user_message)
         for key in ("amount", "subject", "source_mode", "trigger_type", "custom_type", "visual_style",
-                    "custom_style", "variety", "constraints"):
+                    "custom_style", "variety"):
             self.assertEqual(context[key], data[key])
+        from goated_prompter.dataset_constraints import compile_constraints
+        self.assertEqual(context["constraints"], compile_constraints(data["constraints"]))
         self.assertEqual(context["assignments"], assignments)
         self.assertEqual(context["assignments"][2]["input"], context["assignments"][0]["input"])
         self.assertNotIn("target_context", context)
@@ -644,10 +646,11 @@ class ScenePlannerTests(unittest.TestCase):
             self.assertIn(planned[0]["scene"], writer.user_message)
             self.assertIn(planned[0]["idea"], writer.user_message)
             self.assertIn("SCENE PLANNER AUTHORITY", writer.system_message)
-            self.assertIn("Creativity — Strict", writer.system_message)
-            self.assertIn("Director supplies rendering technique", writer.system_message)
+            self.assertIn("Dataset Creativity — Balanced", writer.system_message)
+            self.assertIn("It controls treatment, not the semantic scene", writer.system_message)
             self.assertIsNone(writer.stream_character_limit)
-        self.assertEqual(calls[1].user_message, calls[2].user_message)
+        self.assertTrue(calls[2].user_message.startswith(calls[1].user_message))
+        self.assertIn("LOCAL REPAIR CONTRACT", calls[2].user_message)
         self.assertEqual(result["prompts"][0]["input"], "reading on a red couch")
         self.assertEqual(result["prompts"][0]["idea"], planned[0]["idea"])
 

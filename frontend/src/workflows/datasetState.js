@@ -8,12 +8,12 @@ export function invalidateDatasetPrompts(draft, patch = {}) {
     }) };
 }
 
-export function isDatasetSceneUsable(row) {
-  return !!row.idea?.trim() && !!row.scene?.trim() && !["not_generated", "geometry_warning", "failed"].includes(row.scene_status);
+export function isDatasetSceneUsable(eligibility) {
+  return eligibility?.usable === true;
 }
 
-export function datasetRetryStage(row) {
-  if (isDatasetSceneUsable(row)) return "prompt";
+export function datasetRetryStage(row, eligibility) {
+  if (isDatasetSceneUsable(eligibility)) return "prompt";
   return row.idea?.trim() ? "scene" : "idea";
 }
 

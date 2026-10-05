@@ -12,6 +12,7 @@ from unittest.mock import patch
 from aiohttp.test_utils import TestClient, TestServer
 
 import local_app as local
+from tests.helpers import enter_context
 from goated_prompter.backends.base import BackendRunawayError, GoatedPrompterBackend
 from goated_prompter.core import GoatedPrompterRequest
 from goated_prompter.dataset import (
@@ -86,6 +87,19 @@ class AlwaysRunawayBackend(CaptureBackend):
 
 
 class DatasetUnitTests(unittest.TestCase):
+    def test_legacy_prose_writer_reuses_scene_without_fabricating_idea_provenance(self):
+        from goated_prompter.scene_planner import scene_plan_signature
+        data = valid_draft(amount=1, planning_mode="Quality",
+            scene_plan=[{"index": 1, "input": "", "scene": "A person reads a book on a bench."}])
+        data["scene_plan_signature"] = scene_plan_signature(data, dataset_assignments(data))
+        backend = CaptureBackend()
+        with patch("goated_prompter.dataset.create_backend", return_value=backend):
+            result = DatasetService({"backend": "mock"}, lambda: None).run(GoatedPrompterRequest(idea=data["subject"]),
+                data, lambda _message: None, lambda _result: None)
+        self.assertEqual([call.diagnostic_stage for call in backend.calls], ["dataset:1"])
+        self.assertNotIn("idea", result["prompts"][0])
+        self.assertEqual(result["prompts"][0]["scene"], data["scene_plan"][0]["scene"])
+
     def test_obsolete_fields_are_removed_without_losing_supported_draft(self):
         data = valid_draft(results=[{"index": 1, "prompt": "A studio portrait.", "input": "portrait"}])
         legacy = {**data, "discarded_experiment": {"enabled": True}, "frame_mode": "Close-up"}
@@ -98,7 +112,7 @@ class DatasetUnitTests(unittest.TestCase):
 
     def test_long_trigger_paraphrase_is_kept_without_retry_and_reported(self):
         from unittest.mock import Mock
-        data = valid_draft(amount=1, trigger_connected=False,
+        data = valid_draft(amount=1, trigger_connected=False, expand_trigger=True,
             trigger="Two adult characters spending a private romantic weekend together",
             subject="A couple's romantic evening.")
         request = GoatedPrompterRequest(idea=data["subject"], target_model=data["target"])
@@ -139,9 +153,10 @@ class DatasetUnitTests(unittest.TestCase):
             [{"index": 1, "prompt": "contaminating previous prose"}],
             plan_item={"scene": "Cycling together along a country road"})
         builder = assemble_instruction(request, text_only=True)
-        self.assertTrue(instruction.system_message.startswith(builder.system_message.split("USER SETTINGS")[0]))
-        self.assertIn("Creativity — Strict", instruction.system_message)
-        self.assertIn("Scene Planner owns scene creativity", instruction.system_message)
+        from goated_prompter.prompting.base import CORE_SYSTEM_PROMPT
+        self.assertTrue(instruction.system_message.startswith(CORE_SYSTEM_PROMPT))
+        self.assertIn("Dataset Creativity — Balanced", instruction.system_message)
+        self.assertIn("Semantic decisions are locked; descriptive enrichment is allowed", instruction.system_message)
         self.assertNotIn("contaminating previous prose", instruction.user_message)
         self.assertIn("Cycling together", instruction.user_message)
         self.assertIn("FRAME COMPLETENESS DEFAULT", instruction.system_message)
@@ -245,7 +260,7 @@ class DatasetUnitTests(unittest.TestCase):
             GoatedPrompterRequest(idea=data["subject"], target_model=data["target"]),
             data, 1, plan_item=dataset_assignments(data)[0])
         self.assertIn("WORKFLOW RULES", instruction.system_message)
-        self.assertIn("Every scene must focus on romance.", instruction.user_message)
+        self.assertIn("Every scene must focus on romance", instruction.user_message)
         self.assertNotIn("COVERAGE ASSIGNMENT", instruction.user_message)
 
     def test_quality_report_finds_trigger_duplicates_format_and_leakage(self):
@@ -397,7 +412,7 @@ class DatasetEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.backend = CaptureBackend()
-        self.enterContext(patch("goated_prompter.dataset.create_backend", return_value=self.backend))
+        enter_context(self, patch("goated_prompter.dataset.create_backend", return_value=self.backend))
         self.app = local.create_app(config_loader=lambda: {"backend": "mock"},
                                     settings_path=Path(self.temp.name) / "settings.json")
         self.client = TestClient(TestServer(self.app), headers={"Host": "127.0.0.1:8190"})
@@ -473,6 +488,8 @@ class DatasetEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(data["scene_plan"][0]["idea"], self.backend.calls[1].user_message)
         self.assertIn(data["scene_plan"][0]["scene"], self.backend.calls[1].user_message)
         data["results"] = final["result"]["prompts"]
+        saved = await (await self.client.get("/api/workspace/settings/dataset")).json()
+        self.assertEqual(saved["draft"]["results"], final["result"]["prompts"])
         response = await self.client.put("/api/workspace/settings/dataset",
             json={"revision": saved["revision"], "draft": data})
         self.assertEqual(response.status, 200, await response.text())
@@ -585,7 +602,7 @@ class DatasetEndpointTests(unittest.IsolatedAsyncioTestCase):
                                 "geometry": character_geometry(action_focus=row["input"])}
                                for row in context["assignments"]])
 
-        self.enterContext(patch.object(self.backend, "generate", side_effect=generate))
+        enter_context(self, patch.object(self.backend, "generate", side_effect=generate))
         response = await self.client.post("/api/workspace/dataset/scenes", json={"input": data})
         self.assertEqual(response.status, 202, await response.text())
         job = await self.terminal(await response.json())

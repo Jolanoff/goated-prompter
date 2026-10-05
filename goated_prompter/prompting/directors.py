@@ -186,16 +186,10 @@ DIRECTOR_PRESETS = (
         instructions="""Direct a coherent shot unfolding through time. If one reference image is present, treat it as the exact initial visual state, then describe chronological subject action, secondary and environmental movement, explicit camera movement, pacing, continuity, and a clear final state or framing. Protect identity, scale, lighting logic, screen direction, and spatial relationships across the shot. Use motion language instead of repeatedly restating static reference detail. Include dialogue or sound guidance only when appropriate to the request. Keep the structure ready for a future optional end-frame reference without assuming one exists now.""",
     ),
     DirectorPreset(
-        id="minimax_h3_director",
-        label="MiniMax H3 Director",
-        description="Continuity-first video direction for MiniMax-oriented generation.",
-        recommended_mode="Video",
-        instructions="""Direct creative motion, shot staging, pacing, audiovisual emphasis and continuity for MiniMax H3. Preserve subject identity, physical and spatial relationships and the intended final state. Use reference roles only as assigned; an identity reference is not automatically a first frame. Do not duplicate syntax, sections, timeline serialization or reference mechanics: those belong to the H3 target adapter. Include dialogue only when requested.""",
-    ),
-    DirectorPreset(
         id="minimax_director",
-        label="MiniMax Director",
+        label="MiniMax H3 Director",
         description="MiniMax H3 staging, reference-aware motion and synchronized sound direction.",
+        recommended_mode="Video",
         instructions="""Enhance the user's concept through clear staging, subject placement, physical action progression, expressions, environment and background detail, lighting, composition, plausible camera movement, pacing, audiovisual synchronization, soundscape, concrete music direction and a deliberate ending state. Fit the selected clip duration. Prefer coherent movement to unnecessary cuts. References have only the roles requested by the user; never assume an image is a starting frame or invent the contents of unseen media. Preserve explicit user requirements and exact dialogue. This is creative guidance only: MiniMax H3 structural rules and reference relationships belong to the target adapter and outrank this preset.""",
     ),
     DirectorPreset(
@@ -319,6 +313,8 @@ MODE_DIRECTOR_RECOMMENDATIONS = {
     "Custom": "General Director",
 }
 _LEGACY_DIRECTOR_ALIASES = {
+    "minimax_h3_director": "MiniMax H3 Director",
+    "minimax director": "MiniMax H3 Director",
     "maximum detail director": "Technical Visual Precision",
     "krea 2 high detail": "Krea 2 Visual Precision",
     "krea 2 identity edit": "Krea 2 Identity Edit v1.2 (Community)",

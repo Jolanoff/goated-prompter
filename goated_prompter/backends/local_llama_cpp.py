@@ -16,6 +16,8 @@ class LocalLlamaCppBackend(GoatedPrompterBackend):
         self.config = LlamaCppLaunchConfig.from_mapping(settings)
         self.context_reserve_tokens = settings.get("context_reserve_tokens", 1024)
         self.activity_callback = settings.get("_activity_callback")
+        self.register_interrupt = settings.get("_register_interrupt")
+        self.unregister_interrupt = settings.get("_unregister_interrupt")
         self.process_manager = process_manager or get_process_manager()
 
     def _client(self, runtime_config=None, runtime_diagnostics=None):
@@ -33,6 +35,8 @@ class LocalLlamaCppBackend(GoatedPrompterBackend):
                 "_is_llama_cpp": True,
                 "_runtime_diagnostics": runtime_diagnostics or {},
                 "_activity_callback": self.activity_callback,
+                "_register_interrupt": self.register_interrupt,
+                "_unregister_interrupt": self.unregister_interrupt,
             }
         )
 

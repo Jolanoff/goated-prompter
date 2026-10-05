@@ -54,7 +54,7 @@ class RefineService:
             try:
                 prompt = normalize_workflow_output(raw, target,
                     expected_visible_text=expected_visible_text)
-                if target != "Ideogram4":
+                if target not in {"Ideogram4", "MiniMax H3"}:
                     prompt = sanitize_prompt_text(prompt)
                     if not prompt:
                         raise WorkflowFormatError("The prompt engine returned only removable metadata.")

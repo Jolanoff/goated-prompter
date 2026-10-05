@@ -210,10 +210,10 @@ class QualityPlanningTests(unittest.TestCase):
         self.assertEqual(session.generate.call_count, 4)
         self.assertIn("genuinely new idea", session.generate.call_args_list[1].args[0].system_message)
 
-    def test_near_duplicate_idea_replaced_locally_before_composition(self):
+    def test_exact_duplicate_idea_replaced_locally_before_composition(self):
         data = draft(amount=3)
         ideas = [{"index": 1, "idea": "trying to juggle oranges and failing"},
-                 {"index": 2, "idea": "dropping fruit while attempting to juggle"},
+                 {"index": 2, "idea": "trying to juggle oranges and failing"},
                  {"index": 3, "idea": "wearing oversized shoes"}]
         replacement = {"index": 2, "idea": "balancing a spoon on her nose"}
         rows = [scene(row["index"], row["idea"], scene="She " + row["idea"] + ", necessary props visible.")
@@ -230,11 +230,12 @@ class QualityPlanningTests(unittest.TestCase):
 
     def test_final_writer_retries_only_prompt_if_action_disappears(self):
         data = saved(draft(amount=1), [scene()])
-        result, session, _ = run(data, ["person_token wears clown clothes in a studio.",
+        result, session, _ = run(data, ["person_token stands motionless in a studio.",
                                       "person_token tries to juggle oranges and fails."])
         self.assertEqual(session.generate.call_count, 2)
         calls = [call.args[0] for call in session.generate.call_args_list]
-        self.assertEqual(calls[0].user_message, calls[1].user_message)
+        self.assertTrue(calls[1].user_message.startswith(calls[0].user_message))
+        self.assertIn("LOCAL REPAIR CONTRACT", calls[1].user_message)
         self.assertIn("SCENE FIDELITY CORRECTION", calls[1].system_message)
         self.assertIn("juggle", result["prompts"][0]["prompt"])
         self.assertEqual(result["scene_plan"], data["scene_plan"])
@@ -330,7 +331,6 @@ class GeometryAndQualityTests(unittest.TestCase):
     def test_clear_geometry_contradictions(self):
         cases = [
             {"camera_view": "direct rear", "face_visibility": "full frontal"},
-            {"framing": "close-up", "visibility_focus": ["shoes"]},
             {"body_orientation": "fully facing away", "head_direction": "fully frontal toward camera"},
             {"camera_view": "profile", "face_visibility": "both sides of face equally visible"},
             {"camera_view": "direct rear", "gaze": "looking straight into camera"},
@@ -389,7 +389,7 @@ class GeometryAndQualityTests(unittest.TestCase):
             self.assertEqual(planned["geometry"]["framing"], framing.replace(" ", "_").replace("-", "_"))
             self.assertEqual(session.generate.call_count, 1)
 
-    def test_invalid_shoe_crop_repairs_locally_without_changing_idea(self):
+    def test_missing_required_metadata_repairs_without_widening_crop(self):
         data = draft(amount=1)
         bad = scene(idea="walking in giant shoes", scene="She walks in giant shoes.", geometry={"framing": "face close-up"})
         good = {**bad, "geometry": {**scene(idea=bad["idea"])["geometry"], "framing": "full_body", "visibility_focus": ["shoes"]}}
@@ -397,13 +397,14 @@ class GeometryAndQualityTests(unittest.TestCase):
         session.generate.side_effect = [json.dumps([bad]), json.dumps([good])]
         result = ScenePlanner(lambda: None).compose(session=session, data=data, assignments=dataset_assignments(data),
             ideas=[{"index": 1, "idea": bad["idea"]}], progress=lambda _: None)
-        self.assertEqual(result[0], good)
+        self.assertEqual(result[0], {**good, "geometry": {**good["geometry"], "framing": "face_close_up"}})
         self.assertEqual(session.generate.call_count, 2)
 
-    def test_semantic_paraphrases_form_one_duplicate_cluster(self):
+    def test_explicit_lexical_duplicates_cluster_but_nuanced_paraphrases_defer_to_review(self):
         rows = [{"index": i, "idea": idea} for i, idea in enumerate(("trying to juggle oranges and failing",
                 "dropping fruit while attempting to juggle", "losing control of three airborne oranges"), 1)]
-        self.assertEqual(analyze_idea_diversity(draft(), rows)["uniqueness"], 0)
+        self.assertEqual(analyze_idea_diversity(draft(), rows)["uniqueness"], 50)
+        self.assertFalse(analyze_idea_diversity(draft(), rows)["ideas"][2]["issues"])
         for constrained in ({"source_mode": "guided"}, {"variety": "Focused"}):
             self.assertEqual(analyze_idea_diversity(draft(**constrained), rows)["uniqueness"], 100)
         exact = [rows[0], {**rows[0], "index": 2}]
@@ -422,13 +423,13 @@ class GeometryAndQualityTests(unittest.TestCase):
         self.assertEqual(quality["metrics"]["scene_uniqueness"], 0)
         self.assertLess(quality["score"], 50)
 
-    def test_irrelevant_maximum_inventory_is_replaced_only_for_dataset(self):
+    def test_normal_maximum_length_is_retained_with_scene_detail_discipline(self):
         data = draft(length="Maximum Detail", amount=1)
         request = GoatedPrompterRequest(idea=data["subject"], prompt_length=data["length"])
         writer = dataset_instruction(request, data, 1, plan_item=scene())
-        self.assertNotIn(MAXIMUM_DETAIL_GUIDANCE, writer.system_message)
+        self.assertIn(MAXIMUM_DETAIL_GUIDANCE, writer.system_message)
         self.assertIn(DATASET_DETAIL_DISCIPLINE, writer.system_message)
-        self.assertIn("State each important semantic fact once", writer.system_message)
+        self.assertIn("non-redundant visual", writer.system_message)
         self.assertIn(MAXIMUM_DETAIL_GUIDANCE, assemble_instruction(request, text_only=True).system_message)
 
     def test_krea_preserves_anime_and_photographic_styles(self):

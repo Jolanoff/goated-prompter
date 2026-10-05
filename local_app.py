@@ -2,35 +2,31 @@
 
 import argparse
 import asyncio
-import base64
-import binascii
-import copy
 from contextlib import closing
 from collections import OrderedDict
 from dataclasses import replace
-from io import BytesIO
 import logging
 import json
 import hashlib
-import os
 from pathlib import Path
-import tempfile
-import threading
 import time
-import uuid
 
 from aiohttp import web
-from PIL import Image, UnidentifiedImageError
 
 from goated_prompter.backends.base import GoatedPrompterError
+from goated_prompter.job_lifecycle import release_completed_checkpoints, daemon_work
+from goated_prompter.local_jobs import Job, JobCancelled, TERMINAL
+from goated_prompter.json_store import atomic_json, read_store
+from goated_prompter.uploaded_images import decode_image
+from goated_prompter.dataset_idea_history import RecentIdeaHistory
+from goated_prompter.dataset_checkpoints import DatasetCheckpointStore
 from goated_prompter.backends.llama_cpp_process import get_process_manager, _resolve_server_executable
 from goated_prompter.config import load_config
 from goated_prompter.core import GoatedPrompterRequest, GoatedPrompterService, _as_bool
 from goated_prompter.director_profiles import discover_director_profiles, resolve_director_config
-from goated_prompter.image_utils import EncodedImage
 from goated_prompter.comfy_node import GoatedPrompter
 from goated_prompter.reference_map import REFERENCE_ATTRIBUTES
-from goated_prompter.workspace_store import WorkspaceStore
+from goated_prompter.workspace_store import WorkspaceStore, WorkspaceConflict
 from goated_prompter.workspace_api import register_workspace_routes, execute_workflow
 from goated_prompter.workflow_settings import WorkflowSettingsStore
 from goated_prompter.presets import (
@@ -39,46 +35,10 @@ from goated_prompter.presets import (
     get_director_preset, recommended_director_for_mode, update_director, reset_director,
 )
 
-MAX_IMAGE_BYTES = 20 * 1024 * 1024
-MAX_IMAGE_PIXELS = 40_000_000
 COMPLETED_LIMIT = 32
-TERMINAL = {"succeeded", "failed", "cancelled"}
 STATE = web.AppKey("local_state", object)
-MAX_STORE_BYTES = 16 * 1024 * 1024
 MAX_PROMPTS = 10000
 REFERENCE_SOURCES = ("Off", "Image 1", "Image 2", "Image 3", "Image 4", "Blend")
-
-
-def atomic_json(path, payload):
-    data = (json.dumps(payload, ensure_ascii=True, indent=2) + "\n").encode("utf-8")
-    if len(data) > MAX_STORE_BYTES:
-        raise ValueError("JSON store exceeds the 16 MiB limit. Export or remove records first.")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = None
-    try:
-        with tempfile.NamedTemporaryFile(dir=path.parent, prefix=path.name + ".", suffix=".tmp", delete=False) as file:
-            temporary = Path(file.name)
-            file.write(data)
-            file.flush()
-            os.fsync(file.fileno())
-        os.replace(temporary, path)
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
-
-
-def read_store(path, default, validate):
-    try:
-        try:
-            with path.open("rb") as file:
-                data = file.read(MAX_STORE_BYTES + 1)
-        except FileNotFoundError:
-            return default
-        if len(data) > MAX_STORE_BYTES:
-            raise ValueError("Store exceeds the 16 MiB limit.")
-        return validate(json.loads(data))
-    except (OSError, ValueError, TypeError) as exc:
-        raise ValueError(f"Cannot read {path}: {exc} Restore or repair this file; it has not been overwritten.") from exc
 
 
 def validate_settings(payload):
@@ -100,7 +60,7 @@ def validate_settings(payload):
     if "builder" in payload:
         builder = payload["builder"]
         strings = {"idea", "system_prompt_override", "custom_instructions", "generated_prompt", "director_preset"}
-        combos = {"mode", "target_model", "creativity", "prompt_length"}
+        combos = {"mode", "target_model", "creativity", "prompt_length", "planning_mode"}
         sources = {f"reference_{key}_source" for key, _ in REFERENCE_ATTRIBUTES}
         if not isinstance(builder, dict):
             raise ValueError("builder must be an object.")
@@ -117,6 +77,10 @@ def validate_settings(payload):
             elif key in sources and value not in REFERENCE_SOURCES:
                 raise ValueError(f"Invalid reference source for {key}.")
             elif key in combos:
+                if key == "planning_mode":
+                    from goated_prompter.planning import planning_mode
+                    planning_mode(value)
+                    continue
                 if key == "prompt_length" and value == "Maximum":
                     value = builder[key] = "Maximum Detail"
                 if value not in schema[key][0]:
@@ -150,42 +114,6 @@ def validate_prompts(payload):
     return {"prompts": list(records.values())}
 
 
-def decode_image(value, max_dimension=1344):
-    if value is None:
-        return None
-    formats = {"data:image/png;base64": "PNG", "data:image/jpeg;base64": "JPEG",
-               "data:image/webp;base64": "WEBP"}
-    if not isinstance(value, str) or "," not in value:
-        raise ValueError("Images must be PNG, JPEG, or WEBP base64 data URLs, or null.")
-    header, data = value.split(",", 1)
-    if header not in formats or len(data) > 4 * ((MAX_IMAGE_BYTES + 2) // 3):
-        raise ValueError("Each image must be PNG, JPEG, or WEBP and at most 20 MiB.")
-    try:
-        raw = base64.b64decode(data, validate=True)
-        if len(raw) > MAX_IMAGE_BYTES:
-            raise ValueError("Each image must be at most 20 MiB.")
-        with Image.open(BytesIO(raw)) as image:
-            if image.format != formats[header]:
-                raise ValueError("Image content does not match its data URL type.")
-            if image.width * image.height > MAX_IMAGE_PIXELS:
-                raise ValueError("Each image must be at most 40 million pixels.")
-            image.verify()
-        with Image.open(BytesIO(raw)) as image:
-            prepared = image.convert("RGB")
-        try:
-            limit = max(256, min(4096, int(max_dimension)))
-        except (TypeError, ValueError):
-            limit = 1344
-        if max(prepared.size) > limit:
-            prepared.thumbnail((limit, limit), Image.Resampling.LANCZOS)
-        buffer = BytesIO()
-        prepared.save(buffer, format="PNG", optimize=True)
-        return EncodedImage(base64.b64encode(buffer.getvalue()).decode("ascii"),
-                            "image/png", prepared.width, prepared.height)
-    except (binascii.Error, UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
-        raise ValueError("Image could not be decoded. Upload a valid PNG, JPEG, or WEBP.") from exc
-
-
 def validate_local_paths(values):
     for key in ("model_path", "mmproj_path", "llama_server", "models_dir", "discovery_root", "runtime_root",
                 "director_model_path", "director_mmproj_path", "director_llama_server"):
@@ -194,203 +122,6 @@ def validate_local_paths(values):
             raise ValueError(f"{key} must be a local filesystem path, not a URL or network share.")
         if value and str(Path(value).expanduser().resolve()).startswith(("\\\\", "//")):
             raise ValueError(f"{key} must resolve to a local filesystem path.")
-
-
-class Job:
-    def __init__(self):
-        self.id = uuid.uuid4().hex
-        self.status = "running"
-        self.revision = 0
-        self.created_at = time.time()
-        self.finished_at = None
-        self.result = None
-        self.error = None
-        self.lock = threading.RLock()
-        self.gate = threading.Event()
-        self.gate.set()
-        self.stopping = False
-        self.cancel_requested = False
-        self.interrupt = None
-        self.kind = "builder"
-        self.progress = ""
-        self.progress_at = self.created_at
-        self.status_reason = "The job was accepted and is waiting for the generation worker."
-        self.events = []
-        self._event_sequence = 0
-        self._llm_request_sequence = 0
-        self.llm_trace = None
-        self._append_event(self.status_reason, "status")
-
-    def _append_event(self, message, event_type="info"):
-        self._event_sequence += 1
-        self.events.append({
-            "id": self._event_sequence,
-            "timestamp": time.time(),
-            "type": event_type,
-            "message": str(message),
-        })
-        del self.events[:-200]
-
-    def record_event(self, message, event_type="info", *, revise=True):
-        """Record bounded, user-safe runtime activity without exposing prompt contents."""
-        with self.lock:
-            self._append_event(message, event_type)
-            if revise:
-                self.revision += 1
-
-    def set_progress(self, message):
-        with self.lock:
-            self.progress = message
-            self.progress_at = time.time()
-            self.status_reason = message
-            self._append_event(message, "stage")
-            self.revision += 1
-
-    def record_llm_activity(self, event):
-        """Capture the exact text exposed by the model transport for the live inspector."""
-        if not isinstance(event, dict):
-            return
-        event_type = event.get("type")
-        with self.lock:
-            now = time.time()
-            if event_type == "request":
-                self._llm_request_sequence += 1
-                self.llm_trace = {
-                    "request_number": self._llm_request_sequence,
-                    "status": "waiting_first_token",
-                    "model": str(event.get("model") or "unknown"),
-                    "messages": copy.deepcopy(event.get("messages") or []),
-                    "parameters": copy.deepcopy(event.get("parameters") or {}),
-                    "timeout_seconds": event.get("timeout_seconds"),
-                    "output": "",
-                    "reasoning": "",
-                    "issue": "",
-                    "started_at": now,
-                    "first_token_at": None,
-                    "updated_at": now,
-                    "finished_at": None,
-                    "finish_reason": None,
-                }
-                self._append_event(
-                    f"LLM request {self._llm_request_sequence} sent; waiting for the first response text.",
-                    "request",
-                )
-            elif self.llm_trace is not None and event_type in {"response_delta", "reasoning_delta"}:
-                field = "reasoning" if event_type == "reasoning_delta" else "output"
-                text = str(event.get("text") or "")
-                if text:
-                    first = self.llm_trace["first_token_at"] is None
-                    self.llm_trace[field] += text
-                    self.llm_trace["status"] = "receiving"
-                    self.llm_trace["first_token_at"] = self.llm_trace["first_token_at"] or now
-                    self.llm_trace["updated_at"] = now
-                    if first:
-                        self._append_event(
-                            f"LLM request {self.llm_trace['request_number']} started returning text.",
-                            "response",
-                        )
-            elif self.llm_trace is not None and event_type == "response_complete":
-                self.llm_trace["status"] = "complete"
-                self.llm_trace["finish_reason"] = str(event.get("finish_reason") or "stop")
-                self.llm_trace["updated_at"] = now
-                self.llm_trace["finished_at"] = now
-                self._append_event(
-                    f"LLM request {self.llm_trace['request_number']} completed with finish reason "
-                    f"'{self.llm_trace['finish_reason']}'.",
-                    "response",
-                )
-            elif event_type == "error":
-                message = str(event.get("message") or "The model transport failed.")
-                if self.llm_trace is not None:
-                    self.llm_trace["status"] = "error"
-                    self.llm_trace["issue"] = message
-                    self.llm_trace["updated_at"] = now
-                    self.llm_trace["finished_at"] = now
-                self._append_event(message, "error")
-            else:
-                return
-            self.revision += 1
-
-    def snapshot(self):
-        with self.lock:
-            return {"id": self.id, "status": self.status, "revision": self.revision, "created_at": self.created_at,
-                    "finished_at": self.finished_at, "result": self.result, "error": self.error,
-                    "kind": self.kind, "progress": self.progress, "progress_at": self.progress_at,
-                    "status_reason": self.status_reason, "events": list(self.events),
-                    "llm_trace": copy.deepcopy(self.llm_trace)}
-
-    def checkpoint(self):
-        while True:
-            with self.lock:
-                if self.cancel_requested:
-                    raise JobCancelled()
-                if self.stopping:
-                    raise ValueError("Server is shutting down. Restart it and generate again.")
-                if self.gate.is_set():
-                    return
-                if self.status != "paused":
-                    self.status = "paused"
-                    self.status_reason = "Paused at a safe checkpoint because a pause was requested. Resume the job to continue."
-                    self._append_event(self.status_reason, "pause")
-                    self.revision += 1
-            self.gate.wait()
-
-    def set_interrupt(self, interrupt):
-        with self.lock:
-            self.interrupt = interrupt
-            cancelled = self.cancel_requested
-        if cancelled:
-            interrupt()
-
-    def cancel(self):
-        with self.lock:
-            if self.status in TERMINAL:
-                return self.snapshot()
-            self.cancel_requested = True
-            self.status = "cancelling"
-            self.status_reason = (
-                "Cancellation was requested. Waiting for the active model call to stop or reach a safe checkpoint."
-            )
-            self._append_event(self.status_reason, "cancel")
-            self.gate.set()
-            self.revision += 1
-            interrupt = self.interrupt
-            snapshot = self.snapshot()
-        if interrupt is not None:
-            interrupt()
-        return snapshot
-
-    def deliver(self, result):
-        """Deliver a result (or a durable-result factory) at a cancellable checkpoint."""
-        while True:
-            self.checkpoint()
-            with self.lock:
-                if not self.gate.is_set():
-                    continue
-                self.checkpoint()
-                self.result = result() if callable(result) else result
-                self.status = "succeeded"
-                self.status_reason = "Generation completed successfully."
-                self._append_event(self.status_reason, "success")
-                self.finished_at = time.time()
-                self.revision += 1
-                return
-
-    def commit(self, operation, finish=False):
-        """Serialize a durable result with cancellation, without waiting under the lock."""
-        if finish:
-            return self.deliver(operation)
-        while True:
-            self.checkpoint()
-            with self.lock:
-                if not self.gate.is_set():
-                    continue
-                self.checkpoint()
-                return operation()
-
-
-class JobCancelled(Exception):
-    """A local generation was explicitly ended by the user."""
 
 
 class LocalState:
@@ -415,7 +146,14 @@ class LocalState:
         if workflow_settings_path in {self.settings_path, self.prompts_path}:
             raise ValueError("Workflow settings require a separate JSON path.")
         self.workflow_settings = WorkflowSettingsStore(workflow_settings_path, read_store, atomic_json)
+        checkpoint_path = self.settings_path.parent / "dataset_checkpoints.json"
+        if checkpoint_path in {self.settings_path, self.prompts_path}:
+            raise ValueError("Dataset checkpoints require a separate JSON path.")
+        self.dataset_checkpoints = DatasetCheckpointStore(checkpoint_path, read_store, atomic_json)
+        self.dataset_checkpoints.recover()
+        self.workflow_settings.dataset_checkpoints = self.dataset_checkpoints
         self.jobs = OrderedDict()
+        self.idea_history = RecentIdeaHistory()
         self.tasks = set()
         self.admission = asyncio.Lock()
         self.storage_lock = asyncio.Lock()
@@ -515,10 +253,24 @@ class LocalState:
                 return snapshot
         return None
 
+    def start_job(self, kind, request, config, text_only, workflow=None, *, job_factory=Job):
+        """Called under admission; all routes share task registration/lifecycle."""
+        job = job_factory()
+        job.kind = kind
+        if kind in {"dataset", "dataset_scenes", "dataset_review"}:
+            self.workflow_settings.begin_dataset(job, workflow["input"], workflow.get("workflow_revision"))
+        self.jobs[job.id] = job
+        task = asyncio.create_task(self.run(job, request, config, text_only, workflow))
+        self.tasks.add(task)
+        task.add_done_callback(self.tasks.discard)
+        return job.snapshot()
+
     def execute(self, job, director_request, config, text_only, workflow=None):
         try:
             job.checkpoint()
-            config = {**config, "_activity_callback": job.record_llm_activity}
+            config = {**config, "_activity_callback": job.record_llm_activity,
+                      "_register_interrupt": job.register_interrupt,
+                      "_unregister_interrupt": job.unregister_interrupt}
             effective, _ = resolve_director_config(config, director_request)
             local_settings = effective.get("local_llama_cpp", {})
             validate_local_paths(local_settings)
@@ -539,6 +291,7 @@ class LocalState:
             result = {"ok": True, "prompt": generated.prompt, "backend": generated.backend_name,
                       "director_profile": generated.director_profile,
                       "prompt_model": generated.prompt_model, "director_preset": generated.director_preset}
+            result["planning_status"] = getattr(generated, "planning_status", "direct")
             def save_result():
                 try:
                     snapshot = self.workspace.add_version(generated.prompt, director_request.target_model, "Builder generation")
@@ -549,34 +302,53 @@ class LocalState:
             job.commit(save_result, finish=True)
         except JobCancelled:
             with job.lock:
+                if job.released:
+                    return
                 job.status = "cancelled"
+                job.completion_state = "cancelled"
                 job.status_reason = "Generation stopped because cancellation was requested."
                 job._append_event(job.status_reason, "cancel")
                 job.finished_at = time.time()
                 job.revision += 1
         except Exception as exc:
             with job.lock:
+                if job.released:
+                    return
                 cancelled = job.cancel_requested
                 if cancelled:
                     job.status = "cancelled"
+                    job.completion_state = "cancelled"
                     job.status_reason = "Generation stopped because cancellation was requested."
                     job._append_event(job.status_reason, "cancel")
+                elif job.stopping:
+                    job.status = "interrupted"
+                    job.completion_state = "interrupted"
+                    job.error = "Server stopped. Completed Dataset checkpoints remain recoverable."
+                    job.status_reason = job.error
+                    job._append_event(job.error, "error")
                 else:
                     job.error = str(exc) if isinstance(exc, (ValueError, GoatedPrompterError)) else (
                         "Generation failed unexpectedly. Check the server console and model configuration, then retry.")
-                    job.status = "failed"
+                    job.completion_state = getattr(exc, "completion_state", "provider_error")
+                    job.status = "interrupted" if job.completion_state == "interrupted" else "failed"
                     job.status_reason = job.error
                     job._append_event(job.error, "error")
                 job.finished_at = time.time()
                 job.revision += 1
             if not cancelled:
                 logging.exception("Local generation failed")
+        finally:
+            if not job.released and job.kind in {"dataset", "dataset_scenes", "dataset_review"}:
+                try:
+                    self.workflow_settings.checkpoint_dataset(job)
+                except (ValueError, OSError):
+                    logging.exception("Could not persist final Dataset job status; prior checkpoints remain intact")
 
     async def run(self, job, *args):
-        await asyncio.to_thread(self.execute, job, *args)
+        await daemon_work(self.execute, job, *args)
         completed = [key for key, record in self.jobs.items() if record.status in TERMINAL]
         for key in completed[:-COMPLETED_LIMIT]:
-            del self.jobs[key]
+            self.jobs.pop(key).clear_private_data()
 
 
 async def json_object(request):
@@ -655,24 +427,28 @@ async def generate(request):
             encoded = await asyncio.to_thread(lambda: [decode_image(value, dimension) for value in slots])
             director_request = replace(director_request, image=encoded[0], image_2=encoded[1],
                                        image_3=encoded[2], image_4=encoded[3])
-        job = Job()
-        state.jobs[job.id] = job
-        task = asyncio.create_task(state.run(job, director_request, config, text_only))
-        state.tasks.add(task)
-        task.add_done_callback(state.tasks.discard)
-        return web.json_response(job.snapshot(), status=202)
+        return web.json_response(state.start_job("builder", director_request, config, text_only), status=202)
 
 
 async def job_endpoint(request):
     job = request.app[STATE].jobs.get(request.match_info["id"])
     if job is None:
+        recovered = await asyncio.to_thread(request.app[STATE].dataset_checkpoints.find, request.match_info["id"])
+        if recovered is not None and request.method == "GET":
+            return web.json_response(recovered)
         raise web.HTTPNotFound(reason="Job not found or expired. Generate again.")
     if request.method == "POST" and request.match_info["action"] == "cancel":
         with job.lock:
             if job.status in TERMINAL:
                 raise web.HTTPConflict(reason="This job has already finished.")
         # Process termination can briefly wait; keep the HTTP event loop free.
-        return web.json_response(await asyncio.to_thread(job.cancel))
+        try:
+            snapshot = await asyncio.wait_for(daemon_work(job.cancel), timeout=2)
+        except asyncio.TimeoutError:
+            # Admission stays occupied until the worker reaches its cancellable
+            # checkpoint; a stalled transport must not stall the HTTP response.
+            snapshot = job.snapshot()
+        return web.json_response(snapshot)
     with job.lock:
         if request.method == "POST":
             if job.status in TERMINAL:
@@ -693,6 +469,16 @@ async def job_endpoint(request):
                 job._append_event(job.status_reason, "status")
             job.revision += 1
         return web.json_response(job.snapshot())
+
+
+async def release_job_checkpoints(request):
+    family = request.query.get("kind")
+    if not family:
+        raise ValueError("Choose the workflow whose completed checkpoints should be released.")
+    released = release_completed_checkpoints(request.app[STATE].jobs, family=family)
+    if family == "dataset":
+        await asyncio.to_thread(request.app[STATE].dataset_checkpoints.release, released)
+    return web.json_response({"ok": True, "released": released})
 
 
 async def models(request):
@@ -791,6 +577,8 @@ def create_app(*, port=8190, dist=None, config_loader=load_config, service_facto
             response = await handler(request)
         except web.HTTPException as exc:
             response = web.json_response({"ok": False, "error": exc.reason}, status=exc.status)
+        except WorkspaceConflict as exc:
+            response = web.json_response({"ok": False, "error": str(exc)}, status=409)
         except (ValueError, TypeError, GoatedPrompterError, DirectorLibraryError) as exc:
             response = web.json_response({"ok": False, "error": str(exc)}, status=400)
         except Exception:
@@ -807,6 +595,7 @@ def create_app(*, port=8190, dist=None, config_loader=load_config, service_facto
                             settings_path if settings_path is not None else Path(__file__).parent / "data" / "settings.json",
                             prompts_path)
     app.add_routes([web.get("/api/bootstrap", bootstrap), web.post("/api/generate", generate),
+                     web.delete("/api/jobs", release_job_checkpoints),
                     web.get("/api/jobs/{id}", job_endpoint),
                     web.post("/api/jobs/{id}/{action:pause|resume|cancel}", job_endpoint),
                     web.get("/api/models", models), web.get("/api/presets", presets),
@@ -836,13 +625,35 @@ def create_app(*, port=8190, dist=None, config_loader=load_config, service_facto
 
     async def shutdown(app):
         state = app[STATE]
+        interrupts = []
         for job in state.jobs.values():
             with job.lock:
                 job.stopping = True
                 job.gate.set()
-        if state.tasks:
-            await asyncio.gather(*state.tasks)
-        await asyncio.to_thread(get_process_manager().request_unload)
+            interrupts.append(asyncio.create_task(daemon_work(job.interrupt_requests)))
+        waiting = set(state.tasks) | set(interrupts)
+        if waiting:
+            done, pending = await asyncio.wait(waiting, timeout=3)
+            for task in pending:
+                task.cancel()
+            for task in done:
+                if not task.cancelled() and task.exception():
+                    logging.error("Shutdown cancellation failed: %s", task.exception())
+            for job in state.jobs.values():
+                with job.lock:
+                    if job.status not in TERMINAL:
+                        job.status = "interrupted"
+                        job.completion_state = "interrupted"
+                        job.error = "Shutdown timeout. Completed checkpoints remain recoverable."
+                        job.finished_at = time.time()
+                if job.kind in {"dataset", "dataset_scenes", "dataset_review"}:
+                    await asyncio.to_thread(state.workflow_settings.checkpoint_dataset, job)
+        unload_task = asyncio.create_task(daemon_work(get_process_manager().request_unload))
+        _done, pending = await asyncio.wait({unload_task}, timeout=1)
+        for task in pending:
+            task.cancel()
+        release_completed_checkpoints(state.jobs)
+        state.idea_history.clear()
 
     app.on_shutdown.append(shutdown)
     return app

@@ -2,6 +2,7 @@
 
 import base64
 from dataclasses import dataclass, replace
+import json
 import hashlib
 
 from .backends.factory import create_backend
@@ -37,11 +38,12 @@ from .prompting.details import (
 )
 from .prompting.evidence import EVIDENCE_ANALYSIS_SYSTEM_PROMPT, evidence_analysis_user_message
 from .prompting.modes import get_mode_adapter, get_vision_mode_adapter
-from .prompting.output import OUTPUT_CONTRACT, output_contract, qwen_format_repair
+from .prompting.output import OUTPUT_CONTRACT, output_contract, qwen_format_repair, minimax_format_repair
 from .prompting.target_models import QWEN21_EDIT_ADAPTER, get_model_adapter, canonical_target, resolve_target_length, get_target_capabilities
 from .presets import DEFAULT_DIRECTOR_PRESET, get_director_preset, legacy_preset_for_mode
 from .reference_map import REFERENCE_IMAGE_SLOTS, reference_images, reference_map_from_mapping, resolve_reference_map
 from .workflow_output import WorkflowFormatError, normalize_workflow_output, sanitize_prompt_text, requested_visible_text
+from .planning import planning_mode
 
 
 def _qwen21_source_tokens(request, reference_map=None, text_only=False):
@@ -147,9 +149,11 @@ class GoatedPrompterRequest:
     image_3: object = None
     image_4: object = None
     linked_references: bool = False
+    planning_mode: str = "Auto"
 
     def __post_init__(self):
         object.__setattr__(self, "target_model", canonical_target(self.target_model))
+        planning_mode(self.planning_mode)
 
     @property
     def selected_prompt_model(self):
@@ -191,6 +195,7 @@ class GoatedPrompterRequest:
             image_1_role=_reference_role(values.get("image_1_role")),
             image_2_role=_reference_role(values.get("image_2_role")),
             linked_references=_as_bool(values.get("linked_references", False)),
+            planning_mode=str(values.get("planning_mode", "Auto")),
         )
 
 
@@ -220,6 +225,9 @@ class PromptInstruction:
     # Optional bounded stream ceiling for structured batch planning. Individual
     # prompt workflows retain the transport's default runaway-output ceiling.
     stream_character_limit: int = None
+    # Request-local sampling; supporting planners use conservative values.
+    temperature: float = None
+    top_p: float = None
 
     def _user_content(self, text):
         if not reference_images(self):
@@ -258,6 +266,7 @@ class GenerationResult:
     director_profile: str = ""
     prompt_model: str = ""
     director_preset: str = ""
+    planning_status: str = "direct"
 
 
 def assemble_instruction(
@@ -266,10 +275,12 @@ def assemble_instruction(
     resolved_scene=None,
     resolved_reference_map=None,
     text_only=False,
+    prompt_scene_plan=None,
+    compile_user_constraints=True,
 ):
     if text_only:
         resolved_scene = None
-    idea = request.idea.strip()
+    idea = (prompt_scene_plan.compiled_request.writer_request(include_constraints=False) if prompt_scene_plan is not None else request.idea).strip()
     if request.linked_references and not text_only:
         resolved_reference_map = (
             resolved_reference_map
@@ -323,11 +334,21 @@ def assemble_instruction(
     ))
 
     sections.append(f"DIRECTOR BEHAVIOR — {preset.label}\n{active_director_instructions}")
-    if request.custom_instructions.strip():
-        sections.append(f"WORKFLOW RULES\n{request.custom_instructions.strip()}")
+    if prompt_scene_plan is not None:
+        sections.append(prompt_scene_plan.supporting_input())
+    workflow_rules = request.custom_instructions
+    if prompt_scene_plan is not None and prompt_scene_plan.compiled_request.workflow_rules is not None:
+        workflow_rules = prompt_scene_plan.compiled_request.workflow_rules
+    if workflow_rules.strip():
+        sections.append(f"WORKFLOW RULES\n{workflow_rules.strip()}")
 
     if resolved_scene is not None:
-        compiler_input = resolved_scene.compiler_input(request.target_model)
+        compiler_scene = resolved_scene
+        if prompt_scene_plan is not None:
+            compiler_scene = replace(resolved_scene, attributes=tuple(
+                replace(item, evidence="User-requested transformation: " + prompt_scene_plan.compiled_request.positive_request)
+                if item.source == "User Prompt" else item for item in resolved_scene.attributes))
+        compiler_input = compiler_scene.compiler_input(request.target_model)
         sections.append(compiler_input)
         if debug_prompts_enabled():
             print("[Goated Prompter FINAL COMPILER INPUT]", flush=True)
@@ -337,6 +358,19 @@ def assemble_instruction(
         sections.append(reference_constraints)
         print("[Goated Prompter DIRECTOR CONSTRAINTS]", flush=True)
         print(resolved_reference_map.director_constraints(), flush=True)
+
+    if prompt_scene_plan is None and compile_user_constraints:
+        from .planning.constraints import compile_prompt_request, COMPILED_CONTRACT
+        compiled = compile_prompt_request(request, has_context=has_visual_context)
+        if compiled.forbidden or compiled.variable:
+            # Direct still performs no planning call. Only safely compiled rule
+            # clauses move from positive prose to compiler-owned restrictions.
+            idea = compiled.positive_request
+            if workflow_rules.strip() and compiled.workflow_rules != workflow_rules:
+                sections = [section for section in sections if section != f"WORKFLOW RULES\n{workflow_rules.strip()}"]
+                if compiled.workflow_rules.strip():
+                    sections.append(f"WORKFLOW RULES\n{compiled.workflow_rules.strip()}")
+            sections.append(COMPILED_CONTRACT + "\n" + json.dumps(compiled.workflow_data(), ensure_ascii=False))
 
     if request.target_model == "Qwen Image 2.1":
         if qwen_images:
@@ -464,6 +498,7 @@ class GoatedPrompterService:
         resolved_scene=None,
         resolved_reference_map=None,
         text_only=False,
+        prompt_scene_plan=None,
     ):
         return assemble_instruction(
             request,
@@ -471,6 +506,7 @@ class GoatedPrompterService:
             resolved_scene=resolved_scene,
             resolved_reference_map=resolved_reference_map,
             text_only=text_only,
+            **({"prompt_scene_plan": prompt_scene_plan} if prompt_scene_plan is not None else {}),
         )
 
     def generate(self, request):
@@ -555,12 +591,24 @@ class GoatedPrompterService:
                 if debug_prompts_enabled():
                     print("[Goated Prompter RESOLVED SCENE]", flush=True)
                     print(resolved_scene.diagnostic_text(), flush=True)
+            prompt_scene_plan, planning_status = None, "direct"
+            from .planning.semantic_validation import enabled, constraints_enabled, invariant_contract, review_candidate, repair_contract, SemanticValidationError
+            validate_semantics = enabled(effective_config)
+            if request.planning_mode != "Direct":
+                from .planning.scene_planner import plan_prompt_scene
+                def planning_progress(message):
+                    session_backend.emit_activity("planning", message=message)
+                prompt_scene_plan, planning_status = plan_prompt_scene(
+                    session_backend, request, resolved_scene=resolved_scene,
+                    family=model_family, checkpoint=self._checkpoint, progress=planning_progress,
+                    **({"semantic_validation": True} if validate_semantics else {}))
             instruction = self.assemble(
                 request,
                 model_family=model_family,
                 resolved_scene=resolved_scene,
                 resolved_reference_map=resolved_reference_map,
                 text_only=text_only,
+                **({"prompt_scene_plan": prompt_scene_plan} if prompt_scene_plan is not None else {}),
             )
             instruction = replace(
                 instruction,
@@ -572,33 +620,67 @@ class GoatedPrompterService:
             )
             qwen_images = _qwen21_source_tokens(request, resolved_reference_map, text_only) if request.target_model == "Qwen Image 2.1" else ()
             qwen_task = "edit" if qwen_images else "t2i"
-            validate_format = request.target_model == "Qwen Image 2.1" or get_target_capabilities(request.target_model).output_format == "json"
-            for attempt in range(2 if validate_format else 1):
+            validate_format = request.target_model == "Qwen Image 2.1" or get_target_capabilities(request.target_model).supports_structured_output
+            from .planning.constraints import compile_prompt_request
+            from .planning.constraint_validation import output_constraint_issues
+            compiled_constraints = compile_prompt_request(request, has_context=resolved_scene is not None or bool(reference_images(request)))
+            validate_constraints = bool(compiled_constraints.forbidden)
+            audit_constraints = validate_constraints and constraints_enabled(effective_config)
+            semantic_contract = invariant_contract(request.idea + "\n" + request.custom_instructions,
+                planned=prompt_scene_plan.details if prompt_scene_plan else None,
+                constraints=compiled_constraints.workflow_data(), literal_text=requested_visible_text(request.idea), target=request.target_model)
+            accepted_facts = ()
+            if resolved_scene is not None:
+                semantic_contract["preserved_reference_facts"] = [{"attribute":item.key,"source":item.source,"evidence":item.evidence}
+                    for item in resolved_scene.attributes if item.preserve and item.source not in {"Off","User Prompt"}]
+            for attempt in range(2 if validate_format or validate_constraints or validate_semantics or audit_constraints else 1):
+                format_valid = None
                 session_backend.validate_instruction(instruction)
                 if self._checkpoint is not None:
                     self._checkpoint()
                 prompt = str(session_backend.generate(instruction) or "").strip()
                 if self._checkpoint is not None:
                     self._checkpoint()
-                if not validate_format:
+                raw_candidate = prompt
+                if not validate_format and not validate_constraints and not validate_semantics and not audit_constraints:
                     break
+                problems = []
                 try:
-                    prompt = normalize_workflow_output(prompt, request.target_model,
-                                                       expected_visible_text=requested_visible_text(request.idea))
+                    if validate_format:
+                        prompt = normalize_workflow_output(prompt, request.target_model,
+                                                            expected_visible_text=requested_visible_text(request.idea), mode=request.mode)
+                        format_valid = True
+                    problems = [issue for issue in output_constraint_issues(prompt, request.target_model,
+                        compiled_constraints.workflow_data()) if issue["severity"] == "error"] if validate_constraints else []
+                    if problems:
+                        raise WorkflowFormatError(problems[0]["message"])
+                    if validate_semantics or audit_constraints:
+                        accepted_facts = review_candidate(session_backend, {**semantic_contract, "accepted_facts": list(accepted_facts)},
+                            prompt, stage="builder:final", family=model_family, checkpoint=self._checkpoint,
+                            checks=("action_fidelity", "scene_fidelity", "constraint_validity", *(["repair_preservation"] if attempt else []))
+                            if validate_semantics else ("constraint_validity",))
+                    session_backend.emit_activity("validation", workflow="builder", attempt=attempt, accepted=True, format_valid=format_valid)
                     break
-                except WorkflowFormatError as exc:
+                except (WorkflowFormatError, SemanticValidationError) as exc:
+                    session_backend.emit_activity("validation", workflow="builder", attempt=attempt, accepted=False,
+                        format_valid=False if format_valid is None and validate_format else format_valid,
+                        error=str(exc), issues=getattr(exc, "issues", []))
                     if attempt:
                         raise BackendGenerationError(f"{request.target_model} returned an invalid prompt after one format-repair attempt: {exc}") from exc
+                    accepted_facts = getattr(exc, "accepted_facts", ()) or accepted_facts
+                    semantic_contract.update(previous_response=raw_candidate, listed_defect=str(exc))
                     instruction = replace(instruction,
-                        system_message=qwen_format_repair(
+                        system_message=(instruction.system_message + "\n\nCONSTRAINT CORRECTION: " + str(exc)
+                            + " Preserve the original scene/action and all supplied facts. Apply exclusions silently; change only invalid final wording."
+                            if problems else minimax_format_repair(instruction.system_message, exc) if request.target_model == "MiniMax H3" else qwen_format_repair(
                             instruction.system_message,
                             exc,
                             output_contract(request.target_model, qwen_task=qwen_task, qwen_images=qwen_images),
-                        ),
-                        diagnostic_stage="final:format_retry")
+                        )), user_message=instruction.user_message + repair_contract(semantic_contract, raw_candidate, exc, accepted_facts), temperature=.25, top_p=.85,
+                        diagnostic_stage="final:semantic_retry" if isinstance(exc, SemanticValidationError) else "final:constraint_retry" if problems else "final:format_retry")
         if not prompt:
             raise RuntimeError("Goated Prompter backend returned an empty prompt.")
-        if request.target_model != "Ideogram4":
+        if request.target_model != "Ideogram4" and not (request.target_model == "MiniMax H3" and request.mode == "Video"):
             prompt = sanitize_prompt_text(prompt)
         if not prompt:
             raise RuntimeError("Goated Prompter backend returned only removable metadata.")
@@ -609,4 +691,5 @@ class GoatedPrompterService:
             director_profile=profile.label if profile else "",
             prompt_model=profile.prompt_model if profile else request.selected_prompt_model,
             director_preset=instruction.director_preset,
+            planning_status=planning_status,
         )

@@ -1,19 +1,38 @@
 """Director library mutations always use an isolated temporary library."""
 
 import os
+import json
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 
 from goated_prompter import presets
+from tests.helpers import enter_context
 
 
 class DirectorLibraryTests(unittest.TestCase):
+    def test_single_minimax_director_resolves_legacy_ids_labels_and_override(self):
+        directors = [preset for preset in presets.DIRECTOR_PRESETS if "MiniMax" in preset.label]
+        self.assertEqual(len(directors), 1)
+        director = directors[0]
+        self.assertEqual(director.label, "MiniMax H3 Director")
+        for alias in ("minimax_director", "minimax_h3_director", "MiniMax Director", "MiniMax H3 Director"):
+            self.assertEqual(presets.get_director_preset(alias), director)
+        path = self.root / ".overrides" / "minimax_h3_director.json"
+        path.parent.mkdir()
+        path.write_text(json.dumps({"id": "minimax_h3_director", "name": "MiniMax H3 Director",
+            "instructions": "User motion direction", "recommended_mode": "Video"}), encoding="utf-8")
+        modified = presets.get_director_preset("minimax_director")
+        self.assertTrue(modified.modified)
+        self.assertEqual(modified.instructions, "User motion direction")
+        presets.reset_director("minimax_h3_director")
+        self.assertFalse(path.exists())
+
     def setUp(self):
-        temporary = self.enterContext(tempfile.TemporaryDirectory())
+        temporary = enter_context(self, tempfile.TemporaryDirectory())
         self.root = Path(temporary)
-        self.enterContext(patch.dict(os.environ, {presets.USER_DIRECTOR_DIR_ENV: temporary}))
+        enter_context(self, patch.dict(os.environ, {presets.USER_DIRECTOR_DIR_ENV: temporary}))
 
     def test_update_preserves_id_filename_mode_and_atomic_failure(self):
         director, path = presets.save_user_director("Original", "Instructions", "Video")

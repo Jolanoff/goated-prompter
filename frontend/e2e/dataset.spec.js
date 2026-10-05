@@ -2,7 +2,97 @@ import { test, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import AxeBuilder from "@axe-core/playwright";
 
-test("Quality composes in small chunks and geometry stays behind a readable disclosure", async ({ page, request }) => {
+async function delayDatasetSettings(page) {
+  // Exercise the job-completion/revision-refresh boundary on slower CI runners.
+  await page.route("**/api/workspace/settings/dataset", async (route) => {
+    const response = await route.fetch();
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    await route.fulfill({ response });
+  });
+}
+
+test("backend completes and persists Dataset after the generating browser closes", async ({ page, context, browser, request }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  await page.getByLabel("Dataset idea", { exact: true }).fill("A craftsperson working with clay.");
+  await page.getByLabel("Trigger text or terms").fill("durable_person");
+  await page.getByLabel("Number of prompts").selectOption("5");
+  const accepted = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset") && response.status() === 202);
+  await page.getByRole("button", { name: "Generate 5 prompts", exact: true }).click();
+  const job = await (await accepted).json();
+  const appUrl = page.url();
+  await context.close();
+  await expect.poll(async () => (await (await request.get(`/api/jobs/${job.id}`)).json()).status).toBe("succeeded");
+  const saved = await (await request.get("/api/workspace/settings/dataset")).json();
+  expect(saved.draft.results).toHaveLength(5);
+  expect(saved.checkpoint.job_id).toBe(job.id);
+  const recovered = await browser.newContext();
+  try {
+    const newPage = await recovered.newPage();
+    await newPage.goto(appUrl);
+    await newPage.getByRole("button", { name: "Dataset", exact: true }).click();
+    await expect(newPage.getByLabel("Dataset prompt 5")).toHaveValue(/durable_person/);
+  } finally { await recovered.close(); }
+});
+
+test("descriptive creativity persists independently and reuses the exact planned scene", async ({ page, request }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  await expect(page.getByLabel("Dataset descriptive creativity")).toHaveValue("Balanced");
+  await page.getByLabel("Dataset idea", { exact: true }).fill("One performer balancing inside an aerial hoop.");
+  await page.getByLabel("Number of prompts").selectOption("1");
+  await page.getByRole("button", { name: "Plan scenes first", exact: true }).click();
+  await expect(page.getByLabel("Planned scene 1")).toHaveValue(/mock scene/);
+  await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
+  const before = (await (await request.get("/api/workspace/settings/dataset")).json()).draft;
+  await page.getByLabel("Dataset descriptive creativity").selectOption("Dice");
+  await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
+  const changed = (await (await request.get("/api/workspace/settings/dataset")).json()).draft;
+  expect(changed.creativity).toBe("Dice");
+  expect(changed.scene_plan_signature).toBe(before.scene_plan_signature);
+  expect(changed.scene_plan.map(({ idea, scene, geometry }) => ({ idea, scene, geometry })))
+    .toEqual(before.scene_plan.map(({ idea, scene, geometry }) => ({ idea, scene, geometry })));
+  await page.reload();
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  await expect(page.getByLabel("Dataset descriptive creativity")).toHaveValue("Dice");
+  await page.getByLabel("Trigger text or terms").fill("ohwx_performer");
+  const accepted = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset") && response.status() === 202);
+  await page.getByRole("button", { name: "Generate prompts from these scenes", exact: true }).click();
+  const response = await accepted;
+  expect(response.request().postDataJSON().input.creativity).toBe("Dice");
+  const job = await response.json();
+  await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(/ohwx_performer/);
+  const finished = await (await request.get(`/api/jobs/${job.id}`)).json();
+  expect(finished.llm_trace.request_number).toBe(1);
+  expect(finished.llm_trace.messages[0].content).toContain("Dataset Creativity — Dice");
+  expect(finished.result.scene_plan[0].geometry).toEqual(before.scene_plan[0].geometry);
+});
+
+test("a writer failure retries the prompt using backend scene eligibility, not scene repair", async ({ page, request }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  await page.getByLabel("Dataset idea", { exact: true }).fill("A craftsperson working with clay.");
+  await page.getByLabel("Trigger text or terms").fill("retry_person");
+  await page.getByLabel("Number of prompts").selectOption("1");
+  await page.getByRole("button", { name: "Plan scenes first", exact: true }).click();
+  await expect(page.getByLabel("Planned scene 1")).toHaveValue(/mock scene/);
+  const saved = await (await request.get("/api/workspace/settings/dataset")).json();
+  saved.draft.scene_plan[0] = { ...saved.draft.scene_plan[0], prompt_status: "failed",
+    failure_stage: "prompt", failure_reason: "Writer disconnected; the scene is valid." };
+  expect((await request.put("/api/workspace/settings/dataset", { data: { revision: saved.revision, draft: saved.draft } })).ok()).toBe(true);
+  await page.reload();
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  const accepted = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset/scene") && response.status() === 202);
+  await page.getByRole("button", { name: "Retry failed prompt", exact: true }).click();
+  const response = await accepted;
+  expect(response.request().postDataJSON().action).toBe("regenerate_prompt");
+  const job = await response.json();
+  await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(/retry_person/);
+  const finished = await (await request.get(`/api/jobs/${job.id}`)).json();
+  expect(finished.llm_trace.request_number).toBe(1);
+});
+
+test("Quality composes in small chunks and geometry opens in an accessible modal", async ({ page, request }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/");
   await page.getByRole("button", { name: "Dataset", exact: true }).click();
@@ -18,33 +108,58 @@ test("Quality composes in small chunks and geometry stays behind a readable disc
   expect(finished.status).toBe("succeeded");
   expect(finished.llm_trace.request_number).toBe(8); // Full-batch ideas + 2 chunks + 5 writers.
   const plan = page.getByRole("region", { name: "Scene Planner ideas", exact: true });
-  const disclosure = plan.locator("details").filter({ has: page.getByText("Geometry 1", { exact: true }) });
-  await expect(disclosure).not.toHaveAttribute("open");
-  await expect(disclosure.getByText("gaze direction", { exact: true })).not.toBeVisible();
+  const geometryButton = plan.getByRole("button", { name: "View geometry 1", exact: true });
+  const modal = page.getByRole("dialog", { name: "Geometry 1", exact: true });
+  await expect(modal).not.toBeVisible();
+  await expect(geometryButton).toHaveAttribute("aria-haspopup", "dialog");
+  await expect(geometryButton).toHaveAttribute("title", "View geometry 1");
   const neighboringScene = plan.getByLabel("Planned scene 2").locator("../..");
   const sceneBefore = await neighboringScene.boundingBox();
-  await disclosure.locator("summary").click();
-  await expect(disclosure.getByText("gaze direction", { exact: true })).toBeVisible();
-  await expect(disclosure.getByText("toward action", { exact: true })).toHaveCount(2); // Head and eyes are separate facts.
-  await expect(disclosure.getByText("standing neutral", { exact: true })).toBeVisible();
+  await geometryButton.focus();
+  await page.keyboard.press("Enter");
+  await expect(modal).toBeVisible();
+  await expect(modal.getByRole("button", { name: "Close geometry", exact: true })).toBeFocused();
+  await expect(modal.getByText("gaze direction", { exact: true })).toBeVisible();
+  await expect(modal.getByText("toward action", { exact: true })).toHaveCount(2); // Head and eyes are separate facts.
+  await expect(modal.getByText("standing neutral", { exact: true })).toBeVisible();
+  await page.keyboard.press("Tab");
+  expect(await modal.evaluate((element) => element.contains(document.activeElement))).toBe(true);
+  await page.keyboard.press("Tab");
+  await expect(modal.getByRole("button", { name: "Close geometry", exact: true })).toBeFocused();
+  await page.keyboard.press("Shift+Tab");
+  await expect(modal.locator("dl")).toBeFocused();
   const sceneAfter = await neighboringScene.boundingBox();
-  expect(sceneAfter.height).toBe(sceneBefore.height);
-  expect(sceneAfter.width).toBe(sceneBefore.width);
-  expect(sceneAfter.x).toBe(sceneBefore.x);
-  const fields = disclosure.locator("dl");
-  expect(await fields.evaluate((element) => getComputedStyle(element).gridTemplateRows.split(" ").length)).toBe(2);
-  expect(await fields.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
+  expect(sceneAfter.height).toBeCloseTo(sceneBefore.height, 2);
+  expect(sceneAfter.width).toBeCloseTo(sceneBefore.width, 2);
+  expect(sceneAfter.x).toBeCloseTo(sceneBefore.x, 2);
+  const fields = modal.locator("dl");
+  expect(await fields.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  expect((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze()).violations).toEqual([]);
+  await page.keyboard.press("Escape");
+  await expect(modal).not.toBeVisible();
+  await expect(geometryButton).toBeFocused();
   const results = page.getByRole("region", { name: "Dataset results", exact: true });
   const neighboringPrompt = results.getByLabel("Dataset prompt 2").locator("..");
   const promptBefore = await neighboringPrompt.boundingBox();
-  await results.getByText("Geometry 1", { exact: true }).click();
+  const resultGeometryButton = results.getByRole("button", { name: "View geometry 1", exact: true });
+  await resultGeometryButton.click();
+  await expect(modal).toBeVisible();
   const promptAfter = await neighboringPrompt.boundingBox();
   expect(promptAfter.height).toBe(promptBefore.height);
   expect(promptAfter.width).toBe(promptBefore.width);
   expect(promptAfter.x).toBe(promptBefore.x);
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  expect(await fields.evaluate((element) => getComputedStyle(element).gridTemplateRows.split(" ").length)).toBe(2);
+  const modalBox = await modal.boundingBox();
+  expect(modalBox.x).toBeGreaterThanOrEqual(0);
+  expect(modalBox.x + modalBox.width).toBeLessThanOrEqual(390);
+  expect(modalBox.y).toBeGreaterThanOrEqual(0);
+  expect(modalBox.y + modalBox.height).toBeLessThanOrEqual(844);
+  expect(await fields.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  expect((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze()).violations).toEqual([]);
+  await modal.getByRole("button", { name: "Close geometry", exact: true }).click();
+  await expect(modal).not.toBeVisible();
+  await expect(resultGeometryButton).toBeFocused();
   expect(finished.result.scene_plan.every((row) => row.geometry.gaze_direction === "toward_action" && !("gaze" in row.geometry))).toBe(true);
 });
 
@@ -99,6 +214,10 @@ test("failed scenes show persistent reasons and do not block writing valid scene
   await expect(results.getByLabel("Prompt 1 failure reason")).toContainText(reason);
   await expect(results.getByRole("button", { name: "Retry failed scene", exact: true })).toBeVisible();
   await expect(results.getByRole("button", { name: "Retry failed idea", exact: true })).toHaveCount(0);
+  // Measure final-state contrast, not a transient entrance-fade frame.
+  await page.evaluate(() => Promise.all(document.getAnimations()
+    .filter((animation) => Number.isFinite(animation.effect.getTiming().iterations))
+    .map((animation) => animation.finished.catch(() => {}))));
   expect((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze()).violations).toEqual([]);
   const accepted = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset") && response.status() === 202);
   await page.getByRole("button", { name: "Generate prompts from 1 valid scene", exact: true }).click();
@@ -124,7 +243,7 @@ test("failed scenes show persistent reasons and do not block writing valid scene
   await expect(page.getByLabel("Planned idea 1")).toHaveValue(fixedIdea);
 });
 
-test("Dataset builds, persists and exports a trigger-ready batch", async ({ page }) => {
+test("Dataset builds, persists and exports a trigger-ready batch", async ({ page, request }) => {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.setViewportSize({ width: 390, height: 844 });
@@ -150,12 +269,17 @@ test("Dataset builds, persists and exports a trigger-ready batch", async ({ page
   await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/running through/);
   await expect(page.getByLabel("Planned scene 1")).toHaveValue(/standing portrait/);
   await expect(page.getByRole("button", { name: "TXT", exact: true })).toBeEnabled();
+  await expect(page.getByLabel("Planned scene 1")).toBeEnabled();
   const downloaded = page.waitForEvent("download");
+  const cleanup = page.waitForResponse((response) => response.url().endsWith("/api/jobs?kind=dataset") && response.request().method() === "DELETE");
   await page.getByRole("button", { name: "JSONL", exact: true }).click();
   const exported = (await readFile(await (await downloaded).path(), "utf8")).split("\n").map(JSON.parse);
   expect(exported[0].scene).toContain("standing portrait");
   expect(exported[0].idea).toContain("standing portrait");
   expect(exported[0].index).toBe(1);
+  const released = await (await cleanup).json();
+  expect(released.released.length).toBeGreaterThan(0);
+  for (const id of released.released) expect((await request.get(`/api/jobs/${id}`)).status()).toBe(404);
   const quality = page.getByRole("region", { name: "Dataset quality report" });
   await expect(quality.getByText("Overall", { exact: true })).toBeVisible();
   await expect(quality.getByText(/Prompt checks · \d\/3 passed/)).toBeVisible();
@@ -283,7 +407,89 @@ test("plan first, edit and persist ideas, reuse across targets, and invalidate s
   expect(errors).toEqual([]);
 });
 
+test("expanded fruit wording passes subject checks while protected wording stays exact", async ({ page, request }) => {
+  const path = "/api/workspace/settings/dataset";
+  const record = await (await request.get(path)).json();
+  const prompt = "A muscular anthropomorphic banana in a suit punches the apple character in a dress on a padded dojo mat.";
+  const input = { ...record.draft, amount: 1, trigger: "a banana, an apple", trigger_connected: false,
+    trigger_at_start: false, expand_trigger: true, subject: "Fruit characters in combat.", target: "Generic",
+    source_mode: "random", scene_plan: [], scene_plan_signature: "", quality_report: {},
+    results: [{ index: 1, input: "", prompt }], result_job_id: "" };
+  const expanded = await (await request.post("/api/workspace/dataset/quality", { data: { input } })).json();
+  expect(expanded.report.prompts[0].issues.filter((issue) => issue.code.startsWith("trigger"))).toEqual([]);
+  const protectedReport = await (await request.post("/api/workspace/dataset/quality", {
+    data: { input: { ...input, expand_trigger: false } },
+  })).json();
+  expect(protectedReport.report.prompts[0].issues.some((issue) => issue.code === "trigger_missing")).toBe(true);
+  expect(protectedReport.report.signature).not.toBe(expanded.report.signature);
+  expect((await request.put(path, { data: { revision: record.revision, draft: input } })).ok()).toBe(true);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  await expect(page.getByLabel("Allow trigger expansion")).toBeChecked();
+  await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(prompt);
+  const quality = page.getByRole("region", { name: "Dataset quality report", exact: true });
+  await quality.getByText("Prompt checks · 1/1 passed", { exact: true }).click();
+  await expect(quality.getByText("All automatic checks passed.")).toBeVisible();
+  await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
+  const latest = await (await request.get(path)).json();
+  expect((await request.put(path, { data: { revision: latest.revision, draft: record.draft } })).ok()).toBe(true);
+});
+
+test("reset recent ideas does not invalidate the current plan or prompts", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  await page.getByLabel("Dataset idea", { exact: true }).fill("A performer in a rehearsal room.");
+  await page.getByLabel("Trigger text or terms").fill("performer_token");
+  await page.getByLabel("Number of prompts").selectOption("2");
+  await page.getByRole("button", { name: "Generate 2 prompts", exact: true }).click();
+  await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/performer_token/);
+  await expect(page.getByRole("button", { name: "Reset recent ideas", exact: true })).toBeEnabled();
+  const idea = await page.getByLabel("Planned idea 1").inputValue();
+  const prompt = await page.getByLabel("Dataset prompt 1").inputValue();
+  const reset = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset/novelty/reset"));
+  await page.getByRole("button", { name: "Reset recent ideas", exact: true }).click();
+  expect((await reset).ok()).toBe(true);
+  await expect(page.getByText("Recent ideas reset for this concept. Current scenes and prompts are unchanged.", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Planned idea 1")).toHaveValue(idea);
+  await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(prompt);
+});
+
+test("manual scenes regenerate locally and clearing results releases only job checkpoints", async ({ page, request }) => {
+  await delayDatasetSettings(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  await page.getByLabel("Dataset idea", { exact: true }).fill("A traveler visiting exhibits.");
+  await page.getByLabel("Trigger text or terms").fill("ohwx_traveler");
+  await page.getByLabel("Number of prompts").selectOption("2");
+  await page.getByRole("button", { name: "Generate 2 prompts", exact: true }).click();
+  await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/ohwx_traveler/);
+  await expect(page.getByLabel("Planned scene 1")).toBeEnabled();
+  const manual = "She reads a book on a park bench.";
+  await page.getByLabel("Planned scene 1").fill(manual);
+  const plan = page.getByRole("region", { name: "Scene Planner ideas", exact: true });
+  const started = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset/scene") && response.request().method() === "POST");
+  await plan.getByRole("button", { name: "Regenerate prompt", exact: true }).first().click();
+  const response = await started;
+  expect(response.ok(), await response.text()).toBe(true);
+  const sceneJob = await response.json();
+  await expect.poll(async () => (await (await request.get(`/api/jobs/${sceneJob.id}`)).json()).status).toBe("succeeded");
+  await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(/park bench/);
+  await expect(page.getByLabel("Planned scene 1")).toHaveValue(manual);
+  await expect(plan.getByRole("button", { name: "View geometry 1", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Clear", exact: true })).toBeEnabled();
+  const cleanup = page.waitForResponse((response) => response.url().endsWith("/api/jobs?kind=dataset") && response.request().method() === "DELETE");
+  await page.getByRole("button", { name: "Clear", exact: true }).click();
+  for (const id of (await (await cleanup).json()).released) expect((await request.get(`/api/jobs/${id}`)).status()).toBe(404);
+  await expect(page.getByLabel("Dataset prompt 1")).toHaveCount(0);
+  await expect(page.getByText("Dataset settings: Saved")).toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  await expect(page.getByLabel("Planned scene 1")).toHaveValue(manual);
+  await expect(page.getByLabel("Dataset prompt 1")).toHaveCount(0);
+});
+
 test("Quality planning and per-scene controls preserve the rest of the batch", async ({ page, request }) => {
+  await delayDatasetSettings(page);
   await page.goto("/");
   await page.getByRole("button", { name: "Dataset", exact: true }).click();
   await page.getByLabel("Dataset idea", { exact: true }).fill("A woman doing funny stuff");
@@ -324,7 +530,12 @@ test("Quality planning and per-scene controls preserve the rest of the batch", a
   expect(state.idea_plan_current).toBe(true);
   expect(state.scene_plan_current).toBe(false);
   await expect(page.getByRole("button", { name: "Repair scene", exact: true }).first()).toBeEnabled();
+  const repaired = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset/scene") && response.request().method() === "POST");
   await page.getByRole("button", { name: "Repair scene", exact: true }).first().click();
+  const repairResponse = await repaired;
+  expect(repairResponse.ok(), await repairResponse.text()).toBe(true);
+  const repairJob = await repairResponse.json();
+  await expect.poll(async () => (await (await request.get(`/api/jobs/${repairJob.id}`)).json()).status).toBe("succeeded");
   await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(/Edited activity/);
   await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(before.results[1].prompt);
 });

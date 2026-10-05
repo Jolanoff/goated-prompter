@@ -16,12 +16,18 @@ class BackendConfigurationError(GoatedPrompterError):
 class BackendGenerationError(GoatedPrompterError):
     """The selected backend failed while generating text."""
 
+    def __init__(self, message, *, completion_state="provider_error", partial_text="", finish_reason=None):
+        super().__init__(message)
+        self.completion_state = completion_state
+        self.partial_text = partial_text
+        self.finish_reason = finish_reason
+
 
 class BackendRunawayError(BackendGenerationError):
     """A bounded workflow exceeded its limit or entered a repetition loop."""
 
-    def __init__(self, message, *, recoverable_text=""):
-        super().__init__(message)
+    def __init__(self, message, *, recoverable_text="", completion_state="provider_error", partial_text="", finish_reason=None):
+        super().__init__(message, completion_state=completion_state, partial_text=partial_text, finish_reason=finish_reason)
         self.recoverable_text = recoverable_text
 
 

@@ -28,8 +28,8 @@ test("scene edits keep idea and discard stale geometry and only its prompt", () 
   assert.deepEqual(patch.results, [draft.results[1]]);
 });
 
-test("target, length and director changes preserve idea, scene and geometry", () => {
-  for (const settings of [{ target: "Qwen Image" }, { length: "Detailed" }, { director_preset: "photography_director" }]) {
+test("target, length, director and descriptive creativity preserve idea, scene and geometry", () => {
+  for (const settings of [{ target: "Qwen Image" }, { length: "Detailed" }, { director_preset: "photography_director" }, { creativity: "Dice" }]) {
     const patch = invalidateDatasetPrompts(draft, settings);
     assert.deepEqual(patch.results, []);
     patch.scene_plan.forEach((row, index) => {
@@ -42,13 +42,11 @@ test("target, length and director changes preserve idea, scene and geometry", ()
   }
 });
 
-test("valid-only scene selection excludes failed and pending scenes but includes a failed writer's valid scene", () => {
-  assert.equal(isDatasetSceneUsable(draft.scene_plan[0]), true);
-  for (const patch of [{ scene_status: "failed" }, { scene_status: "geometry_warning" },
-                       { scene_status: "not_generated" }, { scene: "" }, { idea: "" }]) {
-    assert.equal(isDatasetSceneUsable({ ...draft.scene_plan[0], ...patch }), false);
-  }
-  assert.equal(isDatasetSceneUsable({ ...draft.scene_plan[0], prompt_status: "failed" }), true);
+test("scene selection consumes server eligibility instead of guessing from prose or geometry", () => {
+  assert.equal(isDatasetSceneUsable({ usable: true, source_kind: "manual_prose" }), true);
+  assert.equal(isDatasetSceneUsable({ usable: false, reason: "Invalid geometry" }), false);
+  assert.equal(isDatasetSceneUsable(draft.scene_plan[0]), false);
+  assert.equal(isDatasetSceneUsable(undefined), false);
 });
 
 test("manual idea/scene edits clear stale failure metadata only for the edited item", () => {
@@ -66,7 +64,7 @@ test("manual idea/scene edits clear stale failure metadata only for the edited i
 test("retrying a failed scene keeps its good idea and never requests idea replacement", () => {
   assert.equal(datasetRetryStage({ ...draft.scene_plan[0], scene_status: "failed" }), "scene");
   assert.equal(datasetRetryStage({ ...draft.scene_plan[0], scene: "", scene_status: "not_generated" }), "scene");
-  assert.equal(datasetRetryStage({ ...draft.scene_plan[0], prompt_status: "failed" }), "prompt");
+  assert.equal(datasetRetryStage({ ...draft.scene_plan[0], prompt_status: "failed" }, { usable: true }), "prompt");
   assert.equal(datasetRetryStage({ idea: "", scene: "", scene_status: "failed" }), "idea");
 });
 

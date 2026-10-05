@@ -10,7 +10,7 @@ DATASET_OUTPUT_TOKEN_LIMITS = {
     "Maximum Detail": 3072,
     "Maximum": 3072,
 }
-MAXIMUM_DETAIL_GUIDANCE = """Prompt length — Maximum Detail: use the richest useful descriptive density within the target's practical envelope. Clarify supported subject/action, spatial relationships, composition, relevant materials and lighting without exhaustive unrelated inventories. Preserve the central concept, reference evidence and locks. Omit irrelevant or unavailable facts; do not repeat details, stack synonyms, invent evidence or pad with filler. Target structure and density limits take priority."""
+MAXIMUM_DETAIL_GUIDANCE = """Prompt length — Maximum Detail: use the richest useful descriptive density within the target's practical envelope. Clarify supported subject/action, spatial relationships, composition, relevant materials and lighting without exhaustive unrelated inventories. After the core scene is covered, spend remaining detail on previously unstated useful facts: defining contact/support mechanics, spatial relationships, material behavior at contact surfaces, motivated light/shadow/reflection behavior, environmental surfaces and foreground/background separation. Each addition should help render this exact scene, not repeat an existing fact with adjectives. Do not change mechanics to create detail. If applicable coverage is saturated, stop rather than force filler or unrelated categories. Preserve the central concept, reference evidence and locks. Omit irrelevant or unavailable facts; do not repeat details, stack synonyms, invent evidence or pad with filler. Target structure and density limits take priority."""
 LENGTH_ADAPTERS = {
     "Short": "Prompt length — Short: one compact prompt focused on the most consequential visual information.",
     "Medium": "Prompt length — Medium: a balanced prompt with enough detail to direct subject, composition, lighting, and materials without bloat.",
@@ -20,21 +20,34 @@ LENGTH_ADAPTERS = {
     "Maximum": MAXIMUM_DETAIL_GUIDANCE,
 }
 
-# Dataset overrides are applied only by its final writer, never the Builder.
+# Dataset's semantic overlay controls WHAT; the normal length controls HOW MUCH.
 DATASET_DETAIL_DISCIPLINE = """DATASET DETAIL DISCIPLINE
-Expand the planned scene only until its important visible relationships are clear and useful for
-the target model. Prompt length controls useful scene-specific richness, not an exhaustive inventory.
-Do not spend detail budget inventing unrelated garment construction, arbitrary clothing colors,
-background decoration, material microdetail, cinematic atmosphere, accessories or environmental
-objects unless they support the planned scene. Maximum Detail should be scene-dense, not filler-dense.
-State each important semantic fact once. Use additional words for new visual information rather
-than synonymous emphasis. Preserve the requested medium rather than adding stylistic defaults."""
-DATASET_LENGTH_ADAPTERS = {
-    "Short": LENGTH_ADAPTERS["Short"],
-    "Medium": LENGTH_ADAPTERS["Medium"],
-    "Detailed": "Prompt length — Detailed: enrich this scene's important visible action, relationships and composition with supported scene-specific detail. Stop when it is clearly described.",
-    "Maximum Detail": "Prompt length — Maximum Detail: give the planned scene dense, useful visual specificity. Clarify action, pose, contacts, spatial relationships, crop and scene-relevant rendering; do not expand irrelevant categories or repeat semantic facts.",
-}
+Spend detail on information that improves the rendering of this exact planned scene.
+Prioritize action readability, subject interaction, pose mechanics, required visibility,
+composition, scene-relevant clothing/material behavior, environment, lighting, depth and
+target-appropriate visual treatment. Richness is allowed when it supports the scene.
+Keep ordinary description economical, but preserve all information needed to
+reconstruct actions, complex poses, contacts, overlap/depth, framing and required
+visible anatomy. Functional pose geometry is not decorative verbosity, even at Short.
+Use specific surfaces, textures, fabric tension, shadows, reflections, atmospheric separation
+and color relationships where useful; preserve the requested medium and all supplied facts.
+Avoid unrelated biography, arbitrary decorative objects, accessory inventories, irrelevant
+microtexture, changing the event to add detail, repeated facts and synonymous filler.
+Maximum Detail should be scene-dense, not filler-dense. Do not stop merely because the basic
+event is understandable: satisfy the selected normal Length with useful, non-redundant visual
+information within the target envelope. Detailed and Maximum Detail should develop the scene's
+physical relationships, material/light response, environment and spatial depth more fully than
+Medium, without requiring every category or turning geometry into a checklist.
+At Maximum Detail, go beyond a Detailed restatement of staging: develop the richest useful
+scene-specific material response, light direction/quality and shadow/reflection behavior,
+environmental surfaces and foreground/background separation that this target can use.
+Prefer concrete visible information over vague claims of a focused atmosphere, realistic
+texture or coherent lighting. The planned mechanics are the starting point, not the entire
+detail budget; add new compatible rendering information instead of rephrasing those mechanics.
+Short remains concise and Medium balanced. The normal target envelope always wins."""
+# Compatibility export for old callers and finite-output loop recovery. There is
+# deliberately no weaker Dataset meaning of Detailed or Maximum Detail.
+DATASET_LENGTH_ADAPTERS = dict(LENGTH_ADAPTERS)
 
 # Preserve (legacy booleans and linked reference-map output)
 REFERENCE_ROLE_NAMES = ("Auto", "Subject", "Scene", "Style", "Pose", "Composition", "Lighting")

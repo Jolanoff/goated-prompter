@@ -9,12 +9,12 @@
 A local prompt studio for image and video workflows.<br>
 Bring your ideas and reference images. Shape the result. Copy it into your favorite generator.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-a3e635?style=flat-square)](LICENSE)
+[![License: Source Available](https://img.shields.io/badge/License-Source_Available-a3e635?style=flat-square)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=white)](frontend/package.json)
 [![llama.cpp](https://img.shields.io/badge/Local_inference-llama.cpp-a3e635?style=flat-square)](https://github.com/ggml-org/llama.cpp)
 
-[Get started](#installation) · [Workflows](#using-the-controls) · [Troubleshooting](#troubleshooting) · [Development](#development-and-verification) · [Report an issue](https://github.com/Jolanoff/goated-prompter/issues)
+[Get started](#installation) · [Workflows](#using-the-controls) · [Troubleshooting](#troubleshooting) · [Development](#development-and-verification) · [Architecture](docs/refactoring.md) · [Report an issue](https://github.com/Jolanoff/goated-prompter/issues)
 
 </div>
 
@@ -46,7 +46,7 @@ Goated Prompter pairs a **React + Tailwind interface** with a **Python backend**
 
 Target adapters own structure, syntax and useful density envelopes. Length changes descriptive density inside that envelope; creativity changes semantic invention, never serialization. Krea preserves non-photographic media, Klein stays moderately detailed, and LTX uses a focused chronological paragraph without inventing dialogue, camera movement or cuts. Anima supports lowercase-style tags, appropriate quality/score tags and scene prose; negative conditioning stays separate. Ideogram validates ordered JSON keys, normalized bounds and uppercase hex colors while retaining literal text. Lightweight capability metadata lives in `goated_prompter/prompting/target_models.py`. Saved legacy target names migrate to the clarified names.
 
-The former Maximum Detail and Krea High Detail Directors are repurposed as **Technical Visual Precision** and **Krea 2 Visual Precision**, retaining their stable IDs without controlling verbosity. Krea-specific Directors are inactive on unrelated targets. **Krea 2 Identity Edit v1.2 (Community)** describes the community model/workflow, not an official Krea.ai base capability. MiniMax Directors supply creative staging and continuity, not target serialization.
+The former Maximum Detail and Krea High Detail Directors are repurposed as **Technical Visual Precision** and **Krea 2 Visual Precision**, retaining their stable IDs without controlling verbosity. Krea-specific Directors are inactive on unrelated targets. **Krea 2 Identity Edit v1.2 (Community)** describes the community model/workflow, not an official Krea.ai base capability. The single **MiniMax H3 Director** supplies creative staging and continuity, not target serialization; both former MiniMax preset IDs remain compatible.
 
 The **target model** shapes the writing instructions and output format. The **prompt engine** is the language/vision model that writes the text. Selecting a target does not download or run that image/video generator.
 
@@ -67,7 +67,7 @@ All Qwen Image 2.1 detail levels (Short, Medium, Detailed and Maximum Detail) us
 <details>
 <summary><strong>MiniMax H3: references, clip timing, and output validation</strong></summary>
 
-Open **MiniMax H3**, choose **Clip Length** (10 seconds by default), leave **Mode** on Auto, and describe your video. Choose **MiniMax Director** or any existing instruction preset for creative direction.
+Open **MiniMax H3**, choose **Clip Length** (10 seconds by default), leave **Mode** on Auto, and describe your video. Choose **MiniMax H3 Director** or any existing instruction preset for creative direction.
 
 Use **+ Image**, **+ Video**, and **+ Audio** to insert symbolic tokens at the cursor. Clicking a chip inserts it again. Valid tokens typed directly into the request are also registered; their numbers stay stable. Example:
 
@@ -82,7 +82,7 @@ Auto distinguishes identity/motion/style references from explicit first/last-fra
 - Settings, references, request, and edited output autosave independently in `workflow_settings.json`. Shared job controls support cancellation.
 - Local prompting knowledge and source links live in [`goated_prompter/minimax_knowledge`](goated_prompter/minimax_knowledge/SOURCES.md). No documentation fetch is needed during generation.
 - Output validation checks H3 section order, exact frame alignment, shot timing, reference IDs, retention markers and dialogue syntax before delivery. Invalid output gets one repair attempt; a failed attempt leaves your previous output intact.
-- MiniMax analysis, prompt writing, and repair requests have no application output-token cap. Local llama.cpp runs until EOS (`max_tokens: -1`); remote OpenAI-compatible requests omit `max_tokens`. Engine context capacity and provider-side limits still apply.
+- MiniMax reference analysis, prompt writing, and repair requests have no application output-token cap. Optional supporting video planning has a small bounded response budget. Engine context capacity and provider-side limits still apply.
 
 This page writes **prompt text only**. It does not upload/analyze media, render videos, or call MiniMax's video-generation API. It requires a configured language-model prompt engine; the generic mock backend is for plumbing tests and does not perform H3 semantic rewriting.
 
@@ -167,7 +167,7 @@ For additional models, give each model/projector pair its own subfolder. Use a m
 
 ### 5. Configure and launch
 
-Open **`config/config.json`** and set `local_llama_cpp.llama_server` to your actual executable path. Use forward slashes or escaped backslashes in JSON:
+Copy **`config/config.example.json`** to **`config/config.json`**, then set `local_llama_cpp.llama_server` to your actual executable path. Your local config is ignored by Git. Use forward slashes or escaped backslashes in JSON:
 
 ```json
 "llama_server": "C:/Tools/llama.cpp/llama-server.exe"
@@ -221,11 +221,20 @@ Use your own absolute model directory in Settings. The browser workflow is the s
 | **Prompt task** | Chooses the type of work and selects its matching instruction preset. You can then choose a different preset. |
 | **Instruction preset** | Adds reusable specialist instructions. Changing it does not change the task. |
 | **Target model** | Shapes the prompt for the image/video generator you will use afterward. |
+| **Planning** | Auto (default) stages structurally complex requests. Direct preserves the original workflow. Always requests one supporting planning pass. |
 | **Creativity** | Controls how much new visual detail the writer may introduce. |
 | **Prompt length** | Controls descriptive density. Maximum Detail requests a larger output budget, not a guaranteed word count. |
 | **Prompt engine** | The language/vision model that actually writes the prompt. |
 | **Keep from reference images** | Selects the source for each attribute you want to preserve. |
 | **Workflow rules / notes** | Adds constraints for the current request. |
+
+### Optional scene planning
+
+Builder and MiniMax have independent **Auto / Direct / Always** selectors. Direct adds no planning calls or contracts. Simple Auto requests (an apple on a table, a car driving down a street) normally follow Direct. Complex contact, unusual poses, interacting subjects and video sequences can receive **one** compact semantic/staging pass—not a new idea or batch workflow.
+
+Builder plans **after selected reference evidence** and before the unchanged final compiler's target, Director, Creativity and Length controls. MiniMax plans **after its existing symbolic-reference analysis** and before its H3 writer, normalization and repair. Supplied shot order/timing and exact dialogue stay authoritative. Without supplied shots, planning describes continuous progression, not additional cuts.
+
+High-confidence standalone exclusions are compiled internally and applied silently; quoted text, names and ambiguous rules remain intact. Auto logs planning failures and uses the original direct workflow; Always reports a planning failure rather than pretending it succeeded. A small status marks generations that used planning. Internal plans have no separate saved workflow or default geometry UI; the existing live request inspector can show planning activity. Model inference can still misinterpret mechanics or unseen references—planning is supporting guidance, not a semantic guarantee.
 
 ### Reference images
 
@@ -243,7 +252,7 @@ Slots keep their numbers when an image is removed. Removing a required image res
 <summary><strong>Output, saving, and cancellation behavior</strong></summary>
 
 - **Text-only preview** ignores all reference images and preservation selections.
-- **End generation** cancels the local job. With the managed llama.cpp backend it stops the owned server, so the next job reloads the model. An external OpenAI-compatible request currently ends at its next checkpoint rather than aborting the remote computation immediately.
+- **End generation** first interrupts the active HTTP request safely. The managed model process is only stopped as a fallback when no cancellable transport is registered. Closing an external request does not guarantee the remote provider stops its computation immediately.
 - One generation runs at a time. Settings and preset editing are locked while a job is active.
 - **Save Prompt** adds named output text to the saved-prompt library. Instruction presets are a separate library.
 
@@ -272,6 +281,8 @@ Completed versions and history selection/redo live in **`data/workspace.json`**.
 
 Refine, MiniMax H3, and Dataset settings autosave separately to **`data/workflow_settings.json`**. Refine retains requested changes, locks, starting text/target and manual-edit drafts; MiniMax and Dataset retain their workflow-specific inputs and current results. Wait for the respective **Saved** indicator before closing or reloading. Failed writes keep the local draft and expose retry/reload actions; revision checks prevent a stale browser tab from replacing newer settings.
 
+Dataset generated progress is different: the backend atomically writes completed idea/scene chunks, prompts, repairs and final quality results to **`data/dataset_checkpoints.json`** before displaying them. Browser autosave is needed for your edits, not for completed generation work. Each job records its workflow revision and exact input signature; stale results remain historical and never replace newer settings or manual scenes. After a backend restart, the last durable chunk is recovered as interrupted work, not silently resumed inference. Generate from the recovered plan to continue.
+
 Expand **Refine advanced settings** to edit its built-in behavior. **Save instructions** activates edits for subsequent generations; **Discard instruction edits** restores the saved editor text; **Use built-in instructions** resets the workflow to its shipped default. Unsaved instruction-editor changes require an explicit save before reload, unlike the ordinary autosaved controls.
 
 Custom workflow instructions replace the corresponding built-in behavior. Target formatting and detail locks are still applied separately, including JSON validation for Ideogram4. Instruction changes are blocked during generation, and each job uses a snapshot of the saved instructions. Builder's instruction-preset library stays independent of these workflow-specific editors.
@@ -293,7 +304,7 @@ Build a batch around one concept, keep shared details consistent, and vary the s
 
 Open **Dataset** and start with **Dataset idea**: describe the subject and what should happen, for example “a woman doing funny stuff.” Choose Subject type, Amount and Variety, then final visual treatment, target and prompt length. Character, multiple-character, animal, object/product, visual-style, location/environment, brand/logo, typography/text, concept and custom types receive appropriate planning guidance. Training trigger controls are separate and collapsible; opaque trigger tokens are not sent to Scene Planner as visual descriptions.
 
-**Require trigger at the beginning** strongly requests beginning placement when enabled; while off, the model is encouraged to write a natural visual introduction first. **Keep trigger text connected** requests the complete input as one uninterrupted phrase; turn it off to encourage comma-, line-, or `and`-separated terms in different meaningful positions, such as `woman, cake` or `1 man and 1 girl`. Missing exact trigger wording, imperfect placement, or grouping is reported as a warning without discarding an otherwise finished prompt. Check these warnings before using outputs for training that requires exact trigger tokens. **Allow the model to expand the trigger** is off by default: the model may still describe actions, poses, interactions, scene-relevant clothing or use, composition, and lighting, but it must not invent intrinsic identity, appearance, design, material, style, or location properties unless the concept, rules, guided input, or trigger explicitly supplies them.
+**Require trigger at the beginning** strongly requests beginning placement when enabled; while off, the model is encouraged to write a natural visual introduction first. **Keep trigger text connected** requests the complete input as one phrase; turn it off to encourage comma-, line-, or `and`-separated terms in different meaningful positions, such as `woman, cake` or `1 man and 1 girl`. Placement and grouping remain warning-only preferences. **Allow the model to expand the trigger** is off by default: every trigger term must appear exactly as typed, including capitalization and word order. Missing exact wording retries only that final prompt, preserving its idea and scene. With expansion enabled, articles, capitalization and inserted descriptors may vary: `a banana` can become `A muscular anthropomorphic banana`, but both banana and apple must still be mentioned for `a banana, an apple`. Subject/attribute words are matched as whole words in order; unknown semantic paraphrases need manual review, and custom identifier tokens remain protected. When expansion is off, the model may still describe actions, poses, interactions, scene-relevant clothing or use, composition, and lighting, but it must not invent intrinsic identity, appearance, design, material, style, or location properties unless the concept, rules, guided input, or trigger explicitly supplies them.
 
 The **dataset concept** is the recurring activity, relationship, environment, or theme shared by the batch—for example, “their adventures together.” **Consistency and variation rules** state both fixed requirements (“the man is taller and has a beard”) and deliberate changes (“use a different adventure and outfit in every prompt”). Explicit rules are allowed even when trigger expansion is disabled.
 
@@ -305,11 +316,15 @@ Older coverage settings are ignored when loading saved drafts. Existing scenes a
 
 Generation follows **user concept → guided selection (if supplied) → Scene Planner → existing final writer → target-specific prompt**. Fast mode combines idea and scene in chunks of four; Quality mode plans all ideas, then composes scenes in chunks of four. A ten-item batch composes 1–4 / 5–8 / 9–10 in either mode. Later Fast chunks receive the original concept, constraints, current assignments and accepted idea summaries; failed chunk retries never regenerate accepted chunks. Output contains `{index, idea, scene, geometry}`. Ideas remain short semantic interpretations (maximum 30 words / 240 characters); scenes remain concise spatial realizations (maximum 120 words / 1,000 characters). Newlines and whitespace normalize without repair, as do obvious enum spellings and framing aliases. Character geometry requires only framing, camera azimuth, body orientation, head direction, gaze direction and face visibility. All helper metadata is optional, including details for custom poses/expressions. Scene prose remains authoritative for unusual staging. Shoes/feet-central actions deterministically widen incompatible incidental crops and record a framing diagnostic; the idea always wins. No coverage planner is restored. Instructions live in `goated_prompter/prompting/scene_planner.py`; planning validation and versioned reuse signatures live in `goated_prompter/scene_planner.py`. Target syntax, Director instructions and trigger tokens stay out of planning.
 
-**Type-aware staging:** Both Fast and Quality use `goated_prompter/dataset_staging/`. `vocabulary.py` holds canonical values; `schema.py` defines fields once; `profiles.py` selects required/recommended/applicable fields and registered rule groups for all ten Dataset types. `prompt_schema.py` generates the model's schema from that same registry. Camera azimuth, elevation and distance are independent axes; body/torso/hip orientation describes the side presented to camera, not pose. Non-human subjects can use `subject_orientation`, `full_subject` and `full_subject_with_environment`. Existing human framing labels remain accepted for compatibility. Multiple characters require scene-level framing, azimuth, composition, primary count and action visibility, not a shared head/gaze/face state. Animal, Product, Environment, Brand, Text, Style, Concept and Custom do not run Character anatomy rules or require human fields. Custom defaults to common staging; unusual posture/viewpoint goes in applicable `pose_detail`, `view_detail` and focus fields. Requested specialized pose/head vocabulary is retained in the Character profile.
+**Type-aware staging:** Both Fast and Quality use `goated_prompter/dataset_staging/`. `vocabulary.py` holds canonical values; `schema.py` defines fields once; `profiles.py` selects required/recommended/applicable fields, per-profile enum restrictions and registered rule groups for all ten Dataset types. `prompt_schema.py` generates the model's schema from those same field and value restrictions. Camera azimuth, elevation and distance are independent axes; framing describes which content is included, while distance describes physical camera proximity. Character uses explicit common + human fields without duplicate generic orientation. Non-human profiles use `detail_close_up`, `full_subject`, `full_subject_with_environment`, `wide` and `extreme_wide`, not human crop labels. Safe whole-subject legacy labels migrate on load; ambiguous crops receive local warnings. Multiple characters require scene-level framing, azimuth, composition, primary count and action visibility, not a shared head/gaze/face state. Animal, Product, Environment, Brand, Text, Style, Concept and Custom do not run Character anatomy rules or require human fields. Custom stays generic without automatic leg/pelvis/back fields; unusual posture/viewpoint goes in applicable `pose_detail`, `view_detail` and focus fields. Requested specialized pose/head vocabulary is retained in the Character profile.
+
+Lexical normalization precedes field-specific aliases and enum validation: `framing=medium` becomes `waist_up` without another model call for Character. Known emotional gaze mistakes move to `expression` only if no existing fact conflicts; supported head/eye-position states stay in `head_direction`. A required missing gaze is never invented from head orientation: an explicit, unambiguous gaze in scene prose may supply it, otherwise only that scene receives field-specific repair while its idea and valid siblings remain unchanged.
+
+Structured runtime output validation dispatches from target capabilities. MiniMax H3 video output requires complete nonempty named sections in order and receives a bounded format-only retry if malformed. The dedicated MiniMax workflow shares that section validation while retaining its reference/timeline checks; non-video Builder/Dataset tasks remain image tasks.
 
 `normalize.py` handles spelling/aliases without physics. `migration.py` loads older `camera_view`, `camera_height`, `gaze`, `pose` and mixed orientation facts conservatively: safe camera facts move to the appropriate axis, unusual facts become details, and no missing side/elevation is invented. Ambiguous rows receive `geometry_warning` for local repair while their ideas, scenes, prompts and valid siblings remain loadable. Safe field renames do not bump the scene-plan signature or force all current saved plans to replan. Saved/manual scenes with no geometry remain authoritative and are not rewritten just to fill metadata; explicit prose contradictions and incomplete supplied staging still need repair. New model output always enforces its selected profile in both modes. `engine.py` runs modular `rules/` and returns structured issues with fields, severity and repair guidance; `geometry_errors()` retains string-message compatibility. Prose contradiction checks live in `rules/prose.py`, with no dependency on Dataset quality. `dataset_geometry.py` is only a temporary import facade. Add a future field in the registry, assign it to profiles, and add an optional rule/test—do not duplicate schema lists in the planner.
 
-**Generate prompts** remains one-click. Optionally click **Plan scenes first**, inspect/edit the separate Idea and Scene fields, then **Generate prompts from these scenes**. Keep manual edits to both consistent; editing an idea does not automatically recompose its scene. Planning alone needs no training trigger. The existing `scene_plan` now stores `{index, input, idea, scene}` with its semantic signature, separate from results. Target, length, Director and trigger-format changes reuse both; concept, inputs, amount, type, variety, constraints or visual style changes invalidate them. **Replan scenes** replaces the idea/scene plan, not existing results. New final and partial results preserve `{index, input, idea, scene, prompt}`. Editing a plan affects the next generation, never the provenance recorded with an existing prompt. JSONL includes both originating idea and scene; **Scenes JSON** exports the plan. TXT and Copy all remain final-prompt-only. Wait for **Dataset settings: Saved** before closing; persistence uses the existing browser-driven, revision-checked local autosave. Legacy results remain readable without invented provenance. Legacy scene-only plans remain loadable but are stale and require replanning under the idea/scene schema. Original-input fallbacks remain loadable even when longer than normal model output.
+**Generate prompts** remains one-click. Optionally click **Plan scenes first**, inspect/edit the separate Idea and Scene fields, then **Generate prompts from these scenes**. Keep manual edits to both consistent; editing an idea does not automatically recompose its scene. Planning alone needs no training trigger. The `scene_plan` stores `{index, input, idea, scene}` with its semantic signature, separate from results. Target, length, Director and trigger-format changes reuse both; concept, inputs, amount, type, variety, constraints or visual style changes invalidate them. New final and partial results preserve `{index, input, idea, scene, prompt}`. Editing a plan affects the next generation, never the provenance recorded with an existing prompt. JSONL includes both originating idea and scene; **Scenes JSON** exports the plan. TXT and Copy all remain final-prompt-only. Completed chunks are backend-persisted; wait for **Dataset settings: Saved** for manual edits. Legacy scene-only prose and manually edited scenes can remain usable without geometry or invented idea provenance. Original-input fallbacks remain loadable even when longer than normal model output.
 
 **Guided inputs** accept full scene ideas or partial anchors (place, pose, outfit, prop or action). A partial line such as “park” is completed creatively within the shared concept while keeping that setting; a supplied action such as sitting on a table stays authoritative. Details in a line apply only to that line's assignments, not the whole batch. Shared identity does not automatically lock clothing. Lines cycle in order when the requested amount exceeds the line count: six lines for ten images map to lines 1–6, then 1–4 again. Different compatible completions are encouraged for repeated partial anchors, but exact scene repetition is valid for the same nonempty guided input. Random-mode duplicates and duplicates across different guided inputs still require repair. If an older run fell back to raw lines, use **Replan scenes** after restarting to replace that fallback; existing plans/edits are not automatically overwritten by this fix.
 
@@ -317,7 +332,7 @@ The final Dataset writer uses existing Builder assembly (Enhance mode, selected 
 
 **Visible content only:** Dataset planning and writing describe what the intended image contains, not a list of what to exclude. Single-subject and exclusion constraints shape composition silently. Use positive visible states such as a sparsely furnished room, naturally resting hands, an empty abandoned street or an unoccupied chair. Internal quality slogans, negative-conditioning lists and exclusion commands do not belong in positive prose. The compact shared LLM rule and strict phrase checks live in `goated_prompter/dataset_visible_content.py`; forbidden examples stay in code/tests, not the visible-content system rule. New planner output with detected leakage still receives the existing one repair. Final generation (including recovered runaway prefixes) follows **normalize target output → general text cleanup / trigger check → conservative positive-content cleanup → strict positive-content validation → accept or bounded retry**. `sanitize_positive_prompt()` removes complete, clearly standalone exclusion/meta clauses, never global word replacements or useful prose mixed with restrictions. A removable clause costs no additional generation call. Literal quoted content, protected triggers and meaningful visible absence remain intact. Ideogram cleanup touches only positive description strings, preserving rendered `elements[].text`, other JSON fields and required nonempty descriptions. Unsafe/remaining leakage uses **OUTPUT CONTENT CORRECTION**, without echoing the offending phrase; malformed target structures use **FORMAT CORRECTION**. Repeated invalid output fails validation rather than silently saving it. Existing/manual results can show leakage warnings in quality analysis and Deep Review. Checks are conservative heuristics, not a universal ban on words like “no,” and cannot detect every paraphrase. Raw-input fallback plans retain original wording as recovery data; the writer must still interpret exclusions silently and pass positive-output checks. Normal Builder and other workflows are unchanged, and no negative-prompt field has been added or concatenated into positive output.
 
-Generation runs sequentially in one model session. Completed items appear while the batch runs and are retained if a later item stops or fails. Invalid target format or runaway output gets up to three writer retries; exhausted retries mark only that prompt failed without replacing its idea or scene. Loop retries progressively shorten density and output allowance without losing the target envelope or restoring a larger allowance during format repair. A sentence-complete prefix may be recovered if it passes validation. Trigger wording, placement and grouping misses remain warnings. Results are editable and exportable as TXT or JSONL. For Ideogram4, trigger placement applies inside `high_level_description` so the outer JSON remains valid. Anima's supported standalone positive quality/score tags are exempt from the generic quality-slogan sanitizer; negative lists remain disallowed in positive prose.
+Generation runs sequentially in one model session. Completed items appear while the batch runs and are retained if a later item stops or fails. Invalid target format, missing protected trigger wording, or runaway output gets up to three writer retries; exhausted retries mark only that prompt failed without replacing its idea or scene. Loop retries progressively shorten density and output allowance without losing the target envelope or restoring a larger allowance during repair. A sentence-complete prefix may be recovered if it passes validation, including the selected trigger-expansion policy. With expansion on, unrecognized subject wording remains a review warning, not an automatic rewrite. Placement and grouping misses remain warnings in either mode. Results are editable and exportable as TXT or JSONL. For Ideogram4, trigger checks apply inside `high_level_description` so the outer JSON remains valid. Anima's supported standalone positive quality/score tags are exempt from the generic quality-slogan sanitizer; negative lists remain disallowed in positive prose.
 
 After generation, the local **Dataset quality report** checks triggers, format, leakage, prompt duplicates, guided assignments, idea similarity and scene repetition separately. Idea hints respect guided/Focused repetition and explicit facial-expression scope. Narrow geometry warnings catch explicit rear/frontal-face conflicts, tight face/upper-body crops claiming visible shoes, and directly conflicting camera positions; they skip negated requirements and reflected/multi-panel cases rather than pretending to simulate anatomy. These English-text heuristics miss paraphrases and can flag legitimate similarities. Optional **Deep consistency review** compares saved IDEA + SCENE + FINAL PROMPT against concept and constraints; lost semantic purpose is included under `scene_drift`. It also checks camera/body/head/gaze/pose/crop/prop contradictions, differentiating writer-introduced drift from existing usability problems, without penalizing interpretable unusual/stylized poses. It uses groups of four prompts and 2,048 output tokens per group; it does not generate fixes or new scenes. Legacy missing provenance cannot be reliably audited for originating idea/scene drift. Reports autosave; prompt edits recompute deterministic checks.
 
@@ -343,6 +358,7 @@ goated-prompter/
 │   ├── config.example.json     # Portable configuration template
 │   └── config.json             # Backend / llama-server configuration
 ├── goated_prompter/
+│   ├── planning/               # Shared constraints and optional single-pass scene/video staging
 │   ├── prompting/              # Prompt content split by concern
 │   │   ├── modes.py            # Prompt task modes
 │   │   ├── directors.py        # Built-in Directors
@@ -423,6 +439,14 @@ Set `GOATED_PROMPTER_API_KEY` in the environment if authentication is required. 
 
 ## Development and verification
 
+### Checkpoint privacy and recovery
+
+Dataset generated checkpoints are durable local content in **`data/dataset_checkpoints.json`**, separate from editable settings. Up to 20 recent job records are retained, subject to the local 16 MiB store limit. Other workflows' runtime checkpoints, live request/response logs and interrupted partial-text diagnostics remain RAM-only. Dataset exports/Clear release completed RAM jobs and hide their diagnostic recovery endpoints; they do not erase durable scenes/prompts. Active jobs are never deleted by cleanup. Shutdown uses bounded cancellation, marks unfinished work interrupted and releases RAM diagnostics. Backend restart recovers completed Dataset chunks, not active sockets or partial prompts.
+
+This cleanup does **not** remove your existing autosaved drafts (`settings.json` / `workflow_settings.json`), named saved prompts, version history, downloaded exports or clipboard content. Those still contain private content locally. Keep `GOATED_PROMPTER_DEBUG_PROMPTS` disabled to avoid content in console logs. Remote inference providers have their own retention policies; releasing Python references is not guaranteed secure memory erasure.
+
+Model streams require an explicit completion reason (`stop`); EOF or `[DONE]` without a reason is not assumed successful. Diagnostics distinguish interrupted, token-limit, cancelled, provider-error and malformed-stream outcomes and retain partial text without presenting it as a finished prompt. Local HTTP requests can be interrupted during headers and streaming, and their configured timeout is also a total deadline. DNS/connect operations remain subject to operating-system/network timeouts. Structured-output budgets are checked against the configured context estimate before sending; uncapped Builder/video contracts remain unchanged.
+
 <details>
 <summary><strong>Live development and project conventions</strong></summary>
 
@@ -449,6 +473,7 @@ Run the checks from the project root:
 
 ```powershell
 npm --prefix frontend run build
+npm --prefix frontend run lint
 .\.venv\Scripts\python.exe -m unittest discover -s tests
 node --test tests/test_comfy_frontend.cjs tests/test_ui_shared.cjs
 npm --prefix frontend test
@@ -466,6 +491,10 @@ On Windows with Edge installed, use `$env:PLAYWRIGHT_CHANNEL = "msedge"` before 
 
 Automated checks cover prompt assembly, reference mapping, API/storage behavior, and browser workflows. Mock tests do not measure real-model output quality, GPU compatibility, or performance. Report issues with your OS, Python/Node versions, llama.cpp build/backend, exact model/projector filenames, and the relevant error at [GitHub Issues](https://github.com/Jolanoff/goated-prompter/issues).
 
+GitHub Actions runs lint, unit/API tests and builds on Python 3.10/3.13, plus Chromium workflow tests. Reliability regressions include actual HTTP socket interruption and heartbeat deadlines, unexpected stream EOF, manual-scene regeneration, ambiguous gaze ownership and checkpoint cleanup. Real-model quality still requires evaluation on your configured engine; no model downloads or external inference calls occur in these checks.
+
+The reusable quality corpus, frozen real responses, annotation rubric and JSON/Markdown reporting live in **[`tests/eval/`](tests/eval/README.md)**. It covers Builder, Dataset writer parity, MiniMax temporal/reference behavior, specialized domains, constraints and five-run novelty probes. Fidelity, useful detail density and semantic repetition require explicit review; missing annotations never count as success. CI publishes frozen replay reports without inference. Live evaluation requires an explicit existing engine and `--allow-live`; notify the GPU owner first.
+
 </details>
 
 ## Optional ComfyUI integration
@@ -478,7 +507,13 @@ The website remains the main installation path. There is no claimed ComfyUI Regi
 
 ## License and credits
 
-[MIT License](LICENSE) — copyright (c) 2026 Jolanoff.
+[Goated Prompter Source-Available License 1.0](LICENSE) — copyright (c) 2026 Jolanoff.
+
+- **Allowed:** free use and redistribution, modifications, internal business/client work, and monetizing prompts or creative content made using the app.
+- **Not allowed:** selling or renting the app or its forks, paid software bundles containing it, or charging for hosted access, API access, subscriptions, or app features.
+- Keep the license and copyright notice with redistributed copies and identify modifications. See `LICENSE` for the full terms.
+
+This is a custom source-available license, **not MIT or an OSI-approved open-source license**. Previously released MIT versions retain their MIT permissions; these restrictions apply to versions distributed under the new license.
 
 Built with React, Tailwind CSS, Vite, aiohttp, Pillow, and llama.cpp. Downloaded models and third-party dependencies retain their own licenses; model weights are not distributed with this project.
 

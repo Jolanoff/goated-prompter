@@ -1,0 +1,18 @@
+{
+  "run_id": "frozen-dataset-writer-revised-2026-10-04",
+  "provenance": "Exact response from dataset-writer-revised.json, installed Qwen3.8-27B-Uncensored-HauhauCS-Aggressive-Q2_K_P, externally loaded context 32768. No new inference. Exploratory unseeded trial.",
+  "records": [
+    {
+      "sample_id": "hoop|dataset|1",
+      "case_id": "hoop",
+      "workflow": "dataset",
+      "target": "Generic",
+      "completion_state": "completed",
+      "finish_reason": "stop",
+      "known_failure": "Unsolicited gendered identity language despite protected trigger identity.",
+      "anchors": {"scene":["sideways aerial suspension","green training outfit"],"action":["supported suspension"],"pose":["right knee load-bearing rim contact","left hand stabilizing hoop","left leg diagonally down","torso twist with side-on hips"],"constraint":["full body and entire hoop visible","no invented gender"]},
+      "prompt": "ohwx_person hangs sideways inside a vertical suspended steel aerial hoop in a rehearsal studio, her right knee hooked firmly over the upper rim to bear her weight while her left hand grips the side rim to stabilize the suspension. The left leg extends diagonally downward, and the right arm reaches outward for balance, with the torso twisting toward the viewer while the hips remain side-on. She wears a fitted green training outfit that clings to her form, highlighting the tension in her muscles and the precise geometry of the pose. The eye-level front three-quarter full-body view captures the entire hoop, both feet, the hooked knee contact, and the stabilizing hand, with open space around the limbs to emphasize the suspension. The studio environment features neutral, clean surfaces with soft, even lighting that casts subtle shadows, enhancing the depth and clarity of the performance. The steel hoop gleams slightly under the light, contrasting with the matte texture of the training outfit, while the performer's expression remains focused and controlled, directing her gaze toward the action.",
+      "calls": [{"stage":"dataset:1","finish_reason":"stop","parameters":{"temperature":0.25,"top_p":0.85,"max_tokens":1536}}]
+    }
+  ]
+}

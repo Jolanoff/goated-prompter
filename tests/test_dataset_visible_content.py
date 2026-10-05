@@ -32,7 +32,7 @@ def draft(**changes):
 
 
 def caption():
-    return {"high_level_description": "A woman rests her hands on a kitchen table.",
+    return {"high_level_description": "A woman person_token rests her hands on a kitchen table.",
             "style_description": {"aesthetics": "Quiet domestic photography", "lighting": "Soft daylight",
                                   "photo": "Medium frontal view", "medium": "Photograph"},
             "compositional_deconstruction": {"background": "A sparsely furnished kitchen",
@@ -244,7 +244,7 @@ class VisibleContentTests(unittest.TestCase):
         session.generate.side_effect = ["no watermark, best quality", "person_token juggling oranges."]
         result = DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None)
         self.assertEqual(result, "person_token juggling oranges.")
-        self.assertIn("OUTPUT CONTENT CORRECTION", session.generate.call_args.args[0].system_message)
+        self.assertIn("TRIGGER WORDING CORRECTION", session.generate.call_args.args[0].system_message)
         original = caption()
         original["style_description"]["lighting"] = "no watermark"
         cleaned = sanitize_positive_prompt(json.dumps(original), "Ideogram4")
@@ -262,7 +262,8 @@ class VisibleContentTests(unittest.TestCase):
         DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None)
         self.assertEqual(session.generate.call_count, 2)
         retry = session.generate.call_args.args[0]
-        self.assertEqual(retry.user_message, instruction.user_message)
+        self.assertTrue(retry.user_message.startswith(instruction.user_message))
+        self.assertIn("LOCAL REPAIR CONTRACT", retry.user_message)
         self.assertEqual(retry.hard_max_tokens, instruction.hard_max_tokens)
         correction = retry.system_message[len(instruction.system_message):]
         self.assertIn("OUTPUT CONTENT CORRECTION", correction)

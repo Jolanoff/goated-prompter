@@ -28,7 +28,8 @@ def subject_presentation(context):
 
 def body_presentation(context):
     problems = presentation_issues(context, "body_orientation")
-    if {context.geometry.get("torso_orientation"), context.geometry.get("hip_orientation")} == {"front", "direct_rear"}:
+    if (context.geometry.get("pose_type") != "custom"
+            and {context.geometry.get("torso_orientation"), context.geometry.get("hip_orientation")} == {"front", "direct_rear"}):
         problems.append(issue("opposed_torso_hips", ("torso_orientation", "hip_orientation"),
             "Torso and hips require an impossible opposing front/rear twist."))
     return problems

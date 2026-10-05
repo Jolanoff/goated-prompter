@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Copy, Film, RefreshCw, SlidersHorizontal, Sparkles, Trash2 } from "lucide-react";
 import { ui } from "../ui.js";
 import { orderDisplayPresets, presetDisplayLabel } from "../presetPresentation.js";
-import { TargetSelect } from "./WorkflowControls.jsx";
+import { TargetSelect, PlanningSelect } from "./WorkflowControls.jsx";
 import { useWorkflowSettings } from "./useWorkflowSettings.js";
 import WorkflowSettingsStatus from "./WorkflowSettingsStatus.jsx";
 import { insertReference, insertShot, nextReference, nextShot, parseReferences, parseShots, referenceLimits } from "./minimaxReferences.js";
@@ -12,18 +12,27 @@ const modes = [["auto", "Auto"], ["T2VA", "Text to Video"], ["I2VA", "First Fram
 const models = ["MiniMax H3"];
 const ratios = ["Auto", "16:9", "9:16", "1:1", "4:3", "3:4", "21:9"];
 
-export default function MiniMaxTab({ visible, job, busy, active, noEngine, engineLabel, presets, onGenerate, onCancel, onCopy }) {
+export default function MiniMaxTab({ visible, job, busy, active, noEngine, engineLabel, presets, onGenerate, onCancel, onCopy, onReleaseJobs }) {
   const preferences = useWorkflowSettings("minimax");
   const { draft, update } = preferences;
   const textarea = useRef(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState("");
   const submission = useRef(false);
+
+  async function clearDraft() {
+    // Retain the acknowledgement ID until cleanup finishes so a still-visible
+    // terminal snapshot cannot rehydrate the output we just discarded.
+    update({ user_request: "", generated_prompt: "", references: [] });
+    setError("");
+    try { await preferences.flush(); await onReleaseJobs?.("minimax"); }
+    catch (err) { setError(`Could not release temporary job checkpoints. ${err.message}`); }
+  }
   useEffect(() => {
     if (draft && job?.kind === "minimax" && job.status === "succeeded" && draft.result_job_id !== job.id) {
       update({ generated_prompt: job.result.prompt, result_job_id: job.id });
     }
-  }, [draft, job]);
+  }, [draft, job, update]);
 
   const disabled = busy || starting || preferences.working;
   const parsed = parseReferences(draft?.user_request || "");
@@ -102,6 +111,7 @@ export default function MiniMaxTab({ visible, job, busy, active, noEngine, engin
         </header>
         <div className={ui.fields}>
           <TargetSelect label="Model" value={draft.model} targets={models} disabled={disabled} onChange={(model) => update({ model })} />
+          <PlanningSelect video value={draft.planning_mode} disabled={disabled} onChange={(planning_mode) => update({ planning_mode })} />
           <label className={ui.field}><span>Clip Length</span>
             <select className={ui.select} aria-label="Clip Length" value={draft.duration_seconds} disabled={disabled} onChange={(event) => update({ duration_seconds: Number(event.target.value) })}>
               {Array.from(new Set([4, 5, 6, 8, 10, 12, 15, draft.duration_seconds])).sort((a, b) => a - b).map((duration) => <option key={duration} value={duration}>{duration} seconds</option>)}
@@ -177,10 +187,12 @@ export default function MiniMaxTab({ visible, job, busy, active, noEngine, engin
           <textarea id="minimax-output" className={ui.outputInput} style={{ minHeight: 360 }} value={draft.generated_prompt}
             maxLength={100000} disabled={disabled} onChange={(event) => update({ generated_prompt: event.target.value })}
             placeholder="Your MiniMax H3 prompt will appear here." />
+          {job?.kind === "minimax" && job?.result?.planning_status === "planned" &&
+            <p className={ui.subtleNote} role="status">Supporting video scene planning used for the latest generation.</p>}
           <div className={ui.outputActions}>
             <button className={ui.button} disabled={!draft.generated_prompt} onClick={() => onCopy(draft.generated_prompt)}><Copy size={14} />Copy</button>
             <button className={ui.button} disabled={!canGenerate} onClick={generate}><RefreshCw size={14} />Regenerate</button>
-            <button className={ui.button} disabled={disabled} onClick={() => { update({ user_request: "", generated_prompt: "", references: [] }); setError(""); }}><Trash2 size={14} />Clear</button>
+            <button className={ui.button} disabled={disabled} onClick={clearDraft}><Trash2 size={14} />Clear</button>
           </div>
         </section>
       </div>

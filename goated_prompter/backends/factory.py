@@ -26,6 +26,8 @@ def create_backend(config):
             raise BackendConfigurationError("openai_compatible configuration must be an object.")
         backend = OpenAICompatibleBackend(settings)
         backend.activity_callback = activity_callback or backend.activity_callback
+        backend.register_interrupt = config.get("_register_interrupt") or backend.register_interrupt
+        backend.unregister_interrupt = config.get("_unregister_interrupt") or backend.unregister_interrupt
         return backend
 
     if backend_name in {"local_llama_cpp", "llama_cpp", "llamacpp"}:
@@ -34,6 +36,8 @@ def create_backend(config):
         settings = config.get("local_llama_cpp", {})
         backend = LocalLlamaCppBackend(settings)
         backend.activity_callback = activity_callback or backend.activity_callback
+        backend.register_interrupt = config.get("_register_interrupt")
+        backend.unregister_interrupt = config.get("_unregister_interrupt")
         return backend
 
     raise BackendConfigurationError(f"Unsupported Goated Prompter backend: {backend_name}")

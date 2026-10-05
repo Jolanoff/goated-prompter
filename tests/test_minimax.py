@@ -13,6 +13,7 @@ from unittest.mock import patch
 from aiohttp.test_utils import TestClient, TestServer
 
 import local_app as local
+from tests.helpers import enter_context
 from goated_prompter.backends.base import GoatedPrompterBackend, BackendGenerationError
 from goated_prompter.core import GoatedPrompterRequest
 from goated_prompter.minimax import (MiniMaxService, analysis_instruction, default_minimax_draft,
@@ -92,6 +93,7 @@ DANCE_PLAN = plan_json(role("image1", "identity", "appearance"), role("video1", 
 
 def dance_input(**overrides):
     return validate_minimax_draft({"references": ["image1", "video1"], "duration_seconds": 15,
+                                  "planning_mode": "Direct",  # Freeze the pre-planning writer/repair contract.
                                   "user_request": REQUEST, **overrides}, generation=True)
 
 
@@ -157,6 +159,7 @@ class MiniMaxContractTests(unittest.TestCase):
 
     def test_image_only_shot_outline_converts_to_guide_fields_and_keeps_speech(self):
         data = validate_minimax_draft({"references": ["image1", "image2", "image3"],
+                                       "planning_mode": "Direct",
                                        "user_request": APPLE_SHOTS.replace("<shot1> apple", "<shot1> 0-3s apple")}, generation=True)
         roles = plan_json(role("image1", "character"), role("image2", "character"), role("image3", "environment"))
         plan = validate_analysis(roles, data)
@@ -513,10 +516,10 @@ class MiniMaxContractTests(unittest.TestCase):
 
 class MiniMaxEndpointTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.temp = self.enterContext(tempfile.TemporaryDirectory())
-        self.enterContext(patch.dict(os.environ, {"GOATED_PROMPTER_USER_DIR": str(Path(self.temp) / "directors")}))
+        self.temp = enter_context(self, tempfile.TemporaryDirectory())
+        enter_context(self, patch.dict(os.environ, {"GOATED_PROMPTER_USER_DIR": str(Path(self.temp) / "directors")}))
         self.backend = ScriptedBackend(DANCE_PLAN, REF)
-        self.enterContext(patch("goated_prompter.minimax.create_backend", return_value=self.backend))
+        enter_context(self, patch("goated_prompter.minimax.create_backend", return_value=self.backend))
         self.app = local.create_app(config_loader=lambda: {"backend": "mock"}, settings_path=Path(self.temp) / "settings.json")
         self.client = TestClient(TestServer(self.app), headers={"Host": "127.0.0.1:8190"})
         await self.client.start_server()

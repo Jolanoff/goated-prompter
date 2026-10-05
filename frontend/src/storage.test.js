@@ -79,6 +79,7 @@ test("builder hydration normalizes Maximum and excludes images, runtime and pres
     },
   );
   assert.equal(result.idea, "draft");
+  assert.equal(result.planning_mode, "Auto");
   assert.equal(result.prompt_length, "Maximum Detail");
   for (const key of referenceAttributes)
     assert.equal(result[`reference_${key}_source`], "Off");
@@ -168,6 +169,7 @@ test("renamed targets and precision Directors hydrate without losing saved choic
     { id: "maximum_detail_director", label: "Technical Visual Precision" },
     { id: "krea_2_high_detail", label: "Krea 2 Visual Precision" },
     { id: "krea_2_identity_edit", label: "Krea 2 Identity Edit v1.2 (Community)" },
+    { id: "minimax_director", label: "MiniMax H3 Director" },
   ];
   for (const [legacy, current] of [
     ["Qwen2.1", "Qwen Image 2.1"], ["Qwen Image", "Qwen Image (original)"],
@@ -178,9 +180,20 @@ test("renamed targets and precision Directors hydrate without losing saved choic
   for (const [legacy, id] of [
     ["Maximum Detail Director", "maximum_detail_director"],
     ["Krea 2 High Detail", "krea_2_high_detail"], ["Krea 2 Identity Edit", "krea_2_identity_edit"],
+    ["minimax_h3_director", "minimax_director"], ["MiniMax Director", "minimax_director"],
+    ["MiniMax H3 Director", "minimax_director"],
   ]) {
     assert.equal(hydrateBuilder({}, { director_preset: legacy }, { presets }).director_preset, id);
   }
+});
+
+test("builder planning choice survives snapshots and legacy drafts default to Auto", () => {
+  for (const mode of ["Auto", "Direct", "Always"]) {
+    const result = hydrateBuilder({}, { planning_mode: mode, idea: "apple" });
+    assert.equal(result.planning_mode, mode);
+    assert.equal(builderSnapshot(result).planning_mode, mode);
+  }
+  assert.equal(hydrateBuilder({}, { idea: "legacy apple" }).planning_mode, "Auto");
 });
 
 test("reverting a pending edit returns autosave to Saved without a write", async () => {

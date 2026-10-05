@@ -149,6 +149,11 @@ for (const theme of ["dark", "light"]) {
     const quality = page.getByRole("region", { name: "Dataset quality report" });
     await expect(quality.getByText("Overall", { exact: true })).toBeVisible();
     await quality.getByText(/Prompt checks/).click();
+    // A contrast audit during the cards' entrance fade measures transient
+    // opacity, not the settled theme. Wait for finite animations/transitions.
+    await page.evaluate(() => Promise.all(document.getAnimations()
+      .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
+      .map((animation) => animation.finished.catch(() => {}))));
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze();
     expect(results.violations).toEqual([]);

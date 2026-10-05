@@ -1,0 +1,63 @@
+{
+  "artifact_path": "complex-pose-authorized-verification-20261005-101638/production.json",
+  "artifact_sha256": "d9854c91e2e72cec3daf9b5e01b7cdf23cd6611b569ca49a4de6fb3a8ac78a49",
+  "records": [
+    {
+      "mode": "Fast",
+      "id": "shoulder_inversion",
+      "source": "shoulder-supported inverted pose with legs folded around the upper body",
+      "row": {
+        "index": 1,
+        "idea": "shoulder-supported inverted pose with legs folded around the upper body",
+        "scene": "A contortionist performs a compact inverted shoulder stand; the upper torso and head are supported by interlocked hands on a flat floor; knees bend sharply beside the chest; lower legs fold upward so feet rest near the shoulders; the entire body forms a dense, balanced vertical stack within a tight frame.",
+        "geometry": {
+          "body_orientation": "front", "camera_azimuth": "front", "face_visibility": "full",
+          "framing": "three_quarter_body", "gaze_direction": "toward_camera", "head_direction": "toward_camera",
+          "pose_type": "custom",
+          "pose_detail": "Shoulders grounded on floor with interlocked hands supporting head; torso upright and compressed; knees bent high beside ribcage; lower legs fold upward; feet visible near upper back/shoulders; hips aligned over shoulders.",
+          "body_visibility": "custom", "required_visible_parts": ["face", "torso", "feet", "knees"],
+          "action_focus": "inverted shoulder stand with folded legs", "composition": "centered", "contact_state": "supporting"
+        }
+      }
+    },
+    {
+      "mode": "Quality",
+      "id": "shoulder_inversion",
+      "source": "shoulder-supported inverted pose with legs folded around the upper body",
+      "row": {
+        "index": 1,
+        "idea": "Shoulder-supported inverted pose with legs folded around upper body",
+        "scene": "A contortionist performs an inverted shoulder stand, balancing on both shoulders and upper back. The torso is upright and vertical, with the head hanging down toward the floor. Both legs are folded tightly around the upper torso and chest, with knees bent sharply and thighs pressed against the ribcage. The feet are tucked near the collarbone, creating a compact, spherical body shape. The arms are bent, with hands gripping the upper arms or shoulders to stabilize the inverted position. The subject is centered in the frame against a neutral studio background, with soft lighting highlighting the muscle tension and balance.",
+        "geometry": {
+          "body_orientation": "front", "camera_azimuth": "front", "camera_elevation": "eye_level",
+          "camera_distance": "medium_close", "face_visibility": "partial", "framing": "full_body",
+          "gaze_direction": "down", "head_direction": "down", "pose_type": "custom",
+          "pose_detail": "Inverted shoulder stand; weight supported on shoulders and upper back; torso vertical; legs folded around chest and upper torso; knees bent; feet tucked near collarbone; arms bent to grip upper arms for stability.",
+          "body_visibility": "full_body", "required_visible_parts": ["face", "torso", "legs", "feet"],
+          "expression": "concentrating", "movement": "still", "contact_state": "standing_on",
+          "composition": "centered", "action_visibility": "clear"
+        }
+      }
+    },
+    {
+      "mode": "Quality",
+      "id": "asymmetric_balance",
+      "source": "one-arm acrobatic balance with asymmetric leg positioning, one knee near shoulder and opposite leg extended",
+      "row": {
+        "index": 1,
+        "idea": "One-arm acrobatic balance, knee near shoulder, opposite leg extended.",
+        "scene": "A photorealistic character performs a dynamic one-arm acrobatic balance on a smooth, neutral studio floor. The subject stands on the right leg, which is straight and bears the full body weight, while the left knee is bent sharply and drawn high toward the left shoulder, creating an asymmetric silhouette. The right arm extends downward to the floor, palm flat against the ground, supporting the torso's weight. The left arm reaches outward to the side for balance, fingers spread. The torso twists slightly to align the hips over the supporting leg, with the head turned toward the camera. Soft, diffused lighting highlights the muscle definition and the tension in the extended limbs, capturing the precise moment of static equilibrium.",
+        "geometry": {
+          "body_orientation": "front_three_quarter", "camera_azimuth": "front_three_quarter",
+          "face_visibility": "three_quarter", "framing": "full_body", "gaze_direction": "toward_camera",
+          "head_direction": "toward_camera", "pose_type": "custom",
+          "pose_detail": "Standing on right leg with knee straight; left leg bent at knee, thigh raised high so left knee is near left shoulder; right arm extended down, palm flat on floor supporting weight; left arm extended horizontally to left for balance; torso twisted slightly toward camera; hips aligned over right leg; head upright facing camera.",
+          "required_visible_parts": ["face", "torso", "legs", "arms", "feet"], "body_visibility": "full_body",
+          "camera_distance": "medium_full", "camera_elevation": "eye_level", "expression": "focused",
+          "movement": "still", "contact_state": "standing_on", "action_focus": "one-arm acrobatic balance",
+          "composition": "centered", "occlusion": "none"
+        }
+      }
+    }
+  ]
+}

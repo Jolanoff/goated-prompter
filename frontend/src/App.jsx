@@ -1,37 +1,31 @@
-import { useEffect, useRef, useState } from "react";
-import { orderDisplayPresets, presetDisplayLabel } from "./presetPresentation.js";
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
+import { presetDisplayLabel } from "./presetPresentation.js";
 import { ui } from "./ui.js";
 import { api } from "./api.js";
+import { activeJobStatuses as activeStatuses, useJobPolling } from "./useJobPolling.js";
 import { readTheme, saveTheme } from "./theme.js";
 import CreativeWorkspace from "./workflows/CreativeWorkspace.jsx";
 import MiniMaxTab from "./workflows/MiniMaxTab.jsx";
 import DatasetTab from "./workflows/DatasetTab.jsx";
+import SavedPromptsTab from "./workflows/SavedPromptsTab.jsx";
+import SettingsTab from "./workflows/SettingsTab.jsx";
+import DirectorsTab from "./workflows/DirectorsTab.jsx";
+import BuilderTab from "./workflows/BuilderTab.jsx";
+import ReferenceImages from "./workflows/ReferenceImages.jsx";
+import { GoatMark } from "./components/StudioPrimitives.jsx";
 import JobLogModal from "./JobLogModal.jsx";
 import {
-  ArrowLeft,
-  ArrowUpRight,
   Bookmark,
   Check,
-  ChevronDown,
-  Copy,
   Database,
   FileText,
   Film,
-  ImagePlus,
-  Layers3,
-  LoaderCircle,
-  LockKeyhole,
   Moon,
-  Plus,
-  RefreshCw,
-  RotateCcw,
   Save,
   ScrollText,
   Settings2,
   SlidersHorizontal,
-  Sparkles,
   Sun,
-  Trash2,
   WandSparkles,
   X,
   Zap,
@@ -46,21 +40,8 @@ import {
   loadSaved,
   SAVED_KEY,
 } from "./storage.js";
-const activeStatuses = ["running", "pause_requested", "paused", "cancelling"];
 const titleCase = (text) =>
   text.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
-const taskLabels = {
-  Enhance: "Improve a prompt",
-  Archviz: "Architecture & interiors",
-  Photography: "Photography",
-  Character: "Character",
-  Product: "Product",
-  "Image Edit": "Edit an image",
-  "Style Transfer": "Transfer a style",
-  "Dataset Caption": "Caption for a dataset",
-  Video: "Video shot",
-  Custom: "Custom instructions",
-};
 const referenceOrder = [
   "subject",
   "face",
@@ -83,82 +64,6 @@ const workspaceViews = [
   { id: "directors", label: "Instruction presets", icon: FileText },
   { id: "settings", label: "Settings", icon: Settings2 },
 ];
-
-function GoatMark({ small = false }) {
-  return (
-    <svg
-      className={`goat-mark ${small ? "size-10" : "size-[43px]"}`}
-      viewBox="0 0 64 64"
-      fill="none"
-      aria-hidden="true"
-    >
-      <circle cx="32" cy="32" r="31" fill="currentColor" opacity=".16" />
-      <path
-        d="M29 20C14 3 5 17 20 28M37 20C51 2 60 17 45 29"
-        stroke="currentColor"
-        strokeWidth="5"
-        strokeLinecap="round"
-      />
-      <path d="m22 22 10-6 11 7-2 16-9 15-9-15-1-17Z" fill="currentColor" />
-      <path d="m21 24-10-2 7 11 7-1m18-8 10-2-7 11-6-1" fill="currentColor" />
-      <path
-        d="m26 30 4 2m8-2-4 2m-4 8h5"
-        stroke="#192d40"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function Panel({
-  icon: Icon,
-  title,
-  subtitle,
-  action,
-  children,
-  className = "",
-  collapsible = false,
-  open = false,
-}) {
-  const Container = collapsible ? "details" : "section";
-  const Header = collapsible ? "summary" : "header";
-  return (
-    <Container className={`${ui.panel} ${collapsible ? "collapsible-panel" : ""} ${className}`}
-      {...(collapsible ? { open: open || undefined } : {})}>
-      <Header className={ui.panelHeader}>
-        <div className={ui.panelIcon}>
-          <Icon size={21} />
-        </div>
-        <div className={ui.panelHeading}>
-          <h2>{title}</h2>
-          <p>{subtitle}</p>
-        </div>
-        {action}
-      </Header>
-      {children}
-    </Container>
-  );
-}
-
-function Toggle({ label, description, checked, onChange, disabled }) {
-  return (
-    <label className={ui.toggleRow}>
-      <input
-        className={ui.toggleInput}
-        type="checkbox"
-        checked={!!checked}
-        onChange={(event) => onChange(event.target.checked)}
-        disabled={disabled}
-      />
-      <span className={ui.switch} aria-hidden="true" />
-      <span>
-        <span className={ui.toggleLabel}>{label}</span>
-        {description && <small>{description}</small>}
-      </span>
-    </label>
-  );
-}
 
 function App() {
   const [theme, setTheme] = useState(() => {
@@ -260,12 +165,12 @@ function App() {
   const sources = bootstrap?.reference_sources || referenceSources;
   const hasImages = images.some(Boolean);
   const imageCount = images.filter(Boolean).length;
-  const sourceAvailable = (source) => {
+  const sourceAvailable = useCallback((source) => {
     if (!source || source === "Off") return true;
     if (source === "Blend") return imageCount >= 2;
     const slot = Number(source.replace(/\D/g, "")) - 1;
     return slot >= 0 && slot < images.length && !!images[slot];
-  };
+  }, [imageCount, images]);
   const hasInvalidReferenceMappings = referenceAttributes.some(
     (key) => !sourceAvailable(settings[`reference_${key}_source`]),
   );
@@ -282,7 +187,6 @@ function App() {
       item.id === settings.director_preset ||
       item.label === settings.director_preset,
   );
-  const displayedPresets = orderDisplayPresets(bootstrap?.presets.presets || []);
   const status = submitting
     ? "Starting"
     : job?.status === "cancelling"
@@ -368,8 +272,9 @@ function App() {
     }
   }
 
+  const initialConnect = useEffectEvent(connect);
   useEffect(() => {
-    connect();
+    initialConnect();
     try {
       const id = sessionStorage.getItem(JOB_KEY);
       if (id) receiveJob({ id, status: "running", revision: -1 });
@@ -396,7 +301,7 @@ function App() {
         }),
       ),
     }));
-  }, [images, hasInvalidReferenceMappings]);
+  }, [images, hasInvalidReferenceMappings, sourceAvailable]);
 
   useEffect(() => {
     if (!bootstrap?.presets || !hydrated.current) return;
@@ -479,45 +384,21 @@ function App() {
     };
   }, [storageReload]);
 
-  useEffect(() => {
-    if (!active || !job?.id) return;
-    let disposed = false;
-    let timer;
-    async function poll() {
-      try {
-        const next = await api(`/jobs/${job.id}`);
-        if (disposed) return;
-        receiveJob(next);
-        if (!activeStatuses.includes(next.status)) {
-          return;
-        }
-      } catch (err) {
-        if (disposed) return;
-        if (err.status === 404) {
-          setJob(null);
-          latestJobRef.current = null;
-          try {
-            sessionStorage.removeItem(JOB_KEY);
-          } catch {
-            /* Optional reload recovery. */
-          }
-          setError(
-            "This job is no longer available. The backend may have restarted; generate again.",
-          );
-          return;
-        }
-        setError(
-          `Connection interrupted; still checking the current job. ${err.message}`,
-        );
-      }
-      if (!disposed) timer = setTimeout(poll, 700);
+  useJobPolling(job?.id, active, receiveJob, () => {
+    setJob(null);
+    latestJobRef.current = null;
+    try { sessionStorage.removeItem(JOB_KEY); } catch { /* Optional recovery. */ }
+    setError("This job is no longer available. The backend may have restarted; generate again.");
+  }, (err) => setError(`Connection interrupted; still checking the current job. ${err.message}`));
+
+  async function releaseJobs(kind) {
+    const result = await api(`/jobs?kind=${encodeURIComponent(kind)}`, undefined, "DELETE");
+    if (result.released.includes(latestJobRef.current?.id)) {
+      latestJobRef.current = null;
+      setJob(null);
+      setLogOpen(false);
     }
-    poll();
-    return () => {
-      disposed = true;
-      clearTimeout(timer);
-    };
-  }, [job?.id, active]);
+  }
 
   useEffect(() => {
     if (!notice) return;
@@ -637,55 +518,6 @@ function App() {
     } finally {
       setActionBusy(false);
     }
-  }
-
-  function field(key, label, optionsOverride) {
-    const [type, options = {}] = bootstrap.inputs[key];
-    const choices =
-      optionsOverride ||
-      (Array.isArray(type)
-        ? type.map((value) => ({ value, label: value }))
-        : null);
-    return (
-      <label className={ui.field} key={key}>
-        <span>{label || titleCase(key)}</span>
-        {choices ? (
-          <span className={ui.selectWrap}>
-            <select
-              className={ui.select}
-              aria-label={label || titleCase(key)}
-              value={settings[key] ?? ""}
-              onChange={(event) => update(key, event.target.value)}
-            >
-              {choices.map((item) => (
-                <option key={item.value} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-            <ChevronDown size={15} />
-          </span>
-        ) : (
-          <input
-            className={ui.input}
-            aria-label={label || titleCase(key)}
-            type={type === "INT" ? "number" : "text"}
-            min={options.min}
-            max={options.max}
-            step={type === "INT" ? 1 : undefined}
-            value={settings[key] ?? ""}
-            onChange={(event) =>
-              update(
-                key,
-                type === "INT" && event.target.value !== ""
-                  ? Number(event.target.value)
-                  : event.target.value,
-              )
-            }
-          />
-        )}
-      </label>
-    );
   }
 
   async function upload(file, slot) {
@@ -1117,13 +949,13 @@ function App() {
           {bootstrap && <MiniMaxTab visible={view === "minimax"} job={job}
             busy={busy || actionBusy || settingsBusy || !!uploading} active={active} noEngine={noEngine}
             engineLabel={configuredBackend ? `Configured backend (${bootstrap.backend})` : selectedProfile?.label}
-               presets={bootstrap.presets.presets} onGenerate={startWorkflow} onCancel={endGeneration} onCopy={copy} />}
+               presets={bootstrap.presets.presets} onGenerate={startWorkflow} onCancel={endGeneration} onCopy={copy} onReleaseJobs={releaseJobs} />}
           {bootstrap && <DatasetTab visible={view === "dataset"} job={job}
             busy={busy || actionBusy || settingsBusy || !!uploading} active={active} noEngine={noEngine}
             engineLabel={configuredBackend ? `Configured backend (${bootstrap.backend})` : selectedProfile?.label}
             presets={bootstrap.presets.presets} targets={bootstrap.inputs.target_model[0]}
             lengths={bootstrap.inputs.prompt_length[0]} onGenerate={startWorkflow}
-            onCancel={endGeneration} onCopy={copy} />}
+             onCancel={endGeneration} onCopy={copy} onReleaseJobs={releaseJobs} />}
           {active && view !== "builder" && view !== "refine" && view !== "minimax" && view !== "dataset" && (
             <div className={`${ui.panel} mb-5 flex flex-wrap items-center justify-between gap-3`} role="status">
               <span>{job.progress || "Generating prompt…"}</span>
@@ -1132,94 +964,14 @@ function App() {
           )}
 
           {view === "refine" || view === "minimax" || view === "dataset" ? null : view === "saved" ? (
-            <>
-              <div className={ui.pageHeading}>
-                <div>
-                  <h2>Saved prompts</h2>
-                  <p>
-                    Your prompt library, saved on this server and ready to use again.
-                  </p>
-                </div>
-                <button className={ui.button} onClick={() => setView("builder")}>
-                  <ArrowLeft size={16} />
-                  Back to builder
-                </button>
-              </div>
-              {!storageReady ? (
-                <div className={ui.emptyState}>
-                  <Bookmark size={34} />
-                  <h3>Saved prompts are not ready yet</h3>
-                  <p>
-                    Loading from the local server. If the connection fails,
-                    retry above.
-                  </p>
-                </div>
-              ) : saved.length === 0 ? (
-                <div className={ui.emptyState}>
-                  <div className={ui.emptyIcon}>
-                    <Bookmark size={30} />
-                  </div>
-                  <h3>Keep your best prompts here</h3>
-                  <p>
-                    Create a prompt in Builder, then choose Save Prompt to add it to your library.
-                  </p>
-                  <button
-                    className={ui.primaryButton}
-                    onClick={() => setView("builder")}
-                  >
-                    <Plus size={16} />
-                    Create a prompt
-                  </button>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-[18px] mobile:grid-cols-1">
-                  {saved.map((record) => (
-                    <article className={ui.savedCard} key={record.id}>
-                      <div className={ui.savedMeta}>
-                        <span>{record.target || "Prompt"}</span>
-                        <time dateTime={record.createdAt}>
-                          {new Date(record.createdAt).toLocaleDateString(
-                            undefined,
-                            { month: "short", day: "numeric", year: "numeric" },
-                          )}
-                        </time>
-                      </div>
-                      <h3>{record.title}</h3>
-                      <pre tabIndex={0}>{record.prompt}</pre>
-                      <div className="flex gap-2 border-t border-line pt-[15px]">
-                        <button
-                          className={ui.button}
-                          onClick={() => copy(record.prompt)}
-                        >
-                          <Copy size={15} />
-                          Copy
-                        </button>
-                        <button
-                          className={ui.button}
-                          disabled={busy}
-                          onClick={() => {
-                            setSettings((current) => ({ ...current, generated_prompt: record.prompt,
-                              target_model: record.target || current.target_model }));
-                            setView("builder");
-                          }}
-                        >
-                          <ArrowUpRight size={15} />
-                          Open
-                        </button>
-                        <button
-                          className={ui.deleteButton}
-                          aria-label={`Delete ${record.title}`}
-                          disabled={!storageReady || promptsBusy || dialogBusy}
-                          onClick={() => deletePrompt(record)}
-                        >
-                          <Trash2 size={17} />
-                        </button>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-            </>
+            <SavedPromptsTab records={saved} ready={storageReady} busy={busy}
+              deletingDisabled={!storageReady || promptsBusy || dialogBusy}
+              onBack={() => setView("builder")} onCopy={copy} onDelete={deletePrompt}
+              onOpen={(record) => {
+                setSettings((current) => ({ ...current, generated_prompt: record.prompt,
+                  target_model: record.target || current.target_model }));
+                setView("builder");
+              }} />
           ) : !bootstrap ? (
             <div className={ui.emptyState}>
               <GoatMark />
@@ -1231,743 +983,41 @@ function App() {
               <code>python local_app.py</code>
             </div>
           ) : view === "directors" ? (
-            <>
-              <div className={ui.pageHeading}>
-                <div>
-                  <h2>Instruction presets</h2>
-                  <p>
-                    Reusable instructions that guide how your prompt task is written.
-                  </p>
-                </div>
-              </div>
-              <div className={ui.directorsGrid}>
-                <Panel
-                  icon={WandSparkles}
-                  title="Instruction presets"
-                  subtitle="Choose saved instructions to edit."
-                >
-                  <div className={ui.directorList}>
-                    {displayedPresets.map((item) => (
-                      <button
-                        key={item.id}
-                        className={`${ui.directorChoice} ${directorId === item.id ? "selected" : ""}`}
-                        data-active={directorId === item.id}
-                        disabled={actionBusy}
-                        onClick={() => {
-                          if (item.id !== directorId && discardDirector())
-                            selectDirector(item);
-                        }}
-                      >
-                        <strong>{presetDisplayLabel(item)}</strong>
-                        <span>
-                          {item.protected ? "Built-in" : "User"}
-                          {item.modified ? " / Edited" : ""}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                  <button
-                    className={ui.button}
-                    disabled={busy || actionBusy}
-                    onClick={() => {
-                      if (discardDirector()) selectDirector(null);
-                    }}
-                  >
-                    <Plus size={15} />
-                    New instruction preset
-                  </button>
-                </Panel>
-                <form
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    writeDirector("save");
-                  }}
-                >
-                  <fieldset disabled={busy || actionBusy}>
-                    <Panel
-                      icon={FileText}
-                      title={
-                        directorId ? "Edit instruction preset" : "New instruction preset"
-                      }
-                      subtitle={
-                        directorDirty
-                          ? "Unsaved changes"
-                          : "Instructions saved separately from your builder."
-                      }
-                    >
-                      <label className={ui.field}>
-                        <span>Instruction preset name</span>
-                        <input
-                          className={ui.input}
-                          required
-                          maxLength={80}
-                          readOnly={!!editorDirector?.protected}
-                          value={editorDirector?.protected
-                            ? presetDisplayLabel(editorDirector)
-                            : directorDraft.name}
-                          onChange={(event) =>
-                            setDirectorDraft((draft) => ({
-                              ...draft,
-                              name: event.target.value,
-                            }))
-                          }
-                        />
-                      </label>
-                      {editorDirector?.protected && (
-                        <p className={ui.subtleNote}>
-                          Built-in names cannot be changed. Instructions can be
-                          edited and restored.
-                        </p>
-                      )}
-                      <p className={ui.subtleNote}>
-                        {editorDirector?.description === "User Director"
-                          ? "User instruction preset"
-                          : editorDirector?.description}
-                      </p>
-                      <label className={ui.field}>
-                        <span>Preset instructions</span>
-                        <textarea
-                          className={ui.directorInput}
-                          required
-                          value={directorDraft.instructions}
-                          onChange={(event) =>
-                            setDirectorDraft((draft) => ({
-                              ...draft,
-                              instructions: event.target.value,
-                            }))
-                          }
-                        />
-                      </label>
-                      <div className={ui.inlineActions}>
-                        <button
-                          className={ui.primaryButton}
-                          disabled={
-                            !directorDirty ||
-                            !directorDraft.name.trim() ||
-                            !directorDraft.instructions.trim()
-                          }
-                        >
-                          <Save size={14} />
-                          Save changes
-                        </button>
-                        {editorDirector && (
-                          <button
-                            type="button"
-                            className={ui.button}
-                            onClick={() => {
-                              if (discardDirector()) {
-                                setDirectorDraft(directorOriginal);
-                                update("director_preset", directorId);
-                                setView("builder");
-                              }
-                            }}
-                          >
-                            Use in builder
-                          </button>
-                        )}
-                        {editorDirector && !editorDirector.protected && (
-                          <button
-                            type="button"
-                            className={ui.button}
-                            onClick={() => writeDirector("delete")}
-                          >
-                            <Trash2 size={14} />
-                            Delete instruction preset
-                          </button>
-                        )}
-                        {editorDirector?.protected &&
-                          editorDirector.modified && (
-                            <button
-                              type="button"
-                              className={ui.button}
-                              onClick={() => writeDirector("reset")}
-                            >
-                              <RotateCcw size={14} />
-                              Reset built-in
-                            </button>
-                          )}
-                      </div>
-                      <p className={`${ui.subtleNote} wrap-anywhere`}>
-                        Stored JSON library: {bootstrap.presets.storage}
-                      </p>
-                    </Panel>
-                  </fieldset>
-                  {busy && (
-                    <p className={ui.warningNote}>
-                      Instruction presets are read-only while a generation job is active.
-                    </p>
-                  )}
-                </form>
-              </div>
-              {bootstrap.presets.warnings?.map((warning, index) => (
-                <p className={ui.warningNote} key={index}>
-                  {warning}
-                </p>
-              ))}
-            </>
+            <DirectorsTab library={bootstrap.presets} directorId={directorId}
+              draft={directorDraft} dirty={directorDirty} editorDirector={editorDirector}
+              busy={busy} actionBusy={actionBusy} onWrite={writeDirector}
+              onSelect={(item) => { if (discardDirector()) selectDirector(item); }}
+              onChange={(key, value) => setDirectorDraft((draft) => ({ ...draft, [key]: value }))}
+              onUse={() => {
+                if (discardDirector()) {
+                  setDirectorDraft(directorOriginal);
+                  update("director_preset", directorId);
+                  setView("builder");
+                }
+              }} />
           ) : view === "settings" ? (
-            <>
-              <div className={ui.pageHeading}>
-                <div>
-                  <h2>Settings</h2>
-                  <p>
-                    Connect your local models and choose how they run.
-                  </p>
-                </div>
-                <button className={ui.button} onClick={() => setView("builder")}>
-                  <ArrowLeft size={16} />
-                  Back to builder
-                </button>
-              </div>
-              <form onSubmit={saveSettings} className={ui.settingsForm}>
-                <fieldset disabled={busy || settingsBusy || actionBusy}>
-                  <Panel
-                    icon={Layers3}
-                    title="Local models"
-                    subtitle={`Configured backend: ${bootstrap.backend}`}
-                  >
-                    <label className={ui.field}>
-                      <span>Models directory</span>
-                      <input
-                        className={ui.input}
-                        required
-                        value={settingsDraft.models_directory || ""}
-                        aria-describedby="folder-help"
-                        onChange={(event) =>
-                          setSettingsDraft((previous) => ({
-                            ...previous,
-                            models_directory: event.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                    <p className={ui.subtleNote} id="folder-help">
-                      Enter an existing folder path on the server. This folder
-                      is scanned directly and recursively; no LLM folder is
-                      appended. Put each model GGUF and its matching mmproj GGUF
-                      in the same subfolder. A folder containing the pair
-                      directly also works. Only complete vision-ready profiles
-                      appear in Prompt engine.
-                    </p>
-                    <Toggle
-                      label="Keep model loaded"
-                      description="Retain the model between generations for faster reuse."
-                      checked={settingsDraft.keep_model_loaded}
-                      onChange={(value) =>
-                        setSettingsDraft((previous) => ({
-                          ...previous,
-                          keep_model_loaded: value,
-                        }))
-                      }
-                    />
-                    <div className="mt-[22px] flex flex-wrap items-center gap-2">
-                      <button className={ui.primaryButton} type="submit">
-                        <Save size={14} />
-                        {settingsBusy ? "Saving..." : "Save settings"}
-                      </button>
-                      <button
-                        className={ui.button}
-                        type="button"
-                        onClick={() => modelAction()}
-                      >
-                        <RefreshCw size={14} />
-                        Refresh models
-                      </button>
-                      <button
-                        className={ui.button}
-                        type="button"
-                        onClick={() => modelAction(true)}
-                      >
-                        <Layers3 size={14} />
-                        Unload model
-                      </button>
-                    </div>
-                    {busy && (
-                      <p className={ui.warningNote}>
-                        Settings are read-only while a generation job is active.
-                        Return to the builder to manage the job.
-                      </p>
-                    )}
-                    <p className={`${ui.subtleNote} wrap-anywhere`}>
-                      Scanned folder: {bootstrap.models.root}
-                    </p>
-                    <p className={ui.subtleNote}>
-                      {profiles.length} ready prompt engines found.
-                      {configuredBackend &&
-                        " Generation uses your configured backend, even without local models."}
-                    </p>
-                    {bootstrap.models.profiles
-                      .filter((item) => !item.vision_ready)
-                      .map((item) => (
-                        <p className={ui.warningNote} key={item.id}>
-                          {item.label}: incomplete model. Add the model GGUF and
-                          matching mmproj to the same folder, then refresh
-                          models.
-                        </p>
-                      ))}
-                    {bootstrap.models.warnings.map((warning, index) => (
-                      <p className={ui.warningNote} key={index}>
-                        {warning}
-                      </p>
-                    ))}
-                  </Panel>
-                </fieldset>
-              </form>
-            </>
+            <SettingsTab backend={bootstrap.backend} models={bootstrap.models}
+              draft={settingsDraft} profiles={profiles} configuredBackend={configuredBackend}
+              busy={busy} saving={settingsBusy} actionBusy={actionBusy}
+              onSave={saveSettings} onModelAction={modelAction} onBack={() => setView("builder")}
+              onChange={(key, value) => setSettingsDraft((previous) => ({ ...previous, [key]: value }))} />
           ) : (
-            <>
-              <div className={ui.pageHeading}>
-                <div>
-                  <h2>Start with an idea.</h2>
-                  <p>
-                    Shape a rough thought into a ready-to-use image or video prompt.
-                  </p>
-                </div>
-                <span className={ui.workspaceTag}>
-                  <Layers3 size={14} />
-                  Prompt workspace
-                </span>
-              </div>
-
-              <fieldset disabled={busy}>
-                <div className={ui.workspaceGrid}>
-                  <div className={ui.column}>
-                    <Panel
-                      icon={FileText}
-                      title="Describe your idea"
-                      subtitle="Start with the subject, mood, setting, or a little bit of everything."
-                      className={ui.ideaPanel}
-                    >
-                      <div className="relative">
-                        <textarea
-                          aria-label="Describe your idea"
-                          className={ui.ideaInput}
-                          value={settings.idea}
-                          onChange={(event) =>
-                            update("idea", event.target.value)
-                          }
-                          placeholder="A cinematic portrait of a wandering samurai in a misty forest at dawn..."
-                        />
-                        <span className={ui.charCount}>
-                          {settings.idea.length.toLocaleString()} characters
-                        </span>
-                      </div>
-                      <div className={ui.inputHint}>
-                        <Sparkles size={13} />
-                        <span>
-                          Start with a rough idea, then choose a task and saved
-                          instructions below.
-                        </span>
-                      </div>
-                    </Panel>
-
-                    <Panel
-                      icon={SlidersHorizontal}
-                      title="Prompt controls"
-                      subtitle="Choose how your idea takes shape."
-                    >
-                      <div className={`${ui.fields} grid-cols-2`}>
-                        {field(
-                          "mode",
-                          "Prompt task",
-                          bootstrap.inputs.mode[0].map((value) => ({
-                            value,
-                            label: taskLabels[value] || value,
-                          })),
-                        )}
-                        {field(
-                          "director_preset",
-                          "Instruction preset",
-                          displayedPresets.map((item) => ({
-                            value: item.id,
-                            label: presetDisplayLabel(item),
-                          })),
-                        )}
-                      </div>
-                      <div className="mb-5 border-t border-line pt-3">
-                        <p className={ui.subtleNote}>
-                          Changing the task selects its matching instruction preset.
-                          You can then choose another preset without changing the task.
-                        </p>
-                        <span className={ui.directorDescription}>
-                          {preset?.description === "User Director"
-                            ? "User instruction preset"
-                            : preset?.description}
-                        </span>
-                        <button
-                          className={ui.textButton}
-                          onClick={() => {
-                            selectDirector(preset || bootstrap.presets.presets[0]);
-                            navigate("directors");
-                          }}
-                        >
-                          Manage instruction presets
-                        </button>
-                      </div>
-                      {field("target_model", "Target model")}
-                      <div className={`${ui.fields} ${ui.threeFields} mt-5`}>
-                        {field("creativity", "Creativity")}
-                        {field(
-                          "prompt_length",
-                          "Prompt length",
-                          ["Short", "Medium", "Detailed", "Maximum Detail"].map(
-                            (value) => ({ value, label: value }),
-                          ),
-                        )}
-                        <label className={ui.field}>
-                          <span>Prompt engine</span>
-                          <span className={ui.selectWrap}>
-                            <select
-                              className={ui.select}
-                              aria-label="Prompt engine"
-                              value={
-                                configuredBackend
-                                  ? "configured"
-                                  : selectedProfile?.id || ""
-                              }
-                              disabled={
-                                settingsBusy ||
-                                actionBusy ||
-                                configuredBackend ||
-                                noEngine
-                              }
-                              onChange={(event) =>
-                                saveSettings(null, event.target.value)
-                              }
-                            >
-                              {configuredBackend ? (
-                                <option value="configured">
-                                  Configured backend ({bootstrap.backend})
-                                </option>
-                              ) : profiles.length ? (
-                                profiles.map((item) => (
-                                  <option key={item.id} value={item.id}>
-                                    {item.label}
-                                  </option>
-                                ))
-                              ) : (
-                                <option value="">No ready local engines</option>
-                              )}
-                            </select>
-                            <ChevronDown size={15} />
-                          </span>
-                        </label>
-                      </div>
-                      <p className={ui.subtleNote}>
-                        Maximum Detail uses the largest output budget, not a
-                        guaranteed word count. Actual length depends on the
-                        model and your instructions.
-                      </p>
-                      {noEngine && (
-                        <p className={ui.warningNote}>
-                          No complete local model found.{" "}
-                          <button
-                            className={ui.textButton}
-                            onClick={() => setView("settings")}
-                          >
-                            Set up models in Settings
-                          </button>
-                        </p>
-                      )}
-                    </Panel>
-
-                    <Panel
-                      icon={FileText}
-                      title="Workflow rules / notes"
-                      subtitle="Add constraints or details the prompt should keep."
-                    >
-                      <textarea className={ui.notesInput} aria-label="Workflow rules"
-                        placeholder="e.g. Avoid text and watermarks. Keep natural lighting and realistic textures…"
-                        value={settings.custom_instructions}
-                        onChange={(event) => update("custom_instructions", event.target.value)} />
-                    </Panel>
-                  </div>
-                  <div className={ui.column}>
-                    <Panel
-                      icon={WandSparkles}
-                      title="Generated prompt"
-                      subtitle="Review, edit, and copy it into your creative workflow."
-                      action={
-                        <span
-                          className={ui.resultStatus}
-                          data-working={active}
-                        >
-                          <span className={ui.statusDot} />
-                          {active ? status : prompt ? "Ready" : "Awaiting idea"}
-                        </span>
-                      }
-                      className={ui.outputPanel}
-                    >
-                      <div className="relative">
-                        <textarea
-                          className={ui.outputInput}
-                          aria-label="Generated prompt"
-                          value={prompt}
-                          onChange={(event) =>
-                            update("generated_prompt", event.target.value)
-                          }
-                          placeholder={"Your prompt will appear here.\n\nGenerate from your idea, then edit or copy the result."}
-                          spellCheck={false}
-                        />
-                        <span className={ui.charCount}>
-                          {prompt.length.toLocaleString()} characters
-                        </span>
-                      </div>
-                      <div className={ui.outputActions}>
-                        <button
-                          className={ui.button}
-                          disabled={!prompt}
-                          onClick={() => copy(prompt)}
-                        >
-                          <Copy size={16} />
-                          Copy Prompt
-                        </button>
-                        <button
-                          className={ui.saveButton}
-                          disabled={
-                             !prompt.trim() ||
-                             !storageReady ||
-                            promptsBusy ||
-                            dialogBusy
-                          }
-                          onClick={openSave}
-                        >
-                          <Bookmark size={16} />
-                          Save Prompt
-                        </button>
-                        <button
-                          className={ui.button}
-                          disabled={!prompt}
-                          onClick={() => update("generated_prompt", "")}
-                        >
-                          <Trash2 size={16} />
-                          Clear
-                        </button>
-                      </div>
-                      <div className={ui.inlineActions}>
-                        <button className={ui.button} disabled={!prompt.trim()} onClick={() => navigate("refine")}>
-                          <WandSparkles size={15} />Refine & history
-                        </button>
-                      </div>
-                    </Panel>
-                    <Panel
-                      icon={ImagePlus}
-                      title="Reference images"
-                      subtitle="Add up to four images to guide your prompt."
-                      action={
-                        <span className={ui.countChip}>
-                          {images.filter(Boolean).length} / 4
-                        </span>
-                      }
-                    >
-                      <div className="grid grid-cols-2 gap-[11px]">
-                        {images.map((image, index) => (
-                          <div
-                            className={ui.imageSlot}
-                            data-image={!!image}
-                            key={index}
-                            onDragOver={(event) => event.preventDefault()}
-                            onDrop={(event) => {
-                              event.preventDefault();
-                              if (event.dataTransfer.files.length !== 1)
-                                setError(
-                                  "Drop one image into each slot. The limit is four references.",
-                                );
-                              else upload(event.dataTransfer.files[0], index);
-                            }}
-                          >
-                            {image ? (
-                              <>
-                                <img
-                                  src={image.data}
-                                  alt={`Reference ${index + 1}: ${image.name}`}
-                                />
-                                <button
-                                  className={ui.imageRemove}
-                                  aria-label={`Remove image ${index + 1}`}
-                                  onClick={() =>
-                                    setImages((previous) =>
-                                      previous.map((item, slot) =>
-                                        slot === index ? null : item,
-                                      ),
-                                    )
-                                  }
-                                >
-                                  <X size={15} />
-                                </button>
-                                <div className={ui.imageCaption}>
-                                  <span>IMAGE {index + 1}</span>
-                                  <span title={image.name}>{image.name}</span>
-                                </div>
-                              </>
-                            ) : (
-                              <label className={ui.uploadLabel}>
-                                <input
-                                  type="file"
-                                  aria-label={`Upload image ${index + 1}`}
-                                  accept="image/png,image/jpeg,image/webp"
-                                  onChange={(event) => {
-                                    upload(event.target.files[0], index);
-                                    event.target.value = "";
-                                  }}
-                                />
-                                <span className="mb-[3px] text-accent [&>svg]:inline [&>svg]:align-baseline">
-                                  <ImagePlus size={24} />
-                                </span>
-                                <strong>Add image {index + 1}</strong>
-                                <span>Drop here or click to browse</span>
-                                <small>PNG, JPG, WEBP</small>
-                              </label>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                      <p className={ui.subtleNote}>
-                        Images are not saved. References need reuploading after
-                        reload; unavailable preserve mappings reset to Off.
-                      </p>
-                    </Panel>
-                    <Panel
-                      icon={Settings2}
-                      title="Keep from reference images"
-                      subtitle="Choose which image supplies each attribute to keep."
-                      collapsible
-                      open={hasImages}
-                    >
-                      <div className={ui.referenceMap}>
-                        {attributes.map(({ key: attribute, label }) => (
-                          <label className={ui.referenceRow} key={attribute}>
-                            <span>{label}</span>
-                            <span className={ui.selectWrap}>
-                              <select
-                                className={ui.select}
-                                aria-label={`${titleCase(attribute)} source`}
-                                value={hasImages
-                                  ? settings[`reference_${attribute}_source`]
-                                  : "Off"}
-                                disabled={!hasImages}
-                                onChange={(event) =>
-                                  update(
-                                    `reference_${attribute}_source`,
-                                    event.target.value,
-                                  )
-                                }
-                              >
-                                {sources.map((source) => (
-                                  <option
-                                    key={source}
-                                    disabled={!sourceAvailable(source)}
-                                  >
-                                    {source}
-                                  </option>
-                                ))}
-                              </select>
-                              <ChevronDown size={13} />
-                            </span>
-                          </label>
-                        ))}
-                      </div>
-                      <p className={ui.subtleNote}>
-                        Off adds no explicit preserve constraint. Blend
-                        uses all uploaded images and requires at least two.
-                      </p>
-                      {!!missingReferences.length && (
-                        <p className={ui.warningNote} role="alert">
-                          Missing references for{" "}
-                          {missingReferences
-                            .map(({ label }) => label)
-                            .join(", ")}
-                          . Reupload the mapped images or select Off. Blend
-                          needs at least two images. Text-only preview ignores
-                          these mappings.
-                        </p>
-                      )}
-                    </Panel>
-
-                  </div>
-                </div>
-              </fieldset>
-
-              <div className={ui.generationBar}>
-                <button
-                  className={ui.generateButton}
-                  disabled={
-                    !!missingReferences.length ||
-                    busy ||
-                    !!uploading ||
-                    actionBusy ||
-                    settingsBusy ||
-                    noEngine
-                  }
-                  onClick={() => generate(false)}
-                >
-                  {busy ? (
-                    <LoaderCircle
-                      size={25}
-                      className={job?.status === "paused" || job?.status === "cancelling" ? "" : "animate-working"}
-                    />
-                  ) : (
-                    <Sparkles size={25} />
-                  )}
-                  <span>
-                    <strong>
-                      {busy
-                        ? status === "Pause requested"
-                          ? "Finishing current stage"
-                          : status
-                        : "Generate prompt"}
-                    </strong>
-                    <small>
-                      {busy
-                        ? "Your idea is in good hands"
-                        : images.some(Boolean)
-                          ? "Create a prompt grounded in your references"
-                          : "Turn your idea into a refined prompt"}
-                    </small>
-                  </span>
-                </button>
-                <button
-                  className={ui.endButton}
-                  disabled={!active || actionBusy}
-                  onClick={endGeneration}
-                >
-                  <X size={23} />
-                  <span>
-                    <strong>End generation</strong>
-                    <small>
-                      {job?.status === "cancelling"
-                        ? "Ending the active model request"
-                        : "Stop this generation now"}
-                    </small>
-                  </span>
-                </button>
-              </div>
-              <div className={ui.belowActions}>
-                <span>
-                  <LockKeyhole size={12} />
-                  Settings and saved prompts stay in local JSON files on this
-                  server.
-                </span>
-                <button
-                  className={ui.textButton}
-                  disabled={
-                    busy ||
-                    !!uploading ||
-                    actionBusy ||
-                    settingsBusy ||
-                    noEngine ||
-                    !settings.idea.trim()
-                  }
-                  onClick={() => generate(true)}
-                >
-                  Text-only preview
-                  <ArrowUpRight size={13} />
-                </button>
-                <span className={ui.previewNote}>
-                  Ignores reference images and the attributes selected to keep.
-                </span>
-              </div>
-            </>
+            <BuilderTab settings={settings} inputs={bootstrap.inputs} presets={bootstrap.presets.presets}
+              preset={preset} engine={{ backend: bootstrap.backend, configuredBackend, selectedProfile, profiles, noEngine }}
+              job={job} busy={busy} active={active} status={status} actionBusy={actionBusy}
+              settingsBusy={settingsBusy} uploading={uploading} hasImages={hasImages}
+              hasMissingReferences={!!missingReferences.length} canSave={storageReady && !promptsBusy && !dialogBusy}
+              onChange={update} onCopy={copy} onSave={openSave} onGenerate={generate} onCancel={endGeneration}
+              onNavigate={navigate} onSelectEngine={(id) => saveSettings(null, id)}
+              onManagePresets={() => {
+                selectDirector(preset || bootstrap.presets.presets[0]);
+                navigate("directors");
+              }}>
+              <ReferenceImages images={images} settings={settings} attributes={attributes} sources={sources}
+                missingReferences={missingReferences} sourceAvailable={sourceAvailable} onChange={update}
+                onUpload={upload} onError={setError}
+                onRemove={(index) => setImages((previous) => previous.map((item, slot) => slot === index ? null : item))} />
+            </BuilderTab>
           )}
         </main>
       </div>

@@ -11,11 +11,13 @@ from .dataset_triggers import trigger_contract_error, trigger_presence_error, tr
 from .dataset_visible_content import visible_content_error, positive_prompt_error
 from .dataset_staging.rules.prose import explicit_geometry_issues  # Legacy report import compatibility.
 from .dataset_staging import geometry_issues
+from .dataset_constraints import compile_constraints, constraint_issues, positive_descriptions
 
 
 LEAKED_LABELS = re.compile(
     r"(?im)^\s*(?:ITEM|TRIGGER TYPE|TRIGGER DESCRIPTION|REQUIRED TRIGGER TEXT|DATASET CONCEPT|"
     r"SOURCE MODE|GUIDED INPUT|ADDITIONAL CONSISTENCY RULES|CONSISTENCY AND VARIATION RULES|"
+    r"REQUIRED FACTS|FORBIDDEN FACTS|VARIATION ALLOWED|UNRESOLVED RULES|"
     r"EARLIER ITEM|OUTPUT FORMAT|CURRENT SCENE|PLANNED IDEA|PLANNED GEOMETRY|PLANNED SCENE(?: / CURRENT SCENE)?|FINAL PROMPT)\s*(?:\d+[^\n]*)?$|"
     r"</?(?:data|trigger|input|constraints|example|idea|scene)>",
 )
@@ -74,9 +76,6 @@ def idea_concepts(text):
     text = text.casefold()
     for family, pattern in _CONCEPT_FAMILIES.items():
         text = re.sub(r"\b(?:" + pattern + r")\b", family, text)
-    # Object control in flight is a common paraphrase of failed juggling.
-    if "failure" in text and "fruit" in text and re.search(r"\b(?:airborne|air|flight)\b", text):
-        text += " juggle"
     text = re.sub(r"\b(?:trying|attempting|attempt|control|airborne|air|flight|three|two|one|and|to)\b", "", text)
     text = re.sub(r"\b(?:at (?:night|dawn|dusk|sunset)|in (?:warm|soft|bright) light|from a low angle)\b", "", text)
     return set(_scene_event_words(text))
@@ -84,8 +83,23 @@ def idea_concepts(text):
 
 def idea_action_error(idea, description):
     """High-confidence action loss only; unknown paraphrases remain review hints."""
-    actions = idea_concepts(idea) & {"juggle", "walk", "run", "laugh", "catch", "read"}
-    if actions and not actions & idea_concepts(description):
+    # Inspect the entire prose, not a truncated diversity/event prefix. Unknown
+    # paraphrases are Deep Review's job, not reasons to replace valid staging.
+    action_families = {"juggle", "walk", "run", "laugh", "catch", "read"}
+    def explicit_actions(text):
+        return {name for name in action_families if re.search(r"\b(?:" + _CONCEPT_FAMILIES[name] + r")\b", text, re.I)}
+    actions, described = explicit_actions(idea), explicit_actions(description)
+    # Clothing, portrait language and unfamiliar verbs do not prove an action
+    # disappeared. Only an explicit stillness assertion contradicts movement;
+    # unknown paraphrases belong to review, not an automatic rewrite.
+    movement = actions & {"juggle", "walk", "run", "catch"}
+    primary_subject = r"(?:she|he|they|(?:the |a )?(?:woman|man|person|character|subject)|[\w-]+_token)"
+    static_replacement = re.match(
+        primary_subject + r"\s+(?:stands? (?:completely )?still|standing (?:completely )?still|(?:stands?|standing|poses?|posing) motionless)\b",
+        description.strip(), re.I)
+    if re.search(r"\b(?:while|as|and|who|although)\b", description, re.I):
+        static_replacement = None  # Multiple clauses can refer to another actor.
+    if movement and not actions & described and static_replacement:
         return "The planned primary action disappeared. Preserve the fixed idea and its important action."
     return None
 
@@ -165,7 +179,7 @@ def analyze_idea_diversity(data, rows):
                 continue
             elif focused:
                 continue  # Narrow family variants are valid, but exact copies are not.
-            elif aw and bw and (_similarity(aw, bw) >= .75 or (facial and not expression_scope)):
+            elif (aw and aw == bw and not facial) or (min(len(aw), len(bw)) >= 3 and _similarity(aw, bw) >= .85):
                 code = "similar_idea_category"
             if code:
                 pairs.add((left["index"], right["index"]))
@@ -180,6 +194,7 @@ def _prompt_trigger_valid(prompt, data):
     try:
         return trigger_presence_error(
             prompt, data.get("trigger", ""), data.get("target", "Generic"),
+            expand=data.get("expand_trigger", False),
         ) is None
     except ValueError:
         return False
@@ -189,6 +204,7 @@ def _prompt_trigger_issue(prompt, data):
     try:
         return trigger_presence_error(
             prompt, data.get("trigger", ""), data.get("target", "Generic"),
+            expand=data.get("expand_trigger", False),
         )
     except ValueError as exc:
         return str(exc)
@@ -200,13 +216,17 @@ def _prompt_trigger_preference(prompt, data):
             prompt, data.get("trigger", ""), data.get("target", "Generic"),
             connected=data.get("trigger_connected", True),
             at_start=data.get("trigger_at_start", False),
+            expand=data.get("expand_trigger", False),
         )
     except ValueError:
         return None
 
 
 def quality_signature(data, results, plan):
-    value = {"version": 7, "trigger": data.get("trigger"), "target": data.get("target"), "trigger_type": data.get("trigger_type"),
+    value = {"version": 10, "trigger": data.get("trigger"), "target": data.get("target"), "trigger_type": data.get("trigger_type"),
+             "creativity": data.get("creativity", "Balanced"),
+             "constraints": data.get("constraints", ""),
+             "expand_trigger": data.get("expand_trigger", False),
              "trigger_connected": data.get("trigger_connected", True),
              "trigger_at_start": data.get("trigger_at_start", False),
              "amount": data.get("amount"), "results": results, "plan": plan}
@@ -221,6 +241,9 @@ def analyze_dataset_quality(data, results=None, plan=None):
     records = {item["index"]: {"index": item["index"], "status": "pass", "issues": []}
                for item in results}
     batch_issues = []
+    compiled = compile_constraints(data.get("constraints", ""))
+    if compiled["unresolved"]:
+        batch_issues.append(_issue("unresolved_constraints", "warning", "Some consistency rules have conditional or unsupported syntax. Review their interpretation; they have not been silently discarded."))
 
     def add(index, issue):
         records[index]["issues"].append(issue)
@@ -248,7 +271,7 @@ def analyze_dataset_quality(data, results=None, plan=None):
             issue = _prompt_trigger_issue(prompt, data)
             add(index, _issue("trigger_missing", "warning", issue or "Requested trigger wording is missing."))
         try:
-            normalize_workflow_output(prompt, target)
+            normalize_workflow_output(prompt, target, mode="Enhance")
             format_passes += 1
         except WorkflowFormatError as exc:
             add(index, _issue("target_format", "error", f"Target format is invalid: {exc}"))
@@ -262,6 +285,13 @@ def analyze_dataset_quality(data, results=None, plan=None):
             leakage = None  # Already reported by the target-format check above.
         if leakage:
             add(index, _issue("positive_content_leakage", "warning", leakage))
+        try:
+            for text in positive_descriptions(prompt, target):
+                for issue in constraint_issues(text, compiled, trigger_terms(trigger, data.get("trigger_connected", True))):
+                    if issue not in records[index]["issues"]:
+                        add(index, issue)
+        except (ValueError, KeyError, TypeError):
+            pass  # Target-format issues are reported separately.
         for source in ("idea", "scene"):
             if leakage := visible_content_error(item.get(source, "")):
                 add(index, _issue(source + "_content_leakage", "warning", leakage))

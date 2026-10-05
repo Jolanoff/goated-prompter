@@ -8,6 +8,7 @@ import re
 
 from ..core import PromptInstruction
 from ..presets import get_director_preset
+from ..minimax_format import BASE_SECTIONS, REF_SECTIONS, normalize_h3_sections
 
 MODELS = ("MiniMax H3",)
 MODES = ("auto", "T2VA", "I2VA", "FL2VA", "L2VA", "Ref2VA")
@@ -18,8 +19,6 @@ TOKEN = re.compile(r"<(image|video|audio)(\d+)>", re.I)
 SHOT_TAG = re.compile(r"\[Shot\s*(\d+)\]", re.I)
 SHOT_INPUT = re.compile(r"<shot(\d+)>", re.I)
 SHOT_RANGE = re.compile(r"^\s*(\d{1,2}(?:\.\d{1,3})?)\s*[-–—]\s*(\d{1,2}(?:\.\d{1,3})?)\s*s\b", re.I)
-BASE_SECTIONS = ("integrated_multimodal_description", "overall_soundscape", "non_diegetic_music")
-REF_SECTIONS = ("subject_definitions", "summary", "retention_analysis", "detailed_description", "overall_soundscape", "non_diegetic_music")
 VISUAL_ROLES = {"identity", "appearance", "character", "object", "product", "environment", "style", "first frame",
                 "last frame", "keyframe", "storyboard", "motion", "dance", "pose", "expression", "camera movement",
                 "editing source", "video continuation", "cut structure", "timing", "pacing"}
@@ -39,11 +38,13 @@ def repair_instruction(original, raw, error):
         "Return only the corrected complete response.\n\nPREVIOUS RESPONSE:\n"
         + str(raw)[:24000],
         diagnostic_stage=original.diagnostic_stage + ":repair",
+        temperature=.25, top_p=.85,
     )
 
 
 def default_minimax_draft():
     return {"model": MODELS[0], "duration_seconds": 10, "mode": "auto", "aspect_ratio": "Auto",
+            "planning_mode": "Auto",
             "director_preset": "minimax_director", "references": [], "user_request": "",
             "generated_prompt": "", "result_job_id": ""}
 
@@ -109,7 +110,8 @@ def validate_minimax_draft(value, *, generation=False):
     if not isinstance(value, dict) or value.keys() - defaults.keys():
         raise ValueError("Invalid MiniMax settings fields.")
     result = {**defaults, **value}
-    for key, choices in (("model", MODELS), ("mode", MODES), ("aspect_ratio", RATIOS)):
+    from ..planning import PLANNING_MODES
+    for key, choices in (("model", MODELS), ("mode", MODES), ("aspect_ratio", RATIOS), ("planning_mode", PLANNING_MODES)):
         if result[key] not in choices:
             raise ValueError(f"Invalid MiniMax {key}.")
     if type(result["duration_seconds"]) is not int or not 4 <= result["duration_seconds"] <= 15:
@@ -311,7 +313,10 @@ def reference_scaffold(plan):
     return "\n".join(definitions), "\n".join(retention)
 
 
-def generation_instruction(data, plan, director, family):
+def generation_instruction(data, plan, director, family, video_scene_plan=None):
+    from ..planning.constraints import compile_request, COMPILED_CONTRACT
+    compiled = video_scene_plan.compiled_request if video_scene_plan is not None else compile_request(
+        data["user_request"], has_context=bool(plan["references"]))
     mode = plan["mode"]
     context = {key: data[key] for key in ("model", "duration_seconds", "mode", "references")}
     context.update(resolved_mode=mode, reference_analysis=plan)
@@ -340,6 +345,7 @@ def generation_instruction(data, plan, director, family):
         "If shot_outline is present, preserve its exact number of shots, their order and described actions. "
         "Shot shortcut tokens are instructions, not media references: output [Shot 1] without a timestamp, "
         "then numbered shot headings At MM:SS.mmm, at each supplied start_ms boundary. Never print symbolic shot tokens in the final output. "
+        "For an explicitly supplied time range, describe its ending state at its exact end_ms time inside the shot body (At MM:SS.mmm), including the final endpoint. Do not create an extra shot heading for the ending. "
         "The video_audio_tracks map, when nonempty, enables ONLY explicitly requested audio from existing videos. "
         "Define each mapped Audio label as that video's synchronized track, with explicit provenance; it is not a new file. "
         "No other unregistered Audio label is permitted. Generated music, ambience, dialogue and sound design are NOT Audio references; "
@@ -355,7 +361,10 @@ def generation_instruction(data, plan, director, family):
     ]), user_message="\n\n".join([
         "STRUCTURED SETTINGS\n" + json.dumps(context, ensure_ascii=False),
         "DIRECTOR PRESET — CREATIVE GUIDANCE ONLY\n" + json.dumps({"name": director.label, "instructions": director.instructions}, ensure_ascii=False),
-        "USER REQUEST\n" + data["user_request"],
+        *([video_scene_plan.supporting_input()] if video_scene_plan is not None else []),
+        *([COMPILED_CONTRACT + "\n" + json.dumps(compiled.workflow_data(), ensure_ascii=False)]
+          if video_scene_plan is None and (compiled.forbidden or compiled.variable) else []),
+        "USER REQUEST\n" + compiled.writer_request(include_constraints=False),
         f"Write the complete {mode} prompt for exactly {data['duration_seconds']} seconds. Return only the final prompt.",
     ]), model_family=family, diagnostic_stage="minimax:prompt", unlimited_tokens=True)
 
@@ -538,7 +547,7 @@ def normalize_outlined_shots(timeline, headings, outline, plan, request):
 def validate_output(raw, data, plan):
     if not isinstance(raw, str) or not raw.strip():
         raise ValueError("MiniMax returned an empty prompt.")
-    prompt = raw.strip()
+    prompt = normalize_h3_sections(raw, reference=plan["mode"] == "Ref2VA")
     allowed = set(plan["label_map"].values()) | set(plan["video_audio_tracks"])
     prompt = re.sub(r"<(subject|picture|video|audio) ([1-9]\d*)>",
                     lambda match: f"<{match[1].title()} {match[2]}>", prompt, flags=re.I)
@@ -583,6 +592,7 @@ def validate_output(raw, data, plan):
     if normalize_spoken_lines(parts, data, plan):
         timeline = parts[timeline_key]
         prompt = prompt[:headers[0].start()] + "\n\n".join(f"{section}:\n{parts[section]}" for section in sections)
+    validate_temporal_endpoints(timeline, data)
     shots = shot_headings(timeline)
     if not shots or [int(shot[1]) for shot in shots] != list(range(1, len(shots) + 1)):
         raise ValueError("Timeline shots must start at [Shot 1] and be sequential without duplicates.")
@@ -647,6 +657,34 @@ def validate_output(raw, data, plan):
     for match in re.finditer(r"says in an off-screen voiceover[^<]*<d>.*?</d>([^.]*\.)?", timeline, re.S):
         if not re.search(r"lips.*closed", match[1] or "", re.I):
             raise ValueError("State that lips remain closed immediately after every voiceover block.")
+    from ..planning.constraints import compile_request
+    from ..planning.constraint_validation import output_constraint_issues
+    compiled = compile_request(data["user_request"], has_context=bool(plan["references"]))
+    problems = [issue for issue in output_constraint_issues(prompt, "MiniMax H3", compiled.workflow_data())
+                if issue["severity"] == "error"]
+    if problems:
+        raise ValueError(problems[0]["message"])
     return prompt
+
+
+def validate_temporal_endpoints(timeline, data):
+    """Require user-authored temporal boundaries; never fabricate missing events."""
+    request = data["user_request"]
+    from ..planning.rule_compiler import QUOTED
+    request = QUOTED.sub("[protected literal]", re.sub(r"<d>.*?</d>", "[protected dialogue]", request, flags=re.S))
+    explicit = []
+    markers = list(SHOT_INPUT.finditer(request))
+    for i, marker in enumerate(markers):
+        content = request[marker.end():markers[i + 1].start() if i + 1 < len(markers) else len(request)]
+        if timing := SHOT_RANGE.match(content):
+            explicit.extend(float(timing[j]) for j in (1, 2) if float(timing[j]) != 0)
+    explicit.extend(float(match[1]) for match in re.finditer(r"\bat\s+(\d+(?:\.\d+)?)\s*(?:seconds?|s)\b", request, re.I))
+    present = [int(match[1]) * 60 + int(match[2]) + float("0." + (match[3] or "0"))
+               for match in re.finditer(r"\b(\d{1,2}):([0-5]\d)(?:\.(\d{1,3}))?\b", timeline)]
+    present.extend(float(match[1]) for match in re.finditer(r"\b(?:at|by|until|through|ends?\s+at)\s+(\d+(?:\.\d+)?)\s*(?:seconds?|s)\b", timeline, re.I))
+    missing = sorted({seconds for seconds in explicit if not any(abs(seconds - actual) < .0005 for actual in present)})
+    if missing:
+        raise ValueError("Temporal endpoint completeness: explicitly describe the required state/event at "
+                         + ", ".join(f"{seconds:g} seconds" for seconds in missing) + ". Preserve existing shots, support/contact states and exact dialogue.")
 
 

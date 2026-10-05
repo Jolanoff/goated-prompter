@@ -13,6 +13,7 @@ from .prompting.dataset import (
     dataset_format_repair, dataset_content_repair, dataset_loop_repair, deep_review_correction,
 )
 from .prompting.details import PROMPT_LENGTH_NAMES
+from .prompting.creativity import CREATIVITY_NAMES
 from .prompting.target_models import TARGET_MODEL_NAMES, canonical_target
 from .workflow_output import WorkflowFormatError, normalize_workflow_output, sanitize_prompt_text, requested_visible_text
 from .dataset_assignments import dataset_assignments
@@ -20,10 +21,12 @@ from .dataset_quality import analyze_dataset_quality, analyze_idea_diversity, id
 from .dataset_triggers import trigger_text_target
 from .dataset_triggers import trigger_presence_error, trigger_terms
 from .dataset_visible_content import PositiveContentError, positive_prompt_error, sanitize_positive_prompt
+from .dataset_constraints import compile_constraints, constraint_issues, positive_descriptions
 from .scene_planner import (ScenePlanner, MAX_STORED_SCENE_CHARACTERS, MAX_STORED_IDEA_CHARACTERS,
                             reusable_scene_plan, scene_plan_signature, validate_saved_scene_plan, validate_plan_metadata,
-                            failure_reason, failed_scene, scene_is_usable, FAILURE_METADATA)
-from .dataset_staging import geometry_errors, migrate_saved_geometry, resolve_framing_conflicts
+                            failure_reason, failed_scene, scene_is_usable, scene_geometry_errors, FAILURE_METADATA)
+from .dataset_staging import migrate_saved_geometry, resolve_framing_conflicts
+from .dataset_staging.rules.framing import framing_text_errors
 
 
 DATASET_MAX_RETRIES = 3
@@ -40,6 +43,7 @@ def default_dataset_draft():
         "amount": 12, "visual_style": "Photorealistic", "custom_style": "",
         "source_mode": "random", "inputs": "", "target": "Generic", "length": "Medium",
         "director_preset": "general_director", "variety": "Balanced", "constraints": "",
+        "creativity": "Balanced",
         "quality_report": {}, "results": [], "result_job_id": "",
         "scene_plan": [], "scene_plan_signature": "",
         "planning_mode": "Fast",
@@ -80,6 +84,8 @@ def validate_dataset_draft(value, *, generation=False, planning=False):
         raise ValueError("Invalid dataset source mode.")
     if result["variety"] not in DATASET_VARIETY:
         raise ValueError("Invalid dataset variety.")
+    if result["creativity"] not in CREATIVITY_NAMES:
+        raise ValueError("Invalid Dataset descriptive creativity.")
     result["target"] = canonical_target(result["target"])
     if result["target"] not in TARGET_MODEL_NAMES or result["length"] not in PROMPT_LENGTH_NAMES:
         raise ValueError("Invalid target model or prompt length.")
@@ -132,9 +138,15 @@ def validate_dataset_draft(value, *, generation=False, planning=False):
     return result
 
 
+class TriggerContractError(ValueError):
+    """Exact protected wording requires writer-only repair."""
+
+
 def validate_trigger_contract(prompt, data, progress=None):
     cleaned = prompt if data["target"] == "Ideogram4" else sanitize_prompt_text(prompt)
-    error = trigger_presence_error(cleaned, data["trigger"], data["target"])
+    error = trigger_presence_error(cleaned, data["trigger"], data["target"], expand=data.get("expand_trigger", False))
+    if error and not data.get("expand_trigger", False):
+        raise TriggerContractError(error)
     if error and progress:
         progress(f"Trigger warning: {error} Keeping the finished prompt without rewriting it.")
     return cleaned
@@ -148,23 +160,63 @@ def validate_positive_content(prompt, data):
         error = "Positive content cleanup left no visible image description."
     if error:
         raise PositiveContentError(error)
+    compiled = compile_constraints(data.get("constraints", ""))
+    problems = [issue for text in positive_descriptions(prompt, data["target"])
+                for issue in constraint_issues(text, compiled, terms) if issue["severity"] == "error"]
+    if problems:
+        raise PositiveContentError(problems[0]["message"])
     return prompt
 
 
 class DatasetService:
-    def __init__(self, config, checkpoint):
+    def __init__(self, config, checkpoint, idea_history=None):
         self.config, self.checkpoint = config, checkpoint
+        self.idea_history = idea_history
 
     def _generate(self, session, instruction, data, index, progress, plan_item=None, *, retries=DATASET_MAX_RETRIES):
+        from .planning.semantic_validation import enabled, support_enabled, constraints_enabled, invariant_contract, review_candidate, repair_contract, SemanticValidationError
+        from .planning.semantics import support_requirements
+        from .planning.constraints import compile_request
+        validate_semantics = enabled(self.config)
+        source = "\n".join((data["subject"], (plan_item or {}).get("input", "")))
+        support = (support_requirements(source) if support_enabled(self.config)
+                   and isinstance((plan_item or {}).get("geometry"), dict)
+                   and (plan_item or {})["geometry"].get("pose_type") == "custom" else [])
+        compiled_source = compile_request(source, has_context=True)
+        constraints = compile_constraints(data.get("constraints", ""))
+        constraints["forbidden"] = list(dict.fromkeys([*constraints["forbidden"], *compiled_source.forbidden]))
+        audit_constraints = bool(constraints["forbidden"]) and constraints_enabled(self.config)
+        contract = invariant_contract(source, planned=plan_item, constraints=constraints,
+            literal_text=requested_visible_text(source), trigger=trigger_terms(data["trigger"], data["trigger_connected"]),
+            target=data["target"], concept=data["subject"])
+        accepted_facts = ()
         expected_text = requested_visible_text("\n".join((data["subject"], data["constraints"], (plan_item or {}).get("input", ""))))
         def check_fidelity(prompt):
+            nonlocal accepted_facts
+            if plan_item and data["trigger_type"] == "Character":
+                framing = plan_item.get("geometry", {}).get("framing")
+                protected = (*expected_text, *trigger_terms(data["trigger"], data["trigger_connected"]))
+                errors = [error for text in positive_descriptions(prompt, data["target"])
+                          for error in framing_text_errors(text, framing, protected_terms=protected)]
+                if errors:
+                    raise SceneFidelityError(" ".join(dict.fromkeys(errors)))
             if data.get("planning_mode") == "Quality" and plan_item:
                 text = trigger_text_target(prompt, data["target"])
                 if data["target"] == "Ideogram4":
                     caption = json.loads(prompt)
                     text += " " + " ".join(element["desc"] for element in caption["compositional_deconstruction"]["elements"])
-                if error := idea_action_error(plan_item["idea"], text):
+                if error := idea_action_error(plan_item.get("idea") or plan_item["scene"], text):
                     raise SceneFidelityError(error)
+            if support:
+                accepted_facts = review_candidate(session, {**contract, "accepted_facts": list(accepted_facts),
+                    "candidate_scope": "source_support", "source_support_requirements": support}, prompt,
+                    stage=f"dataset:support:final:{index}", family=instruction.model_family, checkpoint=self.checkpoint,
+                    checks=("action_fidelity", "scene_fidelity", *(["repair_preservation"] if contract.get("previous_response") else [])))
+            if validate_semantics or audit_constraints:
+                accepted_facts = review_candidate(session, {**contract, "accepted_facts": list(accepted_facts)}, prompt,
+                    stage=f"dataset:final:{index}", family=instruction.model_family, checkpoint=self.checkpoint,
+                    checks=("action_fidelity", "scene_fidelity", "constraint_validity", *(["repair_preservation"] if contract.get("previous_response") else []))
+                    if validate_semantics else ("constraint_validity",))
             return prompt
         original = instruction
         for attempt in range(retries + 1):
@@ -183,7 +235,7 @@ class DatasetService:
                 content_failure = False
                 if recovered and len(recovered.split()) >= 30 and recovered.rstrip().endswith((".", "!", "?", "}")):
                     try:
-                        prompt = normalize_workflow_output(recovered, data["target"],
+                        prompt = normalize_workflow_output(recovered, data["target"], mode="Enhance",
                             expected_visible_text=expected_text)
                         prompt = validate_trigger_contract(prompt, data, progress)
                         prompt = validate_positive_content(prompt, data)
@@ -199,7 +251,8 @@ class DatasetService:
                 if attempt >= retries:
                     raise BackendGenerationError(
                         f"Dataset prompt {index}/{data['amount']} produced runaway output after "
-                        f"{retries} retries. {exc}"
+                        f"{retries} retries. {exc}", completion_state=exc.completion_state,
+                        partial_text=exc.partial_text, finish_reason=exc.finish_reason,
                     ) from exc
                 progress(
                     f"Dataset prompt {index}/{data['amount']} entered a repetition/output-limit loop: "
@@ -212,28 +265,39 @@ class DatasetService:
                 instruction = replace(
                     original,
                     system_message=retry_system,
+                    user_message=original.user_message + repair_contract(contract, recovered or exc.partial_text, exc, accepted_facts),
                     max_tokens=max(384, int(original.max_tokens * (0.8 ** (attempt + 1)))),
                     hard_max_tokens=max(384, int(original.hard_max_tokens * (0.8 ** (attempt + 1)))),
                     diagnostic_stage=original.diagnostic_stage + f":loop_retry_{attempt + 1}",
+                    temperature=.25, top_p=.85,
                 )
                 continue
             except BackendGenerationError as exc:
                 self.checkpoint()
                 if attempt >= retries:
                     raise BackendGenerationError(
-                        f"Dataset prompt {index}/{data['amount']} could not be generated after {retries} retries. {exc}"
+                        f"Dataset prompt {index}/{data['amount']} could not be generated after {retries} retries. {exc}",
+                        completion_state=exc.completion_state, partial_text=exc.partial_text, finish_reason=exc.finish_reason,
                     ) from exc
                 progress(f"Dataset prompt {index}/{data['amount']} engine request failed: {exc} Retrying ({attempt + 1}/{retries}).")
-                instruction = replace(original, diagnostic_stage=original.diagnostic_stage + f":transport_retry_{attempt + 1}")
+                # A transport retry must not discard an earlier repair contract,
+                # correction or reduced runaway-output budget.
+                instruction = replace(instruction, diagnostic_stage=original.diagnostic_stage + f":transport_retry_{attempt + 1}")
                 continue
             self.checkpoint()
             progress(f"Checking dataset prompt {index}/{data['amount']}")
+            format_valid = False
             try:
-                prompt = normalize_workflow_output(raw, data["target"],
+                prompt = normalize_workflow_output(raw, data["target"], mode="Enhance",
                     expected_visible_text=expected_text)
+                format_valid = True
                 prompt = validate_trigger_contract(prompt, data, progress)
-                return check_fidelity(validate_positive_content(prompt, data))
+                prompt = check_fidelity(validate_positive_content(prompt, data))
+                session.emit_activity("validation", workflow="dataset", attempt=attempt, accepted=True, format_valid=format_valid)
+                return prompt
             except (WorkflowFormatError, ValueError, KeyError, TypeError) as exc:
+                session.emit_activity("validation", workflow="dataset", attempt=attempt, accepted=False,
+                    format_valid=format_valid, error=str(exc), issues=getattr(exc, "issues", []))
                 if attempt >= retries:
                     raise BackendGenerationError(
                         f"Dataset prompt {index}/{data['amount']} remained invalid after "
@@ -249,15 +313,29 @@ class DatasetService:
                 if instruction.hard_max_tokens < original.hard_max_tokens:
                     retry_system = dataset_loop_repair(retry_system, exc, attempt + 1)
                 content_failure = isinstance(exc, PositiveContentError)
-                fidelity_failure = isinstance(exc, SceneFidelityError)
+                fidelity_failure = isinstance(exc, (SceneFidelityError, SemanticValidationError))
+                trigger_failure = isinstance(exc, TriggerContractError)
+                if trigger_failure and validate_semantics:
+                    # Retain already-valid scene facts even when the cheap trigger
+                    # gate rejected the candidate before the normal semantic gate.
+                    try:
+                        check_fidelity(validate_positive_content(prompt, data))
+                    except (PositiveContentError, SemanticValidationError) as review_error:
+                        accepted_facts = getattr(review_error, "accepted_facts", ()) or accepted_facts
+                accepted_facts = getattr(exc, "accepted_facts", ()) or accepted_facts
+                contract.update(previous_response=raw, listed_defect=str(exc))
                 instruction = replace(original,
-                    system_message=(retry_system + "\n\nSCENE FIDELITY CORRECTION: Render the same fixed idea, primary action, props and geometry; do not replace the event with generic presentation."
+                    system_message=(retry_system + "\n\nTRIGGER WORDING CORRECTION: " + str(exc)
+                                    + " Include each exact case-sensitive trigger term as supplied. Preserve the fixed idea, scene, action and geometry; change only the final wording."
+                                    if trigger_failure else retry_system + "\n\nSCENE FIDELITY CORRECTION: " + str(exc) + " Render the same fixed idea, primary action, props and geometry; do not replace the event with generic presentation."
                                     if fidelity_failure else dataset_content_repair(retry_system) if content_failure
                                     else dataset_format_repair(retry_system, exc)),
+                    user_message=original.user_message + repair_contract(contract, raw, exc, accepted_facts),
                     max_tokens=instruction.max_tokens,
                     hard_max_tokens=instruction.hard_max_tokens,
+                    temperature=.25, top_p=.85,
                     diagnostic_stage=original.diagnostic_stage
-                    + f":{'scene' if fidelity_failure else 'content' if content_failure else 'format'}_retry_{attempt + 1}")
+                    + f":{'semantic' if isinstance(exc, SemanticValidationError) else 'trigger' if trigger_failure else 'scene' if fidelity_failure else 'content' if content_failure else 'format'}_retry_{attempt + 1}")
 
     def run(self, request, data, progress, partial, *, scenes_only=False, scene_action=None, valid_only=False):
         effective, profile = resolve_director_config(self.config, request)
@@ -268,7 +346,8 @@ class DatasetService:
         signature = scene_plan_signature(data, assignments)
         progress("Starting the prompt engine for the dataset…")
         with backend.generation_session() as session:
-            planner = ScenePlanner(self.checkpoint)
+            from .planning.semantic_validation import enabled, support_enabled
+            planner = ScenePlanner(self.checkpoint, idea_history=self.idea_history, semantic_validation=enabled(self.config), support_validation=support_enabled(self.config))
             scenes = reusable_scene_plan(data, assignments, require_scenes=False, allow_pending=valid_only or scene_action is not None)
             if valid_only and (scenes is None or not any(scene_is_usable(row, data) for row in scenes)):
                 raise ValueError("No valid scenes are available in the current saved plan.")
@@ -286,9 +365,10 @@ class DatasetService:
                          "target": data["target"],
                          "scene_plan": [dict(row) for row in scenes], "scene_plan_signature": signature})
             if scenes is None:
-                planned = planner.plan_batch(
+                planned_result = planner.plan_result(
                     session=session, data=data, assignments=assignments, family=family, progress=progress,
                     plan_update=save_planning_stage)
+                planned = planned_result.plan
                 scenes = [{**row, "input": assignment["input"], "idea_status": row.get("idea_status", "valid"),
                             "scene_status": row.get("scene_status", ("guided_fallback" if data["source_mode"] == "guided"
                                              and row["scene"] == assignment["input"] else "valid")),
@@ -359,8 +439,7 @@ class DatasetService:
                 # staging. Validate their prose without rewriting it merely to
                 # fill metadata. New model output and supplied staging still
                 # enforce the same complete type profile in both modes.
-                errors = [] if row.get("scene_status") == "guided_fallback" else geometry_errors(
-                    row, dataset_type=data["trigger_type"], require_fields=bool(row.get("geometry")))
+                errors = scene_geometry_errors(row, data)
                 if errors or row.get("scene_status") in {"not_generated", "geometry_warning"}:
                     if scene_action and scene_action[0] == "regenerate_prompt":
                         raise ValueError("Repair this scene's geometry before regenerating its prompt.")
@@ -389,7 +468,7 @@ class DatasetService:
             publish()
             for index in selected:
                 self.checkpoint()
-                if scenes[index - 1].get("scene_status") == "failed":
+                if not scene_is_usable(scenes[index - 1], data):
                     continue
                 plan_item = {**assignments[index - 1], **scenes[index - 1]}
                 instruction = dataset_instruction(request, data, index, (), family, plan_item)
@@ -405,7 +484,8 @@ class DatasetService:
                     continue
                 seed = plan_item["input"]
                 results.append({"index": index, "prompt": prompt, "input": seed,
-                                "idea": plan_item["idea"], "scene": plan_item["scene"],
+                                "scene": plan_item["scene"],
+                                **({"idea": plan_item["idea"]} if "idea" in plan_item else {}),
                                 **{key: plan_item[key] for key in ("geometry",) if key in plan_item}})
                 results.sort(key=lambda row: row["index"])
                 if "prompt_status" in scenes[index - 1]:

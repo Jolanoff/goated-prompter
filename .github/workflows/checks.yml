@@ -1,0 +1,59 @@
+name: Workflow checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.10', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: python -m pip install -r requirements-local.txt
+      - run: npm ci
+        working-directory: frontend
+      - run: npm run lint
+        working-directory: frontend
+      - run: npm test
+        working-directory: frontend
+      - run: npm run build
+        working-directory: frontend
+      - run: python -m unittest discover -s tests -v
+      - name: Replay frozen quality corpus (no inference)
+        run: |
+          mkdir -p quality-artifacts
+          python -m tests.eval.runner --replay tests/eval/fixtures/model_outputs --output quality-artifacts/run.json
+          python -m tests.eval.report quality-artifacts/run.json --output quality-artifacts/report.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frozen-quality-python-${{ matrix.python }}
+          path: quality-artifacts/
+      - run: node --test tests/test_comfy_frontend.cjs tests/test_ui_shared.cjs
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+        if: matrix.python == '3.13'
+      - run: npm run test:e2e -- --config e2e/isolated.config.js
+        working-directory: frontend
+        if: matrix.python == '3.13'
+      - name: Upload browser failure diagnostics
+        uses: actions/upload-artifact@v4
+        if: failure() && matrix.python == '3.13'
+        with:
+          name: browser-failures-python-${{ matrix.python }}
+          path: frontend/test-results/
+          if-no-files-found: ignore

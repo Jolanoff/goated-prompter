@@ -214,6 +214,10 @@ class LlamaCppLaunchConfig:
             "--host", self.host,
             "--port", str(self.port),
             "--alias", self.alias,
+            # The application admits one generation job at a time. llama.cpp's
+            # automatic slot count reserves unused recurrent/compute state and
+            # can force layers onto CPU on otherwise GPU-fit models.
+            "--parallel", "1",
         ]
 
 

@@ -231,15 +231,22 @@ def _override_path(builtin, directory):
 
 def _effective_builtin(builtin, directory):
     path = _override_path(builtin, directory)
+    if builtin.id == "minimax_director" and not path.exists():
+        path = path.with_name("minimax_h3_director.json")
     if not path.exists():
         return builtin, ""
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
-        if (not isinstance(payload, dict) or payload.get("id") != builtin.id
-                or payload.get("name") != builtin.label
+        ids, labels, modes = {builtin.id}, {builtin.label}, {builtin.recommended_mode}
+        if builtin.id == "minimax_director":
+            ids.add("minimax_h3_director")
+            labels.add("MiniMax Director")
+            modes.add("")
+        if (not isinstance(payload, dict) or not isinstance(payload.get("id"), str) or payload.get("id") not in ids
+                or not isinstance(payload.get("name"), str) or payload.get("name") not in labels
                 or not isinstance(payload.get("instructions"), str)
                 or not 1 <= len(payload["instructions"].strip()) <= 100000
-                or payload.get("recommended_mode") != builtin.recommended_mode):
+                or not isinstance(payload.get("recommended_mode"), str) or payload.get("recommended_mode") not in modes):
             raise ValueError("invalid override fields")
         return replace(builtin, instructions=payload["instructions"].strip(), modified=True), ""
     except (OSError, ValueError) as exc:
@@ -300,6 +307,8 @@ def reset_director(value, directory=None):
     path = _override_path(builtin, directory)
     try:
         path.unlink(missing_ok=True)
+        if builtin.id == "minimax_director":
+            path.with_name("minimax_h3_director.json").unlink(missing_ok=True)
     except OSError as exc:
         raise DirectorLibraryError("The Director override could not be reset.") from exc
     return builtin, path

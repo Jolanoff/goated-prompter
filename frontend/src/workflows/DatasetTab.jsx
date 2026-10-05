@@ -1,30 +1,75 @@
 import { useEffect, useRef, useState } from "react";
-import { CircleAlert, CircleCheck, Copy, Database, Download, FileJson, RefreshCw, ShieldCheck, Sparkles, Trash2 } from "lucide-react";
+import { AlignLeft, Box, ChevronDown, Circle, CircleAlert, CircleCheck, CircleHelp, Copy, Cpu, Database, Download, FileJson, Layers3, LoaderCircle, Palette, RefreshCw, ShieldCheck, SlidersHorizontal, Sparkles, Tag, Trash2, WandSparkles, Wrench, X, Zap } from "lucide-react";
 import { ui } from "../ui.js";
 import { api } from "../api.js";
 import { orderDisplayPresets, presetDisplayLabel } from "../presetPresentation.js";
 import { TargetSelect } from "./WorkflowControls.jsx";
 import { useWorkflowSettings } from "./useWorkflowSettings.js";
 import WorkflowSettingsStatus from "./WorkflowSettingsStatus.jsx";
-import { datasetJsonl } from "./datasetExport.js";
-import { editDatasetPlan, invalidateDatasetPrompts, isDatasetSceneUsable, datasetRetryStage } from "./datasetState.js";
+import { datasetCopyText, datasetJsonl } from "./datasetExport.js";
+import { editDatasetPlan, invalidateDatasetPrompts, datasetRetryStage } from "./datasetState.js";
 import { geometryRows } from "./datasetGeometry.js";
 
 const triggerTypes = ["Character", "Multiple characters", "Animal", "Object / product", "Visual style",
   "Location / environment", "Brand / logo", "Typography / text", "Concept", "Custom"];
 const visualStyles = ["Photorealistic", "Cinematic photography", "Anime / manga", "Illustration", "3D render", "Graphic design", "Keep described style", "Mixed styles", "Custom"];
 const varieties = ["Focused", "Balanced", "Wide"];
+const metricLabels = {
+  idea_uniqueness: "Idea diversity", scene_uniqueness: "Scene diversity",
+  uniqueness: "Prompt diversity", trigger: "Trigger", format: "Format",
+};
+const metricOrder = Object.keys(metricLabels);
 
-function GeometryDetails({ geometry, index }) {
-  const rows = geometryRows(geometry);
-  if (!rows.length) return null;
-  return <details className="dataset-geometry min-w-0 rounded-lg border border-line p-3 text-xs">
-    <summary className="cursor-pointer font-semibold">Geometry {index}</summary>
-    <dl className="dataset-geometry-fields mt-3 gap-3" tabIndex={0} aria-label={`Geometry ${index} fields`}>{rows.map(({ label, value }) => <div key={label} className="min-w-0 content-start grid gap-1">
+function StatusChip({ label, status }) {
+  const state = ["valid", "generated", "pass", "strong"].includes(status) ? "success"
+    : ["failed", "error"].includes(status) ? "failed"
+    : ["warning", "geometry_warning", "duplicate_warning", "review", "issues"].includes(status) ? "warning" : "pending";
+  const Icon = state === "success" ? CircleCheck : state === "pending" ? Circle : CircleAlert;
+  return <span className="dataset-status-chip" data-state={state} aria-label={`${label}: ${state}`}>
+    <Icon size={13} aria-hidden="true" />{label}
+  </span>;
+}
+
+function HelpDetails({ children }) {
+  return <details className="dataset-help dataset-details">
+    <summary><CircleHelp size={14} aria-hidden="true" />Learn more<ChevronDown size={14} aria-hidden="true" /></summary>
+    <p className="mt-2 text-xs leading-relaxed text-muted">{children}</p>
+  </details>;
+}
+
+function GeometryButton({ geometry, index, onOpen }) {
+  if (!geometryRows(geometry).length) return null;
+  return <button className={`${ui.iconButton} dataset-geometry-button`} type="button"
+    title={`View geometry ${index}`} aria-label={`View geometry ${index}`} aria-haspopup="dialog"
+    onClick={() => onOpen({ geometry, index })}><Box size={18} aria-hidden="true" /></button>;
+}
+
+function GeometryModal({ item, onClose }) {
+  const dialog = useRef(null);
+  useEffect(() => {
+    if (item && !dialog.current?.open) dialog.current?.showModal();
+    else if (!item && dialog.current?.open) dialog.current.close();
+  }, [item]);
+  const rows = geometryRows(item?.geometry);
+  return <dialog ref={dialog} className="app-dialog dataset-geometry-dialog"
+    aria-labelledby="dataset-geometry-title" onCancel={(event) => { event.preventDefault(); onClose(); }} onClose={onClose}
+    onKeyDown={(event) => {
+      if (event.key !== "Tab") return;
+      const controls = event.currentTarget.querySelectorAll('button, [tabindex="0"]');
+      const first = controls[0], last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    }}>
+    <header className="mb-5 flex items-center gap-3 border-b border-line pb-4">
+      <div className={ui.panelIcon}><Box size={21} aria-hidden="true" /></div>
+      <h2 id="dataset-geometry-title" className="min-w-0 flex-1 font-display text-lg font-bold">Geometry {item?.index}</h2>
+      <button className={`${ui.iconButton} dataset-geometry-button`} type="button" aria-label="Close geometry" title="Close geometry" onClick={onClose} autoFocus><X size={18} aria-hidden="true" /></button>
+    </header>
+    <dl className="dataset-geometry-fields gap-4 text-xs" tabIndex={0} aria-label={`Geometry ${item?.index} fields`}>{rows.map(({ label, value }) => <div key={label} className="min-w-0 content-start grid gap-1 rounded-lg border border-line p-3">
       <dt className="capitalize font-semibold">{label}</dt>
       <dd className="wrap-anywhere leading-relaxed text-muted">{value}</dd>
     </div>)}</dl>
-  </details>;
+  </dialog>;
 }
 
 function FailureReason({ item }) {
@@ -50,16 +95,23 @@ function download(name, content, type) {
 }
 
 export default function DatasetTab({ visible, job, busy, active, noEngine, engineLabel, presets,
-  targets, lengths, onGenerate, onCancel, onCopy }) {
+  targets, lengths, onGenerate, onCancel, onCopy, onReleaseJobs }) {
   const preferences = useWorkflowSettings("dataset");
-  const { draft, update } = preferences;
+  const { draft, update, refreshGenerated } = preferences;
   const [starting, setStarting] = useState(false);
   const [qualityBusy, setQualityBusy] = useState(false);
   const [error, setError] = useState("");
+  const [geometryItem, setGeometryItem] = useState(null);
+  const [resettingIdeas, setResettingIdeas] = useState(false);
+  const [noveltyNotice, setNoveltyNotice] = useState("");
   const submission = useRef(false);
   const synced = useRef("");
   const qualityAttempt = useRef(0);
   const [clock, setClock] = useState(Date.now());
+
+  useEffect(() => {
+    if (!visible) setGeometryItem(null);
+  }, [visible]);
 
   const datasetJob = ["dataset", "dataset_scenes", "dataset_review"].includes(job?.kind);
   const workflowActive = datasetJob && active;
@@ -75,32 +127,25 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
   }, [workflowActive, job?.id, job?.progress_at]);
 
   useEffect(() => {
-    if (!datasetJob || job.status !== "failed") return;
+    if (!datasetJob || !["failed", "interrupted"].includes(job.status)) return;
     setError(`${job.kind === "dataset_review" ? "Dataset review" : job.kind === "dataset_scenes" ? "Scene planning" : "Dataset generation"} failed. ${job.error || "The prompt engine did not return a usable result."}`);
-  }, [datasetJob, job?.id, job?.revision, job?.status]);
+  }, [datasetJob, job?.id, job?.revision, job?.status, job?.kind, job?.error]);
 
   useEffect(() => {
     if (!draft || !["dataset", "dataset_scenes"].includes(job?.kind) || !job.result?.scene_plan) return;
     const key = `${job.id}:${job.revision}`;
     if (synced.current === key) return;
     synced.current = key;
-    update({
-      ...(job.kind === "dataset" && Array.isArray(job.result.prompts) ? {
-        results: job.result.prompts, result_job_id: job.id,
-      } : {}),
-      scene_plan: job.result.scene_plan,
-      scene_plan_signature: job.result.scene_plan_signature,
-      ...(job.result.quality_report ? { quality_report: job.result.quality_report } : {}),
-    });
-  }, [job?.id, job?.revision, !!draft]);
+    refreshGenerated().catch((err) => setError(`Could not recover saved progress. ${err.message}`));
+  }, [job, draft, refreshGenerated]);
 
   useEffect(() => {
     if (!draft || job?.kind !== "dataset_review" || job.status !== "succeeded" || !job.result?.report) return;
     const key = `review:${job.id}:${job.revision}`;
     if (synced.current === key) return;
     synced.current = key;
-    update({ quality_report: job.result.report });
-  }, [job?.id, job?.revision, !!draft]);
+    refreshGenerated().catch((err) => setError(err.message));
+  }, [job, draft, refreshGenerated]);
 
   const disabled = busy || starting || preferences.working;
   const availablePresets = orderDisplayPresets(presets || []);
@@ -113,7 +158,13 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
     draft.subject.trim() && customReady && styleReady && sourceReady;
   const staleScenePlan = !!draft?.scene_plan_signature && (preferences.record?.scene_plan_matches_settings ?? preferences.record?.idea_plan_current) === false &&
     preferences.record?.draft.scene_plan_signature === draft.scene_plan_signature;
-  const validSceneCount = draft?.scene_plan?.filter(isDatasetSceneUsable).length || 0;
+  const sceneUsable = (row) => {
+    const saved = preferences.record?.draft.scene_plan.find((item) => item.index === row.index);
+    const current = draft?.scene_plan?.find((item) => item.index === row.index);
+    return JSON.stringify(saved) === JSON.stringify(current) && preferences.record?.scene_eligibility?.[row.index]?.usable === true;
+  };
+  const validSceneCount = draft?.scene_plan?.filter(sceneUsable).length || 0;
+  const retryStage = (row) => datasetRetryStage(row, { usable: sceneUsable(row) });
   const scenePlanReady = !staleScenePlan && !!draft?.scene_plan_signature && validSceneCount > 0;
   const canWrite = canPlanScenes && director && draft.trigger.trim();
   const canGenerate = canWrite && !draft.scene_plan?.some((item) => item.scene_status !== "failed" && item.idea !== undefined && !item.idea.trim());
@@ -125,6 +176,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
 
   useEffect(() => {
     const attempt = ++qualityAttempt.current;
+    let disposed = false;
     setQualityBusy(false);
     if (!draft?.results.length || workflowActive) return;
     if (draft.quality_report?.signature && draft.quality_report.idea_quality) return;
@@ -132,16 +184,16 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
       setQualityBusy(true);
       try {
         const result = await api("/workspace/dataset/quality", { input: { ...draft, quality_report: {} } });
-        if (qualityAttempt.current !== attempt) return;
+        if (disposed || qualityAttempt.current !== attempt) return;
         update({ quality_report: result.report });
       } catch (err) {
-        if (qualityAttempt.current === attempt) setError(`Could not analyze dataset quality. ${err.message}`);
+        if (!disposed && qualityAttempt.current === attempt) setError(`Could not analyze dataset quality. ${err.message}`);
       } finally {
-        if (qualityAttempt.current === attempt) setQualityBusy(false);
+        if (!disposed && qualityAttempt.current === attempt) setQualityBusy(false);
       }
     }, 500);
-    return () => { clearTimeout(timer); qualityAttempt.current++; };
-  }, [draft?.results, draft?.quality_report?.signature, workflowActive]);
+    return () => { disposed = true; clearTimeout(timer); };
+  }, [draft, workflowActive, update]);
 
   function updateSceneSettings(patch) {
     update({ ...patch, scene_plan: [], scene_plan_signature: "", quality_report: {}, results: [] });
@@ -158,7 +210,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
     setError("");
     try {
       await preferences.flush();
-      await onGenerate("dataset/scene", { input: draft, index, action });
+      await onGenerate("dataset/scene", { input: draft, index, action, workflow_revision: preferences.revision() });
     } catch (err) { setError(err.message); }
     finally { submission.current = false; setStarting(false); }
   }
@@ -175,7 +227,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
         update({ results: [], result_job_id: "", quality_report: {} });
       }
       await preferences.flush();
-      await onGenerate(scenesOnly ? "dataset/scenes" : "dataset", { input, ...(validOnly ? { valid_only: true } : {}) });
+      await onGenerate(scenesOnly ? "dataset/scenes" : "dataset", { input, workflow_revision: preferences.revision(), ...(validOnly ? { valid_only: true } : {}) });
     } catch (err) { setError(err.message); }
     finally { submission.current = false; setStarting(false); }
   }
@@ -187,7 +239,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
     setError("");
     try {
       await preferences.flush();
-      await onGenerate("dataset/review", { input: draft });
+      await onGenerate("dataset/review", { input: draft, workflow_revision: preferences.revision() });
     } catch (err) { setError(err.message); }
     finally { submission.current = false; setStarting(false); }
   }
@@ -196,15 +248,46 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
     update({ results: draft.results.map((item) => item.index === index ? { ...item, prompt } : item), quality_report: {} });
   }
 
+  async function releaseCheckpoints() {
+    try {
+      // Preserve existing draft autosave. Only disposable job checkpoints/logs
+      // are released; exports never delete the editable scene plan or history.
+      await preferences.flush();
+      await onReleaseJobs?.("dataset");
+    } catch (err) { setError(`Could not release temporary job checkpoints. ${err.message}`); }
+  }
+
+  function exportDataset(name, content, type) {
+    download(name, content, type);
+    if (!workflowActive) void releaseCheckpoints();
+  }
+
+  async function clearResults() {
+    update({ results: [], result_job_id: "", quality_report: {} });
+    await releaseCheckpoints();
+  }
+
+  async function resetRecentIdeas() {
+    setResettingIdeas(true);
+    setNoveltyNotice("");
+    try {
+      await api("/workspace/dataset/novelty/reset", { input: draft });
+      setNoveltyNotice("Recent ideas reset for this concept. Current scenes and prompts are unchanged.");
+    } catch (err) { setError(err.message); }
+    finally { setResettingIdeas(false); }
+  }
+
   const allText = draft?.results.map((item) => item.prompt).join("\n\n") || "";
   const jsonl = datasetJsonl(draft);
   const quality = draft?.quality_report;
+  const qualityMetrics = Object.entries(quality?.metrics || {}).sort(([left], [right]) =>
+    (metricOrder.includes(left) ? metricOrder.indexOf(left) : 99) - (metricOrder.includes(right) ? metricOrder.indexOf(right) : 99));
   const promptQuality = new Map((quality?.prompts || []).map((item) => [item.index, item]));
   const failedItems = draft?.scene_plan?.filter((item) => item.scene_status === "failed" || item.prompt_status === "failed") || [];
   const displayedResults = [...(draft?.results || []), ...failedItems.filter((item) => !draft.results.some((result) => result.index === item.index))
     .map((item) => ({ ...item, failed: true, prompt: "" }))].sort((left, right) => left.index - right.index);
 
-  return <div hidden={!visible}>
+  return <div className="dataset-view" hidden={!visible}>
     <div className={ui.pageHeading}><div>
       <h2>Build a prompt dataset</h2>
       <p>One concept, distinct scenes. Create up to 25 trigger-ready prompts for your training set.</p>
@@ -213,7 +296,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
     {error && <div className={ui.message} role="alert"><span>{error}</span></div>}
     <div className={ui.workflowStatus}>
       <span>{noEngine ? "Choose a prompt engine in Builder or Settings to generate." : `Engine: ${engineLabel}`}</span>
-      <span role="status">{workflowActive ? job.status === "cancelling" ? "Ending batch…" : <>{job.progress || "Starting dataset generation…"}{stageSeconds >= 5 && ` · ${elapsedLabel(stageSeconds)}`}</> : `${draft?.results.length || 0} prompts in the current batch${failedItems.length ? ` · ${failedItems.length} failed` : ""}`}</span>
+      <span role="status" className="flex items-center gap-2">{workflowActive && <LoaderCircle size={15} className="dataset-loader" aria-hidden="true" />}{workflowActive ? job.status === "cancelling" ? "Ending batch…" : <>{job.progress || "Starting dataset generation…"}{stageSeconds >= 5 && ` · ${elapsedLabel(stageSeconds)}`}</> : `${draft?.results.length || 0} prompts in the current batch${failedItems.length ? ` · ${failedItems.length} failed` : ""}`}</span>
       {active && <button className={ui.button} onClick={onCancel} disabled={job.status === "cancelling"}>End generation</button>}
     </div>
     {workflowActive && stageSeconds >= 45 && <p className={`${ui.subtleNote} mb-5`} role="status">
@@ -222,7 +305,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
     </p>}
 
     {draft && <>
-      <div className="grid grid-cols-[minmax(260px,0.9fr)_minmax(0,1.2fr)] items-start gap-6 [@media(width<=850px)]:grid-cols-1">
+      <div className="dataset-config-grid">
         <section className={ui.panel} aria-label="Dataset trigger and concept settings">
           <header className={ui.panelHeader}>
             <div className={ui.panelIcon}><Database size={21} /></div>
@@ -233,7 +316,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
               <textarea className={ui.ideaInput} aria-label="Dataset idea" maxLength={10000}
                 value={draft.subject} onChange={(event) => updateSceneSettings({ subject: event.target.value })}
                 placeholder="A woman doing funny stuff · a dog going on small adventures · a knight doing office work" />
-              <small className={ui.directorDescription}>Describe the subject and overall concept. Scene Planner invents distinct visible situations, not just new backgrounds.</small>
+              <small className={ui.directorDescription}>Describe the subject and what makes these images different.</small>
             </label>
             <label className={ui.field}><span>Subject type</span>
               <select className={ui.select} aria-label="Subject type" value={draft.trigger_type}
@@ -265,33 +348,41 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                 value={draft.constraints} onChange={(event) => updateSceneSettings({ constraints: event.target.value })}
                 placeholder="Same hairstyle and outfit. No outdoor scenes. Each image shows a different mishap…" />
             </label>
-            <label className={ui.field}><span>Planning mode</span>
+            <div className="flex flex-wrap items-center gap-2">
+              <button className={ui.button} disabled={disabled || resettingIdeas || !draft.subject.trim()} onClick={resetRecentIdeas}>
+                <RefreshCw size={14} />{resettingIdeas ? "Resetting…" : "Reset recent ideas"}
+              </button>
+              <small className="text-muted">Novelty hints stay in RAM, expire automatically, and never override fixed ideas.</small>
+            </div>
+            {noveltyNotice && <p className={ui.subtleNote} role="status">{noveltyNotice}</p>}
+            <label className={ui.field}><span>{draft.planning_mode === "Quality" ? <ShieldCheck size={14} aria-hidden="true" /> : <Zap size={14} aria-hidden="true" />}Planning mode</span>
               <select className={ui.select} aria-label="Dataset planning mode" value={draft.planning_mode || "Fast"}
                 onChange={(event) => updateSceneSettings({ planning_mode: event.target.value })}>
                 <option>Fast</option><option>Quality</option>
               </select>
-               <small className={ui.directorDescription}>Fast: combined ideas and scenes in small chunks. Quality: distinct ideas first, then scenes in small chunks. Valid chunks are saved. After three failed fixes, try one new idea, then skip the item if it still fails.</small>
+               <small className={ui.directorDescription}>Fast — ideas and scenes together. Quality — ideas first, scenes second.</small>
             </label>
-             <label className={ui.field}><span>Trigger text or terms</span>
+            <HelpDetails>Plan scenes first creates a fresh idea run with recent-idea novelty hints. Generate reuses your current valid plan, including manual edits. Failed items use local repair; valid siblings remain unchanged. You can retry skipped items individually.</HelpDetails>
+             <label className={ui.field}><span><Tag size={14} aria-hidden="true" />Trigger text or terms</span>
               <textarea className={ui.notesInput} style={{ minHeight: 82 }} aria-label="Trigger text or terms" maxLength={200} value={draft.trigger}
                 onChange={(event) => updateWriterSettings({ trigger: event.target.value })} placeholder="e.g. old lady with dark hair · or woman, cake" />
-              <small className={ui.directorDescription}>The exact required text. When distributed, separate terms with commas or new lines.</small>
+               <small className={ui.directorDescription}>Exact wording to include in each prompt.</small>
              </label>
-             <details className="rounded-lg border border-line p-3">
-               <summary className="cursor-pointer text-xs font-semibold">Training trigger & controls</summary>
+             <details className="dataset-details rounded-lg border border-line p-3">
+               <summary><Tag size={14} aria-hidden="true" /><span>Training trigger & controls</span><ChevronDown size={14} aria-hidden="true" /></summary>
                <div className="mt-4 grid gap-4">
             <div className="grid gap-2">
                <label className={ui.choiceCard}>
                  <input type="checkbox" className="mt-0.5" aria-label="Require trigger at beginning"
                   checked={draft.trigger_at_start === true} onChange={(event) => updateWriterSettings({ trigger_at_start: event.target.checked })} />
-                <span><strong className="block">Require trigger at the beginning</strong>
-                  <small className="mt-1 block leading-relaxed text-muted">On strongly requests beginning placement. Off encourages a natural introduction first. Placement will never make an otherwise usable prompt fail.</small></span>
+                 <span title="Beginning placement is a preference; it never makes an otherwise usable prompt fail."><strong className="block">Require trigger at beginning</strong>
+                   <small className="mt-1 block leading-relaxed text-muted">Prefer the trigger before other details.</small></span>
               </label>
                <label className={ui.choiceCard}>
                  <input type="checkbox" className="mt-0.5" aria-label="Keep trigger text connected"
                   checked={draft.trigger_connected !== false} onChange={(event) => updateWriterSettings({ trigger_connected: event.target.checked })} />
-                <span><strong className="block">Keep trigger text connected</strong>
-                  <small className="mt-1 block leading-relaxed text-muted">Off requests comma-, line-, or “and”-separated terms in different positions. Missing wording or grouping is reported as a warning; finished prompts are not discarded.</small></span>
+                 <span title="Turn off to distribute comma-, line-, or ‘and’-separated terms. Grouping is a preference; exact wording is required when trigger expansion is off."><strong className="block">Keep trigger connected</strong>
+                   <small className="mt-1 block leading-relaxed text-muted">Keep terms together, or distribute them.</small></span>
               </label>
               {draft.trigger_connected === false && triggerParts.length > 0 && <p className={ui.subtleNote}>
                 {triggerParts.length === 1 ? "One required term detected. Add commas, new lines, or “and” to distribute multiple terms: " : "Required distributed terms: "}
@@ -300,8 +391,8 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                <label className={ui.choiceCard}>
                  <input type="checkbox" className="mt-0.5" aria-label="Allow trigger expansion"
                   checked={draft.expand_trigger === true} onChange={(event) => updateWriterSettings({ expand_trigger: event.target.checked })} />
-                <span><strong className="block">Allow the model to expand the trigger</strong>
-                  <small className="mt-1 block leading-relaxed text-muted">Off prevents unsolicited identity, appearance, design, material, or style details. Explicit concept and rule requirements are still allowed.</small></span>
+                 <span title="On: natural articles, capitalization and added descriptors are allowed while each subject stays mentioned. Off: preserve each trigger term exactly as typed and avoid unsolicited identity, appearance, design, material or style details. Explicit concept and rule requirements remain allowed."><strong className="block">Allow trigger expansion</strong>
+                    <small className="mt-1 block leading-relaxed text-muted">On: expand wording. Off: keep exact trigger terms.</small></span>
               </label>
             </div>
               </div>
@@ -312,16 +403,16 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
         <section className={ui.panel} aria-label="Dataset generation settings">
           <header className={ui.panelHeader}>
             <div className={ui.panelIcon}><Sparkles size={21} /></div>
-            <div className={ui.panelHeading}><h2>Prompt settings</h2><p>Choose the final treatment and target. Reuse scene ideas across targets.</p></div>
+            <div className={ui.panelHeading}><h2>Prompt settings</h2><p>Choose the treatment and target.</p></div>
           </header>
           <fieldset disabled={disabled}>
             <div className="grid grid-cols-2 gap-4 tiny:grid-cols-1">
-              <label className={ui.field}><span>Visual style</span>
+              <label className={ui.field}><span><Palette size={14} aria-hidden="true" />Visual style</span>
                 <select className={ui.select} aria-label="Visual style" value={draft.visual_style} onChange={(event) => updateSceneSettings({ visual_style: event.target.value })}>
                   {visualStyles.map((item) => <option key={item}>{item}</option>)}
                 </select>
               </label>
-              <label className={ui.field}><span>Director preset</span>
+              <label className={ui.field}><span><SlidersHorizontal size={14} aria-hidden="true" />Director preset</span>
                 <select className={ui.select} aria-label="Dataset director preset" value={draft.director_preset} onChange={(event) => updateWriterSettings({ director_preset: event.target.value })}>
                   {!director && <option value={draft.director_preset}>Unavailable — choose a preset</option>}
                   {availablePresets.map((item) => <option key={item.id} value={item.id}>{presetDisplayLabel(item)}</option>)}
@@ -333,19 +424,26 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                 onChange={(event) => updateSceneSettings({ custom_style: event.target.value })} placeholder="Describe medium, realism, rendering, texture and finish…" />
             </label>}
             <div className="mt-4 grid grid-cols-2 gap-4 tiny:grid-cols-1">
-              <TargetSelect label="Dataset target model" value={draft.target} targets={targets} disabled={disabled} onChange={(target) => updateWriterSettings({ target })} />
-              <label className={ui.field}><span>Prompt length</span>
+              <TargetSelect label="Dataset target model" icon={<Cpu size={14} aria-hidden="true" />} value={draft.target} targets={targets} disabled={disabled} onChange={(target) => updateWriterSettings({ target })} />
+              <label className={ui.field}><span><AlignLeft size={14} aria-hidden="true" />Prompt length</span>
                 <select className={ui.select} aria-label="Dataset prompt length" value={draft.length} onChange={(event) => updateWriterSettings({ length: event.target.value })}>
                   {lengths.map((item) => <option key={item}>{item}</option>)}
                 </select>
               </label>
             </div>
 
+            <label className={`${ui.field} mt-4`}><span><Sparkles size={14} aria-hidden="true" />Descriptive creativity</span>
+              <select className={ui.select} aria-label="Dataset descriptive creativity" value={draft.creativity || "Balanced"} onChange={(event) => updateWriterSettings({ creativity: event.target.value })}>
+                {["Strict", "Balanced", "Creative", "Dice"].map((item) => <option key={item}>{item}</option>)}
+              </select>
+              <small className="text-[10px] leading-relaxed text-muted">Enriches visual treatment only. The planned action, pose and relationships stay fixed.</small>
+            </label>
+
             <fieldset className="mt-5 border-t border-line pt-4">
               <legend className="pr-2 text-xs font-semibold">Scene source</legend>
               <div className="mt-2 grid grid-cols-2 gap-2 tiny:grid-cols-1">
-                {[['random', 'Let Scene Planner invent scenes', 'Give Scene Planner the overall Dataset concept and it will create distinct visual situations.'],
-                  ['guided', 'Provide my own scene ideas', 'Enter one idea per line. Scene Planner improves each idea without replacing its central action.']].map(([value, label, help]) =>
+                {[['random', 'Let Scene Planner invent scenes', 'Distinct situations from your concept.'],
+                  ['guided', 'Provide my own scene ideas', 'One idea per line; the action stays fixed.']].map(([value, label, help]) =>
                    <label key={value} className={`${ui.choiceCard} block`}>
                     <span className="flex items-center gap-2 text-xs font-semibold"><input type="radio" name="dataset-source" value={value}
                        checked={draft.source_mode === value} onChange={() => updateSceneSettings({ source_mode: value })} />{label}</span>
@@ -356,7 +454,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                 <textarea className={ui.ideaInput} style={{ minHeight: 160 }} aria-label="Guided dataset inputs" maxLength={50000}
                   value={draft.inputs} onChange={(event) => updateSceneSettings({ inputs: event.target.value })}
                   placeholder={"standing portrait in a city at night\nrunning through a sunlit field\nclose-up profile in a quiet studio"} />
-                  <small className={ui.directorDescription}>Lines cycle to fill the requested amount. Full scenes or partial place/pose/outfit ideas are welcome. Each line applies only to its own images; stated actions stay fixed.</small>
+                   <small className={ui.directorDescription}>Lines cycle to fill the batch; each action stays fixed.</small>
               </label>}
             </fieldset>
 
@@ -364,22 +462,26 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
               <Sparkles size={17} />{starting || isGenerating ? `Generating ${draft.amount} prompts…` : `Generate ${draft.amount} prompts`}
             </button>
             <button className={`${ui.button} mt-3 w-full justify-center`} disabled={!canPlanScenes}
-              onClick={() => generate(true)}><Sparkles size={15} />{scenePlannerBusy ? "Planning scenes…" : "Plan scenes first"}</button>
-             <p className={ui.subtleNote}>{!draft.subject.trim() ? "Add a dataset idea to get started. " : !draft.trigger.trim() ? "Add trigger text to generate final prompts, or plan scenes without it. " : "One-click generation plans automatically. "}Planning first lets you edit ideas before writing prompts.</p>
+              onClick={() => generate(true)}><Layers3 size={15} />{scenePlannerBusy ? "Planning scenes…" : "Plan scenes first"}</button>
+              <p className={ui.subtleNote}>{!draft.subject.trim() ? "Add a dataset idea to get started." : !draft.trigger.trim() ? "Add trigger text, or plan scenes without it." : "Generate directly, or plan first to edit your scenes."}</p>
           </fieldset>
         </section>
       </div>
 
       {!!draft.scene_plan?.length && <section className={`${ui.panel} mt-6`} aria-label="Scene Planner ideas">
         <header className={ui.panelHeader}>
-          <div className={ui.panelIcon}><Sparkles size={21} /></div>
-          <div className={ui.panelHeading}><h2>Scene Planner ideas</h2>
-             <p>Idea = what happens. Scene = how it fits one image. Target and prompt length changes reuse both.</p></div>
+          <div className={ui.panelIcon}><Layers3 size={21} /></div>
+          <div className={ui.panelHeading}><h2>Scene planner</h2>
+             <p>Edit what happens and how it fits one image.</p></div>
         </header>
-        <p className={ui.subtleNote}>Idea edits invalidate only that scene and prompt. Scene edits invalidate only that prompt. Output settings keep the plan and invalidate prompts.</p>
+        <HelpDetails>Idea edits invalidate only that scene and prompt. Scene edits invalidate only that prompt. Output settings reuse the plan and invalidate prompts.</HelpDetails>
         {staleScenePlan && <p className={ui.warningNote}>This plan no longer matches the Dataset settings. Plan scenes again or use the main Generate action to replan automatically.</p>}
-        <div className="grid grid-cols-2 items-start gap-4 mobile:grid-cols-1">
-          {draft.scene_plan.map((item) => <div key={item.index} className="min-w-0 grid content-start gap-3 rounded-lg border border-line p-3">
+        <div className="dataset-card-grid mt-4">
+          {draft.scene_plan.map((item) => <div key={item.index} className="dataset-card rounded-lg border border-line">
+            <div className="dataset-card-header"><strong className="dataset-card-number">#{String(item.index).padStart(2, "0")}</strong>
+              <div className="dataset-status-group"><StatusChip label="Idea" status={item.idea_status || "valid"} /><StatusChip label="Scene" status={item.scene_status || "valid"} /><StatusChip label="Prompt" status={item.prompt_status} /><GeometryButton geometry={item.geometry} index={item.index} onOpen={setGeometryItem} /></div>
+            </div>
+            <FailureReason item={item} />
             {item.input && <small className="text-muted">Original idea: {item.input}</small>}
             <label className={ui.field}><span>Idea {item.index}</span>
               <input className={ui.input} aria-label={`Planned idea ${item.index}`} value={item.idea || ""}
@@ -392,16 +494,13 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                 maxLength={preferences.record?.scene_limits?.characters} disabled={disabled}
                 onChange={(event) => update(editDatasetPlan(draft, item.index, "scene", event.target.value))} />
             </label>
-            <small className="text-muted">Idea: {item.idea_status || "valid"} · Scene: {item.scene_status || "valid"} · Prompt: {item.prompt_status || "not_generated"}</small>
-            <GeometryDetails geometry={item.geometry} index={item.index} />
-            <FailureReason item={item} />
             <div className="flex flex-wrap gap-2">
-              <button className={ui.button} disabled={!canWrite || staleScenePlan}
-                onClick={() => sceneAction(item.index, "regenerate_idea")}>Regenerate idea</button>
-              <button className={ui.button} disabled={!canWrite || staleScenePlan || !item.idea?.trim()}
-                onClick={() => sceneAction(item.index, "repair_scene")}>Repair scene</button>
-              <button className={ui.button} disabled={!canWrite || staleScenePlan || !isDatasetSceneUsable(item)}
-                onClick={() => sceneAction(item.index, "regenerate_prompt")}>Regenerate prompt</button>
+              <button className={ui.button} title="Regenerate idea" aria-label="Regenerate idea" disabled={!canWrite || staleScenePlan}
+                onClick={() => sceneAction(item.index, "regenerate_idea")}><RefreshCw size={14} aria-hidden="true" />Idea</button>
+              <button className={ui.button} title="Repair scene" aria-label="Repair scene" disabled={!canWrite || staleScenePlan || !item.idea?.trim()}
+                onClick={() => sceneAction(item.index, "repair_scene")}><Wrench size={14} aria-hidden="true" />Scene</button>
+              <button className={ui.button} title="Regenerate prompt" aria-label="Regenerate prompt" disabled={!canWrite || staleScenePlan || !sceneUsable(item)}
+                onClick={() => sceneAction(item.index, "regenerate_prompt")}><WandSparkles size={14} aria-hidden="true" />Prompt</button>
             </div>
           </div>)}
         </div>
@@ -410,30 +509,30 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
             onClick={() => generate(false, true)}>{validSceneCount === draft.amount ? "Generate prompts from these scenes" : `Generate prompts from ${validSceneCount} valid ${validSceneCount === 1 ? "scene" : "scenes"}`}</button>
           <button className={ui.button} disabled={!canPlanScenes} onClick={() => generate(true)}><RefreshCw size={14} />Replan scenes</button>
           <button className={ui.button} disabled={!draft.scene_plan.length}
-            onClick={() => download("dataset-scenes.json", JSON.stringify(draft.scene_plan, null, 2), "application/json")}><FileJson size={14} />Scenes JSON</button>
+             onClick={() => exportDataset("dataset-scenes.json", JSON.stringify(draft.scene_plan, null, 2), "application/json")}><FileJson size={14} />Scenes JSON</button>
         </div>
       </section>}
 
       {!!draft.results.length && <section className={`${ui.panel} mt-6`} aria-label="Dataset quality report">
         <header className={ui.panelHeader}>
           <div className={ui.panelIcon}>{quality?.status === "strong" ? <ShieldCheck size={21} /> : <CircleAlert size={21} />}</div>
-          <div className={ui.panelHeading}><h2>Dataset quality report</h2>
-             <p>Diagnostics for triggers, format, idea/scene similarity and explicit geometry conflicts.</p></div>
+          <div className={ui.panelHeading}><h2>Quality report</h2>
+             <p>Check diversity, trigger wording and format.</p></div>
           <span className={ui.resultStatus} data-working={qualityBusy || active && job?.kind === "dataset_review"}><span className={ui.statusDot} />
             {active && job?.kind === "dataset_review" ? "Reviewing" : qualityBusy ? "Checking" : quality?.status === "strong" ? "Strong" : quality?.status === "review" ? "Needs review" : quality?.status === "issues" ? "Issues found" : "Pending"}
           </span>
         </header>
          <div className={`${ui.workflowStatus} mb-4`}>
-           <span>{quality?.deep_review?.completed ? `Deep review complete · ${quality.deep_review.errors} errors · ${quality.deep_review.warnings} warnings` : "Optional: check planned-scene fidelity, identity, style and constraints with the prompt engine."}</span>
+           <span>{quality?.deep_review?.completed ? `Deep review complete · ${quality.deep_review.errors} errors · ${quality.deep_review.warnings} warnings` : "Optional model review of fidelity and consistency."}</span>
           <button className={ui.button} disabled={disabled || noEngine || !draft.results.length} onClick={deepReview}>
             <ShieldCheck size={14} />{active && job?.kind === "dataset_review" ? "Deep reviewing…" : quality?.deep_review?.completed ? "Run deep review again" : "Deep consistency review"}
           </button>
         </div>
         {quality?.metrics ? <>
-          <div className="grid grid-cols-4 gap-3 mobile:grid-cols-2">
+          <div className="dataset-metrics">
              <div className="rounded-lg border border-line bg-selected p-4 mobile:col-span-2"><span className="text-xs text-muted">Overall</span><strong className="mt-1 block font-display text-2xl text-accent">{quality.score}</strong></div>
-             {Object.entries(quality.metrics).map(([key, value]) => <div key={key} className="rounded-lg border border-line bg-canvas p-4">
-               <span className="text-xs capitalize text-muted">{key.replaceAll("_", " ")}</span><strong className="mt-1 block font-display text-xl">{value}%</strong>
+             {qualityMetrics.map(([key, value]) => <div key={key} className="rounded-lg border border-line bg-canvas p-4">
+               <span className="text-xs text-muted">{metricLabels[key] || key.replaceAll("_", " ")}</span><strong className="mt-1 block font-display text-xl">{value}%</strong>
             </div>)}
           </div>
           {!!quality.batch_issues?.length && <div className="mt-4 grid gap-2">
@@ -441,8 +540,8 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
               <strong className="mr-1">{issue.severity === "error" ? "Issue:" : "Review:"}</strong>{issue.message}
             </p>)}
           </div>}
-           <details className="mt-4 rounded-lg border border-line bg-canvas p-3 text-xs">
-            <summary className="cursor-pointer font-semibold">Prompt checks · {(quality.prompts || []).filter((item) => item.status === "pass").length}/{quality.prompts?.length || 0} passed</summary>
+           <details className="dataset-details mt-4 rounded-lg border border-line bg-canvas p-3 text-xs" open={(quality.prompts || []).some((item) => item.status !== "pass")}>
+            <summary><ShieldCheck size={14} aria-hidden="true" /><span>Prompt checks · {(quality.prompts || []).filter((item) => item.status === "pass").length}/{quality.prompts?.length || 0} passed</span><ChevronDown size={14} aria-hidden="true" /></summary>
             <div className="mt-3 grid gap-2">{(quality.prompts || []).map((item) => <div key={item.index} className="flex items-start gap-2 border-t border-line pt-2 first:border-0 first:pt-0">
                {item.status === "pass" ? <CircleCheck size={15} className="text-success" /> : <CircleAlert size={15} className={item.status === "error" ? "text-danger" : "text-warning"} />}
               <div><strong>Prompt {item.index}</strong>
@@ -451,7 +550,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
               </div>
             </div>)}</div>
           </details>
-          <p className={ui.subtleNote}>This report catches structural and similarity problems; it is a diagnostic, not a guarantee of training quality.</p>
+          <HelpDetails>Automatic checks are structural and lexical hints, not a guarantee of training quality. Deep Review handles nuanced semantic consistency.</HelpDetails>
         </> : <p className="text-xs text-muted">{qualityBusy ? "Analyzing the current batch…" : "The report will appear after generation."}</p>}
       </section>}
 
@@ -460,45 +559,48 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
           <div><h3 className="font-display text-lg font-bold">Generated dataset</h3>
             <p className="mt-1 text-xs text-muted">Completed prompts appear as the batch runs and remain editable.</p></div>
           <div className="flex flex-wrap gap-2">
-            <button className={ui.button} disabled={!draft.results.length} onClick={() => onCopy(allText)}><Copy size={15} />Copy all</button>
-            <button className={ui.button} disabled={!draft.results.length} onClick={() => download("dataset-prompts.txt", allText, "text/plain;charset=utf-8")}><Download size={15} />TXT</button>
-            <button className={ui.button} disabled={!draft.results.length} onClick={() => download("dataset-prompts.jsonl", jsonl, "application/x-ndjson;charset=utf-8")}><FileJson size={15} />JSONL</button>
-            <button className={ui.button} disabled={disabled || !draft.results.length} onClick={() => update({ results: [], result_job_id: "", quality_report: {} })}><Trash2 size={15} />Clear</button>
+            <button className={ui.button} disabled={!draft.results.length} onClick={() => onCopy(datasetCopyText(draft))}><Copy size={15} />Copy all</button>
+            <button className={ui.button} disabled={!draft.results.length} onClick={() => exportDataset("dataset-prompts.txt", allText, "text/plain;charset=utf-8")}><Download size={15} />TXT</button>
+            <button className={ui.button} disabled={!draft.results.length} onClick={() => exportDataset("dataset-prompts.jsonl", jsonl, "application/x-ndjson;charset=utf-8")}><FileJson size={15} />JSONL</button>
+            <button className={ui.button} disabled={disabled || !draft.results.length} onClick={clearResults}><Trash2 size={15} />Clear</button>
           </div>
         </div>
         {!displayedResults.length ? <div className={`${ui.emptyState} min-h-[260px]`}>
            <Database size={34} /><h3>Your scenes start with an idea</h3><p>Describe your concept above. Plan scenes to review them first, or generate the full batch.</p>
-        </div> : <div className="grid grid-cols-2 items-start gap-4 [@media(width<=1050px)]:grid-cols-1">
+        </div> : <div className="dataset-card-grid">
           {displayedResults.map((item) => {
             const check = promptQuality.get(item.index);
-            return <article className={ui.panel} key={item.index}>
-            <div className="mb-3 flex items-center justify-between gap-3">
+            return <article className="dataset-card dataset-result-card panel" key={item.index}>
+            <div className="dataset-card-header">
                <div><span className="text-sm font-semibold text-accent">Prompt {item.index}</span>
                 {item.input && <p className="mt-1 max-w-[48ch] truncate text-[10px] text-muted" title={item.input}>{item.input}</p>}
-                 {check && <span className={`mt-1 inline-flex items-center gap-1 text-xs ${check.status === "pass" ? "text-success" : check.status === "error" ? "text-danger" : "text-warning"}`}>
-                  {check.status === "pass" ? <CircleCheck size={11} /> : <CircleAlert size={11} />}{check.status === "pass" ? "Passed checks" : `${check.issues.length} ${check.issues.length === 1 ? "issue" : "issues"}`}
-                </span>}</div>
-               {!item.failed && <button className={ui.button} onClick={() => onCopy(item.prompt)}><Copy size={14} />Copy</button>}
-               {item.failed && <span className="text-xs font-semibold text-warning">Failed · skipped</span>}
+                </div>
+               <div className="dataset-status-group">{item.failed ? <StatusChip label="Failed · skipped" status="failed" /> : <StatusChip label={check?.status === "pass" ? "Passed" : check ? `${check.issues.length} issues` : "Pending checks"} status={check?.status} />}<GeometryButton geometry={item.geometry} index={item.index} onOpen={setGeometryItem} /></div>
              </div>
-              {item.idea ? <div className="mb-3 text-xs"><strong>Idea {item.index}</strong>
-                <p className="mt-1 whitespace-pre-wrap leading-relaxed text-muted">{item.idea}</p>
+              {item.idea ? <div className="text-xs">
+                <p className="whitespace-pre-wrap leading-relaxed text-muted">{item.idea}</p>
               </div> : <p className={`${ui.subtleNote} mb-3`}>Legacy result: no originating idea was saved.</p>}
-              {item.scene ? <details className="mb-3 rounded-lg border border-line p-3 text-xs" open>
-               <summary className="cursor-pointer font-semibold">Scene {item.index}</summary>
+              {item.scene ? <details className="dataset-details rounded-lg border border-line p-3 text-xs">
+               <summary><Layers3 size={14} aria-hidden="true" /><span>Scene {item.index}</span><ChevronDown size={14} aria-hidden="true" /></summary>
                <p className="mt-2 whitespace-pre-wrap leading-relaxed text-muted">{item.scene}</p>
               </details> : <p className={`${ui.subtleNote} mb-3`}>Legacy result: no originating scene was saved.</p>}
-              <GeometryDetails geometry={item.geometry} index={item.index} />
               <FailureReason item={item} />
               {item.failed ? <button className={`${ui.button} mt-3`} disabled={!canWrite || staleScenePlan}
-                onClick={() => sceneAction(item.index, datasetRetryStage(item) === "scene" ? "repair_scene" : `regenerate_${datasetRetryStage(item)}`)}>Retry failed {datasetRetryStage(item)}</button> : <>
-              <p className="mb-2 text-xs font-semibold">Final prompt</p>
-             <textarea className={ui.outputInput} style={{ minHeight: 220 }} aria-label={`Dataset prompt ${item.index}`}
+                onClick={() => sceneAction(item.index, retryStage(item) === "scene" ? "repair_scene" : `regenerate_${retryStage(item)}`)}><RefreshCw size={14} aria-hidden="true" />Retry failed {retryStage(item)}</button> : <>
+              <label htmlFor={`dataset-prompt-${item.index}`} className="dataset-final-label">Final prompt</label>
+              <textarea className={ui.outputInput} style={{ minHeight: 220 }} aria-label={`Dataset prompt ${item.index}`}
+               id={`dataset-prompt-${item.index}`}
               value={item.prompt} maxLength={100000} disabled={isGenerating || active && job?.kind === "dataset_review"}
-              onChange={(event) => editResult(item.index, event.target.value)} /></>}
+              onChange={(event) => editResult(item.index, event.target.value)} />
+              <div><button className={ui.button} onClick={() => onCopy(item.prompt)}><Copy size={14} aria-hidden="true" />Copy</button></div>
+              {!!check?.issues.length && <details className="dataset-details rounded-lg border border-line p-3 text-xs" open>
+                <summary><CircleAlert size={14} aria-hidden="true" />Diagnostics<ChevronDown size={14} aria-hidden="true" /></summary>
+                <ul className="mt-3 grid gap-2 text-muted">{check.issues.map((issue, index) => <li key={`${issue.code}-${index}`}>{issue.message}</li>)}</ul>
+              </details>}</>}
           </article>})}
         </div>}
       </section>
     </>}
+    <GeometryModal item={geometryItem} onClose={() => setGeometryItem(null)} />
   </div>;
 }

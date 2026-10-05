@@ -18,6 +18,8 @@ from aiohttp.test_utils import TestClient, TestServer
 from PIL import Image
 
 import local_app as local
+from tests.helpers import enter_context
+from goated_prompter import json_store, uploaded_images
 
 
 class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
@@ -29,7 +31,7 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.configs = []
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.enterContext(patch.dict(os.environ, {"GOATED_PROMPTER_USER_DIR": str(Path(self.temp.name) / "directors")}))
+        enter_context(self, patch.dict(os.environ, {"GOATED_PROMPTER_USER_DIR": str(Path(self.temp.name) / "directors")}))
         self.settings_path = Path(self.temp.name) / "data" / "settings.json"
         owner = self
 
@@ -121,6 +123,44 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(trace["output"], "partial answer")
         self.assertEqual(trace["timeout_seconds"], 45)
         self.assertEqual(trace["status"], "complete")
+
+    async def test_job_snapshots_isolate_mutable_result_and_trace(self):
+        job = local.Job()
+        messages = [{"role": "user", "content": "original"}]
+        job.record_llm_activity({"type": "request", "messages": messages})
+        messages[0]["content"] = "changed by caller"
+        job.deliver({"prompts": ["original result"]})
+        snapshot = job.snapshot()
+        snapshot["result"]["prompts"].append("changed by reader")
+        snapshot["llm_trace"]["messages"][0]["content"] = "changed by reader"
+        self.assertEqual(job.snapshot()["result"], {"prompts": ["original result"]})
+        self.assertEqual(job.snapshot()["llm_trace"]["messages"],
+                         [{"role": "user", "content": "original"}])
+
+    async def test_job_events_are_bounded_and_release_ignores_late_activity(self):
+        job = local.Job()
+        for index in range(250):
+            job.record_event(f"Event {index}")
+        self.assertEqual(len(job.snapshot()["events"]), 200)
+        self.assertEqual(job.snapshot()["events"][0]["message"], "Event 50")
+        job.clear_private_data()
+        revision = job.revision
+        job.record_llm_activity({"type": "request", "messages": [{"content": "late private text"}]})
+        self.assertEqual(job.revision, revision)
+        self.assertIsNone(job.snapshot()["llm_trace"])
+        self.assertEqual(job.snapshot()["events"], [])
+
+    async def test_http_errors_keep_security_headers_and_no_store(self):
+        for url in ("/api/settings", "/api/jobs/missing", "/api/no-such-route"):
+            response = await self.client.get(url)
+            self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+            self.assertEqual(response.headers["Referrer-Policy"], "same-origin")
+            self.assertEqual(response.headers["Cache-Control"], "no-store")
+        for body in ("not json", "[]"):
+            response = await self.client.post("/api/generate", data=body,
+                                              headers={"Content-Type": "application/json"})
+            self.assertEqual(response.status, 400)
+            self.assertFalse((await response.json())["ok"])
 
     async def test_director_updates_reset_and_generation_authority(self):
         from goated_prompter import presets as library
@@ -430,7 +470,7 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         await self.client.post("/api/prompts", json=record)
         path = self.settings_path.parent / "prompts.json"
         original = path.read_bytes()
-        with patch.object(local.os, "replace", side_effect=OSError("disk failure")):
+        with patch.object(json_store.os, "replace", side_effect=OSError("disk failure")):
             response = await self.client.delete("/api/prompts/one")
             self.assertEqual(response.status, 500)
         self.assertEqual(path.read_bytes(), original)
@@ -457,7 +497,7 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         await self.client.put("/api/settings", json={"keep_model_loaded": True})
         original = self.settings_path.read_bytes()
         self.assertEqual(json.loads(original), {"keep_model_loaded": True})
-        with patch.object(local.os, "replace", side_effect=OSError("disk failure")):
+        with patch.object(json_store.os, "replace", side_effect=OSError("disk failure")):
             response = await self.client.put("/api/settings", json={"keep_model_loaded": False})
             self.assertEqual(response.status, 500)
         self.assertEqual(self.settings_path.read_bytes(), original)
@@ -584,8 +624,108 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         await self.client.post(f"/api/jobs/{job['id']}/pause")
         self.release.set()
         await self.wait_status(job["id"], "paused")
+        retained = self.app[local.STATE].jobs[job["id"]]
         await asyncio.wait_for(self.client.close(), 3)
-        self.assertEqual(self.app[local.STATE].jobs[job["id"]].status, "failed")
+        self.assertEqual(retained.status, "interrupted")
+        self.assertEqual(self.app[local.STATE].jobs, {})
+        self.assertIsNone(retained.result)
+        self.assertIsNone(retained.llm_trace)
+        self.assertEqual(retained.events, [])
+
+    async def test_shutdown_is_bounded_when_provider_and_interrupt_do_not_cooperate(self):
+        self.release.clear()
+        accepted = await self.start()
+        self.assertTrue(await asyncio.to_thread(self.entered.wait, 2))
+        retained = self.app[local.STATE].jobs[accepted["id"]]
+        retained.set_interrupt(lambda: self.release.wait(30))
+        try:
+            await asyncio.wait_for(self.client.close(), 4.5)
+            self.assertEqual(retained.status, "interrupted")
+            self.assertTrue(retained.released)
+            self.assertIsNone(retained.result)
+        finally:
+            self.release.set()
+
+    async def test_cancel_response_is_bounded_when_transport_does_not_cooperate(self):
+        self.release.clear()
+        accepted = await self.start()
+        self.assertTrue(await asyncio.to_thread(self.entered.wait, 2))
+        retained = self.app[local.STATE].jobs[accepted["id"]]
+        retained.set_interrupt(lambda: self.release.wait(30))
+        try:
+            response = await asyncio.wait_for(self.client.post(f"/api/jobs/{accepted['id']}/cancel"), 3)
+            self.assertEqual(response.status, 200)
+            self.assertEqual((await response.json())["status"], "cancelling")
+            self.assertTrue(retained.cancel_requested)
+        finally:
+            self.release.set()
+        await self.wait_status(accepted["id"], "cancelled")
+
+    async def test_checkpoint_cleanup_is_scoped_memory_only_and_preserves_saved_content(self):
+        state = self.app[local.STATE]
+        completed = local.Job()
+        completed.kind = "dataset"
+        completed.deliver({"prompts": ["private checkpoint"]})
+        completed.record_llm_activity({"type": "request", "messages": [{"content": "private request"}]})
+        active = local.Job()
+        active.kind = "dataset_scenes"
+        other = local.Job()
+        other.kind = "minimax"
+        other.deliver({"prompt": "other workflow"})
+        for job in (completed, active, other):
+            state.jobs[job.id] = job
+        before = {path: path.read_bytes() for path in Path(self.temp.name).rglob("*.json")}
+        response = await self.client.delete("/api/jobs?kind=dataset")
+        self.assertEqual(await response.json(), {"ok": True, "released": [completed.id]})
+        self.assertIsNone(completed.result)
+        self.assertIsNone(completed.llm_trace)
+        self.assertEqual(completed.events, [])
+        self.assertEqual((await self.client.get(f"/api/jobs/{completed.id}")).status, 404)
+        self.assertIn(active.id, state.jobs)
+        self.assertIn(other.id, state.jobs)
+        self.assertEqual(before, {path: path.read_bytes() for path in Path(self.temp.name).rglob("*.json")})
+        self.assertEqual((await self.client.delete("/api/jobs?kind=unknown")).status, 400)
+        self.assertEqual((await self.client.delete("/api/jobs")).status, 400)
+        self.assertEqual((await self.client.delete("/api/jobs?kind=dataset", headers={"Origin": "https://evil.example"})).status, 403)
+        active.deliver({"scene_plan": []})
+
+    async def test_recent_idea_reset_is_private_scoped_and_preserves_drafts(self):
+        from goated_prompter.dataset import default_dataset_draft
+        state = self.app[local.STATE]
+        data = {**default_dataset_draft(), "subject": "A performer at a rehearsal"}
+        other = {**data, "subject": "A different concept"}
+        state.idea_history.remember(data, [{"idea": "Private recent activity"}])
+        state.idea_history.remember(other, [{"idea": "Another private activity"}])
+        before = {path: path.read_bytes() for path in Path(self.temp.name).rglob("*.json")}
+        response = await self.client.post("/api/workspace/dataset/novelty/reset", json={"input": data})
+        self.assertEqual(await response.json(), {"ok": True})
+        self.assertEqual(state.idea_history.recent(data), [])
+        self.assertEqual(state.idea_history.recent(other), ["Another private activity"])
+        self.assertEqual(before, {path: path.read_bytes() for path in Path(self.temp.name).rglob("*.json")})
+        response = await self.client.post("/api/workspace/dataset/novelty/reset", json={"input": data}, headers={"Origin": "https://evil.example"})
+        self.assertEqual(response.status, 403)
+        active = local.Job()
+        state.jobs[active.id] = active
+        state.idea_history.remember(data, [{"idea": "An active run's recent idea"}])
+        response = await self.client.post("/api/workspace/dataset/novelty/reset", json={"input": data})
+        self.assertEqual(response.status, 409)
+        self.assertEqual(state.idea_history.recent(data), ["An active run's recent idea"])
+        active.deliver({"ok": True})
+
+    async def test_local_prompt_regeneration_accepts_manual_scene_without_geometry(self):
+        from goated_prompter.dataset import default_dataset_draft
+        from goated_prompter.dataset_assignments import dataset_assignments
+        from goated_prompter.scene_planner import scene_plan_signature
+        data = {**default_dataset_draft(), "amount": 1, "subject": "A traveler", "trigger": "person_token"}
+        data["scene_plan"] = [{"index": 1, "input": "", "idea": "Reading on a bench",
+                               "scene": "She reads a book on a park bench.", "geometry": {},
+                               "idea_status": "valid", "scene_status": "valid", "prompt_status": "not_generated"}]
+        data["scene_plan_signature"] = scene_plan_signature(data, dataset_assignments(data))
+        response = await self.client.post("/api/workspace/dataset/scene", json={"input": data, "index": 1, "action": "regenerate_prompt"})
+        self.assertEqual(response.status, 202, await response.text())
+        finished = await self.wait_status((await response.json())["id"], "succeeded")
+        self.assertEqual(finished["result"]["scene_plan"][0]["scene"], data["scene_plan"][0]["scene"])
+        self.assertEqual(finished["result"]["scene_plan"][0]["geometry"], {})
 
     async def test_preset_crud_and_unload_shapes(self):
         director = SimpleNamespace(to_public_mapping=lambda: {"id": "user:test", "label": "Test"})
@@ -629,7 +769,7 @@ class JsonStorageTests(unittest.TestCase):
                     db.execute("CREATE TABLE settings (id INTEGER PRIMARY KEY, payload TEXT)")
                     db.execute("INSERT INTO settings VALUES (1, ?)", (payload,))
                 original = legacy.read_bytes()
-                with patch.object(local.os, "replace", side_effect=OSError("disk failure")):
+                with patch.object(json_store.os, "replace", side_effect=OSError("disk failure")):
                     with self.assertRaises((ValueError, OSError)):
                         local.create_app(settings_path=path)
                 self.assertFalse(path.exists())
@@ -653,13 +793,23 @@ class JsonStorageTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     local.validate_prompts({"prompts": [record, {**record, "id": "two"}]})
             original = path.read_bytes()
-            with patch.object(local, "MAX_STORE_BYTES", 2):
+            with patch.object(json_store, "MAX_STORE_BYTES", 2):
                 with self.assertRaises(ValueError):
                     local.atomic_json(path, {"prompts": [record]})
             self.assertEqual(path.read_bytes(), original)
 
 
 class UploadTests(unittest.TestCase):
+    def test_declared_format_must_match_content_and_invalid_dimension_uses_default(self):
+        buffer = BytesIO()
+        Image.new("RGB", (1600, 800)).save(buffer, "PNG")
+        raw = base64.b64encode(buffer.getvalue()).decode()
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            local.decode_image("data:image/jpeg;base64," + raw)
+        encoded = local.decode_image("data:image/png;base64," + raw, "invalid")
+        self.assertEqual((encoded.width, encoded.height), (1344, 672))
+        self.assertIsNone(local.decode_image(None))
+
     def test_formats_and_limits(self):
         for fmt, mime in (("PNG", "png"), ("JPEG", "jpeg"), ("WEBP", "webp")):
             buffer = BytesIO()
@@ -667,10 +817,10 @@ class UploadTests(unittest.TestCase):
             data = f"data:image/{mime};base64," + base64.b64encode(buffer.getvalue()).decode()
             encoded = local.decode_image(data, 256)
             self.assertEqual((encoded.width, encoded.height, encoded.media_type), (256, 154, "image/png"))
-            with patch.object(local, "MAX_IMAGE_PIXELS", 100):
+            with patch.object(uploaded_images, "MAX_IMAGE_PIXELS", 100):
                 with self.assertRaisesRegex(ValueError, "pixels"):
                     local.decode_image(data)
-            with patch.object(local, "MAX_IMAGE_BYTES", 1):
+            with patch.object(uploaded_images, "MAX_IMAGE_BYTES", 1):
                 with self.assertRaises(ValueError):
                     local.decode_image(data)
         with self.assertRaises(ValueError):

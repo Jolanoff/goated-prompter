@@ -1,7 +1,7 @@
 """Conservative saved-plan migration, not an alternative live-output validator."""
 
 from .engine import validate_geometry
-from .normalize import normalize_field, normalize_geometry_value
+from .normalize import normalize_field, normalize_geometry_value, normalize_geometry
 from .profiles import get_profile
 from .schema import GEOMETRY_FIELDS
 from .vocabulary import CAMERA_AZIMUTH_VALUES, GAZE_DIRECTION_VALUES, EXPRESSION_VALUES, POSE_TYPE_VALUES, ORIENTATION_VALUES
@@ -35,6 +35,7 @@ def migrate_saved_geometry(value, *, dataset_type=None):
     profile = get_profile(dataset_type)
     if not isinstance(value, dict):
         return {}, True
+    value = normalize_geometry(value, profile=profile)
     cleaned, needs_repair = {}, False
 
     def put(name, content):
@@ -66,6 +67,15 @@ def migrate_saved_geometry(value, *, dataset_type=None):
         if name not in GEOMETRY_FIELDS or name not in profile.allowed:
             continue
         canonical = normalize_field(name, content)
+        if name == "framing" and isinstance(canonical, str) and canonical not in profile.values_for(name):
+            # Older builds advertised human crop names to non-human profiles.
+            # Preserve only equivalent whole-subject/detail extents; a torso
+            # crop is not a product crop and must remain a local warning.
+            replacement = {"full_body": "full_subject", "full_body_with_environment": "full_subject_with_environment",
+                           "full_subject": "full_body", "full_subject_with_environment": "full_body_with_environment",
+                           "face_close_up": "detail_close_up", "extreme_close_up": "detail_close_up"}.get(canonical)
+            if replacement in profile.values_for(name):
+                content = canonical = replacement
         if name in {"body_orientation", "torso_orientation", "hip_orientation"} and isinstance(canonical, str) and canonical not in ORIENTATION_VALUES:
             continue
         if name == "pose_type" and isinstance(canonical, str) and canonical not in POSE_TYPE_VALUES:
@@ -75,7 +85,13 @@ def migrate_saved_geometry(value, *, dataset_type=None):
         if name == "head_direction" and isinstance(canonical, str) and canonical not in GEOMETRY_FIELDS[name].values:
             continue
         try:
-            cleaned.update(validate_geometry({name: content}, dataset_type=dataset_type, require_fields=False))
+            # Validate against already supplied sibling facts so category
+            # remapping cannot replace a conflicting saved expression/head.
+            checked = validate_geometry({name: content, **{key: item for key, item in value.items()
+                if name == "gaze_direction" and key in {"expression", "head_direction"} and key in profile.allowed}},
+                dataset_type=dataset_type, require_fields=False)
+            for key, item in checked.items():
+                put(key, item)
         except ValueError:
             needs_repair = True
 
@@ -115,7 +131,7 @@ def migrate_saved_geometry(value, *, dataset_type=None):
         elif name in {"pose", "pose_type"} and isinstance(canonical, str):
             if "pose_type" in profile.allowed:
                 put("pose_type", canonical if canonical in POSE_TYPE_VALUES else "custom")
-            if canonical not in POSE_TYPE_VALUES:
+            if canonical not in POSE_TYPE_VALUES and not value.get("pose_detail"):
                 detail("pose_detail", content)
         elif name in {"body_orientation", "torso_orientation", "hip_orientation"} and isinstance(canonical, str) and canonical not in ORIENTATION_VALUES:
             put("pose_type", LEGACY_POSES.get(canonical, "custom"))
@@ -123,6 +139,8 @@ def migrate_saved_geometry(value, *, dataset_type=None):
             needs_repair = True  # Pose does not reveal which side faces the camera.
         elif name == "body_orientation" and "body_orientation" not in profile.allowed and "subject_orientation" in profile.allowed and canonical in ORIENTATION_VALUES:
             put("subject_orientation", canonical)
+        elif name == "subject_orientation" and "subject_orientation" not in profile.allowed and "body_orientation" in profile.allowed and canonical in ORIENTATION_VALUES:
+            put("body_orientation", canonical)
         elif name == "head_direction" and canonical in LEGACY_HEAD_DIRECTIONS and canonical not in GEOMETRY_FIELDS[name].values:
             put(name, LEGACY_HEAD_DIRECTIONS[canonical])
         elif name == "head_direction" and isinstance(canonical, str) and canonical not in GEOMETRY_FIELDS[name].values:
@@ -141,4 +159,9 @@ def migrate_saved_geometry(value, *, dataset_type=None):
             needs_repair = True
     if value and profile.required - result.keys():
         needs_repair = True
+    if result.get("pose_type") == "custom" and len(result.get("pose_detail", "").split()) < 4:
+        needs_repair = True
+    if result.get("body_visibility") == "custom" and not result.get("required_visible_parts"):
+        needs_repair = True
+    # Optional omission is the legacy equivalent of []; no guessed anatomy/crop.
     return result, needs_repair

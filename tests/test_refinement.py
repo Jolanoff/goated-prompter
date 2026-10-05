@@ -10,6 +10,7 @@ from unittest.mock import patch
 from aiohttp.test_utils import TestClient, TestServer
 
 import local_app as local
+from tests.helpers import enter_context
 from goated_prompter.backends.base import GoatedPrompterBackend
 from goated_prompter.core import GoatedPrompterRequest
 from goated_prompter.refinement import refine_instruction
@@ -64,7 +65,7 @@ class RefinementEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.backend = ControlledBackend()
-        self.enterContext(patch("goated_prompter.refinement.create_backend", return_value=self.backend))
+        enter_context(self, patch("goated_prompter.refinement.create_backend", return_value=self.backend))
         self.app = local.create_app(config_loader=lambda: {"backend": "mock"}, settings_path=Path(self.temp.name) / "settings.json")
         self.client = TestClient(TestServer(self.app), headers={"Host": "127.0.0.1:8190"})
         await self.client.start_server()
