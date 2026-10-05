@@ -2,35 +2,28 @@
 
 import argparse
 import asyncio
-import base64
-import binascii
-import copy
 from contextlib import closing
 from collections import OrderedDict
 from dataclasses import replace
-from io import BytesIO
 import logging
 import json
 import hashlib
-import os
 from pathlib import Path
-import tempfile
-import threading
 import time
-import uuid
 
 from aiohttp import web
-from PIL import Image, UnidentifiedImageError
 
 from goated_prompter.backends.base import GoatedPrompterError
 from goated_prompter.job_lifecycle import release_completed_checkpoints, daemon_work
+from goated_prompter.local_jobs import Job, JobCancelled, TERMINAL
+from goated_prompter.json_store import atomic_json, read_store
+from goated_prompter.uploaded_images import decode_image
 from goated_prompter.dataset_idea_history import RecentIdeaHistory
 from goated_prompter.dataset_checkpoints import DatasetCheckpointStore
 from goated_prompter.backends.llama_cpp_process import get_process_manager, _resolve_server_executable
 from goated_prompter.config import load_config
 from goated_prompter.core import GoatedPrompterRequest, GoatedPrompterService, _as_bool
 from goated_prompter.director_profiles import discover_director_profiles, resolve_director_config
-from goated_prompter.image_utils import EncodedImage
 from goated_prompter.comfy_node import GoatedPrompter
 from goated_prompter.reference_map import REFERENCE_ATTRIBUTES
 from goated_prompter.workspace_store import WorkspaceStore, WorkspaceConflict
@@ -42,46 +35,10 @@ from goated_prompter.presets import (
     get_director_preset, recommended_director_for_mode, update_director, reset_director,
 )
 
-MAX_IMAGE_BYTES = 20 * 1024 * 1024
-MAX_IMAGE_PIXELS = 40_000_000
 COMPLETED_LIMIT = 32
-TERMINAL = {"succeeded", "failed", "cancelled", "interrupted"}
 STATE = web.AppKey("local_state", object)
-MAX_STORE_BYTES = 16 * 1024 * 1024
 MAX_PROMPTS = 10000
 REFERENCE_SOURCES = ("Off", "Image 1", "Image 2", "Image 3", "Image 4", "Blend")
-
-
-def atomic_json(path, payload):
-    data = (json.dumps(payload, ensure_ascii=True, indent=2) + "\n").encode("utf-8")
-    if len(data) > MAX_STORE_BYTES:
-        raise ValueError("JSON store exceeds the 16 MiB limit. Export or remove records first.")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = None
-    try:
-        with tempfile.NamedTemporaryFile(dir=path.parent, prefix=path.name + ".", suffix=".tmp", delete=False) as file:
-            temporary = Path(file.name)
-            file.write(data)
-            file.flush()
-            os.fsync(file.fileno())
-        os.replace(temporary, path)
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
-
-
-def read_store(path, default, validate):
-    try:
-        try:
-            with path.open("rb") as file:
-                data = file.read(MAX_STORE_BYTES + 1)
-        except FileNotFoundError:
-            return default
-        if len(data) > MAX_STORE_BYTES:
-            raise ValueError("Store exceeds the 16 MiB limit.")
-        return validate(json.loads(data))
-    except (OSError, ValueError, TypeError) as exc:
-        raise ValueError(f"Cannot read {path}: {exc} Restore or repair this file; it has not been overwritten.") from exc
 
 
 def validate_settings(payload):
@@ -157,42 +114,6 @@ def validate_prompts(payload):
     return {"prompts": list(records.values())}
 
 
-def decode_image(value, max_dimension=1344):
-    if value is None:
-        return None
-    formats = {"data:image/png;base64": "PNG", "data:image/jpeg;base64": "JPEG",
-               "data:image/webp;base64": "WEBP"}
-    if not isinstance(value, str) or "," not in value:
-        raise ValueError("Images must be PNG, JPEG, or WEBP base64 data URLs, or null.")
-    header, data = value.split(",", 1)
-    if header not in formats or len(data) > 4 * ((MAX_IMAGE_BYTES + 2) // 3):
-        raise ValueError("Each image must be PNG, JPEG, or WEBP and at most 20 MiB.")
-    try:
-        raw = base64.b64decode(data, validate=True)
-        if len(raw) > MAX_IMAGE_BYTES:
-            raise ValueError("Each image must be at most 20 MiB.")
-        with Image.open(BytesIO(raw)) as image:
-            if image.format != formats[header]:
-                raise ValueError("Image content does not match its data URL type.")
-            if image.width * image.height > MAX_IMAGE_PIXELS:
-                raise ValueError("Each image must be at most 40 million pixels.")
-            image.verify()
-        with Image.open(BytesIO(raw)) as image:
-            prepared = image.convert("RGB")
-        try:
-            limit = max(256, min(4096, int(max_dimension)))
-        except (TypeError, ValueError):
-            limit = 1344
-        if max(prepared.size) > limit:
-            prepared.thumbnail((limit, limit), Image.Resampling.LANCZOS)
-        buffer = BytesIO()
-        prepared.save(buffer, format="PNG", optimize=True)
-        return EncodedImage(base64.b64encode(buffer.getvalue()).decode("ascii"),
-                            "image/png", prepared.width, prepared.height)
-    except (binascii.Error, UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
-        raise ValueError("Image could not be decoded. Upload a valid PNG, JPEG, or WEBP.") from exc
-
-
 def validate_local_paths(values):
     for key in ("model_path", "mmproj_path", "llama_server", "models_dir", "discovery_root", "runtime_root",
                 "director_model_path", "director_mmproj_path", "director_llama_server"):
@@ -201,256 +122,6 @@ def validate_local_paths(values):
             raise ValueError(f"{key} must be a local filesystem path, not a URL or network share.")
         if value and str(Path(value).expanduser().resolve()).startswith(("\\\\", "//")):
             raise ValueError(f"{key} must resolve to a local filesystem path.")
-
-
-class Job:
-    def __init__(self):
-        self.id = uuid.uuid4().hex
-        self.status = "running"
-        self.completion_state = None
-        self.revision = 0
-        self.created_at = time.time()
-        self.finished_at = None
-        self.result = None
-        self.error = None
-        self.lock = threading.RLock()
-        self.gate = threading.Event()
-        self.gate.set()
-        self.stopping = False
-        self.cancel_requested = False
-        self.interrupt = None
-        self.transport_interrupts = set()
-        self.kind = "builder"
-        self.progress = ""
-        self.progress_at = self.created_at
-        self.status_reason = "The job was accepted and is waiting for the generation worker."
-        self.events = []
-        self._event_sequence = 0
-        self._llm_request_sequence = 0
-        self.llm_trace = None
-        self.partial_responses = []
-        self.released = False
-        self.workflow_revision = None
-        self.input_signature = None
-        self._append_event(self.status_reason, "status")
-
-    def _append_event(self, message, event_type="info"):
-        self._event_sequence += 1
-        self.events.append({
-            "id": self._event_sequence,
-            "timestamp": time.time(),
-            "type": event_type,
-            "message": str(message),
-        })
-        del self.events[:-200]
-
-    def record_event(self, message, event_type="info", *, revise=True):
-        """Record bounded, user-safe runtime activity without exposing prompt contents."""
-        with self.lock:
-            self._append_event(message, event_type)
-            if revise:
-                self.revision += 1
-
-    def set_progress(self, message):
-        with self.lock:
-            self.progress = message
-            self.progress_at = time.time()
-            self.status_reason = message
-            self._append_event(message, "stage")
-            self.revision += 1
-
-    def record_llm_activity(self, event):
-        """Capture the exact text exposed by the model transport for the live inspector."""
-        if not isinstance(event, dict):
-            return
-        event_type = event.get("type")
-        with self.lock:
-            if self.released:
-                return
-            now = time.time()
-            if event_type == "request":
-                self._llm_request_sequence += 1
-                self.llm_trace = {
-                    "request_number": self._llm_request_sequence,
-                    "status": "waiting_first_token",
-                    "model": str(event.get("model") or "unknown"),
-                    "stage": event.get("stage"),
-                    "messages": copy.deepcopy(event.get("messages") or []),
-                    "parameters": copy.deepcopy(event.get("parameters") or {}),
-                    "timeout_seconds": event.get("timeout_seconds"),
-                    "output": "",
-                    "reasoning": "",
-                    "issue": "",
-                    "started_at": now,
-                    "first_token_at": None,
-                    "updated_at": now,
-                    "finished_at": None,
-                    "finish_reason": None,
-                }
-                self._append_event(
-                    f"LLM request {self._llm_request_sequence} sent; waiting for the first response text.",
-                    "request",
-                )
-            elif self.llm_trace is not None and event_type in {"response_delta", "reasoning_delta"}:
-                field = "reasoning" if event_type == "reasoning_delta" else "output"
-                text = str(event.get("text") or "")
-                if text:
-                    first = self.llm_trace["first_token_at"] is None
-                    self.llm_trace[field] += text
-                    self.llm_trace["status"] = "receiving"
-                    self.llm_trace["first_token_at"] = self.llm_trace["first_token_at"] or now
-                    self.llm_trace["updated_at"] = now
-                    if first:
-                        self._append_event(
-                            f"LLM request {self.llm_trace['request_number']} started returning text.",
-                            "response",
-                        )
-            elif self.llm_trace is not None and event_type == "response_complete":
-                self.llm_trace["status"] = "complete" if event.get("finish_reason") == "stop" else "interrupted"
-                self.llm_trace["completion_state"] = "completed" if event.get("finish_reason") == "stop" else "interrupted"
-                self.llm_trace["finish_reason"] = event.get("finish_reason")
-                self.llm_trace["updated_at"] = now
-                self.llm_trace["finished_at"] = now
-                self._append_event(
-                    f"LLM request {self.llm_trace['request_number']} completed with finish reason "
-                    f"'{self.llm_trace['finish_reason']}'.",
-                    "response",
-                )
-            elif event_type == "planning":
-                self.progress = str(event.get("message") or "Planning scene…")
-                self.progress_at = now
-                self._append_event(self.progress, "planning")
-            elif event_type == "error":
-                message = str(event.get("message") or "The model transport failed.")
-                if self.llm_trace is not None:
-                    self.llm_trace["status"] = "error"
-                    self.llm_trace["completion_state"] = event.get("completion_state", "provider_error")
-                    self.llm_trace["partial_text"] = event.get("partial_text", self.llm_trace["output"])
-                    self.llm_trace["finish_reason"] = event.get("finish_reason")
-                    self.llm_trace["issue"] = message
-                    self.llm_trace["updated_at"] = now
-                    self.llm_trace["finished_at"] = now
-                    if self.llm_trace["partial_text"]:
-                        diagnostic = {key: self.llm_trace.get(key) for key in
-                            ("request_number", "stage", "completion_state", "finish_reason", "partial_text", "issue")}
-                        self.partial_responses = [row for row in self.partial_responses if row["request_number"] != diagnostic["request_number"]]
-                        self.partial_responses.append(diagnostic)
-                        del self.partial_responses[:-5]
-                self._append_event(message, "error")
-            else:
-                return
-            self.revision += 1
-
-    def snapshot(self):
-        with self.lock:
-            return {"id": self.id, "status": self.status, "completion_state": self.completion_state, "revision": self.revision, "created_at": self.created_at,
-                    "finished_at": self.finished_at, "result": copy.deepcopy(self.result), "error": self.error,
-                    "kind": self.kind, "progress": self.progress, "progress_at": self.progress_at,
-                    "status_reason": self.status_reason, "events": list(self.events),
-                    "llm_trace": copy.deepcopy(self.llm_trace),
-                    "partial_responses": copy.deepcopy(self.partial_responses),
-                    "workflow_revision": self.workflow_revision, "input_signature": self.input_signature}
-
-    def clear_private_data(self):
-        """Release our references; this is not a secure RAM-erasure guarantee."""
-        with self.lock:
-            self.released = True
-            self.result = self.llm_trace = self.error = self.interrupt = None
-            self.events.clear()
-            self.partial_responses.clear()
-            self.transport_interrupts.clear()
-            self.progress = self.status_reason = ""
-
-    def checkpoint(self):
-        while True:
-            with self.lock:
-                if self.cancel_requested:
-                    raise JobCancelled()
-                if self.stopping:
-                    raise ValueError("Server is shutting down. Restart it and generate again.")
-                if self.gate.is_set():
-                    return
-                if self.status != "paused":
-                    self.status = "paused"
-                    self.status_reason = "Paused at a safe checkpoint because a pause was requested. Resume the job to continue."
-                    self._append_event(self.status_reason, "pause")
-                    self.revision += 1
-            self.gate.wait()
-
-    def set_interrupt(self, interrupt):
-        with self.lock:
-            self.interrupt = interrupt
-            cancelled = self.cancel_requested
-        if cancelled:
-            interrupt()
-
-    def register_interrupt(self, interrupt):
-        with self.lock:
-            self.transport_interrupts.add(interrupt)
-            stopped = self.cancel_requested or self.stopping
-        if stopped:
-            interrupt()
-
-    def unregister_interrupt(self, interrupt):
-        with self.lock:
-            self.transport_interrupts.discard(interrupt)
-
-    def interrupt_requests(self):
-        with self.lock:
-            interrupts = list(self.transport_interrupts)
-            if not interrupts and self.interrupt is not None:
-                interrupts.append(self.interrupt)
-        for interrupt in interrupts:
-            interrupt()
-
-    def cancel(self):
-        with self.lock:
-            if self.status in TERMINAL:
-                return self.snapshot()
-            self.cancel_requested = True
-            self.status = "cancelling"
-            self.status_reason = (
-                "Cancellation was requested. Waiting for the active model call to stop or reach a safe checkpoint."
-            )
-            self._append_event(self.status_reason, "cancel")
-            self.gate.set()
-            self.revision += 1
-            snapshot = self.snapshot()
-        self.interrupt_requests()
-        return snapshot
-
-    def deliver(self, result):
-        """Deliver a result (or a durable-result factory) at a cancellable checkpoint."""
-        while True:
-            self.checkpoint()
-            with self.lock:
-                if not self.gate.is_set():
-                    continue
-                self.checkpoint()
-                self.result = result() if callable(result) else result
-                self.status = "succeeded"
-                self.completion_state = "completed"
-                self.status_reason = "Generation completed successfully."
-                self._append_event(self.status_reason, "success")
-                self.finished_at = time.time()
-                self.revision += 1
-                return
-
-    def commit(self, operation, finish=False):
-        """Serialize a durable result with cancellation, without waiting under the lock."""
-        if finish:
-            return self.deliver(operation)
-        while True:
-            self.checkpoint()
-            with self.lock:
-                if not self.gate.is_set():
-                    continue
-                self.checkpoint()
-                return operation()
-
-
-class JobCancelled(Exception):
-    """A local generation was explicitly ended by the user."""
 
 
 class LocalState:

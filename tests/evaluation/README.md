@@ -90,8 +90,10 @@ actual call stages. Valid JSON/H3 or a successful request is not proof of pose,
 dialogue, role or continuity fidelity. Direct uses the current unchanged final
 writers, not an older model or different system prompt. Repeat trials and obtain
 independent annotations before claiming a general improvement. This runner
-unloads only its owned local process on exit. See `SUPPORTING_PLANNING_RESULTS.md`
-for the exploratory local probe and limitations.
+unloads only its owned local process on exit. Exploratory local reports are
+private artifacts, not versioned documentation. Save generated results under
+ignored `quality-artifacts/` or outside the repository, and remove machine paths
+and hardware details before contributing reusable regression fixtures.
 
 ## Dataset Scene → Writer parity
 

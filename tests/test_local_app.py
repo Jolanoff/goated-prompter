@@ -18,6 +18,7 @@ from aiohttp.test_utils import TestClient, TestServer
 from PIL import Image
 
 import local_app as local
+from goated_prompter import json_store, uploaded_images
 
 
 class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
@@ -121,6 +122,44 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(trace["output"], "partial answer")
         self.assertEqual(trace["timeout_seconds"], 45)
         self.assertEqual(trace["status"], "complete")
+
+    async def test_job_snapshots_isolate_mutable_result_and_trace(self):
+        job = local.Job()
+        messages = [{"role": "user", "content": "original"}]
+        job.record_llm_activity({"type": "request", "messages": messages})
+        messages[0]["content"] = "changed by caller"
+        job.deliver({"prompts": ["original result"]})
+        snapshot = job.snapshot()
+        snapshot["result"]["prompts"].append("changed by reader")
+        snapshot["llm_trace"]["messages"][0]["content"] = "changed by reader"
+        self.assertEqual(job.snapshot()["result"], {"prompts": ["original result"]})
+        self.assertEqual(job.snapshot()["llm_trace"]["messages"],
+                         [{"role": "user", "content": "original"}])
+
+    async def test_job_events_are_bounded_and_release_ignores_late_activity(self):
+        job = local.Job()
+        for index in range(250):
+            job.record_event(f"Event {index}")
+        self.assertEqual(len(job.snapshot()["events"]), 200)
+        self.assertEqual(job.snapshot()["events"][0]["message"], "Event 50")
+        job.clear_private_data()
+        revision = job.revision
+        job.record_llm_activity({"type": "request", "messages": [{"content": "late private text"}]})
+        self.assertEqual(job.revision, revision)
+        self.assertIsNone(job.snapshot()["llm_trace"])
+        self.assertEqual(job.snapshot()["events"], [])
+
+    async def test_http_errors_keep_security_headers_and_no_store(self):
+        for url in ("/api/settings", "/api/jobs/missing", "/api/no-such-route"):
+            response = await self.client.get(url)
+            self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff")
+            self.assertEqual(response.headers["Referrer-Policy"], "same-origin")
+            self.assertEqual(response.headers["Cache-Control"], "no-store")
+        for body in ("not json", "[]"):
+            response = await self.client.post("/api/generate", data=body,
+                                              headers={"Content-Type": "application/json"})
+            self.assertEqual(response.status, 400)
+            self.assertFalse((await response.json())["ok"])
 
     async def test_director_updates_reset_and_generation_authority(self):
         from goated_prompter import presets as library
@@ -430,7 +469,7 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         await self.client.post("/api/prompts", json=record)
         path = self.settings_path.parent / "prompts.json"
         original = path.read_bytes()
-        with patch.object(local.os, "replace", side_effect=OSError("disk failure")):
+        with patch.object(json_store.os, "replace", side_effect=OSError("disk failure")):
             response = await self.client.delete("/api/prompts/one")
             self.assertEqual(response.status, 500)
         self.assertEqual(path.read_bytes(), original)
@@ -457,7 +496,7 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         await self.client.put("/api/settings", json={"keep_model_loaded": True})
         original = self.settings_path.read_bytes()
         self.assertEqual(json.loads(original), {"keep_model_loaded": True})
-        with patch.object(local.os, "replace", side_effect=OSError("disk failure")):
+        with patch.object(json_store.os, "replace", side_effect=OSError("disk failure")):
             response = await self.client.put("/api/settings", json={"keep_model_loaded": False})
             self.assertEqual(response.status, 500)
         self.assertEqual(self.settings_path.read_bytes(), original)
@@ -729,7 +768,7 @@ class JsonStorageTests(unittest.TestCase):
                     db.execute("CREATE TABLE settings (id INTEGER PRIMARY KEY, payload TEXT)")
                     db.execute("INSERT INTO settings VALUES (1, ?)", (payload,))
                 original = legacy.read_bytes()
-                with patch.object(local.os, "replace", side_effect=OSError("disk failure")):
+                with patch.object(json_store.os, "replace", side_effect=OSError("disk failure")):
                     with self.assertRaises((ValueError, OSError)):
                         local.create_app(settings_path=path)
                 self.assertFalse(path.exists())
@@ -753,13 +792,23 @@ class JsonStorageTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     local.validate_prompts({"prompts": [record, {**record, "id": "two"}]})
             original = path.read_bytes()
-            with patch.object(local, "MAX_STORE_BYTES", 2):
+            with patch.object(json_store, "MAX_STORE_BYTES", 2):
                 with self.assertRaises(ValueError):
                     local.atomic_json(path, {"prompts": [record]})
             self.assertEqual(path.read_bytes(), original)
 
 
 class UploadTests(unittest.TestCase):
+    def test_declared_format_must_match_content_and_invalid_dimension_uses_default(self):
+        buffer = BytesIO()
+        Image.new("RGB", (1600, 800)).save(buffer, "PNG")
+        raw = base64.b64encode(buffer.getvalue()).decode()
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            local.decode_image("data:image/jpeg;base64," + raw)
+        encoded = local.decode_image("data:image/png;base64," + raw, "invalid")
+        self.assertEqual((encoded.width, encoded.height), (1344, 672))
+        self.assertIsNone(local.decode_image(None))
+
     def test_formats_and_limits(self):
         for fmt, mime in (("PNG", "png"), ("JPEG", "jpeg"), ("WEBP", "webp")):
             buffer = BytesIO()
@@ -767,10 +816,10 @@ class UploadTests(unittest.TestCase):
             data = f"data:image/{mime};base64," + base64.b64encode(buffer.getvalue()).decode()
             encoded = local.decode_image(data, 256)
             self.assertEqual((encoded.width, encoded.height, encoded.media_type), (256, 154, "image/png"))
-            with patch.object(local, "MAX_IMAGE_PIXELS", 100):
+            with patch.object(uploaded_images, "MAX_IMAGE_PIXELS", 100):
                 with self.assertRaisesRegex(ValueError, "pixels"):
                     local.decode_image(data)
-            with patch.object(local, "MAX_IMAGE_BYTES", 1):
+            with patch.object(uploaded_images, "MAX_IMAGE_BYTES", 1):
                 with self.assertRaises(ValueError):
                     local.decode_image(data)
         with self.assertRaises(ValueError):

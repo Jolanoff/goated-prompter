@@ -18,11 +18,12 @@ the current dirty `test` revision with one stable Qwen3.8 27B Q2 engine:
 - MiniMax forbidden peaked cap and invented floor-hand balancing in dialogue.
 
 These preserve exact raw responses, parameters, explicit `stop` reasons, measured
-latency, source artifact hash, production code digest and engine launch arguments.
+latency, source artifact hash and production code digest. Machine-specific launch
+arguments and paths are excluded from the versioned fixture metadata.
 Request messages are represented by hashes; the full captured requests remain in
-the source artifact listed in `../LIVE_RESULTS.md`. Selection is not a failure-rate
+private local evaluation artifacts. Selection is not a failure-rate
 denominator. Judgments are exploratory non-blinded agent review, not independent
-domain or rendered-media review. See that report for the full 39-sample denominator.
+domain or rendered-media review. The originating local report used 39 samples.
 
 Existing evaluation artifacts also document omitted viewpoint, trigger-repair
 exhaustion, contradictory support mechanics, repetition and transport loss.
