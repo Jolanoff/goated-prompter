@@ -3,6 +3,7 @@
 import asyncio
 from aiohttp import web
 
+from .backends.factory import canonical_backend_name
 from .core import GoatedPrompterRequest, _as_bool
 from .prompting.details import PROMPT_LENGTH_NAMES
 from .prompting.target_models import TARGET_MODEL_NAMES, canonical_target
@@ -77,7 +78,7 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
                 return web.json_response({"error": "Wait for the active generation before generating again.",
                                           "active_job": active}, status=409)
             config = state.config()
-            configured = config.get("backend") in {"mock", "openai_compatible"}
+            configured = canonical_backend_name(config.get("backend")) in {"mock", "openai_compatible"}
             director_request = GoatedPrompterRequest(
                 idea=data["subject"], mode="Custom", target_model=data["target"],
                 creativity=data["creativity"],
@@ -112,7 +113,7 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
                 return web.json_response({"error": "Wait for the active generation before reviewing again.",
                                           "active_job": active}, status=409)
             config = state.config()
-            configured = config.get("backend") in {"mock", "openai_compatible"}
+            configured = canonical_backend_name(config.get("backend")) in {"mock", "openai_compatible"}
             director_request = GoatedPrompterRequest(
                 idea=data["subject"], mode="Custom", target_model=data["target"], prompt_model="Custom",
                 director_profile="" if configured else text(
@@ -138,7 +139,7 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
             if active:
                 return web.json_response({"error": "Wait for the active generation before generating again.", "active_job": active}, status=409)
             config = state.config()
-            configured = config.get("backend") in {"mock", "openai_compatible"}
+            configured = canonical_backend_name(config.get("backend")) in {"mock", "openai_compatible"}
             director_request = GoatedPrompterRequest(
                 idea=data["user_request"], prompt_model="Custom",
                 director_profile="" if configured else text(settings.get("director_profile", state.saved_settings.get("selected_profile", "")), "Prompt engine", 512, optional=True),
@@ -192,7 +193,7 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
                 if len(current["versions"]) >= 1000:
                     raise ValueError("Version history is full. Back it up and clear history before refining again.")
                 config = state.config()
-                configured = config.get("backend") in {"mock", "openai_compatible"}
+                configured = canonical_backend_name(config.get("backend")) in {"mock", "openai_compatible"}
                 director_request = GoatedPrompterRequest(
                     idea=workflow["base"], target_model=target, prompt_length=length, prompt_model="Custom",
                     director_profile="" if configured else text(settings.get("director_profile", state.saved_settings.get("selected_profile", "")), "Prompt engine", 512, optional=True),

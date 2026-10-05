@@ -14,6 +14,7 @@ import time
 from aiohttp import web
 
 from goated_prompter.backends.base import GoatedPrompterError
+from goated_prompter.backends.factory import canonical_backend_name
 from goated_prompter.job_lifecycle import release_completed_checkpoints, daemon_work
 from goated_prompter.local_jobs import Job, JobCancelled, TERMINAL
 from goated_prompter.json_store import atomic_json, read_store
@@ -364,7 +365,8 @@ async def json_object(request):
 async def models_payload(state, refresh=False):
     config = state.config()
     discovered = await asyncio.to_thread(discover_director_profiles, config.get("local_llama_cpp", {}), refresh)
-    return {**discovered.to_public_mapping(), "ok": True, "backend": str(config.get("backend") or "auto")}
+    return {**discovered.to_public_mapping(), "ok": True,
+            "backend": canonical_backend_name(config.get("backend")) or "auto"}
 
 
 async def presets_payload():

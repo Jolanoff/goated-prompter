@@ -8,6 +8,40 @@ test.beforeEach(async ({ request }) => {
   ).toBe(true);
 });
 
+test("aliased mock backend publishes canonical bootstrap and enables generation without local models", async ({ page, request }) => {
+  const bootstrap = await (await request.get("/api/bootstrap")).json();
+  expect(bootstrap.backend).toBe("mock");
+  expect(bootstrap.models.backend).toBe("mock");
+  await page.route("**/api/bootstrap", async (route) => {
+    const response = await route.fetch();
+    const payload = await response.json();
+    payload.models.profiles = [];
+    await route.fulfill({ response, json: payload });
+  });
+  await page.goto("/");
+  await page.getByLabel("Describe your idea", { exact: true }).fill("red apple on a wooden table");
+  await expect(page.getByRole("button", { name: /^Generate prompt/ })).toBeEnabled();
+  await page.getByRole("button", { name: /^Generate prompt/ }).click();
+  await expect(page.getByLabel("Generated prompt", { exact: true })).toHaveValue(/red apple/);
+});
+
+test("configured remote bootstrap enables generation without local profiles", async ({ page }) => {
+  await page.route("**/api/bootstrap", async (route) => {
+    const response = await route.fetch();
+    const payload = await response.json();
+    payload.backend = payload.models.backend = "openai_compatible";
+    payload.models.profiles = [];
+    await route.fulfill({ response, json: payload });
+  });
+  await page.goto("/");
+  await page.getByLabel("Describe your idea", { exact: true }).fill("a remote-backend request");
+  await expect(page.getByRole("button", { name: /^Generate prompt/ })).toBeEnabled();
+  const generation = page.waitForRequest("**/api/generate");
+  await page.getByRole("button", { name: /^Generate prompt/ }).click();
+  expect((await generation).postDataJSON().settings.director_profile).toBe("");
+  await expect(page.getByLabel("Generated prompt", { exact: true })).toHaveValue(/remote-backend request/);
+});
+
 test("planning mode autosaves, submits and reports supporting planning without exposing geometry", async ({ page, request }) => {
   await page.goto("/");
   const planning = page.getByLabel("Builder planning");

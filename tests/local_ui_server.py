@@ -82,6 +82,7 @@ if __name__ == "__main__":
         port = int(os.environ.get("GOATED_UI_TEST_PORT", "8190"))
         with patch("goated_prompter.dataset.create_backend", side_effect=dataset_ui_backend), \
                 patch("goated_prompter.core.create_backend", side_effect=dataset_ui_backend):
-            web.run_app(create_app(port=port, config_loader=lambda: {"backend": "mock"}, settings_path=Path(data) / "settings.json",
+            # Exercise accepted aliases through the real API, not only factory tests.
+            web.run_app(create_app(port=port, config_loader=lambda: {"backend": " DeBuG "}, settings_path=Path(data) / "settings.json",
                                    service_factory=DelayedMockService), host="127.0.0.1",
                         port=port)

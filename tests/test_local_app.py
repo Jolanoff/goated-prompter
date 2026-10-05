@@ -20,6 +20,7 @@ from PIL import Image
 import local_app as local
 from tests.helpers import enter_context
 from goated_prompter import json_store, uploaded_images
+from tests.test_backend_identity import CONFIGURED_BACKENDS, backend_config
 
 
 class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
@@ -103,6 +104,45 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
             response = await self.client.get("/api/models?refresh=true")
             self.assertEqual(response.status, 200)
             self.assertTrue(discover.call_args.args[1])
+
+    async def test_bootstrap_and_models_publish_canonical_backend_aliases(self):
+        state = self.app[local.STATE]
+        for name, expected in CONFIGURED_BACKENDS + (("LLAMA-CPP", "local_llama_cpp"), ("llamacpp", "local_llama_cpp")):
+            with self.subTest(name=name):
+                config = {**backend_config(name), "local_llama_cpp": {"models_dir": self.temp.name}}
+                state.config_loader = lambda: config
+                payload = await (await self.client.get("/api/bootstrap")).json()
+                self.assertEqual(payload["backend"], expected)
+                self.assertEqual(payload["models"]["backend"], expected)
+                self.assertEqual(payload["models"]["profiles"], [])
+                models = await (await self.client.get("/api/models?refresh=true")).json()
+                self.assertEqual(models["backend"], expected)
+
+    async def test_configured_aliases_do_not_require_profiles_at_workflow_admission(self):
+        from goated_prompter.dataset import default_dataset_draft
+        from goated_prompter.minimax import default_minimax_draft
+
+        state = self.app[local.STATE]
+        state.workspace.add_version("A cup on a table.", "Generic", "Starting prompt")
+        data = {**default_dataset_draft(), "subject": "A craftsperson working.", "trigger": "craft_token", "amount": 1}
+        reviewed = {**data, "results": [{"index": 1, "input": "", "prompt": "craft_token working."}]}
+        minimax = {**default_minimax_draft(), "user_request": "A car driving down a street."}
+        # A deliberately invalid local selection must be ignored by configured backends.
+        settings = {"director_profile": 123}
+        for name, _expected in CONFIGURED_BACKENDS:
+            state.config_loader = lambda: backend_config(name)
+            revision = state.workspace.snapshot()["revision"]
+            for path, payload in (
+                ("dataset", {"input": data}),
+                ("dataset/scenes", {"input": data}),
+                ("dataset/review", {"input": reviewed}),
+                ("minimax", {"input": minimax}),
+                ("refine", {"revision": revision, "changes": "Soften the light."}),
+            ):
+                with self.subTest(name=name, workflow=path), patch.object(state, "start_job", return_value={"id": "admitted"}) as start:
+                    response = await self.client.post(f"/api/workspace/{path}", json={**payload, "settings": settings})
+                    self.assertEqual(response.status, 202, await response.text())
+                    self.assertEqual(start.call_args.args[1].director_profile, "")
 
     async def test_job_live_llm_trace_keeps_exact_exposed_text(self):
         job = local.Job()

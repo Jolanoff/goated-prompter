@@ -7,6 +7,7 @@ import re
 import threading
 
 from .backends.base import BackendConfigurationError
+from .backends.factory import canonical_backend_name
 from .prompting.directors import (
     DIRECTOR_AI_NAMES,
     PROMPT_MODEL_GEMMA,
@@ -326,8 +327,9 @@ def _custom_runtime_settings(request):
 def resolve_director_config(config, request, refresh=False):
     """Return an effective backend config without mutating the user config."""
     config = dict(config or {})
-    backend_name = str(config.get("backend") or "").strip().lower().replace("-", "_")
-    if backend_name in {"mock", "debug", "openai", "openai_compatible"}:
+    backend_name = canonical_backend_name(config.get("backend"))
+    if backend_name in {"mock", "openai_compatible"}:
+        config["backend"] = backend_name
         return config, None
 
     legacy_selection = str(getattr(request, "director_ai", "") or "").strip()

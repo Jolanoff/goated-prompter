@@ -437,6 +437,8 @@ For an existing OpenAI-compatible server, replace the configuration with your en
 
 Set `GOATED_PROMPTER_API_KEY` in the environment if authentication is required. The endpoint and model must support vision for reference images. Local model discovery is not required for this backend. `{"backend": "mock"}` is available for text-only UI/assembly checks without an LLM; its output is intentionally just a marked mock result.
 
+Backend names ignore surrounding whitespace, casing and hyphen/underscore differences. Existing aliases (`openai`, `debug`, `llama_cpp`, `llamacpp`) remain supported; the website API publishes their canonical names (`openai_compatible`, `mock`, `local_llama_cpp`).
+
 `GOATED_PROMPTER_CONFIG` selects an alternative config file. Configuration otherwise uses `config/config.json`. `GOATED_PROMPTER_USER_DIR` overrides instruction-preset storage, which defaults to `data/directors/`. `GOATED_PROMPTER_DEBUG_PROMPTS=1` enables full prompt diagnostics in the server console.
 
 ## Development and verification
