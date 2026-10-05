@@ -26,6 +26,8 @@ def capture(calls, event):
         calls[-1]["latency_seconds"] = time.perf_counter() - calls[-1]["started_at"]
     elif calls and kind == "error":
         calls[-1].update(error=event.get("message"), completion_state=event.get("completion_state", "provider_error"))
+    elif calls and kind in {"semantic_review", "validation"}:
+        calls[-1].setdefault("validation_events", []).append(event)
 
 
 def live_case(case, workflow, config, args, run=1):

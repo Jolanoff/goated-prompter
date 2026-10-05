@@ -1,16 +1,64 @@
-MIT License
+Goated Prompter Source-Available License 1.0
+No Sale or Paid Access; Commercial Outputs Permitted
 
 Copyright (c) 2026 Jolanoff
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+1. Scope and permission
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+"Software" means the Goated Prompter software and associated documentation
+provided under this license, including modifications, forks, and redistributed
+copies of those materials.
+
+Subject to the conditions below, permission is granted, free of charge, to use,
+copy, inspect, modify, merge, and distribute the Software. You may use the
+Software for personal purposes, internally in a business, or in paid client
+work. You may distribute original or modified copies only without charging for
+the Software or access to it.
+
+2. No sale or paid access to the Software
+
+You may not sell, rent, lease, or license the Software for a fee or other
+consideration. You may not charge for access to, use of, or features of the
+Software, including through a hosted website, API, subscription, or paid tier.
+
+These restrictions also apply when the Software is modified, renamed, forked,
+or included in a paid bundle or product. A required payment or donation in
+exchange for a copy of the Software, its features, or access to it counts as
+charging. You may not impose additional terms that authorize these prohibited
+activities.
+
+3. Commercial outputs are permitted
+
+You may sell, license, publish, or otherwise monetize prompts, images, videos,
+datasets, and other content created using the Software. You may use the
+Software internally to produce deliverables for paying clients.
+
+Selling such content or deliverables is not selling the Software. However,
+this permission does not authorize charging customers for access to the
+Software itself or to a hosted interactive service exposing its functionality.
+
+This license does not claim ownership of your outputs or grant rights in
+third-party content. You remain responsible for any rights, permissions, and
+licenses needed for your inputs, outputs, models, and other tools.
+
+4. Notices and redistribution
+
+You must include this license and the copyright notice in all copies or
+substantial portions of the Software. Modified distributions must clearly
+identify that they have been modified. Recipients receive permission to use
+and redistribute the Software only subject to these same conditions.
+
+5. Third-party materials and earlier versions
+
+This license applies only to material for which the copyright holder has the
+authority to grant these permissions. Third-party dependencies, model weights,
+and separately licensed materials retain their own licenses.
+
+Versions previously distributed under the MIT License remain available under
+that license. This license does not revoke permissions already granted for
+those versions; it applies to versions distributed under this license.
+
+6. No warranty; limitation of liability
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,

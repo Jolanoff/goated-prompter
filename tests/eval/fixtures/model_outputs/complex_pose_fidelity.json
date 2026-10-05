@@ -1,0 +1,48 @@
+{
+  "artifact": "complex-pose-verification-round3-20261005/production.json",
+  "provenance": "Exact scene text, geometry and raw writer responses projected from the saved real-model run. The old run accepted these; offline replay is not fresh inference or model-quality proof.",
+  "records": [
+    {
+      "mode": "Fast",
+      "id": "feet_behind_neck",
+      "source": "upper body, character with both feet behind her neck, feet visible",
+      "scene": "A character sits on the floor with legs bent high, knees beside shoulders, and ankles passing behind the neck so both feet are visible beside the head. The torso remains upright and the face is clearly visible, framing the upper body to emphasize the unusual limb placement and balance.",
+      "geometry": {
+        "body_orientation": "front", "camera_azimuth": "front", "face_visibility": "full", "framing": "waist_up",
+        "gaze_direction": "toward_camera", "head_direction": "toward_camera", "pose_type": "custom",
+        "pose_detail": "Seated on floor; hips supported; knees drawn high beside chest; lower legs fold behind neck; ankles pass behind neck; feet visible beside head.",
+        "body_visibility": "custom", "required_visible_parts": ["face", "torso", "feet", "hands"],
+        "composition": "centered", "contact_state": "none", "hand_visibility": "both_visible"
+      },
+      "writer_raw": "A tight waist-up composition centers a character seated directly on a smooth, neutral-toned floor, facing the camera with a calm, focused expression. The subject’s hips are grounded, supporting an upright torso that remains vertical despite the extreme flexibility of the limbs. Both knees are drawn high, pressing firmly against the sides of the chest, while the lower legs fold back so the ankles pass behind the neck. Both feet are clearly visible, resting gently beside the head with toes pointing upward, emphasizing the unusual limb placement and balance. The character’s hands are visible, resting naturally on the thighs or near the knees to stabilize the pose. The face is fully visible, with eyes looking directly toward the camera, framed by the surrounding geometry of the folded legs. The lighting is soft and even, casting subtle shadows that define the muscle tension in the shoulders and the fabric of the clothing, which appears as a simple, form-fitting athletic suit that allows for unrestricted movement. The background is a clean, out-of-focus gradient, ensuring the viewer’s attention remains on the precise anatomical alignment and the clear visibility of the feet beside the head. pose_subject"
+    },
+    {
+      "mode": "Fast",
+      "id": "foreshortened_feet",
+      "source": "waist-up reclining pose with feet toward the camera",
+      "scene": "A person reclines on a plush floor cushion, torso upright supported by a backrest, while both legs extend directly toward the camera lens. The feet are foreshortened in the immediate foreground, appearing large and detailed, with the upper body receding into the midground. The composition uses a low angle to emphasize the perspective distortion of the legs against the stable upper body.",
+      "geometry": {
+        "body_orientation": "front", "camera_azimuth": "front", "face_visibility": "full", "framing": "waist_up",
+        "gaze_direction": "toward_camera", "head_direction": "toward_camera", "pose_type": "custom",
+        "pose_detail": "Torso reclined at a steep angle supported by a cushion behind the back; hips resting on the floor surface; both legs extend straight forward toward the camera lens; feet positioned in the immediate foreground, foreshortened and prominent; arms resting relaxed at sides.",
+        "body_visibility": "custom", "required_visible_parts": ["face", "torso", "feet", "hands"],
+        "camera_elevation": "low", "camera_distance": "close", "composition": "centered", "depth_position": "foreground"
+      },
+      "writer_raw": "A low-angle, close-up shot captures a person reclining on a plush floor cushion, their torso upright and supported by a backrest while both legs extend directly toward the camera lens. The composition is centered, with the feet foreshortened in the immediate foreground, appearing large and detailed, while the upper body recedes into the midground. The subject’s face is fully visible, gazing directly toward the camera with a calm expression, and their hands rest relaxed at their sides. The pose emphasizes the perspective distortion of the legs against the stable upper body, with the hips resting on the floor surface. The scene is illuminated by soft, diffused light that highlights the texture of the cushion and the natural skin tones, creating a shallow depth of field that keeps the foreground feet sharp while gently blurring the background elements. The overall atmosphere is intimate and focused, drawing attention to the geometric relationship between the subject’s body and the camera lens. pose_subject"
+    },
+    {
+      "mode": "Quality",
+      "id": "closeup_hands",
+      "source": "close-up, both hands framing her face",
+      "scene": "A photorealistic close-up of a woman's face, framed by her own hands. Her fingers gently touch her cheeks and forehead, creating an intimate, self-contained composition. The lighting is soft and even, highlighting the texture of her skin and the delicate positioning of her fingers. The background is blurred, keeping the focus entirely on her face and hands.",
+      "geometry": {
+        "body_orientation": "front", "camera_azimuth": "front", "face_visibility": "full", "framing": "face_close_up",
+        "gaze_direction": "toward_camera", "head_direction": "toward_camera", "pose_type": "custom",
+        "pose_detail": "Both hands frame the face with fingertips gently touching the cheeks and forehead; fingers are slightly curled to follow the facial contours; wrists are angled inward toward the center of the face.",
+        "body_visibility": "custom", "required_visible_parts": ["face", "hands"], "hand_visibility": "both_visible",
+        "camera_distance": "extreme_close", "camera_elevation": "eye_level", "composition": "centered", "expression": "neutral", "movement": "still"
+      },
+      "writer_raw": "A photorealistic extreme close-up of a woman's face, centered in the frame, framed intimately by her own hands. Her fingers gently touch her cheeks and forehead, with fingertips slightly curled to follow the delicate contours of her facial structure. The wrists are angled inward toward the center of the face, creating a self-contained composition that isolates the subject. The lighting is soft and even, highlighting the natural texture of her skin and the precise positioning of her fingers. The background is heavily blurred, keeping the focus entirely on her face and hands. The subject, pose_subject, maintains a neutral expression while gazing directly toward the camera. The shot is taken at eye level, capturing the subtle details of her skin and the gentle pressure of her fingertips against her face."
+    }
+  ]
+}

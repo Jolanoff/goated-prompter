@@ -46,6 +46,7 @@ def constraint_issues(text, compiled, protected_terms=()):
             excluded = re.search(r"\b(?:no|without|avoid|(?:clear|free)\s+of|(?:do not|don't|never|not)\s+(?:wear\w*|us\w*|show\w*|includ\w*))\b[^.;,!?]*$", before, re.I)
             excluded = excluded or re.match(r"\s+(?:(?:is|are|was|were)\s+)?(?:absent|excluded|omitted|not\s+(?:visible|present|shown|included))\b", after, re.I)
             excluded = excluded or re.match(r"[- ]free\b", text[match.end():], re.I)
+            excluded = excluded or re.search(r"\b(?:absence|lack)\s+of\s+(?:any\s+|visible\s+)?$", before, re.I)
             if excluded:
                 code, severity = "constraint_negative_leakage", "error"
             else:

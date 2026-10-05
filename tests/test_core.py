@@ -31,7 +31,8 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(self.session.generate.call_count, 2)
         repair = self.session.generate.call_args_list[1].args[0]
         self.assertIn("MINIMAX H3 FORMAT CORRECTION", repair.system_message)
-        self.assertEqual(repair.user_message, self.session.generate.call_args_list[0].args[0].user_message)
+        self.assertTrue(repair.user_message.startswith(self.session.generate.call_args_list[0].args[0].user_message))
+        self.assertIn("LOCAL REPAIR CONTRACT", repair.user_message)
 
     def test_minimax_nonvideo_mode_retains_plain_image_task(self):
         self.session.generate.side_effect = ["A runner beside a sign."]
@@ -289,7 +290,8 @@ class CoreTests(unittest.TestCase):
         result = self.service.generate(core.GoatedPrompterRequest(idea="red bicycle", target_model="Qwen2.1"))
         self.assertEqual(result.prompt, expected)
         first, retry = [entry.args[0] for entry in self.session.generate.call_args_list]
-        self.assertEqual(first.user_message, retry.user_message)
+        self.assertTrue(retry.user_message.startswith(first.user_message))
+        self.assertIn("LOCAL REPAIR CONTRACT", retry.user_message)
         self.assertIn('FORMAT CORRECTION', retry.system_message)
         self.assertEqual(retry.diagnostic_stage, 'final:format_retry')
         self.assertTrue(first.unlimited_tokens and retry.unlimited_tokens)

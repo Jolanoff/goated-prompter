@@ -262,7 +262,8 @@ class VisibleContentTests(unittest.TestCase):
         DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None)
         self.assertEqual(session.generate.call_count, 2)
         retry = session.generate.call_args.args[0]
-        self.assertEqual(retry.user_message, instruction.user_message)
+        self.assertTrue(retry.user_message.startswith(instruction.user_message))
+        self.assertIn("LOCAL REPAIR CONTRACT", retry.user_message)
         self.assertEqual(retry.hard_max_tokens, instruction.hard_max_tokens)
         correction = retry.system_message[len(instruction.system_message):]
         self.assertIn("OUTPUT CONTENT CORRECTION", correction)

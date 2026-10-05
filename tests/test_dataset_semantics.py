@@ -80,7 +80,8 @@ class SemanticContractTests(unittest.TestCase):
         output = DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None)
         self.assertNotIn("no hat", output)
         self.assertEqual(session.generate.call_count, 2)
-        self.assertEqual(session.generate.call_args.args[0].user_message, instruction.user_message)
+        self.assertTrue(session.generate.call_args.args[0].user_message.startswith(instruction.user_message))
+        self.assertIn("LOCAL REPAIR CONTRACT", session.generate.call_args.args[0].user_message)
         self.assertIn(":content_retry_1", session.generate.call_args.args[0].diagnostic_stage)
         with self.assertRaises(PositiveContentError):
             validate_positive_content("person_token wears a red hat.", data)

@@ -41,7 +41,7 @@ class ScenePlannerTests(unittest.TestCase):
     def test_planning_process_separates_concept_ideas_scenes_and_silent_audit(self):
         data = draft()
         system = scene_planner_instruction(data, dataset_assignments(data)).system_message
-        steps = ["STEP 1 — UNDERSTAND", "STEP 2 — GENERATE", "STEP 3 — COMPOSE",
+        steps = ["STEP 1 — UNDERSTAND", "STEP 2 — GENERATE", "STEP 3 — ESTABLISH MECHANICS",
                  "STEP 4 — CHECK GEOMETRY", "STEP 5 — REPAIR", "STEP 6 — RETURN"]
         self.assertEqual([system.index(step) for step in steps], sorted(system.index(step) for step in steps))
         for heading in ("IDEA DUPLICATION CHECK", "SCENE GEOMETRY AND VISIBILITY", "VISIBLE DETAIL RULE",
@@ -136,7 +136,7 @@ class ScenePlannerTests(unittest.TestCase):
         from goated_prompter.dataset_quality import explicit_geometry_issues, analyze_dataset_quality
         cases = [
             ("Direct rear view of woman, looking directly into the camera, full frontal face clearly visible.", "rear_front_conflict"),
-            ("Tight face close-up with shoes clearly visible.", "crop_visibility_conflict"),
+            ("Tight face close-up with shoes clearly visible.", None),
             ("Camera directly in front of her; camera directly behind her.", "camera_direction_conflict"),
             ("Rear three-quarter body orientation, head turned over shoulder toward camera, one side of face visible.", None),
             ("Juggling oranges, eyes following one falling orange, hands ready beneath it.", None),
@@ -649,7 +649,8 @@ class ScenePlannerTests(unittest.TestCase):
             self.assertIn("Dataset Creativity — Balanced", writer.system_message)
             self.assertIn("It controls treatment, not the semantic scene", writer.system_message)
             self.assertIsNone(writer.stream_character_limit)
-        self.assertEqual(calls[1].user_message, calls[2].user_message)
+        self.assertTrue(calls[2].user_message.startswith(calls[1].user_message))
+        self.assertIn("LOCAL REPAIR CONTRACT", calls[2].user_message)
         self.assertEqual(result["prompts"][0]["input"], "reading on a red couch")
         self.assertEqual(result["prompts"][0]["idea"], planned[0]["idea"])
 

@@ -97,7 +97,8 @@ class TriggerExpansionTests(unittest.TestCase):
         self.assertEqual(output, "On a wooden mat, a banana punches an apple.")
         self.assertEqual(session.generate.call_count, 2)
         retry = session.generate.call_args.args[0]
-        self.assertEqual(retry.user_message, original.user_message)
+        self.assertTrue(retry.user_message.startswith(original.user_message))
+        self.assertIn("LOCAL REPAIR CONTRACT", retry.user_message)
         self.assertEqual(retry.hard_max_tokens, original.hard_max_tokens)
         self.assertIn("TRIGGER WORDING CORRECTION", retry.system_message)
         self.assertIn(":trigger_retry_1", retry.diagnostic_stage)

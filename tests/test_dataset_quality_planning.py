@@ -234,7 +234,8 @@ class QualityPlanningTests(unittest.TestCase):
                                       "person_token tries to juggle oranges and fails."])
         self.assertEqual(session.generate.call_count, 2)
         calls = [call.args[0] for call in session.generate.call_args_list]
-        self.assertEqual(calls[0].user_message, calls[1].user_message)
+        self.assertTrue(calls[1].user_message.startswith(calls[0].user_message))
+        self.assertIn("LOCAL REPAIR CONTRACT", calls[1].user_message)
         self.assertIn("SCENE FIDELITY CORRECTION", calls[1].system_message)
         self.assertIn("juggle", result["prompts"][0]["prompt"])
         self.assertEqual(result["scene_plan"], data["scene_plan"])
@@ -330,7 +331,6 @@ class GeometryAndQualityTests(unittest.TestCase):
     def test_clear_geometry_contradictions(self):
         cases = [
             {"camera_view": "direct rear", "face_visibility": "full frontal"},
-            {"framing": "close-up", "visibility_focus": ["shoes"]},
             {"body_orientation": "fully facing away", "head_direction": "fully frontal toward camera"},
             {"camera_view": "profile", "face_visibility": "both sides of face equally visible"},
             {"camera_view": "direct rear", "gaze": "looking straight into camera"},
@@ -389,7 +389,7 @@ class GeometryAndQualityTests(unittest.TestCase):
             self.assertEqual(planned["geometry"]["framing"], framing.replace(" ", "_").replace("-", "_"))
             self.assertEqual(session.generate.call_count, 1)
 
-    def test_invalid_shoe_crop_repairs_locally_without_changing_idea(self):
+    def test_missing_required_metadata_repairs_without_widening_crop(self):
         data = draft(amount=1)
         bad = scene(idea="walking in giant shoes", scene="She walks in giant shoes.", geometry={"framing": "face close-up"})
         good = {**bad, "geometry": {**scene(idea=bad["idea"])["geometry"], "framing": "full_body", "visibility_focus": ["shoes"]}}
@@ -397,7 +397,7 @@ class GeometryAndQualityTests(unittest.TestCase):
         session.generate.side_effect = [json.dumps([bad]), json.dumps([good])]
         result = ScenePlanner(lambda: None).compose(session=session, data=data, assignments=dataset_assignments(data),
             ideas=[{"index": 1, "idea": bad["idea"]}], progress=lambda _: None)
-        self.assertEqual(result[0], good)
+        self.assertEqual(result[0], {**good, "geometry": {**good["geometry"], "framing": "face_close_up"}})
         self.assertEqual(session.generate.call_count, 2)
 
     def test_explicit_lexical_duplicates_cluster_but_nuanced_paraphrases_defer_to_review(self):

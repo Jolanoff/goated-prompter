@@ -19,7 +19,7 @@ def normalized(text):
 def annotation_template(records):
     return [{"sample_id": row["sample_id"], "reviewer": "", "anchors": {
         kind: {anchor: None for anchor in row.get("anchors", {}).get(kind, [])} for kind in FIDELITY},
-        "useful_details": {}, "semantic_idea_ids": [], **{key: None for key in REVIEW_FIELDS}, "notes": ""}
+        "useful_details": {}, "semantic_idea_ids": [], "coverage_saturated": None, **{key: None for key in REVIEW_FIELDS}, "notes": ""}
         for row in records]
 
 
@@ -28,7 +28,11 @@ def measure(row, review=None):
     words = len(prompt.split())
     completion = row.get("completion_state", "unknown")
     calls = row.get("calls", [])
-    repairs = sum(bool(re.search(r"repair|retry|correction", str(call.get("stage", "")))) for call in calls)
+    writer_calls = [call for call in calls if not str(call.get("stage", "")).startswith("semantic:review:")]
+    repairs = sum(bool(re.search(r"repair|retry|correction", str(call.get("stage", "")))) for call in writer_calls)
+    events = [event for call in calls for event in call.get("validation_events", [])]
+    validations = [event for event in events if event.get("type") == "validation" and event.get("workflow") == row["workflow"]]
+    semantic = [event for event in events if event.get("type") == "semantic_review"]
     try:
         if row.get("output_kind") == "ideas":
             from goated_prompter.scene_planner import validate_saved_scene_plan
@@ -44,15 +48,41 @@ def measure(row, review=None):
     except (ValueError, TypeError, KeyError):
         issues = []
     accepted = valid and not row.get("error") and completion == "completed"
-    result = {"sample_id": row["sample_id"], "workflow": row["workflow"], "format_valid": valid, "accepted": accepted,
+    # Rejected semantic candidates can still have valid target formatting.
+    measured_formats = [event["format_valid"] for event in validations if type(event.get("format_valid")) is bool]
+    format_valid = measured_formats[-1] if measured_formats else valid
+    result = {"sample_id": row["sample_id"], "workflow": row["workflow"], "format_valid": format_valid, "accepted": accepted,
               "completion_state": completion, "completion_reason": row.get("finish_reason"),
               "truncation": completion == "token_limit", "prompt_words": words, "prompt_characters": len(prompt),
-              "repair_calls": repairs if calls else None, "repair_frequency": repairs / len(calls) if calls else None,
+              "repair_calls": repairs if calls else None, "repair_frequency": repairs / len(writer_calls) if writer_calls else None,
               "first_pass_valid": accepted and not repairs if completion != "unknown" else None, "latency_seconds": row.get("latency_seconds"),
               "forbidden_content_violations": sum(issue["code"] == "forbidden_content" and issue["severity"] == "error" for issue in issues),
               "forbidden_content_warnings": sum(issue["code"] == "forbidden_content" and issue["severity"] == "warning" for issue in issues),
               "negative_language_leakage": sum(issue["code"] == "constraint_negative_leakage" for issue in issues),
-              "constraint_diagnostics": issues, "reviewed": False}
+               "constraint_diagnostics": issues, "reviewed": False}
+    outcomes = {event["attempt"]: event for event in validations}
+    result.update(transport_success=(all(call.get("finish_reason") == "stop" for call in calls) if calls else None),
+        semantic_checks=[event.get("checks", {}) for event in semantic],
+        semantic_review_measured=bool(semantic),
+        repair_status=("repaired_successfully" if accepted and repairs else "first_pass_valid" if accepted else
+                       "repair_exhausted" if repairs else "rejected") if validations else "unknown",
+        repair_introduced_regression=(any(event.get("attempt", 0) > 0 and any(issue.get("category") == "repair_preservation"
+            for issue in event.get("issues", [])) for event in validations) if validations else None))
+    result["semantic_forbidden_content_violations"] = sum(issue.get("kind") == "forbidden_content"
+        for event in semantic for issue in event.get("issues", [])) if semantic else None
+    result["semantic_exclusion_language_leakage"] = sum(issue.get("kind") == "exclusion_leakage"
+        for event in semantic for issue in event.get("issues", [])) if semantic else None
+    result["reviewer_format_failures"] = sum(bool(event.get("error")) for event in semantic)
+    if repairs and result["repair_introduced_regression"] is False and not any(
+            "repair_preservation" in event.get("checks", {}) for event in semantic):
+        result["repair_introduced_regression"] = None
+    if calls and any(call.get("finish_reason") is None for call in calls) and not any(call.get("error") for call in calls):
+        result["transport_success"] = None
+    if 0 in outcomes:
+        result["first_pass_valid"] = outcomes[0]["accepted"]
+    for category in ("action_fidelity", "scene_fidelity", "constraint_validity", "domain_relevance", "temporal_fidelity"):
+        statuses = [event.get("checks", {}).get(category) for event in semantic if category in event.get("checks", {})]
+        result["model_review_" + category] = statuses[-1] if statuses else None
     result["known_failure"] = row.get("known_failure")
     if row.get("scene_plan"):
         from goated_prompter.scene_eligibility import scene_eligibility
@@ -77,8 +107,11 @@ def measure(row, review=None):
         if value is not None and type(value) is not bool:
             raise ValueError(f"{field} needs true/false or null (not applicable).")
         result[field] = value
+    if review.get("coverage_saturated") is not None and type(review["coverage_saturated"]) is not bool:
+        raise ValueError("coverage_saturated needs true/false or null; never infer saturation from length.")
     unique = {fact.casefold().strip() for values in facts.values() for fact in values}
     result.update(reviewed=True, reviewer=review["reviewer"], useful_detail_facts=len(unique),
+                   useful_fact_ids=sorted(unique),
                   useful_detail_density=100 * len(unique) / max(1, words),
                   detail_categories={key: len(set(values)) for key, values in facts.items()})
     required = ["semantic_repetition", "target_usability"]
@@ -96,6 +129,15 @@ def measure(row, review=None):
     return result
 
 
+def useful_fact_coverage(smaller, larger):
+    """Compare explicit reviewed fact IDs, never adjectives or raw token count."""
+    def facts(label):
+        return {fact.strip().casefold() for values in label.get("useful_details", {}).values() for fact in values}
+    low, high = facts(smaller), facts(larger)
+    return {"new_useful_facts": sorted(high - low), "retained_useful_facts": sorted(high & low),
+            "lost_useful_facts": sorted(low - high), "net_useful_fact_gain": len(high) - len(low)}
+
+
 def summarize(records, annotations=()):
     labels = {row["sample_id"]: row for row in annotations}
     if len(labels) != len(annotations) or len({row["sample_id"] for row in records}) != len(records):
@@ -106,7 +148,7 @@ def summarize(records, annotations=()):
     workflows = {}
     for workflow in sorted({row["workflow"] for row in samples}):
         rows = [row for row in samples if row["workflow"] == workflow]
-        fields = ("format_valid", "first_pass_valid", "repair_frequency", "prompt_words", "latency_seconds",
+        fields = ("format_valid", "first_pass_valid", "repair_frequency", "transport_success", "repair_introduced_regression", "prompt_words", "latency_seconds",
                   "useful_detail_density", "semantic_repetition", "domain_action_relevance", "generic_pose",
                   "pose_simplified", "temporal_fidelity", "dialogue_reference_fidelity", "target_usability", "scene_validity",
                   *(kind + "_fidelity" for kind in FIDELITY))
@@ -114,6 +156,11 @@ def summarize(records, annotations=()):
             values = [row[field] for row in rows if row.get(field) is not None]
             return sum(values) / len(values) if values else None
         workflows[workflow] = {"samples": len(rows), "reviewed": sum(row["reviewed"] for row in rows),
+            "repair_outcomes": {status: sum(row["repair_status"] == status for row in rows)
+                for status in ("first_pass_valid", "repaired_successfully", "repair_exhausted", "rejected", "unknown")},
+            "model_semantic_statuses": {category: {status:sum(row.get("model_review_" + category) == status for row in rows)
+                for status in ("pass", "fail", "unknown", None)}
+                for category in ("action_fidelity", "scene_fidelity", "constraint_validity", "domain_relevance", "temporal_fidelity")},
             "averages": {field: average(field) for field in fields},
             "forbidden_content_violations": sum(row["forbidden_content_violations"] for row in rows),
             "negative_language_leakage": sum(row["negative_language_leakage"] for row in rows),
@@ -147,8 +194,32 @@ def summarize(records, annotations=()):
                 parity_groups[key][row["workflow"]] = sample
     parity = [{"settings": list(key), "builder": values["builder"], "dataset": values["dataset"]}
               for key, values in parity_groups.items() if set(values) == {"builder", "dataset"}]
+    length_groups = defaultdict(dict)
+    for row, sample in zip(records, samples):
+        if row.get("length") not in {"Detailed", "Maximum", "Maximum Detail"} or row.get("output_kind") == "ideas":
+            continue
+        key = tuple(row.get(field) for field in ("workflow", "case_id", "target", "director", "style", "creativity", "planning", "run", "request", "rules"))
+        if all(value is not None for value in key):
+            length_groups[key]["Detailed" if row["length"] == "Detailed" else "Maximum Detail"] = (row, sample)
+    coverage_pairs = []
+    for key, pair in length_groups.items():
+        if set(pair) != {"Detailed", "Maximum Detail"}:
+            continue
+        low, high = pair["Detailed"], pair["Maximum Detail"]
+        if not low[1]["reviewed"] or not high[1]["reviewed"]:
+            continue
+        delta = useful_fact_coverage(labels[low[0]["sample_id"]], labels[high[0]["sample_id"]])
+        fidelity_valid = all(sample["accepted"] and sample.get("review_complete") and not any(sample.get(kind + "_fidelity") not in (None, 1) for kind in FIDELITY)
+                             and sample.get("target_usability") is not False and sample.get("temporal_fidelity") is not False
+                             and sample.get("dialogue_reference_fidelity") is not False and sample.get("domain_action_relevance") is not False
+                             and sample.get("pose_simplified") is not True
+                             for _, sample in (low, high))
+        coverage_pairs.append({"settings":list(key), "detailed":low[0]["sample_id"], "maximum":high[0]["sample_id"],
+            **delta, "fidelity_valid":fidelity_valid,
+            "source_saturated":labels[low[0]["sample_id"]].get("coverage_saturated"),
+            "useful_coverage_increased": bool(delta["new_useful_facts"]) and delta["net_useful_fact_gain"] > 0 and fidelity_valid})
     latency = sorted(row["latency_seconds"] for row in records if isinstance(row.get("latency_seconds"), (int, float)))
-    return {"workflows": workflows, "samples": samples, "parity_pairs": parity,
+    return {"workflows": workflows, "samples": samples, "parity_pairs": parity, "length_coverage_pairs":coverage_pairs,
             "latency": {"measured": len(latency), "p50_seconds": latency[len(latency) // 2] if latency else None,
                         "p95_seconds": latency[min(len(latency) - 1, int(len(latency) * .95))] if latency else None},
             "novelty": {"within_run_exact_duplicate_rates": {str(key): duplicate_rate(values) for key, values in groups.items()},

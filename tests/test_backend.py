@@ -98,6 +98,15 @@ class ProcessManagerTests(unittest.TestCase):
         self.manager._start_process.assert_called_once()
         self.process.terminate.assert_not_called()
 
+    def test_launch_uses_one_slot_without_changing_context_or_offload_choice(self):
+        for context, layers in ((32768, "auto"), (16384, "all"), (8192, "0")):
+            with self.subTest(context=context, layers=layers):
+                command = replace(self.config, context_size=context, gpu_layers=layers).command()
+                self.assertEqual(command.count("--parallel"), 1)
+                self.assertEqual(command[command.index("--parallel") + 1], "1")
+                self.assertEqual(command[command.index("--ctx-size") + 1], str(context))
+                self.assertEqual(command[command.index("--n-gpu-layers") + 1], layers)
+
     def test_cli_changes_still_require_restart(self):
         owned = self.manager.acquire(self.config)
         for name, value in (("alias", "other"), ("model_path", Path("other.gguf")),

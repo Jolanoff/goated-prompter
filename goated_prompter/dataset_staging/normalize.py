@@ -2,7 +2,7 @@
 
 import re
 from .schema import GEOMETRY_FIELDS
-from .vocabulary import FRAMING_ALIASES
+from .vocabulary import FRAMING_ALIASES, BODY_PART_ALIASES, POSE_TYPE_VALUES
 
 FIELD_ALIASES = {
     "framing": FRAMING_ALIASES,
@@ -18,6 +18,10 @@ def normalize_geometry_value(value):
 
 def normalize_field(name, value):
     spec = GEOMETRY_FIELDS.get(name)
+    if spec is not None and spec.item_values is not None and isinstance(value, list):
+        parts = [BODY_PART_ALIASES.get(normalize_geometry_value(part), normalize_geometry_value(part))
+                 if isinstance(part, str) else part for part in value]
+        return list(dict.fromkeys(parts)) if all(isinstance(part, str) for part in parts) else parts
     if spec is not None and spec.values is not None:
         value = normalize_geometry_value(value)
         if isinstance(value, str):
@@ -67,6 +71,15 @@ def normalize_geometry(value, *, profile=None, scene=""):
     expression/head facts stay invalid for local repair instead of being lost.
     """
     cleaned = {name: normalize_field(name, content) for name, content in value.items()}
+    pose = cleaned.get("pose_type")
+    detail = cleaned.get("pose_detail")
+    if isinstance(pose, str) and pose.strip() and pose not in POSE_TYPE_VALUES and isinstance(detail, str) and len(detail.split()) >= 4:
+        cleaned["pose_type"] = "custom"  # Preserve actual geometry, never invent a replacement.
+    if cleaned.get("leg_position") == "custom" and isinstance(detail, str) and len(detail.split()) >= 4:
+        # No canonical leg state is asserted by this placeholder. The actual
+        # directions/bends remain in pose_detail; omit the optional helper rather
+        # than invent a conventional leg arrangement or another taxonomy value.
+        cleaned.pop("leg_position")
     gaze = cleaned.get("gaze_direction")
     if not isinstance(gaze, str) or gaze == "custom" or gaze in GEOMETRY_FIELDS["gaze_direction"].values:
         return cleaned

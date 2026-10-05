@@ -26,6 +26,7 @@ from .scene_planner import (ScenePlanner, MAX_STORED_SCENE_CHARACTERS, MAX_STORE
                             reusable_scene_plan, scene_plan_signature, validate_saved_scene_plan, validate_plan_metadata,
                             failure_reason, failed_scene, scene_is_usable, scene_geometry_errors, FAILURE_METADATA)
 from .dataset_staging import migrate_saved_geometry, resolve_framing_conflicts
+from .dataset_staging.rules.framing import framing_text_errors
 
 
 DATASET_MAX_RETRIES = 3
@@ -173,8 +174,32 @@ class DatasetService:
         self.idea_history = idea_history
 
     def _generate(self, session, instruction, data, index, progress, plan_item=None, *, retries=DATASET_MAX_RETRIES):
+        from .planning.semantic_validation import enabled, support_enabled, constraints_enabled, invariant_contract, review_candidate, repair_contract, SemanticValidationError
+        from .planning.semantics import support_requirements
+        from .planning.constraints import compile_request
+        validate_semantics = enabled(self.config)
+        source = "\n".join((data["subject"], (plan_item or {}).get("input", "")))
+        support = (support_requirements(source) if support_enabled(self.config)
+                   and isinstance((plan_item or {}).get("geometry"), dict)
+                   and (plan_item or {})["geometry"].get("pose_type") == "custom" else [])
+        compiled_source = compile_request(source, has_context=True)
+        constraints = compile_constraints(data.get("constraints", ""))
+        constraints["forbidden"] = list(dict.fromkeys([*constraints["forbidden"], *compiled_source.forbidden]))
+        audit_constraints = bool(constraints["forbidden"]) and constraints_enabled(self.config)
+        contract = invariant_contract(source, planned=plan_item, constraints=constraints,
+            literal_text=requested_visible_text(source), trigger=trigger_terms(data["trigger"], data["trigger_connected"]),
+            target=data["target"], concept=data["subject"])
+        accepted_facts = ()
         expected_text = requested_visible_text("\n".join((data["subject"], data["constraints"], (plan_item or {}).get("input", ""))))
         def check_fidelity(prompt):
+            nonlocal accepted_facts
+            if plan_item and data["trigger_type"] == "Character":
+                framing = plan_item.get("geometry", {}).get("framing")
+                protected = (*expected_text, *trigger_terms(data["trigger"], data["trigger_connected"]))
+                errors = [error for text in positive_descriptions(prompt, data["target"])
+                          for error in framing_text_errors(text, framing, protected_terms=protected)]
+                if errors:
+                    raise SceneFidelityError(" ".join(dict.fromkeys(errors)))
             if data.get("planning_mode") == "Quality" and plan_item:
                 text = trigger_text_target(prompt, data["target"])
                 if data["target"] == "Ideogram4":
@@ -182,6 +207,16 @@ class DatasetService:
                     text += " " + " ".join(element["desc"] for element in caption["compositional_deconstruction"]["elements"])
                 if error := idea_action_error(plan_item.get("idea") or plan_item["scene"], text):
                     raise SceneFidelityError(error)
+            if support:
+                accepted_facts = review_candidate(session, {**contract, "accepted_facts": list(accepted_facts),
+                    "candidate_scope": "source_support", "source_support_requirements": support}, prompt,
+                    stage=f"dataset:support:final:{index}", family=instruction.model_family, checkpoint=self.checkpoint,
+                    checks=("action_fidelity", "scene_fidelity", *(["repair_preservation"] if contract.get("previous_response") else [])))
+            if validate_semantics or audit_constraints:
+                accepted_facts = review_candidate(session, {**contract, "accepted_facts": list(accepted_facts)}, prompt,
+                    stage=f"dataset:final:{index}", family=instruction.model_family, checkpoint=self.checkpoint,
+                    checks=("action_fidelity", "scene_fidelity", "constraint_validity", *(["repair_preservation"] if contract.get("previous_response") else []))
+                    if validate_semantics else ("constraint_validity",))
             return prompt
         original = instruction
         for attempt in range(retries + 1):
@@ -230,6 +265,7 @@ class DatasetService:
                 instruction = replace(
                     original,
                     system_message=retry_system,
+                    user_message=original.user_message + repair_contract(contract, recovered or exc.partial_text, exc, accepted_facts),
                     max_tokens=max(384, int(original.max_tokens * (0.8 ** (attempt + 1)))),
                     hard_max_tokens=max(384, int(original.hard_max_tokens * (0.8 ** (attempt + 1)))),
                     diagnostic_stage=original.diagnostic_stage + f":loop_retry_{attempt + 1}",
@@ -244,16 +280,24 @@ class DatasetService:
                         completion_state=exc.completion_state, partial_text=exc.partial_text, finish_reason=exc.finish_reason,
                     ) from exc
                 progress(f"Dataset prompt {index}/{data['amount']} engine request failed: {exc} Retrying ({attempt + 1}/{retries}).")
-                instruction = replace(original, diagnostic_stage=original.diagnostic_stage + f":transport_retry_{attempt + 1}")
+                # A transport retry must not discard an earlier repair contract,
+                # correction or reduced runaway-output budget.
+                instruction = replace(instruction, diagnostic_stage=original.diagnostic_stage + f":transport_retry_{attempt + 1}")
                 continue
             self.checkpoint()
             progress(f"Checking dataset prompt {index}/{data['amount']}")
+            format_valid = False
             try:
                 prompt = normalize_workflow_output(raw, data["target"], mode="Enhance",
                     expected_visible_text=expected_text)
+                format_valid = True
                 prompt = validate_trigger_contract(prompt, data, progress)
-                return check_fidelity(validate_positive_content(prompt, data))
+                prompt = check_fidelity(validate_positive_content(prompt, data))
+                session.emit_activity("validation", workflow="dataset", attempt=attempt, accepted=True, format_valid=format_valid)
+                return prompt
             except (WorkflowFormatError, ValueError, KeyError, TypeError) as exc:
+                session.emit_activity("validation", workflow="dataset", attempt=attempt, accepted=False,
+                    format_valid=format_valid, error=str(exc), issues=getattr(exc, "issues", []))
                 if attempt >= retries:
                     raise BackendGenerationError(
                         f"Dataset prompt {index}/{data['amount']} remained invalid after "
@@ -269,19 +313,29 @@ class DatasetService:
                 if instruction.hard_max_tokens < original.hard_max_tokens:
                     retry_system = dataset_loop_repair(retry_system, exc, attempt + 1)
                 content_failure = isinstance(exc, PositiveContentError)
-                fidelity_failure = isinstance(exc, SceneFidelityError)
+                fidelity_failure = isinstance(exc, (SceneFidelityError, SemanticValidationError))
                 trigger_failure = isinstance(exc, TriggerContractError)
+                if trigger_failure and validate_semantics:
+                    # Retain already-valid scene facts even when the cheap trigger
+                    # gate rejected the candidate before the normal semantic gate.
+                    try:
+                        check_fidelity(validate_positive_content(prompt, data))
+                    except (PositiveContentError, SemanticValidationError) as review_error:
+                        accepted_facts = getattr(review_error, "accepted_facts", ()) or accepted_facts
+                accepted_facts = getattr(exc, "accepted_facts", ()) or accepted_facts
+                contract.update(previous_response=raw, listed_defect=str(exc))
                 instruction = replace(original,
                     system_message=(retry_system + "\n\nTRIGGER WORDING CORRECTION: " + str(exc)
                                     + " Include each exact case-sensitive trigger term as supplied. Preserve the fixed idea, scene, action and geometry; change only the final wording."
-                                    if trigger_failure else retry_system + "\n\nSCENE FIDELITY CORRECTION: Render the same fixed idea, primary action, props and geometry; do not replace the event with generic presentation."
+                                    if trigger_failure else retry_system + "\n\nSCENE FIDELITY CORRECTION: " + str(exc) + " Render the same fixed idea, primary action, props and geometry; do not replace the event with generic presentation."
                                     if fidelity_failure else dataset_content_repair(retry_system) if content_failure
                                     else dataset_format_repair(retry_system, exc)),
+                    user_message=original.user_message + repair_contract(contract, raw, exc, accepted_facts),
                     max_tokens=instruction.max_tokens,
                     hard_max_tokens=instruction.hard_max_tokens,
                     temperature=.25, top_p=.85,
                     diagnostic_stage=original.diagnostic_stage
-                    + f":{'trigger' if trigger_failure else 'scene' if fidelity_failure else 'content' if content_failure else 'format'}_retry_{attempt + 1}")
+                    + f":{'semantic' if isinstance(exc, SemanticValidationError) else 'trigger' if trigger_failure else 'scene' if fidelity_failure else 'content' if content_failure else 'format'}_retry_{attempt + 1}")
 
     def run(self, request, data, progress, partial, *, scenes_only=False, scene_action=None, valid_only=False):
         effective, profile = resolve_director_config(self.config, request)
@@ -292,7 +346,8 @@ class DatasetService:
         signature = scene_plan_signature(data, assignments)
         progress("Starting the prompt engine for the dataset…")
         with backend.generation_session() as session:
-            planner = ScenePlanner(self.checkpoint, idea_history=self.idea_history)
+            from .planning.semantic_validation import enabled, support_enabled
+            planner = ScenePlanner(self.checkpoint, idea_history=self.idea_history, semantic_validation=enabled(self.config), support_validation=support_enabled(self.config))
             scenes = reusable_scene_plan(data, assignments, require_scenes=False, allow_pending=valid_only or scene_action is not None)
             if valid_only and (scenes is None or not any(scene_is_usable(row, data) for row in scenes)):
                 raise ValueError("No valid scenes are available in the current saved plan.")

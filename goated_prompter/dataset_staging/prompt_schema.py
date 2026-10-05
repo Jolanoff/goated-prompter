@@ -15,7 +15,8 @@ def geometry_prompt_schema(dataset_type, *, optional_values_in_context=False):
         if name not in profile.allowed:
             continue
         values = profile.values_for(name)
-        kind = ("enum; allowed values in optional_geometry_values" if optional_values_in_context and values is not None and name not in profile.required else
+        kind = (f"array of up to {spec.max_items} anatomical parts: {', '.join(sorted(spec.item_values))}" if spec.item_values is not None else
+                "enum; allowed values in optional_geometry_values" if optional_values_in_context and values is not None and name not in profile.required else
                 ", ".join(sorted(values)) if values is not None else
                 f"integer >= {spec.minimum}" if spec.count else
                 f"array of up to {spec.max_items} short strings" if spec.text_array else

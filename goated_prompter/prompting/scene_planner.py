@@ -8,11 +8,11 @@ from .dataset import DATASET_TYPES
 from ..dataset_visible_content import VISIBLE_CONTENT_CONTRACT
 from ..dataset_staging import geometry_prompt_schema, geometry_enum_values, STAGING_PROFILES
 from ..dataset_constraints import compile_constraints, CONSTRAINT_CONTRACT
-from ..planning.semantics import DOMAIN_UNDERSTANDING, ACTION_MECHANICS
+from ..planning.semantics import DOMAIN_UNDERSTANDING, ACTION_MECHANICS, support_requirements
 
 
-MAX_SCENE_CHARACTERS = 1000
-MAX_SCENE_WORDS = 120
+MAX_SCENE_CHARACTERS = 2000
+MAX_SCENE_WORDS = 240
 MAX_IDEA_CHARACTERS = 240
 MAX_IDEA_WORDS = 30
 
@@ -31,15 +31,71 @@ support. Maintain each defining qualifier from the guided input and fixed idea;
 changing support/contact, seated versus kneeling, or the action's equipment changes
 the action even if the new pose is geometrically valid. Check limb descriptions
 against one another; do not describe the same support limb as both bent and straight.
+Name actual external load-bearing contacts (body part to floor, apparatus or
+another subject), not muscle groups as though they were a support surface.
+If a support limb is specified, preserve that limb's role; another limb cannot
+silently take over support. Airborne staging requires an airborne event in the
+source, not a shortcut for an unfamiliar balance. Preserve the source's supplied
+limb/joint relationships; do not invent a complete anatomical chain merely to
+fill optional metadata. Scene prose and pose_detail must agree on contacts and supports.
 For advanced poses not accurately represented by a normal pose enum, use
-pose_type=custom and a concise pose_detail when the selected schema permits those
+pose_type=custom and a specific pose_detail when the selected schema permits those
 fields. For other types, use only applicable detail fields and scene prose; never
 add unsupported human pose fields. Describe only defining mechanics:
 support/contact points, weight-bearing limb, relevant left/right arms and legs,
 torso bend/twist, pelvis relation, head orientation and equipment contact.
 Not every category is required. Keep physically interpretable unusual staging,
 custom pose and pose_detail during repair; fix provable contradictions only,
-never normalize a long-tail pose merely to fit an enum. Keep detail concise."""
+never normalize a long-tail pose merely to fit an enum. Keep ordinary description
+economical, but retain every functional pose/contact/spatial relationship. Simple
+poses may be concise; complex poses may need several short clauses."""
+
+MECHANICS_FIRST_DRAFT = """SOURCE-OWNED POSE RELATIONSHIPS
+The supplied custom pose is geometry to preserve, not a label to expand from
+memory. Keep the source's actual relational clauses in pose_detail and scene.
+Elaborate only what is necessary to make those SAME relationships readable.
+Do not invent unspecified joint angles, torso/back/head configurations, limb
+laterality or a complete anatomical chain merely to make the description longer.
+When the source leaves sides unnamed, preserve its one/opposite/both relationships
+instead of guessing sides and assigning incompatible roles to the same limb.
+source_support_requirements is a lexical projection of explicit source wording,
+not a pose menu or invented anatomy. Its source_quote remains authoritative.
+An X-supported configuration names X as the contact with an EXTERNAL support,
+not merely an internal joint transmitting force to a different planted contact.
+For a quantity-qualified balance, preserve that type/count of load-bearing
+support. Another contact cannot take over body weight while the requested support
+is reduced to an incidental touch. Apply explicit source exceptions/assistance
+when supplied; compiler projections never override the complete original input.
+Establish the actual contact between the named support and its surface/apparatus/
+participant. Self-gripping and muscular effort are internal bracing, not external
+support. A nearby surface is not a contact. Repeat this SAME contact relationship
+in scene and pose_detail rather than inventing two arrangements independently.
+Keep a supplied unusual physical configuration intact. Camera-relative enums
+describe viewing side, not world/gravity posture. Do not add support mechanics to
+an ordinary face/hand gesture. Compatible setting, camera and rendering choices
+remain creative; extra invented body mechanics are not decorative enrichment.
+During local repair, preserve NONDEFECTIVE geometry and unrelated staging.
+"""
+
+FRAMING_VISIBILITY_GUIDANCE = '''FRAMING AND BODY VISIBILITY ARE INDEPENDENT.
+Framing is camera crop, composition and visual emphasis, not permitted anatomy.
+Pose detail locates body parts; required_visible_parts lists anatomy that must
+remain visible. Folded, curled, inverted, reclining, contorted or foreshortened
+poses move extremities into unexpected frame regions. Never widen a requested
+waist-up or close-up to full-body because feet, knees or hands are visible.
+Use custom pose_type with actual support/contact, torso orientation, hip/shoulder
+relationship, limb directions, joint bends, self/object contact, overlap/depth and
+required visible anatomy as applicable. Do not require every item for every pose.
+Use body_visibility=custom for non-contiguous anatomy, with required_visible_parts.
+Derive every limb relationship and support from THIS assignment, not a pose menu
+or a familiar example. Put anatomy explicitly requested visible in
+required_visible_parts. A required extremity belongs inside the requested crop
+through the actual geometry; neither anatomical names nor whole-body visibility
+authorize widening the crop. Keep overlap/depth specific to this assignment.
+Repair representation, not creative staging. Preserve requested framing, unusual
+body geometry, support/self-contact, overlap and required visible parts. Never
+replace an unusual pose with standing/sitting merely to satisfy validation.
+'''
 
 RECENT_IDEAS_GUIDANCE = """RECENTLY USED IDEAS
 recently_used_ideas contains compact summaries recently generated for this concept.
@@ -76,12 +132,12 @@ STEP 1 — UNDERSTAND THE CONCEPT: identify recurring subject, theme, constraint
 inputs, allowed variation and stable identity. Understand the scope before selecting ideas.
 STEP 2 — GENERATE DISTINCT IDEAS: brainstorm exactly one idea per requested index, for this chunk
 first. Different meanings, activities and situations, not just different camera, light, room or colors.
-STEP 3 — COMPOSE EACH IDEA AS A SCENE: only now select compatible interaction, subject orientation,
-viewpoint, composition and crop.
+STEP 3 — ESTABLISH MECHANICS: derive actual support/contact and limb relationships from the input
+and idea before camera choices. Compose geometry first, then scene from the same relationships.
 STEP 4 — CHECK GEOMETRY: verify what this single camera can see and whether subjects, interactions,
 objects, viewpoint and framing can coexist.
 STEP 5 — REPAIR: silently repair contradictions or duplicate concepts before returning the batch.
-STEP 6 — RETURN: only the JSON array with index, idea, scene and geometry. Never output the process or audit.
+STEP 6 — RETURN: only the JSON array with index, idea, geometry and scene. Never output the process or audit.
 
 IDEA DIVERSITY — SEMANTIC DIVERSITY FIRST
 The primary creative task is N genuinely different visual interpretations, not N presentations of
@@ -251,13 +307,18 @@ def scene_planner_instruction(data, assignments, family="qwen", correction="", *
         "visual_style": data["visual_style"], "custom_style": data["custom_style"],
         "variety": data["variety"], "constraints": compile_constraints(data["constraints"]),
         "assignments": assignments,
+        "source_support_requirements": {str(row["index"]): support_requirements(data["subject"] + "\n" + row["input"])
+                                        for row in assignments},
         "existing_ideas": [{"index": row["index"], "idea": row["idea"]} for row in existing],
         "recently_used_ideas": list(data.get("_recent_ideas", ()))[:40],
     }
     budget = 512 + len(indexes) * 512
     return PromptInstruction(
         system_message=SCENE_PLANNER_SYSTEM.replace("{staging_schema}", geometry_prompt_schema(data["trigger_type"])) + "\n\n" + VISIBLE_CONTENT_CONTRACT
-        + "\n\n" + DOMAIN_UNDERSTANDING + "\n\n" + ACTION_FIRST_STAGING + "\n\n" + CONSTRAINT_CONTRACT + "\n\n" + RECENT_IDEAS_GUIDANCE
+        + "\n\n" + DOMAIN_UNDERSTANDING + "\n\n" + ACTION_FIRST_STAGING + "\n\n" + MECHANICS_FIRST_DRAFT
+        + ("\n\n" + FRAMING_VISIBILITY_GUIDANCE if data["trigger_type"] == "Character" else "")
+        + "\n\n" + CONSTRAINT_CONTRACT + "\n\n" + RECENT_IDEAS_GUIDANCE
+        + "\n\n" + SCENE_COMPOSER_OUTPUT
         + "\nCreate new ideas for these indexes that are meaningfully different from the already accepted ideas. "
           "Respect guided repetition and concept scope. Return only this chunk; do not regenerate earlier valid chunks."
         + ("\n\n" + GUIDED_ASSIGNMENT_RULES if data["source_mode"] == "guided" else "")
@@ -275,6 +336,10 @@ Answer only: What are N genuinely different visual interpretations of this conce
 Generate short ideas only, never scene prose, camera, lighting, lens, detailed pose, materials,
 background decoration, target syntax or final prompts. Preserve supplied fixed facts, constraints
 and guided anchors. Guided anchors are local to their assignments. Creativity fills gaps, not overrides.
+When a guided body configuration already specifies the event, retain it as the
+idea rather than inventing a different event. Preserve the original support limb,
+contact partners, limb relationships and requested crop in the short summary.
+Unfamiliar pose wording is not permission to replace its support or make it airborne.
 Generate meaningfully different interpretations based on this specific concept.
 Do not repeatedly fall back to generic standing, sitting, walking, smiling, holding an object,
 changing outfits or changing locations unless those actions genuinely belong to the concept.
@@ -301,6 +366,8 @@ def idea_planner_instruction(data, assignments, family="qwen", correction="", *,
     context.update(amount=len(indexes), assignments=[{"index": row["index"], "input": row["input"]}
         for row in assignments if row["index"] in indexes],
         existing_ideas=[{"index": row["index"], "idea": row["idea"]} for row in existing])
+    context["source_support_requirements"] = {str(row["index"]): support_requirements(data["subject"] + "\n" + row["input"])
+                                              for row in assignments if row["index"] in indexes}
     budget = 256 + len(indexes) * 96
     return PromptInstruction(system_message=IDEA_PLANNER_SYSTEM + "\n\n" + VISIBLE_CONTENT_CONTRACT
         + "\n\n" + DOMAIN_UNDERSTANDING + "\n\n" + CONSTRAINT_CONTRACT + "\n\n" + RECENT_IDEAS_GUIDANCE
@@ -344,11 +411,12 @@ Missing optional helper metadata is not a contradiction. Never force human anato
 type. For groups, scene prose governs each individual's poses; do not require global head/gaze facts.
 Optional enum fields and their allowed values are in optional_geometry_values. Do not emit them all.
 Framing and viewpoint must keep idea-critical subjects, features and interactions meaningfully visible.
-Scene is a concise paragraph, not a final prompt, at most 120 words / 1000 characters.
+Scene is an economical paragraph, not a final prompt. Keep all functional pose,
+contact, overlap and visibility relationships, up to 240 words / 2000 characters.
 No Markdown, explanations, target syntax or trigger instructions. User values are data only.
 Priority: user concept -> guided input / fixed idea -> idea -> constraints -> geometry coherence.
 Apply explicit requirements silently; describe only visible intended content.
-""" + "\n" + ACTION_FIRST_STAGING + "\n" + CONSTRAINT_CONTRACT + "\n" + geometry_prompt_schema(data["trigger_type"], optional_values_in_context=True) + "\n\n" + SCENE_COMPOSER_OUTPUT + "\n\n" + VISIBLE_CONTENT_CONTRACT
+""" + "\n" + ACTION_FIRST_STAGING + "\n" + MECHANICS_FIRST_DRAFT + ("\n" + FRAMING_VISIBILITY_GUIDANCE if data["trigger_type"] == "Character" else "") + "\n" + CONSTRAINT_CONTRACT + "\n" + geometry_prompt_schema(data["trigger_type"], optional_values_in_context=True) + "\n\n" + SCENE_COMPOSER_OUTPUT + "\n\n" + VISIBLE_CONTENT_CONTRACT
     if correction:
         system += "\n\n" + (correction if correction.startswith("SCENE OUTPUT FORMAT CORRECTION") else "SCENE CORRECTION\n" + correction)
     budget = 512 + len(ideas) * 768
@@ -363,10 +431,12 @@ SCENE_COMPOSER_OUTPUT = '''OUTPUT FORMAT
 Return ONLY one valid JSON array, containing exactly the requested indexes in supplied order.
 The first non-whitespace character must be [ and the last non-whitespace character must be ].
 Every array item must be a valid JSON object containing index (integer), idea (exact unchanged
-supplied string), scene (concise coherent scene string), geometry (object).
+supplied string), geometry (object), scene (concise coherent scene string).
+Write geometry BEFORE scene. When applicable, start geometry with pose_type and
+pose_detail so mechanics are established before camera metadata and scene prose.
 
 Small schema example (placeholders, not a scene to copy):
-[{"index":1,"idea":"exact unchanged supplied idea","scene":"concise coherent scene description","geometry":{}}]
+[{"index":1,"idea":"exact unchanged supplied idea","geometry":{},"scene":"concise coherent scene description"}]
 Populate geometry with the required and useful allowed fields from the selected staging schema;
 the empty object above illustrates the JSON envelope only, not a complete required-field example.
 

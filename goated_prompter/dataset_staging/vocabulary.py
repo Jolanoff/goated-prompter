@@ -8,10 +8,11 @@ wide extreme_wide
 """.split())
 
 FRAMING_ALIASES = {
+    "upper_body": "waist_up",
     "medium": "waist_up", "medium_shot": "waist_up",
     "medium_full": "three_quarter_body", "cowboy_shot": "three_quarter_body",
     "close_up": "face_close_up", "closeup": "face_close_up", "face_closeup": "face_close_up",
-    "medium_close_up": "upper_body", "long_shot": "full_body_with_environment", "wide_shot": "wide",
+    "medium_close_up": "waist_up", "long_shot": "full_body_with_environment", "wide_shot": "wide",
 }
 
 CHARACTER_FRAMING_VALUES = FRAMING_VALUES - {"detail_close_up", "full_subject", "full_subject_with_environment"}
@@ -99,7 +100,10 @@ amazon reverse_amazon
 MOVEMENT_VALUES = frozenset("still subtle active fast explosive falling airborne".split())
 
 FACE_VISIBILITY_VALUES = frozenset("full three_quarter profile partial mostly_hidden hidden".split())
-BODY_VISIBILITY_VALUES = frozenset("face_only head_and_shoulders upper_body waist_up three_quarter_body full_body partial_body".split())
+BODY_VISIBILITY_VALUES = frozenset("face_only head_and_shoulders upper_body waist_up three_quarter_body full_body partial_body custom".split())
+BODY_PART_VALUES = frozenset("face head neck shoulders torso arms hands hips legs thighs knees lower_legs ankles feet".split())
+BODY_PART_ALIASES = {"foot": "feet", "both_feet": "feet", "feet_visible": "feet",
+                     "hand": "hands", "both_hands": "hands"}
 HAND_VISIBILITY_VALUES = frozenset("none_visible left_visible right_visible both_visible partially_visible".split())
 FEET_VISIBILITY_VALUES = HAND_VISIBILITY_VALUES
 

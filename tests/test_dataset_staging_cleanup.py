@@ -121,7 +121,7 @@ class StagingCleanupTests(unittest.TestCase):
         for name in ("pelvis_tilt", "back_arch", "leg_position", "body_orientation"):
             self.assertNotIn(name, STAGING_PROFILES["Custom"].allowed)
         schema = geometry_prompt_schema("Character")
-        self.assertIn("Which portion of the subject/image content", schema)
+        self.assertIn("Camera crop, composition and visual emphasis", schema)
         self.assertIn("How physically near or far the camera", schema)
         self.assertIn("Supported head/eye-position states", schema)
         self.assertNotIn("BODY AND POSE LOGIC", SCENE_PLANNER_SYSTEM)
