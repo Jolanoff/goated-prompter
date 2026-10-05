@@ -18,6 +18,7 @@ from aiohttp.test_utils import TestClient, TestServer
 from PIL import Image
 
 import local_app as local
+from goated_prompter import json_store, uploaded_images
 
 
 class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
@@ -468,7 +469,7 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         await self.client.post("/api/prompts", json=record)
         path = self.settings_path.parent / "prompts.json"
         original = path.read_bytes()
-        with patch.object(local.os, "replace", side_effect=OSError("disk failure")):
+        with patch.object(json_store.os, "replace", side_effect=OSError("disk failure")):
             response = await self.client.delete("/api/prompts/one")
             self.assertEqual(response.status, 500)
         self.assertEqual(path.read_bytes(), original)
@@ -495,7 +496,7 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         await self.client.put("/api/settings", json={"keep_model_loaded": True})
         original = self.settings_path.read_bytes()
         self.assertEqual(json.loads(original), {"keep_model_loaded": True})
-        with patch.object(local.os, "replace", side_effect=OSError("disk failure")):
+        with patch.object(json_store.os, "replace", side_effect=OSError("disk failure")):
             response = await self.client.put("/api/settings", json={"keep_model_loaded": False})
             self.assertEqual(response.status, 500)
         self.assertEqual(self.settings_path.read_bytes(), original)
@@ -767,7 +768,7 @@ class JsonStorageTests(unittest.TestCase):
                     db.execute("CREATE TABLE settings (id INTEGER PRIMARY KEY, payload TEXT)")
                     db.execute("INSERT INTO settings VALUES (1, ?)", (payload,))
                 original = legacy.read_bytes()
-                with patch.object(local.os, "replace", side_effect=OSError("disk failure")):
+                with patch.object(json_store.os, "replace", side_effect=OSError("disk failure")):
                     with self.assertRaises((ValueError, OSError)):
                         local.create_app(settings_path=path)
                 self.assertFalse(path.exists())
@@ -791,7 +792,7 @@ class JsonStorageTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     local.validate_prompts({"prompts": [record, {**record, "id": "two"}]})
             original = path.read_bytes()
-            with patch.object(local, "MAX_STORE_BYTES", 2):
+            with patch.object(json_store, "MAX_STORE_BYTES", 2):
                 with self.assertRaises(ValueError):
                     local.atomic_json(path, {"prompts": [record]})
             self.assertEqual(path.read_bytes(), original)
@@ -815,10 +816,10 @@ class UploadTests(unittest.TestCase):
             data = f"data:image/{mime};base64," + base64.b64encode(buffer.getvalue()).decode()
             encoded = local.decode_image(data, 256)
             self.assertEqual((encoded.width, encoded.height, encoded.media_type), (256, 154, "image/png"))
-            with patch.object(local, "MAX_IMAGE_PIXELS", 100):
+            with patch.object(uploaded_images, "MAX_IMAGE_PIXELS", 100):
                 with self.assertRaisesRegex(ValueError, "pixels"):
                     local.decode_image(data)
-            with patch.object(local, "MAX_IMAGE_BYTES", 1):
+            with patch.object(uploaded_images, "MAX_IMAGE_BYTES", 1):
                 with self.assertRaises(ValueError):
                     local.decode_image(data)
         with self.assertRaises(ValueError):
