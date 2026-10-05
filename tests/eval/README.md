@@ -16,6 +16,10 @@ python -m tests.eval.report quality-artifacts/quality-run.json --output quality-
 ```
 
 `--replay tests/eval/fixtures/model_outputs` combines all three frozen workflows.
+Keep live results, hardware details, local paths, and review notes in ignored
+`quality-artifacts/` or outside the repository. Top-level evaluation result/notes
+files are local-only; reusable corpora, test documentation, and sanitized frozen
+regression responses remain versioned. Review fixture metadata before adding it.
 Reporting with `--annotations REVIEW.json --require-review --baseline OLD_REPORT.json`
 fails on incomplete comparable reviews or fidelity/constraint regressions. Prompt
 length never compensates for a lost anchor. CI publishes frozen replay JSON/Markdown;

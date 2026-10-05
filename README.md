@@ -14,7 +14,7 @@ Bring your ideas and reference images. Shape the result. Copy it into your favor
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=white)](frontend/package.json)
 [![llama.cpp](https://img.shields.io/badge/Local_inference-llama.cpp-a3e635?style=flat-square)](https://github.com/ggml-org/llama.cpp)
 
-[Get started](#installation) · [Workflows](#using-the-controls) · [Troubleshooting](#troubleshooting) · [Development](#development-and-verification) · [Report an issue](https://github.com/Jolanoff/goated-prompter/issues)
+[Get started](#installation) · [Workflows](#using-the-controls) · [Troubleshooting](#troubleshooting) · [Development](#development-and-verification) · [Architecture](docs/refactoring.md) · [Report an issue](https://github.com/Jolanoff/goated-prompter/issues)
 
 </div>
 
@@ -167,7 +167,7 @@ For additional models, give each model/projector pair its own subfolder. Use a m
 
 ### 5. Configure and launch
 
-Open **`config/config.json`** and set `local_llama_cpp.llama_server` to your actual executable path. Use forward slashes or escaped backslashes in JSON:
+Copy **`config/config.example.json`** to **`config/config.json`**, then set `local_llama_cpp.llama_server` to your actual executable path. Your local config is ignored by Git. Use forward slashes or escaped backslashes in JSON:
 
 ```json
 "llama_server": "C:/Tools/llama.cpp/llama-server.exe"
