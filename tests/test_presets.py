@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from goated_prompter import presets
+from tests.helpers import enter_context
 
 
 class DirectorLibraryTests(unittest.TestCase):
@@ -29,9 +30,9 @@ class DirectorLibraryTests(unittest.TestCase):
         self.assertFalse(path.exists())
 
     def setUp(self):
-        temporary = self.enterContext(tempfile.TemporaryDirectory())
+        temporary = enter_context(self, tempfile.TemporaryDirectory())
         self.root = Path(temporary)
-        self.enterContext(patch.dict(os.environ, {presets.USER_DIRECTOR_DIR_ENV: temporary}))
+        enter_context(self, patch.dict(os.environ, {presets.USER_DIRECTOR_DIR_ENV: temporary}))
 
     def test_update_preserves_id_filename_mode_and_atomic_failure(self):
         director, path = presets.save_user_director("Original", "Instructions", "Video")

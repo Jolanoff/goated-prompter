@@ -12,6 +12,7 @@ from unittest.mock import patch
 from aiohttp.test_utils import TestClient, TestServer
 
 import local_app as local
+from tests.helpers import enter_context
 from goated_prompter.backends.base import BackendRunawayError, GoatedPrompterBackend
 from goated_prompter.core import GoatedPrompterRequest
 from goated_prompter.dataset import (
@@ -411,7 +412,7 @@ class DatasetEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.backend = CaptureBackend()
-        self.enterContext(patch("goated_prompter.dataset.create_backend", return_value=self.backend))
+        enter_context(self, patch("goated_prompter.dataset.create_backend", return_value=self.backend))
         self.app = local.create_app(config_loader=lambda: {"backend": "mock"},
                                     settings_path=Path(self.temp.name) / "settings.json")
         self.client = TestClient(TestServer(self.app), headers={"Host": "127.0.0.1:8190"})
@@ -601,7 +602,7 @@ class DatasetEndpointTests(unittest.IsolatedAsyncioTestCase):
                                 "geometry": character_geometry(action_focus=row["input"])}
                                for row in context["assignments"]])
 
-        self.enterContext(patch.object(self.backend, "generate", side_effect=generate))
+        enter_context(self, patch.object(self.backend, "generate", side_effect=generate))
         response = await self.client.post("/api/workspace/dataset/scenes", json={"input": data})
         self.assertEqual(response.status, 202, await response.text())
         job = await self.terminal(await response.json())

@@ -26,6 +26,7 @@ from goated_prompter.presets import DIRECTOR_PRESETS, get_director_preset
 from goated_prompter.prompting.minimax import (validate_minimax_draft, validate_analysis,
     generation_instruction, parse_shot_outline, exact_dialogue)
 from goated_prompter.prompting.target_models import TARGET_MODEL_NAMES
+from tests.helpers import enter_context
 
 
 HOOP = ("a performer suspended sideways from a hoop, one knee hooked over the top, "
@@ -84,8 +85,8 @@ class SupportingPlanningTests(unittest.TestCase):
         self.assertIn("LOCAL REPAIR CONTRACT", backend.calls[1].user_message)
 
     def setUp(self):
-        directory = self.enterContext(tempfile.TemporaryDirectory())
-        self.enterContext(patch.dict(os.environ, {"GOATED_PROMPTER_USER_DIR": directory}))
+        directory = enter_context(self, tempfile.TemporaryDirectory())
+        enter_context(self, patch.dict(os.environ, {"GOATED_PROMPTER_USER_DIR": directory}))
         clear_evidence_cache()
         self.addCleanup(clear_evidence_cache)
 

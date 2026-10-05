@@ -18,6 +18,7 @@ from aiohttp.test_utils import TestClient, TestServer
 from PIL import Image
 
 import local_app as local
+from tests.helpers import enter_context
 from goated_prompter import json_store, uploaded_images
 
 
@@ -30,7 +31,7 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.configs = []
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.enterContext(patch.dict(os.environ, {"GOATED_PROMPTER_USER_DIR": str(Path(self.temp.name) / "directors")}))
+        enter_context(self, patch.dict(os.environ, {"GOATED_PROMPTER_USER_DIR": str(Path(self.temp.name) / "directors")}))
         self.settings_path = Path(self.temp.name) / "data" / "settings.json"
         owner = self
 

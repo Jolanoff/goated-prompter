@@ -15,7 +15,11 @@ python -m tests.eval.runner --template quality-artifacts/quality-review.json --r
 python -m tests.eval.report quality-artifacts/quality-run.json --output quality-artifacts/quality-report.json
 ```
 
-`--replay tests/eval/fixtures/model_outputs` combines all three frozen workflows.
+`--replay tests/eval/fixtures/model_outputs` combines frozen evaluation runs across
+all three workflows. Runs require `run_id` and records with `sample_id` and
+`workflow`. Raw scene, geometry, and constraint-audit fixtures use separate schemas
+and regression tests; directory replay lists them in `skipped_supporting_fixtures`
+instead of treating them as workflow samples. Malformed workflow runs still fail.
 Keep live results, hardware details, local paths, and review notes in ignored
 `quality-artifacts/` or outside the repository. Top-level evaluation result/notes
 files are local-only; reusable corpora, test documentation, and sanitized frozen

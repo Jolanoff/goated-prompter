@@ -122,6 +122,44 @@ def novelty_cases(spec, config, args):
     return rows
 
 
+def load_replay(path):
+    """Load evaluation runs, excluding raw supporting fixtures in directories."""
+    directory = path.is_dir()
+    paths = sorted(path.glob("*.json")) if directory else [path]
+    runs, skipped = [], []
+    for source in paths:
+        run = json.loads(source.read_text(encoding="utf-8"))
+        records = run.get("records") if isinstance(run, dict) else None
+        # Raw scene/geometry/audit responses have their own regression tests;
+        # they must not be reported as workflow samples or invented successes.
+        if directory and isinstance(run, dict):
+            if records is None and "run_id" not in run:
+                skipped.append(source.name)
+                continue
+            if isinstance(records, list) and records and all(
+                isinstance(row, dict) and "sample_id" not in row and "workflow" not in row
+                for row in records
+            ):
+                skipped.append(source.name)
+                continue
+        if not isinstance(run, dict) or not isinstance(run.get("run_id"), str) or not run["run_id"]:
+            raise ValueError(f"{source.name}: evaluation run requires a nonempty run_id")
+        if not isinstance(records, list) or any(
+            not isinstance(row, dict) or not row.get("sample_id") or
+            row.get("workflow") not in {"builder", "dataset", "minimax"}
+            for row in records
+        ):
+            raise ValueError(f"{source.name}: evaluation records require sample_id and workflow")
+        runs.append(run)
+    if not runs:
+        raise ValueError("No evaluation runs found in replay input")
+    if not directory:
+        return runs[0]
+    return {"run_id": "frozen-regression-replay", "sources": [run["run_id"] for run in runs],
+            "skipped_supporting_fixtures": skipped,
+            "records": [row for run in runs for row in run["records"]]}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--corpus", type=Path, default=CORPUS)
@@ -150,12 +188,10 @@ def main():
         print(json.dumps({"cases": cases, "novelty": corpus["novelty"], "inference": False}, indent=2))
         return
     if args.replay:
-        if args.replay.is_dir():
-            runs = [json.loads(path.read_text(encoding="utf-8")) for path in sorted(args.replay.glob("*.json"))]
-            result = {"run_id": "frozen-regression-replay", "sources": [run["run_id"] for run in runs],
-                      "records": [row for run in runs for row in run["records"]]}
-        else:
-            result = json.loads(args.replay.read_text(encoding="utf-8"))
+        try:
+            result = load_replay(args.replay)
+        except ValueError as exc:
+            parser.error(str(exc))
     else:
         if not args.allow_live or not args.config or not args.output:
             parser.error("Live evaluation requires --allow-live, --config and --output; notify the GPU owner first.")
