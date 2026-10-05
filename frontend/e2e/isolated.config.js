@@ -9,6 +9,8 @@ export default defineConfig({
     browserName: "chromium",
     channel: process.env.PLAYWRIGHT_CHANNEL,
     headless: true,
+    trace: "retain-on-failure",
+    screenshot: "only-on-failure",
   },
   webServer: [
     {

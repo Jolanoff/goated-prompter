@@ -9,6 +9,7 @@ export function useWorkflowSettings(operation) {
   const [status, setStatus] = useState("Loading");
   const [error, setError] = useState("");
   const [working, setWorking] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [conflict, setConflict] = useState(false);
   const latest = useRef(null);
   const currentDraft = useRef(null);
@@ -76,15 +77,22 @@ export function useWorkflowSettings(operation) {
   const refreshGenerated = useCallback(async () => {
     const sequence = editSequence.current;
     const attempt = ++refreshSequence.current;
-    await saver.current.flush();
-    const saved = await api(path);
-    // A completed old job must never replace a newer unsaved edit.
-    if (!mounted.current || sequence !== editSequence.current || attempt !== refreshSequence.current) return;
-    latest.current = saved;
-    currentDraft.current = saved.draft;
-    saver.current.hydrate(saved.draft);
-    setRecord(saved);
-    setDraft(saved.draft);
+    // Job completion can advance the server revision before its GET arrives.
+    // Keep editable controls locked until the matching draft/revision is loaded.
+    setRefreshing(true);
+    try {
+      await saver.current.flush();
+      const saved = await api(path);
+      // A completed old job must never replace a newer unsaved edit.
+      if (!mounted.current || sequence !== editSequence.current || attempt !== refreshSequence.current) return;
+      latest.current = saved;
+      currentDraft.current = saved.draft;
+      saver.current.hydrate(saved.draft);
+      setRecord(saved);
+      setDraft(saved.draft);
+    } finally {
+      if (mounted.current && attempt === refreshSequence.current) setRefreshing(false);
+    }
   }, [path]);
 
   async function saveInstructions(instructions, reset = false) {
@@ -113,6 +121,6 @@ export function useWorkflowSettings(operation) {
     await load();
   }
 
-  return { record, draft, update, status, error, working, conflict, reload, saveInstructions, refreshGenerated,
+  return { record, draft, update, status, error, working: working || refreshing, conflict, reload, saveInstructions, refreshGenerated,
     revision: () => latest.current?.revision, flush: () => saver.current.flush() };
 }

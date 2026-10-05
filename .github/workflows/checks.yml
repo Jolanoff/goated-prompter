@@ -50,3 +50,10 @@ jobs:
       - run: npm run test:e2e -- --config e2e/isolated.config.js
         working-directory: frontend
         if: matrix.python == '3.13'
+      - name: Upload browser failure diagnostics
+        uses: actions/upload-artifact@v4
+        if: failure() && matrix.python == '3.13'
+        with:
+          name: browser-failures-python-${{ matrix.python }}
+          path: frontend/test-results/
+          if-no-files-found: ignore

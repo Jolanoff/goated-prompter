@@ -48,7 +48,9 @@ test("advanced Refine instructions save and reset independently", async ({ page,
   await page.getByRole("button", { name: "Refine", exact: true }).click();
   await page.getByText("Refine advanced settings", { exact: true }).click();
   await page.getByLabel("Refine system prompt", { exact: true }).fill("Keep edits concise and grounded in the source.");
+  const saved = page.waitForResponse((response) => response.url().endsWith("/api/workspace/settings/refine/instructions") && response.request().method() === "POST");
   await page.getByRole("button", { name: "Save Refine instructions", exact: true }).click();
+  expect((await saved).ok()).toBe(true);
   expect((await (await request.get("/api/workspace/settings/refine")).json()).instructions.system)
     .toBe("Keep edits concise and grounded in the source.");
   page.once("dialog", (dialog) => dialog.accept());

@@ -2,6 +2,15 @@ import { test, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import AxeBuilder from "@axe-core/playwright";
 
+async function delayDatasetSettings(page) {
+  // Exercise the job-completion/revision-refresh boundary on slower CI runners.
+  await page.route("**/api/workspace/settings/dataset", async (route) => {
+    const response = await route.fetch();
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    await route.fulfill({ response });
+  });
+}
+
 test("backend completes and persists Dataset after the generating browser closes", async ({ page, context, browser, request }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Dataset", exact: true }).click();
@@ -446,6 +455,7 @@ test("reset recent ideas does not invalidate the current plan or prompts", async
 });
 
 test("manual scenes regenerate locally and clearing results releases only job checkpoints", async ({ page, request }) => {
+  await delayDatasetSettings(page);
   await page.goto("/");
   await page.getByRole("button", { name: "Dataset", exact: true }).click();
   await page.getByLabel("Dataset idea", { exact: true }).fill("A traveler visiting exhibits.");
@@ -457,7 +467,12 @@ test("manual scenes regenerate locally and clearing results releases only job ch
   const manual = "She reads a book on a park bench.";
   await page.getByLabel("Planned scene 1").fill(manual);
   const plan = page.getByRole("region", { name: "Scene Planner ideas", exact: true });
+  const started = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset/scene") && response.request().method() === "POST");
   await plan.getByRole("button", { name: "Regenerate prompt", exact: true }).first().click();
+  const response = await started;
+  expect(response.ok(), await response.text()).toBe(true);
+  const sceneJob = await response.json();
+  await expect.poll(async () => (await (await request.get(`/api/jobs/${sceneJob.id}`)).json()).status).toBe("succeeded");
   await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(/park bench/);
   await expect(page.getByLabel("Planned scene 1")).toHaveValue(manual);
   await expect(plan.getByRole("button", { name: "View geometry 1", exact: true })).toHaveCount(0);
@@ -474,6 +489,7 @@ test("manual scenes regenerate locally and clearing results releases only job ch
 });
 
 test("Quality planning and per-scene controls preserve the rest of the batch", async ({ page, request }) => {
+  await delayDatasetSettings(page);
   await page.goto("/");
   await page.getByRole("button", { name: "Dataset", exact: true }).click();
   await page.getByLabel("Dataset idea", { exact: true }).fill("A woman doing funny stuff");
@@ -514,7 +530,12 @@ test("Quality planning and per-scene controls preserve the rest of the batch", a
   expect(state.idea_plan_current).toBe(true);
   expect(state.scene_plan_current).toBe(false);
   await expect(page.getByRole("button", { name: "Repair scene", exact: true }).first()).toBeEnabled();
+  const repaired = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset/scene") && response.request().method() === "POST");
   await page.getByRole("button", { name: "Repair scene", exact: true }).first().click();
+  const repairResponse = await repaired;
+  expect(repairResponse.ok(), await repairResponse.text()).toBe(true);
+  const repairJob = await repairResponse.json();
+  await expect.poll(async () => (await (await request.get(`/api/jobs/${repairJob.id}`)).json()).status).toBe("succeeded");
   await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(/Edited activity/);
   await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(before.results[1].prompt);
 });
