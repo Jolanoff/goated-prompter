@@ -1,6 +1,20 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { datasetJsonl } from "./workflows/datasetExport.js";
+import { datasetCopyText, datasetJsonl } from "./workflows/datasetExport.js";
+
+test("Copy all places each prompt on one line without blank separators", () => {
+  const draft = { results: [{ prompt: "prompt1" }, { prompt: "prompt2" }] };
+  assert.equal(datasetCopyText(draft), "prompt1\nprompt2");
+  assert.equal(datasetCopyText(null), "");
+  assert.equal(datasetCopyText({ results: [] }), "");
+});
+
+test("Copy all flattens prompt line breaks without changing saved prompts", () => {
+  const draft = { results: [{ prompt: "First\r\n\r\nprompt." }, { prompt: "Second\nprompt." }] };
+  const before = structuredClone(draft);
+  assert.equal(datasetCopyText(draft), "First prompt.\nSecond prompt.");
+  assert.deepEqual(draft, before);
+});
 
 test("Dataset JSONL preserves index, original input, idea, scene and final prompt", () => {
   const draft = { trigger: "token", target: "Qwen Image", results: [

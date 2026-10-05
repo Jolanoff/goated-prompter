@@ -14,14 +14,24 @@ def markdown(report):
             return "; ".join(f"{field}: {result['averages'].get(field):.3f}" if result["averages"].get(field) is not None
                              else f"{field}: not reviewed/measured" for field in fields)
         lines += ["- " + metrics(("format_valid", "first_pass_valid", "repair_frequency")),
+                  "- " + metrics(("transport_success", "repair_introduced_regression")),
                   "- " + metrics(("scene_fidelity", "action_fidelity", "pose_fidelity", "constraint_fidelity")),
                   "- " + metrics(("prompt_words", "useful_detail_density", "semantic_repetition", "latency_seconds")),
                   "- " + metrics(("temporal_fidelity", "dialogue_reference_fidelity") if workflow == "minimax" else
                                   ("domain_action_relevance", "generic_pose", "pose_simplified"))]
         lines += [f"- forbidden content: {result['forbidden_content_violations']}",
                   f"- exclusion-language leakage: {result['negative_language_leakage']}",
-                  f"- failures: {', '.join(result['failures']) or 'none detected (review coverage above)'}", ""]
+                   f"- failures: {', '.join(result['failures']) or 'none detected (review coverage above)'}", ""]
+        lines += ["Repair outcomes: " + json.dumps(result.get("repair_outcomes", {})),
+                  "Model semantic statuses (separate from explicit annotations): " + json.dumps(result.get("model_semantic_statuses", {})), ""]
     lines += ["## Novelty", "```json", json.dumps(report["novelty"], indent=2), "```"]
+    pairs = report.get("length_coverage_pairs", [])
+    lines += ["", "## Useful-detail length scaling", f"Matched explicitly reviewed pairs: {len(pairs)}"]
+    for pair in pairs:
+        lines.append(f"- {pair['detailed']} -> {pair['maximum']}: {len(pair['new_useful_facts'])} new facts, "
+                     f"{len(pair['lost_useful_facts'])} lost facts, net gain {pair['net_useful_fact_gain']}; "
+                     f"fidelity valid: {pair['fidelity_valid']}; useful coverage increased: {pair['useful_coverage_increased']}; "
+                     f"Detailed coverage saturated: {pair['source_saturated']}")
     return "\n".join(lines) + "\n"
 
 

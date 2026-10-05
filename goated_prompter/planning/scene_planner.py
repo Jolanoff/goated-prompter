@@ -100,10 +100,21 @@ def supporting_pass(session, mode, text, build, validate, *, checkpoint=None, pr
     return PlanningResult(True, result, fallback_allowed=mode != "Always", status="planned")
 
 
-def plan_prompt_scene(session, request, *, resolved_scene=None, family="qwen", checkpoint=None, progress=None):
+def plan_prompt_scene(session, request, *, resolved_scene=None, family="qwen", checkpoint=None, progress=None, semantic_validation=False):
     has_evidence = resolved_scene is not None and any(
         item.source not in {"Off", "User Prompt"} for item in resolved_scene.attributes)
     compiled = compile_prompt_request(request, has_context=has_evidence)
+    def validate(raw):
+        details = validate_plan(raw, compiled)
+        if semantic_validation:
+            from .semantic_validation import invariant_contract, review_candidate
+            contract = invariant_contract(compiled.original + "\n" + (compiled.workflow_rules or ""), constraints=compiled.workflow_data())
+            if resolved_scene is not None:
+                contract["preserved_reference_facts"] = [{"attribute":item.key,"source":item.source,"evidence":item.evidence}
+                    for item in resolved_scene.attributes if item.preserve and item.source not in {"Off","User Prompt"}]
+            review_candidate(session, contract,
+                json.dumps(details, ensure_ascii=False), stage="builder:plan", family=family, checkpoint=checkpoint)
+        return PromptScenePlan(details, compiled)
     return supporting_pass(session, request.planning_mode, request.idea + "\n" + request.custom_instructions,
         lambda: scene_planning_instruction(request, compiled, resolved_scene=resolved_scene, family=family),
-        lambda raw: PromptScenePlan(validate_plan(raw, compiled), compiled), checkpoint=checkpoint, progress=progress)
+        validate, checkpoint=checkpoint, progress=progress)

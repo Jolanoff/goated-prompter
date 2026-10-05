@@ -15,7 +15,7 @@ OVER_SHOULDER_HEADS = frozenset(("over_left_shoulder", "over_right_shoulder"))
 
 
 def rear_face(context):
-    if context.reflected:
+    if context.reflected or context.geometry.get("pose_type") == "custom":
         return []
     g = context.geometry
     view, face, head, gaze = (g.get(field) for field in ("camera_azimuth", "face_visibility", "head_direction", "gaze_direction"))
@@ -38,7 +38,7 @@ def rear_face(context):
 def head_gaze(context):
     g = context.geometry
     problems = []
-    if g.get("body_orientation") == "direct_rear" and not context.reflected:
+    if g.get("body_orientation") == "direct_rear" and not context.reflected and g.get("pose_type") != "custom":
         if g.get("head_direction") == "toward_camera":
             problems.append(issue("rear_head_rotation", ("body_orientation", "head_direction"),
                 "Direct rear body and fully camera-facing head require incompatible rotation; use a rear three-quarter shoulder turn."))

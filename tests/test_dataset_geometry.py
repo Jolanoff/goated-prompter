@@ -7,6 +7,7 @@ from goated_prompter.dataset_staging import (
     GeometryValidationError, geometry_errors as staging_geometry_errors, migrate_saved_geometry, validate_geometry,
 )
 from goated_prompter.dataset_staging.normalize import FRAMING_ALIASES, normalize_geometry_value
+from goated_prompter.dataset_staging.schema import GEOMETRY_FIELDS
 
 
 def geometry_errors(row, *, dataset_type="Character"):
@@ -29,8 +30,12 @@ class GeometrySchemaTests(unittest.TestCase):
                 with self.subTest(field=field, value=value):
                     geometry = {field: value}
                     if value == "custom":
-                        geometry[CUSTOM_DETAIL_FIELDS[field]] = "An unusual but interpretable physical state"
-                    self.assertEqual(validate_geometry(geometry), geometry)
+                        if field == "body_visibility":
+                            geometry["required_visible_parts"] = ["face", "feet"]
+                        else:
+                            geometry[CUSTOM_DETAIL_FIELDS[field]] = "An unusual but interpretable physical state"
+                    expected = {**geometry, "framing": FRAMING_ALIASES.get(value, value)} if field == "framing" else geometry
+                    self.assertEqual(validate_geometry(geometry), expected)
 
     def test_every_enum_rejects_unknown_prose_and_wrong_types(self):
         for field in GEOMETRY_ENUMS:
@@ -41,9 +46,13 @@ class GeometrySchemaTests(unittest.TestCase):
             with self.subTest(field=field), self.assertRaises(ValueError):
                 validate_geometry({field: "custom"})
 
-    def test_custom_pose_and_expression_details_are_optional(self):
+    def test_custom_pose_requires_detail_expression_detail_remains_optional(self):
         for field, detail in CUSTOM_DETAIL_FIELDS.items():
-            self.assertEqual(validate_geometry({field: "custom"}), {field: "custom"})
+            if field == "pose_type":
+                with self.assertRaises(ValueError):
+                    validate_geometry({field: "custom"})
+            else:
+                self.assertEqual(validate_geometry({field: "custom"}), {field: "custom"})
             for invalid in ({field: "custom", detail: ""}, {field: "custom", detail: "x\ny"}):
                 with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                     validate_geometry(invalid)
@@ -98,7 +107,7 @@ class GeometrySchemaTests(unittest.TestCase):
 
     def test_free_text_arrays_and_details_are_bounded(self):
         for field in ("action_focus", "pose_detail", "expression_detail"):
-            for value in ("", "x\ny", "x" * 161, "no extra people", [], 3):
+            for value in ("", "x\ny", "x" * (GEOMETRY_FIELDS[field].max_length + 1), "no extra people", [], 3):
                 with self.subTest(field=field, value=value), self.assertRaises(ValueError):
                     validate_geometry({field: value})
         for value in ("face", [""], ["x"] * 13, [True], ["no other people"]):
@@ -150,13 +159,15 @@ class GeometryCompatibilityTests(unittest.TestCase):
 
     def test_crop_feet_and_body_visibility(self):
         for crop in ("extreme_close_up", "face_close_up", "head_and_shoulders", "upper_body", "waist_up", "three_quarter_body"):
-            for feet in ("left_visible", "right_visible", "both_visible", "partially_visible"):
+            for feet in ("left_visible", "right_visible", "both_visible"):
                 with self.subTest(crop=crop, feet=feet):
-                    self.assertTrue(self.errors(framing=crop, feet_visibility=feet))
+                    self.assertFalse(self.errors(framing=crop, feet_visibility=feet))
             self.assertFalse(self.errors(framing=crop, feet_visibility="none_visible"))
-        self.assertTrue(self.errors(framing="face_close_up", body_visibility="waist_up"))
-        self.assertTrue(self.errors(framing="full_body", body_visibility="upper_body"))
-        self.assertTrue(self.errors(framing="full_body", feet_visibility="none_visible"))
+            self.assertFalse(self.errors(framing=crop, feet_visibility="partially_visible"))
+        self.assertFalse(self.errors(framing="face_close_up", body_visibility="waist_up"))
+        self.assertFalse(self.errors(framing="full_body", body_visibility="upper_body"))
+        self.assertFalse(self.errors(framing="full_body", feet_visibility="none_visible"))
+        self.assertFalse(self.errors(framing="full_body", feet_visibility="partially_visible"))
         self.assertFalse(self.errors(framing="full_body", feet_visibility="none_visible", occlusion="major", body_visibility="partial_body"))
 
     def test_camera_body_torso_relative_sides(self):
@@ -178,7 +189,7 @@ class GeometryCompatibilityTests(unittest.TestCase):
         self.assertFalse(self.errors(action_focus="juggling oranges"))
         self.assertFalse(self.errors(action_focus="juggling oranges", visibility_focus=["hands", "oranges"]))
         self.assertFalse(self.errors(action_focus="catching popcorn in her mouth", hand_visibility="none_visible"))
-        self.assertTrue(geometry_errors({"idea": "walking in oversized shoes", "geometry": {"framing": "face_close_up"}}))
+        self.assertFalse(geometry_errors({"idea": "walking in oversized shoes", "geometry": {"framing": "face_close_up"}}))
 
     def test_selfie_and_closed_eye_contradictions(self):
         self.assertTrue(self.errors(pose_type="selfie_pose", face_visibility="hidden"))

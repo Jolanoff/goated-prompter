@@ -29,7 +29,7 @@ primary_subject_count secondary_subject_count
 HUMAN_STAGING_FIELDS = frozenset("""
 body_orientation torso_orientation hip_orientation head_direction gaze_direction
 expression expression_detail pose_type pose_detail movement leg_position pelvis_tilt back_arch
-face_visibility body_visibility hand_visibility feet_visibility head_turn contact_state
+face_visibility body_visibility hand_visibility feet_visibility required_visible_parts head_turn contact_state
 """.split())
 NON_HUMAN_SUBJECT_FIELDS = frozenset("subject_orientation movement pose_detail contact_state".split())
 PRODUCT_STAGING_FIELDS = COMMON_STAGING_FIELDS | {"subject_orientation", "contact_state"}
@@ -62,7 +62,7 @@ STAGING_PROFILES = {
         pose_type pose_detail
         leg_position pelvis_tilt back_arch
         expression movement
-        body_visibility hand_visibility feet_visibility
+        body_visibility hand_visibility feet_visibility required_visible_parts
         contact_state
         action_focus visibility_focus
         composition occlusion

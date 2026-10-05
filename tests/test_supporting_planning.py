@@ -80,7 +80,8 @@ class SupportingPlanningTests(unittest.TestCase):
         self.assertEqual(result.prompt, "A person runs beside a bus.")
         self.assertEqual([call.diagnostic_stage for call in backend.calls], ["final", "final:constraint_retry"])
         self.assertEqual((backend.calls[1].temperature, backend.calls[1].top_p), (.25, .85))
-        self.assertEqual(backend.calls[0].user_message, backend.calls[1].user_message)
+        self.assertTrue(backend.calls[1].user_message.startswith(backend.calls[0].user_message))
+        self.assertIn("LOCAL REPAIR CONTRACT", backend.calls[1].user_message)
 
     def setUp(self):
         directory = self.enterContext(tempfile.TemporaryDirectory())

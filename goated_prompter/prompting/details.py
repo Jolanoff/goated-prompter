@@ -10,7 +10,7 @@ DATASET_OUTPUT_TOKEN_LIMITS = {
     "Maximum Detail": 3072,
     "Maximum": 3072,
 }
-MAXIMUM_DETAIL_GUIDANCE = """Prompt length — Maximum Detail: use the richest useful descriptive density within the target's practical envelope. Clarify supported subject/action, spatial relationships, composition, relevant materials and lighting without exhaustive unrelated inventories. Preserve the central concept, reference evidence and locks. Omit irrelevant or unavailable facts; do not repeat details, stack synonyms, invent evidence or pad with filler. Target structure and density limits take priority."""
+MAXIMUM_DETAIL_GUIDANCE = """Prompt length — Maximum Detail: use the richest useful descriptive density within the target's practical envelope. Clarify supported subject/action, spatial relationships, composition, relevant materials and lighting without exhaustive unrelated inventories. After the core scene is covered, spend remaining detail on previously unstated useful facts: defining contact/support mechanics, spatial relationships, material behavior at contact surfaces, motivated light/shadow/reflection behavior, environmental surfaces and foreground/background separation. Each addition should help render this exact scene, not repeat an existing fact with adjectives. Do not change mechanics to create detail. If applicable coverage is saturated, stop rather than force filler or unrelated categories. Preserve the central concept, reference evidence and locks. Omit irrelevant or unavailable facts; do not repeat details, stack synonyms, invent evidence or pad with filler. Target structure and density limits take priority."""
 LENGTH_ADAPTERS = {
     "Short": "Prompt length — Short: one compact prompt focused on the most consequential visual information.",
     "Medium": "Prompt length — Medium: a balanced prompt with enough detail to direct subject, composition, lighting, and materials without bloat.",
@@ -26,6 +26,9 @@ Spend detail on information that improves the rendering of this exact planned sc
 Prioritize action readability, subject interaction, pose mechanics, required visibility,
 composition, scene-relevant clothing/material behavior, environment, lighting, depth and
 target-appropriate visual treatment. Richness is allowed when it supports the scene.
+Keep ordinary description economical, but preserve all information needed to
+reconstruct actions, complex poses, contacts, overlap/depth, framing and required
+visible anatomy. Functional pose geometry is not decorative verbosity, even at Short.
 Use specific surfaces, textures, fabric tension, shadows, reflections, atmospheric separation
 and color relationships where useful; preserve the requested medium and all supplied facts.
 Avoid unrelated biography, arbitrary decorative objects, accessory inventories, irrelevant

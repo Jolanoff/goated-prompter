@@ -52,12 +52,22 @@ Normally fewer than 450 words.
         hard_max_tokens=1600, stream_character_limit=7000, temperature=.25, top_p=.85)
 
 
-def plan_video_scene(session, data, reference_analysis, *, family="qwen", checkpoint=None, progress=None):
+def plan_video_scene(session, data, reference_analysis, *, family="qwen", checkpoint=None, progress=None, semantic_validation=False):
     from ..prompting.minimax import parse_shot_outline, exact_dialogue
     compiled = compile_request(data["user_request"], has_context=bool(reference_analysis["references"]))
     shots = parse_shot_outline(data["user_request"], data["duration_seconds"])
+    def validate(raw):
+        details = validate_plan(raw, compiled, video=True, reference_analysis=reference_analysis,
+                                shots=shots, dialogue=exact_dialogue(data["user_request"]))
+        if semantic_validation:
+            from .semantic_validation import invariant_contract, review_candidate
+            contract = invariant_contract(compiled.original, constraints=compiled.workflow_data(), temporal=shots)
+            contract["reference_roles"] = reference_analysis
+            review_candidate(session, contract,
+                json.dumps(details, ensure_ascii=False), stage="minimax:plan", family=family, checkpoint=checkpoint,
+                checks=("action_fidelity", "scene_fidelity", "constraint_validity", "temporal_fidelity"))
+        return VideoScenePlan(details, compiled)
     return supporting_pass(session, data["planning_mode"], data["user_request"],
         lambda: video_planning_instruction(data, reference_analysis, compiled, family=family),
-        lambda raw: VideoScenePlan(validate_plan(raw, compiled, video=True, reference_analysis=reference_analysis,
-            shots=shots, dialogue=exact_dialogue(data["user_request"])), compiled),
+        validate,
         checkpoint=checkpoint, progress=progress, video=True)

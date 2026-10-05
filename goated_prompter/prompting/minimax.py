@@ -345,6 +345,7 @@ def generation_instruction(data, plan, director, family, video_scene_plan=None):
         "If shot_outline is present, preserve its exact number of shots, their order and described actions. "
         "Shot shortcut tokens are instructions, not media references: output [Shot 1] without a timestamp, "
         "then numbered shot headings At MM:SS.mmm, at each supplied start_ms boundary. Never print symbolic shot tokens in the final output. "
+        "For an explicitly supplied time range, describe its ending state at its exact end_ms time inside the shot body (At MM:SS.mmm), including the final endpoint. Do not create an extra shot heading for the ending. "
         "The video_audio_tracks map, when nonempty, enables ONLY explicitly requested audio from existing videos. "
         "Define each mapped Audio label as that video's synchronized track, with explicit provenance; it is not a new file. "
         "No other unregistered Audio label is permitted. Generated music, ambience, dialogue and sound design are NOT Audio references; "
@@ -591,6 +592,7 @@ def validate_output(raw, data, plan):
     if normalize_spoken_lines(parts, data, plan):
         timeline = parts[timeline_key]
         prompt = prompt[:headers[0].start()] + "\n\n".join(f"{section}:\n{parts[section]}" for section in sections)
+    validate_temporal_endpoints(timeline, data)
     shots = shot_headings(timeline)
     if not shots or [int(shot[1]) for shot in shots] != list(range(1, len(shots) + 1)):
         raise ValueError("Timeline shots must start at [Shot 1] and be sequential without duplicates.")
@@ -663,5 +665,26 @@ def validate_output(raw, data, plan):
     if problems:
         raise ValueError(problems[0]["message"])
     return prompt
+
+
+def validate_temporal_endpoints(timeline, data):
+    """Require user-authored temporal boundaries; never fabricate missing events."""
+    request = data["user_request"]
+    from ..planning.rule_compiler import QUOTED
+    request = QUOTED.sub("[protected literal]", re.sub(r"<d>.*?</d>", "[protected dialogue]", request, flags=re.S))
+    explicit = []
+    markers = list(SHOT_INPUT.finditer(request))
+    for i, marker in enumerate(markers):
+        content = request[marker.end():markers[i + 1].start() if i + 1 < len(markers) else len(request)]
+        if timing := SHOT_RANGE.match(content):
+            explicit.extend(float(timing[j]) for j in (1, 2) if float(timing[j]) != 0)
+    explicit.extend(float(match[1]) for match in re.finditer(r"\bat\s+(\d+(?:\.\d+)?)\s*(?:seconds?|s)\b", request, re.I))
+    present = [int(match[1]) * 60 + int(match[2]) + float("0." + (match[3] or "0"))
+               for match in re.finditer(r"\b(\d{1,2}):([0-5]\d)(?:\.(\d{1,3}))?\b", timeline)]
+    present.extend(float(match[1]) for match in re.finditer(r"\b(?:at|by|until|through|ends?\s+at)\s+(\d+(?:\.\d+)?)\s*(?:seconds?|s)\b", timeline, re.I))
+    missing = sorted({seconds for seconds in explicit if not any(abs(seconds - actual) < .0005 for actual in present)})
+    if missing:
+        raise ValueError("Temporal endpoint completeness: explicitly describe the required state/event at "
+                         + ", ".join(f"{seconds:g} seconds" for seconds in missing) + ". Preserve existing shots, support/contact states and exact dialogue.")
 
 

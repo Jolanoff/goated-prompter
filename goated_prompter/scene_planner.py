@@ -3,9 +3,12 @@
 import json
 import hashlib
 import logging
+from copy import deepcopy
 from dataclasses import replace
 from .dataset_visible_content import visible_content_error
-from .dataset_staging import validate_geometry, geometry_errors, migrate_saved_geometry, resolve_framing_conflicts, STAGING_PROFILES
+from .dataset_staging import validate_geometry, validate_planned_geometry, geometry_errors, migrate_saved_geometry, resolve_framing_conflicts, STAGING_PROFILES
+from .dataset_staging.engine import geometry_repair_locks, geometry_issues, semantic_geometry_fields
+from .dataset_staging.rules.framing import requested_framing
 from .dataset_quality import analyze_idea_diversity, idea_action_error
 from .dataset_constraints import compile_constraints, constraint_issues
 from .scene_eligibility import scene_eligibility, scene_geometry_errors
@@ -33,6 +36,13 @@ PLAN_STATUS_VALUES = {
 # or plans from older builds. New LLM output uses the stricter shared limits.
 MAX_STORED_SCENE_CHARACTERS = 10000
 MAX_STORED_IDEA_CHARACTERS = 10000
+
+
+class SceneFormatError(ValueError):
+    def __init__(self, message, indexes):
+        super().__init__(message)
+        self.correction = (SCENE_FORMAT_CORRECTION + "\nSchema error: " + message
+            + "\nEvery object must include its index. Requested indexes in order: " + json.dumps(indexes))
 
 
 def scene_plan_signature(data, assignments):
@@ -156,7 +166,7 @@ def validate_scene_plan(raw, amount, *, guided_inputs=None, indexes=None, requir
                 or row.keys() - {"index", "idea", "scene", "geometry"}
                 or (require_geometry and "geometry" not in row)
                 or type(row["index"]) is not int or row["index"] != index):
-            raise ValueError("Scene Planner rows require requested integer indexes, idea, scene and optional geometry.")
+            raise SceneFormatError("Scene Planner rows require requested integer indexes, idea, scene and optional geometry.", indexes)
         idea = row["idea"]
         if (not isinstance(idea, str) or not idea.strip()
                 or len(idea) > MAX_IDEA_CHARACTERS or len(idea.split()) > MAX_IDEA_WORDS
@@ -225,9 +235,64 @@ class ScenePlanner:
 
     """Chunked Fast planning or Quality composition, with bounded local repairs."""
 
-    def __init__(self, checkpoint, idea_history=None):
+    def __init__(self, checkpoint, idea_history=None, semantic_validation=False, support_validation=False):
         self.checkpoint = checkpoint
         self.idea_history = idea_history
+        self.semantic_validation = semantic_validation
+        self.support_validation = support_validation
+        self._accepted_scene_facts = {}
+        self._scene_repair_contracts = {}
+
+    def _audit_idea(self, session, data, assignments, row, family):
+        from .planning.semantic_validation import invariant_contract, review_candidate
+        local = assignments[row["index"] - 1].get("input", "")
+        contract = invariant_contract(data["subject"] + "\n" + local,
+            constraints=compile_constraints(data.get("constraints", "")), concept=data["subject"])
+        contract["candidate_scope"] = "idea"
+        return review_candidate(session, contract, json.dumps(row, ensure_ascii=False),
+            stage=f"dataset:idea:{row['index']}", family=family, checkpoint=self.checkpoint,
+            checks=("domain_relevance", "constraint_validity", *(["action_fidelity"] if local else [])))
+
+    def _audit_scene(self, session, data, assignments, row, family):
+        from .planning.semantic_validation import invariant_contract, review_candidate, SemanticValidationError
+        from .planning.semantics import support_requirements
+        source = "\n".join((data["subject"], assignments[row["index"] - 1].get("input", "")))
+        support = (support_requirements(source) if self.support_validation
+                   and isinstance(row.get("geometry"), dict) and row["geometry"].get("pose_type") == "custom" else [])
+        if not self.semantic_validation and not support:
+            return
+        contract = invariant_contract(source, planned={"idea": row["idea"]}, constraints=compile_constraints(data.get("constraints", "")),
+            concept=data["subject"], accepted_facts=self._accepted_scene_facts.get(row["index"], ()))
+        if previous := self._scene_repair_contracts.get(row["index"]):
+            if (previous["original_requirements"] == source
+                    and previous["action_critical_facts"].get("idea") == row["idea"]):
+                contract.update(previous)
+                contract["accepted_facts"] = list(self._accepted_scene_facts.get(row["index"], ()))
+            else:
+                # A deliberate local idea replacement starts a new contract;
+                # never leak the failed sibling's facts into its replacement.
+                self._scene_repair_contracts.pop(row["index"], None)
+                self._accepted_scene_facts.pop(row["index"], None)
+                contract["accepted_facts"] = []
+        try:
+            preservation = ("repair_preservation",) if contract.get("previous_response") else ()
+            reviews = []
+            if support:
+                reviews.append(("source_support", "support", ("action_fidelity", "scene_fidelity", *preservation)))
+            if self.semantic_validation:
+                reviews.append(("scene", "scene", ("action_fidelity", "scene_fidelity", "constraint_validity", "domain_relevance", *preservation)))
+            for scope, stage, checks in reviews:
+                facts = review_candidate(session, {**contract, "candidate_scope": scope,
+                    "source_support_requirements": support}, json.dumps(row, ensure_ascii=False),
+                    stage=f"dataset:{stage}:{row['index']}", family=family, checkpoint=self.checkpoint, checks=checks)
+                contract["accepted_facts"] = list(facts)
+        except SemanticValidationError as exc:
+            facts = exc.accepted_facts or contract["accepted_facts"]
+            evidence = [problem.get("evidence", "") for problem in exc.issues if problem.get("evidence")]
+            self._accepted_scene_facts[row["index"]] = tuple(fact for fact in facts
+                if not any(quote in fact or fact in quote for quote in evidence))
+            raise
+        self._accepted_scene_facts[row["index"]] = facts
 
     def plan_batch(self, *, session, data, assignments, family="qwen", progress, plan_update=None):
         if self.idea_history is not None:
@@ -374,17 +439,27 @@ class ScenePlanner:
         # Guided/Focused scope exemptions live in the diversity checker.
         accepted = [dict(row) for row in existing if row["index"] not in indexes]
         for position, row in enumerate(rows):
+            relevance_error = None
+            if self.semantic_validation:
+                from .planning.semantic_validation import SemanticValidationError
+                try:
+                    self._audit_idea(session, data, assignments, row, family)
+                except SemanticValidationError as exc:
+                    relevance_error = str(exc)
             audit = analyze_idea_diversity(data, accepted + [row])
-            if any(issue["code"] == "exact_duplicate_idea" for record in audit["ideas"] if record["index"] == row["index"] for issue in record["issues"]):
+            if relevance_error or any(issue["code"] == "exact_duplicate_idea" for record in audit["ideas"] if record["index"] == row["index"] for issue in record["issues"]):
                 exclusions = accepted + rows[position + 1:]
                 def validate_new(raw):
                     new = validate_idea_plan(raw, [row["index"]])
                     audit = analyze_idea_diversity(data, exclusions + new)
                     if any(issue["code"] == "exact_duplicate_idea" for record in audit["ideas"] if record["index"] == row["index"] for issue in record["issues"]):
                         raise ValueError("Replacement idea still repeats an existing idea's meaning.")
+                    if self.semantic_validation:
+                        self._audit_idea(session, data, assignments, new[0], family)
                     return new
                 rows[position] = self._call(session,
-                    lambda correction: idea_planner_instruction(data, assignments, family, correction,
+                    lambda correction: idea_planner_instruction(data, assignments, family,
+                        ("CONCEPT RELEVANCE CORRECTION: " + relevance_error + ". Keep a meaningful procedure inside the concept; novelty is subordinate to relevance. " if relevance_error else "") + correction,
                         indexes=[row["index"]], existing=exclusions),
                     validate_new, progress, f"Idea Planner · replace idea {row['index']}")[0]
             accepted.append(rows[position])
@@ -439,12 +514,13 @@ class ScenePlanner:
         replaced = {row["index"] for row in (ideas or rows) if row.get("replacement_attempted")}
         checked = list(existing_rows)
         for position, row in enumerate(rows):
+            semantic_issues = ()
             scene_error = scene_errors[row["index"]]
             if row["index"] in replaced:
                 row["replacement_attempted"] = True
             try:
                 if "geometry" in row:
-                    row["geometry"] = validate_geometry(row["geometry"], dataset_type=data["trigger_type"], scene=row["scene"])
+                    row["geometry"] = validate_planned_geometry(row["geometry"], dataset_type=data["trigger_type"], scene=row["scene"])
                     row = rows[position] = resolve_framing_conflicts(row, dataset_type=data["trigger_type"])
                 elif ideas is not None or STAGING_PROFILES[data["trigger_type"]].required:
                     raise ValueError("Scene Composer must include a structured geometry object.")
@@ -454,6 +530,10 @@ class ScenePlanner:
                 errors = [getattr(exc, "correction", str(exc))]
             if scene_error:
                 errors.append(scene_error)
+            if data["trigger_type"] == "Character" and data["source_mode"] == "guided":
+                crop = requested_framing(assignments[row["index"] - 1]["input"])
+                if crop and (not isinstance(row.get("geometry"), dict) or row["geometry"].get("framing") != crop):
+                    errors.append(f"The guided input explicitly requests {crop} framing. Preserve that crop; correct the representation without replacing the body geometry.")
             compiled = compile_constraints(data.get("constraints", ""))
             errors.extend(issue["message"] for text in (row["idea"], row["scene"])
                           for issue in constraint_issues(text, compiled) if issue["severity"] == "error")
@@ -464,6 +544,12 @@ class ScenePlanner:
                 errors.append("Echo the fixed idea unchanged; compose it instead of replacing it.")
             if error := duplicate_scene_error(row, checked, data, assignments):
                 errors.append(error)
+            if not errors:
+                try:
+                    self._audit_scene(session, data, assignments, row, family)
+                except ValueError as exc:
+                    errors.append(str(exc))
+                    semantic_issues = getattr(exc, "issues", ())
             if errors:
                 if plan_update:
                     # Publish loadable stage state even if a local repair later fails.
@@ -482,25 +568,68 @@ class ScenePlanner:
                     plan_update(pending)
                 rows[position] = self.recover_scene(session=session, data=data, assignments=assignments,
                     row={**row, "idea": fixed[row["index"]]}, family=family, progress=progress, errors=errors,
-                    existing_rows=[*checked, *rows[position + 1:]])
+                    existing_rows=[*checked, *rows[position + 1:]], semantic_issues=semantic_issues)
             if rows[position].get("scene_status") != "failed":
                 checked.append(rows[position])
         return rows
 
-    def recover_scene(self, *, session, data, assignments, row, family="qwen", progress, errors=(), existing_rows=()):
+    def recover_scene(self, *, session, data, assignments, row, family="qwen", progress, errors=(), existing_rows=(), semantic_issues=()):
         try:
             return self.repair_scene(session=session, data=data, assignments=assignments, row=row,
                 family=family, progress=progress, errors=errors, existing_rows=existing_rows,
-                attempts=SCENE_REPAIR_ATTEMPTS)
+                attempts=SCENE_REPAIR_ATTEMPTS, semantic_issues=semantic_issues)
         except BackendGenerationError as exc:
             reason = failure_reason(exc)
             progress(f"Scene {row['index']} needs a local retry: {reason}")
             return failed_scene(row, reason, dataset_type=data["trigger_type"])
 
-    def repair_scene(self, *, session, data, assignments, row, family="qwen", progress, errors=(), existing_rows=(), attempts=SCENE_REPAIR_ATTEMPTS):
+    def repair_scene(self, *, session, data, assignments, row, family="qwen", progress, errors=(), existing_rows=(), attempts=SCENE_REPAIR_ATTEMPTS, semantic_issues=()):
+        semantic_defects = list(deepcopy(semantic_issues))
+        defective_fields = semantic_geometry_fields(row, semantic_defects)
+        locked_geometry = deepcopy(geometry_repair_locks(row, dataset_type=data["trigger_type"], defective_fields=defective_fields))
+        local_crop = (requested_framing(assignments[row["index"] - 1]["input"])
+                      if data["trigger_type"] == "Character" and data["source_mode"] == "guided" else None)
+        if local_crop:
+            locked_geometry["framing"] = local_crop  # Source outranks supporting plan.
+        problems = geometry_issues(row, data["trigger_type"])
+        defective_fields.update(field for problem in problems for field in problem.fields)
+        # A malformed optional metadata field does not authorize rewriting valid
+        # scene prose. Semantic/prose defects still use the existing scene repair.
+        preserve_scene = (not semantic_defects and bool(problems) and all(problem.code in {"staging_schema", "support_contact_metadata"} for problem in problems)
+            and bool(row.get("scene", "").strip()) and not visible_content_error(row["scene"])
+            and len(row["scene"]) <= MAX_SCENE_CHARACTERS and len(row["scene"].split()) <= MAX_SCENE_WORDS
+            and not any(problem.fields == ("pose_detail",) for problem in problems))
+        compiled = compile_constraints(data.get("constraints", ""))
+        if (any(problem["severity"] == "error" for problem in constraint_issues(row.get("scene", ""), compiled))
+                or duplicate_scene_error(row, existing_rows, data, assignments)
+                or (data.get("planning_mode") == "Quality" and idea_action_error(row["idea"], row.get("scene", "")))):
+            preserve_scene = False  # Real content defects must remain repairable.
+        if local_crop and (not isinstance(row.get("geometry"), dict) or row["geometry"].get("framing") != local_crop):
+            preserve_scene = False
+        from .planning.semantic_validation import invariant_contract
+        source = "\n".join((data["subject"], assignments[row["index"] - 1].get("input", "")))
+        def support_contract():
+            supporting = deepcopy(row)
+            if isinstance(supporting.get("geometry"), dict):
+                for field in defective_fields:
+                    supporting["geometry"].pop(field, None)
+            evidence = [problem.get("evidence", "") for problem in semantic_defects if problem.get("evidence")]
+            accepted = [fact for fact in self._accepted_scene_facts.get(row["index"], ())
+                        if not any(quote in fact or fact in quote for quote in evidence)]
+            return {**invariant_contract(source, planned=supporting, constraints=compiled, concept=data["subject"],
+                        accepted_facts=accepted),
+                    "previous_response": json.dumps(row, ensure_ascii=False), "listed_defect": " ".join(errors),
+                    "known_semantic_defects": deepcopy(semantic_defects)}
+        self._scene_repair_contracts[row["index"]] = support_contract()
         def validate(raw):
+            nonlocal preserve_scene
             result = validate_scene_plan(raw, 1, indexes=[row["index"]], require_geometry=True, validate_geometry_fields=False)[0]
-            result["geometry"] = validate_geometry(result["geometry"], dataset_type=data["trigger_type"], scene=result["scene"])
+            if not isinstance(result["geometry"], dict):
+                raise ValueError("Repair geometry must be an object.")
+            result["geometry"] = {**result["geometry"], **deepcopy(locked_geometry)}
+            if preserve_scene:
+                result["scene"] = row["scene"]
+            result["geometry"] = validate_planned_geometry(result["geometry"], dataset_type=data["trigger_type"], scene=result["scene"])
             result = resolve_framing_conflicts(result, dataset_type=data["trigger_type"])
             if result["idea"] != row["idea"]:
                 raise ValueError("Repair must preserve the fixed idea exactly.")
@@ -514,12 +643,38 @@ class ScenePlanner:
                     raise ValueError(problems[0]["message"])
             if data.get("planning_mode") == "Quality" and (error := idea_action_error(row["idea"], result["scene"])):
                 raise ValueError(error)
+            try:
+                self._audit_scene(session, data, assignments, result, family)
+            except ValueError as exc:
+                # A metadata-only retry can uncover a semantic defect. Carry its
+                # exact field evidence into the next bounded attempt; otherwise
+                # copying the original locks back makes correction impossible.
+                if issues := getattr(exc, "issues", ()):
+                    preserve_scene = False
+                    semantic_defects.extend(deepcopy(problem) for problem in issues if problem not in semantic_defects)
+                    defective_fields.update(semantic_geometry_fields(result, issues))
+                    locked_geometry.clear()
+                    locked_geometry.update(deepcopy(geometry_repair_locks(row, dataset_type=data["trigger_type"], defective_fields=defective_fields)))
+                    if local_crop:
+                        locked_geometry["framing"] = local_crop
+                    self._scene_repair_contracts[row["index"]] = support_contract()
+                raise
             return result
-        result = self._call(session,
-            lambda correction: scene_composer_instruction(data, assignments, [row], family,
+        def build(correction):
+            from .planning.semantic_validation import repair_contract
+            instruction = scene_composer_instruction(data, assignments, [row], family,
                 (correction + "\n" + " ".join(errors) if correction.startswith("SCENE OUTPUT FORMAT CORRECTION")
                  else " ".join(errors) + " " + correction)
-                + " Preserve the fixed idea, important action and required props.", previous=row),
+                + " Preserve the fixed idea, important action and required props.", previous=row)
+            contract = support_contract()
+            context = json.loads(instruction.user_message)
+            context["repair_contract"] = repair_contract(contract, json.dumps(row, ensure_ascii=False), " ".join(errors) + " " + correction)
+            context["locked_geometry"] = locked_geometry
+            context["locked_scene_prose"] = row["scene"] if preserve_scene else None
+            context["repair_policy"] = "Repair only diagnosed defects, not unrelated creative staging. locked_geometry fields are unchanged; echo them and keep scene prose consistent with them. Fields implicated by quoted known_semantic_defects are repairable, not accepted invariants. Source support/contact requirements outrank a defective supporting plan. Preserve unusual geometry, overlap and required visible anatomy. Never widen crop to expose an extremity or substitute a conventional pose."
+            return replace(instruction, user_message=json.dumps(context, ensure_ascii=False))
+        result = self._call(session,
+            build,
             validate, progress, f"Scene Composer · repair scene {row['index']}", scene_output=True, attempts=attempts)
         if row.get("replacement_attempted"):
             result["replacement_attempted"] = True

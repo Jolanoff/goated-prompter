@@ -1,7 +1,8 @@
-"""Framing tables and deterministic crop widening; never change the fixed idea."""
+"""Compositional extent, never inferred from anatomical placement."""
 
 import re
 from . import Rule, issue
+from ..vocabulary import FRAMING_VALUES, FRAMING_ALIASES
 
 FRAMING_RANK = {
     "extreme_close_up": 0, "detail_close_up": 0, "face_close_up": 0,
@@ -9,18 +10,81 @@ FRAMING_RANK = {
     "full_body": 5, "full_subject": 5, "full_body_with_environment": 6,
     "full_subject_with_environment": 6, "wide": 7, "extreme_wide": 8,
 }
-BODY_VISIBILITY_RANK = {"face_only": 0, "head_and_shoulders": 1, "upper_body": 2, "waist_up": 3, "three_quarter_body": 4, "full_body": 5}
-MIN_FRAMING_FOR_DETAIL = {"feet": "full_body", "foot": "full_body", "shoes": "full_body", "shoe": "full_body", "full body": "full_body"}
+
+
 WHOLE_SUBJECT_PATTERN = r"\b(?:whole|entire|complete|full) (?:product|object|subject|logo|sign|text block|landmark|building)\b"
 CROP_WORDING = r"\b(?:extreme\s+close[- ]?up|detail\s+close[- ]?up|face\s+close[- ]?up|close[- ]?up|head[- ]and[- ]shoulders|upper[- ]body|waist[- ]up|three[- ]quarter[- ]body)(?:\s+(?:crop|framing|shot|view))?\b"
 
 
+# Read only explicit camera/crop labels, not the anatomy claimed visible. Use
+# the canonical vocabulary rather than guessing composition from body parts.
+_CROP_LABELS = sorted((FRAMING_VALUES | FRAMING_ALIASES.keys()) - {"medium"}, key=len, reverse=True)
+_EXPLICIT_CROP = re.compile(r"\b(" + "|".join(
+    re.escape(label).replace("_", r"[- _]+") for label in _CROP_LABELS)
+    + r")\b", re.I)
+_SOURCE_CROP = re.compile(r"(?:^|[,;\n])\s*(" + "|".join(
+    re.escape(label).replace("_", r"[- _]+") for label in _CROP_LABELS)
+    + r")(?:\s+(?:framing|composition|shot|crop|view))?\s*(?=[,;\n]|$)", re.I)
+
+
+def requested_framing(source):
+    """Read a standalone explicit crop tag; ambiguous prose is not classified.
+
+    This lexical projection never derives composition from anatomy or pose.
+    Conflicting crop tags remain unresolved instead of silently choosing one.
+    """
+    values = {FRAMING_ALIASES.get(label, label) for match in _SOURCE_CROP.finditer(source)
+              for label in (re.sub(r"[- _]+", "_", match[1].casefold()),)}
+    return next(iter(values)) if len(values) == 1 else None
+
+
+def _crop_family(value):
+    value = FRAMING_ALIASES.get(value, value)
+    return value.removesuffix("_with_environment")
+
+
+def framing_text_errors(text, framing, *, protected_terms=()):
+    """Reject explicit different crops; missing/implicit wording stays unverified.
+
+    This is not a semantic coverage verdict, and cannot infer a crop from visible
+    feet, torso, whole-body anatomy, perspective, or camera distance alone.
+    """
+    if framing not in FRAMING_VALUES:
+        return []
+    from ...planning.rule_compiler import QUOTED
+    for term in sorted((term for term in protected_terms if term), key=len, reverse=True):
+        text = text.replace(term, "[protected]")
+    text = QUOTED.sub("[literal]", text).replace("–", "-").replace("—", "-")
+    errors = []
+    for match in _EXPLICIT_CROP.finditer(text):
+        label = re.sub(r"[- _]+", "_", match[1].casefold())
+        # "Full body of ..." and "head and shoulders of ..." are anatomy, not
+        # camera labels. Require a compositional qualifier unless the phrase
+        # already explicitly names a shot/close-up. Distance alone stays separate.
+        qualifier = re.match(r"\s+(?:composition\b|framing\b|view\b|shot\b|crop\b|portrait\b|is\s+framed\b)", text[match.end():], re.I)
+        shot_label = label.endswith("_shot")
+        closeup_label = (label.endswith("close_up") or _crop_family(label).endswith("close_up"))
+        distance_label = re.match(r"\s+(?:camera\s+)?distance\b", text[match.end():], re.I)
+        if distance_label or not (qualifier or shot_label or closeup_label):
+            continue
+        if re.search(r"\b(?:no|not|never|without|avoid)\b[^,.;:]*$", text[max(0, match.start() - 40):match.start()], re.I):
+            continue
+        if _crop_family(label) != _crop_family(framing):
+            errors.append(f"Explicit {match[1]!r} framing conflicts with locked {framing!r}. Preserve the locked crop and actual pose/contacts; correct only the composition wording.")
+    return list(dict.fromkeys(errors))
+
+
+def scene_crop(context):
+    return [issue("scene_crop_drift", ("scene",), message) for message in
+            framing_text_errors(context.row.get("scene", ""), context.geometry.get("framing"))]
+
+
 def minimum_framing(context):
-    content = context.action + " " + context.focus
+    content = (context.action + " " + context.focus).casefold()
+
     if "character" in context.rule_groups:
-        details = [frame for detail, frame in MIN_FRAMING_FOR_DETAIL.items()
-                   if re.search(r"\b" + re.escape(detail).replace(r"\ ", r"[- ]") + r"\b", content)]
-        return max(details, key=FRAMING_RANK.get) if details else None
+        return None  # Pose locates anatomy; no standing-body crop assumptions.
+
     if re.search(WHOLE_SUBJECT_PATTERN, content):
         return "full_subject"
     return None
@@ -35,27 +99,6 @@ def requested_extent(context):
     return []
 
 
-def human_crop_visibility(context):
-    g = context.geometry
-    crop = g.get("framing")
-    rank = FRAMING_RANK.get(crop, 99)
-    problems = []
-    if rank < 5 and g.get("feet_visibility", "none_visible") != "none_visible":
-        problems.append(issue("feet_outside_crop", ("framing", "feet_visibility"),
-            "The current framing cannot show the claimed feet. Keep the idea unchanged and choose a wider framing."))
-    if rank < BODY_VISIBILITY_RANK.get(g.get("body_visibility"), 0):
-        problems.append(issue("body_outside_crop", ("framing", "body_visibility"),
-            "The framing cannot include the claimed body visibility. Keep the action and choose a compatible crop."))
-    if crop in {"full_body", "full_body_with_environment", "full_subject", "full_subject_with_environment"} and g.get("occlusion", "none") == "none":
-        for field, expected, message in (
-            ("body_visibility", "full_body", "Full-body framing normally requires full_body visibility unless explicitly occluded."),
-            ("feet_visibility", "both_visible", "Full-body framing must include both feet unless explicitly occluded."),
-        ):
-            if g.get(field, expected) != expected:
-                problems.append(issue("full_frame_" + field, ("framing", field, "occlusion"), message))
-    return problems
-
-
 def widen_framing(context):
     geometry = dict(context.geometry)
     minimum = minimum_framing(context)
@@ -65,11 +108,6 @@ def widen_framing(context):
     geometry["framing"] = minimum
     if "camera_distance" in geometry:
         geometry["camera_distance"] = "full"
-    if "character" in context.rule_groups:
-        if "body_visibility" in geometry:
-            geometry["body_visibility"] = "full_body"
-        if "feet_visibility" in geometry and geometry.get("occlusion", "none") == "none":
-            geometry["feet_visibility"] = "both_visible"
     replacement = "full-body view" if minimum == "full_body" else "whole-subject view"
     scene = re.sub(CROP_WORDING, replacement, context.row.get("scene", ""), flags=re.I)
     return {**context.row, "scene": scene, "geometry": geometry,
@@ -77,5 +115,4 @@ def widen_framing(context):
 
 
 COMMON_FRAMING_RULES = (Rule("required_extent", requested_extent),)
-CHARACTER_FRAMING_RULES = (Rule("human_crop_visibility", human_crop_visibility,
-    "Framing must show required limbs/props; full-body frames normally show feet unless explicitly occluded."),)
+CHARACTER_FRAMING_RULES = (Rule("scene_crop", scene_crop),)

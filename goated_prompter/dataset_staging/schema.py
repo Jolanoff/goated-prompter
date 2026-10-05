@@ -15,12 +15,13 @@ class FieldSpec:
     minimum: int = 0
     max_length: int = 160
     max_items: int = 12
+    item_values: frozenset[str] | None = None
 
 
 GEOMETRY_FIELDS = {
     spec.name: spec for spec in (
         FieldSpec("framing", v.FRAMING_VALUES,
-                  description="Which portion of the subject/image content is included in the composition. Use only the listed framing values, not camera-distance labels."),
+                  description="Camera crop, composition and visual emphasis, independent of anatomical visibility and pose. Required feet, knees or hands never automatically widen framing; pose_detail places them inside the composition."),
         FieldSpec("camera_azimuth", v.CAMERA_AZIMUTH_VALUES,
                   description="Which side is presented to the camera, not world-space direction. Unsided front_three_quarter does not imply left or right."),
         FieldSpec("camera_elevation", v.CAMERA_ELEVATION_VALUES,
@@ -46,9 +47,9 @@ GEOMETRY_FIELDS = {
         FieldSpec("expression_detail", free_text=True,
                   description="Optional unusual expression description."),
         FieldSpec("pose_type", v.POSE_TYPE_VALUES,
-                  description="Broad body mechanics. For uncommon staging use custom; detail is optional."),
-        FieldSpec("pose_detail", free_text=True,
-                  description="Free description of posture or long-tail physical staging; no new pose enum is needed."),
+                  description="Broad body mechanics. Use custom for long-tail poses; custom requires specific pose_detail, not a generic pose label."),
+        FieldSpec("pose_detail", free_text=True, max_length=1600,
+                  description="Physical staging: support/contact, torso and hip/shoulder relationship, limb directions, joint bends, self/object contact, overlap/depth and unusual visible extremities as applicable. Simple poses may be concise; complex poses need several short clauses. No new pose enum is needed."),
         FieldSpec("movement", v.MOVEMENT_VALUES,
                   description="Visible motion/body state."),
         FieldSpec("leg_position", v.LEG_POSITION_VALUES,
@@ -60,11 +61,13 @@ GEOMETRY_FIELDS = {
         FieldSpec("face_visibility", v.FACE_VISIBILITY_VALUES,
                   description="Face visibility in the selected view."),
         FieldSpec("body_visibility", v.BODY_VISIBILITY_VALUES,
-                  description="Visible extent of the human body."),
+                  description="Anatomical visibility, independent of framing. Use custom plus required_visible_parts for non-contiguous anatomy such as face, torso and feet."),
+        FieldSpec("required_visible_parts", item_values=v.BODY_PART_VALUES, max_items=len(v.BODY_PART_VALUES),
+                  description="Array of anatomical parts that must remain visible. Controls anatomical visibility only; must never automatically widen or change framing. Required and nonempty when body_visibility=custom; optional otherwise."),
         FieldSpec("hand_visibility", v.HAND_VISIBILITY_VALUES,
                   description="Visibility of human hands."),
         FieldSpec("feet_visibility", v.FEET_VISIBILITY_VALUES,
-                  description="Visibility of human feet."),
+                  description="Visibility of human feet, independent of crop. Folded, inverted or foreshortened feet may appear within tight framing."),
         FieldSpec("subject_position", v.SUBJECT_POSITION_VALUES,
                   description="Position within the image."),
         FieldSpec("subject_scale", v.SUBJECT_SCALE_VALUES,
@@ -72,7 +75,7 @@ GEOMETRY_FIELDS = {
         FieldSpec("action_visibility", v.ACTION_VISIBILITY_VALUES,
                   description="Readability of the main action/interaction."),
         FieldSpec("contact_state", v.CONTACT_STATE_VALUES,
-                  description="Subject/object relationship to an interacting object or support."),
+                  description="Subject/object relationship to an interacting object or support. For unusual load-bearing contacts not accurately described by ordinary standing/sitting labels, use supporting and establish the actual external contact in pose_detail. This enum is not a substitute for a load path."),
         FieldSpec("occlusion", v.OCCLUSION_VALUES,
                   description="Extent of relevant subject/feature occlusion."),
         FieldSpec("depth_position", v.DEPTH_POSITION_VALUES,

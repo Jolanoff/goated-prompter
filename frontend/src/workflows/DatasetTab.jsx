@@ -6,7 +6,7 @@ import { orderDisplayPresets, presetDisplayLabel } from "../presetPresentation.j
 import { TargetSelect } from "./WorkflowControls.jsx";
 import { useWorkflowSettings } from "./useWorkflowSettings.js";
 import WorkflowSettingsStatus from "./WorkflowSettingsStatus.jsx";
-import { datasetJsonl } from "./datasetExport.js";
+import { datasetCopyText, datasetJsonl } from "./datasetExport.js";
 import { editDatasetPlan, invalidateDatasetPrompts, datasetRetryStage } from "./datasetState.js";
 import { geometryRows } from "./datasetGeometry.js";
 
@@ -559,7 +559,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
           <div><h3 className="font-display text-lg font-bold">Generated dataset</h3>
             <p className="mt-1 text-xs text-muted">Completed prompts appear as the batch runs and remain editable.</p></div>
           <div className="flex flex-wrap gap-2">
-            <button className={ui.button} disabled={!draft.results.length} onClick={() => onCopy(allText)}><Copy size={15} />Copy all</button>
+            <button className={ui.button} disabled={!draft.results.length} onClick={() => onCopy(datasetCopyText(draft))}><Copy size={15} />Copy all</button>
             <button className={ui.button} disabled={!draft.results.length} onClick={() => exportDataset("dataset-prompts.txt", allText, "text/plain;charset=utf-8")}><Download size={15} />TXT</button>
             <button className={ui.button} disabled={!draft.results.length} onClick={() => exportDataset("dataset-prompts.jsonl", jsonl, "application/x-ndjson;charset=utf-8")}><FileJson size={15} />JSONL</button>
             <button className={ui.button} disabled={disabled || !draft.results.length} onClick={clearResults}><Trash2 size={15} />Clear</button>

@@ -119,7 +119,8 @@ class DatasetWriterTests(unittest.TestCase):
         calls = [call.args[0] for call in session.generate.call_args_list]
         self.assertEqual((calls[0].temperature, calls[0].top_p), (.45, .9))
         self.assertEqual((calls[1].temperature, calls[1].top_p), (.25, .85))
-        self.assertEqual(calls[0].user_message, calls[1].user_message)
+        self.assertTrue(calls[1].user_message.startswith(calls[0].user_message))
+        self.assertIn("LOCAL REPAIR CONTRACT", calls[1].user_message)
         self.assertEqual(calls[0].hard_max_tokens, calls[1].hard_max_tokens)
         self.assertIn(PLANNED_SCENE_CONTRACT, calls[1].system_message)
         self.assertIn(LENGTH_ADAPTERS["Maximum Detail"], calls[1].system_message)

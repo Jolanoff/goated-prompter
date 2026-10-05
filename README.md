@@ -9,7 +9,7 @@
 A local prompt studio for image and video workflows.<br>
 Bring your ideas and reference images. Shape the result. Copy it into your favorite generator.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-a3e635?style=flat-square)](LICENSE)
+[![License: Source Available](https://img.shields.io/badge/License-Source_Available-a3e635?style=flat-square)](LICENSE)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/downloads/)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=white)](frontend/package.json)
 [![llama.cpp](https://img.shields.io/badge/Local_inference-llama.cpp-a3e635?style=flat-square)](https://github.com/ggml-org/llama.cpp)
@@ -507,7 +507,13 @@ The website remains the main installation path. There is no claimed ComfyUI Regi
 
 ## License and credits
 
-[MIT License](LICENSE) — copyright (c) 2026 Jolanoff.
+[Goated Prompter Source-Available License 1.0](LICENSE) — copyright (c) 2026 Jolanoff.
+
+- **Allowed:** free use and redistribution, modifications, internal business/client work, and monetizing prompts or creative content made using the app.
+- **Not allowed:** selling or renting the app or its forks, paid software bundles containing it, or charging for hosted access, API access, subscriptions, or app features.
+- Keep the license and copyright notice with redistributed copies and identify modifications. See `LICENSE` for the full terms.
+
+This is a custom source-available license, **not MIT or an OSI-approved open-source license**. Previously released MIT versions retain their MIT permissions; these restrictions apply to versions distributed under the new license.
 
 Built with React, Tailwind CSS, Vite, aiohttp, Pillow, and llama.cpp. Downloaded models and third-party dependencies retain their own licenses; model weights are not distributed with this project.
 

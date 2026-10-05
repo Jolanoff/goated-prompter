@@ -1,0 +1,40 @@
+{
+  "run_id": "semantic-constraint-qualification-20261004",
+  "engine": {"model": "Qwen3.8-27B-Uncensored-HauhauCS-Aggressive-Q2_K_P.gguf", "context_size": 16384, "slots": 1, "reasoning": "off", "temperature": 0.0, "top_p": 1.0},
+  "provenance": "Exact final raw audit responses from trial 1; scoped constraint review, not independent semantic annotations. Full calls and both trial orders retained in artifact.",
+  "source_artifact": "semantic-constraint-qualification-20261004/controls.json",
+  "records": [
+    {
+      "id": "cap",
+      "source": "A guard holds a sign reading \"NO ENTRY\". No hats.",
+      "candidate": "The guard wears a peaked cap and holds a sign reading \"NO ENTRY\".",
+      "expected_accepted": false,
+      "expected_issue_kind": "forbidden_content",
+      "raw": "```json\n{\n  \"checks\": {\n    \"constraint_validity\": \"fail\"\n  },\n  \"issues\": [\n    {\n      \"category\": \"constraint_validity\",\n      \"kind\": \"forbidden_content\",\n      \"source_quote\": \"No hats.\",\n      \"evidence\": \"The guard wears a peaked cap\",\n      \"message\": \"The candidate depicts a 'peaked cap', which is a specific instance of a 'hat', violating the explicit prohibition against hats.\",\n      \"index\": 0\n    }\n  ],\n  \"accepted_facts\": [\n    \"holds a sign reading \\\"NO ENTRY\\\"\"\n  ]\n}\n```"
+    },
+    {
+      "id": "jewelry-good",
+      "source": "Portrait of a person. No jewelry.",
+      "candidate": "A close portrait lit by a window.",
+      "expected_accepted": true,
+      "expected_issue_kind": null,
+      "raw": "```json\n{\n  \"checks\": {\n    \"constraint_validity\": \"pass\"\n  },\n  \"issues\": [],\n  \"accepted_facts\": [\n    \"A close portrait lit by a window.\"\n  ]\n}\n```"
+    },
+    {
+      "id": "related-leakage",
+      "source": "Portrait of a guard. No hats.",
+      "candidate": "The guard has no headwear.",
+      "expected_accepted": false,
+      "expected_issue_kind": "exclusion_leakage",
+      "raw": "```json\n{\n  \"checks\": {\n    \"constraint_validity\": \"fail\"\n  },\n  \"issues\": [\n    {\n      \"category\": \"constraint_validity\",\n      \"kind\": \"exclusion_leakage\",\n      \"source_quote\": \"No hats.\",\n      \"evidence\": \"The guard has no headwear.\",\n      \"message\": \"The candidate explicitly verbalizes the absence of the forbidden concept ('no headwear'), which constitutes exclusion leakage even though the object is not depicted.\",\n      \"index\": 0\n    }\n  ],\n  \"accepted_facts\": []\n}\n```"
+    },
+    {
+      "id": "literal",
+      "source": "A performer says \"No hats allowed!\". No hats.",
+      "candidate": "The performer says: <d>[English] No hats allowed!</d>.",
+      "expected_accepted": true,
+      "expected_issue_kind": null,
+      "raw": "```json\n{\n  \"checks\": {\n    \"constraint_validity\": \"pass\"\n  },\n  \"issues\": [],\n  \"accepted_facts\": [\n    \"The performer says: <d>[English] No hats allowed!</d>.\"\n  ]\n}\n```"
+    }
+  ]
+}

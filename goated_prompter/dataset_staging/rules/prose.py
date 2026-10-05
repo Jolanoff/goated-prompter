@@ -30,9 +30,6 @@ PROSE_CHECKS = (
     ProseCheck("body_head_conflict", "character", ("body_orientation", "head_direction"),
         (r"\bbody (?:is )?fully facing away\b", r"\bhead (?:is )?fully frontal(?: toward (?:the )?camera)?\b"),
         "A fully away body cannot support a fully frontal head toward the camera."),
-    ProseCheck("crop_visibility_conflict", "character", ("framing", "feet_visibility"),
-        (r"\btight (?:face|facial) close[- ]up\b|\btight upper[- ]body crop\b", r"\b(?:shoes|feet) (?:are )?(?:clearly |fully )?visible\b|\b(?:clearly|fully) (?:showing|shows) (?:her |his |their )?(?:shoes|feet)\b"),
-        "A tight face/upper-body crop cannot also clearly show feet or shoes in the same view."),
     ProseCheck("camera_direction_conflict", "common", ("camera_azimuth",),
         (r"\bcamera (?:is )?(?:directly )?in front\b", r"\bcamera (?:is )?directly behind\b"),
         "One camera is specified both directly in front and directly behind the subject."),
@@ -42,6 +39,8 @@ PROSE_CHECKS = (
 def prose_issues(context):
     return [issue(check.code, check.fields, check.message, severity="warning") for check in PROSE_CHECKS
             if (check.group == "common" or check.group in context.rule_groups)
+            and not (context.geometry.get("pose_type") == "custom" and check.code in
+                     {"rear_front_conflict", "rear_gaze_conflict", "body_head_conflict"})
             and all(context.asserted(pattern) for pattern in check.patterns)
             and (not check.unless or not context.asserted(check.unless))]
 

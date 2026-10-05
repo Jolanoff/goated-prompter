@@ -131,7 +131,7 @@ def migrate_saved_geometry(value, *, dataset_type=None):
         elif name in {"pose", "pose_type"} and isinstance(canonical, str):
             if "pose_type" in profile.allowed:
                 put("pose_type", canonical if canonical in POSE_TYPE_VALUES else "custom")
-            if canonical not in POSE_TYPE_VALUES:
+            if canonical not in POSE_TYPE_VALUES and not value.get("pose_detail"):
                 detail("pose_detail", content)
         elif name in {"body_orientation", "torso_orientation", "hip_orientation"} and isinstance(canonical, str) and canonical not in ORIENTATION_VALUES:
             put("pose_type", LEGACY_POSES.get(canonical, "custom"))
@@ -159,4 +159,9 @@ def migrate_saved_geometry(value, *, dataset_type=None):
             needs_repair = True
     if value and profile.required - result.keys():
         needs_repair = True
+    if result.get("pose_type") == "custom" and len(result.get("pose_detail", "").split()) < 4:
+        needs_repair = True
+    if result.get("body_visibility") == "custom" and not result.get("required_visible_parts"):
+        needs_repair = True
+    # Optional omission is the legacy equivalent of []; no guessed anatomy/crop.
     return result, needs_repair
