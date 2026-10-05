@@ -26,7 +26,7 @@ from .scene_planner import (ScenePlanner, MAX_STORED_SCENE_CHARACTERS, MAX_STORE
                             reusable_scene_plan, scene_plan_signature, validate_saved_scene_plan, validate_plan_metadata,
                             failure_reason, failed_scene, scene_is_usable, scene_geometry_errors, FAILURE_METADATA)
 from .dataset_staging import migrate_saved_geometry, resolve_framing_conflicts
-from .dataset_staging.rules.framing import framing_text_errors
+from .dataset_staging.rules.framing import framing_text_errors, framing_intent
 
 
 DATASET_MAX_RETRIES = 3
@@ -193,8 +193,8 @@ class DatasetService:
         expected_text = requested_visible_text("\n".join((data["subject"], data["constraints"], (plan_item or {}).get("input", ""))))
         def check_fidelity(prompt):
             nonlocal accepted_facts
-            if plan_item and data["trigger_type"] == "Character":
-                framing = plan_item.get("geometry", {}).get("framing")
+            if plan_item:
+                framing = framing_intent(data, plan_item).crop
                 protected = (*expected_text, *trigger_terms(data["trigger"], data["trigger_connected"]))
                 errors = [error for text in positive_descriptions(prompt, data["target"])
                           for error in framing_text_errors(text, framing, protected_terms=protected)]
@@ -432,7 +432,7 @@ class DatasetService:
                 if row.get("scene_status") == "failed":
                     continue
                 try:
-                    row = scenes[index - 1] = resolve_framing_conflicts(row, dataset_type=data["trigger_type"])
+                    row = scenes[index - 1] = resolve_framing_conflicts(row, dataset_type=data["trigger_type"], intent=framing_intent(data, row))
                 except ValueError:
                     pass  # Unknown staging facts still need a scene-local repair.
                 # Saved/manual scenes may intentionally have no structured

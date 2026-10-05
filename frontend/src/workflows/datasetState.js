@@ -12,6 +12,28 @@ export function isDatasetSceneUsable(eligibility) {
   return eligibility?.usable === true;
 }
 
+function canonicalValue(value) {
+  if (Array.isArray(value)) return value.map(canonicalValue);
+  if (value && typeof value === "object") return Object.fromEntries(
+    Object.keys(value).sort().map((key) => [key, canonicalValue(value[key])]),
+  );
+  return value;
+}
+
+export function datasetSceneSignature(row) {
+  if (!row) return null;
+  // Only the scene dependency boundary, not writer status or failure bookkeeping.
+  return JSON.stringify(canonicalValue({ index: row.index, input: row.input || "",
+    idea: row.idea, scene: row.scene || "", geometry: row.geometry || {},
+    scene_status: row.scene_status || "valid" }));
+}
+
+export function isDatasetSceneCurrent(row, record) {
+  const saved = record?.draft?.scene_plan?.find((item) => item.index === row?.index);
+  return !!row && !!saved && datasetSceneSignature(saved) === datasetSceneSignature(row) &&
+    isDatasetSceneUsable(record?.scene_eligibility?.[row.index]);
+}
+
 export function datasetRetryStage(row, eligibility) {
   if (isDatasetSceneUsable(eligibility)) return "prompt";
   return row.idea?.trim() ? "scene" : "idea";

@@ -63,7 +63,7 @@ class SourceSupportContractTests(unittest.TestCase):
             self.assertEqual(context["source_support_requirements"]["1"], support_requirements(data["inputs"].splitlines()[0]))
             self.assertFalse(context["source_support_requirements"]["2"])
             self.assertEqual([row["input"] for row in context["assignments"]], [row["input"] for row in assignments])
-            self.assertIn("not merely an internal joint", instruction.system_message)
+            self.assertIn("not an internal joint", instruction.system_message)
 
     def test_unqualified_source_checker_is_not_enabled_by_default(self):
         self.assertFalse(support_enabled({"backend": "mock"}))

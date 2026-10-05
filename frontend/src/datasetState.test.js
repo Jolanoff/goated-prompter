@@ -1,10 +1,39 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { editDatasetPlan, invalidateDatasetPrompts, isDatasetSceneUsable, datasetRetryStage } from "./workflows/datasetState.js";
+import { editDatasetPlan, invalidateDatasetPrompts, isDatasetSceneUsable, datasetRetryStage, datasetSceneSignature, isDatasetSceneCurrent } from "./workflows/datasetState.js";
 
 const draft = { scene_plan: [1, 2].map((index) => ({ index, idea: `idea ${index}`, scene: `scene ${index}`,
   geometry: { camera_view: "front" }, idea_status: "valid", scene_status: "valid", prompt_status: "valid" })),
   results: [1, 2].map((index) => ({ index, prompt: `prompt ${index}` })), quality_report: { score: 100 } };
+
+test("scene signatures ignore object key order and downstream prompt bookkeeping", () => {
+  const saved = { index: 1, input: "", idea: "Read", scene: "Read a book", geometry: { framing: "full_body", visibility_focus: ["face", "book"] }, scene_status: "valid", prompt_status: "failed", failure_reason: "Writer failed" };
+  const reordered = { geometry: { visibility_focus: ["face", "book"], framing: "full_body" }, scene: "Read a book", idea: "Read", input: "", index: 1, prompt_status: "not_generated" };
+  assert.equal(datasetSceneSignature(saved), datasetSceneSignature(reordered));
+  const record = { draft: { scene_plan: [saved] }, scene_eligibility: { 1: { usable: true } } };
+  assert.equal(isDatasetSceneCurrent(reordered, record), true);
+  assert.equal(isDatasetSceneCurrent(reordered, { ...record, scene_eligibility: { 1: { usable: false } } }), false);
+});
+
+test("scene signatures invalidate source, idea, staging, prose and scene-state changes", () => {
+  const row = draft.scene_plan[0];
+  for (const change of [{ input: "new source" }, { idea: "new event" }, { scene: "new scene" },
+    { geometry: { camera_view: "rear" } }, { scene_status: "geometry_warning" }]) {
+    assert.notEqual(datasetSceneSignature(row), datasetSceneSignature({ ...row, ...change }));
+  }
+  assert.notEqual(datasetSceneSignature({ index: 1, scene: "Legacy prose" }), datasetSceneSignature({ index: 1, scene: "Legacy prose", idea: "" }));
+  assert.equal(isDatasetSceneCurrent(undefined, undefined), false);
+  assert.equal(isDatasetSceneCurrent(row, {}), false);
+});
+
+test("scene geometry signatures sort nested keys but retain list ordering and literal prose", () => {
+  const row = { ...draft.scene_plan[0], geometry: { subjects: [{ pose: "custom", detail: "lean" }], focus: ["face", "book"] } };
+  assert.equal(datasetSceneSignature(row), datasetSceneSignature({ ...row,
+    geometry: { focus: ["face", "book"], subjects: [{ detail: "lean", pose: "custom" }] } }));
+  assert.notEqual(datasetSceneSignature(row), datasetSceneSignature({ ...row,
+    geometry: { ...row.geometry, focus: ["book", "face"] } }));
+  assert.notEqual(datasetSceneSignature(row), datasetSceneSignature({ ...row, scene: "scene  1" }));
+});
 
 test("idea edits invalidate only that scene, geometry and prompt", () => {
   const patch = editDatasetPlan(draft, 1, "idea", "new idea");

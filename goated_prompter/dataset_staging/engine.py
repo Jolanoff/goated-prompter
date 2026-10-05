@@ -98,8 +98,10 @@ def geometry_errors(row, *, dataset_type=None, require_fields=True):
     return list(dict.fromkeys(problem.message for problem in geometry_issues(row, dataset_type, require_fields=require_fields)))
 
 
-def resolve_framing_conflicts(row, *, dataset_type=None):
+def resolve_framing_conflicts(row, *, dataset_type=None, intent=None):
     geometry = validate_geometry(row.get("geometry", {}), dataset_type=dataset_type, scene=row.get("scene", ""))
+    if intent is not None and intent.locked:
+        return {**row, "geometry": geometry} if "geometry" in row else row
     profile = get_profile(dataset_type)
     return widen_framing(GeometryContext(row, geometry, dataset_type, profile.rule_groups))
 

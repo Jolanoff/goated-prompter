@@ -12,19 +12,8 @@ class WorkflowFormatError(ValueError):
 
 
 def sanitize_prompt_text(value):
-    """Remove prompt punctuation and renderer metadata the UI does not want copied."""
-    text = str(value or "")
-    text = re.sub(
-        r"(?i)(?:^|[,\n]\s*)\b(?:aspect\s*ratio|resolution|output\s*canvas|canvas\s*size|wh_ratio|ratio_follow)\b\s*[:=\-]?\s*(?:\d{1,5}\s*[x×:]\s*\d{1,5}|\d{1,4}\s*:\s*\d{1,4}|auto)\b\. ?",
-        lambda match: "\n" if match.group(0).startswith("\n") else "",
-        text,
-    )
-    text = text.replace(";", ",").replace("(", "").replace(")", "")
-    text = re.sub(r"[ \t]{2,}", " ", text)
-    text = re.sub(r"\s+([,.!?])", r"\1", text)
-    text = re.sub(r",\s*,+", ", ", text)
-    text = re.sub(r"^[ \t]+|[ \t]+$", "", text, flags=re.MULTILINE)
-    return text.strip()
+    """Trim the output boundary; target adapters own syntax transformations."""
+    return str(value or "").strip()
 
 
 def _unfence(value):

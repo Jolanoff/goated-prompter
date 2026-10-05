@@ -17,6 +17,50 @@ class EvaluationTests(unittest.TestCase):
         self.assertIsNone(report["workflows"]["builder"]["averages"]["scene_fidelity"])
         self.assertIn("not reviewed", markdown({"run_id": "test", **report}))
 
+    def test_missing_call_history_does_not_invent_first_pass_validity_or_cost(self):
+        measured = measure(self.sample())
+        self.assertIsNone(measured["first_pass_valid"])
+        self.assertIsNone(measured["calls_per_result"])
+        self.assertIsNone(measured["repair_rate"])
+
+    def test_cost_counts_reviews_but_output_repairs_exclude_transport_and_self_review(self):
+        calls = [{"stage": stage, "finish_reason": "stop"} for stage in (
+            "dataset:scene_planner", "dataset:1", "semantic:review:dataset:final:1",
+            "semantic:review:dataset:final:1:format_retry", "dataset:1:transport_retry_1", "dataset:1:format_retry_2")]
+        measured = measure(self.sample(workflow="dataset", calls=calls, trigger="cup"))
+        self.assertEqual(measured["model_calls"], 6)
+        self.assertEqual(measured["calls_per_result"], 6)
+        self.assertEqual(measured["repair_calls"], 1)
+        self.assertEqual(measured["transport_retry_calls"], 1)
+        self.assertTrue(measured["repair_rate"])
+        self.assertTrue(measured["trigger_fidelity"])
+
+    def test_trigger_fidelity_measures_exact_case_sensitive_wording(self):
+        self.assertTrue(measure(self.sample(trigger="cup"))["trigger_fidelity"])
+        self.assertFalse(measure(self.sample(trigger="Cup"))["trigger_fidelity"])
+        self.assertIsNone(measure(self.sample())["trigger_fidelity"])
+
+    def test_pipeline_repair_is_not_hidden_by_a_valid_first_writer_attempt(self):
+        calls = [{"stage": "dataset:scene_composer:repair", "finish_reason": "stop"},
+                 {"stage": "dataset:1", "finish_reason": "stop", "validation_events": [
+                     {"type": "validation", "workflow": "dataset", "attempt": 0, "accepted": True}]}]
+        self.assertFalse(measure(self.sample(workflow="dataset", calls=calls))["first_pass_valid"])
+
+    def test_missing_prompt_is_a_trigger_failure_not_an_unmeasured_success(self):
+        self.assertIs(measure(self.sample(prompt="", trigger="cup", error="writer failed"))["trigger_fidelity"], False)
+
+    def test_self_review_annotations_cannot_pass_independent_review_gate(self):
+        row = self.sample()
+        label = annotation_template([row])[0]
+        label.update(reviewer="writer model", review_kind="self_review", semantic_repetition=False, target_usability=True)
+        label["anchors"]["scene"]["cup"] = True
+        report = summarize([row], [label])
+        self.assertTrue(report["samples"][0]["review_complete"])
+        self.assertFalse(report["semantic_review_complete"])
+        self.assertFalse(report["samples"][0]["independent_review"])
+        label.update(reviewer="external human", review_kind="human")
+        self.assertTrue(summarize([row], [label])["semantic_review_complete"])
+
     def test_length_does_not_override_failed_anchor(self):
         row = self.sample(prompt="A table. " * 100)
         label = annotation_template([row])[0]
@@ -79,9 +123,14 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(sum(len(result["failures"]) for result in report["workflows"].values()), 7)
 
     def test_regression_gate_cannot_hide_fidelity_loss_in_more_words(self):
-        baseline = {"samples": [{"sample_id": "one", "review_complete": True, "scene_fidelity": 1, "prompt_words": 10}]}
-        report = {"samples": [{"sample_id": "one", "review_complete": True, "scene_fidelity": .5, "prompt_words": 1000}]}
+        baseline = {"samples": [{"sample_id": "one", "review_complete": True, "review_kind": "human", "scene_fidelity": 1, "prompt_words": 10}]}
+        report = {"samples": [{"sample_id": "one", "review_complete": True, "review_kind": "human", "scene_fidelity": .5, "prompt_words": 1000}]}
         self.assertIn("scene_fidelity regressed", regressions(report, baseline)[0])
+
+    def test_regression_comparison_requires_explicit_independent_provenance(self):
+        for kind in (None, "", "unspecified", "self_review", "exploratory"):
+            row = {"sample_id": "one", "review_complete": True, "review_kind": kind}
+            self.assertTrue(regressions({"samples": [row]}, {"samples": [row]}))
 
     def test_reviewed_usability_failure_is_not_hidden_by_valid_format_and_anchors(self):
         row = self.sample()

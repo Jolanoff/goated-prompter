@@ -6,10 +6,11 @@ import unittest
 from unittest.mock import patch
 
 from goated_prompter.backends.base import BackendGenerationError, GoatedPrompterBackend
-from goated_prompter.core import GoatedPrompterRequest
+from goated_prompter.core import GoatedPrompterRequest, GoatedPrompterService
+from goated_prompter.dataset import DatasetService, default_dataset_draft, dataset_instruction
 from goated_prompter.prompting.target_models import TARGET_MODEL_NAMES
 from goated_prompter.refinement import RefineService, refine_instruction
-from goated_prompter.workflow_output import WorkflowFormatError, normalize_workflow_output, requested_visible_text
+from goated_prompter.workflow_output import WorkflowFormatError, normalize_workflow_output, requested_visible_text, sanitize_prompt_text
 
 
 CAPTION = {
@@ -20,6 +21,20 @@ CAPTION = {
 
 
 class OutputFormatTests(unittest.TestCase):
+    def test_generic_cleanup_preserves_prompt_content(self):
+        cases = (
+            "A dancer (seen in profile) pauses; her partner waits.",
+            'A sign reads "WAIT (HERE); NOW!".',
+            'A blackboard reads "f(x) = (x + 1)^2; x ∈ [0, 1]".',
+            'Lettering reads "A  B , C,, D" with deliberate spacing.',
+            'Resolution: 1920x1080. is printed on a technical diagram.',
+            'A poster reads “GO (LEFT); STOP”.\n\nA small caption below.',
+        )
+        for text in cases:
+            with self.subTest(text=text):
+                self.assertEqual(sanitize_prompt_text(" \n" + text + "\n "), text)
+                self.assertEqual(sanitize_prompt_text(sanitize_prompt_text(text)), text)
+
     def test_minimax_named_sections_normalize_and_require_complete_structure(self):
         valid = 'integrated_multimodal_description: A runner shouts "Go!".\noverall_soundscape: Footsteps.\nnon_diegetic_music: None.'
         self.assertEqual(normalize_workflow_output(valid.upper(), "MiniMax H3").splitlines()[0],
@@ -157,6 +172,27 @@ class ScriptedBackend(GoatedPrompterBackend):
 
 
 class FormatRepairTests(unittest.TestCase):
+    def test_builder_and_dataset_keep_visible_math_and_protected_trigger_punctuation(self):
+        text = 'mira(token); a blackboard reads "f(x) = (x + 1)^2;  x > 0".'
+        request = GoatedPrompterRequest(idea=text, target_model="Generic", planning_mode="Direct")
+        backend = ScriptedBackend([text])
+        with patch("goated_prompter.core.create_backend", return_value=backend):
+            self.assertEqual(GoatedPrompterService(config={"backend": "mock"}).generate(request).prompt, text)
+        data = {**default_dataset_draft(), "subject": text, "trigger": "mira(token)", "amount": 1}
+        backend = ScriptedBackend([text])
+        instruction = dataset_instruction(request, data, 1)
+        self.assertEqual(DatasetService({"backend": "mock"}, lambda: None)._generate(
+            backend, instruction, data, 1, lambda _message: None), text)
+        self.assertEqual(len(backend.calls), 1)
+
+    def test_refinement_preserves_punctuation_and_visible_lettering_without_retry(self):
+        text = 'Mira (in profile) stands by a sign reading "OPEN (LATE);  A + B".'
+        for target in ("Generic", "Anima", "Qwen2.1"):
+            with self.subTest(target=target):
+                backend = ScriptedBackend([json.dumps({"prompt": text})])
+                self.assertEqual(self.run_workflow(backend, target=target)["prompt"], text)
+                self.assertEqual(len(backend.calls), 1)
+
     def test_minimax_malformed_sections_are_repaired_and_not_sanitized(self):
         valid = 'integrated_multimodal_description: [Shot 1] A runner shouts "Go!" (quietly).\noverall_soundscape: Footsteps.\nnon_diegetic_music: None.'
         backend = ScriptedBackend(["A runner moves.", valid])

@@ -6,6 +6,7 @@ import re
 from goated_prompter.dataset_constraints import compile_constraints
 from goated_prompter.workflow_output import normalize_workflow_output
 from goated_prompter.planning.constraint_validation import output_constraint_issues
+from goated_prompter.dataset_triggers import trigger_presence_error
 
 FIDELITY = ("scene", "action", "pose", "constraint")
 REVIEW_FIELDS = ("semantic_repetition", "domain_action_relevance", "generic_pose", "pose_simplified",
@@ -17,7 +18,7 @@ def normalized(text):
 
 
 def annotation_template(records):
-    return [{"sample_id": row["sample_id"], "reviewer": "", "anchors": {
+    return [{"sample_id": row["sample_id"], "reviewer": "", "review_kind": "", "anchors": {
         kind: {anchor: None for anchor in row.get("anchors", {}).get(kind, [])} for kind in FIDELITY},
         "useful_details": {}, "semantic_idea_ids": [], "coverage_saturated": None, **{key: None for key in REVIEW_FIELDS}, "notes": ""}
         for row in records]
@@ -29,7 +30,9 @@ def measure(row, review=None):
     completion = row.get("completion_state", "unknown")
     calls = row.get("calls", [])
     writer_calls = [call for call in calls if not str(call.get("stage", "")).startswith("semantic:review:")]
-    repairs = sum(bool(re.search(r"repair|retry|correction", str(call.get("stage", "")))) for call in writer_calls)
+    transport_retries = sum("transport_retry" in str(call.get("stage", "")) for call in writer_calls)
+    repairs = sum(bool(re.search(r"repair|retry|correction", str(call.get("stage", ""))))
+                  and "transport_retry" not in str(call.get("stage", "")) for call in writer_calls)
     events = [event for call in calls for event in call.get("validation_events", [])]
     validations = [event for event in events if event.get("type") == "validation" and event.get("workflow") == row["workflow"]]
     semantic = [event for event in events if event.get("type") == "semantic_review"]
@@ -48,18 +51,29 @@ def measure(row, review=None):
     except (ValueError, TypeError, KeyError):
         issues = []
     accepted = valid and not row.get("error") and completion == "completed"
+    completed = row.get("completed_results", int(accepted))
+    trigger_fidelity = None
+    if row.get("trigger") and row.get("output_kind") != "ideas":
+        trigger_fidelity = trigger_presence_error(prompt, row["trigger"], row.get("target", "Generic"),
+                                                 expand=row.get("expand_trigger", False)) is None
     # Rejected semantic candidates can still have valid target formatting.
     measured_formats = [event["format_valid"] for event in validations if type(event.get("format_valid")) is bool]
     format_valid = measured_formats[-1] if measured_formats else valid
     result = {"sample_id": row["sample_id"], "workflow": row["workflow"], "format_valid": format_valid, "accepted": accepted,
               "completion_state": completion, "completion_reason": row.get("finish_reason"),
               "truncation": completion == "token_limit", "prompt_words": words, "prompt_characters": len(prompt),
-              "repair_calls": repairs if calls else None, "repair_frequency": repairs / len(writer_calls) if writer_calls else None,
-              "first_pass_valid": accepted and not repairs if completion != "unknown" else None, "latency_seconds": row.get("latency_seconds"),
+               "repair_calls": repairs if calls else None, "repair_frequency": repairs / len(writer_calls) if writer_calls else None,
+               "repair_rate": bool(repairs) if writer_calls else None,
+               "transport_retry_calls": transport_retries if calls else None,
+               "model_calls": len(calls) if calls else None,
+               "calls_per_result": len(calls) / completed if calls and completed else None,
+               "trigger_fidelity": trigger_fidelity,
+               "first_pass_valid": accepted and not (repairs or transport_retries) if writer_calls and completion != "unknown" else None,
+               "latency_seconds": row.get("latency_seconds"),
               "forbidden_content_violations": sum(issue["code"] == "forbidden_content" and issue["severity"] == "error" for issue in issues),
               "forbidden_content_warnings": sum(issue["code"] == "forbidden_content" and issue["severity"] == "warning" for issue in issues),
               "negative_language_leakage": sum(issue["code"] == "constraint_negative_leakage" for issue in issues),
-               "constraint_diagnostics": issues, "reviewed": False}
+                "constraint_diagnostics": issues, "reviewed": False, "independent_review": False}
     outcomes = {event["attempt"]: event for event in validations}
     result.update(transport_success=(all(call.get("finish_reason") == "stop" for call in calls) if calls else None),
         semantic_checks=[event.get("checks", {}) for event in semantic],
@@ -79,7 +93,7 @@ def measure(row, review=None):
     if calls and any(call.get("finish_reason") is None for call in calls) and not any(call.get("error") for call in calls):
         result["transport_success"] = None
     if 0 in outcomes:
-        result["first_pass_valid"] = outcomes[0]["accepted"]
+        result["first_pass_valid"] = outcomes[0]["accepted"] and not (repairs or transport_retries)
     for category in ("action_fidelity", "scene_fidelity", "constraint_validity", "domain_relevance", "temporal_fidelity"):
         statuses = [event.get("checks", {}).get(category) for event in semantic if category in event.get("checks", {})]
         result["model_review_" + category] = statuses[-1] if statuses else None
@@ -92,6 +106,10 @@ def measure(row, review=None):
         return result
     if not review.get("reviewer"):
         raise ValueError("Semantic review needs named provenance (including agent/exploratory reviews).")
+    review_kind = review.get("review_kind", "unspecified")
+    if review_kind not in {"", "unspecified", "human", "independent", "self_review", "exploratory"}:
+        raise ValueError("Unknown semantic review kind.")
+    result.update(review_kind=review_kind, independent_review=review_kind in {"human", "independent"})
     for kind in FIDELITY:
         anchors = review.get("anchors", {}).get(kind, {})
         expected = set(row.get("anchors", {}).get(kind, []))
@@ -148,7 +166,8 @@ def summarize(records, annotations=()):
     workflows = {}
     for workflow in sorted({row["workflow"] for row in samples}):
         rows = [row for row in samples if row["workflow"] == workflow]
-        fields = ("format_valid", "first_pass_valid", "repair_frequency", "transport_success", "repair_introduced_regression", "prompt_words", "latency_seconds",
+        fields = ("format_valid", "first_pass_valid", "repair_frequency", "repair_rate", "calls_per_result", "model_calls",
+                  "trigger_fidelity", "transport_retry_calls", "transport_success", "repair_introduced_regression", "prompt_words", "latency_seconds",
                   "useful_detail_density", "semantic_repetition", "domain_action_relevance", "generic_pose",
                   "pose_simplified", "temporal_fidelity", "dialogue_reference_fidelity", "target_usability", "scene_validity",
                   *(kind + "_fidelity" for kind in FIDELITY))
@@ -226,4 +245,4 @@ def summarize(records, annotations=()):
                         "cross_run_exact_duplicate_rates": {str(key): duplicate_rate(values) for key, values in cross.items()},
                         "cross_run_prompt_duplicate_rates": {str(key): duplicate_rate(values) if len(values) > 1 else None for key, values in prompt_groups.items()},
                         "reviewed_semantic_duplicate_rates": {str(key): duplicate_rate(values) for key, values in semantic_groups.items()}},
-            "semantic_review_complete": bool(samples) and all(row.get("review_complete") for row in samples)}
+            "semantic_review_complete": bool(samples) and all(row.get("review_complete") and row["independent_review"] for row in samples)}

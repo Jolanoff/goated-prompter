@@ -92,6 +92,34 @@ test("a writer failure retries the prompt using backend scene eligibility, not s
   expect(finished.llm_trace.request_number).toBe(1);
 });
 
+test("writer-setting acknowledgements retain scene eligibility despite reordered JSON keys", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  await page.getByLabel("Dataset idea", { exact: true }).fill("A craftsperson working with clay.");
+  await page.getByLabel("Trigger text or terms").fill("clay_person");
+  await page.getByLabel("Number of prompts").selectOption("1");
+  await page.getByRole("button", { name: "Plan scenes first", exact: true }).click();
+  await expect(page.getByLabel("Planned scene 1")).toHaveValue(/mock scene/);
+  await expect(page.getByLabel("Planned scene 1")).toBeEnabled();
+  await page.route("**/api/workspace/settings/dataset", async (route) => {
+    const response = await route.fetch();
+    if (route.request().method() !== "PUT") return route.fulfill({ response });
+    const record = await response.json();
+    record.draft.scene_plan = record.draft.scene_plan.map((row) => Object.fromEntries(
+      Object.entries({ ...row, geometry: Object.fromEntries(Object.entries(row.geometry).reverse()) }).reverse(),
+    ));
+    await route.fulfill({ response, json: record });
+  });
+  const saved = page.waitForResponse((response) => response.url().endsWith("/api/workspace/settings/dataset") && response.request().method() === "PUT");
+  await page.getByLabel("Dataset prompt length").selectOption("Detailed");
+  expect((await saved).ok()).toBe(true);
+  await expect(page.getByRole("button", { name: "Generate prompts from these scenes", exact: true })).toBeEnabled();
+  const accepted = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset") && response.status() === 202);
+  await page.getByRole("button", { name: "Generate prompts from these scenes", exact: true }).click();
+  expect((await accepted).request().postDataJSON().valid_only).toBe(true);
+  await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(/clay_person/);
+});
+
 test("Quality composes in small chunks and geometry opens in an accessible modal", async ({ page, request }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/");

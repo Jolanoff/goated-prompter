@@ -4,11 +4,12 @@ import json
 import hashlib
 import logging
 from copy import deepcopy
-from dataclasses import replace
+from dataclasses import dataclass, replace
+from typing import Literal
 from .dataset_visible_content import visible_content_error
 from .dataset_staging import validate_geometry, validate_planned_geometry, geometry_errors, migrate_saved_geometry, resolve_framing_conflicts, STAGING_PROFILES
 from .dataset_staging.engine import geometry_repair_locks, geometry_issues, semantic_geometry_fields
-from .dataset_staging.rules.framing import requested_framing
+from .dataset_staging.rules.framing import framing_intent
 from .dataset_quality import analyze_idea_diversity, idea_action_error
 from .dataset_constraints import compile_constraints, constraint_issues
 from .scene_eligibility import scene_eligibility, scene_geometry_errors
@@ -43,6 +44,14 @@ class SceneFormatError(ValueError):
         super().__init__(message)
         self.correction = (SCENE_FORMAT_CORRECTION + "\nSchema error: " + message
             + "\nEvery object must include its index. Requested indexes in order: " + json.dumps(indexes))
+
+
+@dataclass
+class PlannerCallState:
+    phase: Literal["initial", "repair", "transport_retry"] = "initial"
+    correction: str = ""
+    previous_output: str = ""
+    last_error: Exception | None = None
 
 
 def scene_plan_signature(data, assignments):
@@ -227,13 +236,13 @@ def validate_idea_plan(raw, indexes):
 
 
 class ScenePlanner:
+    """Chunked Fast planning or Quality composition, with bounded local repairs."""
+
     def plan_result(self, **kwargs):
         rows = self.plan_batch(**kwargs)
         warnings = tuple(row.get("failure_reason", "Scene planning needs repair.") for row in rows if row.get("scene_status") == "failed")
         return PlanningResult(not warnings, rows, warnings=warnings, fallback_allowed=False,
                               status="partial" if warnings else "planned")
-
-    """Chunked Fast planning or Quality composition, with bounded local repairs."""
 
     def __init__(self, checkpoint, idea_history=None, semantic_validation=False, support_validation=False):
         self.checkpoint = checkpoint
@@ -386,38 +395,45 @@ class ScenePlanner:
                 for row in assignments]
 
     def _call(self, session, build, validate, progress, label, *, scene_output=False, attempts=2):
-        correction = ""
-        previous_output = ""
-        last_error = None
+        state = PlannerCallState()
         for attempt in range(attempts):
             self.checkpoint()
-            progress(f"{label} · {'repairing output' if attempt else 'planning'}…")
+            progress(f"{label} · {'retrying transport' if state.phase == 'transport_retry' else 'repairing output' if attempt else 'planning'}…")
             try:
-                instruction = build(correction)
-                if scene_output and previous_output:
+                instruction = build(state.correction)
+                if state.phase == "transport_retry":
+                    instruction = replace(instruction, diagnostic_stage=instruction.diagnostic_stage + f":transport_retry_{attempt}")
+                if scene_output and state.previous_output:
                     context = json.loads(instruction.user_message)
-                    context["previous_response"] = previous_output[:instruction.stream_character_limit]
+                    context["previous_response"] = state.previous_output[:instruction.stream_character_limit]
                     instruction = replace(instruction, user_message=json.dumps(context, ensure_ascii=False))
                 session.validate_instruction(instruction)
                 raw = session.generate(instruction)
-                previous_output = raw if isinstance(raw, str) else ""
+                state.previous_output = raw if isinstance(raw, str) else ""
                 self.checkpoint()
                 return validate(raw)
             except json.JSONDecodeError as exc:
                 self.checkpoint()
-                last_error = exc
+                state.last_error = exc
+                state.phase = "repair"
                 logger.warning("%s JSON parse failure: %s", label, exc, exc_info=True)
-                correction = SCENE_FORMAT_CORRECTION if scene_output else "Return only one valid JSON array of the requested ideas. No YAML, Markdown or commentary."
+                state.correction = SCENE_FORMAT_CORRECTION if scene_output else "Return only one valid JSON array of the requested ideas. No YAML, Markdown or commentary."
                 progress(f"{label} returned invalid JSON; repairing output format only.")
-            except (ValueError, TypeError, RecursionError, BackendGenerationError) as exc:
+            except BackendGenerationError as exc:
                 self.checkpoint()
-                last_error = exc
-                correction = getattr(exc, "correction", str(exc))
+                state.last_error = exc
+                state.phase = "transport_retry"
+                progress(f"{label} engine request failed; retrying the same stage request.")
+            except (ValueError, TypeError, RecursionError) as exc:
+                self.checkpoint()
+                state.last_error = exc
+                state.phase = "repair"
+                state.correction = getattr(exc, "correction", str(exc))
                 logger.warning("%s validation failure: %s", label, exc)
-                progress(f"{label} failed validation: {correction}")
-        raise BackendGenerationError(f"Dataset {label} failed after retries. {correction}",
-            completion_state=getattr(last_error, "completion_state", "provider_error"),
-            partial_text=getattr(last_error, "partial_text", ""), finish_reason=getattr(last_error, "finish_reason", None)) from last_error
+                progress(f"{label} failed validation: {state.correction}")
+        raise BackendGenerationError(f"Dataset {label} failed after retries. {state.correction or str(state.last_error)}",
+            completion_state=getattr(state.last_error, "completion_state", "provider_error"),
+            partial_text=getattr(state.last_error, "partial_text", ""), finish_reason=getattr(state.last_error, "finish_reason", None)) from state.last_error
 
     def plan_ideas(self, *, session, data, assignments, family="qwen", progress, indexes=None, existing=()):
         if self.idea_history is not None:
@@ -521,7 +537,7 @@ class ScenePlanner:
             try:
                 if "geometry" in row:
                     row["geometry"] = validate_planned_geometry(row["geometry"], dataset_type=data["trigger_type"], scene=row["scene"])
-                    row = rows[position] = resolve_framing_conflicts(row, dataset_type=data["trigger_type"])
+                    row = rows[position] = resolve_framing_conflicts(row, dataset_type=data["trigger_type"], intent=framing_intent(data, row))
                 elif ideas is not None or STAGING_PROFILES[data["trigger_type"]].required:
                     raise ValueError("Scene Composer must include a structured geometry object.")
                 errors = geometry_errors(row, dataset_type=data["trigger_type"])
@@ -530,10 +546,7 @@ class ScenePlanner:
                 errors = [getattr(exc, "correction", str(exc))]
             if scene_error:
                 errors.append(scene_error)
-            if data["trigger_type"] == "Character" and data["source_mode"] == "guided":
-                crop = requested_framing(assignments[row["index"] - 1]["input"])
-                if crop and (not isinstance(row.get("geometry"), dict) or row["geometry"].get("framing") != crop):
-                    errors.append(f"The guided input explicitly requests {crop} framing. Preserve that crop; correct the representation without replacing the body geometry.")
+            errors.extend(framing_intent(data, {**row, "input": assignments[row["index"] - 1]["input"]}).errors_for(row))
             compiled = compile_constraints(data.get("constraints", ""))
             errors.extend(issue["message"] for text in (row["idea"], row["scene"])
                           for issue in constraint_issues(text, compiled) if issue["severity"] == "error")
@@ -587,8 +600,8 @@ class ScenePlanner:
         semantic_defects = list(deepcopy(semantic_issues))
         defective_fields = semantic_geometry_fields(row, semantic_defects)
         locked_geometry = deepcopy(geometry_repair_locks(row, dataset_type=data["trigger_type"], defective_fields=defective_fields))
-        local_crop = (requested_framing(assignments[row["index"] - 1]["input"])
-                      if data["trigger_type"] == "Character" and data["source_mode"] == "guided" else None)
+        intent = framing_intent(data, {**row, "input": assignments[row["index"] - 1]["input"]})
+        local_crop = intent.crop if intent.locked else None
         if local_crop:
             locked_geometry["framing"] = local_crop  # Source outranks supporting plan.
         problems = geometry_issues(row, data["trigger_type"])
@@ -630,9 +643,11 @@ class ScenePlanner:
             if preserve_scene:
                 result["scene"] = row["scene"]
             result["geometry"] = validate_planned_geometry(result["geometry"], dataset_type=data["trigger_type"], scene=result["scene"])
-            result = resolve_framing_conflicts(result, dataset_type=data["trigger_type"])
+            result = resolve_framing_conflicts(result, dataset_type=data["trigger_type"], intent=intent)
             if result["idea"] != row["idea"]:
                 raise ValueError("Repair must preserve the fixed idea exactly.")
+            if framing_errors := intent.errors_for(result):
+                raise ValueError(" ".join(framing_errors))
             if problems := geometry_errors(result, dataset_type=data["trigger_type"]):
                 raise ValueError(" ".join(problems))
             if error := duplicate_scene_error(result, existing_rows, data, assignments):

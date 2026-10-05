@@ -41,17 +41,14 @@ class ScenePlannerTests(unittest.TestCase):
     def test_planning_process_separates_concept_ideas_scenes_and_silent_audit(self):
         data = draft()
         system = scene_planner_instruction(data, dataset_assignments(data)).system_message
-        steps = ["STEP 1 — UNDERSTAND", "STEP 2 — GENERATE", "STEP 3 — ESTABLISH MECHANICS",
-                 "STEP 4 — CHECK GEOMETRY", "STEP 5 — REPAIR", "STEP 6 — RETURN"]
-        self.assertEqual([system.index(step) for step in steps], sorted(system.index(step) for step in steps))
-        for heading in ("IDEA DUPLICATION CHECK", "SCENE GEOMETRY AND VISIBILITY", "VISIBLE DETAIL RULE",
-                        "ACTION LOGIC", "SCENE COHERENCE AUDIT"):
-            self.assertIn(heading, system)
+        for responsibility in ("IDEA (what happens)", "SCENE (how it exists spatially", "one frozen primary event",
+                               "one camera", "Compare core meanings", "one valid JSON array"):
+            self.assertIn(responsibility, system)
         self.assertNotIn("explore compatible idea families", system)
         self.assertIn("fields supplied by the selected staging schema", system)
         self.assertIn("normally 3–15 words", system)
-        self.assertIn("14. NO STAGING HACKS", system)
-        self.assertIn('"geometry" (object)', system)
+        self.assertIn("Never invent a second camera, mirror or collage", system)
+        self.assertIn("geometry (object)", system)
 
     def test_broad_and_narrow_concepts_produce_matching_idea_scene_counts_in_one_call(self):
         # Mocked semantic examples test orchestration, not real LLM creativity.
@@ -212,8 +209,8 @@ class ScenePlannerTests(unittest.TestCase):
             instruction = call.args[0]
             self.assertIn(plan["idea"], instruction.user_message)
             self.assertIn(plan["scene"], instruction.user_message)
-            self.assertIn("IDEA is authoritative for semantic purpose", instruction.system_message)
-            self.assertIn("independently force eye contact", instruction.system_message)
+            self.assertIn("IDEA owns the event and semantic purpose", instruction.system_message)
+            self.assertIn("head direction, gaze and expression", instruction.system_message)
             self.assertIn("GEOMETRY FIDELITY", instruction.system_message)
         self.assertIn("gaze tracking", final)
         self.assertNotIn("looking directly at viewer", final)
@@ -221,11 +218,9 @@ class ScenePlannerTests(unittest.TestCase):
     def test_idea_first_and_still_image_contract(self):
         data = draft(subject="A woman doing funny stuff")
         instruction = scene_planner_instruction(data, dataset_assignments(data))
-        for section in ("SCENE IDEA FIRST", "VISUAL DEPICTABILITY", "ONE PRIMARY EVENT",
-                        "CONTROLLED VARIATION", "PRESENTATION SUPPORTS THE IDEA"):
-            self.assertIn(section, instruction.system_message)
-        self.assertIn("SEMANTIC DIVERSITY FIRST", instruction.system_message)
-        self.assertIn("normally 20–70 words", instruction.system_message)
+        for responsibility in ("one IDEA", "one frozen primary event", "distinct concept-relevant events",
+                               "Explicit concept, consistency rules and local guided input"):
+            self.assertIn(responsibility, instruction.system_message)
         self.assertIn(f"at most {MAX_SCENE_WORDS} words", instruction.system_message)
         scenes = ["A woman freezes with a raised spatula as a flipped pancake lands on her head in the kitchen.",
                   "A woman chases oranges rolling from a torn grocery bag across a supermarket parking lot.",
@@ -385,8 +380,8 @@ class ScenePlannerTests(unittest.TestCase):
         self.assertNotIn("subject_definition", context)
         self.assertNotIn(data["trigger"], instruction.user_message)
         self.assertEqual(instruction.model_family, "gemma")
-        self.assertIn("input is authoritative", instruction.system_message)
-        self.assertIn("Do not generate finished image prompts", instruction.system_message)
+        self.assertIn("input is an authoritative LOCAL specification", instruction.system_message)
+        self.assertIn("Leave dense rendering, target syntax, trigger handling", instruction.system_message)
         self.assertIn("constraints", instruction.system_message)
         for key in ("trigger_at_start", "trigger_connected", "director_preset", "results", "quality_report"):
             self.assertNotIn(key, context)
@@ -645,7 +640,7 @@ class ScenePlannerTests(unittest.TestCase):
         for writer in calls[1:]:
             self.assertIn(planned[0]["scene"], writer.user_message)
             self.assertIn(planned[0]["idea"], writer.user_message)
-            self.assertIn("SCENE PLANNER AUTHORITY", writer.system_message)
+            self.assertIn("SCENE-LOCKED VISUAL ENRICHMENT", writer.system_message)
             self.assertIn("Dataset Creativity — Balanced", writer.system_message)
             self.assertIn("It controls treatment, not the semantic scene", writer.system_message)
             self.assertIsNone(writer.stream_character_limit)

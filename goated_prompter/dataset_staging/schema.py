@@ -41,7 +41,7 @@ GEOMETRY_FIELDS = {
         FieldSpec("head_direction", v.HEAD_DIRECTION_VALUES,
                   description="Where the head points, independently of gaze. Supported head/eye-position states such as eyes_rolled belong here, never in gaze_direction."),
         FieldSpec("gaze_direction", v.GAZE_DIRECTION_VALUES,
-                  description="GAZE_DIRECTION describes where the eyes are directed, never emotion or facial expression. Do not put ecstatic, shocked, aggressive, intense pleasure or eyes_rolled here."),
+                  description="GAZE_DIRECTION describes where the eyes are directed, never emotion, facial expression or head position."),
         FieldSpec("expression", v.EXPRESSION_VALUES,
                   description="EXPRESSION describes visible emotion/facial state, separate from eye direction. Never place emotional language inside gaze_direction."),
         FieldSpec("expression_detail", free_text=True,

@@ -131,3 +131,24 @@ knees_bent ankles_crossed
 
 PELVIS_TILT_VALUES = frozenset("neutral tilted_up tilted_down arched thrust_forward thrust_back".split())
 BACK_ARCH_VALUES = frozenset("flat slight moderate strong extreme".split())
+
+# The full registry reads historical facts. Live profiles offer general staging;
+# user-specified long-tail mechanics use detail fields instead of a pose menu.
+GENERAL_STAGING_VALUES = {
+    "camera_elevation": CAMERA_ELEVATION_VALUES - {"crotch_level", "between_legs"},
+    "head_direction": HEAD_DIRECTION_VALUES - {"looking_at_genital"},
+    "gaze_direction": GAZE_DIRECTION_VALUES - {"looking_at_genital"},
+    "expression": EXPRESSION_VALUES - {"submissive", "dominant", "aroused", "pleasured", "orgasmic", "ahegao", "moaning"},
+    "pose_type": frozenset("""
+        standing_neutral standing_relaxed standing_dynamic standing_balancing standing_leaning
+        walking running jumping landing crouching squatting kneeling
+        sitting_upright sitting_relaxed sitting_leaning sitting_on_floor
+        lying_face_up lying_face_down lying_on_side
+        reaching bending twisting dancing falling slipping climbing hanging
+        lifting carrying throwing catching pushing pulling holding gesturing
+        selfie_pose posed_portrait balancing custom
+    """.split()),
+    "contact_state": frozenset("none holding touching supporting leaning_on sitting_on standing_on lying_on pushing pulling carrying wearing".split()),
+    "leg_position": LEG_POSITION_VALUES - {"legs_on_shoulders", "spread_eagle"},
+    "pelvis_tilt": PELVIS_TILT_VALUES - {"thrust_forward", "thrust_back"},
+}

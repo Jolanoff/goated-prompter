@@ -83,6 +83,30 @@ class EvaluationRunnerTests(unittest.TestCase):
             self.assertGreaterEqual(row["latency_seconds"], 0)
         self.assertEqual(rows[0]["effective_request"], rows[1]["effective_request"])
 
+    def test_optional_dataset_pipeline_runs_production_planning_before_writing(self):
+        args = self.args()
+        args.dataset_mode = "pipeline"
+        args.dataset_planning = "Fast"
+        case = {"id": "cup", "request": "A chipped blue cup on a table.", "dataset_type": "Object / product", "anchors": {}}
+        def generate(backend, instruction):
+            text = (json.dumps([{"index": 1, "idea": "A cup resting on a table", "scene": case["request"],
+                                 "geometry": {"framing": "full_subject", "subject_orientation": "front"}}])
+                    if instruction.diagnostic_stage == "dataset:scene_planner"
+                    else "eval_subject is a chipped blue cup on a table.")
+            backend.emit_activity("request", stage=instruction.diagnostic_stage, parameters={}, messages=instruction.to_messages())
+            backend.emit_activity("response_delta", text=text)
+            backend.emit_activity("response_complete", finish_reason="stop")
+            return text
+        with patch.object(MockBackend, "generate", generate):
+            row = live_case(case, "dataset", {"backend": "mock"}, args)
+        self.assertNotIn("error", row)
+        self.assertEqual(row["evaluation_scope"], "pipeline")
+        self.assertEqual(row["completed_results"], 1)
+        self.assertEqual(len(row["scene_plan"]), 1)
+        self.assertEqual(row["trigger"], "eval_subject")
+        self.assertEqual(row["calls"][0]["stage"], "dataset:scene_planner")
+        self.assertEqual(measure(row)["calls_per_result"], len(row["calls"]))
+
     def test_novelty_uses_quality_ideation_and_matched_settings(self):
         inputs, histories = [], []
         def run(service, request, data, *callbacks, **kwargs):

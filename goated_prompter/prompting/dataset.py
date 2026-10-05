@@ -2,16 +2,17 @@
 
 import json
 from ..dataset_constraints import constraint_sections, CONSTRAINT_CONTRACT
-from dataclasses import replace
 
-from ..core import PromptInstruction, assemble_instruction
+from ..core import PromptInstruction
 from ..dataset_triggers import trigger_terms
 from ..dataset_visible_content import VISIBLE_CONTENT_CONTRACT
 from ..presets import get_director_preset
 from .details import (DATASET_OUTPUT_TOKEN_LIMITS, LENGTH_ADAPTERS,
                       DATASET_DETAIL_DISCIPLINE, DATASET_LENGTH_ADAPTERS)
 from .creativity import CREATIVITY_ADAPTERS
-from .modes import get_mode_adapter
+from .target_models import get_model_adapter, resolve_target_length
+from .output import OUTPUT_CONTRACT, output_contract
+from ..dataset_staging.rules.framing import framing_intent
 
 DATASET_TYPES = (
     "Character", "Multiple characters", "Animal", "Object / product", "Visual style",
@@ -36,41 +37,24 @@ STYLE_RULES = {
 }
 
 PLANNED_SCENE_CONTRACT = (
-    "SCENE-LOCKED VISUAL ENRICHMENT / SCENE PLANNER AUTHORITY\n"
-    "Semantic decisions are locked; descriptive enrichment is allowed. Render the supplied idea and scene "
-    "as a polished production-ready target prompt, not a minimal caption or a new idea. "
-    "Priority: explicit user concept/guided requirements and rules > planned idea > scene/geometry > "
-    "compatible descriptive enrichment > optional Director embellishment. Apply compiled restrictions "
-    "silently; a planner addition never overrides an explicit user constraint. "
-    "IDEA is authoritative for semantic purpose and the main event. SCENE/GEOMETRY own subjects and count, primary action, "
-    "pose, expression, relationships, interactions, important props/environment, camera intent, viewpoint, "
-    "framing, composition and required visibility. Preserve supplied outfit, material, light, mood, weather "
-    "and time-of-day facts; unspecified secondary visual decisions are NOT already locked. "
-    "Within those boundaries enrich scene-relevant temporary clothing, fabric behavior, materials, surfaces, "
-    "environment textures, compatible lighting direction/quality, shadows, reflections, atmosphere, color "
-    "relationships, depth/separation, wear/weathering and minor background details that do not change the event. "
-    "Use physically useful detail to communicate the same pose/action, and photographic or illustrative "
-    "rendering appropriate to the target and requested medium. No new activity, subject, subject count, "
-    "relationship, major prop, location, pose or competing camera concept; never remove required objects "
-    "or substitute a prettier/easier scene. Do not obscure required contacts or visibility with enrichment. "
-    "DIRECTOR TREATMENT: Fully use the selected Director for compatible lighting, atmosphere, style, "
-    "composition emphasis, presentation and motion emphasis. It controls treatment, not the semantic scene; "
-    "adapt its preferences to the locked action, geometry, environment and objects. "
-    "GEOMETRY FIDELITY: Preserve independent camera azimuth, elevation and distance. Preserve applicable subject/body/torso/hip orientation, head direction, gaze_direction and expression separately, "
-    "Pose geometry is locked: preserve limb relationships, joint bends, support points, self/object contact, spatial overlap/depth, orientation and required_visible_parts. "
-    "Framing is crop/composition, independent of anatomical visibility. Feet or knees can enter waist-up framing when folded beside the head or foreshortened toward camera. "
-    "Render this positively as a tight waist-up composition with those extremities inside it; never widen a supplied crop because lower-body parts are mentioned. "
-    "Keep detailed custom geometry rather than replacing it with a generic yoga, dynamic or contortion label. "
-    "Express the locked framing explicitly in natural positive composition language. Spend the first useful clauses on the defining pose and actual load-bearing contacts before adding decorative rendering detail. "
-    "Reuse the established support/contact clause from pose_detail and scene; do not independently invent another load path. Keep internal bracing distinct from external weight support. "
-    "crop and object/hand relationships. ACTION-FIRST FIDELITY: Preserve the specialized action's defining support/contact, equipment, body configuration and individual participant roles. Never trade them for a simpler valid pose. "
-    "Do not reinterpret the pose, add a second body orientation or "
-    "contradictory camera angle, independently force eye contact, or expose body regions hidden by the "
-    "planned crop/viewpoint. Local descriptive enrichment must agree with the planned camera/body/action "
-    "geometry. Do not hallucinate an anatomy twist or new staging to repair a bad scene; higher-priority "
-    "explicit user requirements still win. "
-    "If planning fell back to terse user input, clarify that input conservatively without inventing "
-    "a replacement scene. Do not expose planning labels or instructions in the final prompt."
+    "SCENE-LOCKED VISUAL ENRICHMENT\n"
+    "Semantic decisions are locked; descriptive enrichment is allowed. Explicit concept, rules and local "
+    "guided input outrank supporting plans; IDEA owns the event and semantic purpose, SCENE/GEOMETRY "
+    "own its participants, action, relationships, props, environment, pose, expression and camera. "
+    "Preserve supplied appearance, material, lighting, weather and time facts. Do not replace the event, "
+    "add subjects or major props, or invent a different location, pose or camera. "
+    "GEOMETRY FIDELITY: Preserve independent camera azimuth/elevation/distance, applicable orientations, "
+    "head direction, gaze and expression. Keep custom pose_detail, limb/joint relationships, "
+    "support/contact, overlap/depth and required_visible_parts. Reuse the established support/contact clause "
+    "from pose_detail and scene; internal bracing is not external weight support. "
+    "Framing is crop/composition, independent of anatomical visibility: folded or foreshortened "
+    "extremities can enter tight crops. Express locked framing positively; never widen it merely "
+    "to expose feet or knees. Do not invent anatomy or a second camera to repair a conflict. "
+    "DIRECTOR TREATMENT: Fully use the selected Director for compatible lighting, atmosphere, style "
+    "and presentation. It controls treatment, not the semantic scene. Enrich unspecified secondary "
+    "materials, textures, fabric behavior, light/shadow/reflections, palette, depth and minor background "
+    "details inside these locks. Render the same scene as a polished target prompt, not a bare caption. "
+    "For terse guided fallbacks, clarify conservatively. Do not expose internal planning labels."
 )
 
 DATASET_DESCRIPTIVE_CREATIVITY = {
@@ -139,6 +123,10 @@ def dataset_instruction(request, data, index, previous=(), model_family="qwen", 
     scene = (plan_item or {}).get("scene") or seed or data["subject"]
     idea = (plan_item or {}).get("idea") or "Unavailable for this legacy item; preserve the supplied scene's semantic purpose."
     content.append("PLANNED IDEA\n<idea>\n" + idea + "\n</idea>")
+    intent = framing_intent(data, {**(plan_item or {}), "index": index, "input": seed})
+    if intent.locked:
+        content.append("FRAMING AUTHORITY\n" + json.dumps({"crop": intent.crop, "source": intent.source,
+                       "conflicts": list(intent.conflicts)}, ensure_ascii=False))
     if (plan_item or {}).get("geometry"):
         content.append("PLANNED GEOMETRY\n" + json.dumps(plan_item["geometry"], ensure_ascii=False)
                        + "\nInternal canonical snake_case staging facts: render as readable visual descriptions, not field names or enum tokens. "
@@ -149,26 +137,23 @@ def dataset_instruction(request, data, index, previous=(), model_family="qwen", 
     content.append("PLANNED SCENE / CURRENT SCENE\n<scene>\n" + scene + "\n</scene>")
     if data["constraints"].strip():
         content.append("CONSISTENCY AND VARIATION RULES\n<constraints>\n" + constraint_sections(data["constraints"]) + "\n</constraints>\nApply fixed requirements and preserve this scene's planned interpretation of variation rules; do not plan other items or new scene variants.")
-    builder_request = replace(
-        request, idea="\n\n".join(content), mode="Enhance",
-        director_preset=director.id, system_prompt_override="",
-        custom_instructions=rules, prompt_length=data["length"], target_model=data["target"],
-        creativity=data.get("creativity", request.creativity),
-        # Builder preservation switches are not Dataset scene locks. The single
-        # semantic overlay above owns all supplied scene and identity facts.
-        preserve_subject=False, preserve_composition=False, preserve_camera=False,
-        preserve_materials=False, preserve_lighting=False, preserve_colors=False,
-    )
-    instruction = assemble_instruction(builder_request, model_family=model_family, text_only=True,
-                                       compile_user_constraints=False)  # Dataset already owns compiled semantic rules.
     token_limit = DATASET_OUTPUT_TOKEN_LIMITS[data["length"]]
-    creativity = builder_request.creativity if builder_request.creativity in CREATIVITY_ADAPTERS else "Balanced"
-    system = instruction.system_message.replace(CREATIVITY_ADAPTERS[creativity], DATASET_DESCRIPTIVE_CREATIVITY[creativity])
-    system = system.replace(get_mode_adapter("Enhance"),
-        "Enhance mode: improve clarity, visual specificity and coherence while preserving the planned scene's meaning. Dataset semantic locks and descriptive Creativity define the enrichment boundary.")
-    system = system.replace("- Creativity controls SEMANTIC invention only, never target syntax or output format. Director behavior must respect it and all active preservation constraints.",
-        "- Dataset Creativity controls descriptive enrichment only, never semantic scene decisions or target format. The Scene-Locked Visual Enrichment contract owns semantics; Director treatment stays inside it.")
-    return replace(instruction, system_message=system, diagnostic_stage=f"dataset:{index}",
+    creativity = data.get("creativity", request.creativity)
+    creativity = creativity if creativity in CREATIVITY_ADAPTERS else "Balanced"
+    director_instructions = director.instructions
+    if director.supported_targets and data["target"] not in director.supported_targets:
+        director_instructions = "This target-specific Director is inactive for the selected target. Follow the selected task and target adapter."
+    system = "\n\n".join([
+        "You are the Dataset final writer. Render one supplied still scene; planning is complete.",
+        "MODE ADAPTER\nEnhance mode: improve clarity and visual specificity inside the supplied semantic locks.",
+        "WORKFLOW RULES\n" + rules,
+        "TARGET MODEL ADAPTER\n" + get_model_adapter(data["target"]),
+        DATASET_DESCRIPTIVE_CREATIVITY[creativity], resolve_target_length(data["target"], data["length"]),
+        f"DIRECTOR BEHAVIOR — {director.label}\n{director_instructions}",
+        OUTPUT_CONTRACT, output_contract(data["target"]),
+    ])
+    return PromptInstruction(system_message=system, user_message="\n\n".join(content),
+                    model_family=model_family, director_preset=director.label, diagnostic_stage=f"dataset:{index}",
                    max_tokens=token_limit, unlimited_tokens=False, hard_max_tokens=token_limit,
                    temperature=0.25, top_p=0.85)
 

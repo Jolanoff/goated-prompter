@@ -73,7 +73,8 @@ def normalize_geometry(value, *, profile=None, scene=""):
     cleaned = {name: normalize_field(name, content) for name, content in value.items()}
     pose = cleaned.get("pose_type")
     detail = cleaned.get("pose_detail")
-    if isinstance(pose, str) and pose.strip() and pose not in POSE_TYPE_VALUES and isinstance(detail, str) and len(detail.split()) >= 4:
+    pose_values = profile.values_for("pose_type") if profile is not None else POSE_TYPE_VALUES
+    if isinstance(pose, str) and pose.strip() and pose not in pose_values and isinstance(detail, str) and len(detail.split()) >= 4:
         cleaned["pose_type"] = "custom"  # Preserve actual geometry, never invent a replacement.
     if cleaned.get("leg_position") == "custom" and isinstance(detail, str) and len(detail.split()) >= 4:
         # No canonical leg state is asserted by this placeholder. The actual

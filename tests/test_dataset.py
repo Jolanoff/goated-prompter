@@ -145,7 +145,7 @@ class DatasetUnitTests(unittest.TestCase):
         self.assertEqual(calls[2].hard_max_tokens, calls[1].hard_max_tokens)
         self.assertNotIn("Prompt length — Maximum Detail", calls[2].system_message)
 
-    def test_writer_uses_builder_system_and_omits_previous_prose(self):
+    def test_writer_uses_scene_locks_and_omits_previous_prose(self):
         from goated_prompter.core import assemble_instruction
         data = valid_draft()
         request = GoatedPrompterRequest(idea=data["subject"], target_model=data["target"])
@@ -153,13 +153,12 @@ class DatasetUnitTests(unittest.TestCase):
             [{"index": 1, "prompt": "contaminating previous prose"}],
             plan_item={"scene": "Cycling together along a country road"})
         builder = assemble_instruction(request, text_only=True)
-        from goated_prompter.prompting.base import CORE_SYSTEM_PROMPT
-        self.assertTrue(instruction.system_message.startswith(CORE_SYSTEM_PROMPT))
+        self.assertTrue(instruction.system_message.startswith("You are the Dataset final writer"))
         self.assertIn("Dataset Creativity — Balanced", instruction.system_message)
         self.assertIn("Semantic decisions are locked; descriptive enrichment is allowed", instruction.system_message)
         self.assertNotIn("contaminating previous prose", instruction.user_message)
         self.assertIn("Cycling together", instruction.user_message)
-        self.assertIn("FRAME COMPLETENESS DEFAULT", instruction.system_message)
+        self.assertNotIn("FRAME COMPLETENESS DEFAULT", instruction.system_message)
         self.assertIn("FRAME COMPLETENESS DEFAULT", builder.system_message)
         self.assertIn("Preserve explicit counts", builder.system_message)
         self.assertNotIn("one thousand", builder.system_message)

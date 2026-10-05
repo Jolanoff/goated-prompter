@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass
 
 from .dataset_staging import geometry_errors
 from .dataset_visible_content import visible_content_error
+from .dataset_staging.rules.framing import framing_intent
 
 
 @dataclass(frozen=True)
@@ -18,9 +19,10 @@ class SceneEligibility:
 
 
 def scene_geometry_errors(row, data):
+    framing_errors = framing_intent(data, row).errors_for(row)
     if row.get("scene_status") == "guided_fallback":
-        return []
-    return geometry_errors(row, dataset_type=data["trigger_type"], require_fields=bool(row.get("geometry")))
+        return framing_errors
+    return list(dict.fromkeys([*framing_errors, *geometry_errors(row, dataset_type=data["trigger_type"], require_fields=bool(row.get("geometry")))]))
 
 
 def scene_eligibility(row, data):

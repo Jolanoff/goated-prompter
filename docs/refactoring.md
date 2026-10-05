@@ -9,6 +9,11 @@ lives in `goated_prompter/input_schema.py`; reference images enter through
 `goated_prompter/uploaded_images.py`. Historical test counts below are not current
 suite counts.
 
+For the current Dataset boundaries and remediation verification, see
+[Dataset architecture](dataset-architecture.md) and the
+[remediation report](remediation-report.md). The module inventory and counts
+below describe the earlier checkpoint, not the present Dataset implementation.
+
 This is a behavior-preserving first pass at the two largest application modules.
 `App.jsx` decreased from 2,022 to 1,090 lines; `local_app.py` from 996 to 667.
 API routes, response/error shapes, generation budgets, job revisions, storage
@@ -28,10 +33,11 @@ GPU benchmarks, new dependencies, or deployment flags are needed.
 - `frontend/src/components/StudioPrimitives.jsx` owns the shared mark, panel,
   and toggle. Keep existing UI classes and accessible labels stable.
 
-Views do not persist data or call the API independently. Shared state remains in
-the coordinator to preserve draft lifetime and existing race protections. Future
-work can extract cohesive controller hooks after adding focused lifecycle tests;
-avoid replacing one large component with a generic context containing all state.
+At this checkpoint shared state remained in the coordinator. Dataset now delegates
+workflow API requests, job synchronization and quality analysis to
+`frontend/src/workflows/useDatasetWorkflow.js`; `useWorkflowSettings.js` retains
+serialized autosave and revision guards. The view retains presentation, elapsed
+time, geometry dialogs and downloads. Avoid a generic context containing all state.
 
 ### Backend
 

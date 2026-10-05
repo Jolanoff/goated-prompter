@@ -35,8 +35,35 @@ def migrate_saved_geometry(value, *, dataset_type=None):
     profile = get_profile(dataset_type)
     if not isinstance(value, dict):
         return {}, True
+    value = dict(value)
+    detail_overflow = False
+    # Preserve known historical enum facts in free text before live scoping.
+    for name, destination in (("pose_type", "pose_detail"), ("expression", "expression_detail"),
+                              ("head_direction", "view_detail"), ("gaze_direction", "view_detail"),
+                              ("camera_elevation", "view_detail"), ("contact_state", "pose_detail"),
+                              ("leg_position", "pose_detail"), ("pelvis_tilt", "pose_detail")):
+        canonical = normalize_field(name, value.get(name))
+        if (name not in profile.allowed or not isinstance(canonical, str)
+                or canonical not in GEOMETRY_FIELDS[name].values or canonical in profile.values_for(name)):
+            continue
+        if destination not in profile.allowed:
+            destination = "view_detail"
+        description = canonical.replace("_", " ")
+        if name not in {"pose_type", "expression"}:
+            description = name.replace("_", " ") + " " + description
+        existing = value.get(destination, "")
+        joined = description + (", " + existing if isinstance(existing, str) and existing else "")
+        limit = GEOMETRY_FIELDS[destination].max_length
+        detail_overflow |= len(joined) > limit
+        value[destination] = joined[:limit]
+        if name in {"pose_type", "expression"}:
+            value[name] = "custom"
+        elif name in {"head_direction", "gaze_direction"}:
+            value[name] = "toward_action"
+        else:
+            value.pop(name)
     value = normalize_geometry(value, profile=profile)
-    cleaned, needs_repair = {}, False
+    cleaned, needs_repair = {}, detail_overflow
 
     def put(name, content):
         nonlocal needs_repair

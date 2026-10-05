@@ -40,8 +40,8 @@ class SceneComposerTests(unittest.TestCase):
     def test_output_contract_is_explicit_and_example_does_not_anchor_creativity(self):
         data = draft(amount=1)
         system = scene_composer_instruction(data, dataset_assignments(data), rows(1)).system_message
-        for phrase in ("Return ONLY one valid JSON array", "character must be [", "character must be ]", "double-quoted keys",
-                       "no YAML", "no numbered sections", "no trailing commas", "gaze_direction", "not put emotions",
+        for phrase in ("Return one valid JSON array", "requested indexes in supplied order", "Echo the fixed idea unchanged",
+                       "No fences, YAML, headings or commentary", "gaze_direction", "not put emotions",
                        "expression", "custom", "pose_detail", "relative"):
             self.assertIn(phrase, system)
         self.assertIn("IDEA SPATIAL CLARITY", idea_planner_instruction(data, dataset_assignments(data)).system_message)

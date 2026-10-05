@@ -1,6 +1,8 @@
 """Compositional extent, never inferred from anatomical placement."""
 
 import re
+from dataclasses import dataclass
+from typing import Literal
 from . import Rule, issue
 from ..vocabulary import FRAMING_VALUES, FRAMING_ALIASES
 
@@ -28,19 +30,80 @@ _SOURCE_CROP = re.compile(r"(?:^|[,;\n])\s*(" + "|".join(
 
 
 def requested_framing(source):
-    """Read a standalone explicit crop tag; ambiguous prose is not classified.
+    """Read explicit crop tags or qualified composition; ambiguous prose stays unset.
 
     This lexical projection never derives composition from anatomy or pose.
     Conflicting crop tags remain unresolved instead of silently choosing one.
     """
+    values = _requested_crops(source)
+    return next(iter(values)) if len(values) == 1 else None
+
+
+def _requested_crops(source):
+    from ...planning.rule_compiler import QUOTED
+    source = QUOTED.sub("[literal]", source).replace("–", "-").replace("—", "-")
     values = {FRAMING_ALIASES.get(label, label) for match in _SOURCE_CROP.finditer(source)
               for label in (re.sub(r"[- _]+", "_", match[1].casefold()),)}
-    return next(iter(values)) if len(values) == 1 else None
+    values.update(FRAMING_ALIASES.get(label, label) for _match, label in _composition_labels(source))
+    return values
 
 
 def _crop_family(value):
     value = FRAMING_ALIASES.get(value, value)
     return value.removesuffix("_with_environment")
+
+
+def _composition_labels(text):
+    for match in _EXPLICIT_CROP.finditer(text):
+        label = re.sub(r"[- _]+", "_", match[1].casefold())
+        qualifier = re.match(r"\s+(?:composition\b|framing\b|view\b|shot\b|crop\b|portrait\b|is\s+framed\b)", text[match.end():], re.I)
+        distance = re.match(r"\s+(?:camera\s+)?distance\b", text[match.end():], re.I)
+        if distance or not (qualifier or label.endswith("_shot") or _crop_family(label).endswith("close_up")):
+            continue
+        if re.search(r"\b(?:no|not|never|without|avoid)\b[^,.;:]*$", text[max(0, match.start() - 40):match.start()], re.I):
+            continue
+        yield match, label
+
+
+@dataclass(frozen=True)
+class FramingIntent:
+    crop: str | None
+    source: Literal["user", "guided", "planner"]
+    conflicts: tuple[str, ...] = ()
+
+    @property
+    def locked(self):
+        return self.source != "planner" and (self.crop is not None or bool(self.conflicts))
+
+    def errors_for(self, row):
+        errors = list(self.conflicts)
+        geometry = row.get("geometry", {})
+        if self.locked and self.crop and isinstance(geometry, dict) and geometry and geometry.get("framing") != self.crop:
+            errors.append(f"The {self.source} input explicitly requests {self.crop} framing. Preserve that crop; correct the representation without replacing the body geometry.")
+        errors.extend(framing_text_errors(row.get("scene", ""), self.crop))
+        return list(dict.fromkeys(errors))
+
+
+def framing_intent(data, row):
+    """Project framing authority once, without inferring crop from visible anatomy."""
+    inputs = [line.strip() for line in data.get("inputs", "").splitlines() if line.strip()]
+    local = row.get("input", inputs[(row.get("index", 1) - 1) % len(inputs)] if inputs and data.get("source_mode") == "guided" else "")
+    sources = [("user", data.get("subject", "")), ("user", data.get("constraints", ""))]
+    if data.get("source_mode") == "guided":
+        sources.append(("guided", local))
+    crops = [(kind, crop) for kind, text in sources for crop in _requested_crops(text)]
+    if len({crop for _kind, crop in crops}) > 1:
+        return FramingIntent(None, "user", ("Explicit source framing requirements conflict. Resolve the requested crops before composing this scene.",))
+    if crops:
+        kind, crop = crops[-1]
+        if data.get("trigger_type") != "Character":
+            crop = {"full_body": "full_subject", "full_body_with_environment": "full_subject_with_environment",
+                    "face_close_up": "detail_close_up", "extreme_close_up": "detail_close_up"}.get(crop, crop)
+        return FramingIntent(crop, kind)
+    geometry = row.get("geometry", {})
+    if isinstance(geometry, dict) and geometry.get("framing"):
+        return FramingIntent(geometry["framing"], "planner")
+    return FramingIntent(requested_framing(row.get("scene", "")), "user")
 
 
 def framing_text_errors(text, framing, *, protected_terms=()):
@@ -56,19 +119,7 @@ def framing_text_errors(text, framing, *, protected_terms=()):
         text = text.replace(term, "[protected]")
     text = QUOTED.sub("[literal]", text).replace("–", "-").replace("—", "-")
     errors = []
-    for match in _EXPLICIT_CROP.finditer(text):
-        label = re.sub(r"[- _]+", "_", match[1].casefold())
-        # "Full body of ..." and "head and shoulders of ..." are anatomy, not
-        # camera labels. Require a compositional qualifier unless the phrase
-        # already explicitly names a shot/close-up. Distance alone stays separate.
-        qualifier = re.match(r"\s+(?:composition\b|framing\b|view\b|shot\b|crop\b|portrait\b|is\s+framed\b)", text[match.end():], re.I)
-        shot_label = label.endswith("_shot")
-        closeup_label = (label.endswith("close_up") or _crop_family(label).endswith("close_up"))
-        distance_label = re.match(r"\s+(?:camera\s+)?distance\b", text[match.end():], re.I)
-        if distance_label or not (qualifier or shot_label or closeup_label):
-            continue
-        if re.search(r"\b(?:no|not|never|without|avoid)\b[^,.;:]*$", text[max(0, match.start() - 40):match.start()], re.I):
-            continue
+    for match, label in _composition_labels(text):
         if _crop_family(label) != _crop_family(framing):
             errors.append(f"Explicit {match[1]!r} framing conflicts with locked {framing!r}. Preserve the locked crop and actual pose/contacts; correct only the composition wording.")
     return list(dict.fromkeys(errors))

@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Mapping
 from .schema import GEOMETRY_FIELDS
-from .vocabulary import CHARACTER_FRAMING_VALUES, PRODUCT_FRAMING_VALUES
+from .vocabulary import CHARACTER_FRAMING_VALUES, PRODUCT_FRAMING_VALUES, GENERAL_STAGING_VALUES
 
 
 @dataclass(frozen=True)
@@ -44,12 +44,14 @@ framing camera_azimuth body_orientation head_direction gaze_direction face_visib
 
 
 def _profile(required="", recommended="", extra="", groups=(), *, allowed=None, framing=PRODUCT_FRAMING_VALUES):
+    allowed = COMMON_STAGING_FIELDS | frozenset(extra.split()) if allowed is None else frozenset(allowed)
     return StagingProfile(
         frozenset(required.split()),
         frozenset(recommended.split()),
-        COMMON_STAGING_FIELDS | frozenset(extra.split()) if allowed is None else frozenset(allowed),
+        allowed,
         groups,
-        MappingProxyType({"framing": frozenset(framing)}),
+        MappingProxyType({"framing": frozenset(framing),
+                          **{name: values for name, values in GENERAL_STAGING_VALUES.items() if name in allowed}}),
     )
 
 

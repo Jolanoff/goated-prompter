@@ -13,7 +13,8 @@ def markdown(report):
         def metrics(fields):
             return "; ".join(f"{field}: {result['averages'].get(field):.3f}" if result["averages"].get(field) is not None
                              else f"{field}: not reviewed/measured" for field in fields)
-        lines += ["- " + metrics(("format_valid", "first_pass_valid", "repair_frequency")),
+        lines += ["- " + metrics(("format_valid", "first_pass_valid", "repair_rate", "repair_frequency")),
+                  "- " + metrics(("trigger_fidelity", "calls_per_result", "model_calls", "transport_retry_calls")),
                   "- " + metrics(("transport_success", "repair_introduced_regression")),
                   "- " + metrics(("scene_fidelity", "action_fidelity", "pose_fidelity", "constraint_fidelity")),
                   "- " + metrics(("prompt_words", "useful_detail_density", "semantic_repetition", "latency_seconds")),
@@ -50,6 +51,9 @@ def regressions(report, baseline):
         old = previous.get(row["sample_id"])
         if old is None or not row.get("review_complete") or not old.get("review_complete"):
             failures.append(f"{row['sample_id']}: missing comparable complete semantic review")
+            continue
+        if row.get("review_kind") not in {"human", "independent"} or old.get("review_kind") not in {"human", "independent"}:
+            failures.append(f"{row['sample_id']}: explicit independent review provenance is required for regression evidence")
             continue
         for field in higher + lower:
             value, prior = row.get(field), old.get(field)

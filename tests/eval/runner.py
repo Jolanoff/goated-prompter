@@ -26,6 +26,7 @@ def capture(calls, event):
         calls[-1]["latency_seconds"] = time.perf_counter() - calls[-1]["started_at"]
     elif calls and kind == "error":
         calls[-1].update(error=event.get("message"), completion_state=event.get("completion_state", "provider_error"))
+        calls[-1]["latency_seconds"] = time.perf_counter() - calls[-1]["started_at"]
     elif calls and kind in {"semantic_review", "validation"}:
         calls[-1].setdefault("validation_events", []).append(event)
 
@@ -55,11 +56,16 @@ def live_case(case, workflow, config, args, run=1):
         custom_instructions=common_rules)
     sample_id = "|".join(str(value) for value in (case["id"], workflow, args.target, length, args.director,
                                                args.style, args.creativity, args.planning, run))
+    dataset_mode = getattr(args, "dataset_mode", "writer")
+    if workflow == "dataset" and dataset_mode == "pipeline":
+        sample_id += "|pipeline|" + getattr(args, "dataset_planning", "Fast")
     row = {"sample_id": sample_id, "case_id": case["id"], "workflow": workflow,
            "run": run, "request": case["request"], "anchors": case["anchors"], "rules": rules,
            "target": "MiniMax H3" if workflow == "minimax" else args.target, "length": length, "director": args.director,
            "style": args.style, "creativity": args.creativity, "planning": args.planning,
-           "effective_request": source, "calls": calls}
+            "effective_request": source, "calls": calls}
+    if workflow != "minimax":
+        row.update(trigger="eval_subject", expand_trigger=False)
     start = time.perf_counter()
     try:
         if workflow == "builder":
@@ -70,18 +76,29 @@ def live_case(case, workflow, config, args, run=1):
                  "duration_seconds": 10, "references": case.get("references", []), "director_preset": args.director}, lambda _message: None)
             row["prompt"] = result["prompt"]
         else:
+            row["evaluation_scope"] = dataset_mode
             data = {**default_dataset_draft(), "subject": case["request"], "trigger": "eval_subject",
                     "trigger_type": case.get("dataset_type", "Character"),
                     "amount": 1, "target": args.target, "length": length, "director_preset": args.director,
                     "visual_style": args.style, "creativity": args.creativity, "constraints": rules}
-            plan = {"index": 1, "input": case["request"], "idea": compiled_source.positive_request,
-                    "scene": compiled_source.positive_request, "geometry": {}}
-            backend = create_backend(config)
-            with backend.generation_session() as session:
-                instruction = dataset_instruction(request, data, 1, plan_item=plan)
-                row["prompt"] = DatasetService(config, lambda: None)._generate(session, instruction, data, 1,
-                    lambda _message: None, plan)
-        row["completion_state"] = "completed"
+            if dataset_mode == "pipeline":
+                data.update(source_mode="guided", inputs=case["request"].replace("\n", " "),
+                            planning_mode=getattr(args, "dataset_planning", "Fast"))
+                result = DatasetService(config, lambda: None).run(request, data, lambda _message: None, lambda _partial: None)
+                row.update(scene_plan=result["scene_plan"], dataset_type=data["trigger_type"],
+                           completed_results=result["completed"], prompts=result["prompts"],
+                           prompt=result["prompts"][0]["prompt"] if result["prompts"] else "")
+                if not result["completed"]:
+                    row.update(error="Dataset pipeline produced no valid prompt.", completion_state="validation_failed")
+            else:
+                plan = {"index": 1, "input": case["request"], "idea": compiled_source.positive_request,
+                        "scene": compiled_source.positive_request, "geometry": {}}
+                backend = create_backend(config)
+                with backend.generation_session() as session:
+                    instruction = dataset_instruction(request, data, 1, plan_item=plan)
+                    row["prompt"] = DatasetService(config, lambda: None)._generate(session, instruction, data, 1,
+                        lambda _message: None, plan)
+        row.setdefault("completion_state", "completed")
     except Exception as exc:
         row.update(error=str(exc), completion_state=getattr(exc, "completion_state", "provider_error"),
                    partial_text=getattr(exc, "partial_text", ""))
@@ -177,6 +194,8 @@ def main():
     parser.add_argument("--style", default="Photorealistic")
     parser.add_argument("--creativity", default="Balanced")
     parser.add_argument("--planning", choices=["Direct", "Auto", "Always"], default="Direct")
+    parser.add_argument("--dataset-mode", choices=["writer", "pipeline"], default="writer")
+    parser.add_argument("--dataset-planning", choices=["Fast", "Quality"], default="Fast")
     parser.add_argument("--variety", choices=["Focused", "Balanced", "Wide"], default="Balanced")
     parser.add_argument("--novelty", action="store_true")
     parser.add_argument("--history", choices=["on", "off"], default="on")
@@ -198,6 +217,7 @@ def main():
         config = json.loads(args.config.read_text(encoding="utf-8-sig"))
         if config.get("backend") != "openai_compatible":
             parser.error("Use an explicitly configured existing OpenAI-compatible endpoint; no process ownership changes.")
+        args.output.parent.mkdir(parents=True, exist_ok=True)
         revision = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
         source_root = Path(__file__).resolve().parents[2] / "goated_prompter"
         code = hashlib.sha256()
