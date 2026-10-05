@@ -1,0 +1,88 @@
+name: Bug report
+description: Report a reproducible problem with Goated Prompter.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search existing issues and check the [troubleshooting guide](https://github.com/Jolanoff/goated-prompter#troubleshooting) first.
+        For vulnerabilities, follow the [security policy](https://github.com/Jolanoff/goated-prompter/blob/master/SECURITY.md) instead. All issue contents are public.
+  - type: input
+    id: version
+    attributes:
+      label: App version or commit
+      description: Run git rev-parse --short HEAD, or give the release/download date.
+      placeholder: "Commit hash or release version"
+    validations:
+      required: true
+  - type: dropdown
+    id: workflow
+    attributes:
+      label: Affected area
+      options:
+        - Installation or startup
+        - Prompt Builder or references
+        - Refine and history
+        - MiniMax H3
+        - Dataset
+        - Saved Prompts or instruction presets
+        - Settings or model loading
+        - ComfyUI integration
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment and inference setup
+      description: Include relevant versions. Remove private paths, endpoint credentials, and API keys.
+      placeholder: |
+        OS:
+        Browser/version:
+        Python/version:
+        Node.js/version (if building the frontend):
+        Installation: standalone / ComfyUI
+        Backend: local_llama_cpp / openai_compatible / mock
+        llama.cpp build or remote server software/version:
+        Exact model and projector filenames (if relevant):
+        GPU and RAM/VRAM (if relevant):
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include relevant settings and a minimal non-sensitive example. Note whether this also happens with the mock backend, if applicable.
+      placeholder: |
+        1. Open ...
+        2. Select ...
+        3. Click ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Describe the result and exact error message, if any.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Sanitized logs or screenshots
+      description: Optional. Redact secrets, personal paths, private prompts/images, and user data. Do not upload your complete config or data directory.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues for this problem.
+          required: true
+        - label: I removed secrets and private content, and this is not a vulnerability report.
+          required: true

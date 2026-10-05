@@ -439,6 +439,8 @@ Set `GOATED_PROMPTER_API_KEY` in the environment if authentication is required. 
 
 ## Development and verification
 
+Want to help? Read the [contribution guide](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md). Use the [issue forms](https://github.com/Jolanoff/goated-prompter/issues/new/choose) for bugs and feature requests; report vulnerabilities according to the [security policy](SECURITY.md).
+
 ### Checkpoint privacy and recovery
 
 Dataset generated checkpoints are durable local content in **`data/dataset_checkpoints.json`**, separate from editable settings. Up to 20 recent job records are retained, subject to the local 16 MiB store limit. Other workflows' runtime checkpoints, live request/response logs and interrupted partial-text diagnostics remain RAM-only. Dataset exports/Clear release completed RAM jobs and hide their diagnostic recovery endpoints; they do not erase durable scenes/prompts. Active jobs are never deleted by cleanup. Shutdown uses bounded cancellation, marks unfinished work interrupted and releases RAM diagnostics. Backend restart recovers completed Dataset chunks, not active sockets or partial prompts.

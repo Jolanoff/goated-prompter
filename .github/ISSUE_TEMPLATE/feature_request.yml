@@ -1,0 +1,41 @@
+name: Feature request
+description: Suggest a focused improvement to Goated Prompter.
+title: "[Feature]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search existing requests first. Goated Prompter writes prompts; it does not generate images or videos.
+        Keep examples non-sensitive: issues and attachments are public.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What are you trying to accomplish, and where does the current workflow fall short?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed improvement
+      description: Describe the intended behavior and affected workflow. For target-model support, include links to official format documentation.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or current workaround
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Optional sanitized examples, mockups, compatibility considerations, or documentation links.
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues for this request.
+          required: true
+        - label: My examples and attachments contain no secrets or private content.
+          required: true

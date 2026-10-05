@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/Jolanoff/goated-prompter/blob/master/SECURITY.md
+    about: Follow the security policy; do not publish vulnerability details in an issue.
+  - name: Installation and troubleshooting
+    url: https://github.com/Jolanoff/goated-prompter#troubleshooting
+    about: Check the setup guide and common fixes before opening an issue.
