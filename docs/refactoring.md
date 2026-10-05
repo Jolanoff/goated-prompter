@@ -3,6 +3,7 @@
 ## Scope
 
 This is a behavior-preserving first pass at the two largest application modules.
+`App.jsx` decreased from 2,022 to 1,090 lines; `local_app.py` from 996 to 667.
 API routes, response/error shapes, generation budgets, job revisions, storage
 schemas, visual layout, and workflow behavior are unchanged. No model inference,
 GPU benchmarks, new dependencies, or deployment flags are needed.
@@ -46,6 +47,12 @@ mutable snapshot isolation, bounded activity, late transport events, HTTP error
 headers, and upload format/default-dimension behavior before moving those modules.
 Repository-hygiene tests verify ignore rules and sanitized public fixture metadata.
 
+Final verification passed 617 Python tests in the working tree (including existing
+uncommitted planning work), 38 frontend unit tests, 25 ComfyUI JavaScript tests,
+84 isolated Edge browser tests, lint, and the production build. The committed
+refactor was also tested in a clean checkout: 523 Python tests passed, with the
+built-site test skipped because that checkout had no generated frontend assets.
+
 Run:
 
 ```powershell
@@ -82,3 +89,11 @@ separately authorized, backed-up history rewrite. Every affected collaborator
 must resync after a rewrite and must not merge old history back in. GitHub may
 retain cached commit pages or pull-request refs; sensitive-data removal from
 those requires GitHub Support. Contributor statistics may take time to refresh.
+
+The authorized cleanup rewrote and atomically force-pushed both published
+branches, `master` and `test`, removing private reports/config from their history
+and reattributing the secondary account's four commits to the primary account.
+Private backups remain outside this repository. Old local branches are retained
+for recovery: **do not push backup branches or the old `main` branch**, and do
+not use `git push --all`. The cleaned refactor remains local on
+`refactor/application-modularity`; it was not merged into the published branches.
