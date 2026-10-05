@@ -60,5 +60,6 @@ Desktop.ini
 
 # Local AI-agent skills (not needed to run the app)
 /.agents/skills/
-/.opencode/skills/
+/.opencode/skills/*
+!/.opencode/skills/goated-prompter-workflow/
 /skills-lock.json
