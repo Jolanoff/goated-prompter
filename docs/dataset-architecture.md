@@ -100,7 +100,10 @@ An unsaved idea/scene/geometry edit cannot reuse old eligibility.
 
 The hook preserves submission exclusion, quality-attempt disposal, job ID/revision deduplication,
 flush-before-generation and the existing revision snapshot. `useWorkflowSettings` owns autosave
-ordering and guards late refreshes against newer edits. Exports release only disposable completed
+ordering and guards late refreshes against newer edits. Regeneration submits the saved draft without
+clearing its prior results, batch ID or quality report before admission. The Dataset service starts a
+fresh result list for full regeneration; accepted job checkpoints replace the old batch. A lost admission
+response does not trigger a client rollback over accepted work. Exports release only disposable completed
 job diagnostics after flushing; editable plans, durable checkpoints and history are not erased.
 
 ## Evidence boundary

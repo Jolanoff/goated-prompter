@@ -198,6 +198,106 @@ test.beforeEach(async ({ request }) => {
   })).ok()).toBe(true);
 });
 
+async function seedEditedDatasetBatch(request) {
+  const initial = await (await request.get("/api/workspace/settings/dataset")).json();
+  const input = { ...initial.draft, subject: "A craftsperson working with clay.", trigger: "saved_person", amount: 2 };
+  const accepted = await request.post("/api/workspace/dataset/scenes", { data: { input } });
+  expect(accepted.status()).toBe(202);
+  const job = await accepted.json();
+  await expect.poll(async () => (await (await request.get(`/api/jobs/${job.id}`)).json()).status).toBe("succeeded");
+  const saved = await (await request.get("/api/workspace/settings/dataset")).json();
+  const draft = { ...saved.draft, result_job_id: "manually-edited-batch",
+    results: saved.draft.scene_plan.map(({ index, input, idea, scene, geometry }) => ({ index, input, idea, scene, geometry,
+      prompt: `saved_person: edited prompt ${index}; preserve (these words).\n  Deliberate spacing.`,
+    })) };
+  const quality = await request.post("/api/workspace/dataset/quality", { data: { input: draft } });
+  expect(quality.ok(), await quality.text()).toBe(true);
+  draft.quality_report = (await quality.json()).report;
+  const stored = await request.put("/api/workspace/settings/dataset", { data: { revision: saved.revision, draft } });
+  expect(stored.ok()).toBe(true);
+  return (await stored.json()).draft;
+}
+
+for (const button of ["Generate 2 prompts", "Generate prompts from these scenes"]) {
+  for (const status of [400, 409, 503]) {
+    test(`rejected Dataset regeneration preserves the saved edited batch via ${button} (${status})`, async ({ page, request }) => {
+      const before = await seedEditedDatasetBatch(request);
+      await page.goto("/");
+      await page.getByRole("button", { name: "Dataset", exact: true }).click();
+      await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(before.results[0].prompt);
+      await page.route("**/api/workspace/dataset", (route) => route.fulfill({
+        status, json: { error: "Generation admission unavailable." },
+      }));
+      await page.getByRole("button", { name: button, exact: true }).click();
+      await expect(page.getByText(/Generation admission unavailable/).first()).toBeVisible();
+      const after = await (await request.get("/api/workspace/settings/dataset")).json();
+      expect(after.draft).toEqual(before);
+      await page.reload();
+      await page.getByRole("button", { name: "Dataset", exact: true }).click();
+      await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(before.results[0].prompt);
+      await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(before.results[1].prompt);
+    });
+  }
+
+  test(`Dataset replaces the prior batch only after admission via ${button}`, async ({ page, request }) => {
+    const before = await seedEditedDatasetBatch(request);
+    await page.goto("/");
+    await page.getByRole("button", { name: "Dataset", exact: true }).click();
+    let releaseAdmission;
+    const admissionGate = new Promise((resolve) => { releaseAdmission = resolve; });
+    await page.route("**/api/workspace/dataset", async (route) => {
+      await admissionGate;
+      await route.continue();
+    });
+    const submission = page.waitForRequest("**/api/workspace/dataset");
+    const accepted = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset") && response.status() === 202);
+    try {
+      await page.getByRole("button", { name: button, exact: true }).click();
+      const input = (await submission).postDataJSON().input;
+      expect(input.results).toEqual(before.results);
+      expect(input.quality_report).toEqual(before.quality_report);
+      expect(input.result_job_id).toBe(before.result_job_id);
+      const waiting = await (await request.get("/api/workspace/settings/dataset")).json();
+      expect(waiting.draft).toEqual(before);
+      await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(before.results[0].prompt);
+      releaseAdmission();
+      const job = await (await accepted).json();
+      await expect.poll(async () => (await (await request.get(`/api/jobs/${job.id}`)).json()).status).toBe("succeeded");
+      await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(/saved_person:.*mock scene 1/);
+      await expect(page.getByLabel("Planned scene 1")).toBeEnabled();
+      const finished = await (await request.get("/api/workspace/settings/dataset")).json();
+      expect(finished.draft.results.map((row) => row.index)).toEqual([1, 2]);
+      expect(finished.draft.results).not.toEqual(before.results);
+      expect(finished.draft.result_job_id).toBe(job.id);
+    } finally { releaseAdmission(); }
+  });
+}
+
+test("Dataset recovers an accepted replacement after losing its admission response without restoring stale output", async ({ page, request }) => {
+  const before = await seedEditedDatasetBatch(request);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  let admitted;
+  const accepted = new Promise((resolve) => { admitted = resolve; });
+  await page.route("**/api/workspace/dataset", async (route) => {
+    const response = await route.fetch();
+    expect(response.status()).toBe(202);
+    admitted(await response.json());
+    await route.abort("failed");
+  });
+  await page.getByRole("button", { name: "Generate 2 prompts", exact: true }).click();
+  const job = await accepted;
+  await expect.poll(async () => (await (await request.get(`/api/jobs/${job.id}`)).json()).status).toBe("succeeded");
+  const recovered = await (await request.get("/api/workspace/settings/dataset")).json();
+  expect(recovered.draft.results.map((row) => row.index)).toEqual([1, 2]);
+  expect(recovered.draft.results).not.toEqual(before.results);
+  expect(recovered.draft.result_job_id).toBe(job.id);
+  await page.reload();
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(recovered.draft.results[0].prompt);
+  await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(recovered.draft.results[1].prompt);
+});
+
 test("Fast plans ten scenes in three combined chunks", async ({ page, request }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Dataset", exact: true }).click();

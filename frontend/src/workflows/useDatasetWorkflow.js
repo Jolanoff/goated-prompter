@@ -104,13 +104,8 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, d
     setStarting(true);
     setError("");
     try {
-      let input = draft;
-      if (!scenesOnly) {
-        input = { ...input, results: [], result_job_id: "", quality_report: {} };
-        update({ results: [], result_job_id: "", quality_report: {} });
-      }
       await preferences.flush();
-      await onGenerate(scenesOnly ? "dataset/scenes" : "dataset", { input,
+      await onGenerate(scenesOnly ? "dataset/scenes" : "dataset", { input: draft,
         workflow_revision: preferences.revision(), ...(validOnly ? { valid_only: true } : {}) });
     } catch (err) { setError(err.message); }
     finally { submission.current = false; setStarting(false); }
