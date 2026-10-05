@@ -7,10 +7,13 @@ import { readTheme, saveTheme } from "./theme.js";
 import CreativeWorkspace from "./workflows/CreativeWorkspace.jsx";
 import MiniMaxTab from "./workflows/MiniMaxTab.jsx";
 import DatasetTab from "./workflows/DatasetTab.jsx";
+import SavedPromptsTab from "./workflows/SavedPromptsTab.jsx";
+import SettingsTab from "./workflows/SettingsTab.jsx";
+import DirectorsTab from "./workflows/DirectorsTab.jsx";
+import { GoatMark, Panel } from "./components/StudioPrimitives.jsx";
 import JobLogModal from "./JobLogModal.jsx";
 import { PlanningSelect } from "./workflows/WorkflowControls.jsx";
 import {
-  ArrowLeft,
   ArrowUpRight,
   Bookmark,
   Check,
@@ -24,9 +27,6 @@ import {
   LoaderCircle,
   LockKeyhole,
   Moon,
-  Plus,
-  RefreshCw,
-  RotateCcw,
   Save,
   ScrollText,
   Settings2,
@@ -84,82 +84,6 @@ const workspaceViews = [
   { id: "directors", label: "Instruction presets", icon: FileText },
   { id: "settings", label: "Settings", icon: Settings2 },
 ];
-
-function GoatMark({ small = false }) {
-  return (
-    <svg
-      className={`goat-mark ${small ? "size-10" : "size-[43px]"}`}
-      viewBox="0 0 64 64"
-      fill="none"
-      aria-hidden="true"
-    >
-      <circle cx="32" cy="32" r="31" fill="currentColor" opacity=".16" />
-      <path
-        d="M29 20C14 3 5 17 20 28M37 20C51 2 60 17 45 29"
-        stroke="currentColor"
-        strokeWidth="5"
-        strokeLinecap="round"
-      />
-      <path d="m22 22 10-6 11 7-2 16-9 15-9-15-1-17Z" fill="currentColor" />
-      <path d="m21 24-10-2 7 11 7-1m18-8 10-2-7 11-6-1" fill="currentColor" />
-      <path
-        d="m26 30 4 2m8-2-4 2m-4 8h5"
-        stroke="#192d40"
-        strokeWidth="2.5"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-function Panel({
-  icon: Icon,
-  title,
-  subtitle,
-  action,
-  children,
-  className = "",
-  collapsible = false,
-  open = false,
-}) {
-  const Container = collapsible ? "details" : "section";
-  const Header = collapsible ? "summary" : "header";
-  return (
-    <Container className={`${ui.panel} ${collapsible ? "collapsible-panel" : ""} ${className}`}
-      {...(collapsible ? { open: open || undefined } : {})}>
-      <Header className={ui.panelHeader}>
-        <div className={ui.panelIcon}>
-          <Icon size={21} />
-        </div>
-        <div className={ui.panelHeading}>
-          <h2>{title}</h2>
-          <p>{subtitle}</p>
-        </div>
-        {action}
-      </Header>
-      {children}
-    </Container>
-  );
-}
-
-function Toggle({ label, description, checked, onChange, disabled }) {
-  return (
-    <label className={ui.toggleRow}>
-      <input
-        className={ui.toggleInput}
-        type="checkbox"
-        checked={!!checked}
-        onChange={(event) => onChange(event.target.checked)}
-        disabled={disabled}
-      />
-      <span className={ui.switch} aria-hidden="true" />
-      <span>
-        <span className={ui.toggleLabel}>{label}</span>
-        {description && <small>{description}</small>}
-      </span>
-    </label>
-  );
-}
 
 function App() {
   const [theme, setTheme] = useState(() => {
@@ -1110,94 +1034,14 @@ function App() {
           )}
 
           {view === "refine" || view === "minimax" || view === "dataset" ? null : view === "saved" ? (
-            <>
-              <div className={ui.pageHeading}>
-                <div>
-                  <h2>Saved prompts</h2>
-                  <p>
-                    Your prompt library, saved on this server and ready to use again.
-                  </p>
-                </div>
-                <button className={ui.button} onClick={() => setView("builder")}>
-                  <ArrowLeft size={16} />
-                  Back to builder
-                </button>
-              </div>
-              {!storageReady ? (
-                <div className={ui.emptyState}>
-                  <Bookmark size={34} />
-                  <h3>Saved prompts are not ready yet</h3>
-                  <p>
-                    Loading from the local server. If the connection fails,
-                    retry above.
-                  </p>
-                </div>
-              ) : saved.length === 0 ? (
-                <div className={ui.emptyState}>
-                  <div className={ui.emptyIcon}>
-                    <Bookmark size={30} />
-                  </div>
-                  <h3>Keep your best prompts here</h3>
-                  <p>
-                    Create a prompt in Builder, then choose Save Prompt to add it to your library.
-                  </p>
-                  <button
-                    className={ui.primaryButton}
-                    onClick={() => setView("builder")}
-                  >
-                    <Plus size={16} />
-                    Create a prompt
-                  </button>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-[18px] mobile:grid-cols-1">
-                  {saved.map((record) => (
-                    <article className={ui.savedCard} key={record.id}>
-                      <div className={ui.savedMeta}>
-                        <span>{record.target || "Prompt"}</span>
-                        <time dateTime={record.createdAt}>
-                          {new Date(record.createdAt).toLocaleDateString(
-                            undefined,
-                            { month: "short", day: "numeric", year: "numeric" },
-                          )}
-                        </time>
-                      </div>
-                      <h3>{record.title}</h3>
-                      <pre tabIndex={0}>{record.prompt}</pre>
-                      <div className="flex gap-2 border-t border-line pt-[15px]">
-                        <button
-                          className={ui.button}
-                          onClick={() => copy(record.prompt)}
-                        >
-                          <Copy size={15} />
-                          Copy
-                        </button>
-                        <button
-                          className={ui.button}
-                          disabled={busy}
-                          onClick={() => {
-                            setSettings((current) => ({ ...current, generated_prompt: record.prompt,
-                              target_model: record.target || current.target_model }));
-                            setView("builder");
-                          }}
-                        >
-                          <ArrowUpRight size={15} />
-                          Open
-                        </button>
-                        <button
-                          className={ui.deleteButton}
-                          aria-label={`Delete ${record.title}`}
-                          disabled={!storageReady || promptsBusy || dialogBusy}
-                          onClick={() => deletePrompt(record)}
-                        >
-                          <Trash2 size={17} />
-                        </button>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-            </>
+            <SavedPromptsTab records={saved} ready={storageReady} busy={busy}
+              deletingDisabled={!storageReady || promptsBusy || dialogBusy}
+              onBack={() => setView("builder")} onCopy={copy} onDelete={deletePrompt}
+              onOpen={(record) => {
+                setSettings((current) => ({ ...current, generated_prompt: record.prompt,
+                  target_model: record.target || current.target_model }));
+                setView("builder");
+              }} />
           ) : !bootstrap ? (
             <div className={ui.emptyState}>
               <GoatMark />
@@ -1209,289 +1053,24 @@ function App() {
               <code>python local_app.py</code>
             </div>
           ) : view === "directors" ? (
-            <>
-              <div className={ui.pageHeading}>
-                <div>
-                  <h2>Instruction presets</h2>
-                  <p>
-                    Reusable instructions that guide how your prompt task is written.
-                  </p>
-                </div>
-              </div>
-              <div className={ui.directorsGrid}>
-                <Panel
-                  icon={WandSparkles}
-                  title="Instruction presets"
-                  subtitle="Choose saved instructions to edit."
-                >
-                  <div className={ui.directorList}>
-                    {displayedPresets.map((item) => (
-                      <button
-                        key={item.id}
-                        className={`${ui.directorChoice} ${directorId === item.id ? "selected" : ""}`}
-                        data-active={directorId === item.id}
-                        disabled={actionBusy}
-                        onClick={() => {
-                          if (item.id !== directorId && discardDirector())
-                            selectDirector(item);
-                        }}
-                      >
-                        <strong>{presetDisplayLabel(item)}</strong>
-                        <span>
-                          {item.protected ? "Built-in" : "User"}
-                          {item.modified ? " / Edited" : ""}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                  <button
-                    className={ui.button}
-                    disabled={busy || actionBusy}
-                    onClick={() => {
-                      if (discardDirector()) selectDirector(null);
-                    }}
-                  >
-                    <Plus size={15} />
-                    New instruction preset
-                  </button>
-                </Panel>
-                <form
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    writeDirector("save");
-                  }}
-                >
-                  <fieldset disabled={busy || actionBusy}>
-                    <Panel
-                      icon={FileText}
-                      title={
-                        directorId ? "Edit instruction preset" : "New instruction preset"
-                      }
-                      subtitle={
-                        directorDirty
-                          ? "Unsaved changes"
-                          : "Instructions saved separately from your builder."
-                      }
-                    >
-                      <label className={ui.field}>
-                        <span>Instruction preset name</span>
-                        <input
-                          className={ui.input}
-                          required
-                          maxLength={80}
-                          readOnly={!!editorDirector?.protected}
-                          value={editorDirector?.protected
-                            ? presetDisplayLabel(editorDirector)
-                            : directorDraft.name}
-                          onChange={(event) =>
-                            setDirectorDraft((draft) => ({
-                              ...draft,
-                              name: event.target.value,
-                            }))
-                          }
-                        />
-                      </label>
-                      {editorDirector?.protected && (
-                        <p className={ui.subtleNote}>
-                          Built-in names cannot be changed. Instructions can be
-                          edited and restored.
-                        </p>
-                      )}
-                      <p className={ui.subtleNote}>
-                        {editorDirector?.description === "User Director"
-                          ? "User instruction preset"
-                          : editorDirector?.description}
-                      </p>
-                      <label className={ui.field}>
-                        <span>Preset instructions</span>
-                        <textarea
-                          className={ui.directorInput}
-                          required
-                          value={directorDraft.instructions}
-                          onChange={(event) =>
-                            setDirectorDraft((draft) => ({
-                              ...draft,
-                              instructions: event.target.value,
-                            }))
-                          }
-                        />
-                      </label>
-                      <div className={ui.inlineActions}>
-                        <button
-                          className={ui.primaryButton}
-                          disabled={
-                            !directorDirty ||
-                            !directorDraft.name.trim() ||
-                            !directorDraft.instructions.trim()
-                          }
-                        >
-                          <Save size={14} />
-                          Save changes
-                        </button>
-                        {editorDirector && (
-                          <button
-                            type="button"
-                            className={ui.button}
-                            onClick={() => {
-                              if (discardDirector()) {
-                                setDirectorDraft(directorOriginal);
-                                update("director_preset", directorId);
-                                setView("builder");
-                              }
-                            }}
-                          >
-                            Use in builder
-                          </button>
-                        )}
-                        {editorDirector && !editorDirector.protected && (
-                          <button
-                            type="button"
-                            className={ui.button}
-                            onClick={() => writeDirector("delete")}
-                          >
-                            <Trash2 size={14} />
-                            Delete instruction preset
-                          </button>
-                        )}
-                        {editorDirector?.protected &&
-                          editorDirector.modified && (
-                            <button
-                              type="button"
-                              className={ui.button}
-                              onClick={() => writeDirector("reset")}
-                            >
-                              <RotateCcw size={14} />
-                              Reset built-in
-                            </button>
-                          )}
-                      </div>
-                      <p className={`${ui.subtleNote} wrap-anywhere`}>
-                        Stored JSON library: {bootstrap.presets.storage}
-                      </p>
-                    </Panel>
-                  </fieldset>
-                  {busy && (
-                    <p className={ui.warningNote}>
-                      Instruction presets are read-only while a generation job is active.
-                    </p>
-                  )}
-                </form>
-              </div>
-              {bootstrap.presets.warnings?.map((warning, index) => (
-                <p className={ui.warningNote} key={index}>
-                  {warning}
-                </p>
-              ))}
-            </>
+            <DirectorsTab library={bootstrap.presets} directorId={directorId}
+              draft={directorDraft} dirty={directorDirty} editorDirector={editorDirector}
+              busy={busy} actionBusy={actionBusy} onWrite={writeDirector}
+              onSelect={(item) => { if (discardDirector()) selectDirector(item); }}
+              onChange={(key, value) => setDirectorDraft((draft) => ({ ...draft, [key]: value }))}
+              onUse={() => {
+                if (discardDirector()) {
+                  setDirectorDraft(directorOriginal);
+                  update("director_preset", directorId);
+                  setView("builder");
+                }
+              }} />
           ) : view === "settings" ? (
-            <>
-              <div className={ui.pageHeading}>
-                <div>
-                  <h2>Settings</h2>
-                  <p>
-                    Connect your local models and choose how they run.
-                  </p>
-                </div>
-                <button className={ui.button} onClick={() => setView("builder")}>
-                  <ArrowLeft size={16} />
-                  Back to builder
-                </button>
-              </div>
-              <form onSubmit={saveSettings} className={ui.settingsForm}>
-                <fieldset disabled={busy || settingsBusy || actionBusy}>
-                  <Panel
-                    icon={Layers3}
-                    title="Local models"
-                    subtitle={`Configured backend: ${bootstrap.backend}`}
-                  >
-                    <label className={ui.field}>
-                      <span>Models directory</span>
-                      <input
-                        className={ui.input}
-                        required
-                        value={settingsDraft.models_directory || ""}
-                        aria-describedby="folder-help"
-                        onChange={(event) =>
-                          setSettingsDraft((previous) => ({
-                            ...previous,
-                            models_directory: event.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                    <p className={ui.subtleNote} id="folder-help">
-                      Enter an existing folder path on the server. This folder
-                      is scanned directly and recursively; no LLM folder is
-                      appended. Put each model GGUF and its matching mmproj GGUF
-                      in the same subfolder. A folder containing the pair
-                      directly also works. Only complete vision-ready profiles
-                      appear in Prompt engine.
-                    </p>
-                    <Toggle
-                      label="Keep model loaded"
-                      description="Retain the model between generations for faster reuse."
-                      checked={settingsDraft.keep_model_loaded}
-                      onChange={(value) =>
-                        setSettingsDraft((previous) => ({
-                          ...previous,
-                          keep_model_loaded: value,
-                        }))
-                      }
-                    />
-                    <div className="mt-[22px] flex flex-wrap items-center gap-2">
-                      <button className={ui.primaryButton} type="submit">
-                        <Save size={14} />
-                        {settingsBusy ? "Saving..." : "Save settings"}
-                      </button>
-                      <button
-                        className={ui.button}
-                        type="button"
-                        onClick={() => modelAction()}
-                      >
-                        <RefreshCw size={14} />
-                        Refresh models
-                      </button>
-                      <button
-                        className={ui.button}
-                        type="button"
-                        onClick={() => modelAction(true)}
-                      >
-                        <Layers3 size={14} />
-                        Unload model
-                      </button>
-                    </div>
-                    {busy && (
-                      <p className={ui.warningNote}>
-                        Settings are read-only while a generation job is active.
-                        Return to the builder to manage the job.
-                      </p>
-                    )}
-                    <p className={`${ui.subtleNote} wrap-anywhere`}>
-                      Scanned folder: {bootstrap.models.root}
-                    </p>
-                    <p className={ui.subtleNote}>
-                      {profiles.length} ready prompt engines found.
-                      {configuredBackend &&
-                        " Generation uses your configured backend, even without local models."}
-                    </p>
-                    {bootstrap.models.profiles
-                      .filter((item) => !item.vision_ready)
-                      .map((item) => (
-                        <p className={ui.warningNote} key={item.id}>
-                          {item.label}: incomplete model. Add the model GGUF and
-                          matching mmproj to the same folder, then refresh
-                          models.
-                        </p>
-                      ))}
-                    {bootstrap.models.warnings.map((warning, index) => (
-                      <p className={ui.warningNote} key={index}>
-                        {warning}
-                      </p>
-                    ))}
-                  </Panel>
-                </fieldset>
-              </form>
-            </>
+            <SettingsTab backend={bootstrap.backend} models={bootstrap.models}
+              draft={settingsDraft} profiles={profiles} configuredBackend={configuredBackend}
+              busy={busy} saving={settingsBusy} actionBusy={actionBusy}
+              onSave={saveSettings} onModelAction={modelAction} onBack={() => setView("builder")}
+              onChange={(key, value) => setSettingsDraft((previous) => ({ ...previous, [key]: value }))} />
           ) : (
             <>
               <div className={ui.pageHeading}>
