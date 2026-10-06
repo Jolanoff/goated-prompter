@@ -94,6 +94,21 @@ class DatasetEnhanceTests(unittest.TestCase):
         self.assertEqual(requirements["rules"], [brief["rules"][0], *brief["rules"][2:]])
         self.assertNotIn("Red gloves", instruction.system_message)
 
+    def test_approved_and_absent_briefs_preserve_scene_and_rendering_handoff(self):
+        brief = dataset_understanding_fixture(rules=[{"scope": "all_outputs", "text": "Green training outfit"}])
+        for approved in (None, brief):
+            with self.subTest(approved=bool(approved)):
+                data = {**self.data, "_confirmed_intent": approved}
+                before = deepcopy((data, self.scene))
+                instruction = dataset_instruction(self.request, data, 1, plan_item=self.scene)
+                self.assertEqual(instruction.user_message, self.scene["scene"])
+                self.assertIn("camera, framing or relationships", instruction.system_message)
+                self.assertIn("lighting, materials", instruction.system_message)
+                requirements, _ = json.JSONDecoder().raw_decode(
+                    instruction.system_message.split("SCOPED APPROVED REQUIREMENTS\n", 1)[1])
+                self.assertEqual(requirements["rules"], brief["rules"] if approved else [])
+                self.assertEqual((data, self.scene), before)
+
     def test_final_generation_keeps_one_enhancement_call_without_old_scene_or_semantic_evaluators(self):
         session = Mock()
         session.generate.return_value = "A boxer with ohwx_person extends a glove into the bag in a full-body arena image."
