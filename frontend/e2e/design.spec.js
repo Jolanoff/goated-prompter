@@ -147,9 +147,9 @@ for (const theme of ["dark", "light"]) {
     await page.getByRole("button", { name: "Generate 2 prompts", exact: true }).click();
     await confirmDatasetReview(page);
     await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/ohwx_traveler/);
-    const quality = page.getByRole("region", { name: "Dataset quality report" });
-    await expect(quality.getByText("Overall", { exact: true })).toBeVisible();
-    await quality.getByText(/Prompt checks/).click();
+    await expect(page.getByRole("region", { name: "Dataset quality report" })).toHaveCount(0);
+    await expect(page.getByLabel("Scene 1 self-check", { exact: true })).toContainText("PASS");
+    await expect(page.getByLabel("Scene 2 self-check", { exact: true })).toContainText("PASS");
     // A contrast audit during the cards' entrance fade measures transient
     // opacity, not the settled theme. Wait for finite animations/transitions.
     await page.evaluate(() => Promise.all(document.getAnimations()
