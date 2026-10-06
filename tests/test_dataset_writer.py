@@ -90,6 +90,24 @@ class DatasetWriterTests(unittest.TestCase):
         self.assertNotIn("IDENTITY-ONLY PROTECTION", expanded.system_message)
         self.assertIn("TRIGGER EXPANSION ENABLED", expanded.system_message)
 
+    def test_confirmed_brief_and_framing_have_independent_writer_context(self):
+        request, data, plan = self.fixture()
+        data["subject"] += " Full-body view."
+        for brief in (None, {"identity_policy": "random_per_prompt", "goal": "Aerial practice"}):
+            with self.subTest(brief=brief):
+                original = deepcopy((data, plan))
+                writer = dataset_instruction(request, {**data, "_confirmed_intent": brief}, 1, plan_item=plan)
+                self.assertIn(plan["scene"], writer.user_message)
+                self.assertIn("FRAMING AUTHORITY", writer.user_message)
+                if brief:
+                    self.assertIn('"goal": "Aerial practice"', writer.user_message)
+                    self.assertIn("CONFIRMED DATASET BRIEF", writer.user_message)
+                    self.assertIn("USER-APPROVED RANDOM IDENTITIES", writer.system_message)
+                else:
+                    self.assertNotIn("CONFIRMED DATASET BRIEF", writer.user_message)
+                    self.assertIn("IDENTITY-ONLY PROTECTION", writer.system_message)
+                self.assertEqual((data, plan), original)
+
     def test_creativity_does_not_affect_planning_instructions_or_plan_reuse(self):
         request, data, plan = self.fixture()
         signature = scene_plan_signature(data, dataset_assignments(data))
@@ -131,16 +149,19 @@ class DatasetWriterTests(unittest.TestCase):
                     "target_valid": True, "word_count": words}
                    for length, words in (("Medium", 100), ("Maximum Detail", 500))]
         labels = annotation_template(records)
-        self.assertFalse(score(records, labels)["passed"])
+        self.assertFalse(score(records, labels)["regression_passed"])
         for label in labels:
             label.update(anchors={"same pose": True}, pose_fidelity=True, constraint_fidelity=True, identity_drift=False, filler_or_repetition=False)
             label["useful_details"]["materials"] = ["cotton sleeve creases"]
-        self.assertFalse(score(records, labels)["passed"])  # More words, same visual facts.
+        self.assertFalse(score(records, labels)["regression_passed"])  # More words, same visual facts.
         labels[1]["useful_details"]["lighting"] = ["window sidelight"]
         labels[1]["useful_details"]["depth"] = ["foreground separation"]
-        self.assertTrue(score(records, labels)["passed"])
+        report = score(records, labels)
+        self.assertTrue(report["regression_passed"])
+        self.assertEqual(report["writing_quality_status"], "unverified")
+        self.assertFalse(report["passed"])
         labels[1]["anchors"]["same pose"] = False
-        self.assertFalse(score(records, labels)["passed"])  # Richness cannot buy pose drift.
+        self.assertFalse(score(records, labels)["regression_passed"])  # Richness cannot buy pose drift.
 
 
 if __name__ == "__main__":

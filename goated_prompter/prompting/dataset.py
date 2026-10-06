@@ -66,10 +66,22 @@ DATASET_DESCRIPTIVE_CREATIVITY = {
 }
 
 
-def dataset_instruction(request, data, index, previous=(), model_family="qwen", plan_item=None):
-    trigger_type = data["custom_type"] if data["trigger_type"] == "Custom" else data["trigger_type"]
-    style_rule = data["custom_style"] if data["visual_style"] == "Custom" else STYLE_RULES[data["visual_style"]]
-    director = get_director_preset(data["director_preset"], strict=True)
+DATASET_WRITING_TASK = (
+    "Write one polished, directly usable prompt for the accepted still scene. "
+    "Make its entities, attributes, action/state, relationships and composition unambiguous. "
+    "Establish the scene first; integrate useful rendering details rather than listing categories of detail. "
+    "Tie material response to actual surfaces and lighting to visible effects. "
+    "For hybrid tag/prose targets, keep optional tags compact and develop the scene in fluent prose. "
+    "Do not spend the description on synonymous tags, exclusion lists or claims about correctness. "
+    "Source identity facts govern every output section, including prose. Refer to named subjects by name "
+    "rather than repeating appearance inventories. Preserve conflicting source attributes without "
+    "inventing a reconciliation or substituting another attribute. "
+    "Follow the target format and selected Length inside the scene locks; stop when useful coverage is complete."
+)
+
+
+def dataset_scene_rules(data):
+    """Scene/identity restrictions, independent of final-writing style and density."""
     terms = trigger_terms(data["trigger"], data["trigger_connected"])
     target_field = 'the value of "high_level_description"' if data["target"] == "Ideogram4" else "the final prompt text"
     if data["expand_trigger"]:
@@ -105,14 +117,22 @@ def dataset_instruction(request, data, index, previous=(), model_family="qwen", 
                      "Randomization is authorized across independent assignments, never between this idea, scene and prompt. "
                      "Preserve every fixed identity fact and required appearance rule. Do not change a planned identity.")
     structured_trigger = f"{grouping} {placement} Include the requested trigger wording naturally; prioritize a complete coherent scene over awkward repetition. {expansion}"
-    rules = "\n".join([
+    style_rule = data["custom_style"] if data["visual_style"] == "Custom" else STYLE_RULES[data["visual_style"]]
+    return "\n".join([
         structured_trigger,
         PLANNED_SCENE_CONTRACT,
         VISIBLE_CONTENT_CONTRACT,
         CONSTRAINT_CONTRACT,
-        DATASET_DETAIL_DISCIPLINE,
-        "Write only this one finished visual scene, using the requested Length for useful visual richness. Describe observable requirements, not claims that consistency was preserved. Batch planning, next-scene suggestions, and future camera changes do not belong in the finished prompt.",
         style_rule,
+    ])
+
+
+def dataset_instruction(request, data, index, previous=(), model_family="qwen", plan_item=None):
+    trigger_type = data["custom_type"] if data["trigger_type"] == "Custom" else data["trigger_type"]
+    director = get_director_preset(data["director_preset"], strict=True)
+    rules = "\n".join([
+        dataset_scene_rules(data),
+        DATASET_DETAIL_DISCIPLINE,
     ])
     lines = [line.strip() for line in data["inputs"].splitlines() if line.strip()]
     seed = (plan_item or {}).get("input", "")
@@ -121,8 +141,9 @@ def dataset_instruction(request, data, index, previous=(), model_family="qwen", 
     content = [f"TRIGGER TYPE\n{trigger_type}",
                f"REQUIRED TRIGGER TEXT\n<trigger>\n{data['trigger']}\n</trigger>",
                f"DATASET CONCEPT\n<data>\n{data['subject']}\n</data>"]
-    if intent:
-        content.append("CONFIRMED DATASET BRIEF\n" + json.dumps(intent, ensure_ascii=False))
+    confirmed_intent = data.get("_confirmed_intent")
+    if confirmed_intent:
+        content.append("CONFIRMED DATASET BRIEF\n" + json.dumps(confirmed_intent, ensure_ascii=False))
         rules += "\n" + INTENT_CONTRACT
     if seed:
         content.append(f"GUIDED INPUT\n<input>\n{seed}\n</input>\nPreserve these original anchors in the supplied scene; do not select another scene. This input's outfit, setting, pose and action are local to this item. Shared identity does not imply a shared outfit unless explicitly locked in the concept or consistency rules.")
@@ -133,10 +154,10 @@ def dataset_instruction(request, data, index, previous=(), model_family="qwen", 
     scene = (plan_item or {}).get("scene") or seed or data["subject"]
     idea = (plan_item or {}).get("idea") or "Unavailable for this legacy item; preserve the supplied scene's semantic purpose."
     content.append("PLANNED IDEA\n<idea>\n" + idea + "\n</idea>")
-    intent = framing_intent(data, {**(plan_item or {}), "index": index, "input": seed})
-    if intent.locked:
-        content.append("FRAMING AUTHORITY\n" + json.dumps({"crop": intent.crop, "source": intent.source,
-                       "conflicts": list(intent.conflicts)}, ensure_ascii=False))
+    framing = framing_intent(data, {**(plan_item or {}), "index": index, "input": seed})
+    if framing.locked:
+        content.append("FRAMING AUTHORITY\n" + json.dumps({"crop": framing.crop, "source": framing.source,
+                       "conflicts": list(framing.conflicts)}, ensure_ascii=False))
     if (plan_item or {}).get("geometry"):
         content.append("PLANNED GEOMETRY\n" + json.dumps(plan_item["geometry"], ensure_ascii=False)
                        + "\nInternal canonical snake_case staging facts: render as readable visual descriptions, not field names or enum tokens. "
@@ -155,6 +176,7 @@ def dataset_instruction(request, data, index, previous=(), model_family="qwen", 
         director_instructions = "This target-specific Director is inactive for the selected target. Follow the selected task and target adapter."
     system = "\n\n".join([
         "You are the Dataset final writer. Render one supplied still scene; planning is complete.",
+        DATASET_WRITING_TASK,
         "MODE ADAPTER\nEnhance mode: improve clarity and visual specificity inside the supplied semantic locks.",
         "WORKFLOW RULES\n" + rules,
         "TARGET MODEL ADAPTER\n" + get_model_adapter(data["target"]),

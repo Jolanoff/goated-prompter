@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 DETAIL_CATEGORIES = ("action", "composition", "environment", "materials", "lighting", "depth", "treatment")
+WRITING_CHECKS = ("descriptive_usefulness", "coherence", "target_suitability")
 
 
 def sample_id(record):
@@ -14,15 +15,32 @@ def sample_id(record):
 
 def annotation_template(records):
     return [{"id": sample_id(row), "anchors": {anchor: None for anchor in row["anchors"]},
-             "pose_fidelity": None, "constraint_fidelity": None, "identity_drift": None, "filler_or_repetition": None,
-             "useful_details": {category: [] for category in DETAIL_CATEGORIES}, "notes": ""}
+              "pose_fidelity": None, "constraint_fidelity": None, "identity_drift": None, "filler_or_repetition": None,
+              "reviewer": "", "review_kind": "", "writing_review": {key: None for key in WRITING_CHECKS},
+              "render_review": {"quality": None, "artifact": "", "settings": {}},
+              "useful_details": {category: [] for category in DETAIL_CATEGORIES}, "notes": ""}
             for row in records]
+
+
+def review_status(values, *, independent):
+    if not independent or any(type(value) is not bool for value in values):
+        return "unverified"
+    return "pass" if all(values) else "fail"
+
+
+def aggregate_status(statuses):
+    if "fail" in statuses:
+        return "fail"
+    return "pass" if statuses and all(status == "pass" for status in statuses) else "unverified"
 
 
 def score(records, annotations):
     labels = {row["id"]: row for row in annotations}
     if len(labels) != len(annotations):
         raise ValueError("Duplicate annotation IDs.")
+    records_by_id = {sample_id(row): row for row in records}
+    if len(records_by_id) != len(records):
+        raise ValueError("Duplicate sample IDs.")
     failures, results, lengths, directors = [], [], defaultdict(dict), defaultdict(dict)
     for row in records:
         key = sample_id(row)
@@ -49,7 +67,25 @@ def score(records, annotations):
                   "target_valid": row.get("target_valid", False), "filler_or_repetition": label["filler_or_repetition"],
                   "useful_detail_facts": len(facts), "useful_facts_per_100_words": round(100 * len(facts) / max(1, row.get("word_count", 0)), 2),
                   "category_counts": {category: len(set(values)) for category, values in details.items()},
-                  "final_text_tokens": row.get("final_text_tokens"), "repair_calls": row.get("repair_calls")}
+                   "final_text_tokens": row.get("final_text_tokens"), "repair_calls": row.get("repair_calls")}
+        independent = (isinstance(label.get("reviewer"), str) and bool(label["reviewer"].strip())
+                       and label.get("review_kind") in {"human", "independent"})
+        writing = label.get("writing_review", {})
+        render = label.get("render_review", {})
+        if not isinstance(writing, dict) or any(writing.get(field) is not None and type(writing[field]) is not bool
+                                               for field in WRITING_CHECKS):
+            raise ValueError("Writing review checks need true, false or null.")
+        if not isinstance(render, dict) or (render.get("quality") is not None and type(render["quality"]) is not bool):
+            raise ValueError("Render quality review needs true, false or null.")
+        render_evidence = (isinstance(render.get("artifact"), str) and bool(render["artifact"].strip())
+                           and isinstance(render.get("settings"), dict) and bool(render["settings"]))
+        result.update(reviewer=label.get("reviewer", ""), review_kind=label.get("review_kind", ""),
+            semantic_correctness_status=review_status((not failed_anchors, label["pose_fidelity"],
+                label["constraint_fidelity"], not label["identity_drift"], row.get("target_valid", False)), independent=independent),
+            writing_quality_status=review_status((*[writing.get(field) for field in WRITING_CHECKS],
+                not label["filler_or_repetition"]), independent=independent),
+            image_quality_status=review_status((render.get("quality"),), independent=independent and render_evidence),
+            writing_review=writing, render_review=render)
         results.append(result)
         if row["condition"] not in {"dataset", "sampling"}:
             continue  # Controls remain visible but do not define new-writer regression gates.
@@ -86,17 +122,33 @@ def score(records, annotations):
         for control in ("before", "builder", "sampling"):
             other = reviewed.get(sample_id({**row, "condition": control}))
             if other is not None:
+                control_row = records_by_id[sample_id({**row, "condition": control})]
                 parity.append({"id": row["id"], "trial": row.get("trial", 1), "control": control,
+                               "matched_context": bool(row.get("context_id") and row.get("context_id") == control_row.get("context_id")),
+                               "matched_controls": row.get("controls_matched") is True and control_row.get("controls_matched") is True,
                                "dataset_useful_facts": new["useful_detail_facts"], "control_useful_facts": other["useful_detail_facts"],
                                "dataset_category_counts": new["category_counts"], "control_category_counts": other["category_counts"],
                                "dataset_density": new["useful_facts_per_100_words"], "control_density": other["useful_facts_per_100_words"],
                                "dataset_scene_fidelity": new["scene_fidelity"], "control_scene_fidelity": other["scene_fidelity"],
                                "dataset_pose_fidelity": new["pose_fidelity"], "control_pose_fidelity": other["pose_fidelity"],
                                "dataset_identity_drift": new["identity_drift"], "control_identity_drift": other["identity_drift"],
-                               "dataset_target_valid": new["target_valid"], "control_target_valid": other["target_valid"]})
+                                "dataset_target_valid": new["target_valid"], "control_target_valid": other["target_valid"],
+                                "dataset_writing_quality_status": new["writing_quality_status"],
+                                "control_writing_quality_status": other["writing_quality_status"],
+                                "dataset_image_quality_status": new["image_quality_status"],
+                                "control_image_quality_status": other["image_quality_status"],
+                                "matched_render_settings": bool(new["render_review"].get("settings") and
+                                    new["render_review"].get("settings") == other["render_review"].get("settings"))})
+    candidate_ids = [sample_id(row) for row in records if row["condition"] in {"dataset", "sampling"}]
+    statuses = {field: aggregate_status([reviewed.get(key, {}).get(field, "unverified") for key in candidate_ids])
+                for field in ("semantic_correctness_status", "writing_quality_status", "image_quality_status")}
+    regression_passed = not failures and len(results) == len(records) and bool(records)
+    text_quality_passed = regression_passed and statuses["semantic_correctness_status"] == statuses["writing_quality_status"] == "pass"
     return {"reviewed": len(results), "total": len(records), "samples": results, "regression_failures": failures,
-            "parity_pairs": parity,
-            "passed": not failures and len(results) == len(records)}
+             "parity_pairs": parity,
+             **statuses, "assessment_conditions": ["dataset", "sampling"],
+             "regression_passed": regression_passed, "text_quality_passed": text_quality_passed,
+             "passed": text_quality_passed and statuses["image_quality_status"] == "pass"}
 
 
 def main():
