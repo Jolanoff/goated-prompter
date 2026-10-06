@@ -65,10 +65,22 @@ DATASET_DESCRIPTIVE_CREATIVITY = {
 }
 
 
-def dataset_instruction(request, data, index, previous=(), model_family="qwen", plan_item=None):
-    trigger_type = data["custom_type"] if data["trigger_type"] == "Custom" else data["trigger_type"]
-    style_rule = data["custom_style"] if data["visual_style"] == "Custom" else STYLE_RULES[data["visual_style"]]
-    director = get_director_preset(data["director_preset"], strict=True)
+DATASET_WRITING_TASK = (
+    "Write one polished, directly usable prompt for the accepted still scene. "
+    "Make its entities, attributes, action/state, relationships and composition unambiguous. "
+    "Establish the scene first; integrate useful rendering details rather than listing categories of detail. "
+    "Tie material response to actual surfaces and lighting to visible effects. "
+    "For hybrid tag/prose targets, keep optional tags compact and develop the scene in fluent prose. "
+    "Do not spend the description on synonymous tags, exclusion lists or claims about correctness. "
+    "Source identity facts govern every output section, including prose. Refer to named subjects by name "
+    "rather than repeating appearance inventories. Preserve conflicting source attributes without "
+    "inventing a reconciliation or substituting another attribute. "
+    "Follow the target format and selected Length inside the scene locks; stop when useful coverage is complete."
+)
+
+
+def dataset_scene_rules(data):
+    """Scene/identity restrictions, independent of final-writing style and density."""
     terms = trigger_terms(data["trigger"], data["trigger_connected"])
     target_field = 'the value of "high_level_description"' if data["target"] == "Ideogram4" else "the final prompt text"
     if data["expand_trigger"]:
@@ -98,14 +110,22 @@ def dataset_instruction(request, data, index, previous=(), model_family="qwen", 
         "TRIGGER EXPANSION DISABLED / IDENTITY-ONLY PROTECTION: Include each trigger term exactly as typed, with capitalization and word order unchanged; do not insert adjectives inside it. Protect trigger-owned stable identity: intrinsic face/eye features, hairstyle/hair color, body proportions/age, sex/gender presentation, species/markings, permanent scars/jewelry, product/logo identity and defining design/material traits, or style/location-defining identity. Describe these only when explicitly supplied by the concept, rules, guided input or trigger; secondary planner/writer inference is not identity evidence. Preserve the scene's supplied temporary clothing and treatment without converting action-related muscle or fabric tension into an invented permanent body type. When identity is unspecified, use the subject noun or singular they, not inferred gendered pronouns. Identity protection is NOT a ban on scene detail. Develop compatible scene lighting, shadows/reflections, environment textures, scene materials, temporary clothing/fabric behavior, atmosphere, background depth and secondary colors. Describe material response of supplied identity-defining surfaces rather than guessing a new core product design/material. Weather or secondary props are allowed only if compatible with the planned environment/event and rules. Do not invent identity; do not turn the result into a bare caption."
     )
     structured_trigger = f"{grouping} {placement} Include the requested trigger wording naturally; prioritize a complete coherent scene over awkward repetition. {expansion}"
-    rules = "\n".join([
+    style_rule = data["custom_style"] if data["visual_style"] == "Custom" else STYLE_RULES[data["visual_style"]]
+    return "\n".join([
         structured_trigger,
         PLANNED_SCENE_CONTRACT,
         VISIBLE_CONTENT_CONTRACT,
         CONSTRAINT_CONTRACT,
-        DATASET_DETAIL_DISCIPLINE,
-        "Write only this one finished visual scene, using the requested Length for useful visual richness. Describe observable requirements, not claims that consistency was preserved. Batch planning, next-scene suggestions, and future camera changes do not belong in the finished prompt.",
         style_rule,
+    ])
+
+
+def dataset_instruction(request, data, index, previous=(), model_family="qwen", plan_item=None):
+    trigger_type = data["custom_type"] if data["trigger_type"] == "Custom" else data["trigger_type"]
+    director = get_director_preset(data["director_preset"], strict=True)
+    rules = "\n".join([
+        dataset_scene_rules(data),
+        DATASET_DETAIL_DISCIPLINE,
     ])
     lines = [line.strip() for line in data["inputs"].splitlines() if line.strip()]
     seed = (plan_item or {}).get("input", "")
@@ -145,6 +165,7 @@ def dataset_instruction(request, data, index, previous=(), model_family="qwen", 
         director_instructions = "This target-specific Director is inactive for the selected target. Follow the selected task and target adapter."
     system = "\n\n".join([
         "You are the Dataset final writer. Render one supplied still scene; planning is complete.",
+        DATASET_WRITING_TASK,
         "MODE ADAPTER\nEnhance mode: improve clarity and visual specificity inside the supplied semantic locks.",
         "WORKFLOW RULES\n" + rules,
         "TARGET MODEL ADAPTER\n" + get_model_adapter(data["target"]),

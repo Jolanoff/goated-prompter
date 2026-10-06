@@ -131,16 +131,19 @@ class DatasetWriterTests(unittest.TestCase):
                     "target_valid": True, "word_count": words}
                    for length, words in (("Medium", 100), ("Maximum Detail", 500))]
         labels = annotation_template(records)
-        self.assertFalse(score(records, labels)["passed"])
+        self.assertFalse(score(records, labels)["regression_passed"])
         for label in labels:
             label.update(anchors={"same pose": True}, pose_fidelity=True, constraint_fidelity=True, identity_drift=False, filler_or_repetition=False)
             label["useful_details"]["materials"] = ["cotton sleeve creases"]
-        self.assertFalse(score(records, labels)["passed"])  # More words, same visual facts.
+        self.assertFalse(score(records, labels)["regression_passed"])  # More words, same visual facts.
         labels[1]["useful_details"]["lighting"] = ["window sidelight"]
         labels[1]["useful_details"]["depth"] = ["foreground separation"]
-        self.assertTrue(score(records, labels)["passed"])
+        report = score(records, labels)
+        self.assertTrue(report["regression_passed"])
+        self.assertEqual(report["writing_quality_status"], "unverified")
+        self.assertFalse(report["passed"])
         labels[1]["anchors"]["same pose"] = False
-        self.assertFalse(score(records, labels)["passed"])  # Richness cannot buy pose drift.
+        self.assertFalse(score(records, labels)["regression_passed"])  # Richness cannot buy pose drift.
 
 
 if __name__ == "__main__":
