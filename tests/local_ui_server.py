@@ -26,7 +26,14 @@ class DatasetUIMock(MockBackend):
             context = json.loads(instruction.user_message)
             return json.dumps({"primary_action": context["user_request"],
                                "staging": "Keep the requested subjects and relationships."})
-        if stage.startswith(("dataset:idea_planner", "dataset:scene_planner", "dataset:scene_composer")):
+        if stage.startswith("dataset:understanding"):
+            from tests.helpers import dataset_intent_fixture
+            source = json.loads(instruction.user_message)["source"]
+            result = json.dumps(dataset_intent_fixture(goal=source["subject"],
+                character_count=2 if source["trigger_type"] == "Multiple characters" else 1,
+                identity_policy="random_per_prompt", required_rules=source["constraints"].splitlines(),
+                blocking_questions=["Breaking what?"] if "unclear breaking" in source["subject"] and "breaking a board" not in source["constraints"] else []))
+        elif stage.startswith(("dataset:idea_planner", "dataset:scene_planner", "dataset:scene_composer")):
             context = json.loads(instruction.user_message)
             rows = []
             for assignment in context["assignments"]:
@@ -81,6 +88,7 @@ if __name__ == "__main__":
         os.environ["GOATED_PROMPTER_USER_DIR"] = str(Path(data) / "directors")
         port = int(os.environ.get("GOATED_UI_TEST_PORT", "8190"))
         with patch("goated_prompter.dataset.create_backend", side_effect=dataset_ui_backend), \
+                patch("goated_prompter.dataset_intent.create_backend", side_effect=dataset_ui_backend), \
                 patch("goated_prompter.core.create_backend", side_effect=dataset_ui_backend):
             # Exercise accepted aliases through the real API, not only factory tests.
             web.run_app(create_app(port=port, config_loader=lambda: {"backend": " DeBuG "}, settings_path=Path(data) / "settings.json",

@@ -13,6 +13,7 @@ from .creativity import CREATIVITY_ADAPTERS
 from .target_models import get_model_adapter, resolve_target_length
 from .output import OUTPUT_CONTRACT, output_contract
 from ..dataset_staging.rules.framing import framing_intent
+from ..dataset_intent import INTENT_CONTRACT
 
 DATASET_TYPES = (
     "Character", "Multiple characters", "Animal", "Object / product", "Visual style",
@@ -109,6 +110,12 @@ def dataset_scene_rules(data):
         if data["expand_trigger"] else
         "TRIGGER EXPANSION DISABLED / IDENTITY-ONLY PROTECTION: Include each trigger term exactly as typed, with capitalization and word order unchanged; do not insert adjectives inside it. Protect trigger-owned stable identity: intrinsic face/eye features, hairstyle/hair color, body proportions/age, sex/gender presentation, species/markings, permanent scars/jewelry, product/logo identity and defining design/material traits, or style/location-defining identity. Describe these only when explicitly supplied by the concept, rules, guided input or trigger; secondary planner/writer inference is not identity evidence. Preserve the scene's supplied temporary clothing and treatment without converting action-related muscle or fabric tension into an invented permanent body type. When identity is unspecified, use the subject noun or singular they, not inferred gendered pronouns. Identity protection is NOT a ban on scene detail. Develop compatible scene lighting, shadows/reflections, environment textures, scene materials, temporary clothing/fabric behavior, atmosphere, background depth and secondary colors. Describe material response of supplied identity-defining surfaces rather than guessing a new core product design/material. Weather or secondary props are allowed only if compatible with the planned environment/event and rules. Do not invent identity; do not turn the result into a bare caption."
     )
+    intent = data.get("_confirmed_intent")
+    if intent and intent["identity_policy"] == "random_per_prompt":
+        expansion = ("USER-APPROVED RANDOM IDENTITIES: Preserve exact trigger terms when expansion is disabled, "
+                     "but describe the compatible identities established by this assignment's idea and scene. "
+                     "Randomization is authorized across independent assignments, never between this idea, scene and prompt. "
+                     "Preserve every fixed identity fact and required appearance rule. Do not change a planned identity.")
     structured_trigger = f"{grouping} {placement} Include the requested trigger wording naturally; prioritize a complete coherent scene over awkward repetition. {expansion}"
     style_rule = data["custom_style"] if data["visual_style"] == "Custom" else STYLE_RULES[data["visual_style"]]
     return "\n".join([
@@ -134,6 +141,10 @@ def dataset_instruction(request, data, index, previous=(), model_family="qwen", 
     content = [f"TRIGGER TYPE\n{trigger_type}",
                f"REQUIRED TRIGGER TEXT\n<trigger>\n{data['trigger']}\n</trigger>",
                f"DATASET CONCEPT\n<data>\n{data['subject']}\n</data>"]
+    confirmed_intent = data.get("_confirmed_intent")
+    if confirmed_intent:
+        content.append("CONFIRMED DATASET BRIEF\n" + json.dumps(confirmed_intent, ensure_ascii=False))
+        rules += "\n" + INTENT_CONTRACT
     if seed:
         content.append(f"GUIDED INPUT\n<input>\n{seed}\n</input>\nPreserve these original anchors in the supplied scene; do not select another scene. This input's outfit, setting, pose and action are local to this item. Shared identity does not imply a shared outfit unless explicitly locked in the concept or consistency rules.")
     from ..planning.semantics import support_requirements
@@ -143,10 +154,10 @@ def dataset_instruction(request, data, index, previous=(), model_family="qwen", 
     scene = (plan_item or {}).get("scene") or seed or data["subject"]
     idea = (plan_item or {}).get("idea") or "Unavailable for this legacy item; preserve the supplied scene's semantic purpose."
     content.append("PLANNED IDEA\n<idea>\n" + idea + "\n</idea>")
-    intent = framing_intent(data, {**(plan_item or {}), "index": index, "input": seed})
-    if intent.locked:
-        content.append("FRAMING AUTHORITY\n" + json.dumps({"crop": intent.crop, "source": intent.source,
-                       "conflicts": list(intent.conflicts)}, ensure_ascii=False))
+    framing = framing_intent(data, {**(plan_item or {}), "index": index, "input": seed})
+    if framing.locked:
+        content.append("FRAMING AUTHORITY\n" + json.dumps({"crop": framing.crop, "source": framing.source,
+                       "conflicts": list(framing.conflicts)}, ensure_ascii=False))
     if (plan_item or {}).get("geometry"):
         content.append("PLANNED GEOMETRY\n" + json.dumps(plan_item["geometry"], ensure_ascii=False)
                        + "\nInternal canonical snake_case staging facts: render as readable visual descriptions, not field names or enum tokens. "

@@ -119,6 +119,7 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(models["backend"], expected)
 
     async def test_configured_aliases_do_not_require_profiles_at_workflow_admission(self):
+        from tests.helpers import confirmed_dataset_payload
         from goated_prompter.dataset import default_dataset_draft
         from goated_prompter.minimax import default_minimax_draft
 
@@ -133,8 +134,9 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
             state.config_loader = lambda: backend_config(name)
             revision = state.workspace.snapshot()["revision"]
             for path, payload in (
-                ("dataset", {"input": data}),
-                ("dataset/scenes", {"input": data}),
+                ("dataset", confirmed_dataset_payload(state, data)),
+                ("dataset/scenes", confirmed_dataset_payload(state, data)),
+                ("dataset/understand", {"input": data}),
                 ("dataset/review", {"input": reviewed}),
                 ("minimax", {"input": minimax}),
                 ("refine", {"revision": revision, "changes": "Soften the light."}),
@@ -753,6 +755,7 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         active.deliver({"ok": True})
 
     async def test_local_prompt_regeneration_accepts_manual_scene_without_geometry(self):
+        from tests.helpers import confirmed_dataset_payload
         from goated_prompter.dataset import default_dataset_draft
         from goated_prompter.dataset_assignments import dataset_assignments
         from goated_prompter.scene_planner import scene_plan_signature
@@ -761,7 +764,8 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
                                "scene": "She reads a book on a park bench.", "geometry": {},
                                "idea_status": "valid", "scene_status": "valid", "prompt_status": "not_generated"}]
         data["scene_plan_signature"] = scene_plan_signature(data, dataset_assignments(data))
-        response = await self.client.post("/api/workspace/dataset/scene", json={"input": data, "index": 1, "action": "regenerate_prompt"})
+        response = await self.client.post("/api/workspace/dataset/scene", json=confirmed_dataset_payload(
+            self.app[local.STATE], data, index=1, action="regenerate_prompt"))
         self.assertEqual(response.status, 202, await response.text())
         finished = await self.wait_status((await response.json())["id"], "succeeded")
         self.assertEqual(finished["result"]["scene_plan"][0]["scene"], data["scene_plan"][0]["scene"])

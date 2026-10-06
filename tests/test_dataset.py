@@ -12,7 +12,7 @@ from unittest.mock import patch
 from aiohttp.test_utils import TestClient, TestServer
 
 import local_app as local
-from tests.helpers import enter_context
+from tests.helpers import enter_context, confirmed_dataset_payload
 from goated_prompter.backends.base import BackendRunawayError, GoatedPrompterBackend
 from goated_prompter.core import GoatedPrompterRequest
 from goated_prompter.dataset import (
@@ -51,7 +51,8 @@ class CaptureBackend(GoatedPrompterBackend):
                                for index in data["indexes"]])
         if instruction.diagnostic_stage.startswith("dataset:idea_planner"):
             data = json.loads(instruction.user_message)
-            return json.dumps([{"index": row["index"], "idea": f"Replacement concept {row['index']}"}
+            prefix = "Revised event" if data.get("existing_ideas") else "Replacement concept"
+            return json.dumps([{"index": row["index"], "idea": f"{prefix} {row['index']}"}
                                for row in data["assignments"]])
         if instruction.diagnostic_stage.startswith("dataset:scene_composer"):
             data = json.loads(instruction.user_message)
@@ -428,9 +429,12 @@ class DatasetEndpointTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(.01)
         self.fail("Dataset job did not finish")
 
+    def confirmed(self, data, **options):
+        return confirmed_dataset_payload(self.app[local.STATE], data, **options)
+
     async def test_dataset_endpoint_generates_batch_and_draft_roundtrips(self):
         data = valid_draft(amount=3, visual_style="Photorealistic")
-        response = await self.client.post("/api/workspace/dataset", json={"input": data})
+        response = await self.client.post("/api/workspace/dataset", json=self.confirmed(data))
         self.assertEqual(response.status, 202, await response.text())
         result = await self.terminal(await response.json())
         self.assertEqual(result["status"], "succeeded")
@@ -458,14 +462,14 @@ class DatasetEndpointTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_scene_only_endpoint_persists_editable_plan_and_reuses_across_targets(self):
         data = valid_draft(amount=2, trigger="")
-        response = await self.client.post("/api/workspace/dataset/scenes", json={"input": data})
+        response = await self.client.post("/api/workspace/dataset/scenes", json=self.confirmed(data))
         self.assertEqual(response.status, 202, await response.text())
         job = await self.terminal(await response.json())
         self.assertEqual(job["status"], "succeeded", job)
         result = job["result"]
         self.assertEqual(job["kind"], "dataset_scenes")
         self.assertNotIn("prompts", result)
-        self.assertEqual(len(self.backend.calls), 1)
+        self.assertEqual(len(self.backend.calls), 2)
         data.update(scene_plan=result["scene_plan"], scene_plan_signature=result["scene_plan_signature"])
         data["scene_plan"][0]["scene"] = "An adult character reads a book while sitting on a red couch."
         data["scene_plan"][0]["idea"] = "Reading on a red couch"
@@ -478,14 +482,14 @@ class DatasetEndpointTests(unittest.IsolatedAsyncioTestCase):
         reloaded = await (await self.client.get("/api/workspace/settings/dataset")).json()
         self.assertEqual(reloaded["draft"]["scene_plan"], data["scene_plan"])
         data.update(trigger="ohwx_person", target="Qwen Image", length="Detailed")
-        response = await self.client.post("/api/workspace/dataset", json={"input": data})
+        response = await self.client.post("/api/workspace/dataset", json=self.confirmed(data))
         final = await self.terminal(await response.json())
         self.assertEqual(final["status"], "succeeded", final)
-        self.assertEqual(len(self.backend.calls), 3)
+        self.assertEqual(len(self.backend.calls), 4)
         self.assertEqual(final["result"]["prompts"][0]["scene"], data["scene_plan"][0]["scene"])
         self.assertEqual(final["result"]["prompts"][0]["idea"], data["scene_plan"][0]["idea"])
-        self.assertIn(data["scene_plan"][0]["idea"], self.backend.calls[1].user_message)
-        self.assertIn(data["scene_plan"][0]["scene"], self.backend.calls[1].user_message)
+        self.assertIn(data["scene_plan"][0]["idea"], self.backend.calls[2].user_message)
+        self.assertIn(data["scene_plan"][0]["scene"], self.backend.calls[2].user_message)
         data["results"] = final["result"]["prompts"]
         saved = await (await self.client.get("/api/workspace/settings/dataset")).json()
         self.assertEqual(saved["draft"]["results"], final["result"]["prompts"])
@@ -502,7 +506,7 @@ class DatasetEndpointTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_per_scene_endpoint_preserves_other_items_and_stage_boundaries(self):
         data = valid_draft(amount=2)
-        response = await self.client.post("/api/workspace/dataset", json={"input": data})
+        response = await self.client.post("/api/workspace/dataset", json=self.confirmed(data))
         generated = (await self.terminal(await response.json()))["result"]
         data.update(scene_plan=generated["scene_plan"], scene_plan_signature=generated["scene_plan_signature"],
                     results=generated["prompts"])
@@ -511,7 +515,7 @@ class DatasetEndpointTests(unittest.IsolatedAsyncioTestCase):
                                ("regenerate_idea", ["dataset:idea_planner", "dataset:scene_composer", "dataset:1"])):
             self.backend.calls.clear()
             response = await self.client.post("/api/workspace/dataset/scene",
-                json={"input": data, "action": action, "index": 1})
+                json=self.confirmed(data, action=action, index=1))
             self.assertEqual(response.status, 202, await response.text())
             job = await self.terminal(await response.json())
             self.assertEqual(job["status"], "succeeded", job)
@@ -548,7 +552,7 @@ class DatasetEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(persisted["scene_plan_current"])
         self.assertTrue(persisted["scene_plan_matches_settings"])
         self.assertEqual(persisted["draft"]["scene_plan"][0]["failure_reason"], data["scene_plan"][0]["failure_reason"])
-        response = await self.client.post("/api/workspace/dataset", json={"input": data, "valid_only": True})
+        response = await self.client.post("/api/workspace/dataset", json=self.confirmed(data, valid_only=True))
         self.assertEqual(response.status, 202, await response.text())
         job = await self.terminal(await response.json())
         self.assertEqual(job["status"], "succeeded", job)
@@ -565,7 +569,7 @@ class DatasetEndpointTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_manual_idea_edit_keeps_plan_current_for_local_scene_repair(self):
         data = valid_draft(amount=2)
-        response = await self.client.post("/api/workspace/dataset", json={"input": data})
+        response = await self.client.post("/api/workspace/dataset", json=self.confirmed(data))
         generated = (await self.terminal(await response.json()))["result"]
         data.update(scene_plan=generated["scene_plan"], scene_plan_signature=generated["scene_plan_signature"],
                     results=[generated["prompts"][1]])
@@ -578,7 +582,7 @@ class DatasetEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(saved["idea_plan_current"])
         self.assertFalse(saved["scene_plan_current"])
         response = await self.client.post("/api/workspace/dataset/scene",
-            json={"input": data, "action": "repair_scene", "index": 1})
+            json=self.confirmed(data, action="repair_scene", index=1))
         self.assertEqual(response.status, 202, await response.text())
         job = await self.terminal(await response.json())
         self.assertEqual(job["status"], "succeeded", job)
@@ -592,7 +596,11 @@ class DatasetEndpointTests(unittest.IsolatedAsyncioTestCase):
         original_generate = self.backend.generate
 
         def generate(instruction):
-            if not instruction.diagnostic_stage.startswith("dataset:scene_planner"):
+            if instruction.diagnostic_stage.startswith("dataset:idea_planner"):
+                self.backend.calls.append(instruction)
+                context = json.loads(instruction.user_message)
+                return json.dumps([{"index": row["index"], "idea": row["input"]} for row in context["assignments"]])
+            if not instruction.diagnostic_stage.startswith("dataset:scene_composer"):
                 return original_generate(instruction)
             self.backend.calls.append(instruction)
             context = json.loads(instruction.user_message)
@@ -602,11 +610,11 @@ class DatasetEndpointTests(unittest.IsolatedAsyncioTestCase):
                                for row in context["assignments"]])
 
         enter_context(self, patch.object(self.backend, "generate", side_effect=generate))
-        response = await self.client.post("/api/workspace/dataset/scenes", json={"input": data})
+        response = await self.client.post("/api/workspace/dataset/scenes", json=self.confirmed(data))
         self.assertEqual(response.status, 202, await response.text())
         job = await self.terminal(await response.json())
         self.assertEqual(job["status"], "succeeded", job)
-        self.assertEqual(len(self.backend.calls), 1)
+        self.assertEqual(len(self.backend.calls), 2)
         self.assertFalse(any("failed validation" in event["message"] or "unavailable" in event["message"]
                              for event in job["events"]))
         data.update(scene_plan=job["result"]["scene_plan"], scene_plan_signature=job["result"]["scene_plan_signature"])
@@ -619,10 +627,10 @@ class DatasetEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue((await response.json())["scene_plan_current"])
         saved = await (await self.client.get("/api/workspace/settings/dataset")).json()
         self.assertEqual(saved["draft"]["scene_plan"], data["scene_plan"])
-        response = await self.client.post("/api/workspace/dataset", json={"input": data})
+        response = await self.client.post("/api/workspace/dataset", json=self.confirmed(data))
         final = await self.terminal(await response.json())
         self.assertEqual(final["status"], "succeeded", final)
-        self.assertEqual(len(self.backend.calls), 4)  # No extra planner/repair call.
+        self.assertEqual(len(self.backend.calls), 5)  # No extra planner/repair call.
         self.assertEqual(final["result"]["prompts"][2]["scene"], expanded["reading on a red couch"])
 
     async def test_quality_endpoint_is_inference_free_without_coverage(self):

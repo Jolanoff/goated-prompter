@@ -46,7 +46,7 @@ class ScenePlannerTests(unittest.TestCase):
             self.assertIn(responsibility, system)
         self.assertNotIn("explore compatible idea families", system)
         self.assertIn("fields supplied by the selected staging schema", system)
-        self.assertIn("normally 3–15 words", system)
+        self.assertIn("normally 40–60 words", system)
         self.assertIn("Never invent a second camera, mirror or collage", system)
         self.assertIn("geometry (object)", system)
 

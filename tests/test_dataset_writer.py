@@ -90,6 +90,24 @@ class DatasetWriterTests(unittest.TestCase):
         self.assertNotIn("IDENTITY-ONLY PROTECTION", expanded.system_message)
         self.assertIn("TRIGGER EXPANSION ENABLED", expanded.system_message)
 
+    def test_confirmed_brief_and_framing_have_independent_writer_context(self):
+        request, data, plan = self.fixture()
+        data["subject"] += " Full-body view."
+        for brief in (None, {"identity_policy": "random_per_prompt", "goal": "Aerial practice"}):
+            with self.subTest(brief=brief):
+                original = deepcopy((data, plan))
+                writer = dataset_instruction(request, {**data, "_confirmed_intent": brief}, 1, plan_item=plan)
+                self.assertIn(plan["scene"], writer.user_message)
+                self.assertIn("FRAMING AUTHORITY", writer.user_message)
+                if brief:
+                    self.assertIn('"goal": "Aerial practice"', writer.user_message)
+                    self.assertIn("CONFIRMED DATASET BRIEF", writer.user_message)
+                    self.assertIn("USER-APPROVED RANDOM IDENTITIES", writer.system_message)
+                else:
+                    self.assertNotIn("CONFIRMED DATASET BRIEF", writer.user_message)
+                    self.assertIn("IDENTITY-ONLY PROTECTION", writer.system_message)
+                self.assertEqual((data, plan), original)
+
     def test_creativity_does_not_affect_planning_instructions_or_plan_reuse(self):
         request, data, plan = self.fixture()
         signature = scene_plan_signature(data, dataset_assignments(data))

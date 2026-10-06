@@ -230,11 +230,11 @@ class ComplexPoseStagingTests(unittest.TestCase):
             self.assertNotIn("INPUT: upper body, both feet behind neck", instruction.system_message)
             self.assertNotIn("Compact seated contortion; hips supported on floor", instruction.system_message)
 
-    def test_planner_keeps_existing_sampling_and_budget_with_mechanics_first_drafting(self):
+    def test_planner_keeps_sampling_with_expanded_idea_budget(self):
         data = draft(amount=1)
         fast = scene_planner_instruction(data, dataset_assignments(data))
         quality = scene_composer_instruction(data, dataset_assignments(data), [pose_row(CASES[0])])
-        self.assertEqual((fast.max_tokens, fast.hard_max_tokens), (1024, 1024))
+        self.assertEqual((fast.max_tokens, fast.hard_max_tokens), (1536, 1536))
         self.assertEqual((quality.max_tokens, quality.hard_max_tokens), (1280, 1280))
         self.assertEqual((quality.temperature, quality.top_p), (.25, .85))
 

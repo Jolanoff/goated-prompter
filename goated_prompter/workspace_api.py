@@ -13,6 +13,7 @@ from .minimax import MiniMaxService, validate_minimax_draft
 from .dataset import DatasetReviewService, DatasetService, validate_dataset_draft
 from .dataset_assignments import dataset_assignments
 from .dataset_quality import analyze_dataset_quality
+from .dataset_intent import DatasetIntentService
 from .presets import get_director_preset
 from .scene_planner import reusable_scene_plan, scene_is_usable, scene_unusable_reason
 
@@ -43,13 +44,16 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
         state = request.app[state_key]
         payload = await json_object(request)
         local_scene = request.path.endswith("/scene")
-        if set(payload) - ({"input", "settings", "action", "index", "workflow_revision"} if local_scene else {"input", "settings", "valid_only", "workflow_revision"}):
+        understanding = request.path.endswith("/understand")
+        if set(payload) - ({"input", "settings", "workflow_revision"} if understanding else
+                           {"input", "settings", "action", "index", "workflow_revision", "confirmation_token"} if local_scene else
+                           {"input", "settings", "valid_only", "workflow_revision", "confirmation_token"}):
             raise ValueError("Expected Dataset input and prompt-engine settings.")
         scenes_only = request.path.endswith("/scenes")
         valid_only = payload.get("valid_only", False)
         if type(valid_only) is not bool or (valid_only and scenes_only):
             raise ValueError("Valid-scenes-only generation must be a boolean for prompt generation.")
-        data = validate_dataset_draft(payload.get("input"), generation=True, planning=scenes_only)
+        data = validate_dataset_draft(payload.get("input"), generation=True, planning=scenes_only or understanding)
         if valid_only:
             rows = reusable_scene_plan(data, dataset_assignments(data), require_scenes=False, allow_pending=True)
             if rows is None or not any(scene_is_usable(row, data) for row in rows):
@@ -71,12 +75,13 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
         settings = payload.get("settings", {})
         if not isinstance(settings, dict) or set(settings) - {"director_profile"}:
             raise ValueError("Invalid Dataset prompt-engine settings.")
-        director = None if scenes_only else get_director_preset(data["director_preset"], strict=True)
+        director = None if scenes_only or understanding else get_director_preset(data["director_preset"], strict=True)
         async with state.admission:
             active = state.active_job()
             if active:
                 return web.json_response({"error": "Wait for the active generation before generating again.",
                                           "active_job": active}, status=409)
+            intent = None if understanding else state.dataset_intents.approve(payload.get("confirmation_token"), data)
             config = state.config()
             configured = canonical_backend_name(config.get("backend")) in {"mock", "openai_compatible"}
             director_request = GoatedPrompterRequest(
@@ -90,9 +95,9 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
                 director_keep_model_loaded=_as_bool(
                     config.get("local_llama_cpp", {}).get("keep_model_loaded", False)),
             )
-            kind = "dataset_scenes" if scenes_only else "dataset"
+            kind = "dataset_understanding" if understanding else "dataset_scenes" if scenes_only else "dataset"
             return web.json_response(state.start_job(kind, director_request, config, True,
-                {"operation": kind, "input": data, "scene_action": scene_action, "valid_only": valid_only,
+                {"operation": kind, "input": data, "intent": intent, "scene_action": scene_action, "valid_only": valid_only,
                  "workflow_revision": payload.get("workflow_revision")},
                 job_factory=job_factory), status=202)
 
@@ -230,6 +235,7 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
 
     app.add_routes([web.post("/api/workspace/minimax", minimax_endpoint),
                     web.post("/api/workspace/dataset", dataset_endpoint),
+                    web.post("/api/workspace/dataset/understand", dataset_endpoint),
                     web.post("/api/workspace/dataset/scenes", dataset_endpoint),
                     web.post("/api/workspace/dataset/scene", dataset_endpoint),
                     web.post("/api/workspace/dataset/review", dataset_review_endpoint),
@@ -259,6 +265,12 @@ def execute_workflow(state, job, request, config, workflow):
         job.commit(lambda: result, finish=True)
         return
 
+    if workflow["operation"] == "dataset_understanding":
+        brief = DatasetIntentService(config, job.checkpoint).run(request, workflow["input"], progress)
+        job.commit(lambda: {"ok": True, "kind": "dataset_understanding",
+                           **state.dataset_intents.register(workflow["input"], brief)}, finish=True)
+        return
+
     if workflow["operation"] in {"dataset", "dataset_scenes"}:
         def checkpoint_result():
             try:
@@ -284,7 +296,7 @@ def execute_workflow(state, job, request, config, workflow):
                 # Disk owns progress before it becomes available to a browser poll.
                 checkpoint_result()
         result = DatasetService(config, job.checkpoint, idea_history=state.idea_history).run(
-            request, workflow["input"], progress, partial,
+            request, {**workflow["input"], "_confirmed_intent": workflow.get("intent")}, progress, partial,
             scenes_only=workflow["operation"] == "dataset_scenes", scene_action=workflow.get("scene_action"),
             valid_only=workflow.get("valid_only", False))
         job.commit(lambda: durable_result(result), finish=True)

@@ -58,8 +58,7 @@ coverage/
 Thumbs.db
 Desktop.ini
 
-# Local AI-agent skills (not needed to run the app)
+# Local AI-agent files (not needed to run the app)
 /.agents/skills/
-/.opencode/skills/*
-!/.opencode/skills/goated-prompter-workflow/
+/.opencode/
 /skills-lock.json

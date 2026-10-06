@@ -306,7 +306,7 @@ class ScenePlanner:
     def plan_batch(self, *, session, data, assignments, family="qwen", progress, plan_update=None):
         if self.idea_history is not None:
             data = {**data, "_recent_ideas": self.idea_history.recent(data)}
-        if data.get("planning_mode", "Fast") == "Quality":
+        if data.get("planning_mode", "Fast") == "Quality" or data.get("_confirmed_intent"):
             try:
                 ideas = self.plan_ideas(session=session, data=data, assignments=assignments, family=family, progress=progress)
             except BackendGenerationError:
