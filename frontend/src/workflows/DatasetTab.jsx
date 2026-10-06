@@ -9,6 +9,7 @@ import { datasetCopyText, datasetJsonl } from "./datasetExport.js";
 import { editDatasetPlan } from "./datasetState.js";
 import { useDatasetWorkflow } from "./useDatasetWorkflow.js";
 import { geometryRows } from "./datasetGeometry.js";
+import DatasetConfirmationModal from "./DatasetConfirmationModal.jsx";
 
 const triggerTypes = ["Character", "Multiple characters", "Animal", "Object / product", "Visual style",
   "Location / environment", "Brand / logo", "Typography / text", "Concept", "Custom"];
@@ -104,7 +105,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
     guidedLines, canPlanScenes, staleScenePlan, sceneUsable, validSceneCount, retryStage,
     scenePlanReady, canWrite, canGenerate, updateSceneSettings, updateWriterSettings,
     sceneAction, generate, deepReview, editResult, releaseCheckpoints, clearResults,
-    resetRecentIdeas } = useDatasetWorkflow({ preferences, job, busy, active, noEngine,
+     resetRecentIdeas, confirmation, reviseConfirmation, cancelConfirmation, confirmRequest } = useDatasetWorkflow({ preferences, job, busy, active, noEngine,
       director, onGenerate, onReleaseJobs });
   const [geometryItem, setGeometryItem] = useState(null);
   const [clock, setClock] = useState(Date.now());
@@ -218,7 +219,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                 onChange={(event) => updateSceneSettings({ planning_mode: event.target.value })}>
                 <option>Fast</option><option>Quality</option>
               </select>
-               <small className={ui.directorDescription}>Fast — ideas and scenes together. Quality — ideas first, scenes second.</small>
+               <small className={ui.directorDescription}>Both modes confirm the request, then build ideas and scenes separately. Quality adds stronger prompt-fidelity checks.</small>
             </label>
             <HelpDetails>Plan scenes first creates a fresh idea run with recent-idea novelty hints. Generate reuses your current valid plan, including manual edits. Failed items use local repair; valid siblings remain unchanged. You can retry skipped items individually.</HelpDetails>
              <label className={ui.field}><span><Tag size={14} aria-hidden="true" />Trigger text or terms</span>
@@ -342,7 +343,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
             <FailureReason item={item} />
             {item.input && <small className="text-muted">Original idea: {item.input}</small>}
             <label className={ui.field}><span>Idea {item.index}</span>
-              <input className={ui.input} aria-label={`Planned idea ${item.index}`} value={item.idea || ""}
+              <textarea className={ui.notesInput} aria-label={`Planned idea ${item.index}`} value={item.idea || ""}
                 placeholder="Legacy plan: replan to generate an idea" disabled={disabled}
                 maxLength={preferences.record?.idea_limits?.characters}
                 onChange={(event) => update(editDatasetPlan(draft, item.index, "idea", event.target.value))} />
@@ -448,7 +449,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
               <label htmlFor={`dataset-prompt-${item.index}`} className="dataset-final-label">Final prompt</label>
               <textarea className={ui.outputInput} style={{ minHeight: 220 }} aria-label={`Dataset prompt ${item.index}`}
                id={`dataset-prompt-${item.index}`}
-              value={item.prompt} maxLength={100000} disabled={isGenerating || active && job?.kind === "dataset_review"}
+               value={item.prompt} maxLength={100000} disabled={disabled}
               onChange={(event) => editResult(item.index, event.target.value)} />
               <div><button className={ui.button} onClick={() => onCopy(item.prompt)}><Copy size={14} aria-hidden="true" />Copy</button></div>
               {!!check?.issues.length && <details className="dataset-details rounded-lg border border-line p-3 text-xs" open>
@@ -460,5 +461,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
       </section>
     </>}
     <GeometryModal item={geometryItem} onClose={() => setGeometryItem(null)} />
+    {confirmation && <DatasetConfirmationModal review={confirmation} busy={busy} onRevise={reviseConfirmation}
+      onConfirm={confirmRequest} onCancel={cancelConfirmation} />}
   </div>;
 }

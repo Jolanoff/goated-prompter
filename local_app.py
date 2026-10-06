@@ -20,6 +20,7 @@ from goated_prompter.local_jobs import Job, JobCancelled, TERMINAL
 from goated_prompter.json_store import atomic_json, read_store
 from goated_prompter.uploaded_images import decode_image
 from goated_prompter.dataset_idea_history import RecentIdeaHistory
+from goated_prompter.dataset_intent import DatasetIntentTickets
 from goated_prompter.dataset_checkpoints import DatasetCheckpointStore
 from goated_prompter.backends.llama_cpp_process import get_process_manager, _resolve_server_executable
 from goated_prompter.config import load_config
@@ -155,6 +156,7 @@ class LocalState:
         self.workflow_settings.dataset_checkpoints = self.dataset_checkpoints
         self.jobs = OrderedDict()
         self.idea_history = RecentIdeaHistory()
+        self.dataset_intents = DatasetIntentTickets()
         self.tasks = set()
         self.admission = asyncio.Lock()
         self.storage_lock = asyncio.Lock()

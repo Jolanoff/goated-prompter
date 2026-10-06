@@ -175,7 +175,7 @@ class QualityPlanningTests(unittest.TestCase):
         invalid = ["[]", "{}", "```json\n[]\n```", '[{"index":true,"idea":"Reading"}]',
                    '[{"index":1,"idea":"Reading","scene":"Extra"}]', '[{"index":1,"idea":""}]',
                    '[{"index":1,"idea":"Reading","idea":"Writing"}]', '[{"index":1,"idea":"no other people"}]',
-                   json.dumps([{"index": 1, "idea": "word " * 31}])]
+                   json.dumps([{"index": 1, "idea": "word " * 81}])]
         for raw in invalid:
             with self.subTest(raw=raw), self.assertRaises(ValueError):
                 validate_idea_plan(raw, [1])

@@ -145,6 +145,7 @@ for (const theme of ["dark", "light"]) {
     await page.getByLabel(/Provide my own scene ideas/).check();
     await page.getByLabel("Guided dataset inputs").fill("standing on a platform\nreading a map");
     await page.getByRole("button", { name: "Generate 2 prompts", exact: true }).click();
+    await confirmDatasetReview(page);
     await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/ohwx_traveler/);
     const quality = page.getByRole("region", { name: "Dataset quality report" });
     await expect(quality.getByText("Overall", { exact: true })).toBeVisible();
@@ -184,3 +185,4 @@ test("populated Refine history, instruction editor and activity log remain acces
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("activity-log-mobile.png") });
 });
+import { confirmDatasetReview } from "./datasetHelpers.js";

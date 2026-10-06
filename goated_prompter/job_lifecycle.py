@@ -6,7 +6,7 @@ import threading
 TERMINAL_JOB_STATUSES = frozenset({"succeeded", "failed", "cancelled", "interrupted"})
 JOB_FAMILIES = {
     "builder": {"builder"}, "refine": {"refine"}, "minimax": {"minimax"},
-    "dataset": {"dataset", "dataset_scenes", "dataset_review"},
+    "dataset": {"dataset", "dataset_scenes", "dataset_review", "dataset_understanding"},
 }
 
 
