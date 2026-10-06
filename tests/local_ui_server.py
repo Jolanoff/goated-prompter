@@ -22,17 +22,27 @@ class DatasetUIMock(MockBackend):
     """Schema-aware Dataset fixture; automatic planning cannot rely on fallback."""
     def generate(self, instruction):
         stage = instruction.diagnostic_stage
+        if stage == "dataset:build_scene":
+            context = json.loads(instruction.user_message)
+            row = context["assignments"][0]
+            return json.dumps({"scene": context.get("current_scene") or
+                " ".join(row.get(field, "") for field in ("idea", "placement", "visibility", "camera", "framing", "context")),
+                "self_check": "PASS"})
+        if stage == "dataset:ideas":
+            from tests.helpers import dataset_idea_fixture
+            context = json.loads(instruction.user_message)
+            return json.dumps([dataset_idea_fixture(row["index"]) for row in context["assignments"]])
         if stage == "builder:scene_planning":
             context = json.loads(instruction.user_message)
             return json.dumps({"primary_action": context["user_request"],
                                "staging": "Keep the requested subjects and relationships."})
         if stage.startswith("dataset:understanding"):
-            from tests.helpers import dataset_intent_fixture
+            from tests.helpers import dataset_understanding_fixture
             source = json.loads(instruction.user_message)["source"]
-            result = json.dumps(dataset_intent_fixture(goal=source["subject"],
-                character_count=2 if source["trigger_type"] == "Multiple characters" else 1,
-                identity_policy="random_per_prompt", required_rules=source["constraints"].splitlines(),
-                blocking_questions=["Breaking what?"] if "unclear breaking" in source["subject"] and "breaking a board" not in source["constraints"] else []))
+            self.dataset_trigger = source.get("trigger", "")
+            result = json.dumps(dataset_understanding_fixture(requested_generation=source["subject"],
+                rules=[{"scope": "all_outputs", "text": rule} for rule in source["constraints"].splitlines() if rule.strip()],
+                clarifications=["Breaking what?"] if "unclear breaking" in source["subject"] and "breaking a board" not in source["constraints"] else []))
         elif stage.startswith(("dataset:idea_planner", "dataset:scene_planner", "dataset:scene_composer")):
             context = json.loads(instruction.user_message)
             rows = []
@@ -59,8 +69,10 @@ class DatasetUIMock(MockBackend):
                     rows.append({"index": index, "idea": idea, "scene": f"{text}; mock scene {index}.", "geometry": geometry})
             result = json.dumps(rows)
         elif re.match(r"dataset:\d+", stage):
-            text = re.search(r"<scene>\n(.*?)\n</scene>", instruction.user_message, re.S).group(1)
-            trigger = re.search(r"<trigger>\n(.*?)\n</trigger>", instruction.user_message, re.S).group(1)
+            legacy_scene = re.search(r"<scene>\n(.*?)\n</scene>", instruction.user_message, re.S)
+            legacy_trigger = re.search(r"<trigger>\n(.*?)\n</trigger>", instruction.user_message, re.S)
+            text = legacy_scene.group(1) if legacy_scene else instruction.user_message
+            trigger = legacy_trigger.group(1) if legacy_trigger else getattr(self, "dataset_trigger", "")
             result = f"{trigger}: {text}"
         else:
             return super().generate(instruction)
@@ -88,7 +100,7 @@ if __name__ == "__main__":
         os.environ["GOATED_PROMPTER_USER_DIR"] = str(Path(data) / "directors")
         port = int(os.environ.get("GOATED_UI_TEST_PORT", "8190"))
         with patch("goated_prompter.dataset.create_backend", side_effect=dataset_ui_backend), \
-                patch("goated_prompter.dataset_intent.create_backend", side_effect=dataset_ui_backend), \
+                patch("goated_prompter.dataset_understanding.create_backend", side_effect=dataset_ui_backend), \
                 patch("goated_prompter.core.create_backend", side_effect=dataset_ui_backend):
             # Exercise accepted aliases through the real API, not only factory tests.
             web.run_app(create_app(port=port, config_loader=lambda: {"backend": " DeBuG "}, settings_path=Path(data) / "settings.json",

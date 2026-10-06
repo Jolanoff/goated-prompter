@@ -10,6 +10,7 @@ import { editDatasetPlan } from "./datasetState.js";
 import { useDatasetWorkflow } from "./useDatasetWorkflow.js";
 import { geometryRows } from "./datasetGeometry.js";
 import DatasetConfirmationModal from "./DatasetConfirmationModal.jsx";
+import DatasetIdeaDetails, { DatasetSceneCheck } from "./DatasetIdeaDetails.jsx";
 
 const triggerTypes = ["Character", "Multiple characters", "Animal", "Object / product", "Visual style",
   "Location / environment", "Brand / logo", "Typography / text", "Concept", "Custom"];
@@ -24,7 +25,7 @@ const metricOrder = Object.keys(metricLabels);
 function StatusChip({ label, status }) {
   const state = ["valid", "generated", "pass", "strong"].includes(status) ? "success"
     : ["failed", "error"].includes(status) ? "failed"
-    : ["warning", "geometry_warning", "duplicate_warning", "review", "issues"].includes(status) ? "warning" : "pending";
+    : ["warning", "geometry_warning", "repair_required", "duplicate_warning", "review", "issues"].includes(status) ? "warning" : "pending";
   const Icon = state === "success" ? CircleCheck : state === "pending" ? Circle : CircleAlert;
   return <span className="dataset-status-chip" data-state={state} aria-label={`${label}: ${state}`}>
     <Icon size={13} aria-hidden="true" />{label}
@@ -330,7 +331,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
       {!!draft.scene_plan?.length && <section className={`${ui.panel} mt-6`} aria-label="Scene Planner ideas">
         <header className={ui.panelHeader}>
           <div className={ui.panelIcon}><Layers3 size={21} /></div>
-          <div className={ui.panelHeading}><h2>Scene planner</h2>
+           <div className={ui.panelHeading}><h2>Ideas and scenes</h2>
              <p>Edit what happens and how it fits one image.</p></div>
         </header>
         <HelpDetails>Idea edits invalidate only that scene and prompt. Scene edits invalidate only that prompt. Output settings reuse the plan and invalidate prompts.</HelpDetails>
@@ -348,11 +349,13 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                 maxLength={preferences.record?.idea_limits?.characters}
                 onChange={(event) => update(editDatasetPlan(draft, item.index, "idea", event.target.value))} />
             </label>
+            <DatasetIdeaDetails item={item} />
             <label className={ui.field}><span>Scene {item.index}</span>
               <textarea className={ui.notesInput} aria-label={`Planned scene ${item.index}`} value={item.scene}
                 maxLength={preferences.record?.scene_limits?.characters} disabled={disabled}
                 onChange={(event) => update(editDatasetPlan(draft, item.index, "scene", event.target.value))} />
             </label>
+            <DatasetSceneCheck item={item} />
             <div className="flex flex-wrap gap-2">
               <button className={ui.button} title="Regenerate idea" aria-label="Regenerate idea" disabled={!canWrite || staleScenePlan}
                 onClick={() => sceneAction(item.index, "regenerate_idea")}><RefreshCw size={14} aria-hidden="true" />Idea</button>

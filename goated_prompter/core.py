@@ -228,6 +228,8 @@ class PromptInstruction:
     # Request-local sampling; supporting planners use conservative values.
     temperature: float = None
     top_p: float = None
+    # Structured stages can request llama.cpp JSON decoding without changing writers.
+    json_output: bool = False
 
     def _user_content(self, text):
         if not reference_images(self):

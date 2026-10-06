@@ -8,11 +8,34 @@ import threading
 import time
 
 from .dataset import validate_dataset_draft
+from .scene_planner import validate_saved_scene_plan
 
 CHECKPOINT_LIMIT = 20
 CHECKPOINT_BYTE_BUDGET = 14 * 1024 * 1024
 GENERATED_FIELDS = {"results", "result_job_id", "quality_report"}
 TERMINAL = {"succeeded", "failed", "cancelled", "interrupted"}
+
+
+def _checkpoint_input(data):
+    """Validate an archived input projection without changing its signature or record."""
+    fields = dict(data)
+    if "scene_plan" in fields:
+        fields["scene_plan"] = validate_saved_scene_plan(fields["scene_plan"],
+            dataset_type=fields.get("trigger_type"), allow_legacy_metadata=True)
+    return validate_dataset_draft(fields)
+
+
+def _result_fields(result, data):
+    """Project supported fields without modifying the original historical snapshot."""
+    fields = {key: result[key] for key in ("scene_plan", "scene_plan_signature", "quality_report") if key in result}
+    if "scene_plan" in fields:
+        fields["scene_plan"] = validate_saved_scene_plan(fields["scene_plan"],
+            dataset_type=data["trigger_type"], allow_legacy_metadata=True)
+    if "prompts" in result:
+        fields["results"] = result["prompts"]
+    if "report" in result:
+        fields["quality_report"] = result["report"]
+    return fields
 
 
 def generation_signature(data):
@@ -32,7 +55,7 @@ def validate_checkpoints(value):
                 or not isinstance(row.get("input_signature"), str) or not re.fullmatch(r"[a-f0-9]{64}", row["input_signature"])
                 or not isinstance(row.get("snapshot"), dict) or not isinstance(row.get("input"), dict)):
             raise ValueError("Invalid Dataset checkpoint record.")
-        validate_dataset_draft(row["input"])
+        data = _checkpoint_input(row["input"])
         snapshot = row["snapshot"]
         if (snapshot.get("id") != row["job_id"] or snapshot.get("kind") not in {"dataset", "dataset_scenes", "dataset_review"}
                 or snapshot.get("status") not in TERMINAL | {"running", "paused", "pause_requested", "cancelling"}
@@ -41,12 +64,7 @@ def validate_checkpoints(value):
             raise ValueError("Invalid Dataset checkpoint snapshot.")
         if snapshot.get("result") is not None:
             result = snapshot["result"]
-            fields = {key: result[key] for key in ("scene_plan", "scene_plan_signature", "quality_report") if key in result}
-            if "prompts" in result:
-                fields["results"] = result["prompts"]
-            if "report" in result:
-                fields["quality_report"] = result["report"]
-            validate_dataset_draft({**row["input"], **fields})
+            validate_dataset_draft({**data, **_result_fields(result, data)})
         ids.add(row["job_id"])
     return value
 
@@ -140,10 +158,11 @@ class DatasetCheckpointStore:
             return record
         row = matching[-1]
         result = row["snapshot"].get("result") or {}
+        fields = _result_fields(result, _checkpoint_input(row["input"]))
         draft = deepcopy(record["draft"])
         for key in ("scene_plan", "scene_plan_signature", "quality_report"):
-            if key in result:
-                draft[key] = deepcopy(result[key])
+            if key in fields:
+                draft[key] = deepcopy(fields[key])
         if "prompts" in result:
             draft.update(results=deepcopy(result["prompts"]), result_job_id=row["job_id"])
         if "report" in result:

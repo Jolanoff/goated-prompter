@@ -277,6 +277,8 @@ Undo follows the current version's parent; each imported starting prompt or Buil
 
 Completed versions and history selection/redo live in **`data/workspace.json`**. Writes are atomic and revision-checked so a stale browser tab cannot overwrite newer workspace edits. The storage limit is 1,000 versions and 16 MiB for the workspace file; copy or back up useful results before clearing history. If saving a generated result fails, its recovered text is shown for copying in the current session.
 
+The coding assistant must not inspect private **`data/`** contents. This is not a runtime restriction: the app still reads and writes its stores and sends the content selected for generation, including saved Director instructions, to your configured local LLM. Evaluation corpora live under **`tests/`** and generated evaluation artifacts under **`quality-artifacts/`**, separate from app storage.
+
 #### Saved creative settings and advanced instructions
 
 Refine, MiniMax H3, and Dataset settings autosave separately to **`data/workflow_settings.json`**. Refine retains requested changes, locks, starting text/target and manual-edit drafts; MiniMax and Dataset retain their workflow-specific inputs and current results. Wait for the respective **Saved** indicator before closing or reloading. Failed writes keep the local draft and expose retry/reload actions; revision checks prevent a stale browser tab from replacing newer settings.

@@ -13,7 +13,7 @@ from .minimax import MiniMaxService, validate_minimax_draft
 from .dataset import DatasetReviewService, DatasetService, validate_dataset_draft
 from .dataset_assignments import dataset_assignments
 from .dataset_quality import analyze_dataset_quality
-from .dataset_intent import DatasetIntentService
+from .dataset_understanding import DatasetUnderstandingService
 from .presets import get_director_preset
 from .scene_planner import reusable_scene_plan, scene_is_usable, scene_unusable_reason
 
@@ -266,7 +266,7 @@ def execute_workflow(state, job, request, config, workflow):
         return
 
     if workflow["operation"] == "dataset_understanding":
-        brief = DatasetIntentService(config, job.checkpoint).run(request, workflow["input"], progress)
+        brief = DatasetUnderstandingService(config, job.checkpoint).run(request, workflow["input"], progress)
         job.commit(lambda: {"ok": True, "kind": "dataset_understanding",
                            **state.dataset_intents.register(workflow["input"], brief)}, finish=True)
         return

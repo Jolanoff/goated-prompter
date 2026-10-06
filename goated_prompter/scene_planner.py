@@ -11,6 +11,8 @@ from .dataset_staging import validate_geometry, validate_planned_geometry, geome
 from .dataset_staging.engine import geometry_repair_locks, geometry_issues, semantic_geometry_fields
 from .dataset_staging.rules.framing import framing_intent
 from .dataset_quality import analyze_idea_diversity, idea_action_error
+from .dataset_ideas import DatasetIdeasService, IDEA_DETAIL_FIELDS, MAX_FIELD_CHARACTERS
+from .dataset_scene import DatasetSceneService, validate_self_check
 from .dataset_constraints import compile_constraints, constraint_issues
 from .scene_eligibility import scene_eligibility, scene_geometry_errors
 from .planning.result import PlanningResult
@@ -30,7 +32,7 @@ FAILURE_METADATA = {"failure_reason", "failure_stage", "replacement_attempted"}
 logger = logging.getLogger(__name__)
 PLAN_STATUS_VALUES = {
     "idea_status": {"valid", "not_generated", "duplicate_warning", "failed"},
-    "scene_status": {"valid", "not_generated", "geometry_warning", "guided_fallback", "failed"},
+    "scene_status": {"valid", "not_generated", "geometry_warning", "repair_required", "guided_fallback", "failed"},
     "prompt_status": {"valid", "not_generated", "failed"},
 }
 # Saved scenes can include original long guided inputs used as graceful fallbacks
@@ -64,28 +66,42 @@ def scene_plan_signature(data, assignments):
                                     separators=(",", ":")).encode("utf-8")).hexdigest()[:20]
 
 
-def validate_saved_scene_plan(rows, *, dataset_type=None):
+def validate_saved_scene_plan(rows, *, dataset_type=None, allow_legacy_metadata=False):
+    """Keep live input strict; historical checkpoint projections may omit opaque metadata."""
     if not isinstance(rows, list) or len(rows) > 25:
         raise ValueError("Scene plan must contain at most 25 scenes.")
     cleaned = []
+    fields = {"index", "input", "idea", "scene", "geometry", "self_check", "coverage_conflicts",
+              *IDEA_DETAIL_FIELDS, *PLAN_STATUS_VALUES, *FAILURE_METADATA}
     for index, row in enumerate(rows, 1):
         if isinstance(row, dict):
+            if allow_legacy_metadata:
+                row = {key: value for key, value in row.items() if key in fields}
             # Only new deterministic crop diagnostics survive obsolete coverage metadata.
             conflicts = row.get("coverage_conflicts")
             row = {key: value for key, value in row.items() if key != "coverage_conflicts"}
             if conflicts == ["framing"] and isinstance(row.get("geometry"), dict) and row["geometry"].get("framing") in {"full_body", "full_subject"}:
                 row["coverage_conflicts"] = conflicts
         if (not isinstance(row, dict) or not {"index", "input", "scene"} <= row.keys()
-                or row.keys() - {"index", "input", "idea", "scene", "geometry", "coverage_conflicts", *PLAN_STATUS_VALUES, *FAILURE_METADATA}
+                or row.keys() - fields
                 or type(row["index"]) is not int or row["index"] != index
                 or not isinstance(row["input"], str) or len(row["input"]) > 10000
                 or not isinstance(row["scene"], str) or len(row["scene"]) > MAX_STORED_SCENE_CHARACTERS):
             raise ValueError("Saved scenes require sequential indexes, input and scene text; idea is optional for legacy plans.")
         if "idea" in row and (not isinstance(row["idea"], str) or len(row["idea"]) > MAX_STORED_IDEA_CHARACTERS):
             raise ValueError("Saved idea must be text within the stored-input limit.")
+        details = set(row) & set(IDEA_DETAIL_FIELDS)
+        if details and (details != set(IDEA_DETAIL_FIELDS) or not row.get("idea", "").strip()
+                or any(not isinstance(row[field], str) or not row[field].strip()
+                       or len(row[field]) > MAX_FIELD_CHARACTERS for field in IDEA_DETAIL_FIELDS)):
+            raise ValueError("Saved compact ideas require all five concise description fields alongside the idea.")
         validate_plan_metadata(row)
         row = dict(row)
         row["scene"] = " ".join(row["scene"].split())
+        if "self_check" in row:
+            row["self_check"] = validate_self_check(row["self_check"], allow_pending=True)
+            if row["self_check"].startswith("REPAIR:"):
+                row.update(scene_status="repair_required", prompt_status="not_generated")
         if "geometry" in row:
             row["geometry"], migrated = migrate_saved_geometry(row["geometry"], dataset_type=dataset_type)
             if migrated and row["scene"] and row.get("scene_status") not in {"failed", "guided_fallback"}:
@@ -100,8 +116,8 @@ def reusable_scene_plan(data, assignments, *, require_scenes=True, allow_pending
             or len(rows) != data["amount"] or (not allow_pending and any("idea" in row and not row["idea"].strip()
                 and row.get("scene_status") != "failed" for row in rows))
             or (require_scenes and any(not scene_eligibility(row, data).usable for row in rows))
-            or any(visible_content_error(row.get("idea", "")) or (row.get("scene_status") not in
-                {"not_generated", "geometry_warning", "failed"} and visible_content_error(row["scene"])) for row in rows)
+             or any("self_check" not in row and (visible_content_error(row.get("idea", "")) or (row.get("scene_status") not in
+                 {"not_generated", "geometry_warning", "repair_required", "failed"} and visible_content_error(row["scene"]))) for row in rows)
             or any(row["input"] != assignment["input"] for row, assignment in zip(rows, assignments))):
         return None
     return rows
@@ -307,12 +323,16 @@ class ScenePlanner:
         if self.idea_history is not None:
             data = {**data, "_recent_ideas": self.idea_history.recent(data)}
         if data.get("planning_mode", "Fast") == "Quality" or data.get("_confirmed_intent"):
-            try:
+            if "requested_generation" in (data.get("_confirmed_intent") or {}):
                 ideas = self.plan_ideas(session=session, data=data, assignments=assignments, family=family, progress=progress)
-            except BackendGenerationError:
-                return self._fallback(data, assignments, progress)
+            else:
+                try:
+                    ideas = self.plan_ideas(session=session, data=data, assignments=assignments, family=family, progress=progress)
+                except BackendGenerationError:
+                    return self._fallback(data, assignments, progress)
             if plan_update:
-                plan_update([{**row, "scene": "", "geometry": {}, "scene_status": "not_generated"} for row in ideas])
+                plan_update([{**row, "scene": "", "geometry": {}, "scene_status": "not_generated",
+                    **({"self_check": ""} if "requested_generation" in (data.get("_confirmed_intent") or {}) else {})} for row in ideas])
             return self.compose(session=session, data=data, assignments=assignments, ideas=ideas, family=family,
                                 progress=progress, plan_update=plan_update)
         state = [{"index": row["index"], "idea": "", "scene": "", "geometry": {},
@@ -438,6 +458,12 @@ class ScenePlanner:
     def plan_ideas(self, *, session, data, assignments, family="qwen", progress, indexes=None, existing=()):
         if self.idea_history is not None:
             data = {**data, "_recent_ideas": self.idea_history.recent(data)}
+        if "requested_generation" in (data.get("_confirmed_intent") or {}):
+            rows = DatasetIdeasService(self.checkpoint).run(session=session, data=data,
+                assignments=assignments, family=family, progress=progress, indexes=indexes, existing=existing)
+            if self.idea_history is not None:
+                self.idea_history.remember(data, rows)
+            return rows
         indexes = indexes or list(range(1, data["amount"] + 1))
         previous = {row["index"]: row["idea"] for row in existing if row["index"] in indexes}
         def validate_initial(raw):
@@ -484,6 +510,16 @@ class ScenePlanner:
         return rows
 
     def compose(self, *, session, data, assignments, ideas, family="qwen", progress, plan_update=None):
+        if "requested_generation" in (data.get("_confirmed_intent") or {}):
+            rows = [{**idea, "self_check": "", "geometry": {}, "scene": idea.get("scene", ""),
+                     "scene_status": "not_generated", "prompt_status": "not_generated"} for idea in ideas]
+            for position, idea in enumerate(ideas):
+                row = DatasetSceneService(self.checkpoint).run(session=session, data=data,
+                    assignment=assignments[idea["index"] - 1], idea=idea, family=family, progress=progress)
+                rows[position] = row
+                if plan_update:
+                    plan_update([dict(item) for item in rows])
+            return rows
         # Always publish a loadable state with every fixed idea, including pending
         # chunks. A retry/reload can compose only unfinished rows, never re-ideate.
         state = [{**row, "scene": "", "geometry": {}, "scene_status": "not_generated"} for row in ideas]
@@ -491,7 +527,8 @@ class ScenePlanner:
             by_index = {row["index"]: row for row in rows}
             for position, item in enumerate(state):
                 if item["index"] in by_index:
-                    state[position] = dict(by_index[item["index"]])
+                    state[position] = {**{field: item[field] for field in IDEA_DETAIL_FIELDS if field in item},
+                                       **by_index[item["index"]]}
             if plan_update:
                 plan_update([dict(item) for item in state])
         for start in range(0, len(ideas), SCENE_COMPOSER_CHUNK_SIZE):
@@ -512,7 +549,7 @@ class ScenePlanner:
                 rows = []
                 for idea in chunk:
                     row = self.recover_scene(session=session, data=data, assignments=assignments,
-                        row={"index": idea["index"], "idea": idea["idea"], "scene": "", "geometry": {}},
+                        row={**idea, "scene": "", "geometry": {}},
                         family=family, progress=progress, errors=[failure_reason(exc)],
                         existing_rows=[*recovery_context, *rows])
                     rows.append(row)
@@ -526,6 +563,8 @@ class ScenePlanner:
 
     def _check_scenes(self, session, data, assignments, rows, family, progress, ideas=None, plan_update=None, existing_rows=()):
         fixed = {row["index"]: row["idea"] for row in (ideas or rows)}
+        details = {row["index"]: {field: row[field] for field in IDEA_DETAIL_FIELDS if field in row} for row in (ideas or rows)}
+        rows = [{**details[row["index"]], **row} for row in rows]
         scene_errors = {row["index"]: row.pop("scene_error", "") for row in rows}
         replaced = {row["index"] for row in (ideas or rows) if row.get("replacement_attempted")}
         checked = list(existing_rows)
@@ -587,6 +626,9 @@ class ScenePlanner:
         return rows
 
     def recover_scene(self, *, session, data, assignments, row, family="qwen", progress, errors=(), existing_rows=(), semantic_issues=()):
+        if "requested_generation" in (data.get("_confirmed_intent") or {}):
+            return DatasetSceneService(self.checkpoint).run(session=session, data=data,
+                assignment=assignments[row["index"] - 1], idea=row, family=family, progress=progress, repair=True)
         try:
             return self.repair_scene(session=session, data=data, assignments=assignments, row=row,
                 family=family, progress=progress, errors=errors, existing_rows=existing_rows,
@@ -691,6 +733,7 @@ class ScenePlanner:
         result = self._call(session,
             build,
             validate, progress, f"Scene Composer · repair scene {row['index']}", scene_output=True, attempts=attempts)
+        result.update({field: row[field] for field in IDEA_DETAIL_FIELDS if field in row})
         if row.get("replacement_attempted"):
             result["replacement_attempted"] = True
         if row.get("coverage_conflicts"):

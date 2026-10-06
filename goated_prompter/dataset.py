@@ -177,22 +177,25 @@ class DatasetService:
         from .planning.semantic_validation import enabled, support_enabled, constraints_enabled, invariant_contract, review_candidate, repair_contract, SemanticValidationError
         from .planning.semantics import support_requirements
         from .planning.constraints import compile_request
-        validate_semantics = enabled(self.config)
-        source = "\n".join((data["subject"], (plan_item or {}).get("input", "")))
+        accepted_scene = "self_check" in (plan_item or {})
+        validate_semantics = enabled(self.config) and not accepted_scene
+        source = plan_item["scene"] if accepted_scene else "\n".join((data["subject"], (plan_item or {}).get("input", "")))
         support = (support_requirements(source) if support_enabled(self.config)
                    and isinstance((plan_item or {}).get("geometry"), dict)
                    and (plan_item or {})["geometry"].get("pose_type") == "custom" else [])
         compiled_source = compile_request(source, has_context=True)
         constraints = compile_constraints(data.get("constraints", ""))
         constraints["forbidden"] = list(dict.fromkeys([*constraints["forbidden"], *compiled_source.forbidden]))
-        audit_constraints = bool(constraints["forbidden"]) and constraints_enabled(self.config)
-        contract = invariant_contract(source, planned=plan_item, constraints=constraints,
+        audit_constraints = bool(constraints["forbidden"]) and constraints_enabled(self.config) and not accepted_scene
+        contract = invariant_contract(source, planned={"scene": source} if accepted_scene else plan_item, constraints=constraints,
             literal_text=requested_visible_text(source), trigger=trigger_terms(data["trigger"], data["trigger_connected"]),
             target=data["target"], concept=data["subject"])
         accepted_facts = ()
-        expected_text = requested_visible_text("\n".join((data["subject"], data["constraints"], (plan_item or {}).get("input", ""))))
+        expected_text = requested_visible_text(source if accepted_scene else "\n".join((data["subject"], data["constraints"], (plan_item or {}).get("input", ""))))
         def check_fidelity(prompt):
             nonlocal accepted_facts
+            if accepted_scene:
+                return prompt  # The scene already owns staging and its one compact self-check.
             if plan_item:
                 framing = framing_intent(data, plan_item).crop
                 protected = (*expected_text, *trigger_terms(data["trigger"], data["trigger_connected"]))
@@ -344,6 +347,7 @@ class DatasetService:
         assignments = dataset_assignments(data)
         results = list(data["results"]) if scene_action else []
         signature = scene_plan_signature(data, assignments)
+        compact_scenes = "requested_generation" in (data.get("_confirmed_intent") or {})
         progress("Starting the prompt engine for the dataset…")
         with backend.generation_session() as session:
             from .planning.semantic_validation import enabled, support_enabled
@@ -351,7 +355,8 @@ class DatasetService:
             scenes = reusable_scene_plan(data, assignments, require_scenes=False, allow_pending=valid_only or scene_action is not None)
             if valid_only and (scenes is None or not any(scene_is_usable(row, data) for row in scenes)):
                 raise ValueError("No valid scenes are available in the current saved plan.")
-            if scenes_only and scenes and all(scene_is_usable(row, data) for row in scenes):
+            if scenes_only and scenes and all(scene_is_usable(row, data) for row in scenes) and (
+                    not compact_scenes or all(row.get("self_check") == "PASS" for row in scenes)):
                 scenes = None  # Explicit replanning of a completed plan still creates new ideas.
             if scene_action and scenes is None:
                 raise ValueError("Per-scene actions need a current saved idea plan. Plan scenes first.")
@@ -413,8 +418,9 @@ class DatasetService:
                 elif action != "regenerate_prompt":
                     raise ValueError("Unknown per-scene action.")
             # Saved/manual idea edits invalidate only their downstream scene.
-            pending = [scenes[index - 1] for index in selected if not scenes[index - 1]["scene"].strip()
-                       and scenes[index - 1].get("scene_status") != "failed"]
+            pending = [scenes[index - 1] for index in selected if scenes[index - 1].get("scene_status") != "failed"
+                       and (not scenes[index - 1]["scene"].strip()
+                            or compact_scenes and not scenes[index - 1].get("self_check"))]
             if pending:
                 if scene_action and scene_action[0] == "regenerate_prompt":
                     raise ValueError("Compose or repair this scene before regenerating its prompt.")
@@ -429,7 +435,7 @@ class DatasetService:
                 save_composed([{**row, "scene_status": row.get("scene_status", "valid")} for row in composed])
             for index in selected:
                 row = scenes[index - 1]
-                if row.get("scene_status") == "failed":
+                if row.get("scene_status") == "failed" or "self_check" in row:
                     continue
                 try:
                     row = scenes[index - 1] = resolve_framing_conflicts(row, dataset_type=data["trigger_type"], intent=framing_intent(data, row))

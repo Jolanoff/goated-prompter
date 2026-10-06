@@ -1,0 +1,26 @@
+{
+  "input": {
+    "subject": "Two adults sparring, with either a punch or a block in each image.",
+    "constraints": "Both wear boxing gloves. At least one has blond hair.",
+    "trigger": "sparring_pair",
+    "amount": 3
+  },
+  "brief": {
+    "requested_generation": "Three images of two adults sparring. Each image shows a punch or a block, not both. At least one person has blond hair; both wear gloves.",
+    "expansion_freedom": "Vary unspecified clothing, lighting and setting without changing the required interaction.",
+    "dataset_contents": "Three distinct sparring images with different people, keeping their identities consistent within each image.",
+    "character_count": 2,
+    "identity_policy": "random_per_prompt",
+    "fixed": [{"scope": "all_outputs", "text": "Two adults; at least one has blond hair."}],
+    "may_vary": [{"scope": "all_outputs", "text": "Unspecified clothing, lighting and setting."}],
+    "must_vary": [{"scope": "dataset", "text": "Use different people across images."}],
+    "rules": [{"scope": "all_outputs", "text": "Both people wear boxing gloves."}],
+    "visible_evidence": [{"scope": "all_outputs", "text": "Readable gloves and blond hair."}],
+    "interactions": [{"scope": "all_outputs", "text": "One sparring action with a partner."}],
+    "natural_occlusions": [{"scope": "all_outputs", "text": "Raised gloves may partially obscure faces."}],
+    "visibility_to_preserve": [{"scope": "all_outputs", "text": "Keep the chosen interaction readable."}],
+    "action_options": [{"scope": "all_outputs", "text": "A punch or a block; alternatives, not simultaneous actions."}],
+    "physical_conflicts": [],
+    "clarifications": []
+  }
+}

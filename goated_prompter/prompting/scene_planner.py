@@ -10,6 +10,7 @@ from ..dataset_constraints import compile_constraints, CONSTRAINT_CONTRACT
 from ..planning.semantics import DOMAIN_UNDERSTANDING, support_requirements
 from ..dataset_staging.rules.framing import framing_intent
 from ..dataset_intent import INTENT_CONTRACT
+from ..dataset_ideas import IDEA_DETAIL_FIELDS
 
 
 MAX_SCENE_CHARACTERS = 3000
@@ -248,7 +249,12 @@ def idea_planner_instruction(data, assignments, family="qwen", correction="", *,
 def scene_composer_instruction(data, assignments, ideas, family="qwen", correction="", *, previous=None):
     context = _scene_context(data, assignments, [row["index"] for row in ideas])
     by_index = {row["index"]: row for row in context["assignments"]}
-    context["assignments"] = [{**by_index[row["index"]], "idea": row["idea"]} for row in ideas]
+    context["assignments"] = [{**by_index[row["index"]], "idea": row["idea"],
+        **{field: row[field] for field in IDEA_DETAIL_FIELDS if field in row}} for row in ideas]
+    if data["source_mode"] == "guided" and "requested_generation" in (data.get("_confirmed_intent") or {}):
+        guided_count = len([line for line in data["inputs"].splitlines() if line.strip()])
+        for row in context["assignments"]:
+            row["guided_scope"] = f"guided:{(row['index'] - 1) % guided_count + 1}"
     profile = STAGING_PROFILES[data["trigger_type"]]
     context["optional_geometry_values"] = {key: values for key, values in geometry_enum_values(data["trigger_type"]).items()
                                            if key not in profile.required}
@@ -258,6 +264,8 @@ def scene_composer_instruction(data, assignments, ideas, family="qwen", correcti
 single images. Never brainstorm, replace, paraphrase or change an idea: echo its text and index exactly.
 Focus on type-appropriate, action-compatible staging, required subjects/props and relationships,
 camera/viewpoint, framing, environment and lighting only as needed.
+When placement, visibility, camera, framing and context accompany an idea, preserve
+these compact planning choices in the scene; elaborate them rather than choosing a different setup.
 Preserve the concept, fixed identity, constraints and medium.
 Read each fixed idea together with its local assignment input: shorthand in an
 idea never discards the input's defining physical qualifiers. Preserve those
