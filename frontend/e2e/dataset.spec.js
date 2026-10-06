@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import AxeBuilder from "@axe-core/playwright";
+import { confirmDatasetReview, analyzeDatasetRequest } from "./datasetHelpers.js";
 
 async function delayDatasetSettings(page) {
   // Exercise the job-completion/revision-refresh boundary on slower CI runners.
@@ -19,6 +20,7 @@ test("backend completes and persists Dataset after the generating browser closes
   await page.getByLabel("Number of prompts").selectOption("5");
   const accepted = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset") && response.status() === 202);
   await page.getByRole("button", { name: "Generate 5 prompts", exact: true }).click();
+  await confirmDatasetReview(page);
   const job = await (await accepted).json();
   const appUrl = page.url();
   await context.close();
@@ -42,6 +44,7 @@ test("descriptive creativity persists independently and reuses the exact planned
   await page.getByLabel("Dataset idea", { exact: true }).fill("One performer balancing inside an aerial hoop.");
   await page.getByLabel("Number of prompts").selectOption("1");
   await page.getByRole("button", { name: "Plan scenes first", exact: true }).click();
+  await confirmDatasetReview(page);
   await expect(page.getByLabel("Planned scene 1")).toHaveValue(/mock scene/);
   await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
   const before = (await (await request.get("/api/workspace/settings/dataset")).json()).draft;
@@ -58,6 +61,7 @@ test("descriptive creativity persists independently and reuses the exact planned
   await page.getByLabel("Trigger text or terms").fill("ohwx_performer");
   const accepted = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset") && response.status() === 202);
   await page.getByRole("button", { name: "Generate prompts from these scenes", exact: true }).click();
+  await confirmDatasetReview(page);
   const response = await accepted;
   expect(response.request().postDataJSON().input.creativity).toBe("Dice");
   const job = await response.json();
@@ -75,6 +79,7 @@ test("a writer failure retries the prompt using backend scene eligibility, not s
   await page.getByLabel("Trigger text or terms").fill("retry_person");
   await page.getByLabel("Number of prompts").selectOption("1");
   await page.getByRole("button", { name: "Plan scenes first", exact: true }).click();
+  await confirmDatasetReview(page);
   await expect(page.getByLabel("Planned scene 1")).toHaveValue(/mock scene/);
   const saved = await (await request.get("/api/workspace/settings/dataset")).json();
   saved.draft.scene_plan[0] = { ...saved.draft.scene_plan[0], prompt_status: "failed",
@@ -84,6 +89,7 @@ test("a writer failure retries the prompt using backend scene eligibility, not s
   await page.getByRole("button", { name: "Dataset", exact: true }).click();
   const accepted = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset/scene") && response.status() === 202);
   await page.getByRole("button", { name: "Retry failed prompt", exact: true }).click();
+  await confirmDatasetReview(page);
   const response = await accepted;
   expect(response.request().postDataJSON().action).toBe("regenerate_prompt");
   const job = await response.json();
@@ -99,6 +105,7 @@ test("writer-setting acknowledgements retain scene eligibility despite reordered
   await page.getByLabel("Trigger text or terms").fill("clay_person");
   await page.getByLabel("Number of prompts").selectOption("1");
   await page.getByRole("button", { name: "Plan scenes first", exact: true }).click();
+  await confirmDatasetReview(page);
   await expect(page.getByLabel("Planned scene 1")).toHaveValue(/mock scene/);
   await expect(page.getByLabel("Planned scene 1")).toBeEnabled();
   await page.route("**/api/workspace/settings/dataset", async (route) => {
@@ -116,6 +123,7 @@ test("writer-setting acknowledgements retain scene eligibility despite reordered
   await expect(page.getByRole("button", { name: "Generate prompts from these scenes", exact: true })).toBeEnabled();
   const accepted = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset") && response.status() === 202);
   await page.getByRole("button", { name: "Generate prompts from these scenes", exact: true }).click();
+  await confirmDatasetReview(page);
   expect((await accepted).request().postDataJSON().valid_only).toBe(true);
   await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(/clay_person/);
 });
@@ -130,6 +138,7 @@ test("Quality composes in small chunks and geometry opens in an accessible modal
   await page.getByLabel("Number of prompts").selectOption("5");
   const accepted = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset") && response.status() === 202);
   await page.getByRole("button", { name: "Generate 5 prompts", exact: true }).click();
+  await confirmDatasetReview(page);
   const job = await (await accepted).json();
   await expect(page.getByLabel("Dataset prompt 5")).toHaveValue(/ohwx_traveler/);
   const finished = await (await request.get(`/api/jobs/${job.id}`)).json();
@@ -201,7 +210,8 @@ test.beforeEach(async ({ request }) => {
 async function seedEditedDatasetBatch(request) {
   const initial = await (await request.get("/api/workspace/settings/dataset")).json();
   const input = { ...initial.draft, subject: "A craftsperson working with clay.", trigger: "saved_person", amount: 2 };
-  const accepted = await request.post("/api/workspace/dataset/scenes", { data: { input } });
+  const understood = await analyzeDatasetRequest(request, input);
+  const accepted = await request.post("/api/workspace/dataset/scenes", { data: { input, confirmation_token: understood.confirmation_token } });
   expect(accepted.status()).toBe(202);
   const job = await accepted.json();
   await expect.poll(async () => (await (await request.get(`/api/jobs/${job.id}`)).json()).status).toBe("succeeded");
@@ -229,6 +239,7 @@ for (const button of ["Generate 2 prompts", "Generate prompts from these scenes"
         status, json: { error: "Generation admission unavailable." },
       }));
       await page.getByRole("button", { name: button, exact: true }).click();
+      await confirmDatasetReview(page);
       await expect(page.getByText(/Generation admission unavailable/).first()).toBeVisible();
       const after = await (await request.get("/api/workspace/settings/dataset")).json();
       expect(after.draft).toEqual(before);
@@ -253,6 +264,7 @@ for (const button of ["Generate 2 prompts", "Generate prompts from these scenes"
     const accepted = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset") && response.status() === 202);
     try {
       await page.getByRole("button", { name: button, exact: true }).click();
+      await confirmDatasetReview(page);
       const input = (await submission).postDataJSON().input;
       expect(input.results).toEqual(before.results);
       expect(input.quality_report).toEqual(before.quality_report);
@@ -286,6 +298,7 @@ test("Dataset recovers an accepted replacement after losing its admission respon
     await route.abort("failed");
   });
   await page.getByRole("button", { name: "Generate 2 prompts", exact: true }).click();
+  await confirmDatasetReview(page);
   const job = await accepted;
   await expect.poll(async () => (await (await request.get(`/api/jobs/${job.id}`)).json()).status).toBe("succeeded");
   const recovered = await (await request.get("/api/workspace/settings/dataset")).json();
@@ -298,7 +311,7 @@ test("Dataset recovers an accepted replacement after losing its admission respon
   await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(recovered.draft.results[1].prompt);
 });
 
-test("Fast plans ten scenes in three combined chunks", async ({ page, request }) => {
+test("Fast plans ideas separately before ten scenes in three chunks", async ({ page, request }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Dataset", exact: true }).click();
   await page.getByLabel("Dataset idea", { exact: true }).fill("A traveler visiting different exhibits.");
@@ -306,11 +319,12 @@ test("Fast plans ten scenes in three combined chunks", async ({ page, request })
   await page.getByLabel("Number of prompts").selectOption("10");
   const accepted = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset/scenes") && response.status() === 202);
   await page.getByRole("button", { name: "Plan scenes first", exact: true }).click();
+  await confirmDatasetReview(page);
   const job = await (await accepted).json();
   await expect(page.getByLabel("Planned scene 10")).toHaveValue(/mock scene 10/);
   const finished = await (await request.get(`/api/jobs/${job.id}`)).json();
   expect(finished.status).toBe("succeeded");
-  expect(finished.llm_trace.request_number).toBe(3);
+  expect(finished.llm_trace.request_number).toBe(4);
   expect(finished.result.scene_plan.map((row) => row.index)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 });
 
@@ -320,6 +334,7 @@ test("failed scenes show persistent reasons and do not block writing valid scene
   await page.getByLabel("Dataset idea", { exact: true }).fill("A traveler visiting exhibits.");
   await page.getByLabel("Number of prompts").selectOption("3");
   await page.getByRole("button", { name: "Plan scenes first", exact: true }).click();
+  await confirmDatasetReview(page);
   await expect(page.getByLabel("Planned scene 3")).toHaveValue(/mock scene 3/);
   await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
   const settings = await (await request.get("/api/workspace/settings/dataset")).json();
@@ -349,6 +364,7 @@ test("failed scenes show persistent reasons and do not block writing valid scene
   expect((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze()).violations).toEqual([]);
   const accepted = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset") && response.status() === 202);
   await page.getByRole("button", { name: "Generate prompts from 1 valid scene", exact: true }).click();
+  await confirmDatasetReview(page);
   const response = await accepted;
   expect(response.request().postDataJSON().valid_only).toBe(true);
   const job = await response.json();
@@ -365,6 +381,7 @@ test("failed scenes show persistent reasons and do not block writing valid scene
   await expect(page.getByRole("region", { name: "Dataset results", exact: true }).getByLabel("Prompt 1 failure reason")).toContainText(reason);
   const retry = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset/scene") && response.status() === 202);
   await page.getByRole("button", { name: "Retry failed scene", exact: true }).click();
+  await confirmDatasetReview(page);
   const repaired = await retry;
   expect(repaired.request().postDataJSON().action).toBe("repair_scene");
   await expect(page.getByLabel("Planned scene 1")).toHaveValue(/mock scene 1/);
@@ -392,6 +409,7 @@ test("Dataset builds, persists and exports a trigger-ready batch", async ({ page
   await expect(page.getByLabel("Use coverage plan")).toHaveCount(0);
   await expect(page.getByRole("region", { name: "Coverage planner" })).toHaveCount(0);
   await page.getByRole("button", { name: "Generate 3 prompts" }).click();
+  await confirmDatasetReview(page);
   await expect(page.getByLabel("Dataset prompt 3")).toHaveValue(/ohwx_person/);
   await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(/standing portrait/);
   await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/running through/);
@@ -463,6 +481,7 @@ test("Dataset shows background prompt-engine failures in its own view", async ({
   await page.getByLabel("Trigger text or terms").fill("ohwx_person");
   await page.getByLabel("Dataset idea", { exact: true }).fill("A woman wearing a red jacket.");
   await page.getByRole("button", { name: "Generate 12 prompts" }).click();
+  await confirmDatasetReview(page);
 
   await expect(page.getByText(
     "Dataset generation failed. Model process exited unexpectedly.",
@@ -488,7 +507,8 @@ test("plan first, edit and persist ideas, reuse across targets, and invalidate s
   await page.getByLabel("Dataset idea", { exact: true }).fill("A woman doing funny stuff");
   await page.getByLabel("Number of prompts").selectOption("2");
   await page.getByRole("button", { name: "Plan scenes first", exact: true }).click();
-  await expect(page.getByLabel("Planned scene 2")).toHaveValue("A woman doing funny stuff; mock scene 2.");
+  await confirmDatasetReview(page);
+  await expect(page.getByLabel("Planned scene 2")).toHaveValue("Mock activity2; mock scene 2.");
   const scene = "She attempts a pancake flip and the pancake lands on her head, spatula still raised.";
   const idea = "Flipping a pancake onto her head";
   await expect(page.getByLabel("Planned idea 1")).toHaveValue("Mock activity1");
@@ -508,6 +528,7 @@ test("plan first, edit and persist ideas, reuse across targets, and invalidate s
   await page.getByLabel("Dataset target model").selectOption("Qwen Image (original)");
   const accepted = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset") && response.status() === 202);
   await page.getByRole("button", { name: "Generate prompts from these scenes", exact: true }).click();
+  await confirmDatasetReview(page);
   const job = await (await accepted).json();
   await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/ohwx_woman/);
   await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
@@ -520,6 +541,7 @@ test("plan first, edit and persist ideas, reuse across targets, and invalidate s
   expect(finished.llm_trace.request_number).toBe(2); // two writers, no planner calls
   await page.getByLabel("Dataset target model").selectOption("Anima");
   await page.getByRole("button", { name: "Generate prompts from these scenes", exact: true }).click();
+  await confirmDatasetReview(page);
   await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/ohwx_woman/);
   await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
   const second = (await (await request.get("/api/workspace/settings/dataset")).json()).draft;
@@ -570,6 +592,7 @@ test("reset recent ideas does not invalidate the current plan or prompts", async
   await page.getByLabel("Trigger text or terms").fill("performer_token");
   await page.getByLabel("Number of prompts").selectOption("2");
   await page.getByRole("button", { name: "Generate 2 prompts", exact: true }).click();
+  await confirmDatasetReview(page);
   await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/performer_token/);
   await expect(page.getByRole("button", { name: "Reset recent ideas", exact: true })).toBeEnabled();
   const idea = await page.getByLabel("Planned idea 1").inputValue();
@@ -590,6 +613,7 @@ test("manual scenes regenerate locally and clearing results releases only job ch
   await page.getByLabel("Trigger text or terms").fill("ohwx_traveler");
   await page.getByLabel("Number of prompts").selectOption("2");
   await page.getByRole("button", { name: "Generate 2 prompts", exact: true }).click();
+  await confirmDatasetReview(page);
   await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/ohwx_traveler/);
   await expect(page.getByLabel("Planned scene 1")).toBeEnabled();
   const manual = "She reads a book on a park bench.";
@@ -597,6 +621,7 @@ test("manual scenes regenerate locally and clearing results releases only job ch
   const plan = page.getByRole("region", { name: "Scene Planner ideas", exact: true });
   const started = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset/scene") && response.request().method() === "POST");
   await plan.getByRole("button", { name: "Regenerate prompt", exact: true }).first().click();
+  await confirmDatasetReview(page);
   const response = await started;
   expect(response.ok(), await response.text()).toBe(true);
   const sceneJob = await response.json();
@@ -627,6 +652,7 @@ test("Quality planning and per-scene controls preserve the rest of the batch", a
   await page.getByLabel("Trigger text or terms").fill("ohwx_woman");
   const accepted = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset") && response.status() === 202);
   await page.getByRole("button", { name: "Generate 2 prompts", exact: true }).click();
+  await confirmDatasetReview(page);
   const job = await (await accepted).json();
   await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/ohwx_woman/);
   const finished = await (await request.get(`/api/jobs/${job.id}`)).json();
@@ -636,6 +662,7 @@ test("Quality planning and per-scene controls preserve the rest of the batch", a
   for (const [label, calls] of [["Regenerate prompt", 1], ["Repair scene", 2], ["Regenerate idea", 3]]) {
     const started = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset/scene") && response.status() === 202);
     await page.getByRole("button", { name: label, exact: true }).first().click();
+    await confirmDatasetReview(page);
     const sceneJob = await (await started).json();
     await expect(page.getByRole("button", { name: label, exact: true }).first()).toBeEnabled();
     await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
@@ -660,6 +687,7 @@ test("Quality planning and per-scene controls preserve the rest of the batch", a
   await expect(page.getByRole("button", { name: "Repair scene", exact: true }).first()).toBeEnabled();
   const repaired = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset/scene") && response.request().method() === "POST");
   await page.getByRole("button", { name: "Repair scene", exact: true }).first().click();
+  await confirmDatasetReview(page);
   const repairResponse = await repaired;
   expect(repairResponse.ok(), await repairResponse.text()).toBe(true);
   const repairJob = await repairResponse.json();

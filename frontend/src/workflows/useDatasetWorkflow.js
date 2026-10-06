@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api.js";
 import { datasetRetryStage, invalidateDatasetPrompts, isDatasetSceneCurrent } from "./datasetState.js";
+import { useDatasetConfirmation } from "./useDatasetConfirmation.js";
 
 /** Dataset requests and job projections; editable-draft revisions stay in useWorkflowSettings. */
 export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, director,
@@ -14,9 +15,11 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, d
   const submission = useRef(false);
   const synced = useRef("");
   const qualityAttempt = useRef(0);
-  const datasetJob = ["dataset", "dataset_scenes", "dataset_review"].includes(job?.kind);
+  const confirmationFlow = useDatasetConfirmation({ draft, job, busy, onGenerate,
+    onConfirm: admitConfirmed, setError });
+  const datasetJob = ["dataset", "dataset_scenes", "dataset_review", "dataset_understanding"].includes(job?.kind);
   const workflowActive = datasetJob && active;
-  const disabled = busy || starting || preferences.working;
+  const disabled = busy || starting || preferences.working || !!confirmationFlow.confirmation;
   const guidedLines = draft?.inputs.split("\n").filter((line) => line.trim()).length || 0;
   const customReady = draft?.trigger_type !== "Custom" || draft.custom_type.trim();
   const styleReady = draft?.visual_style !== "Custom" || draft.custom_style.trim();
@@ -38,7 +41,7 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, d
 
   useEffect(() => {
     if (!datasetJob || !["failed", "interrupted"].includes(job.status)) return;
-    setError(`${job.kind === "dataset_review" ? "Dataset review" : job.kind === "dataset_scenes" ? "Scene planning" : "Dataset generation"} failed. ${job.error || "The prompt engine did not return a usable result."}`);
+    setError(`${job.kind === "dataset_understanding" ? "Request analysis" : job.kind === "dataset_review" ? "Dataset review" : job.kind === "dataset_scenes" ? "Scene planning" : "Dataset generation"} failed. ${job.error || "The prompt engine did not return a usable result."}`);
   }, [datasetJob, job?.id, job?.revision, job?.status, job?.kind, job?.error]);
 
   useEffect(() => {
@@ -61,7 +64,7 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, d
     const attempt = ++qualityAttempt.current;
     let disposed = false;
     setQualityBusy(false);
-    if (!draft?.results.length || workflowActive) return;
+    if (!draft?.results.length || workflowActive || confirmationFlow.confirmation) return;
     if (draft.quality_report?.signature && draft.quality_report.idea_quality) return;
     const timer = setTimeout(async () => {
       setQualityBusy(true);
@@ -76,7 +79,7 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, d
       }
     }, 500);
     return () => { disposed = true; clearTimeout(timer); };
-  }, [draft, workflowActive, update]);
+  }, [draft, workflowActive, confirmationFlow.confirmation, update]);
 
   function updateSceneSettings(patch) {
     update({ ...patch, scene_plan: [], scene_plan_signature: "", quality_report: {}, results: [] });
@@ -86,29 +89,28 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, d
     update(invalidateDatasetPrompts(draft, patch));
   }
 
-  async function sceneAction(index, action) {
+  function sceneAction(index, action) {
     if (disabled || staleScenePlan || !canWrite || submission.current) return;
+    confirmationFlow.requestConfirmation("dataset/scene", { index, action });
+  }
+
+  async function admitConfirmed(review) {
+    if (busy || preferences.working || preferences.conflict || noEngine || submission.current) return false;
     submission.current = true;
     setStarting(true);
     setError("");
     try {
       await preferences.flush();
-      await onGenerate("dataset/scene", { input: draft, index, action, workflow_revision: preferences.revision() });
-    } catch (err) { setError(err.message); }
+      return await onGenerate(review.operation, { input: { ...review.input, results: draft.results,
+        result_job_id: draft.result_job_id, quality_report: draft.quality_report }, ...review.options,
+        confirmation_token: review.confirmation_token, workflow_revision: preferences.revision() });
+    }
     finally { submission.current = false; setStarting(false); }
   }
 
-  async function generate(scenesOnly = false, validOnly = false) {
+  function generate(scenesOnly = false, validOnly = false) {
     if (!(scenesOnly ? canPlanScenes : validOnly ? canWrite && scenePlanReady : canGenerate) || submission.current) return;
-    submission.current = true;
-    setStarting(true);
-    setError("");
-    try {
-      await preferences.flush();
-      await onGenerate(scenesOnly ? "dataset/scenes" : "dataset", { input: draft,
-        workflow_revision: preferences.revision(), ...(validOnly ? { valid_only: true } : {}) });
-    } catch (err) { setError(err.message); }
-    finally { submission.current = false; setStarting(false); }
+    confirmationFlow.requestConfirmation(scenesOnly ? "dataset/scenes" : "dataset", validOnly ? { valid_only: true } : {});
   }
 
   async function deepReview() {
@@ -124,6 +126,7 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, d
   }
 
   function editResult(index, prompt) {
+    if (disabled) return;
     update({ results: draft.results.map((item) => item.index === index ? { ...item, prompt } : item), quality_report: {} });
   }
 
@@ -150,6 +153,7 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, d
   }
 
   return { starting, qualityBusy, error, resettingIdeas, noveltyNotice, workflowActive, disabled,
+    ...confirmationFlow,
     guidedLines, canPlanScenes, staleScenePlan, sceneUsable, validSceneCount, retryStage,
     scenePlanReady, canWrite, canGenerate, updateSceneSettings, updateWriterSettings,
     sceneAction, generate, deepReview, editResult, releaseCheckpoints, clearResults, resetRecentIdeas };

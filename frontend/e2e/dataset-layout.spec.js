@@ -1,5 +1,6 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
+import { confirmDatasetReview } from "./datasetHelpers.js";
 
 test.beforeEach(async ({ request }) => {
   const record = await (await request.get("/api/workspace/settings/dataset")).json();
@@ -17,6 +18,7 @@ for (const width of [1920, 1440, 1100, 768, 390]) {
     await page.getByLabel("Trigger text or terms").fill("traveler_token");
     await page.getByLabel("Number of prompts").selectOption("2");
     await page.getByRole("button", { name: "Generate 2 prompts", exact: true }).click();
+    await confirmDatasetReview(page);
     await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/traveler_token/);
     await page.evaluate(() => document.fonts.ready);
     const config = page.locator(".dataset-config-grid");
@@ -61,6 +63,7 @@ test("Dataset respects reduced-motion for cards, loading and disclosures", async
   await page.getByLabel("Dataset idea", { exact: true }).fill("A traveler exploring exhibits.");
   await page.getByLabel("Number of prompts").selectOption("2");
   await page.getByRole("button", { name: "Plan scenes first", exact: true }).click();
+  await confirmDatasetReview(page);
   await expect(page.getByLabel("Planned scene 2")).toHaveValue(/mock scene/);
   await expect(page.locator(".dataset-card").first()).toHaveCSS("animation-name", "none");
   await expect(page.locator(".dataset-details summary").first()).toHaveCSS("transition-duration", "0s");

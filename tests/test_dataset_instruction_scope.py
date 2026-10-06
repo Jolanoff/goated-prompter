@@ -40,10 +40,10 @@ class DatasetInstructionScopeTests(unittest.TestCase):
             self.assertNotIn(unrelated, instruction.system_message)
         self.assertEqual(instruction.system_message.count("SCENE-LOCKED VISUAL ENRICHMENT"), 1)
 
-    def test_common_instruction_density_is_reduced_without_changing_stage_budgets(self):
+    def test_common_instruction_density_with_expanded_idea_budget(self):
         fast = scene_planner_instruction(self.data, self.assignments)
         composer = scene_composer_instruction(self.data, self.assignments, [{"index": 1, "idea": "A fixed event"}])
         writer = dataset_instruction(GoatedPrompterRequest(idea="A performer"), self.data, 1)
         for instruction, ceiling in ((fast, 2300), (composer, 1800), (writer, 1600)):
             self.assertLess(len(instruction.system_message.split()), ceiling, instruction.diagnostic_stage)
-        self.assertEqual((fast.max_tokens, composer.max_tokens, writer.max_tokens), (1024, 1280, 768))
+        self.assertEqual((fast.max_tokens, composer.max_tokens, writer.max_tokens), (1536, 1280, 768))

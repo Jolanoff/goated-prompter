@@ -20,6 +20,17 @@ function canonicalValue(value) {
   return value;
 }
 
+export function datasetRequestSignature(draft) {
+  return JSON.stringify(canonicalValue(Object.fromEntries(Object.entries(draft || {})
+    .filter(([key]) => !["results", "result_job_id", "quality_report"].includes(key)))));
+}
+
+export function reviseDatasetRequest(input, additions) {
+  if (!additions.trim()) return input;
+  return { ...input, constraints: [input.constraints.trim(), additions.trim()].filter(Boolean).join("\n"),
+    scene_plan: [], scene_plan_signature: "" };
+}
+
 export function datasetSceneSignature(row) {
   if (!row) return null;
   // Only the scene dependency boundary, not writer status or failure bookkeeping.
