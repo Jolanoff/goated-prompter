@@ -102,6 +102,50 @@ test("reference chips insert at the cursor, append, preserve numbering and enfor
   await expect(page.getByRole("button", { name: "Generate MiniMax prompt", exact: true })).toBeDisabled();
 });
 
+test("delayed reference cursor restoration cannot steal focus from another control", async ({ page }) => {
+  await open(page);
+  const text = page.getByLabel("Describe your video");
+  await text.fill("Use here.");
+  await text.evaluate((node) => { node.focus(); node.setSelectionRange(4, 8); });
+  await page.evaluate(() => {
+    const original = window.requestAnimationFrame;
+    window.requestAnimationFrame = (callback) => {
+      window.requestAnimationFrame = original;
+      window.delayedInsertionFrame = callback;
+      return 0;
+    };
+  });
+  await page.getByRole("button", { name: "+ Image", exact: true }).click();
+  await expect(text).toHaveValue("Use <image1>.");
+  const duration = page.getByLabel("Clip Length", { exact: true });
+  await duration.focus();
+  await page.evaluate(() => window.delayedInsertionFrame(performance.now()));
+  const focusStayedOnDuration = await duration.evaluate((node) => document.activeElement === node);
+  await page.getByRole("button", { name: "+ Video", exact: true }).click();
+  await expect(text).toHaveValue("Use <image1>. <video1>");
+  expect(focusStayedOnDuration).toBe(true);
+});
+
+test("delayed shot cursor restoration respects a newer focus choice", async ({ page }) => {
+  await open(page);
+  const text = page.getByLabel("Describe your video");
+  await text.fill("A rooftop scene.");
+  await page.evaluate(() => {
+    const original = window.requestAnimationFrame;
+    window.requestAnimationFrame = (callback) => {
+      window.requestAnimationFrame = original;
+      window.delayedInsertionFrame = callback;
+      return 0;
+    };
+  });
+  await page.getByRole("button", { name: "+ Shot", exact: true }).click();
+  await expect(text).toHaveValue("A rooftop scene.\n<shot1> ");
+  const duration = page.getByLabel("Clip Length", { exact: true });
+  await duration.focus();
+  await page.evaluate(() => window.delayedInsertionFrame(performance.now()));
+  await expect(duration).toBeFocused();
+});
+
 test("optional shot shortcuts insert in the prompt without registering media", async ({ page }) => {
   await open(page);
   const text = page.getByLabel("Describe your video");

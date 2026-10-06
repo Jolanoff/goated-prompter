@@ -43,6 +43,14 @@ export default function MiniMaxTab({ visible, job, busy, active, noEngine, engin
   const missingReferences = parsed.references.filter((token) => !draft?.references.includes(token));
   const canGenerate = draft && !disabled && !noEngine && !preferences.conflict && director && draft.user_request.trim() && !parsed.invalid.length && !missingReferences.length && !parsedShots.invalid.length && parsedShots.ordered;
 
+  function restoreCursor(input, cursor) {
+    const focusOwner = document.activeElement;
+    requestAnimationFrame(() => {
+      if (!input.isConnected || document.activeElement !== focusOwner) return;
+      input.focus();
+      input.setSelectionRange(cursor, cursor);
+    });
+  }
   function insert(token, references = draft.references) {
     const input = textarea.current;
     const focused = document.activeElement === input;
@@ -50,7 +58,7 @@ export default function MiniMaxTab({ visible, job, busy, active, noEngine, engin
       focused ? input.selectionStart : draft.user_request.length,
       focused ? input.selectionEnd : draft.user_request.length);
     update({ user_request: next.text, references });
-    requestAnimationFrame(() => { input.focus(); input.setSelectionRange(next.cursor, next.cursor); });
+    restoreCursor(input, next.cursor);
   }
   function preserveCursor(event) {
     if (document.activeElement === textarea.current) event.preventDefault();
@@ -63,7 +71,7 @@ export default function MiniMaxTab({ visible, job, busy, active, noEngine, engin
       focused ? input.selectionStart : draft.user_request.length,
       focused ? input.selectionEnd : draft.user_request.length);
     update({ user_request: next.text });
-    requestAnimationFrame(() => { input.focus(); input.setSelectionRange(next.cursor, next.cursor); });
+    restoreCursor(input, next.cursor);
   }
   function editRequest(value) {
     const typed = parseReferences(value).references;
