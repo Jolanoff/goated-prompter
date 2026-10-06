@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { AlignLeft, Box, ChevronDown, Circle, CircleAlert, CircleCheck, CircleHelp, Copy, Cpu, Database, Download, FileJson, Layers3, LoaderCircle, Palette, RefreshCw, ShieldCheck, SlidersHorizontal, Sparkles, Tag, Trash2, WandSparkles, Wrench, X, Zap } from "lucide-react";
+import { useEffect, useState } from "react";
+import { AlignLeft, ChevronDown, Circle, CircleAlert, CircleCheck, CircleHelp, Copy, Cpu, Database, Download, FileJson, Layers3, LoaderCircle, Palette, RefreshCw, SlidersHorizontal, Sparkles, Tag, Trash2, WandSparkles, Wrench } from "lucide-react";
 import { ui } from "../ui.js";
 import { orderDisplayPresets, presetDisplayLabel } from "../presetPresentation.js";
 import { TargetSelect } from "./WorkflowControls.jsx";
@@ -8,23 +8,18 @@ import WorkflowSettingsStatus from "./WorkflowSettingsStatus.jsx";
 import { datasetCopyText, datasetJsonl } from "./datasetExport.js";
 import { editDatasetPlan } from "./datasetState.js";
 import { useDatasetWorkflow } from "./useDatasetWorkflow.js";
-import { geometryRows } from "./datasetGeometry.js";
 import DatasetConfirmationModal from "./DatasetConfirmationModal.jsx";
+import DatasetIdeaDetails, { DatasetSceneCheck } from "./DatasetIdeaDetails.jsx";
 
 const triggerTypes = ["Character", "Multiple characters", "Animal", "Object / product", "Visual style",
   "Location / environment", "Brand / logo", "Typography / text", "Concept", "Custom"];
 const visualStyles = ["Photorealistic", "Cinematic photography", "Anime / manga", "Illustration", "3D render", "Graphic design", "Keep described style", "Mixed styles", "Custom"];
 const varieties = ["Focused", "Balanced", "Wide"];
-const metricLabels = {
-  idea_uniqueness: "Idea diversity", scene_uniqueness: "Scene diversity",
-  uniqueness: "Prompt diversity", trigger: "Trigger", format: "Format",
-};
-const metricOrder = Object.keys(metricLabels);
 
 function StatusChip({ label, status }) {
-  const state = ["valid", "generated", "pass", "strong"].includes(status) ? "success"
-    : ["failed", "error"].includes(status) ? "failed"
-    : ["warning", "geometry_warning", "duplicate_warning", "review", "issues"].includes(status) ? "warning" : "pending";
+  const state = status === "valid" ? "success"
+    : status === "failed" ? "failed"
+    : ["repair_required", "duplicate_warning"].includes(status) ? "warning" : "pending";
   const Icon = state === "success" ? CircleCheck : state === "pending" ? Circle : CircleAlert;
   return <span className="dataset-status-chip" data-state={state} aria-label={`${label}: ${state}`}>
     <Icon size={13} aria-hidden="true" />{label}
@@ -36,41 +31,6 @@ function HelpDetails({ children }) {
     <summary><CircleHelp size={14} aria-hidden="true" />Learn more<ChevronDown size={14} aria-hidden="true" /></summary>
     <p className="mt-2 text-xs leading-relaxed text-muted">{children}</p>
   </details>;
-}
-
-function GeometryButton({ geometry, index, onOpen }) {
-  if (!geometryRows(geometry).length) return null;
-  return <button className={`${ui.iconButton} dataset-geometry-button`} type="button"
-    title={`View geometry ${index}`} aria-label={`View geometry ${index}`} aria-haspopup="dialog"
-    onClick={() => onOpen({ geometry, index })}><Box size={18} aria-hidden="true" /></button>;
-}
-
-function GeometryModal({ item, onClose }) {
-  const dialog = useRef(null);
-  useEffect(() => {
-    if (item && !dialog.current?.open) dialog.current?.showModal();
-    else if (!item && dialog.current?.open) dialog.current.close();
-  }, [item]);
-  const rows = geometryRows(item?.geometry);
-  return <dialog ref={dialog} className="app-dialog dataset-geometry-dialog"
-    aria-labelledby="dataset-geometry-title" onCancel={(event) => { event.preventDefault(); onClose(); }} onClose={onClose}
-    onKeyDown={(event) => {
-      if (event.key !== "Tab") return;
-      const controls = event.currentTarget.querySelectorAll('button, [tabindex="0"]');
-      const first = controls[0], last = controls[controls.length - 1];
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-    }}>
-    <header className="mb-5 flex items-center gap-3 border-b border-line pb-4">
-      <div className={ui.panelIcon}><Box size={21} aria-hidden="true" /></div>
-      <h2 id="dataset-geometry-title" className="min-w-0 flex-1 font-display text-lg font-bold">Geometry {item?.index}</h2>
-      <button className={`${ui.iconButton} dataset-geometry-button`} type="button" aria-label="Close geometry" title="Close geometry" onClick={onClose} autoFocus><X size={18} aria-hidden="true" /></button>
-    </header>
-    <dl className="dataset-geometry-fields gap-4 text-xs" tabIndex={0} aria-label={`Geometry ${item?.index} fields`}>{rows.map(({ label, value }) => <div key={label} className="min-w-0 content-start grid gap-1 rounded-lg border border-line p-3">
-      <dt className="capitalize font-semibold">{label}</dt>
-      <dd className="wrap-anywhere leading-relaxed text-muted">{value}</dd>
-    </div>)}</dl>
-  </dialog>;
 }
 
 function FailureReason({ item }) {
@@ -101,18 +61,13 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
   const { draft, update } = preferences;
   const availablePresets = orderDisplayPresets(presets || []);
   const director = availablePresets.find((item) => item.id === draft?.director_preset);
-  const { starting, qualityBusy, error, resettingIdeas, noveltyNotice, workflowActive, disabled,
+  const { starting, error, resettingIdeas, noveltyNotice, workflowActive, disabled,
     guidedLines, canPlanScenes, staleScenePlan, sceneUsable, validSceneCount, retryStage,
     scenePlanReady, canWrite, canGenerate, updateSceneSettings, updateWriterSettings,
-    sceneAction, generate, deepReview, editResult, releaseCheckpoints, clearResults,
-     resetRecentIdeas, confirmation, reviseConfirmation, cancelConfirmation, confirmRequest } = useDatasetWorkflow({ preferences, job, busy, active, noEngine,
+    sceneAction, generate, editResult, releaseCheckpoints, clearResults,
+    resetRecentIdeas, confirmation, reviseConfirmation, cancelConfirmation, confirmRequest } = useDatasetWorkflow({ preferences, job, busy, active, noEngine,
       director, onGenerate, onReleaseJobs });
-  const [geometryItem, setGeometryItem] = useState(null);
   const [clock, setClock] = useState(Date.now());
-
-  useEffect(() => {
-    if (!visible) setGeometryItem(null);
-  }, [visible]);
 
   const stageSeconds = workflowActive
     ? Math.max(0, Math.floor(clock / 1000 - (job.progress_at || job.created_at || clock / 1000)))
@@ -138,10 +93,6 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
 
   const allText = draft?.results.map((item) => item.prompt).join("\n\n") || "";
   const jsonl = datasetJsonl(draft);
-  const quality = draft?.quality_report;
-  const qualityMetrics = Object.entries(quality?.metrics || {}).sort(([left], [right]) =>
-    (metricOrder.includes(left) ? metricOrder.indexOf(left) : 99) - (metricOrder.includes(right) ? metricOrder.indexOf(right) : 99));
-  const promptQuality = new Map((quality?.prompts || []).map((item) => [item.index, item]));
   const failedItems = draft?.scene_plan?.filter((item) => item.scene_status === "failed" || item.prompt_status === "failed") || [];
   const displayedResults = [...(draft?.results || []), ...failedItems.filter((item) => !draft.results.some((result) => result.index === item.index))
     .map((item) => ({ ...item, failed: true, prompt: "" }))].sort((left, right) => left.index - right.index);
@@ -214,14 +165,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
               <small className="text-muted">Novelty hints stay in RAM, expire automatically, and never override fixed ideas.</small>
             </div>
             {noveltyNotice && <p className={ui.subtleNote} role="status">{noveltyNotice}</p>}
-            <label className={ui.field}><span>{draft.planning_mode === "Quality" ? <ShieldCheck size={14} aria-hidden="true" /> : <Zap size={14} aria-hidden="true" />}Planning mode</span>
-              <select className={ui.select} aria-label="Dataset planning mode" value={draft.planning_mode || "Fast"}
-                onChange={(event) => updateSceneSettings({ planning_mode: event.target.value })}>
-                <option>Fast</option><option>Quality</option>
-              </select>
-               <small className={ui.directorDescription}>Both modes confirm the request, then build ideas and scenes separately. Quality adds stronger prompt-fidelity checks.</small>
-            </label>
-            <HelpDetails>Plan scenes first creates a fresh idea run with recent-idea novelty hints. Generate reuses your current valid plan, including manual edits. Failed items use local repair; valid siblings remain unchanged. You can retry skipped items individually.</HelpDetails>
+            <HelpDetails>Plan scenes first creates fresh ideas with recent-idea novelty hints. Generate reuses checked scenes. Scene edits need a new check before enhancement; Repair scene requests one targeted attempt, leaving valid siblings unchanged.</HelpDetails>
              <label className={ui.field}><span><Tag size={14} aria-hidden="true" />Trigger text or terms</span>
               <textarea className={ui.notesInput} style={{ minHeight: 82 }} aria-label="Trigger text or terms" maxLength={200} value={draft.trigger}
                 onChange={(event) => updateWriterSettings({ trigger: event.target.value })} placeholder="e.g. old lady with dark hair · or woman, cake" />
@@ -330,29 +274,31 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
       {!!draft.scene_plan?.length && <section className={`${ui.panel} mt-6`} aria-label="Scene Planner ideas">
         <header className={ui.panelHeader}>
           <div className={ui.panelIcon}><Layers3 size={21} /></div>
-          <div className={ui.panelHeading}><h2>Scene planner</h2>
+           <div className={ui.panelHeading}><h2>Ideas and scenes</h2>
              <p>Edit what happens and how it fits one image.</p></div>
         </header>
-        <HelpDetails>Idea edits invalidate only that scene and prompt. Scene edits invalidate only that prompt. Output settings reuse the plan and invalidate prompts.</HelpDetails>
+        <HelpDetails>Idea edits discard stale descriptions and invalidate that scene, check and prompt. Scene edits invalidate that check and prompt. Output settings reuse checked scenes and invalidate prompts.</HelpDetails>
         {staleScenePlan && <p className={ui.warningNote}>This plan no longer matches the Dataset settings. Plan scenes again or use the main Generate action to replan automatically.</p>}
         <div className="dataset-card-grid mt-4">
           {draft.scene_plan.map((item) => <div key={item.index} className="dataset-card rounded-lg border border-line">
             <div className="dataset-card-header"><strong className="dataset-card-number">#{String(item.index).padStart(2, "0")}</strong>
-              <div className="dataset-status-group"><StatusChip label="Idea" status={item.idea_status || "valid"} /><StatusChip label="Scene" status={item.scene_status || "valid"} /><StatusChip label="Prompt" status={item.prompt_status} /><GeometryButton geometry={item.geometry} index={item.index} onOpen={setGeometryItem} /></div>
+              <div className="dataset-status-group"><StatusChip label="Idea" status={item.idea_status || "valid"} /><StatusChip label="Scene" status={item.scene_status || "valid"} /><StatusChip label="Prompt" status={item.prompt_status} /></div>
             </div>
             <FailureReason item={item} />
             {item.input && <small className="text-muted">Original idea: {item.input}</small>}
             <label className={ui.field}><span>Idea {item.index}</span>
               <textarea className={ui.notesInput} aria-label={`Planned idea ${item.index}`} value={item.idea || ""}
-                placeholder="Legacy plan: replan to generate an idea" disabled={disabled}
+                placeholder="Describe this image's idea" disabled={disabled}
                 maxLength={preferences.record?.idea_limits?.characters}
                 onChange={(event) => update(editDatasetPlan(draft, item.index, "idea", event.target.value))} />
             </label>
+            <DatasetIdeaDetails item={item} />
             <label className={ui.field}><span>Scene {item.index}</span>
               <textarea className={ui.notesInput} aria-label={`Planned scene ${item.index}`} value={item.scene}
                 maxLength={preferences.record?.scene_limits?.characters} disabled={disabled}
                 onChange={(event) => update(editDatasetPlan(draft, item.index, "scene", event.target.value))} />
             </label>
+            <DatasetSceneCheck item={item} />
             <div className="flex flex-wrap gap-2">
               <button className={ui.button} title="Regenerate idea" aria-label="Regenerate idea" disabled={!canWrite || staleScenePlan}
                 onClick={() => sceneAction(item.index, "regenerate_idea")}><RefreshCw size={14} aria-hidden="true" />Idea</button>
@@ -372,47 +318,6 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
         </div>
       </section>}
 
-      {!!draft.results.length && <section className={`${ui.panel} mt-6`} aria-label="Dataset quality report">
-        <header className={ui.panelHeader}>
-          <div className={ui.panelIcon}>{quality?.status === "strong" ? <ShieldCheck size={21} /> : <CircleAlert size={21} />}</div>
-          <div className={ui.panelHeading}><h2>Quality report</h2>
-             <p>Check diversity, trigger wording and format.</p></div>
-          <span className={ui.resultStatus} data-working={qualityBusy || active && job?.kind === "dataset_review"}><span className={ui.statusDot} />
-            {active && job?.kind === "dataset_review" ? "Reviewing" : qualityBusy ? "Checking" : quality?.status === "strong" ? "Strong" : quality?.status === "review" ? "Needs review" : quality?.status === "issues" ? "Issues found" : "Pending"}
-          </span>
-        </header>
-         <div className={`${ui.workflowStatus} mb-4`}>
-           <span>{quality?.deep_review?.completed ? `Deep review complete · ${quality.deep_review.errors} errors · ${quality.deep_review.warnings} warnings` : "Optional model review of fidelity and consistency."}</span>
-          <button className={ui.button} disabled={disabled || noEngine || !draft.results.length} onClick={deepReview}>
-            <ShieldCheck size={14} />{active && job?.kind === "dataset_review" ? "Deep reviewing…" : quality?.deep_review?.completed ? "Run deep review again" : "Deep consistency review"}
-          </button>
-        </div>
-        {quality?.metrics ? <>
-          <div className="dataset-metrics">
-             <div className="rounded-lg border border-line bg-selected p-4 mobile:col-span-2"><span className="text-xs text-muted">Overall</span><strong className="mt-1 block font-display text-2xl text-accent">{quality.score}</strong></div>
-             {qualityMetrics.map(([key, value]) => <div key={key} className="rounded-lg border border-line bg-canvas p-4">
-               <span className="text-xs text-muted">{metricLabels[key] || key.replaceAll("_", " ")}</span><strong className="mt-1 block font-display text-xl">{value}%</strong>
-            </div>)}
-          </div>
-          {!!quality.batch_issues?.length && <div className="mt-4 grid gap-2">
-            {quality.batch_issues.map((issue, index) => <p key={`${issue.code}-${index}`} className={issue.severity === "error" ? ui.warningNote : ui.subtleNote}>
-              <strong className="mr-1">{issue.severity === "error" ? "Issue:" : "Review:"}</strong>{issue.message}
-            </p>)}
-          </div>}
-           <details className="dataset-details mt-4 rounded-lg border border-line bg-canvas p-3 text-xs" open={(quality.prompts || []).some((item) => item.status !== "pass")}>
-            <summary><ShieldCheck size={14} aria-hidden="true" /><span>Prompt checks · {(quality.prompts || []).filter((item) => item.status === "pass").length}/{quality.prompts?.length || 0} passed</span><ChevronDown size={14} aria-hidden="true" /></summary>
-            <div className="mt-3 grid gap-2">{(quality.prompts || []).map((item) => <div key={item.index} className="flex items-start gap-2 border-t border-line pt-2 first:border-0 first:pt-0">
-               {item.status === "pass" ? <CircleCheck size={15} className="text-success" /> : <CircleAlert size={15} className={item.status === "error" ? "text-danger" : "text-warning"} />}
-              <div><strong>Prompt {item.index}</strong>
-                {item.issues.length ? <ul className="mt-1 grid gap-1 text-[11px] leading-relaxed text-muted">{item.issues.map((issue, index) => <li key={`${issue.code}-${index}`}>{issue.message}</li>)}</ul>
-                  : <p className="mt-1 text-[11px] text-muted">All automatic checks passed.</p>}
-              </div>
-            </div>)}</div>
-          </details>
-          <HelpDetails>Automatic checks are structural and lexical hints, not a guarantee of training quality. Deep Review handles nuanced semantic consistency.</HelpDetails>
-        </> : <p className="text-xs text-muted">{qualityBusy ? "Analyzing the current batch…" : "The report will appear after generation."}</p>}
-      </section>}
-
       <section className="mt-6" aria-label="Dataset results">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div><h3 className="font-display text-lg font-bold">Generated dataset</h3>
@@ -428,13 +333,12 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
            <Database size={34} /><h3>Your scenes start with an idea</h3><p>Describe your concept above. Plan scenes to review them first, or generate the full batch.</p>
         </div> : <div className="dataset-card-grid">
           {displayedResults.map((item) => {
-            const check = promptQuality.get(item.index);
             return <article className="dataset-card dataset-result-card panel" key={item.index}>
             <div className="dataset-card-header">
                <div><span className="text-sm font-semibold text-accent">Prompt {item.index}</span>
                 {item.input && <p className="mt-1 max-w-[48ch] truncate text-[10px] text-muted" title={item.input}>{item.input}</p>}
                 </div>
-               <div className="dataset-status-group">{item.failed ? <StatusChip label="Failed · skipped" status="failed" /> : <StatusChip label={check?.status === "pass" ? "Passed" : check ? `${check.issues.length} issues` : "Pending checks"} status={check?.status} />}<GeometryButton geometry={item.geometry} index={item.index} onOpen={setGeometryItem} /></div>
+               <div className="dataset-status-group">{item.failed ? <StatusChip label="Failed · skipped" status="failed" /> : <StatusChip label="Generated" status="valid" />}</div>
              </div>
               {item.idea ? <div className="text-xs">
                 <p className="whitespace-pre-wrap leading-relaxed text-muted">{item.idea}</p>
@@ -452,15 +356,11 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                value={item.prompt} maxLength={100000} disabled={disabled}
               onChange={(event) => editResult(item.index, event.target.value)} />
               <div><button className={ui.button} onClick={() => onCopy(item.prompt)}><Copy size={14} aria-hidden="true" />Copy</button></div>
-              {!!check?.issues.length && <details className="dataset-details rounded-lg border border-line p-3 text-xs" open>
-                <summary><CircleAlert size={14} aria-hidden="true" />Diagnostics<ChevronDown size={14} aria-hidden="true" /></summary>
-                <ul className="mt-3 grid gap-2 text-muted">{check.issues.map((issue, index) => <li key={`${issue.code}-${index}`}>{issue.message}</li>)}</ul>
-              </details>}</>}
+              </>}
           </article>})}
         </div>}
       </section>
     </>}
-    <GeometryModal item={geometryItem} onClose={() => setGeometryItem(null)} />
     {confirmation && <DatasetConfirmationModal review={confirmation} busy={busy} onRevise={reviseConfirmation}
       onConfirm={confirmRequest} onCancel={cancelConfirmation} />}
   </div>;

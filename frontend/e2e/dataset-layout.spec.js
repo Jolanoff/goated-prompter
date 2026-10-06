@@ -34,7 +34,13 @@ for (const width of [1920, 1440, 1100, 768, 390]) {
     await expect(results.locator("details").filter({ has: page.getByText("Scene 1", { exact: true }) })).not.toHaveAttribute("open");
     await expect(page.locator("details").filter({ has: page.getByText("Training trigger & controls", { exact: true }) })).not.toHaveAttribute("open");
     await expect(page.getByRole("button", { name: "Repair scene", exact: true }).first()).toHaveAttribute("title", "Repair scene");
-    await expect(results.getByRole("button", { name: "View geometry 1", exact: true })).toBeVisible();
+    await expect(results.getByRole("button", { name: "View geometry 1", exact: true })).toHaveCount(0);
+    await expect(page.getByLabel("Scene 1 self-check", { exact: true })).toContainText("PASS");
+    const details = page.getByLabel("Idea 1 planning details", { exact: true });
+    for (const field of ["Placement", "Visibility", "Camera", "Framing", "Context"]) {
+      await expect(details.getByText(field, { exact: true })).toBeVisible();
+    }
+    expect(await details.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
     if (width === 390) {
       for (const button of await results.getByRole("button").all()) {
         expect((await button.boundingBox()).height).toBeGreaterThanOrEqual(44);
@@ -45,14 +51,6 @@ for (const width of [1920, 1440, 1100, 768, 390]) {
       .map((animation) => animation.finished.catch(() => {}))));
     expect((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze()).violations).toEqual([]);
     await page.screenshot({ path: testInfo.outputPath(`dataset-${width}.png`), fullPage: true });
-    await results.getByRole("button", { name: "View geometry 1", exact: true }).click();
-    const modal = page.getByRole("dialog", { name: "Geometry 1", exact: true });
-    await expect(modal).toBeVisible();
-    expect(await modal.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
-    expect((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze()).violations).toEqual([]);
-    await page.screenshot({ path: testInfo.outputPath(`geometry-modal-${width}.png`) });
-    await modal.getByRole("button", { name: "Close geometry", exact: true }).click();
-    await expect(modal).not.toBeVisible();
   });
 }
 

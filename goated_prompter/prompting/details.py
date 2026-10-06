@@ -20,35 +20,6 @@ LENGTH_ADAPTERS = {
     "Maximum": MAXIMUM_DETAIL_GUIDANCE,
 }
 
-# Dataset's semantic overlay controls WHAT; the normal length controls HOW MUCH.
-DATASET_DETAIL_DISCIPLINE = """DATASET DETAIL DISCIPLINE
-Spend detail on information that improves the rendering of this exact planned scene.
-Prioritize action readability, subject interaction, pose mechanics, required visibility,
-composition, scene-relevant clothing/material behavior, environment, lighting, depth and
-target-appropriate visual treatment. Richness is allowed when it supports the scene.
-Keep ordinary description economical, but preserve all information needed to
-reconstruct actions, complex poses, contacts, overlap/depth, framing and required
-visible anatomy. Functional pose geometry is not decorative verbosity, even at Short.
-Use specific surfaces, textures, fabric tension, shadows, reflections, atmospheric separation
-and color relationships where useful; preserve the requested medium and all supplied facts.
-Avoid unrelated biography, arbitrary decorative objects, accessory inventories, irrelevant
-microtexture, changing the event to add detail, repeated facts and synonymous filler.
-Maximum Detail should be scene-dense, not filler-dense. Do not stop merely because the basic
-event is understandable: satisfy the selected normal Length with useful, non-redundant visual
-information within the target envelope. Detailed and Maximum Detail should develop the scene's
-physical relationships, material/light response, environment and spatial depth more fully than
-Medium, without requiring every category or turning geometry into a checklist.
-At Maximum Detail, go beyond a Detailed restatement of staging: develop the richest useful
-scene-specific material response, light direction/quality and shadow/reflection behavior,
-environmental surfaces and foreground/background separation that this target can use.
-Prefer concrete visible information over vague claims of a focused atmosphere, realistic
-texture or coherent lighting. The planned mechanics are the starting point, not the entire
-detail budget; add new compatible rendering information instead of rephrasing those mechanics.
-Short remains concise and Medium balanced. The normal target envelope always wins."""
-# Compatibility export for old callers and finite-output loop recovery. There is
-# deliberately no weaker Dataset meaning of Detailed or Maximum Detail.
-DATASET_LENGTH_ADAPTERS = dict(LENGTH_ADAPTERS)
-
 # Preserve (legacy booleans and linked reference-map output)
 REFERENCE_ROLE_NAMES = ("Auto", "Subject", "Scene", "Style", "Pose", "Composition", "Lighting")
 PRESERVATION_ADAPTERS = {

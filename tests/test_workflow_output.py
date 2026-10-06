@@ -180,9 +180,10 @@ class FormatRepairTests(unittest.TestCase):
             self.assertEqual(GoatedPrompterService(config={"backend": "mock"}).generate(request).prompt, text)
         data = {**default_dataset_draft(), "subject": text, "trigger": "mira(token)", "amount": 1}
         backend = ScriptedBackend([text])
-        instruction = dataset_instruction(request, data, 1)
+        scene = {"scene": text, "self_check": "PASS"}
+        instruction = dataset_instruction(request, data, 1, plan_item=scene)
         self.assertEqual(DatasetService({"backend": "mock"}, lambda: None)._generate(
-            backend, instruction, data, 1, lambda _message: None), text)
+            backend, instruction, data, 1, lambda _message: None, scene), text)
         self.assertEqual(len(backend.calls), 1)
 
     def test_refinement_preserves_punctuation_and_visible_lettering_without_retry(self):

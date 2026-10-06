@@ -3,7 +3,7 @@
 from collections import defaultdict
 import re
 
-from goated_prompter.dataset_constraints import compile_constraints
+from goated_prompter.planning.rule_compiler import compile_rules
 from goated_prompter.workflow_output import normalize_workflow_output
 from goated_prompter.planning.constraint_validation import output_constraint_issues
 from goated_prompter.dataset_triggers import trigger_presence_error
@@ -39,7 +39,7 @@ def measure(row, review=None):
     try:
         if row.get("output_kind") == "ideas":
             from goated_prompter.scene_planner import validate_saved_scene_plan
-            validate_saved_scene_plan(row.get("scene_plan", []), dataset_type=row.get("dataset_type", "Character"))
+            validate_saved_scene_plan(row.get("scene_plan", []))
             valid = bool(row.get("scene_plan"))
         else:
             normalize_workflow_output(prompt, row.get("target", "Generic"), mode="Video" if row["workflow"] == "minimax" else "Enhance")
@@ -47,7 +47,7 @@ def measure(row, review=None):
     except (ValueError, TypeError, KeyError):
         valid = False
     try:
-        issues = output_constraint_issues(prompt, row.get("target", "Generic"), compile_constraints(row.get("rules", "")))
+        issues = output_constraint_issues(prompt, row.get("target", "Generic"), compile_rules(row.get("rules", "")))
     except (ValueError, TypeError, KeyError):
         issues = []
     accepted = valid and not row.get("error") and completion == "completed"

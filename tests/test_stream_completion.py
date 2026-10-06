@@ -111,9 +111,10 @@ class StreamCompletionTests(unittest.TestCase):
         data = {**default_dataset_draft(), "subject": "a person", "trigger": "subject", "amount": 1}
         session = Mock()
         session.generate.side_effect = BackendGenerationError("EOF", completion_state="interrupted", partial_text="partial")
-        instruction = dataset_instruction(GoatedPrompterRequest(idea="a person"), data, 1)
+        scene = {"scene": "A person stands beside a table.", "self_check": "PASS"}
+        instruction = dataset_instruction(GoatedPrompterRequest(idea="a person"), data, 1, plan_item=scene)
         with self.assertRaises(BackendGenerationError) as raised:
-            DatasetService({"backend": "mock"}, lambda: None)._generate(session, instruction, data, 1, lambda _message: None, retries=1)
+            DatasetService({"backend": "mock"}, lambda: None)._generate(session, instruction, data, 1, lambda _message: None, scene, retries=1)
         self.assertEqual(raised.exception.completion_state, "interrupted")
         self.assertEqual(raised.exception.partial_text, "partial")
         self.assertEqual(session.generate.call_count, 2)

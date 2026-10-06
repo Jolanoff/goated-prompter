@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { LoaderCircle, X } from "lucide-react";
 import { ui } from "../ui.js";
+import { canConfirmDatasetReview, datasetReviewQuestions, datasetUnderstandingSections } from "./datasetState.js";
 
 const identityLabels = {
   fixed: "Fixed; preserve the specified identities",
   random_per_prompt: "Randomized per independent prompt; consistent within its idea and scene",
   not_applicable: "No character identity applies",
+  mixed: "Mixed identity policies; follow the requirements for each subject and guided input",
 };
 
 function SummaryList({ label, items }) {
@@ -25,7 +27,7 @@ export default function DatasetConfirmationModal({ review, busy, onRevise, onCon
   }, [review]);
   const brief = review?.brief;
   const working = ["analyzing", "confirming"].includes(review?.status);
-  const canConfirm = review?.status === "ready" && !!review.confirmation_token && !busy && !additions.trim() && !brief?.blocking_questions?.length;
+  const canConfirm = canConfirmDatasetReview(review, busy, additions);
   const confirmLabel = review?.operation === "dataset/scenes" ? "Confirm and plan scenes" : "Confirm and generate prompts";
   return <dialog ref={dialog} className="app-dialog dataset-confirmation-dialog"
     aria-labelledby="dataset-confirmation-title" aria-describedby="dataset-confirmation-description"
@@ -41,15 +43,15 @@ export default function DatasetConfirmationModal({ review, busy, onRevise, onCon
     {review?.notice && <p className={`${ui.subtleNote} mt-4`}>{review.notice}</p>}
     {brief && <>
       <dl className="mt-5 grid gap-4 text-xs leading-relaxed">
-        <div><dt className="font-semibold">What you want</dt><dd className="mt-1 wrap-anywhere text-muted">{brief.goal}</dd></div>
-        <div><dt className="font-semibold">Characters</dt><dd className="mt-1 text-muted">{brief.character_count ?? "Unspecified / not applicable"}. {identityLabels[brief.identity_policy]}</dd></div>
+        <div><dt className="font-semibold">What you want</dt><dd className="mt-1 whitespace-pre-wrap wrap-anywhere text-muted">{brief.requested_generation}</dd></div>
+        <div><dt className="font-semibold">Characters and identity</dt>
+          <dd className="mt-1 text-muted">{brief.character_count ?? "Unspecified / not applicable"}. {identityLabels[brief.identity_policy]}</dd></div>
+        <div><dt className="font-semibold">How far the idea may expand</dt><dd className="mt-1 wrap-anywhere text-muted">{brief.expansion_freedom}</dd></div>
+        <div><dt className="font-semibold">What the dataset will contain</dt><dd className="mt-1 wrap-anywhere text-muted">{brief.dataset_contents}</dd></div>
         <div><dt className="font-semibold">Triggers</dt><dd className="mt-1 whitespace-pre-wrap wrap-anywhere text-muted">{review.input.trigger || "None; planning only"}</dd></div>
       </dl>
-      <SummaryList label="Fixed identity details" items={brief.fixed_identity_facts} />
-      <SummaryList label="Required rules" items={brief.required_rules} />
-      <SummaryList label="Free to vary" items={brief.allowed_variation} />
-      <SummaryList label="Action alternatives—not all in one image" items={brief.action_options} />
-      <SummaryList label="Answer before generating" items={brief.blocking_questions} />
+      {datasetUnderstandingSections(brief).map(({ label, items }) => <SummaryList key={label} label={label} items={items} />)}
+      <SummaryList label="Answer before generating" items={datasetReviewQuestions(brief)} />
     </>}
     {review && <details className="dataset-details mt-5 rounded-lg border border-line p-3 text-xs">
       <summary>Original request and current rules</summary>

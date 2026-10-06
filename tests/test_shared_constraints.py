@@ -4,7 +4,6 @@ from goated_prompter.core import GoatedPrompterRequest, assemble_instruction
 from goated_prompter.planning.rule_compiler import compile_rules
 from goated_prompter.planning.constraints import compile_request
 from goated_prompter.planning.constraint_validation import constraint_issues
-from goated_prompter.dataset_constraints import compile_constraints
 from goated_prompter.planning.validation import validate_plan
 
 
@@ -16,7 +15,6 @@ class SharedConstraintTests(unittest.TestCase):
         self.assertEqual(compiled["protected_literal"], ["NO ENTRY"])
         hat = next(row for row in compiled["provenance"] if row["value"] == "hats")
         self.assertEqual(hat, {"value": "hats", "kind": "forbidden", "source": "constraints", "source_text": "no hats", "confidence": "high"})
-        self.assertIs(compile_constraints, compile_rules)
         request = compile_request('same short black hair; prefer soft light; a portrait')
         self.assertEqual(request.required, ('same short black hair',))
         self.assertEqual(request.soft_preferences, ('soft light',))

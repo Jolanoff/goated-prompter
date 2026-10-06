@@ -12,6 +12,14 @@ If it cannot be loaded, stop and ask; do not bypass these gates.
   servers, inference, benchmarks, and model-process changes when not already authorized.
 - Create or reuse a matching GitHub issue before investigating or changing anything.
 - Preserve unrelated edits and unfinished tasks.
+- The `data/` privacy restriction applies to the coding assistant and its tools,
+  not the running app or the user's local LLM. Do not inspect, search, list, copy
+  or migrate private `data/` contents. Keep normal app reads/writes and the handoff
+  of selected content to the local LLM working; do not implement this assistant
+  restriction as a runtime sandbox, file-access ban or prompt-redaction rule.
+- Keep evaluation corpora under `tests/` and generated evaluation artifacts under
+  `quality-artifacts/`, separate from app `data/`. Tests run by the assistant use
+  synthetic temporary storage; their privacy guards do not belong in app startup.
 
 ## Git and issue workflow
 

@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from .details import LENGTH_ADAPTERS, DATASET_LENGTH_ADAPTERS
+from .details import LENGTH_ADAPTERS
 
 TARGET_MODEL_NAMES = ("Generic", "Anima", "Krea 2", "FLUX.2 Klein", "Z-Image Base", "Z-Image Turbo", "Qwen Image (original)", "Qwen Image 2.1", "MiniMax H3", "LTX 2.5", "Ideogram4")
 TARGET_ALIASES = {"Z-Image": "Z-Image Base", "Qwen Image": "Qwen Image (original)",
@@ -27,8 +27,8 @@ class TargetCapabilities:
     supports_cfg: bool | None = None
     detail_envelope: str = "Use relevant description without filler; preserve required target structure."
 
-    def resolve_length(self, user_length, *, dataset=False):
-        rules = DATASET_LENGTH_ADAPTERS if dataset else LENGTH_ADAPTERS
+    def resolve_length(self, user_length):
+        rules = LENGTH_ADAPTERS
         length = "Maximum Detail" if user_length == "Maximum" else user_length
         return rules.get(length, rules["Medium"]) + "\nTARGET DETAIL ENVELOPE: " + self.detail_envelope
 
@@ -60,8 +60,8 @@ def get_target_capabilities(name):
     return TARGET_CAPABILITIES.get(canonical_target(name), TARGET_CAPABILITIES["Generic"])
 
 
-def resolve_target_length(name, length, *, dataset=False):
-    return get_target_capabilities(name).resolve_length(length, dataset=dataset)
+def resolve_target_length(name, length):
+    return get_target_capabilities(name).resolve_length(length)
 
 QWEN21_EDIT_ADAPTER = """Qwen Image 2.1 image-editing rewrite: an input image or selected image evidence is present. Return only the complete plain prompt text. No JSON object, metadata fields, commentary or Markdown fences.
 

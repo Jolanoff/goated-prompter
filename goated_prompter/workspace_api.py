@@ -10,10 +10,9 @@ from .prompting.target_models import TARGET_MODEL_NAMES, canonical_target
 from .refinement import RefineService
 from .workspace_store import WorkspaceConflict, locks, text
 from .minimax import MiniMaxService, validate_minimax_draft
-from .dataset import DatasetReviewService, DatasetService, validate_dataset_draft
+from .dataset import DatasetService, validate_dataset_draft
 from .dataset_assignments import dataset_assignments
-from .dataset_quality import analyze_dataset_quality
-from .dataset_intent import DatasetIntentService
+from .dataset_understanding import DatasetUnderstandingService
 from .presets import get_director_preset
 from .scene_planner import reusable_scene_plan, scene_is_usable, scene_unusable_reason
 
@@ -30,15 +29,6 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
                 return web.json_response({"error": "Wait for active generation before resetting recent ideas.", "active_job": active}, status=409)
             state.idea_history.clear(data)
         return web.json_response({"ok": True})
-
-    async def dataset_quality_endpoint(request):
-        payload = await json_object(request)
-        if set(payload) != {"input"}:
-            raise ValueError("Expected Dataset input only.")
-        data = validate_dataset_draft(payload["input"])
-        report = await asyncio.to_thread(
-            analyze_dataset_quality, data, data["results"])
-        return web.json_response({"report": report})
 
     async def dataset_endpoint(request):
         state = request.app[state_key]
@@ -100,35 +90,6 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
                 {"operation": kind, "input": data, "intent": intent, "scene_action": scene_action, "valid_only": valid_only,
                  "workflow_revision": payload.get("workflow_revision")},
                 job_factory=job_factory), status=202)
-
-    async def dataset_review_endpoint(request):
-        state = request.app[state_key]
-        payload = await json_object(request)
-        if set(payload) - {"input", "settings", "workflow_revision"}:
-            raise ValueError("Expected Dataset input and prompt-engine settings.")
-        data = validate_dataset_draft(payload.get("input"), generation=True)
-        if not data["results"]:
-            raise ValueError("Generate at least one dataset prompt before running a deep review.")
-        settings = payload.get("settings", {})
-        if not isinstance(settings, dict) or set(settings) - {"director_profile"}:
-            raise ValueError("Invalid Dataset prompt-engine settings.")
-        async with state.admission:
-            active = state.active_job()
-            if active:
-                return web.json_response({"error": "Wait for the active generation before reviewing again.",
-                                          "active_job": active}, status=409)
-            config = state.config()
-            configured = canonical_backend_name(config.get("backend")) in {"mock", "openai_compatible"}
-            director_request = GoatedPrompterRequest(
-                idea=data["subject"], mode="Custom", target_model=data["target"], prompt_model="Custom",
-                director_profile="" if configured else text(
-                    settings.get("director_profile", state.saved_settings.get("selected_profile", "")),
-                    "Prompt engine", 512, optional=True),
-                director_keep_model_loaded=_as_bool(
-                    config.get("local_llama_cpp", {}).get("keep_model_loaded", False)),
-            )
-            return web.json_response(state.start_job("dataset_review", director_request, config, True,
-                {"operation": "dataset_review", "input": data, "workflow_revision": payload.get("workflow_revision")}, job_factory=job_factory), status=202)
 
     async def minimax_endpoint(request):
         state = request.app[state_key]
@@ -238,8 +199,6 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
                     web.post("/api/workspace/dataset/understand", dataset_endpoint),
                     web.post("/api/workspace/dataset/scenes", dataset_endpoint),
                     web.post("/api/workspace/dataset/scene", dataset_endpoint),
-                    web.post("/api/workspace/dataset/review", dataset_review_endpoint),
-                    web.post("/api/workspace/dataset/quality", dataset_quality_endpoint),
                     web.post("/api/workspace/dataset/novelty/reset", reset_dataset_novelty),
                     web.get("/api/workspace/settings/{operation:refine|minimax|dataset}", settings_endpoint),
                     web.put("/api/workspace/settings/{operation:refine|minimax|dataset}", settings_endpoint),
@@ -266,7 +225,7 @@ def execute_workflow(state, job, request, config, workflow):
         return
 
     if workflow["operation"] == "dataset_understanding":
-        brief = DatasetIntentService(config, job.checkpoint).run(request, workflow["input"], progress)
+        brief = DatasetUnderstandingService(config, job.checkpoint).run(request, workflow["input"], progress)
         job.commit(lambda: {"ok": True, "kind": "dataset_understanding",
                            **state.dataset_intents.register(workflow["input"], brief)}, finish=True)
         return
@@ -287,7 +246,7 @@ def execute_workflow(state, job, request, config, workflow):
                 job.record_event(
                     (f"Dataset prompt {result['completed']}/{result['total']} completed and is available."
                      if result["completed"] else "Dataset planning stages saved; final prompts have not started."
-                     if any(row.get("scene_status") in {"not_generated", "geometry_warning"} for row in result["scene_plan"])
+                     if any(row.get("scene_status") == "not_generated" for row in result["scene_plan"])
                      else "Dataset scene plan is ready and available before prompt writing."),
                     "result",
                     revise=False,
@@ -300,16 +259,6 @@ def execute_workflow(state, job, request, config, workflow):
             scenes_only=workflow["operation"] == "dataset_scenes", scene_action=workflow.get("scene_action"),
             valid_only=workflow.get("valid_only", False))
         job.commit(lambda: durable_result(result), finish=True)
-        return
-
-    if workflow["operation"] == "dataset_review":
-        result = DatasetReviewService(config, job.checkpoint).run(
-            request, workflow["input"], progress)
-        def durable_review():
-            job.result = result
-            state.workflow_settings.checkpoint_dataset(job)
-            return result
-        job.commit(durable_review, finish=True)
         return
 
     service = RefineService(config, job.checkpoint)

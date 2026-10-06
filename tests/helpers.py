@@ -16,14 +16,27 @@ def enter_context(test_case, context):
     return result
 
 
-def dataset_intent_fixture(**changes):
-    return {"goal": "Preserve the supplied Dataset concept.", "character_count": None,
-            "identity_policy": "fixed", "fixed_identity_facts": [], "required_rules": [],
-            "allowed_variation": [], "action_options": [], "blocking_questions": [], **changes}
-
-
 def confirmed_dataset_payload(state, data, **options):
     """Seed only the approval boundary in tests focused on downstream behavior."""
     from goated_prompter.dataset import validate_dataset_draft
-    ticket = state.dataset_intents.register(validate_dataset_draft(data), dataset_intent_fixture())
+    ticket = state.dataset_intents.register(validate_dataset_draft(data), dataset_understanding_fixture())
     return {"input": data, "confirmation_token": ticket["confirmation_token"], **options}
+
+
+def dataset_understanding_fixture(**changes):
+    return {"requested_generation": "A person practising boxing.",
+            "character_count": None, "identity_policy": "random_per_prompt", "action_options": [],
+            "fixed": [], "may_vary": [], "must_vary": [], "rules": [],
+            "visible_evidence": [], "interactions": [], "natural_occlusions": [],
+            "visibility_to_preserve": [], "physical_conflicts": [],
+            "expansion_freedom": "Expand only unspecified details.",
+            "dataset_contents": "One training-image prompt in the selected format.",
+             "clarifications": [], **changes}
+
+
+def dataset_idea_fixture(index=1, **changes):
+    return {"index": index, "idea": f"A boxer practising a straight punch at station {index}.",
+            "placement": "Boxer centered, facing the training bag.",
+            "visibility": "The punching glove overlaps the bag; the opposite glove remains readable.",
+            "camera": "Three-quarter front-side angle.", "framing": "Full body.",
+            "context": "Arena training area.", **changes}

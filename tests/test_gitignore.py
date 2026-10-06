@@ -42,7 +42,7 @@ class GitIgnoreTests(unittest.TestCase):
             "config/config.example.json", ".env.example", ".env.local.example",
             "frontend/package-lock.json", "frontend/src/App.jsx",
             "tests/eval/fixtures/model_outputs/real_builder.json",
-            "tests/eval/README.md", "tests/evaluation/README.md",
+            "tests/eval/README.md",
             "tests/fixtures/scene_planner_eval.md", ".github/workflows/checks.yml",
         ):
             with self.subTest(path=path):
@@ -50,7 +50,7 @@ class GitIgnoreTests(unittest.TestCase):
 
     def test_public_evaluation_metadata_has_no_absolute_machine_paths(self):
         paths = list((ROOT / "tests/eval/fixtures/model_outputs").glob("*.json"))
-        paths += [ROOT / "tests/eval/README.md", ROOT / "tests/evaluation/README.md",
+        paths += [ROOT / "tests/eval/README.md",
                   ROOT / "tests/eval/fixtures/FAILURE_COVERAGE.md"]
         for path in paths:
             with self.subTest(path=path.relative_to(ROOT)):

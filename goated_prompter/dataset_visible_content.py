@@ -7,13 +7,6 @@ from .prompting.target_models import canonical_target
 from .planning.rule_compiler import QUOTED as _QUOTED
 
 
-VISIBLE_CONTENT_CONTRACT = """VISIBLE CONTENT ONLY
-Describe only the visible intended image state.
-Express subject count, composition, environment, anatomy, cleanliness and other constraints through positive visible description. Apply exclusions and restrictions silently rather than verbalizing what is absent or what the generator should avoid.
-Do not expose internal validation rules, quality-control language, negative-conditioning instructions, preservation rules or prompt-engineering metadata in the generated positive prompt.
-If the user explicitly requests rendered text, preserve that literal visible text. Protected trigger text also remains exact.
-Describe the finished image itself, not instructions for preventing generation errors."""
-
 # Phrase patterns, not a ban on "no", "without" or "avoid" in ordinary prose.
 _LEAKAGE = re.compile(
     r"\bno\s+(?:(?:other|extra|additional|duplicate)\s+(?:people|persons?|characters?|objects?|props?|limbs?|fingers?)"
@@ -166,12 +159,8 @@ def visible_content_error(text, protected_terms=()):
         return match.group(0)
 
     text = _QUOTED.sub(quoted_content, text)
-    # Lazy import avoids initializing staging while this module is imported by
-    # its validator. New registry fields automatically get metadata protection.
-    from .dataset_staging.schema import GEOMETRY_FIELDS
-    metadata = (*GEOMETRY_FIELDS, "camera_view", "camera_height", "idea_status", "scene_status", "prompt_status")
-    staging_leakage = re.search(r"\b(?:" + "|".join(map(re.escape, metadata)) + r")\s*[:=]", text, re.I)
-    if _LEAKAGE.search(text) or staging_leakage:
+    metadata = re.search(r"\b(?:self_check|idea_status|scene_status|prompt_status)\s*[:=]", text, re.I)
+    if _LEAKAGE.search(text) or metadata:
         return "Exclusion or quality/meta language leaked into positive content. Describe the intended visible state affirmatively; apply exclusions silently."
     return None
 

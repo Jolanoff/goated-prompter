@@ -187,6 +187,8 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
         }
+        if self.is_llama_cpp and getattr(instruction, "json_output", False) is True:
+            payload["response_format"] = {"type": "json_object"}
         for name, ceiling in (("temperature", 2.0), ("top_p", 1.0)):
             value = getattr(instruction, name, None)
             if value is not None:

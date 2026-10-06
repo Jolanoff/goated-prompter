@@ -231,7 +231,6 @@ function App() {
         setNotice(next.kind === "refine" ? "Refinement saved as a new version."
           : next.kind === "dataset" ? `${next.result.completed} dataset prompts are ready.`
           : next.kind === "dataset_scenes" ? `${next.result.scene_plan.length} scene ideas are ready to review or generate.`
-          : next.kind === "dataset_review" ? `Deep review completed for ${next.result.reviewed} prompts.`
           : next.kind === "dataset_understanding" ? "Review your Dataset request before generating."
           : "Your prompt is ready. Make it yours.");
       } else if (next.status === "cancelled") {

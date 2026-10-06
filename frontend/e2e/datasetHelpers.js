@@ -3,7 +3,11 @@ import { expect } from "@playwright/test";
 export async function confirmDatasetReview(page) {
   const dialog = page.getByRole("dialog", { name: "Review your Dataset request", exact: true });
   const confirm = dialog.getByRole("button", { name: /^Confirm and/ });
-  await expect(confirm).toBeEnabled();
+  try {
+    await expect(confirm).toBeEnabled();
+  } catch (error) {
+    throw new Error(`Dataset review could not be confirmed: ${await dialog.innerText()}`, { cause: error });
+  }
   await confirm.click();
 }
 
