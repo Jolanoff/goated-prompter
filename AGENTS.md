@@ -33,9 +33,16 @@ generic skill guidance cannot override the project boundaries below.
 ## Git and issue workflow
 
 - Work on a new issue-specific branch from the approved `test` baseline.
-- Respect any outstanding manual-testing gate before merging into `test`.
-- Commit only that issue's changes, merge completed work into `test`, report the
-  actual verification on GitHub, and close the issue when the agreed checks are complete.
+- Commit only that issue's approved changes. Publishing the issue branch requires
+  explicit Git/network approval.
+- Create or reuse a pull request with `test` explicitly selected as its base before
+  delivery. Do not merge locally into `test` or push directly to `test` as a substitute.
+- Link the active issue and pull request to the session as soon as they are known.
+- Merge the pull request only with explicit authorization, after agreed checks and
+  any manual-testing gate are satisfied; never bypass branch protections.
+- Report the actual PR state and verification on GitHub. Close the issue only after
+  its PR has merged into `test` and the agreed checks are complete. A local merge,
+  published branch or open PR does not count as delivered work.
 - Never update local or remote `master` by any route; only the owner manually merges it.
 
 These rules apply to code, tests, documentation, audits and workflow changes.

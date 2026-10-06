@@ -1,6 +1,6 @@
 ---
 name: goated-prompter-workflow
-description: Mandatory workflow for every Goated Prompter task. Load this first, then relevant project-local skills, best-practices, code-quality and other task-specific skills before planning or execution. Enforces issue-first work, explicit resource permission, issue-specific branches and authorized delivery only into test. Only the owner updates master.
+description: Mandatory workflow for every Goated Prompter task. Load this first, then relevant project-local skills, best-practices, code-quality and other task-specific skills before planning or execution. Enforces issue-first work, explicit resource permission, issue-specific branches and authorized delivery only through a pull request targeting test. Only the owner updates master.
 ---
 
 # Goated Prompter workflow
@@ -69,6 +69,9 @@ skills and applicable checks in the task plan, and report unrun checks honestly.
   not exceptions permitting unrelated work. If GitHub access is unavailable, stop
   and ask rather than silently working without an issue.
 - Keep reports free of credentials, private prompts, images and personal paths.
+- Link the active issue to the session as soon as it is known, using the host's
+  session-link tool when available. Link a PR for this work as soon as it is known
+  too; do not link unrelated issues or PRs merely mentioned in passing.
 
 ## 3. Work on a new issue-specific branch
 
@@ -80,26 +83,38 @@ skills and applicable checks in the task plan, and report unrun checks honestly.
   practical, but run them only with the required resource permission.
 - Record checks actually performed and any outstanding manual-testing gate.
 
-## 4. Finish through test, never master
+## 4. Deliver through a pull request to test, never master
 
-- Honor requested manual testing: wait for the owner's sign-off before merging
-  into `test` when a manual-testing gate is outstanding.
 - Commit only the issue's changes on its new branch, referencing the issue number.
   Use `Refs #<number>`, not automatic closure keywords that could close it upon a
   future `master` promotion without the completion check below.
-- Merge the completed branch into `test`. Do not force-push or rewrite unrelated
-  history; stop on conflicts or unexpected remote changes.
-- Publishing the feature branch or `test` must be within the approved Git/network
-  operations. Local merge and remote publication are distinct; report which occurred.
-- After the agreed completion checks and merge into `test`, comment on the issue
-  with the commit, delivered scope, verification and limitations, then close it
-  as completed. Leave blocked, unverified or manual-review-pending issues open.
+- Publish only the issue branch within the approved Git/network scope, then create
+  or reuse a matching GitHub pull request. Explicitly select `test` as the base and
+  the issue branch as the head; never rely on the repository's default branch.
+  Verify the PR's actual base/head and link it to the session before continuing.
+- A pull request is required for delivery into `test`. Do not merge locally into
+  `test` or push directly to `test` to bypass it. A published branch or open PR is
+  not a completed merge. If publication/PR creation is not approved or GitHub is
+  unavailable, stop at the authorized boundary and leave the issue open.
+- Merge the PR only with explicit merge authorization, after the agreed checks
+  and any owner manual-testing sign-off. Creating a PR does not authorize merging
+  it or enabling auto-merge. Verify its base is still `test`; do not bypass branch
+  protections, force-push or rewrite unrelated history. Stop on conflicts, failed
+  required checks or unexpected remote changes.
+- Confirm GitHub reports the PR merged into `test` before reporting delivery.
+  Synchronize local `test` only after that confirmed merge and only within approved
+  Git operations, preserving unfinished edits.
+- After the confirmed PR merge and agreed completion checks, comment on the issue
+  with the PR, commit, delivered scope, verification and limitations, then close it
+  as completed. Leave open PRs, blocked, unverified or manual-review-pending work
+  with their matching issues open; do not close an issue after a local-only merge.
 - Only the owner manually promotes `test` into `master`. Never merge to, commit on,
   push to, reset, delete or otherwise update local or remote `master`. Never use a
   refspec, API action, PR auto-merge or other indirect route to bypass this rule.
 
 ## Completion report
 
-Report the issue link, branch and commit, whether it reached `test`, whether the
-issue is closed, checks actually run, outstanding approval/manual testing, and
-that `master` was untouched. Do not silently resume unrelated pending tasks.
+Report the issue and PR links, source branch and commit, actual PR state and base,
+whether it merged into remote `test` and whether local `test` was synchronized,
+whether the issue is closed, checks actually run, outstanding approval/manual
+testing, and that `master` was untouched. Do not silently resume unrelated work.
