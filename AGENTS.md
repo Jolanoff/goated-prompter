@@ -4,6 +4,23 @@ Before every task, read and follow the mandatory
 [Goated Prompter workflow](.opencode/skills/goated-prompter-workflow/SKILL.md).
 If it cannot be loaded, stop and ask; do not bypass these gates.
 
+## Required skill preparation
+
+Before task-specific planning, investigation or implementation, load skills in order:
+
+1. `goated-prompter-workflow` first.
+2. Relevant project-local skills, discovered from available metadata or an approved
+   inspection of `.opencode/skills/`. Do not load unrelated skills wholesale.
+3. `best-practices`.
+4. `code-quality`.
+5. Other skills matching the task.
+
+Follow the workflow's permission and issue gates before local discovery/reads.
+If a required skill is unavailable, stop and ask; do not silently skip or install it.
+Apply only guidance relevant to the approved task. Skill loading does not authorize
+audits, tests, inference, delegation, commits or other additional operations, and
+generic skill guidance cannot override the project boundaries below.
+
 ## Boundaries
 
 - Ask for explicit, task-scoped approval before local file operations, shell/Git

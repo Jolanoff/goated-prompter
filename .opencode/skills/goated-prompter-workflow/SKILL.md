@@ -1,6 +1,6 @@
 ---
 name: goated-prompter-workflow
-description: Mandatory workflow for every Goated Prompter task: GitHub issue first, explicit local CPU/GPU permission, issue-specific branch, commit and merge only into test, then close the issue. Only the owner manually updates master.
+description: Mandatory workflow for every Goated Prompter task. Load this first, then relevant project-local skills, best-practices, code-quality and other task-specific skills before planning or execution. Enforces issue-first work, explicit resource permission, issue-specific branches and authorized delivery only into test. Only the owner updates master.
 ---
 
 # Goated Prompter workflow
@@ -8,6 +8,41 @@ description: Mandatory workflow for every Goated Prompter task: GitHub issue fir
 Use this skill for every task in `Jolanoff/goated-prompter`, including fixes,
 features, refactors, documentation, audits and workflow changes. Load it before
 starting work. This is the owner's project policy, not an optional recommendation.
+
+## 0. Prepare skills before task-specific work
+
+Load and read skills in this order, before task-specific planning, investigation
+or implementation:
+
+1. This `goated-prompter-workflow` skill.
+2. Relevant project-local skills. Consult advertised skill metadata first; when
+   local discovery is needed, inspect `.opencode/skills/` metadata only after the
+   resource and issue gates below are satisfied. Load the local skills whose
+   descriptions match the task; do not load unrelated skills wholesale.
+3. `best-practices`.
+4. `code-quality`.
+5. Additional task-specific skills, such as debugging for a bug, test-writing for
+   regressions, or design guidance when choosing an approach.
+
+The permission request, matching-issue setup and approved discovery needed to
+prepare skills are prerequisites, not permission to begin the substantive task.
+Use the host's skill loader when available; otherwise read the installed skill's
+`SKILL.md` only with file-access approval. Read applicable bundled references when
+needed, not entire skill directories by default. If a required skill cannot be
+located or loaded, stop and ask; do not silently omit it, download or install it.
+
+Both quality skills are required preparation for every project task. Apply their
+guidance within its actual scope: `best-practices` covers applicable web security,
+compatibility and quality concerns; `code-quality` checks approved requirements
+first, then correctness and maintainability. A documentation-only task does not
+become a browser/security audit merely because these skills were loaded.
+
+Generic skill recommendations do not override this project's gates. In particular,
+loading a skill does not authorize file access, tests, builds, audits, inference,
+model-process changes, agent delegation or Git delivery. Keep work scoped and
+preserve unfinished changes; do not follow generic commit/refactor advice against
+the owner's branch-only or manual-review instructions. Briefly state the selected
+skills and applicable checks in the task plan, and report unrun checks honestly.
 
 ## 1. Ask before using local resources
 
