@@ -41,28 +41,17 @@ export default function DatasetConfirmationModal({ review, busy, onRevise, onCon
     {working && <p className="mt-4 flex items-center gap-2 text-xs" role="status"><LoaderCircle size={16} className="dataset-loader" aria-hidden="true" />{review.status === "analyzing" ? "Understanding your request…" : "Starting confirmed generation…"}</p>}
     {review?.error && <p className={`${ui.warningNote} mt-4`} role="alert">{review.error}</p>}
     {review?.notice && <p className={`${ui.subtleNote} mt-4`}>{review.notice}</p>}
-    {brief?.requested_generation ? <>
+    {brief && <>
       <dl className="mt-5 grid gap-4 text-xs leading-relaxed">
         <div><dt className="font-semibold">What you want</dt><dd className="mt-1 whitespace-pre-wrap wrap-anywhere text-muted">{brief.requested_generation}</dd></div>
-        {("character_count" in brief || brief.identity_policy) && <div><dt className="font-semibold">Characters and identity</dt>
-          <dd className="mt-1 text-muted">{brief.character_count ?? "Unspecified / not applicable"}. {identityLabels[brief.identity_policy]}</dd></div>}
+        <div><dt className="font-semibold">Characters and identity</dt>
+          <dd className="mt-1 text-muted">{brief.character_count ?? "Unspecified / not applicable"}. {identityLabels[brief.identity_policy]}</dd></div>
         <div><dt className="font-semibold">How far the idea may expand</dt><dd className="mt-1 wrap-anywhere text-muted">{brief.expansion_freedom}</dd></div>
         <div><dt className="font-semibold">What the dataset will contain</dt><dd className="mt-1 wrap-anywhere text-muted">{brief.dataset_contents}</dd></div>
         <div><dt className="font-semibold">Triggers</dt><dd className="mt-1 whitespace-pre-wrap wrap-anywhere text-muted">{review.input.trigger || "None; planning only"}</dd></div>
       </dl>
       {datasetUnderstandingSections(brief).map(({ label, items }) => <SummaryList key={label} label={label} items={items} />)}
       <SummaryList label="Answer before generating" items={datasetReviewQuestions(brief)} />
-    </> : brief && <>
-      <dl className="mt-5 grid gap-4 text-xs leading-relaxed">
-        <div><dt className="font-semibold">What you want</dt><dd className="mt-1 wrap-anywhere text-muted">{brief.goal}</dd></div>
-        <div><dt className="font-semibold">Characters</dt><dd className="mt-1 text-muted">{brief.character_count ?? "Unspecified / not applicable"}. {identityLabels[brief.identity_policy]}</dd></div>
-        <div><dt className="font-semibold">Triggers</dt><dd className="mt-1 whitespace-pre-wrap wrap-anywhere text-muted">{review.input.trigger || "None; planning only"}</dd></div>
-      </dl>
-      <SummaryList label="Fixed identity details" items={brief.fixed_identity_facts} />
-      <SummaryList label="Required rules" items={brief.required_rules} />
-      <SummaryList label="Free to vary" items={brief.allowed_variation} />
-      <SummaryList label="Action alternatives—not all in one image" items={brief.action_options} />
-      <SummaryList label="Answer before generating" items={brief.blocking_questions} />
     </>}
     {review && <details className="dataset-details mt-5 rounded-lg border border-line p-3 text-xs">
       <summary>Original request and current rules</summary>

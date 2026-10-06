@@ -123,7 +123,7 @@ class DatasetIdeasTests(unittest.TestCase):
         self.assertEqual(set(result), {"index", *IDEA_FIELDS})
 
     def test_saved_plan_roundtrip_keeps_compact_details_but_rejects_partial_or_invalid_details(self):
-        row = {**dataset_idea_fixture(), "input": "", "scene": "A boxer at the bag."}
+        row = {**dataset_idea_fixture(), "input": "", "scene": "A boxer at the bag.", "self_check": "PASS"}
         self.assertEqual(validate_saved_scene_plan([row]), [row])
         for changes in ({"visibility": None}, {"camera": "x" * 601}, {"context": ""}):
             with self.subTest(changes=changes), self.assertRaises(ValueError):

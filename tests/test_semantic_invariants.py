@@ -12,13 +12,11 @@ from unittest.mock import Mock, patch
 import unittest
 
 from goated_prompter.core import GoatedPrompterRequest, GoatedPrompterService
-from goated_prompter.dataset import DatasetService, default_dataset_draft
 from goated_prompter.minimax import MiniMaxService
 from goated_prompter.planning.constraints import compile_request
 from goated_prompter.planning.semantic_validation import (
     SemanticValidationError, invariant_contract, review_candidate, repair_contract,
 )
-from goated_prompter.prompting.dataset import dataset_instruction
 from goated_prompter.prompting.minimax import validate_output, validate_analysis, validate_minimax_draft
 from tests.eval.metrics import measure, useful_fact_coverage
 
@@ -49,6 +47,13 @@ class SequenceBackend:
 
 
 class SemanticInvariantTests(unittest.TestCase):
+    def test_builder_pose_detail_remains_an_action_critical_fact_without_dataset_geometry(self):
+        plan = {"primary_action": "A climber reaches upward.",
+                "pose_detail": "The supporting elbow remains bent."}
+        contract = invariant_contract("A climber reaches upward.", planned=plan)
+        self.assertEqual(contract["action_critical_facts"]["pose_detail"], plan["pose_detail"])
+        self.assertNotIn("planned_geometry", contract)
+
     def test_captured_real_constraint_audits_replay_with_separate_issue_kinds(self):
         fixture=json.loads((FIXTURE.parent/"semantic_constraint_reviews.json").read_text(encoding="utf-8"))
         for row in fixture["records"]:
@@ -162,26 +167,6 @@ class SemanticInvariantTests(unittest.TestCase):
         self.assertIn("NO ENTRY",result["prompt"])
         self.assertIn("required",backend.calls[2].user_message)
 
-    def test_raw_portrait_trigger_repair_cannot_accept_jewelry_leakage(self):
-        row = RECORDS[("portrait","dataset")]
-        first, leaked = [call["raw"] for call in row["calls"][:2]]
-        good = first.replace("a person", "eval_subject", 1)
-        accepted = ["short black hair and brown eyes", "Soft, diffused natural light"]
-        backend = SequenceBackend([first,verdict(accepted=accepted),leaked,good,
-            verdict((*CHECKS,"repair_preservation"), accepted=accepted)])
-        data = {**default_dataset_draft(),"subject":row["request"],"trigger":"eval_subject", "amount":1,
-                "constraints":row["rules"], "planning_mode":"Quality"}
-        plan = {"index":1,"idea":compile_request(row["request"]).positive_request,"scene":compile_request(row["request"]).positive_request,"input":row["request"],"geometry":{}}
-        request = GoatedPrompterRequest(idea=row["request"])
-        instruction = dataset_instruction(request,data,1,plan_item=plan)
-        result = DatasetService({"backend":"mock","semantic_validation":True},lambda:None)._generate(
-            backend,instruction,data,1,lambda _:None,plan)
-        self.assertEqual(result,good)
-        self.assertIn(first, backend.calls[2].user_message.replace('\\"','"'))
-        self.assertIn("accepted_facts",backend.calls[2].user_message)
-        self.assertIn("short black hair and brown eyes",backend.calls[3].user_message)
-        self.assertEqual([e["accepted"] for e in backend.events if e["type"] == "validation"], [False,False,True])
-
     def test_raw_dialogue_requires_explicit_endpoint_but_dialogue_stays_exact(self):
         row = RECORDS[("dialogue","minimax")]
         data = validate_minimax_draft({"user_request":row["request"],"duration_seconds":10})
@@ -242,10 +227,10 @@ class SemanticInvariantTests(unittest.TestCase):
 
     def test_contract_reuses_defining_fields_without_locking_all_scene_decoration(self):
         plan = {"scene":"A climber on warm granite in soft light.","interactions":["The right heel contacts a distinct hold."],
-                "geometry":{"pose_detail":"The supporting elbow remains bent."}}
+                "primary_action":"The supporting elbow remains bent."}
         contract = invariant_contract("A climber reaches upward.",planned=plan)
         self.assertEqual(contract["action_critical_facts"]["interactions"],plan["interactions"])
-        self.assertEqual(contract["action_critical_facts"]["pose_detail"],plan["geometry"]["pose_detail"])
+        self.assertEqual(contract["action_critical_facts"]["primary_action"],plan["primary_action"])
         self.assertNotIn("scene",contract["action_critical_facts"])
         self.assertEqual(contract["planned_scene"],plan["scene"])
 
@@ -262,67 +247,6 @@ class SemanticInvariantTests(unittest.TestCase):
         issue = defect("scene_fidelity","scene_drift","supporting interpretations","A chair")
         with self.assertRaises(SemanticValidationError):
             review_candidate(SequenceBackend([verdict(issue=issue),verdict(issue=issue)]),contract,"A chair.",stage="source")
-
-    def test_transport_retry_after_trigger_repair_keeps_contract_and_all_validators(self):
-        from goated_prompter.backends.base import BackendGenerationError
-        row = RECORDS[("portrait","dataset")]
-        first = row["calls"][0]["raw"]
-        good = first.replace("a person","eval_subject",1)
-        class Interrupted(SequenceBackend):
-            def generate(self,instruction):
-                self.calls.append(instruction)
-                result = next(self.outputs)
-                if isinstance(result,Exception): raise result
-                return result
-        backend = Interrupted([first,BackendGenerationError("temporary disconnect"),good])
-        data={**default_dataset_draft(),"subject":row["request"],"trigger":"eval_subject","amount":1,"constraints":row["rules"]}
-        request=GoatedPrompterRequest(idea=row["request"])
-        instruction=dataset_instruction(request,data,1)
-        result=DatasetService({"backend":"mock"},lambda:None)._generate(backend,instruction,data,1,lambda _:None)
-        self.assertEqual(result,good)
-        self.assertEqual(backend.calls[1].user_message,backend.calls[2].user_message)
-        self.assertIn("LOCAL REPAIR CONTRACT",backend.calls[2].user_message)
-        self.assertIn("TRIGGER WORDING CORRECTION",backend.calls[2].system_message)
-
-    def test_geometry_repair_acceptance_reuses_original_specialized_pose(self):
-        from goated_prompter.scene_planner import ScenePlanner
-        from goated_prompter.dataset_assignments import dataset_assignments
-        from tests.test_dataset_geometry import character_geometry
-        data={**default_dataset_draft(),"subject":"A climber training on a climbing wall","amount":1,"planning_mode":"Quality"}
-        row={"index":1,"idea":"A climber reaching between holds","scene":"A climber reaches between holds with one supporting elbow bent.",
-             "geometry":character_geometry(pose_detail="One supporting elbow stays bent as the other hand reaches.")}
-        corrected={**row,"scene":"A climber reaches between holds with both arms straight.","geometry":character_geometry(pose_detail="Both arms stay straight.")}
-        source="One supporting elbow stays bent"
-        issue=defect("repair_preservation","repair_regression",source,"both arms straight")
-        checks=(*CHECKS,"domain_relevance","repair_preservation")
-        backend=SequenceBackend([json.dumps([corrected]),verdict(checks,issue)])
-        planner=ScenePlanner(lambda:None,semantic_validation=True)
-        with self.assertRaisesRegex(Exception,"repair_preservation"):
-            planner.repair_scene(session=backend,data=data,assignments=dataset_assignments(data),row=row,progress=lambda _:None,
-                errors=["Correct framing only"],attempts=1)
-        audit=json.loads(backend.calls[1].user_message)["contract"]
-        self.assertEqual(audit["action_critical_facts"]["pose_detail"],row["geometry"]["pose_detail"])
-        self.assertIn("Correct framing only",audit["listed_defect"])
-
-    def test_relevance_precedes_history_and_replaces_only_bad_sibling(self):
-        from goated_prompter.scene_planner import ScenePlanner
-        from goated_prompter.dataset_assignments import dataset_assignments
-        data = {**default_dataset_draft(),"subject":"People restoring everyday objects in a shared workshop", "amount":2}
-        accepted = {"index":1,"idea":"Repairing a wooden chair joint"}
-        bad = {"index":2,"idea":"Packing dry ice into lunchboxes"}
-        new = {"index":2,"idea":"Mending a torn canvas bag"}
-        checks = ("domain_relevance","constraint_validity")
-        issue = defect("domain_relevance","irrelevant_action","restoring everyday objects","Packing dry ice",index=2)
-        backend = SequenceBackend([json.dumps([accepted,bad]),verdict(checks),verdict(checks,issue),json.dumps([new]),verdict(checks)])
-        history = Mock()
-        history.recent.return_value = ["Polishing a clock face"]
-        result = ScenePlanner(lambda:None,idea_history=history,semantic_validation=True).plan_ideas(
-            session=backend,data=data,assignments=dataset_assignments(data),progress=lambda _:None)
-        self.assertEqual(result,[accepted,new])
-        history.remember.assert_called_once_with({**data,"_recent_ideas":["Polishing a clock face"]},result)
-        replacement = json.loads(backend.calls[3].user_message)
-        self.assertEqual([item["index"] for item in replacement["assignments"]],[2])
-        self.assertIn("relevance",backend.calls[3].system_message.lower())
 
     def test_temporal_endpoint_rule_is_not_specific_to_ten_seconds(self):
         from goated_prompter.prompting.minimax import validate_temporal_endpoints

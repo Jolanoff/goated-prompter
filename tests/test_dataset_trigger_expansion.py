@@ -7,7 +7,6 @@ from unittest.mock import Mock
 from goated_prompter.backends.base import BackendGenerationError, BackendRunawayError
 from goated_prompter.core import GoatedPrompterRequest
 from goated_prompter.dataset import DatasetService, validate_trigger_contract
-from goated_prompter.dataset_quality import analyze_dataset_quality, quality_signature
 from goated_prompter.dataset_triggers import trigger_presence_error, trigger_contract_error
 from goated_prompter.prompting.dataset import dataset_instruction
 from tests.test_dataset import valid_draft
@@ -31,9 +30,6 @@ class TriggerExpansionTests(unittest.TestCase):
         for prompt in examples:
             with self.subTest(prompt=prompt):
                 self.assertIsNone(trigger_presence_error(prompt, data["trigger"], "Generic", expand=True))
-                report = analyze_dataset_quality(data, [{"index": 1, "prompt": prompt}])
-                self.assertFalse(any(issue["code"].startswith("trigger") for issue in report["prompts"][0]["issues"]))
-                self.assertEqual(report["metrics"]["trigger"], 100)
 
     def test_expansion_does_not_allow_missing_subjects_or_partial_words(self):
         for prompt, missing in (("A banana character poses in a suit.", "an apple"),
@@ -65,9 +61,6 @@ class TriggerExpansionTests(unittest.TestCase):
         for prompt in ("A banana faces an apple.", "a muscular banana faces an apple.", "a banana faces an anthropomorphic apple."):
             self.assertIn("exact required", trigger_presence_error(prompt, "a banana, an apple", "Generic"))
         self.assertIsNone(trigger_presence_error("On the mat, a banana faces an apple.", "a banana, an apple", "Generic"))
-        data = {**self.data(), "expand_trigger": False}
-        report = analyze_dataset_quality(data, [{"index": 1, "prompt": "A banana character confronts the apple character on a wooden mat."}])
-        self.assertTrue(any(issue["code"] == "trigger_missing" for issue in report["prompts"][0]["issues"]))
 
     def test_ideogram_checks_only_high_level_description(self):
         prompt = json.dumps({"high_level_description": "A muscular banana grapples the apple character on a padded mat.",
@@ -88,49 +81,50 @@ class TriggerExpansionTests(unittest.TestCase):
 
     def test_writer_retries_only_final_wording_when_expansion_is_disabled(self):
         data = {**self.data(), "expand_trigger": False}
-        original = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1,
-            plan_item={"idea": "Banana punches apple", "scene": "A banana punches an apple on a wooden mat."})
+        row = {"idea": "Banana punches apple", "scene": "A banana punches an apple on a wooden mat.", "self_check": "PASS"}
+        original = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=row)
         session = Mock()
         session.generate.side_effect = ["A muscular banana punches the apple character on a wooden mat.",
                                        "On a wooden mat, a banana punches an apple."]
-        output = DatasetService({}, lambda: None)._generate(session, original, data, 1, lambda _: None)
+        output = DatasetService({}, lambda: None)._generate(session, original, data, 1, lambda _: None, row)
         self.assertEqual(output, "On a wooden mat, a banana punches an apple.")
         self.assertEqual(session.generate.call_count, 2)
         retry = session.generate.call_args.args[0]
         self.assertTrue(retry.user_message.startswith(original.user_message))
-        self.assertIn("LOCAL REPAIR CONTRACT", retry.user_message)
+        self.assertEqual(retry.user_message, original.user_message)
         self.assertEqual(retry.hard_max_tokens, original.hard_max_tokens)
-        self.assertIn("TRIGGER WORDING CORRECTION", retry.system_message)
-        self.assertIn(":trigger_retry_1", retry.diagnostic_stage)
+        self.assertIn("FINAL OUTPUT CORRECTION", retry.system_message)
+        self.assertIn(":output_retry_1", retry.diagnostic_stage)
 
     def test_strict_retries_are_bounded_and_runaway_prefix_is_not_exempt(self):
         data = {**self.data(), "expand_trigger": False}
-        instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1)
+        row = {"scene": "A banana punches an apple on a mat.", "self_check": "PASS"}
+        instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=row)
         session = Mock()
         session.generate.return_value = "The banana punches the apple on a mat."
         with self.assertRaisesRegex(BackendGenerationError, "after 3 retries"):
-            DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None)
+            DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None, row)
         self.assertEqual(session.generate.call_count, 4)
         prefix = "The banana punches the apple on a wooden mat in a dojo. " + "Their clothes ripple with the force of the impact. " * 3
         session = Mock()
         session.generate.side_effect = [BackendRunawayError("loop", recoverable_text=prefix), "On a mat, a banana punches an apple."]
-        output = DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None)
+        output = DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None, row)
         self.assertIn("a banana", output)
         self.assertEqual(session.generate.call_count, 2)
 
-    def test_expanded_output_does_not_retry_and_quality_cache_tracks_mode(self):
+    def test_expanded_output_does_not_retry(self):
         data = self.data()
         prompt = "A muscular banana punches the apple character on a wooden dojo mat."
-        instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1)
+        row = {"scene": "A banana punches an apple on a mat.", "self_check": "PASS"}
+        instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=row)
         session = Mock()
         session.generate.return_value = prompt
         messages = []
-        self.assertEqual(DatasetService({}, lambda: None)._generate(session, instruction, data, 1, messages.append), prompt)
+        self.assertEqual(DatasetService({}, lambda: None)._generate(session, instruction, data, 1, messages.append, row), prompt)
         self.assertEqual(session.generate.call_count, 1)
         self.assertFalse(any("Trigger warning" in message for message in messages))
         self.assertNotIn("exact uninterrupted text", instruction.system_message)
-        self.assertIn("Every subject must remain mentioned", instruction.system_message)
-        self.assertNotEqual(quality_signature(data, [], []), quality_signature({**data, "expand_trigger": False}, [], []))
+        self.assertIn("Required subjects/attributes", instruction.system_message)
         # Unknown semantic paraphrases remain a non-destructive review warning.
         warnings = []
         validate_trigger_contract("Two fruits grapple on a padded mat.", data, warnings.append)

@@ -7,39 +7,30 @@ import re
 import threading
 import time
 
-from .dataset import validate_dataset_draft
-from .scene_planner import validate_saved_scene_plan
+from .dataset import validate_dataset_draft, saved_dataset_draft
 
 CHECKPOINT_LIMIT = 20
 CHECKPOINT_BYTE_BUDGET = 14 * 1024 * 1024
-GENERATED_FIELDS = {"results", "result_job_id", "quality_report"}
+GENERATED_FIELDS = {"results", "result_job_id"}
 TERMINAL = {"succeeded", "failed", "cancelled", "interrupted"}
 
 
 def _checkpoint_input(data):
     """Validate an archived input projection without changing its signature or record."""
-    fields = dict(data)
-    if "scene_plan" in fields:
-        fields["scene_plan"] = validate_saved_scene_plan(fields["scene_plan"],
-            dataset_type=fields.get("trigger_type"), allow_legacy_metadata=True)
-    return validate_dataset_draft(fields)
+    return saved_dataset_draft(data)
 
 
 def _result_fields(result, data):
     """Project supported fields without modifying the original historical snapshot."""
-    fields = {key: result[key] for key in ("scene_plan", "scene_plan_signature", "quality_report") if key in result}
-    if "scene_plan" in fields:
-        fields["scene_plan"] = validate_saved_scene_plan(fields["scene_plan"],
-            dataset_type=data["trigger_type"], allow_legacy_metadata=True)
+    fields = {key: result[key] for key in ("scene_plan", "scene_plan_signature") if key in result}
     if "prompts" in result:
         fields["results"] = result["prompts"]
-    if "report" in result:
-        fields["quality_report"] = result["report"]
-    return fields
+    projected = saved_dataset_draft({**data, **fields})
+    return {key: projected[key] for key in fields}
 
 
 def generation_signature(data):
-    # Scene prose/geometry and guided input are authoritative generation inputs.
+    # Scene prose/self-check and guided input are authoritative generation inputs.
     value = {key: item for key, item in validate_dataset_draft(data).items() if key not in GENERATED_FIELDS}
     return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True,
                                     separators=(",", ":")).encode()).hexdigest()
@@ -57,7 +48,7 @@ def validate_checkpoints(value):
             raise ValueError("Invalid Dataset checkpoint record.")
         data = _checkpoint_input(row["input"])
         snapshot = row["snapshot"]
-        if (snapshot.get("id") != row["job_id"] or snapshot.get("kind") not in {"dataset", "dataset_scenes", "dataset_review"}
+        if (snapshot.get("id") != row["job_id"] or not isinstance(snapshot.get("kind"), str)
                 or snapshot.get("status") not in TERMINAL | {"running", "paused", "pause_requested", "cancelling"}
                 or type(snapshot.get("revision")) is not int
                 or snapshot.get("result") is not None and not isinstance(snapshot["result"], dict)):
@@ -160,13 +151,11 @@ class DatasetCheckpointStore:
         result = row["snapshot"].get("result") or {}
         fields = _result_fields(result, _checkpoint_input(row["input"]))
         draft = deepcopy(record["draft"])
-        for key in ("scene_plan", "scene_plan_signature", "quality_report"):
+        for key in ("scene_plan", "scene_plan_signature"):
             if key in fields:
                 draft[key] = deepcopy(fields[key])
         if "prompts" in result:
-            draft.update(results=deepcopy(result["prompts"]), result_job_id=row["job_id"])
-        if "report" in result:
-            draft["quality_report"] = deepcopy(result["report"])
+            draft.update(results=deepcopy(fields["results"]), result_job_id=row["job_id"])
         return {**record, "draft": draft, "checkpoint": {key: row[key] for key in
                 ("job_id", "workflow_revision", "input_signature", "updated_at")},
                 "checkpoint_status": row["snapshot"]["status"]}

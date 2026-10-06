@@ -188,23 +188,19 @@ def _brief_json(raw):
 
 def validate_understanding(value: dict, scopes: tuple[str, ...]) -> dict:
     """Validate the brief's shape and scopes, not the model's semantic judgment."""
-    fields = {*SUMMARY_FIELDS, *REQUIREMENT_FIELDS, "physical_conflicts", "clarifications"}
-    if not isinstance(value, dict) or not fields <= set(value) or set(value) - fields - set(DETAIL_FIELDS):
+    fields = {*SUMMARY_FIELDS, *REQUIREMENT_FIELDS, *DETAIL_FIELDS, "physical_conflicts", "clarifications"}
+    if not isinstance(value, dict) or set(value) != fields:
         raise ValueError("Understanding must contain exactly the required brief fields.")
     result = {field: _text(value[field], field) for field in SUMMARY_FIELDS}
-    # Briefs approved before the richer review remain usable without invented metadata.
-    if "character_count" in value:
-        count = value["character_count"]
-        if count is not None and (type(count) is not int or not 1 <= count <= 100):
-            raise ValueError("Character count must be a positive integer up to 100 or null.")
-        result["character_count"] = count
-    if "identity_policy" in value:
-        policy = value["identity_policy"]
-        if not isinstance(policy, str) or policy not in {"fixed", "random_per_prompt", "not_applicable", "mixed"}:
-            raise ValueError("Unknown identity policy.")
-        result["identity_policy"] = policy
-    extra_lists = ("action_options",) if "action_options" in value else ()
-    for field in (*REQUIREMENT_FIELDS, *extra_lists, "physical_conflicts", "clarifications"):
+    count = value["character_count"]
+    if count is not None and (type(count) is not int or not 1 <= count <= 100):
+        raise ValueError("Character count must be a positive integer up to 100 or null.")
+    result["character_count"] = count
+    policy = value["identity_policy"]
+    if not isinstance(policy, str) or policy not in {"fixed", "random_per_prompt", "not_applicable", "mixed"}:
+        raise ValueError("Unknown identity policy.")
+    result["identity_policy"] = policy
+    for field in (*REQUIREMENT_FIELDS, "action_options", "physical_conflicts", "clarifications"):
         items = value[field]
         if not isinstance(items, list) or len(items) > MAX_ITEMS:
             raise ValueError(f"{field} must be an array within the understanding limit.")

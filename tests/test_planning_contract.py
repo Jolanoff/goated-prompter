@@ -6,7 +6,6 @@ from goated_prompter.planning.result import PlanningResult
 from goated_prompter.planning.scene_planner import supporting_pass
 from goated_prompter.planning.complexity import needs_planning
 from goated_prompter.backends.base import BackendGenerationError
-from goated_prompter.scene_planner import ScenePlanner
 
 
 class PlanningContractTests(unittest.TestCase):
@@ -29,17 +28,6 @@ class PlanningContractTests(unittest.TestCase):
         session.emit_activity.assert_called_once()
         with self.assertRaisesRegex(BackendGenerationError, "Required scene planning failed"):
             supporting_pass(session, "Always", "a cup", Mock(), Mock())
-
-    def test_dataset_partial_result_retains_valid_siblings_and_batch_schema(self):
-        planner = ScenePlanner(lambda: None)
-        rows = [{"index": 1, "idea": "one", "scene": "valid", "scene_status": "valid"},
-                {"index": 2, "idea": "two", "scene": "", "scene_status": "failed", "failure_reason": "missing contact"}]
-        planner.plan_batch = Mock(return_value=rows)
-        result = planner.plan_result()
-        self.assertEqual(result.plan, rows)
-        self.assertFalse(result.success)
-        self.assertFalse(result.fallback_allowed)
-        self.assertEqual(result.warnings, ("missing contact",))
 
     def test_structural_mechanics_detect_complexity_without_domain_mapping(self):
         self.assertTrue(needs_planning("One hand braces the object while the other hand rotates the tool."))

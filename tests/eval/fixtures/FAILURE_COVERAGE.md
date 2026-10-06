@@ -10,7 +10,7 @@
   not a proven failure of the current revision.
 
 `current_fixed_engine_failures.json` adds seven selected failures observed on
-the current dirty `test` revision with one stable Qwen3.8 27B Q2 engine:
+the historical dirty `test` revision with one stable Qwen3.8 27B Q2 engine:
 
 - Dataset portrait trigger/constraint-repair exhaustion, including raw retries.
 - Builder and Dataset climbing lock-off contradictions.
@@ -27,9 +27,11 @@ domain or rendered-media review. The originating local report used 39 samples.
 
 Existing evaluation artifacts also document omitted viewpoint, trigger-repair
 exhaustion, contradictory support mechanics, repetition and transport loss.
-The repository's deterministic regressions exercise invalid JSON, YAML, wrong
-geometry category, gaze/emotion confusion, framing/distance confusion, valid
-paraphrases, simplified poses, duplicate ideas, repair loops and unfinished SSE.
+Current deterministic regressions cover approval/scoped briefs, compact idea and
+scene shapes, PASS/REPAIR gates, one explicit repair attempt, trigger/target-output
+recovery, positive-content leakage, duplicates, durable progress and unfinished SSE.
+Legacy geometry fixtures and repair-loop tests have been removed; they do not
+describe the compact pipeline.
 
 **Coverage limitation:** exact raw local-model responses for every requested
 failure class have not been located. Their synthetic regression inputs must not

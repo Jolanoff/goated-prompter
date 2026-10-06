@@ -139,6 +139,6 @@ class DatasetSceneService:
                 + " No automatic retry or separate evaluator was run.") from error
         return {"index": assignment["index"], "input": assignment["input"],
             **{field: idea[field] for field in IDEA_FIELDS if field in idea}, **checked,
-            "geometry": {}, "idea_status": "valid",
+            "idea_status": "valid",
             "scene_status": "valid" if checked["self_check"] == "PASS" else "repair_required",
             "prompt_status": "not_generated"}

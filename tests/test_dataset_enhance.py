@@ -23,7 +23,7 @@ class DatasetEnhanceTests(unittest.TestCase):
     def setUp(self):
         self.data = valid_draft(amount=1, _confirmed_intent=dataset_understanding_fixture())
         self.scene = {**dataset_idea_fixture(), "input": "", "scene": SCENE,
-            "self_check": "PASS", "scene_status": "valid", "geometry": {}}
+            "self_check": "PASS", "scene_status": "valid"}
         self.request = GoatedPrompterRequest(idea="Original raw concept must not be the final Builder input.", mode="Custom")
 
     def assemble(self, **changes):

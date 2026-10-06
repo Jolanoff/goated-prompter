@@ -1,5 +1,9 @@
 # Repository remediation report
 
+Historical report: this describes the pre-compact implementation. Its Dataset
+staging validators, separate writer and associated tests were retired under #25.
+For the current runtime contract, see [Dataset architecture](dataset-architecture.md).
+
 The deterministic remediation pass is complete against the working tree based on `master` at
 `b065b94`. No product UI, dependencies, model processes or persisted user data were replaced.
 This report accompanies the local remediation commit. Nothing was pushed. Live inference was not run.

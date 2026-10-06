@@ -126,7 +126,6 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         state = self.app[local.STATE]
         state.workspace.add_version("A cup on a table.", "Generic", "Starting prompt")
         data = {**default_dataset_draft(), "subject": "A craftsperson working.", "trigger": "craft_token", "amount": 1}
-        reviewed = {**data, "results": [{"index": 1, "input": "", "prompt": "craft_token working."}]}
         minimax = {**default_minimax_draft(), "user_request": "A car driving down a street."}
         # A deliberately invalid local selection must be ignored by configured backends.
         settings = {"director_profile": 123}
@@ -137,7 +136,6 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
                 ("dataset", confirmed_dataset_payload(state, data)),
                 ("dataset/scenes", confirmed_dataset_payload(state, data)),
                 ("dataset/understand", {"input": data}),
-                ("dataset/review", {"input": reviewed}),
                 ("minimax", {"input": minimax}),
                 ("refine", {"revision": revision, "changes": "Soften the light."}),
             ):
@@ -754,14 +752,14 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(state.idea_history.recent(data), ["An active run's recent idea"])
         active.deliver({"ok": True})
 
-    async def test_local_prompt_regeneration_accepts_manual_scene_without_geometry(self):
+    async def test_local_prompt_regeneration_requires_a_checked_scene(self):
         from tests.helpers import confirmed_dataset_payload
         from goated_prompter.dataset import default_dataset_draft
         from goated_prompter.dataset_assignments import dataset_assignments
         from goated_prompter.scene_planner import scene_plan_signature
         data = {**default_dataset_draft(), "amount": 1, "subject": "A traveler", "trigger": "person_token"}
         data["scene_plan"] = [{"index": 1, "input": "", "idea": "Reading on a bench",
-                               "scene": "She reads a book on a park bench.", "geometry": {},
+                               "scene": "She reads a book on a park bench.", "self_check": "PASS",
                                "idea_status": "valid", "scene_status": "valid", "prompt_status": "not_generated"}]
         data["scene_plan_signature"] = scene_plan_signature(data, dataset_assignments(data))
         response = await self.client.post("/api/workspace/dataset/scene", json=confirmed_dataset_payload(
@@ -769,7 +767,15 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 202, await response.text())
         finished = await self.wait_status((await response.json())["id"], "succeeded")
         self.assertEqual(finished["result"]["scene_plan"][0]["scene"], data["scene_plan"][0]["scene"])
-        self.assertEqual(finished["result"]["scene_plan"][0]["geometry"], {})
+        self.assertEqual(finished["result"]["scene_plan"][0]["self_check"], "PASS")
+
+    async def test_retired_dataset_review_and_quality_routes_do_not_start_jobs(self):
+        state = self.app[local.STATE]
+        with patch.object(state, "start_job") as start:
+            for route in ("quality", "review"):
+                response = await self.client.post(f"/api/workspace/dataset/{route}", json={"input": {}})
+                self.assertIn(response.status, (404, 405))
+            start.assert_not_called()
 
     async def test_preset_crud_and_unload_shapes(self):
         director = SimpleNamespace(to_public_mapping=lambda: {"id": "user:test", "label": "Test"})

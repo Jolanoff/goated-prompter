@@ -8,8 +8,7 @@ test.beforeEach(async ({ request }) => {
     data: { revision: record.revision, draft: { subject: "Person 1 and person 2 fighting.",
       trigger_type: "Multiple characters", trigger: "person 1, person 2", trigger_connected: false,
       amount: 2, constraints: "Arena. Both wearing gloves.",
-      results: [{ index: 1, input: "", prompt: "Previous manually edited prompt." }],
-      quality_report: { signature: "fixture", idea_quality: {} } } },
+      results: [{ index: 1, input: "", prompt: "Previous manually edited prompt." }] } },
   })).ok()).toBe(true);
 });
 
@@ -59,7 +58,7 @@ test("extra instructions require a revised summary and only persist after confir
   await expect(confirm).toBeDisabled();
   await dialog.getByRole("button", { name: "Update summary" }).click();
   await expect(confirm).toBeEnabled();
-  await expect(dialog.getByText(addition, { exact: true })).toBeVisible();
+  await expect(dialog.getByText(`Every output: ${addition}`, { exact: true })).toBeVisible();
   const before = (await (await request.get("/api/workspace/settings/dataset")).json()).draft;
   expect(before.constraints).toBe("Arena. Both wearing gloves.");
   expect(before.results[0].prompt).toBe("Previous manually edited prompt.");

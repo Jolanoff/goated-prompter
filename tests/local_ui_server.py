@@ -15,7 +15,6 @@ from aiohttp import web
 from local_app import create_app
 from goated_prompter.core import GoatedPrompterService
 from goated_prompter.backends.mock import MockBackend
-from goated_prompter.dataset_staging import STAGING_PROFILES
 
 
 class DatasetUIMock(MockBackend):
@@ -25,55 +24,30 @@ class DatasetUIMock(MockBackend):
         if stage == "dataset:build_scene":
             context = json.loads(instruction.user_message)
             row = context["assignments"][0]
-            return json.dumps({"scene": context.get("current_scene") or
-                " ".join(row.get(field, "") for field in ("idea", "placement", "visibility", "camera", "framing", "context")),
+            result = json.dumps({"scene": context.get("current_scene") or
+                f"mock scene {row['index']}: " + " ".join(row.get(field, "") for field in ("idea", "placement", "visibility", "camera", "framing", "context")),
                 "self_check": "PASS"})
-        if stage == "dataset:ideas":
+        elif stage == "dataset:ideas":
             from tests.helpers import dataset_idea_fixture
             context = json.loads(instruction.user_message)
-            return json.dumps([dataset_idea_fixture(row["index"]) for row in context["assignments"]])
-        if stage == "builder:scene_planning":
+            result = json.dumps([dataset_idea_fixture(row["index"],
+                idea=row["input"] or f"Mock activity{row['index']}" + (" revised" if context["existing_ideas"] else ""))
+                for row in context["assignments"]])
+        elif stage == "builder:scene_planning":
             context = json.loads(instruction.user_message)
             return json.dumps({"primary_action": context["user_request"],
                                "staging": "Keep the requested subjects and relationships."})
-        if stage.startswith("dataset:understanding"):
+        elif stage.startswith("dataset:understanding"):
             from tests.helpers import dataset_understanding_fixture
             source = json.loads(instruction.user_message)["source"]
             self.dataset_trigger = source.get("trigger", "")
             result = json.dumps(dataset_understanding_fixture(requested_generation=source["subject"],
                 rules=[{"scope": "all_outputs", "text": rule} for rule in source["constraints"].splitlines() if rule.strip()],
                 clarifications=["Breaking what?"] if "unclear breaking" in source["subject"] and "breaking a board" not in source["constraints"] else []))
-        elif stage.startswith(("dataset:idea_planner", "dataset:scene_planner", "dataset:scene_composer")):
-            context = json.loads(instruction.user_message)
-            rows = []
-            for assignment in context["assignments"]:
-                index = assignment["index"]
-                idea = assignment.get("idea") or assignment["input"] or f"Mock activity{index}"
-                if stage.startswith("dataset:idea_planner"):
-                    # A replacement must differ from both the batch and prior idea.
-                    idea = f"Replacement activity{index}" if context.get("existing_ideas") else idea
-                    rows.append({"index": index, "idea": idea})
-                else:
-                    text = assignment["input"] or context["subject"]
-                    if stage.startswith("dataset:scene_composer"):
-                        text = idea
-                    geometry = {"camera_azimuth": "front", "framing": "full_body",
-                                      "body_orientation": "front", "head_direction": "toward_action",
-                                      "gaze_direction": "toward_action", "pose_type": "standing_neutral",
-                                      "action_focus": idea, "face_visibility": "full", "visibility_focus": ["face"]}
-                    kind = context["trigger_type"]
-                    if kind != "Character":
-                        geometry.update(framing="full_subject", visibility_focus=["ribbon"], composition="centered",
-                                        primary_subject_count=2, action_visibility="clear")
-                    geometry = {key: value for key, value in geometry.items() if key in STAGING_PROFILES[kind].allowed}
-                    rows.append({"index": index, "idea": idea, "scene": f"{text}; mock scene {index}.", "geometry": geometry})
-            result = json.dumps(rows)
         elif re.match(r"dataset:\d+", stage):
-            legacy_scene = re.search(r"<scene>\n(.*?)\n</scene>", instruction.user_message, re.S)
-            legacy_trigger = re.search(r"<trigger>\n(.*?)\n</trigger>", instruction.user_message, re.S)
-            text = legacy_scene.group(1) if legacy_scene else instruction.user_message
-            trigger = legacy_trigger.group(1) if legacy_trigger else getattr(self, "dataset_trigger", "")
-            result = f"{trigger}: {text}"
+            supplied = instruction.system_message.split("Include exact case-sensitive trigger wording: ", 1)[1]
+            terms, _ = json.JSONDecoder().raw_decode(supplied)
+            result = f"{', '.join(terms)}: {instruction.user_message}"
         else:
             return super().generate(instruction)
         time.sleep(.02)  # Leaves a real disconnect window without using inference.
@@ -96,12 +70,15 @@ class DelayedMockService(GoatedPrompterService):
 
 
 if __name__ == "__main__":
+    from tests.run_synthetic_suite import private_storage_guard
+    sys.addaudithook(private_storage_guard)
     with tempfile.TemporaryDirectory() as data:
         os.environ["GOATED_PROMPTER_USER_DIR"] = str(Path(data) / "directors")
         port = int(os.environ.get("GOATED_UI_TEST_PORT", "8190"))
         with patch("goated_prompter.dataset.create_backend", side_effect=dataset_ui_backend), \
                 patch("goated_prompter.dataset_understanding.create_backend", side_effect=dataset_ui_backend), \
-                patch("goated_prompter.core.create_backend", side_effect=dataset_ui_backend):
+                patch("goated_prompter.core.create_backend", side_effect=dataset_ui_backend), \
+                patch("local_app.get_process_manager"):
             # Exercise accepted aliases through the real API, not only factory tests.
             web.run_app(create_app(port=port, config_loader=lambda: {"backend": " DeBuG "}, settings_path=Path(data) / "settings.json",
                                    service_factory=DelayedMockService), host="127.0.0.1",

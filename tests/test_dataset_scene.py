@@ -38,7 +38,7 @@ class DatasetSceneTests(unittest.TestCase):
         self.assertEqual(row["scene"], SCENE)
         self.assertEqual(row["self_check"], "PASS")
         self.assertEqual(row["scene_status"], "valid")
-        self.assertFalse(row["geometry"])
+        self.assertNotIn("geometry", row)
         for field, value in before.items():
             self.assertEqual(row[field], value)
         self.assertEqual(self.idea, before)

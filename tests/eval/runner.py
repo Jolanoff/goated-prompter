@@ -33,9 +33,8 @@ def capture(calls, event):
 
 def live_case(case, workflow, config, args, run=1):
     from goated_prompter.core import GoatedPrompterRequest, GoatedPrompterService
-    from goated_prompter.backends.factory import create_backend
     from goated_prompter.dataset import DatasetService, default_dataset_draft
-    from goated_prompter.prompting.dataset import dataset_instruction, STYLE_RULES
+    from goated_prompter.prompting.dataset import STYLE_RULES
     from goated_prompter.minimax import MiniMaxService
     from goated_prompter.planning.constraints import compile_request
     calls = []
@@ -56,9 +55,8 @@ def live_case(case, workflow, config, args, run=1):
         custom_instructions=common_rules)
     sample_id = "|".join(str(value) for value in (case["id"], workflow, args.target, length, args.director,
                                                args.style, args.creativity, args.planning, run))
-    dataset_mode = getattr(args, "dataset_mode", "writer")
-    if workflow == "dataset" and dataset_mode == "pipeline":
-        sample_id += "|pipeline|" + getattr(args, "dataset_planning", "Fast")
+    if workflow == "dataset":
+        sample_id += "|pipeline"
     row = {"sample_id": sample_id, "case_id": case["id"], "workflow": workflow,
            "run": run, "request": case["request"], "anchors": case["anchors"], "rules": rules,
            "target": "MiniMax H3" if workflow == "minimax" else args.target, "length": length, "director": args.director,
@@ -76,28 +74,19 @@ def live_case(case, workflow, config, args, run=1):
                  "duration_seconds": 10, "references": case.get("references", []), "director_preset": args.director}, lambda _message: None)
             row["prompt"] = result["prompt"]
         else:
-            row["evaluation_scope"] = dataset_mode
+            row["evaluation_scope"] = "pipeline"
             data = {**default_dataset_draft(), "subject": case["request"], "trigger": "eval_subject",
                     "trigger_type": case.get("dataset_type", "Character"),
                     "amount": 1, "target": args.target, "length": length, "director_preset": args.director,
                     "visual_style": args.style, "creativity": args.creativity, "constraints": rules}
-            if dataset_mode == "pipeline":
-                data.update(source_mode="guided", inputs=case["request"].replace("\n", " "),
-                            planning_mode=getattr(args, "dataset_planning", "Fast"))
-                result = DatasetService(config, lambda: None).run(request, data, lambda _message: None, lambda _partial: None)
-                row.update(scene_plan=result["scene_plan"], dataset_type=data["trigger_type"],
-                           completed_results=result["completed"], prompts=result["prompts"],
-                           prompt=result["prompts"][0]["prompt"] if result["prompts"] else "")
-                if not result["completed"]:
-                    row.update(error="Dataset pipeline produced no valid prompt.", completion_state="validation_failed")
-            else:
-                plan = {"index": 1, "input": case["request"], "idea": compiled_source.positive_request,
-                        "scene": compiled_source.positive_request, "geometry": {}}
-                backend = create_backend(config)
-                with backend.generation_session() as session:
-                    instruction = dataset_instruction(request, data, 1, plan_item=plan)
-                    row["prompt"] = DatasetService(config, lambda: None)._generate(session, instruction, data, 1,
-                        lambda _message: None, plan)
+            data.update(source_mode="guided", inputs=case["request"].replace("\n", " "))
+            data = approve_dataset(config, request, data)
+            result = DatasetService(config, lambda: None).run(request, data, lambda _message: None, lambda _partial: None)
+            row.update(scene_plan=result["scene_plan"], dataset_type=data["trigger_type"],
+                       completed_results=result["completed"], prompts=result["prompts"],
+                       prompt=result["prompts"][0]["prompt"] if result["prompts"] else "")
+            if not result["completed"]:
+                row.update(error="Dataset pipeline produced no valid prompt.", completion_state="validation_failed")
         row.setdefault("completion_state", "completed")
     except Exception as exc:
         row.update(error=str(exc), completion_state=getattr(exc, "completion_state", "provider_error"),
@@ -105,6 +94,18 @@ def live_case(case, workflow, config, args, run=1):
     row.update(latency_seconds=time.perf_counter() - start,
                finish_reason=calls[-1].get("finish_reason") if calls else None)
     return row
+
+
+def approve_dataset(config, request, data):
+    from goated_prompter.dataset_understanding import DatasetUnderstandingService
+    from goated_prompter.dataset_intent import DatasetIntentTickets
+    brief = DatasetUnderstandingService(config, lambda: None).run(request, data, print)
+    print(json.dumps(brief, ensure_ascii=False, indent=2))
+    tickets = DatasetIntentTickets()
+    ticket = tickets.register(data, brief)
+    if not ticket["confirmation_token"] or input("Approve this interpretation? Type yes: ").strip() != "yes":
+        raise ValueError("Dataset evaluation stopped before downstream generation.")
+    return {**data, "_confirmed_intent": tickets.approve(ticket["confirmation_token"], data)}
 
 
 def novelty_cases(spec, config, args):
@@ -116,7 +117,7 @@ def novelty_cases(spec, config, args):
     for run in range(1, spec["runs"] + 1):
         calls = []
         data = {**default_dataset_draft(), "subject": spec["concept"], "amount": spec["amount"],
-                "variety": args.variety, "trigger": "eval_subject", "planning_mode": "Quality",
+                 "variety": args.variety, "trigger": "eval_subject",
                 "target": args.target, "length": args.length, "director_preset": args.director,
                 "visual_style": args.style, "creativity": args.creativity}
         start = time.perf_counter()
@@ -125,8 +126,10 @@ def novelty_cases(spec, config, args):
                "anchors": {}, "calls": calls, "target": args.target, "output_kind": "ideas",
                "dataset_type": data["trigger_type"], "history": args.history}
         try:
-            result = DatasetService({**config, "_activity_callback": lambda event: capture(calls, event)},
-                lambda: None, idea_history=history).run(GoatedPrompterRequest(idea=spec["concept"]),
+            effective = {**config, "_activity_callback": lambda event: capture(calls, event)}
+            request = GoatedPrompterRequest(idea=spec["concept"])
+            data = approve_dataset(effective, request, data)
+            result = DatasetService(effective, lambda: None, idea_history=history).run(request,
                     data, lambda _message: None, lambda _partial: None, scenes_only=True)
             row.update(ideas=[item["idea"] for item in result["scene_plan"]], scene_plan=result["scene_plan"],
                        completion_state="completed")
@@ -147,7 +150,7 @@ def load_replay(path):
     for source in paths:
         run = json.loads(source.read_text(encoding="utf-8"))
         records = run.get("records") if isinstance(run, dict) else None
-        # Raw scene/geometry/audit responses have their own regression tests;
+        # Historical raw supporting responses are not workflow runs;
         # they must not be reported as workflow samples or invented successes.
         if directory and isinstance(run, dict):
             if records is None and "run_id" not in run:
@@ -194,8 +197,6 @@ def main():
     parser.add_argument("--style", default="Photorealistic")
     parser.add_argument("--creativity", default="Balanced")
     parser.add_argument("--planning", choices=["Direct", "Auto", "Always"], default="Direct")
-    parser.add_argument("--dataset-mode", choices=["writer", "pipeline"], default="writer")
-    parser.add_argument("--dataset-planning", choices=["Fast", "Quality"], default="Fast")
     parser.add_argument("--variety", choices=["Focused", "Balanced", "Wide"], default="Balanced")
     parser.add_argument("--novelty", action="store_true")
     parser.add_argument("--history", choices=["on", "off"], default="on")

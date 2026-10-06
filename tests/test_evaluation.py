@@ -7,6 +7,18 @@ from tests.eval.report import markdown, regressions
 
 
 class EvaluationTests(unittest.TestCase):
+    def test_current_compact_plan_is_valid_in_idea_evaluation(self):
+        from tests.test_dataset import saved_scene
+        row = self.sample(workflow="dataset", output_kind="ideas", scene_plan=[saved_scene()], prompt="")
+        measured = measure(row)
+        self.assertTrue(measured["format_valid"])
+        self.assertTrue(measured["accepted"])
+
+    def test_obsolete_unchecked_plan_is_not_valid_in_idea_evaluation(self):
+        row = self.sample(workflow="dataset", output_kind="ideas", scene_plan=[{
+            "index": 1, "input": "", "idea": "Old idea", "scene": "Old unchecked scene"}], prompt="")
+        self.assertFalse(measure(row)["format_valid"])
+
     def sample(self, **patch):
         return {"sample_id": "one", "workflow": "builder", "prompt": "A cup on a table.",
                 "completion_state": "completed", "anchors": {"scene": ["cup"], "action": [], "pose": [], "constraint": []}, **patch}

@@ -3,103 +3,80 @@ import assert from "node:assert/strict";
 import { editDatasetPlan, invalidateDatasetPrompts, isDatasetSceneUsable, datasetRetryStage, datasetSceneSignature, isDatasetSceneCurrent } from "./workflows/datasetState.js";
 
 const draft = { scene_plan: [1, 2].map((index) => ({ index, idea: `idea ${index}`, scene: `scene ${index}`,
-  geometry: { camera_view: "front" }, idea_status: "valid", scene_status: "valid", prompt_status: "valid" })),
-  results: [1, 2].map((index) => ({ index, prompt: `prompt ${index}` })), quality_report: { score: 100 } };
+  self_check: "PASS", idea_status: "valid", scene_status: "valid", prompt_status: "valid" })),
+  results: [1, 2].map((index) => ({ index, prompt: `prompt ${index}` })) };
 
-test("scene signatures ignore object key order and downstream prompt bookkeeping", () => {
-  const saved = { index: 1, input: "", idea: "Read", scene: "Read a book", geometry: { framing: "full_body", visibility_focus: ["face", "book"] }, scene_status: "valid", prompt_status: "failed", failure_reason: "Writer failed" };
-  const reordered = { geometry: { visibility_focus: ["face", "book"], framing: "full_body" }, scene: "Read a book", idea: "Read", input: "", index: 1, prompt_status: "not_generated" };
+test("scene signatures ignore key order and downstream prompt bookkeeping", () => {
+  const saved = { ...draft.scene_plan[0], prompt_status: "failed", failure_reason: "Writer failed" };
+  const reordered = { self_check: "PASS", scene: "scene 1", idea: "idea 1", index: 1, prompt_status: "not_generated" };
   assert.equal(datasetSceneSignature(saved), datasetSceneSignature(reordered));
   const record = { draft: { scene_plan: [saved] }, scene_eligibility: { 1: { usable: true } } };
   assert.equal(isDatasetSceneCurrent(reordered, record), true);
   assert.equal(isDatasetSceneCurrent(reordered, { ...record, scene_eligibility: { 1: { usable: false } } }), false);
 });
 
-test("scene signatures invalidate source, idea, staging, prose and scene-state changes", () => {
+test("scene signatures invalidate source, idea, prose, self-check and scene-state changes", () => {
   const row = draft.scene_plan[0];
   for (const change of [{ input: "new source" }, { idea: "new event" }, { scene: "new scene" },
-    { geometry: { camera_view: "rear" } }, { scene_status: "geometry_warning" }]) {
+    { self_check: "" }, { scene_status: "not_generated" }]) {
     assert.notEqual(datasetSceneSignature(row), datasetSceneSignature({ ...row, ...change }));
   }
-  assert.notEqual(datasetSceneSignature({ index: 1, scene: "Legacy prose" }), datasetSceneSignature({ index: 1, scene: "Legacy prose", idea: "" }));
   assert.equal(isDatasetSceneCurrent(undefined, undefined), false);
   assert.equal(isDatasetSceneCurrent(row, {}), false);
 });
 
-test("scene geometry signatures sort nested keys but retain list ordering and literal prose", () => {
-  const row = { ...draft.scene_plan[0], geometry: { subjects: [{ pose: "custom", detail: "lean" }], focus: ["face", "book"] } };
-  assert.equal(datasetSceneSignature(row), datasetSceneSignature({ ...row,
-    geometry: { focus: ["face", "book"], subjects: [{ detail: "lean", pose: "custom" }] } }));
-  assert.notEqual(datasetSceneSignature(row), datasetSceneSignature({ ...row,
-    geometry: { ...row.geometry, focus: ["book", "face"] } }));
-  assert.notEqual(datasetSceneSignature(row), datasetSceneSignature({ ...row, scene: "scene  1" }));
+for (const stage of ["idea", "scene"]) test(`${stage} edits invalidate its check and prompt, not siblings`, () => {
+  const changed = editDatasetPlan(draft, 1, stage, "new content");
+  assert.equal(changed.scene_plan[0][stage], "new content");
+  assert.equal(changed.scene_plan[0].self_check, "");
+  assert.equal(changed.scene_plan[0].scene_status, "not_generated");
+  assert.equal(changed.scene_plan[0].prompt_status, "not_generated");
+  assert.equal(changed.scene_plan[1], draft.scene_plan[1]);
+  assert.deepEqual(changed.results, [draft.results[1]]);
+  assert.equal(draft.scene_plan[0].self_check, "PASS");
 });
 
-test("idea edits invalidate only that scene, geometry and prompt", () => {
-  const patch = editDatasetPlan(draft, 1, "idea", "new idea");
-  assert.equal(patch.scene_plan[0].idea, "new idea");
-  assert.equal(patch.scene_plan[0].scene, "");
-  assert.deepEqual(patch.scene_plan[0].geometry, {});
-  assert.equal(patch.scene_plan[0].scene_status, "not_generated");
-  assert.equal(patch.scene_plan[0].prompt_status, "not_generated");
-  assert.equal(patch.scene_plan[1], draft.scene_plan[1]);
-  assert.deepEqual(patch.results, [draft.results[1]]);
-  assert.equal(draft.scene_plan[0].scene, "scene 1");
-});
-
-test("scene edits keep idea and discard stale geometry and only its prompt", () => {
-  const patch = editDatasetPlan(draft, 1, "scene", "new scene");
-  assert.equal(patch.scene_plan[0].idea, draft.scene_plan[0].idea);
-  assert.equal(patch.scene_plan[0].scene, "new scene");
-  assert.deepEqual(patch.scene_plan[0].geometry, {});
-  assert.equal(patch.scene_plan[0].prompt_status, "not_generated");
-  assert.equal(patch.scene_plan[1], draft.scene_plan[1]);
-  assert.deepEqual(patch.results, [draft.results[1]]);
-});
-
-test("target, length, director and descriptive creativity preserve idea, scene and geometry", () => {
+test("writer controls preserve checked scene state and only invalidate prompts", () => {
   for (const settings of [{ target: "Qwen Image" }, { length: "Detailed" }, { director_preset: "photography_director" }, { creativity: "Dice" }]) {
-    const patch = invalidateDatasetPrompts(draft, settings);
-    assert.deepEqual(patch.results, []);
-    patch.scene_plan.forEach((row, index) => {
+    const changed = invalidateDatasetPrompts(draft, settings);
+    assert.deepEqual(changed.results, []);
+    changed.scene_plan.forEach((row, index) => {
       assert.equal(row.idea, draft.scene_plan[index].idea);
       assert.equal(row.scene, draft.scene_plan[index].scene);
-      assert.equal(row.geometry, draft.scene_plan[index].geometry);
+      assert.equal(row.self_check, "PASS");
       assert.equal(row.prompt_status, "not_generated");
     });
-    assert.deepEqual(patch.quality_report, {});
   }
 });
 
-test("scene selection consumes server eligibility instead of guessing from prose or geometry", () => {
-  assert.equal(isDatasetSceneUsable({ usable: true, source_kind: "manual_prose" }), true);
-  assert.equal(isDatasetSceneUsable({ usable: false, reason: "Invalid geometry" }), false);
+test("scene selection consumes server eligibility instead of guessing from prose", () => {
+  assert.equal(isDatasetSceneUsable({ usable: true, source_kind: "frozen_scene" }), true);
+  assert.equal(isDatasetSceneUsable({ usable: false, reason: "Check pending" }), false);
   assert.equal(isDatasetSceneUsable(draft.scene_plan[0]), false);
   assert.equal(isDatasetSceneUsable(undefined), false);
 });
 
-test("manual idea/scene edits clear stale failure metadata only for the edited item", () => {
+test("manual edits clear stale failure metadata only for the edited item", () => {
   const failed = { ...draft, scene_plan: draft.scene_plan.map((row) => ({ ...row,
-    scene_status: "failed", prompt_status: "failed", failure_reason: "Camera conflict", failure_stage: "scene", replacement_attempted: true })) };
+    scene_status: "failed", prompt_status: "failed", failure_reason: "Interrupted", failure_stage: "scene" })) };
   for (const stage of ["idea", "scene"]) {
     const changed = editDatasetPlan(failed, 1, stage, "Corrected content");
     assert.equal(changed.scene_plan[0].failure_reason, undefined);
     assert.equal(changed.scene_plan[0].failure_stage, undefined);
-    assert.equal(changed.scene_plan[0].replacement_attempted, undefined);
     assert.equal(changed.scene_plan[1], failed.scene_plan[1]);
   }
 });
 
-test("retrying a failed scene keeps its good idea and never requests idea replacement", () => {
+test("retry stages keep good ideas and eligible scenes", () => {
   assert.equal(datasetRetryStage({ ...draft.scene_plan[0], scene_status: "failed" }), "scene");
   assert.equal(datasetRetryStage({ ...draft.scene_plan[0], scene: "", scene_status: "not_generated" }), "scene");
   assert.equal(datasetRetryStage({ ...draft.scene_plan[0], prompt_status: "failed" }, { usable: true }), "prompt");
   assert.equal(datasetRetryStage({ idea: "", scene: "", scene_status: "failed" }), "idea");
 });
 
-test("writer settings keep scene failure reasons but clear obsolete prompt-only errors", () => {
+test("writer settings preserve scene failures but clear prompt-only errors", () => {
   const failed = { ...draft, scene_plan: [
-    { ...draft.scene_plan[0], scene_status: "failed", failure_reason: "Rear/face conflict", failure_stage: "scene" },
+    { ...draft.scene_plan[0], scene_status: "failed", failure_reason: "Scene interrupted", failure_stage: "scene" },
     { ...draft.scene_plan[1], prompt_status: "failed", failure_reason: "Invalid JSON", failure_stage: "prompt" },
   ] };
   const changed = invalidateDatasetPrompts(failed, { target: "Qwen Image" });

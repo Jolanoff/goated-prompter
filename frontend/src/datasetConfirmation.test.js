@@ -11,7 +11,7 @@ test("request approval ignores result bookkeeping but detects every source and s
   const input = { subject: "Two people boxing", trigger: "person 1, person 2", amount: 2, target: "Generic",
     length: "Medium", constraints: "Arena. Gloves.", scene_plan: [{ index: 1, scene: "Boxing" }], results: [] };
   const signature = datasetRequestSignature(input);
-  assert.equal(signature, datasetRequestSignature({ ...input, results: [{ prompt: "Old output" }], quality_report: { score: 100 } }));
+  assert.equal(signature, datasetRequestSignature({ ...input, results: [{ prompt: "Old output" }], result_job_id: "old-job" }));
   for (const patch of [{ subject: "New concept" }, { trigger: "new_token" }, { amount: 3 }, { target: "Anima" },
     { constraints: "Blond hair" }, { length: "Detailed" }, { scene_plan: [{ index: 1, scene: "Edited scene" }] }]) {
     assert.notEqual(signature, datasetRequestSignature({ ...input, ...patch }));
@@ -51,7 +51,7 @@ test("confirmation waits for analysis, clarification answers and extra-instructi
   assert.equal(canConfirmDatasetReview({ ...ready, status: "analyzing" }, false), false);
   assert.equal(canConfirmDatasetReview({ ...ready, confirmation_token: "" }, false), false);
   assert.equal(canConfirmDatasetReview({ ...ready, brief: { clarifications: ["Which object?"] } }, false), false);
-  assert.equal(canConfirmDatasetReview({ ...ready, brief: { blocking_questions: ["Which object?"] } }, false), false);
+  assert.equal(canConfirmDatasetReview({ ...ready, brief: { clarifications: ["Which object?"] } }, false), false);
 });
 
 test("the existing modal renders the new brief, keeps extra instructions and blocks unresolved questions", async () => {
@@ -94,7 +94,7 @@ test("the existing modal renders the new brief, keeps extra instructions and blo
 
 test("extra instructions create an isolated revised request without discarding old results", () => {
   const input = { constraints: "Arena. Gloves.", scene_plan: [{ scene: "Existing scene" }],
-    scene_plan_signature: "saved", results: [{ prompt: "Manually edited output" }], quality_report: { score: 100 } };
+    scene_plan_signature: "saved", results: [{ prompt: "Manually edited output" }] };
   const before = structuredClone(input);
   const revised = reviseDatasetRequest(input, "  One person must have blond hair.  ");
   assert.equal(revised.constraints, "Arena. Gloves.\nOne person must have blond hair.");

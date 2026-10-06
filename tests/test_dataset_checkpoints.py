@@ -20,7 +20,7 @@ class DatasetCheckpointTests(unittest.TestCase):
         self.path = Path(self.temp.name) / "settings.json"
         self.state = self.make_state()
         self.data = {**default_dataset_draft(), "subject": "A craftsperson", "trigger": "token", "amount": 1}
-        self.row = {"index": 1, "input": "", "idea": "Center clay", "scene": "Both palms center clay on a spinning wheel.", "geometry": {}}
+        self.row = {"index": 1, "input": "", "idea": "Center clay", "scene": "Both palms center clay on a spinning wheel.", "self_check": "PASS"}
 
     def make_state(self):
         return local.LocalState(lambda: {"backend": "mock"}, None, self.path)
@@ -74,7 +74,7 @@ class DatasetCheckpointTests(unittest.TestCase):
         self.assertEqual(restarted.dataset_checkpoints.find(job.id)["result"], original_result)
         self.assertEqual(restarted.dataset_checkpoints.path.read_bytes(), before)
         projected = restarted.workflow_settings.snapshot("dataset")["draft"]
-        self.assertEqual(projected["scene_plan"], self.result()["scene_plan"])
+        self.assertEqual(projected["scene_plan"], [])
         self.assertEqual(projected["results"], self.result()["prompts"])
 
     def test_legacy_scene_metadata_in_checkpoint_input_and_result_survives_startup_and_new_saves(self):
@@ -91,7 +91,7 @@ class DatasetCheckpointTests(unittest.TestCase):
         atomic_json(self.state.dataset_checkpoints.path, store)
         restarted = local.create_app(config_loader=lambda: {"backend": "mock"}, settings_path=self.path)[local.STATE]
         projected = restarted.workflow_settings.snapshot("dataset")["draft"]
-        self.assertEqual(projected["scene_plan"], [self.row])
+        self.assertEqual(projected["scene_plan"], [])
         self.assertEqual(projected["results"], job.result["prompts"])
         self.assertEqual(restarted.dataset_checkpoints.find(job.id)["status"], "interrupted")
         newer = local.Job()
@@ -180,7 +180,7 @@ class DatasetCheckpointTests(unittest.TestCase):
         with self.assertRaises(WorkspaceConflict):
             self.state.workflow_settings.begin_dataset(local.Job(), self.data, 0)
 
-    def test_signature_includes_manual_geometry_and_writer_controls(self):
+    def test_signature_includes_checked_scene_and_writer_controls(self):
         self.assertNotEqual(generation_signature(self.data), generation_signature({**self.data, "length": "Short"}))
         self.assertNotEqual(generation_signature(self.data), generation_signature({**self.data, "scene_plan": [self.row]}))
 

@@ -1,6 +1,6 @@
-/** Dataset's explicit dependency boundary: idea -> scene/geometry -> prompt. */
+/** Dataset's explicit dependency boundary: idea -> checked scene -> prompt. */
 export function invalidateDatasetPrompts(draft, patch = {}) {
-  return { ...patch, results: [], quality_report: {},
+  return { ...patch, results: [],
     scene_plan: (draft.scene_plan || []).map((row) => {
       if (row.scene_status === "failed") return row;
       const { failure_reason, failure_stage, ...scene } = row;
@@ -22,7 +22,7 @@ function canonicalValue(value) {
 
 export function datasetRequestSignature(draft) {
   return JSON.stringify(canonicalValue(Object.fromEntries(Object.entries(draft || {})
-    .filter(([key]) => !["results", "result_job_id", "quality_report"].includes(key)))));
+    .filter(([key]) => !["results", "result_job_id"].includes(key)))));
 }
 
 export function reviseDatasetRequest(input, additions) {
@@ -32,7 +32,7 @@ export function reviseDatasetRequest(input, additions) {
 }
 
 export function datasetReviewQuestions(brief) {
-  return brief?.clarifications || brief?.blocking_questions || [];
+  return brief?.clarifications || [];
 }
 
 export function canConfirmDatasetReview(review, busy, additions = "") {
@@ -72,7 +72,7 @@ export function datasetSceneSignature(row) {
   if (!row) return null;
   // Only the scene dependency boundary, not writer status or failure bookkeeping.
   return JSON.stringify(canonicalValue({ index: row.index, input: row.input || "",
-    idea: row.idea, scene: row.scene || "", geometry: row.geometry || {},
+    idea: row.idea, scene: row.scene || "",
     scene_status: row.scene_status || "valid", self_check: row.self_check,
     ...Object.fromEntries(datasetIdeaDetails(row).map(({ field, text }) => [field, text])) }));
 }
@@ -89,17 +89,16 @@ export function datasetRetryStage(row, eligibility) {
 }
 
 export function editDatasetPlan(draft, index, stage, text) {
-  return { quality_report: {}, results: draft.results.filter((row) => row.index !== index),
+  return { results: draft.results.filter((row) => row.index !== index),
     scene_plan: draft.scene_plan.map((row) => {
       if (row.index !== index) return row;
-      const { failure_reason, failure_stage, replacement_attempted, ...scene } = row;
-      const compact = "self_check" in row;
-      if (compact) scene.self_check = "";
-      for (const field of Object.keys(ideaDetailLabels)) delete scene[field];
+      const { failure_reason, failure_stage, ...scene } = row;
+      scene.self_check = "";
+      if (stage === "idea") for (const field of Object.keys(ideaDetailLabels)) delete scene[field];
       return stage === "idea"
-      ? { ...scene, idea: text, scene: "", geometry: {},
+      ? { ...scene, idea: text, scene: "",
         idea_status: "valid", scene_status: "not_generated", prompt_status: "not_generated" }
-      : { ...scene, scene: text, geometry: {},
-        scene_status: text.trim() && !compact ? "valid" : "not_generated", prompt_status: "not_generated" };
+      : { ...scene, scene: text,
+        scene_status: "not_generated", prompt_status: "not_generated" };
     }) };
 }

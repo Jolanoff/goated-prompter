@@ -54,7 +54,7 @@ class RuntimeDataAccessTests(unittest.TestCase):
         data = {**default_dataset_draft(), "subject": "A craftsperson", "trigger": "craft_token", "amount": 1}
         scene = {**dataset_idea_fixture(idea="Center clay"), "input": "",
             "scene": "A craftsperson centers clay with both palms on a spinning wheel.",
-            "geometry": {}, "self_check": "PASS", "scene_status": "valid"}
+            "self_check": "PASS", "scene_status": "valid"}
         job = local.Job()
         job.kind = "dataset"
         state.workflow_settings.begin_dataset(job, data)

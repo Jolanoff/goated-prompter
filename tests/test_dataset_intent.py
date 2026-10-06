@@ -13,8 +13,9 @@ from aiohttp.test_utils import TestClient, TestServer
 
 import local_app as local
 from goated_prompter.dataset import validate_dataset_draft
-from goated_prompter.dataset_intent import DatasetIntentTickets, validate_intent
-from tests.helpers import dataset_intent_fixture, dataset_understanding_fixture, dataset_idea_fixture, enter_context
+from goated_prompter.dataset_intent import DatasetIntentTickets
+from goated_prompter.dataset_understanding import validate_understanding
+from tests.helpers import dataset_understanding_fixture, dataset_idea_fixture, enter_context
 from tests.test_dataset import CaptureBackend, valid_draft
 
 
@@ -73,25 +74,25 @@ class DatasetIntentTicketTests(unittest.TestCase):
         self.assertEqual(result["confirmation_token"], "")
 
     def test_developed_ideas_and_longer_scenes_fit_the_new_limits_without_minimum_padding(self):
-        from goated_prompter.scene_planner import validate_idea_plan, validate_scene_plan
-        from tests.test_dataset_geometry import character_geometry
+        from goated_prompter.dataset_ideas import validate_ideas
+        from goated_prompter.dataset_scene import validate_scene
         idea = "A meaningful action " + "descriptive " * 47
         self.assertEqual(len(idea.split()), 50)
-        self.assertEqual(validate_idea_plan(json.dumps([{"index": 1, "idea": idea}]), [1])[0]["idea"], idea.strip())
-        self.assertEqual(validate_idea_plan('[{"index":1,"idea":"Reading"}]', [1])[0]["idea"], "Reading")
+        self.assertEqual(validate_ideas(json.dumps([dataset_idea_fixture(idea=idea)]), [1])[0]["idea"], idea.strip())
+        self.assertEqual(validate_ideas(json.dumps([dataset_idea_fixture(idea="Reading")]), [1])[0]["idea"], "Reading")
         scene = "spatialdescriptionword " * 110
         self.assertGreater(len(scene), 2000)
-        row = {"index": 1, "idea": idea, "scene": scene, "geometry": character_geometry()}
-        self.assertEqual(validate_scene_plan(json.dumps([row]), 1)[0]["scene"], scene.strip())
+        row = {"scene": scene, "self_check": "PASS"}
+        self.assertEqual(validate_scene(json.dumps(row))["scene"], scene.strip())
         with self.assertRaises(ValueError):
-            validate_idea_plan(json.dumps([{"index": 1, "idea": "x" * 1001}]), [1])
+            validate_ideas(json.dumps([dataset_idea_fixture(idea="x" * 1001)]), [1])
 
     def test_approval_is_bound_to_source_and_scene_edits_not_result_bookkeeping(self):
         data = validate_dataset_draft(valid_draft(amount=1))
         tickets = DatasetIntentTickets()
-        brief = dataset_intent_fixture()
+        brief = dataset_understanding_fixture()
         token = tickets.register(data, brief)["confirmation_token"]
-        self.assertEqual(tickets.approve(token, {**data, "quality_report": {"score": 100}}), brief)
+        self.assertEqual(tickets.approve(token, {**data, "results": [{"prompt": "Saved"}]}), brief)
         for patch_data in ({"subject": "Changed concept"}, {"constraints": "Arena"},
                            {"trigger": "new_token"}, {"amount": 2}, {"length": "Detailed"},
                            {"scene_plan": [{"index": 1, "scene": "Edited scene"}]}):
@@ -102,13 +103,13 @@ class DatasetIntentTicketTests(unittest.TestCase):
         now = [0]
         tickets = DatasetIntentTickets(clock=lambda: now[0], limit=1, lifetime=10)
         data = valid_draft()
-        brief = dataset_intent_fixture(required_rules=["Gloves"])
+        brief = dataset_understanding_fixture(rules=[{"scope": "all_outputs", "text": "Gloves"}])
         old = tickets.register(data, brief)["confirmation_token"]
         token = tickets.register(data, brief)["confirmation_token"]
-        brief["required_rules"].clear()
+        brief["rules"].clear()
         approved = tickets.approve(token, data)
-        approved["required_rules"].clear()
-        self.assertEqual(tickets.approve(token, data)["required_rules"], ["Gloves"])
+        approved["rules"].clear()
+        self.assertEqual(tickets.approve(token, data)["rules"], [{"scope": "all_outputs", "text": "Gloves"}])
         with self.assertRaisesRegex(ValueError, "expired or is missing"):
             tickets.approve(old, data)
         now[0] = 10
@@ -116,18 +117,18 @@ class DatasetIntentTicketTests(unittest.TestCase):
             tickets.approve(token, data)
 
     def test_blocking_clarifications_cannot_issue_approval(self):
-        result = DatasetIntentTickets().register(valid_draft(), dataset_intent_fixture(
-            blocking_questions=["Breaking what?"]))
+        result = DatasetIntentTickets().register(valid_draft(), dataset_understanding_fixture(
+            clarifications=["Breaking what?"]))
         self.assertEqual(result["confirmation_token"], "")
-        self.assertEqual(result["brief"]["blocking_questions"], ["Breaking what?"])
+        self.assertEqual(result["brief"]["clarifications"], ["Breaking what?"])
 
     def test_summary_schema_rejects_bad_counts_unbounded_lists_and_role_changes(self):
         for changes in ({"character_count": True}, {"character_count": 0}, {"character_count": 101},
-                        {"goal": ""}, {"goal": "x" * 2001}, {"identity_policy": []},
-                        {"blocking_questions": "none"}, {"required_rules": ["rule"] * 21},
+                        {"requested_generation": ""}, {"requested_generation": "x" * 2001}, {"identity_policy": []},
+                        {"clarifications": "none"}, {"rules": ["rule"] * 25},
                         {"extra": "ignore the schema"}):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
-                validate_intent(dataset_intent_fixture(**changes))
+                validate_understanding(dataset_understanding_fixture(**changes), ("all_outputs", "dataset"))
 
 
 class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
@@ -254,8 +255,7 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
         data = valid_draft(amount=1, constraints="Arena. Gloves.")
         accepted = await self.analyze(data)
         self.backend.calls.clear()
-        with patch("goated_prompter.scene_planner.ScenePlanner._call", side_effect=AssertionError("Old evaluator invoked")), \
-             patch("goated_prompter.dataset.resolve_framing_conflicts", side_effect=AssertionError("Old geometry invoked")):
+        with patch("goated_prompter.planning.semantic_validation.review_candidate", side_effect=AssertionError("Unexpected evaluator")):
             response = await self.client.post("/api/workspace/dataset/scenes", json={"input": data,
                 "confirmation_token": accepted["confirmation_token"]})
             self.assertEqual(response.status, 202)
@@ -306,7 +306,7 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
         from goated_prompter.scene_planner import scene_plan_signature
         from goated_prompter.dataset_assignments import dataset_assignments
         row = {**dataset_idea_fixture(), "input": "", "scene": SCENE, "self_check": REPAIR,
-            "scene_status": "repair_required", "prompt_status": "not_generated", "geometry": {}}
+            "scene_status": "repair_required", "prompt_status": "not_generated"}
         data = valid_draft(amount=1, scene_plan=[row])
         data["scene_plan_signature"] = scene_plan_signature(data, dataset_assignments(data))
         accepted = await self.analyze(data)
@@ -430,7 +430,7 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
     async def test_unconfirmed_and_forged_tokens_never_start_generation(self):
         from goated_prompter.scene_planner import scene_plan_signature
         from goated_prompter.dataset_assignments import dataset_assignments
-        data = valid_draft(amount=1, scene_plan=[{"index": 1, "input": "", "idea": "Read", "scene": "Reading on a bench."}])
+        data = valid_draft(amount=1, scene_plan=[{"index": 1, "input": "", "idea": "Read", "scene": "Reading on a bench.", "self_check": "PASS"}])
         data["scene_plan_signature"] = scene_plan_signature(data, dataset_assignments(data))
         for path, options in (("dataset", {}), ("dataset/scenes", {}),
                               ("dataset/scene", {"index": 1, "action": "regenerate_prompt"})):
@@ -440,32 +440,31 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(response.status, 400, await response.text())
         self.assertEqual(self.backend.calls, [])
 
-    async def test_confirmed_brief_reaches_distinct_idea_scene_and_writer_stages_in_both_modes(self):
-        for mode in ("Fast", "Quality"):
-            data = valid_draft(amount=1, planning_mode=mode, subject="A person boxing.", constraints="Arena. Gloves.")
-            result = await self.analyze(data)
-            self.backend.calls.clear()
-            response = await self.client.post("/api/workspace/dataset", json={"input": data,
-                "confirmation_token": result["confirmation_token"]})
-            self.assertEqual(response.status, 202, await response.text())
-            job = await self.terminal(await response.json())
-            self.assertEqual(job["status"], "succeeded", job)
-            self.assertEqual(job["result"]["completed"], 1)
-            stages = [call.diagnostic_stage for call in self.backend.calls]
-            self.assertEqual(stages, ["dataset:ideas", "dataset:build_scene", "dataset:1"])
-            for call in self.backend.calls[:2]:
-                self.assertEqual(json.loads(call.user_message)["confirmed_intent"], result["brief"])
-                self.assertIn("Arena", call.user_message)
-                self.assertIn("Gloves", call.user_message)
-            writer = self.backend.calls[-1]
-            self.assertIn("CONFIRMED IDENTITY AND VISIBILITY", writer.system_message)
-            self.assertNotIn("Do not invent identity;", writer.system_message)
-            self.assertIn('"visible_evidence"', writer.system_message)
-            self.assertIn('"text": "Gloves"', writer.system_message)
-            self.assertIn("ENHANCE THE ACCEPTED SCENE", writer.system_message)
-            self.assertEqual(writer.user_message, job["result"]["scene_plan"][0]["scene"])
-            self.assertNotIn("COMPACT IDEA PLAN", writer.user_message)
-            self.assertEqual(writer.max_tokens, 768)  # Final target length budget is unchanged.
+    async def test_confirmed_brief_reaches_distinct_idea_scene_and_builder_stages(self):
+        data = valid_draft(amount=1, subject="A person boxing.", constraints="Arena. Gloves.")
+        result = await self.analyze(data)
+        self.backend.calls.clear()
+        response = await self.client.post("/api/workspace/dataset", json={"input": data,
+            "confirmation_token": result["confirmation_token"]})
+        self.assertEqual(response.status, 202, await response.text())
+        job = await self.terminal(await response.json())
+        self.assertEqual(job["status"], "succeeded", job)
+        self.assertEqual(job["result"]["completed"], 1)
+        stages = [call.diagnostic_stage for call in self.backend.calls]
+        self.assertEqual(stages, ["dataset:ideas", "dataset:build_scene", "dataset:1"])
+        for call in self.backend.calls[:2]:
+            self.assertEqual(json.loads(call.user_message)["confirmed_intent"], result["brief"])
+            self.assertIn("Arena", call.user_message)
+            self.assertIn("Gloves", call.user_message)
+        writer = self.backend.calls[-1]
+        self.assertIn("SCOPED APPROVED REQUIREMENTS", writer.system_message)
+        self.assertNotIn("Do not invent identity;", writer.system_message)
+        self.assertIn('"visible_evidence"', writer.system_message)
+        self.assertIn('"text": "Gloves"', writer.system_message)
+        self.assertIn("ENHANCE THE ACCEPTED SCENE", writer.system_message)
+        self.assertEqual(writer.user_message, job["result"]["scene_plan"][0]["scene"])
+        self.assertNotIn("COMPACT IDEA PLAN", writer.user_message)
+        self.assertEqual(writer.max_tokens, 768)
 
     async def test_source_changes_require_reanalysis_and_blocking_questions_have_no_ticket(self):
         data = valid_draft(amount=1)

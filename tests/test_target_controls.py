@@ -11,7 +11,7 @@ from goated_prompter.prompting.target_models import (
     TARGET_MODEL_NAMES, TARGET_CAPABILITIES, get_model_adapter, get_target_capabilities, resolve_target_length,
 )
 from goated_prompter.workflow_settings import validate_draft
-from tests.test_dataset_quality_planning import draft
+from tests.test_dataset import valid_draft, saved_scene
 
 
 class TargetControlTests(unittest.TestCase):
@@ -37,7 +37,7 @@ class TargetControlTests(unittest.TestCase):
             with self.subTest(legacy=legacy):
                 self.assertNotIn(legacy, TARGET_MODEL_NAMES)
                 self.assertEqual(GoatedPrompterRequest(idea="A book", target_model=legacy).target_model, current)
-                self.assertEqual(validate_dataset_draft(draft(target=legacy))["target"], current)
+                self.assertEqual(validate_dataset_draft(valid_draft(target=legacy))["target"], current)
                 self.assertEqual(validate_draft("refine", {"target": legacy})["target"], current)
                 self.assertEqual(get_model_adapter(legacy), get_model_adapter(current))
         self.assertIn("Qwen/Qwen-Image checkpoint", get_model_adapter("Qwen Image (original)"))
@@ -57,11 +57,11 @@ class TargetControlTests(unittest.TestCase):
         self.assertIn("moderately detailed natural-language prose", message)
         self.assertIn("Moderately detailed, focused", message)
         self.assertNotIn("Exhaustively cover", message)
-        data = draft(target="FLUX.2 Klein", length="Maximum Detail")
+        data = valid_draft(target="FLUX.2 Klein", length="Maximum Detail")
         request = GoatedPrompterRequest(idea=data["subject"], target_model=data["target"])
-        writer = dataset_instruction(request, data, 1)
-        self.assertIn(resolve_target_length(data["target"], data["length"], dataset=True), writer.system_message)
-        self.assertIn("scene-dense, not filler-dense", writer.system_message)
+        writer = dataset_instruction(request, data, 1, plan_item=saved_scene())
+        self.assertIn(resolve_target_length(data["target"], data["length"]), writer.system_message)
+        self.assertIn("ENHANCE THE ACCEPTED SCENE", writer.system_message)
 
     def test_anima_positive_quality_tags_are_allowed_but_negatives_stay_separate(self):
         prompt = 'masterpiece, best quality, score_9, 1girl\nShe reads a book beside a window.'

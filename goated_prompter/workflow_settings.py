@@ -7,11 +7,12 @@ from .prompting.refine import builtin_refine_instructions
 from .prompting.target_models import TARGET_MODEL_NAMES, canonical_target
 from .workspace_store import WorkspaceConflict, locks, text
 from .minimax import default_minimax_draft, validate_minimax_draft
-from .dataset import default_dataset_draft, validate_dataset_draft
+from .dataset import default_dataset_draft, validate_dataset_draft, saved_dataset_draft
 from .dataset_assignments import dataset_assignments
 from .scene_planner import reusable_scene_plan
 from .scene_eligibility import scene_eligibility
-from .prompting.scene_planner import MAX_SCENE_CHARACTERS, MAX_SCENE_WORDS, MAX_IDEA_CHARACTERS, MAX_IDEA_WORDS
+from .dataset_scene import MAX_SCENE_CHARACTERS
+from .dataset_ideas import MAX_FIELD_CHARACTERS
 
 
 def default_draft(operation):
@@ -72,7 +73,8 @@ def validate_settings_store(value):
     for operation, record in value.items():
         if not isinstance(record, dict) or set(record) != {"revision", "draft", "overrides"} or type(record["revision"]) is not int or record["revision"] < 0:
             raise ValueError("Invalid workflow settings record.")
-        value[operation] = {**record, "draft": validate_draft(operation, record["draft"])}
+        value[operation] = {**record, "draft": saved_dataset_draft(record["draft"]) if operation == "dataset"
+                            else validate_draft(operation, record["draft"])}
         validate_instructions(operation, record["overrides"])
     # Older stores gain an independent workflow without altering their drafts/revisions.
     return {**empty_settings(), **value}
@@ -93,9 +95,9 @@ class WorkflowSettingsStore:
         scene_state = ({"scene_plan_current": reusable_scene_plan(draft, dataset_assignments(draft)) is not None,
                          "idea_plan_current": reusable_scene_plan(draft, dataset_assignments(draft), require_scenes=False) is not None,
                          "scene_plan_matches_settings": reusable_scene_plan(draft, dataset_assignments(draft), require_scenes=False, allow_pending=True) is not None,
-                         "scene_limits": {"characters": MAX_SCENE_CHARACTERS, "words": MAX_SCENE_WORDS},
-                          "idea_limits": {"characters": MAX_IDEA_CHARACTERS, "words": MAX_IDEA_WORDS},
-                          "scene_eligibility": {str(row["index"]): scene_eligibility(row, draft).to_dict() for row in draft["scene_plan"]}}
+                         "scene_limits": {"characters": MAX_SCENE_CHARACTERS},
+                         "idea_limits": {"characters": MAX_FIELD_CHARACTERS},
+                         "scene_eligibility": {str(row["index"]): scene_eligibility(row, draft).to_dict() for row in draft["scene_plan"]}}
                        if operation == "dataset" else {})
         return {**record, "draft": draft, "defaults": defaults, **scene_state,
                 "instructions": {**defaults, **record["overrides"]}}

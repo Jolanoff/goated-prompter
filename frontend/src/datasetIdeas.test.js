@@ -8,7 +8,7 @@ import { datasetIdeaDetails, datasetRequestSignature, datasetSceneSignature, edi
 
 const item = { index: 1, idea: "A boxer slips a punch.", placement: "Boxer left, partner right.",
   visibility: "Contact overlap preserves the exposed head.", camera: "Three-quarter angle.", framing: "Full body.",
-  context: "Arena center.", input: "", scene: "Composed scene", scene_status: "valid", geometry: {} };
+  context: "Arena center.", input: "", scene: "Composed scene", scene_status: "valid", self_check: "" };
 
 test("compact idea display contains exactly the five descriptions alongside the existing idea", () => {
   assert.deepEqual(datasetIdeaDetails(item).map(({ label }) => label), ["Placement", "Visibility", "Camera", "Framing", "Context"]);
@@ -24,12 +24,12 @@ test("all compact descriptions participate in current-plan and approval signatur
   }
 });
 
-test("manual idea or scene edits remove stale compact descriptions and preserve sibling rows", () => {
+test("manual idea edits remove stale descriptions; scene edits retain the fixed idea and siblings", () => {
   const sibling = { ...item, index: 2 };
   const draft = { scene_plan: [item, sibling], results: [{ index: 1, prompt: "Old prompt" }, { index: 2, prompt: "Sibling prompt" }] };
   for (const stage of ["idea", "scene"]) {
     const updated = editDatasetPlan(draft, 1, stage, "Manually revised content");
-    assert.deepEqual(datasetIdeaDetails(updated.scene_plan[0]), []);
+    assert.equal(datasetIdeaDetails(updated.scene_plan[0]).length, stage === "idea" ? 0 : 5);
     assert.equal(updated.scene_plan[1], sibling);
     assert.deepEqual(updated.results, [draft.results[1]]);
     assert.equal(datasetIdeaDetails(item).length, 5);
@@ -80,5 +80,5 @@ test("idea detail view renders every compact description as escaped text, withou
   assert.doesNotMatch(checked, /<script>/);
   assert.match(renderToStaticMarkup(createElement(Check, { item: { ...item, self_check: "PASS" } })), />PASS<\/p>/);
   assert.match(renderToStaticMarkup(createElement(Check, { item: { ...item, self_check: "" } })), /Self-check pending/);
-  assert.equal(renderToStaticMarkup(createElement(Check, { item })), "");
+  assert.match(renderToStaticMarkup(createElement(Check, { item })), /Self-check pending/);
 });
