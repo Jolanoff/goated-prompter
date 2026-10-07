@@ -59,6 +59,7 @@ Thumbs.db
 Desktop.ini
 
 # Local AI-agent files (not needed to run the app)
+/AGENTS.md
 /.agents/skills/
 /.opencode/
 /skills-lock.json
