@@ -109,8 +109,9 @@ class WorkflowSettingsStore:
                 record = self.dataset_checkpoints.project(record)
             return self._public(operation, record)
 
-    def checkpoint_dataset(self, job):
-        snapshot = job.snapshot()  # Never acquire a job lock while holding the settings lock.
+    def checkpoint_dataset(self, job, *, snapshot=None):
+        # Never acquire a job lock while holding the settings lock.
+        snapshot = job.snapshot() if snapshot is None else snapshot
         with self.lock:
             if self.dataset_checkpoints is not None:
                 self.dataset_checkpoints.save(job, self._read()["dataset"], snapshot=snapshot)

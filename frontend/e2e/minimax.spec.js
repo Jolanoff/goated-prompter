@@ -146,6 +146,53 @@ test("delayed shot cursor restoration respects a newer focus choice", async ({ p
   await expect(duration).toBeFocused();
 });
 
+for (const kind of ["shot", "reference"]) {
+  test(`delayed ${kind} cursor restoration cannot overwrite a newer text edit`, async ({ page }) => {
+    await open(page);
+    const text = page.getByLabel("Describe your video");
+    await text.fill("cartoonish style");
+    await page.evaluate(() => {
+      const original = window.requestAnimationFrame;
+      window.requestAnimationFrame = (callback) => {
+        window.requestAnimationFrame = original;
+        window.delayedInsertionFrame = callback;
+        return 0;
+      };
+    });
+    await page.getByRole("button", { name: kind === "shot" ? "+ Shot" : "+ Image", exact: true }).click();
+    await expect(text).toHaveValue(kind === "shot" ? "cartoonish style\n<shot1> " : "cartoonish style <image1>");
+    const edited = "<image1> is an apple\n<shot1> 0-3s apple walks";
+    await text.fill(edited);
+    await page.evaluate(() => window.delayedInsertionFrame(performance.now()));
+    await page.getByRole("button", { name: kind === "shot" ? "+ Shot" : "+ Video", exact: true }).click();
+    await expect(text).toHaveValue(edited + (kind === "shot" ? "\n<shot2> " : " <video1>"));
+  });
+}
+
+test("delayed shot cursor restoration cannot overwrite a newer insertion", async ({ page }) => {
+  await open(page);
+  const text = page.getByLabel("Describe your video");
+  await text.fill("A rooftop scene.");
+  await page.evaluate(() => {
+    const original = window.requestAnimationFrame;
+    window.requestAnimationFrame = (callback) => {
+      window.requestAnimationFrame = original;
+      window.delayedInsertionFrame = callback;
+      return 0;
+    };
+  });
+  const addShot = page.getByRole("button", { name: "+ Shot", exact: true });
+  await addShot.click();
+  await expect(text).toHaveValue("A rooftop scene.\n<shot1> ");
+  await text.evaluate((node) => node.setSelectionRange(node.value.length, node.value.length));
+  await addShot.click();
+  await expect(text).toHaveValue("A rooftop scene.\n<shot1> \n<shot2> ");
+  await expect.poll(() => text.evaluate((node) => node.selectionStart)).toBe(34);
+  await page.evaluate(() => window.delayedInsertionFrame(performance.now()));
+  await addShot.click();
+  await expect(text).toHaveValue("A rooftop scene.\n<shot1> \n<shot2> \n<shot3> ");
+});
+
 test("optional shot shortcuts insert in the prompt without registering media", async ({ page }) => {
   await open(page);
   const text = page.getByLabel("Describe your video");

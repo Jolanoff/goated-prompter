@@ -3,6 +3,7 @@ import json
 from dataclasses import replace
 from pathlib import Path
 import subprocess
+import threading
 import sys
 from types import ModuleType
 from types import SimpleNamespace
@@ -86,6 +87,46 @@ class ProcessManagerTests(unittest.TestCase):
         self.assertEqual(self.manager.interrupt_active(), "stopped")
         self.process.terminate.assert_called_once()
         self.assertIsNone(self.manager._owned)
+
+    def test_startup_interrupt_does_not_wait_for_readiness_or_return_a_dead_server(self):
+        entered, release, interrupted = threading.Event(), threading.Event(), threading.Event()
+        acquired, errors = [], []
+
+        def wait_ready(owned):
+            entered.set()
+            if not release.wait(4):
+                raise RuntimeError("Test readiness barrier timed out")
+
+        def acquire():
+            try:
+                acquired.append(self.manager.acquire(self.config))
+            except Exception as exc:
+                errors.append(exc)
+
+        def interrupt():
+            self.manager.interrupt_active()
+            interrupted.set()
+
+        self.manager._wait_until_ready.side_effect = wait_ready
+        worker = threading.Thread(target=acquire, daemon=True)
+        canceller = threading.Thread(target=interrupt, daemon=True)
+        worker.start()
+        try:
+            self.assertTrue(entered.wait(2))
+            canceller.start()
+            self.assertTrue(interrupted.wait(1), "Cancellation waited for the startup readiness barrier")
+        finally:
+            release.set()
+            worker.join(2)
+            if canceller.ident is not None:
+                canceller.join(2)
+        self.assertFalse(worker.is_alive())
+        self.assertFalse(canceller.is_alive())
+        self.assertEqual(acquired, [])
+        self.assertEqual(len(errors), 1)
+        self.assertIsInstance(errors[0], llama.BackendGenerationError)
+        self.process.terminate.assert_called_once()
+        self.assertEqual(self.manager.owned_process_count, 0)
 
     def test_display_label_does_not_restart(self):
         renamed = replace(self.config, requested_model="Another label")

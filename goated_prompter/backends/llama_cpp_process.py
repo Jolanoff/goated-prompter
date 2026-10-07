@@ -230,6 +230,7 @@ class LlamaCppProcessManager:
     def __init__(self):
         self._owned = None
         self._lock = threading.RLock()
+        self._acquire_lock = threading.Lock()
 
     @property
     def owned_process_count(self):
@@ -237,6 +238,11 @@ class LlamaCppProcessManager:
             return 1 if self._live_owned() is not None else 0
 
     def acquire(self, config, include_state=False):
+        # Serialize startup/reuse while leaving ownership available to cancellation.
+        with self._acquire_lock:
+            return self._acquire(config, include_state)
+
+    def _acquire(self, config, include_state):
         with self._lock:
             restarted = False
             _log(f"Requested model: {config.requested_model}")
@@ -285,16 +291,20 @@ class LlamaCppProcessManager:
                 "Starting owned llama-server "
                 f"PID={getattr(process, 'pid', 'UNKNOWN')} port={runtime_config.port}"
             )
-            try:
-                self._wait_until_ready(owned)
-            except Exception:
+        try:
+            self._wait_until_ready(owned)
+            with self._lock:
+                if self._owned is not owned or owned.process.poll() is not None:
+                    raise BackendGenerationError("Owned llama.cpp startup was interrupted.")
+                state = {"reused": False, "restarted": restarted}
+                return (owned, state) if include_state else owned
+        except Exception:
+            with self._lock:
                 owned.references = 0
-                self._terminate(owned)
                 if self._owned is owned:
+                    self._terminate(owned)
                     self._owned = None
-                raise
-            state = {"reused": False, "restarted": restarted}
-            return (owned, state) if include_state else owned
+            raise
 
     def _live_owned(self):
         owned = self._owned
