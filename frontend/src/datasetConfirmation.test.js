@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { transformWithEsbuild } from "vite";
-import { canConfirmDatasetReview, datasetRequestSignature, datasetUnderstandingSections,
+import { canConfirmDatasetReview, datasetRequestSignature, datasetUnderstandingSections, datasetUnderstandingSummary,
   reviseDatasetRequest } from "./workflows/datasetState.js";
 
 test("approval shows hard obligations, soft preferences and free choices before rich interpretation", () => {
@@ -13,9 +13,9 @@ test("approval shows hard obligations, soft preferences and free choices before 
     soft: [{ scope: "all_outputs", text: "Close camera" }],
     free: [{ scope: "guided:2", text: "Background" }] });
   assert.deepEqual(sections.slice(0, 3), [
-    { label: "HARD — must satisfy", items: ["Every output: Cup base touching table visible"] },
-    { label: "SOFT — preferences, adjustable", items: ["Every output: Close camera"] },
-    { label: "FREE — creative choices", items: ["Guided input 2: Background"] },
+    { label: "Requirements", items: ["Cup base touching table visible"] },
+    { label: "Adjustable preferences", items: ["Close camera"] },
+    { label: "Open creative choices", items: ["Guided input 2: Background"] },
   ]);
 });
 
@@ -42,10 +42,66 @@ test("understanding review retains all requirement categories and local scope", 
     physical_conflicts: [{ scope: "all_outputs", conflict: "Unobstructed cheek conflicts with contact.", compatible_resolution: null }] };
   const sections = datasetUnderstandingSections(brief);
   assert.equal(sections.length, 12);
-  assert.equal(sections[3].items[0], "Every output: Two adults");
+  assert.equal(sections[3].items[0], "Two adults");
   assert.equal(sections[4].items[0], "Across the dataset: Lighting");
   assert.equal(sections[6].items[0], "Guided input 2: In a gym");
   assert.match(sections[11].items[0], /Needs clarification/);
+});
+
+test("understanding summary groups global rules once without repeating their image scope", () => {
+  const summary = datasetUnderstandingSummary({ requested_generation: "Duck and dinosaur confronting each other",
+    fixed: [{ scope: "all_outputs", text: "Every image must contain the duck" }],
+    hard: [{ scope: "all_outputs", text: "Every image must contain the duck" },
+      { scope: "all_outputs", text: "EVERY IMAGE must contain the dinosaur" },
+      { scope: "all_outputs", text: "Each image must show an active confrontation" }],
+    rules: [{ scope: "all_outputs", text: "Each image must show an active confrontation" },
+      { scope: "all_outputs", text: "EVERY IMAGE must contain the dinosaur" }],
+    may_vary: [{ scope: "dataset", text: "Locations" }],
+    free: [{ scope: "dataset", text: "Locations" }], must_vary: [{ scope: "dataset", text: "Poses" }] });
+  assert.deepEqual(summary.consistent, ["must contain the duck"]);
+  assert.deepEqual(summary.everyImage, ["must contain the dinosaur", "must show an active confrontation"]);
+  assert.deepEqual(summary.mayVary, ["Across the dataset: Locations"]);
+  assert.deepEqual(summary.mustVary, ["Across the dataset: Poses"]);
+  assert.doesNotMatch(JSON.stringify(summary), /every image/i);
+});
+
+test("understanding grouping preserves local scope, qualifiers and distinct obligations", () => {
+  const summary = datasetUnderstandingSummary({ requested_generation: "A fight",
+    hard: [{ scope: "all_outputs", text: "At least one person is blond" },
+      { scope: "guided:2", text: "Every image must contain two people" },
+      { scope: "dataset", text: "Include both indoor and outdoor settings" },
+      { scope: "all_outputs", text: "Both gloves remain visible" },
+      { scope: "all_outputs", text: "One glove contacts the cheek" },
+      { scope: "all_outputs", text: "Part of the face remains visible" }],
+    fixed: [{ scope: "guided:1", text: "Exactly one person" }],
+    visible_evidence: [{ scope: "all_outputs", text: "Both gloves remain visible" }],
+    interactions: [{ scope: "all_outputs", text: "One glove contacts the cheek" }],
+    visibility_to_preserve: [{ scope: "all_outputs", text: "Part of the face remains visible" }] });
+  assert.deepEqual(summary.everyImage, ["At least one person is blond", "Both gloves remain visible",
+    "One glove contacts the cheek", "Part of the face remains visible"]);
+  assert.deepEqual(summary.scoped, ["Guided input 2: Every image must contain two people",
+    "Across the dataset: Include both indoor and outdoor settings"]);
+  assert.deepEqual(summary.consistent, ["Guided input 1: Exactly one person"]);
+});
+
+test("understanding summary keeps the concise contract upfront and rich explanations in details", () => {
+  const brief = { requested_generation: "Two sparring partners",
+    hard: [{ scope: "all_outputs", text: "Both people wear visible gloves and at least one has blond hair" }],
+    rules: [{ scope: "all_outputs", text: "Both people wear gloves" }],
+    visible_evidence: [{ scope: "all_outputs", text: "Visible gloves and blond hair" }] };
+  assert.deepEqual(datasetUnderstandingSummary(brief).everyImage,
+    ["Both people wear visible gloves and at least one has blond hair"]);
+  assert.ok(datasetUnderstandingSections(brief).some(({ items }) => items.includes("Visible gloves and blond hair")));
+  assert.deepEqual(datasetUnderstandingSummary({ ...brief, hard: [] }).everyImage,
+    ["Both people wear gloves", "Visible gloves and blond hair"]);
+});
+
+test("grouping never deduplicates distinct case-sensitive literal requirements", () => {
+  const summary = datasetUnderstandingSummary({ hard: [
+    { scope: "all_outputs", text: 'Include the exact text "DUCK"' },
+    { scope: "all_outputs", text: 'Include the exact text "duck"' },
+  ] });
+  assert.equal(summary.everyImage.length, 2);
 });
 
 test("richer understanding keeps scoped action alternatives separate from required interactions", () => {
@@ -92,13 +148,18 @@ test("the existing modal renders the new brief, keeps extra instructions and blo
     onRevise() {}, onConfirm() {}, onCancel() {} }));
   const markup = render(review);
   for (const section of datasetUnderstandingSections(brief)) assert.ok(markup.includes(section.label));
-  assert.match(markup, /How far the idea may expand/);
+  for (const heading of ["Concept", "What stays consistent", "What should vary", "Every image should", "Output settings"]) {
+    assert.ok(markup.includes(`<h3>${heading}</h3>`), `missing ${heading}`);
+  }
+  assert.match(markup, /Preserve the contact/);
+  assert.match(markup, /<details[^>]*><summary>Show details/);
+  assert.doesNotMatch(markup, /Every output:/);
   assert.match(markup, /What the dataset will contain/);
   assert.match(markup, /Characters and identity/);
   assert.match(markup, /Randomized per independent prompt/);
-  assert.match(markup, /HARD — must satisfy/);
-  assert.match(markup, /SOFT — preferences, adjustable/);
-  assert.match(markup, /FREE — creative choices/);
+  assert.match(markup, /Requirements/);
+  assert.match(markup, /Adjustable preferences/);
+  assert.match(markup, /Open creative choices/);
   assert.match(markup, /Generated ideas are suggestions, not new requirements/);
   assert.match(markup, /Guided input 1: Punch or block &lt;script&gt;/);
   assert.match(markup, /Extra instructions or answers/);

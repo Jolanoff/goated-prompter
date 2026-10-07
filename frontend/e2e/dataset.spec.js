@@ -253,7 +253,7 @@ test("guided Dataset persists and exports on mobile without retired controls", a
   for (const id of (await (await cleanup).json()).released) expect((await request.get(`/api/jobs/${id}`)).status()).toBe(404);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
-  await page.evaluate(() => Promise.all(document.getAnimations().filter((animation) => Number.isFinite(animation.effect.getTiming().iterations))
+  await page.evaluate(() => Promise.all(document.getAnimations().filter((animation) => animation.effect.target.checkVisibility() && Number.isFinite(animation.effect.getTiming().iterations))
     .map((animation) => animation.finished.catch(() => {}))));
   expect((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze()).violations).toEqual([]);
   await page.reload();
@@ -320,6 +320,7 @@ test("reset recent ideas leaves current scenes and prompts unchanged", async ({ 
   const idea = await page.getByLabel("Planned idea 1").inputValue();
   const prompt = await page.getByLabel("Dataset prompt 1").inputValue();
   const reset = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset/novelty/reset"));
+  await page.getByText("Advanced options", { exact: true }).click();
   await page.getByRole("button", { name: "Reset recent ideas", exact: true }).click();
   expect((await reset).ok()).toBe(true);
   await expect(page.getByText("Recent ideas reset for this concept. Current scenes and prompts are unchanged.", { exact: true })).toBeVisible();

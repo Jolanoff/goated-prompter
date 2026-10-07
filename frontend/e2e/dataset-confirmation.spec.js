@@ -30,7 +30,7 @@ test("request review blocks generation, exposes the source, and cancellation pre
   const dialog = page.getByRole("dialog", { name: "Review your Dataset request" });
   await expect(dialog.getByRole("button", { name: "Confirm and generate prompts" })).toBeEnabled();
   await expect(dialog.getByText("Person 1 and person 2 fighting.", { exact: true }).first()).toBeVisible();
-  await expect(dialog.getByText("Randomized per independent prompt", { exact: false })).toBeVisible();
+  await expect(dialog.locator(".dataset-review-identity")).toContainText("Randomized per independent prompt");
   await expect(page.getByLabel("Dataset prompt 1")).toBeDisabled();
   expect(calls).toHaveLength(0);
   expect((await (await request.get("/api/workspace/settings/dataset")).json()).draft.scene_plan).toEqual([]);
@@ -58,7 +58,7 @@ test("extra instructions require a revised summary and only persist after confir
   await expect(confirm).toBeDisabled();
   await dialog.getByRole("button", { name: "Update summary" }).click();
   await expect(confirm).toBeEnabled();
-  await expect(dialog.getByText(`Every output: ${addition}`, { exact: true })).toBeVisible();
+  await expect(dialog.getByRole("region", { name: "Image requirements" }).getByText(addition, { exact: true })).toBeVisible();
   const before = (await (await request.get("/api/workspace/settings/dataset")).json()).draft;
   expect(before.constraints).toBe("Arena. Both wearing gloves.");
   expect(before.results[0].prompt).toBe("Previous manually edited prompt.");

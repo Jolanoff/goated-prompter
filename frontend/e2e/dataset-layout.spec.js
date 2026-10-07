@@ -9,7 +9,7 @@ test.beforeEach(async ({ request }) => {
   })).ok()).toBe(true);
 });
 
-for (const width of [1920, 1440, 1100, 768, 390]) {
+for (const width of [1920, 1440, 1100, 768, 390, 360]) {
   test(`Dataset cards remain readable at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 1000 });
     await page.goto("/");
@@ -22,7 +22,7 @@ for (const width of [1920, 1440, 1100, 768, 390]) {
     await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/traveler_token/);
     await page.evaluate(() => document.fonts.ready);
     const config = page.locator(".dataset-config-grid");
-    expect(await config.evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(" ").length)).toBe(width > 1100 ? 2 : 1);
+    expect(await config.evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(" ").length)).toBe(width > 768 ? 2 : 1);
     for (const grid of await page.locator(".dataset-card-grid").all()) {
       const columns = await grid.evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(" ").length);
       expect(columns).toBe(width === 1920 ? 2 : 1);
@@ -32,7 +32,16 @@ for (const width of [1920, 1440, 1100, 768, 390]) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     const results = page.getByRole("region", { name: "Dataset results", exact: true });
     await expect(results.locator("details").filter({ has: page.getByText("Scene 1", { exact: true }) })).not.toHaveAttribute("open");
-    await expect(page.locator("details").filter({ has: page.getByText("Training trigger & controls", { exact: true }) })).not.toHaveAttribute("open");
+    await expect(page.locator(".dataset-advanced details").filter({ has: page.getByText("Training trigger & controls", { exact: true }) })).not.toHaveAttribute("open");
+    await expect(page.locator(".dataset-advanced")).not.toHaveAttribute("open");
+    const workflow = page.getByRole("navigation", { name: "Dataset workflow" });
+    await expect(workflow.getByRole("button", { name: "Step 3: Dataset", exact: true })).toHaveAttribute("aria-current", "step");
+    await workflow.getByRole("button", { name: "Step 1: Configure", exact: true }).click();
+    await expect(page.getByRole("region", { name: "Configure dataset", exact: true })).toBeFocused();
+    const actions = page.locator(".dataset-config-actions");
+    await expect(actions.getByRole("button", { name: "Plan scenes first", exact: true })).toBeVisible();
+    await expect(actions.getByRole("button", { name: "Generate 2 prompts", exact: true })).toBeVisible();
+    if (width > 768) expect((await page.locator(".dataset-configuration").boundingBox()).height).toBeLessThan(650);
     await expect(page.getByRole("button", { name: "Repair scene", exact: true }).first()).toHaveAttribute("title", "Repair scene");
     await expect(results.getByRole("button", { name: "View geometry 1", exact: true })).toHaveCount(0);
     await expect(page.getByLabel("Scene 1 self-check", { exact: true })).toContainText("PASS");
@@ -47,7 +56,7 @@ for (const width of [1920, 1440, 1100, 768, 390]) {
       }
     }
     await page.evaluate(() => Promise.all(document.getAnimations()
-      .filter((animation) => Number.isFinite(animation.effect.getTiming().iterations))
+      .filter((animation) => animation.effect.target.checkVisibility() && Number.isFinite(animation.effect.getTiming().iterations))
       .map((animation) => animation.finished.catch(() => {}))));
     expect((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze()).violations).toEqual([]);
     await page.screenshot({ path: testInfo.outputPath(`dataset-${width}.png`), fullPage: true });
