@@ -1,11 +1,14 @@
 """Compact idea-stage behavior with synthetic requests and mocked model output."""
 
 from copy import deepcopy
+from io import BytesIO
 import json
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
+from urllib.error import HTTPError
 
 from goated_prompter.backends.base import BackendGenerationError
+from goated_prompter.backends.openai_compatible import OpenAICompatibleBackend
 from goated_prompter.dataset_assignments import dataset_assignments
 from goated_prompter.dataset_ideas import DatasetIdeasService, IDEA_FIELDS, ideas_instruction, validate_ideas
 from goated_prompter.scene_planner import validate_saved_scene_plan
@@ -46,6 +49,18 @@ class DatasetIdeasTests(unittest.TestCase):
         self.assertIn("adjust any generated choice that conflicts with HARD", instruction.system_message)
         self.assertEqual(json.loads(instruction.user_message)["confirmed_intent"], self.data["_confirmed_intent"])
 
+    def test_fight_variations_must_keep_visible_combat_not_hiding_alone(self):
+        self.data.update(subject="A duck fighting a Stegosaurus.",
+            _confirmed_intent=dataset_understanding_fixture(hard=[
+                {"scope": "all_outputs", "text": "The duck and dinosaur must be depicted in a fighting interaction with visible combat cues."}]))
+        instruction = ideas_instruction(self.data, dataset_assignments(self.data))
+        self.assertIn("Every proposed moment must visibly show the required interaction", instruction.system_message)
+        self.assertIn("hiding or peeking alone does not satisfy fighting", instruction.system_message)
+        self.assertIn("retreating while the dinosaur attacks", instruction.system_message)
+        self.assertNotIn("both subjects facing off before the next attack", instruction.system_message)
+        self.assertEqual(json.loads(instruction.user_message)["confirmed_intent"]["hard"],
+            self.data["_confirmed_intent"]["hard"])
+
     def test_missing_understanding_or_unanswered_clarifications_never_call_model(self):
         for brief in (None, dataset_understanding_fixture(clarifications=["Which subject?"])):
             with self.subTest(brief=brief):
@@ -53,6 +68,56 @@ class DatasetIdeasTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.run_ideas([dataset_idea_fixture()])
         self.session.generate.assert_not_called()
+
+    def test_all_outputs_roles_require_actions_without_borrowing_another_roles_equipment(self):
+        self.data["_confirmed_intent"] = dataset_understanding_fixture(hard=[
+            {"scope": "all_outputs", "text": "The safety coordinator manages the crash mat."},
+            {"scope": "all_outputs", "text": "The lighting assistant controls the reflector."}])
+        instruction = ideas_instruction(self.data, dataset_assignments(self.data))
+        rules = " ".join(instruction.system_message.split())
+        self.assertIn("each all_outputs role obligation must have a compatible action in that frozen moment", rules)
+        self.assertIn("Merely including or naming the character does not satisfy a required responsibility", rules)
+        self.assertIn("Do not assign another role's tools, equipment or responsibility just to keep everyone busy", rules)
+        self.assertEqual(json.loads(instruction.user_message)["confirmed_intent"]["hard"],
+            self.data["_confirmed_intent"]["hard"])
+
+    def test_replacement_ideas_preserve_shared_batch_choices_from_existing_ideas(self):
+        self.data["_confirmed_intent"] = dataset_understanding_fixture(
+            hard=[{"scope": "dataset", "text": "Use one shared stunt setup throughout the batch."}],
+            free=[{"scope": "dataset", "text": "Choose the shared setup once."}])
+        existing = [dataset_idea_fixture(1, context="A cable-assisted leap onto a single crash mat.")]
+        before = deepcopy(existing)
+        instruction = ideas_instruction(self.data, dataset_assignments(self.data), indexes=[2], existing=existing)
+        rules = " ".join(instruction.system_message.split())
+        self.assertIn("Preserve any dataset-shared choice already established for the batch", rules)
+        self.assertIn("Vary the stage or interaction around that shared choice rather than replacing the choice", rules)
+        self.assertIn("choose it once for the batch and keep it consistent across all proposed ideas, not independently per image", rules)
+        context = json.loads(instruction.user_message)
+        self.assertEqual(context["existing_ideas"], before)
+        self.assertEqual(context["confirmed_intent"], self.data["_confirmed_intent"])
+        self.assertEqual([row["index"] for row in context["assignments"]], [2])
+        self.assertEqual(existing, before)
+
+    def test_ideas_do_not_deliberately_expose_optional_identity_traits(self):
+        self.data["_confirmed_intent"] = dataset_understanding_fixture(
+            hard=[{"scope": "all_outputs", "text": "The performer has a back tattoo; visibility is optional."}],
+            fixed=[{"scope": "all_outputs", "text": "The performer's back tattoo."}])
+        instruction = ideas_instruction(self.data, dataset_assignments(self.data))
+        rules = " ".join(instruction.system_message.split())
+        self.assertIn("Do not deliberately expose identity traits whose visibility is optional", rules)
+        context = json.loads(instruction.user_message)
+        self.assertEqual(context["confirmed_intent"]["hard"], self.data["_confirmed_intent"]["hard"])
+        self.assertEqual(context["confirmed_intent"]["visible_evidence"], [])
+
+    def test_supplied_character_groups_keep_trait_ownership_not_forced_visibility(self):
+        self.data.update(trigger_type="Multiple characters", trigger="Mira, blue hair, bat wings, Hana, blonde hair, crystal wings")
+        instruction = ideas_instruction(self.data, dataset_assignments(self.data))
+        rules = " ".join(instruction.system_message.split())
+        self.assertIn("Supplied character groups in HARD retain their own attributes", rules)
+        self.assertIn("A trait omitted from a shorter paraphrase is not permission to transfer it", rules)
+        self.assertIn("use only traits belonging to that subject", rules)
+        self.assertIn("Ownership does not require exposure", rules)
+        self.assertEqual(json.loads(instruction.user_message)["source"]["trigger"], self.data["trigger"])
 
     def test_guided_scopes_follow_original_nonempty_lines_when_assignments_cycle(self):
         self.data.update(amount=4, source_mode="guided", inputs="A glove punch\n\nA defensive stance",
@@ -89,6 +154,110 @@ class DatasetIdeasTests(unittest.TestCase):
         self.assertEqual(len(json.loads(instruction.user_message)["assignments"]), 1)
         with self.assertRaises(ValueError):
             validate_ideas(json.dumps(dataset_idea_fixture()), [1])
+
+    def test_ideas_schema_binds_exact_count_order_indexes_and_six_bounded_fields(self):
+        for amount, indexes in ((1, None), (2, None), (25, None), (3, [3, 1]), (3, [2])):
+            with self.subTest(amount=amount, indexes=indexes):
+                data = {**self.data, "amount": amount}
+                instruction = ideas_instruction(data, dataset_assignments(data), indexes=indexes)
+                expected = list(range(1, amount + 1)) if indexes is None else indexes
+                self.assertTrue(instruction.json_output)
+                schema = instruction.json_schema
+                self.assertEqual(schema["type"], "array")
+                self.assertEqual(schema["minItems"], len(expected))
+                self.assertEqual(schema["maxItems"], len(expected))
+                self.assertNotIn("items", schema)
+                self.assertEqual(len(schema["prefixItems"]), len(expected))
+                for record, index in zip(schema["prefixItems"], expected):
+                    self.assertEqual(record["type"], "object")
+                    self.assertIs(record["additionalProperties"], False)
+                    self.assertEqual(set(record["required"]), {"index", *IDEA_FIELDS})
+                    self.assertEqual(set(record["properties"]), {"index", *IDEA_FIELDS})
+                    self.assertEqual(record["properties"]["index"], {"type": "integer", "const": index})
+                    for field in IDEA_FIELDS:
+                        self.assertEqual(record["properties"][field],
+                            {"type": "string", "minLength": 1, "maxLength": 600})
+                context = json.loads(instruction.user_message)
+                self.assertEqual(context["output_contract"], {"record_count": len(expected), "indexes": expected})
+                self.assertEqual([row["index"] for row in context["assignments"]], expected)
+                self.assertEqual(context["source"]["amount"], amount)
+
+    def test_owned_llama_receives_ideas_schema_in_its_existing_model_call(self):
+        expected = [dataset_idea_fixture(1), dataset_idea_fixture(2)]
+        response = Mock()
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        response.headers = {"Content-Type": "application/json"}
+        response.read.return_value = json.dumps({"choices": [{"finish_reason": "stop",
+            "message": {"content": json.dumps(expected)}}]}).encode()
+        for owned in (True, False):
+            with self.subTest(owned_llama=owned):
+                backend = OpenAICompatibleBackend({"base_url": "http://127.0.0.1:8189/v1",
+                    "model": "synthetic", "_is_llama_cpp": owned})
+                with patch("goated_prompter.backends.openai_compatible.urlopen", return_value=response) as send, \
+                        patch("goated_prompter.backends.openai_compatible.log_request"), \
+                        patch("goated_prompter.backends.openai_compatible.log_response"):
+                    rows = self.service.run(session=backend, data=self.data, assignments=dataset_assignments(self.data),
+                        progress=lambda _message: None)
+                send.assert_called_once()
+                payload = json.loads(send.call_args.args[0].data)
+                if owned:
+                    self.assertEqual(payload.get("response_format"), {"type": "json_schema", "json_schema": {
+                        "name": "response", "strict": True,
+                        "schema": ideas_instruction(self.data, dataset_assignments(self.data)).json_schema}})
+                else:
+                    self.assertNotIn("response_format", payload)
+                self.assertEqual(payload["max_tokens"], 1536)
+                self.assertEqual(rows, expected)
+
+    def test_ideas_schema_does_not_trigger_llama_boolean_items_conversion_error(self):
+        expected = [dataset_idea_fixture(1), dataset_idea_fixture(2)]
+        response = Mock()
+        response.__enter__ = Mock(return_value=response)
+        response.__exit__ = Mock(return_value=False)
+        response.headers = {"Content-Type": "application/json"}
+        response.read.return_value = json.dumps({"choices": [{"finish_reason": "stop",
+            "message": {"content": json.dumps(expected)}}]}).encode()
+
+        def convert_schema(request, **_options):
+            schema = json.loads(request.data)["response_format"]["json_schema"]["schema"]
+            if "items" in schema and not isinstance(schema["items"], dict):
+                body = json.dumps({"error": {"message": "JSON schema error at #/items: schema must be an object"}}).encode()
+                raise HTTPError(request.full_url, 500, "Internal Server Error", {}, BytesIO(body))
+            return response
+
+        backend = OpenAICompatibleBackend({"base_url": "http://127.0.0.1:8189/v1",
+            "model": "synthetic", "_is_llama_cpp": True})
+        with patch("goated_prompter.backends.openai_compatible.urlopen", side_effect=convert_schema) as send, \
+                patch("goated_prompter.backends.openai_compatible.log_request"), \
+                patch("goated_prompter.backends.openai_compatible.log_response"):
+            rows = self.service.run(session=backend, data=self.data, assignments=dataset_assignments(self.data),
+                progress=lambda _message: None)
+        send.assert_called_once()
+        self.assertEqual(rows, expected)
+
+    def test_ideas_count_error_reports_expected_and_received_without_response_content(self):
+        for count in (0, 1, 3):
+            with self.subTest(count=count):
+                self.session.reset_mock()
+                rows = [dataset_idea_fixture(index, idea="Synthetic content must not be included in the error.")
+                    for index in range(1, count + 1)]
+                with self.assertRaisesRegex(BackendGenerationError,
+                        rf"Ideas returned {count} records; expected exactly 2 for requested indexes \[1, 2\]") as caught:
+                    self.run_ideas(rows)
+                self.assertNotIn("Synthetic content", str(caught.exception))
+                self.assertIn("No automatic retry", str(caught.exception))
+                self.session.generate.assert_called_once()
+
+    def test_ideas_wrong_container_is_distinct_from_a_count_mismatch(self):
+        rows = [dataset_idea_fixture(1), dataset_idea_fixture(2)]
+        for payload in ({"ideas": rows}, rows[0], None, "Synthetic content"):
+            with self.subTest(container=type(payload).__name__):
+                self.session.reset_mock()
+                with self.assertRaisesRegex(BackendGenerationError, "Ideas must return a JSON array of 2 records") as caught:
+                    self.run_ideas(payload)
+                self.assertNotIn("Synthetic content", str(caught.exception))
+                self.session.generate.assert_called_once()
 
     def test_camera_and_context_changes_do_not_make_identical_events_distinct(self):
         first = dataset_idea_fixture(1)

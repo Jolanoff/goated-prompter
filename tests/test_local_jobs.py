@@ -102,7 +102,8 @@ class JobPersistenceTests(unittest.TestCase):
         result = {"completed": 1, "total": 1, "scene_plan": [], "prompts": []}
         seen = []
 
-        def persist(target, *, snapshot):
+        def persist(target, *, snapshot, approved_intent):
+            self.assertIsNone(approved_intent)
             observed = threading.Event()
             snapshots = []
             def read_job():

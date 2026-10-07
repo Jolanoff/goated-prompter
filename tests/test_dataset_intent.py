@@ -15,8 +15,9 @@ import local_app as local
 from goated_prompter.dataset import validate_dataset_draft
 from goated_prompter.dataset_intent import DatasetIntentTickets
 from goated_prompter.dataset_understanding import validate_understanding
+from goated_prompter.json_store import atomic_json
 from tests.helpers import dataset_understanding_fixture, dataset_idea_fixture, enter_context
-from tests.test_dataset import CaptureBackend, valid_draft
+from tests.test_dataset import CaptureBackend, saved_scene, valid_draft
 
 
 class UnderstandingBackend(CaptureBackend):
@@ -136,6 +137,27 @@ class DatasetIntentTicketTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "expired or is missing"):
             tickets.approve(token, data)
 
+    def test_ram_continuation_tickets_expire_and_do_not_survive_restart(self):
+        now = [0]
+        tickets = DatasetIntentTickets(clock=lambda: now[0], lifetime=10)
+        data = validate_dataset_draft(valid_draft(amount=1))
+        brief = dataset_understanding_fixture()
+        tickets.remember_generated(data, brief)
+        token = tickets.continuation_token(data)
+        self.assertTrue(token)
+        self.assertEqual(tickets.approve(token, data), brief)
+        self.assertEqual(DatasetIntentTickets().continuation_token(data), "")
+        now[0] = 9
+        data["scene_plan"] = [saved_scene()]
+        rebound = tickets.continuation_token(data)
+        self.assertTrue(rebound)
+        self.assertNotEqual(rebound, token)
+        self.assertEqual(tickets.approve(rebound, data), brief)
+        now[0] = 10
+        self.assertEqual(tickets.continuation_token(data), "")
+        with self.assertRaisesRegex(ValueError, "expired or is missing"):
+            tickets.approve(rebound, data)
+
     def test_blocking_clarifications_cannot_issue_approval(self):
         result = DatasetIntentTickets().register(valid_draft(), dataset_understanding_fixture(
             clarifications=["Breaking what?"]))
@@ -182,6 +204,13 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
         job = await self.terminal(await response.json())
         self.assertEqual(job["status"], "succeeded", job)
         return job["result"]
+
+    async def reopen_app(self):
+        await self.client.close()
+        self.app = local.create_app(config_loader=lambda: {"backend": "mock"},
+                                    settings_path=Path(self.temp.name) / "settings.json")
+        self.client = TestClient(TestServer(self.app), headers={"Host": "127.0.0.1:8190"})
+        await self.client.start_server()
 
     async def test_analysis_and_decline_leave_saved_prompts_and_scenes_unchanged(self):
         data = valid_draft(amount=1, results=[{"index": 1, "input": "", "prompt": "Manually edited previous prompt."}])
@@ -245,6 +274,60 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:understanding"])
         self.assertFalse(self.app[local.STATE].dataset_checkpoints.snapshot()["jobs"])
 
+    async def test_multiple_character_source_is_reviewed_carried_through_planning_and_retained_after_restart(self):
+        from goated_prompter.prompting.dataset import dataset_instruction
+        from goated_prompter.core import GoatedPrompterRequest
+        trigger = "2 girls, mira, blue hair, bat wings, bat wings, hana, blonde hair, crystal wings"
+        data = valid_draft(amount=1, trigger_type="Multiple characters", trigger=trigger,
+            target="Anima", trigger_at_start=True, trigger_connected=True, expand_trigger=False,
+            subject="Mira on the left reads the same book with Hana on the right. Traits may be naturally hidden.")
+        self.backend.summary = dataset_understanding_fixture(character_count=2, identity_policy="fixed", hard=[
+            {"scope": "all_outputs", "text": "Mira and Hana read the same book together."}])
+        self.backend.raw_idea_outputs = [json.dumps([dataset_idea_fixture(idea="Hana drapes a bat wing over the table while reading with Mira.")])]
+        self.backend.raw_scene_outputs = [json.dumps({"scene": "Mira on the left and Hana on the right read the same open book at a table in a medium two-shot.", "self_check": "PASS"})]
+        review = await self.analyze(data)
+        source_requirement = review["brief"]["hard"][-1]
+        self.assertTrue(source_requirement["text"].endswith(trigger))
+        self.assertEqual(review["brief"]["visible_evidence"], [])
+        response = await self.client.post("/api/workspace/dataset/scenes", json={"input": data,
+            "confirmation_token": review["confirmation_token"]})
+        done = await self.terminal(await response.json())
+        self.assertEqual(done["status"], "succeeded", done.get("error"))
+        calls = [call for call in self.backend.calls if call.diagnostic_stage in ("dataset:ideas", "dataset:build_scene")]
+        self.assertEqual(len(calls), 2)
+        for instruction in calls:
+            context = json.loads(instruction.user_message)
+            self.assertEqual(context["confirmed_intent"]["hard"][-1], source_requirement)
+            self.assertEqual(context["confirmed_intent"]["visible_evidence"], [])
+        stored = self.app[local.STATE].dataset_checkpoints.snapshot()["jobs"][-1]["approved_intent"]
+        self.assertEqual(stored, review["brief"])
+        await self.reopen_app()
+        reopened = await (await self.client.get("/api/workspace/settings/dataset")).json()
+        approved = self.app[local.STATE].dataset_intents.approve(reopened["continuation_token"], reopened["draft"])
+        self.assertEqual(approved, review["brief"])
+        writer = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]),
+            {**reopened["draft"], "_confirmed_intent": approved}, 1, plan_item=reopened["draft"]["scene_plan"][0])
+        self.assertIn(trigger, writer.system_message)
+        self.assertIn("not a visibility requirement", writer.system_message)
+
+    async def test_older_multiple_character_approval_is_not_silently_upgraded_on_restart(self):
+        data = valid_draft(amount=1, trigger_type="Multiple characters", trigger="Mira, blue hair, Hana, blonde hair")
+        review = await self.analyze(data)
+        response = await self.client.post("/api/workspace/dataset/scenes", json={"input": data,
+            "confirmation_token": review["confirmation_token"]})
+        self.assertEqual((await self.terminal(await response.json()))["status"], "succeeded")
+        await self.client.close()
+        store = self.app[local.STATE].dataset_checkpoints
+        recorded = store.snapshot()
+        legacy_brief = recorded["jobs"][-1]["approved_intent"]
+        legacy_brief["hard"] = [item for item in legacy_brief["hard"] if "Supplied character trigger (verbatim):" not in item["text"]]
+        atomic_json(store.path, recorded)
+        await self.reopen_app()
+        reopened = await (await self.client.get("/api/workspace/settings/dataset")).json()
+        retained = self.app[local.STATE].dataset_intents.approve(reopened["continuation_token"], reopened["draft"])
+        self.assertEqual(retained, legacy_brief)
+        self.assertEqual(self.app[local.STATE].dataset_checkpoints.snapshot()["jobs"][-1]["approved_intent"], legacy_brief)
+
     async def test_full_four_stage_flow_uses_existing_builder_with_accepted_scene_as_the_entire_input(self):
         from goated_prompter.core import assemble_instruction
         data = valid_draft(amount=1, target="Anima", length="Maximum Detail", creativity="Creative", visual_style="Anime / manga")
@@ -270,6 +353,229 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(writer.user_message, scene)
         self.assertEqual([call.diagnostic_stage for call in self.backend.calls],
             ["dataset:understanding", "dataset:ideas", "dataset:build_scene", "dataset:1"])
+
+    async def test_saved_approved_plan_continues_without_reanalysis_and_keeps_completed_prompt(self):
+        data = valid_draft(amount=2)
+        review = await self.analyze(data)
+        response = await self.client.post("/api/workspace/dataset/scenes", json={"input": data,
+            "confirmation_token": review["confirmation_token"]})
+        planned = await self.terminal(await response.json())
+        self.assertEqual(planned["status"], "succeeded", planned.get("error"))
+        saved = await (await self.client.get("/api/workspace/settings/dataset")).json()
+        self.assertTrue(saved.get("continuation_token"))
+        first = saved["draft"]["scene_plan"][0]
+        first["prompt_status"] = "valid"
+        completed = {"index": 1, "input": first["input"], "idea": first["idea"], "scene": first["scene"],
+                     "prompt": "ohwx_person: my edited prompt.\n  Preserve spacing."}
+        saved["draft"]["results"] = [completed]
+        updated = await self.client.put("/api/workspace/settings/dataset", json={
+            "revision": saved["revision"], "draft": saved["draft"]})
+        current = await updated.json()
+        self.assertEqual(current.get("continuation_token"), saved["continuation_token"])
+        self.backend.calls.clear()
+        response = await self.client.post("/api/workspace/dataset", json={"input": current["draft"],
+            "confirmation_token": current["continuation_token"], "resume": True, "valid_only": True})
+        self.assertEqual(response.status, 202, await response.text())
+        finished = await self.terminal(await response.json())
+        self.assertEqual(finished["status"], "succeeded", finished.get("error"))
+        self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:2"])
+        self.assertEqual(finished["result"]["prompts"][0], completed)
+        self.assertEqual(finished["result"]["completed"], 2)
+        self.assertEqual([row["scene"] for row in finished["result"]["scene_plan"]],
+            [row["scene"] for row in saved["draft"]["scene_plan"]])
+        self.assertIn('"text": "Gloves"', self.backend.calls[0].system_message)
+
+    async def test_saved_plan_continues_after_app_restart_without_reanalysis(self):
+        data = valid_draft(amount=2, plan_scenes_first=True)
+        review = await self.analyze(data)
+        response = await self.client.post("/api/workspace/dataset/scenes", json={"input": data,
+            "confirmation_token": review["confirmation_token"]})
+        self.assertEqual((await self.terminal(await response.json()))["status"], "succeeded")
+        saved = await (await self.client.get("/api/workspace/settings/dataset")).json()
+        first = saved["draft"]["scene_plan"][0]
+        first["prompt_status"] = "valid"
+        completed = {"index": 1, "input": first["input"], "idea": first["idea"], "scene": first["scene"],
+                     "prompt": "ohwx_person: retain this manual prompt.\n  And spacing."}
+        saved["draft"]["results"] = [completed]
+        updated = await self.client.put("/api/workspace/settings/dataset", json={
+            "revision": saved["revision"], "draft": saved["draft"]})
+        self.assertEqual(updated.status, 200)
+        persisted = self.app[local.STATE].dataset_checkpoints.snapshot()
+        self.assertEqual(persisted["jobs"][-1]["approved_intent"], review["brief"])
+        self.assertNotIn(review["confirmation_token"], json.dumps(persisted))
+        await self.reopen_app()
+        self.backend.calls.clear()
+        reopened = await (await self.client.get("/api/workspace/settings/dataset")).json()
+        self.assertEqual(reopened["draft"]["scene_plan"], saved["draft"]["scene_plan"])
+        self.assertTrue(reopened.get("continuation_token"), "Reopening lost approval while preserving the scenes.")
+        response = await self.client.post("/api/workspace/dataset", json={"input": reopened["draft"],
+            "confirmation_token": reopened["continuation_token"], "resume": True, "valid_only": True})
+        self.assertEqual(response.status, 202, await response.text())
+        finished = await self.terminal(await response.json())
+        self.assertEqual(finished["status"], "succeeded", finished.get("error"))
+        self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:2"])
+        self.assertEqual(finished["result"]["prompts"][0], completed)
+        self.assertEqual([row["scene"] for row in finished["result"]["scene_plan"]],
+            [row["scene"] for row in saved["draft"]["scene_plan"]])
+        self.assertIn('"text": "Gloves"', self.backend.calls[0].system_message)
+
+    async def test_legacy_saved_plan_continues_after_restart_using_explicit_source_rules(self):
+        data = valid_draft(amount=1, plan_scenes_first=True, constraints="Keep both gloves readable in the arena.")
+        review = await self.analyze(data)
+        response = await self.client.post("/api/workspace/dataset/scenes", json={"input": data,
+            "confirmation_token": review["confirmation_token"]})
+        self.assertEqual((await self.terminal(await response.json()))["status"], "succeeded")
+        # Stop the mock checkpoint writers before simulating an older store.
+        await self.client.close()
+        store = self.app[local.STATE].dataset_checkpoints
+        legacy = store.snapshot()
+        for row in legacy["jobs"]:
+            row.pop("approved_intent", None)
+        atomic_json(store.path, legacy)
+        await self.reopen_app()
+        self.backend.calls.clear()
+        saved = await (await self.client.get("/api/workspace/settings/dataset")).json()
+        self.assertFalse(saved["continuation_token"])
+        response = await self.client.post("/api/workspace/dataset", json={"input": saved["draft"],
+            "resume": True, "valid_only": True})
+        self.assertEqual(response.status, 202, await response.text())
+        finished = await self.terminal(await response.json())
+        self.assertEqual(finished["status"], "succeeded", finished.get("error"))
+        self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:1"])
+        self.assertEqual(self.backend.calls[0].user_message, saved["draft"]["scene_plan"][0]["scene"])
+        self.assertIn(data["constraints"], self.backend.calls[0].system_message,
+                      "Older plans must retain explicit source rules even when their old review was RAM-only.")
+
+    async def test_restart_continuation_does_not_accept_an_unsaved_or_changed_source(self):
+        data = valid_draft(amount=1, plan_scenes_first=True)
+        review = await self.analyze(data)
+        response = await self.client.post("/api/workspace/dataset/scenes", json={"input": data,
+            "confirmation_token": review["confirmation_token"]})
+        self.assertEqual((await self.terminal(await response.json()))["status"], "succeeded")
+        await self.reopen_app()
+        saved = await (await self.client.get("/api/workspace/settings/dataset")).json()
+        self.backend.calls.clear()
+        changed = {**saved["draft"], "length": "Detailed"}
+        response = await self.client.post("/api/workspace/dataset", json={"input": changed,
+            "resume": True, "valid_only": True})
+        self.assertEqual(response.status, 400)
+        self.assertIn("current saved scene plan", (await response.json())["error"])
+        updated = await self.client.put("/api/workspace/settings/dataset", json={
+            "revision": saved["revision"], "draft": changed})
+        self.assertEqual(updated.status, 200)
+        current = await updated.json()
+        self.assertFalse(current["continuation_token"])
+        response = await self.client.post("/api/workspace/dataset", json={"input": current["draft"],
+            "resume": True, "valid_only": True})
+        self.assertEqual(response.status, 400)
+        self.assertEqual(self.backend.calls, [])
+
+    async def test_continuation_requires_approved_source_and_tokens_bind_the_current_plan(self):
+        data = valid_draft(amount=1)
+        review = await self.analyze(data)
+        before = await (await self.client.get("/api/workspace/settings/dataset")).json()
+        self.assertFalse(before.get("continuation_token"))
+        response = await self.client.post("/api/workspace/dataset/scenes", json={"input": data,
+            "confirmation_token": review["confirmation_token"]})
+        self.assertEqual((await self.terminal(await response.json()))["status"], "succeeded")
+        saved = await (await self.client.get("/api/workspace/settings/dataset")).json()
+        token = saved.get("continuation_token")
+        self.assertTrue(token)
+        self.backend.calls.clear()
+        for field, value in (("subject", "Changed concept"), ("constraints", "New hard rule"),
+                             ("visual_style", "Watercolor"), ("length", "Detailed"), ("trigger", "new_token")):
+            with self.subTest(field=field):
+                changed = {**saved["draft"], field: value}
+                rejected = await self.client.post("/api/workspace/dataset", json={"input": changed,
+                    "confirmation_token": token})
+                self.assertEqual(rejected.status, 400, await rejected.text())
+        changed = deepcopy(saved["draft"])
+        changed["scene_plan"][0]["scene"] = "A different scene."
+        rejected = await self.client.post("/api/workspace/dataset", json={"input": changed,
+            "confirmation_token": token, "resume": True, "valid_only": True})
+        self.assertEqual(rejected.status, 400, await rejected.text())
+        self.assertEqual(self.backend.calls, [])
+        updated = await self.client.put("/api/workspace/settings/dataset", json={
+            "revision": saved["revision"], "draft": changed})
+        current_token = (await updated.json()).get("continuation_token")
+        self.assertTrue(current_token)
+        self.assertNotEqual(current_token, token)
+
+    async def test_manual_scene_repair_reuses_source_approval_but_still_requires_a_scene_check(self):
+        data = valid_draft(amount=1)
+        review = await self.analyze(data)
+        response = await self.client.post("/api/workspace/dataset/scenes", json={"input": data,
+            "confirmation_token": review["confirmation_token"]})
+        self.assertEqual((await self.terminal(await response.json()))["status"], "succeeded")
+        saved = await (await self.client.get("/api/workspace/settings/dataset")).json()
+        old_token = saved["continuation_token"]
+        row = saved["draft"]["scene_plan"][0]
+        row.update(scene="An edited training scene.", self_check="", scene_status="not_generated")
+        response = await self.client.put("/api/workspace/settings/dataset", json={
+            "revision": saved["revision"], "draft": saved["draft"]})
+        edited = await response.json()
+        token = edited.get("continuation_token")
+        self.assertTrue(token)
+        self.assertNotEqual(token, old_token)
+        self.backend.calls.clear()
+        refused = await self.client.post("/api/workspace/dataset/scene", json={"input": edited["draft"],
+            "index": 1, "action": "regenerate_prompt", "confirmation_token": token})
+        self.assertEqual(refused.status, 400)
+        response = await self.client.post("/api/workspace/dataset/scene", json={"input": edited["draft"],
+            "index": 1, "action": "repair_scene", "confirmation_token": token})
+        self.assertEqual(response.status, 202, await response.text())
+        finished = await self.terminal(await response.json())
+        self.assertEqual(finished["status"], "succeeded", finished.get("error"))
+        self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:build_scene", "dataset:1"])
+        context = json.loads(self.backend.calls[0].user_message)
+        self.assertEqual(context["confirmed_intent"], review["brief"])
+        self.assertEqual(context["current_scene"], "An edited training scene.")
+
+    async def test_stale_token_cannot_resume_old_input_over_new_saved_source(self):
+        data = valid_draft(amount=1)
+        review = await self.analyze(data)
+        response = await self.client.post("/api/workspace/dataset/scenes", json={"input": data,
+            "confirmation_token": review["confirmation_token"]})
+        self.assertEqual((await self.terminal(await response.json()))["status"], "succeeded")
+        saved = await (await self.client.get("/api/workspace/settings/dataset")).json()
+        updated = await self.client.put("/api/workspace/settings/dataset", json={
+            "revision": saved["revision"], "draft": {**saved["draft"], "length": "Detailed"}})
+        self.assertEqual(updated.status, 200)
+        current = await updated.json()
+        self.backend.calls.clear()
+        response = await self.client.post("/api/workspace/dataset", json={"input": saved["draft"],
+            "confirmation_token": saved["continuation_token"], "resume": True, "valid_only": True})
+        self.assertEqual(response.status, 400, await response.text())
+        self.assertEqual(self.backend.calls, [])
+        after = await (await self.client.get("/api/workspace/settings/dataset")).json()
+        self.assertEqual(after["draft"], current["draft"])
+        self.assertEqual(after["revision"], current["revision"])
+
+    async def test_server_invalidates_edited_scene_pass_and_preserves_checked_sibling(self):
+        data = valid_draft(amount=2)
+        review = await self.analyze(data)
+        response = await self.client.post("/api/workspace/dataset", json={"input": data,
+            "confirmation_token": review["confirmation_token"]})
+        self.assertEqual((await self.terminal(await response.json()))["status"], "succeeded")
+        saved = await (await self.client.get("/api/workspace/settings/dataset")).json()
+        second_scene = deepcopy(saved["draft"]["scene_plan"][1])
+        second_prompt = deepcopy(saved["draft"]["results"][1])
+        saved["draft"]["scene_plan"][0]["scene"] = "A client edit retaining an obsolete PASS."
+        response = await self.client.put("/api/workspace/settings/dataset", json={
+            "revision": saved["revision"], "draft": saved["draft"]})
+        self.assertEqual(response.status, 200, await response.text())
+        current = await response.json()
+        row = current["draft"]["scene_plan"][0]
+        self.assertEqual(row["self_check"], "")
+        self.assertEqual(row["scene_status"], "not_generated")
+        self.assertEqual(row["prompt_status"], "not_generated")
+        self.assertEqual(current["draft"]["scene_plan"][1], second_scene)
+        self.assertEqual(current["draft"]["results"], [second_prompt])
+        self.backend.calls.clear()
+        response = await self.client.post("/api/workspace/dataset/scene", json={"input": current["draft"],
+            "confirmation_token": current["continuation_token"], "action": "regenerate_prompt", "index": 1})
+        self.assertEqual(response.status, 400)
+        self.assertEqual(self.backend.calls, [])
 
     async def test_corrected_cup_scene_reaches_builder_without_restoring_the_generated_crop(self):
         data = valid_draft(amount=1, trigger_type="Object / product",

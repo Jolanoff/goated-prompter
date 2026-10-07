@@ -13,7 +13,8 @@ from .prompting.target_models import TARGET_MODEL_NAMES, canonical_target
 from .workflow_output import WorkflowFormatError, normalize_workflow_output, sanitize_prompt_text, requested_visible_text
 from .dataset_assignments import dataset_assignments
 from .dataset_quality import analyze_idea_diversity
-from .dataset_triggers import trigger_presence_error, trigger_terms
+from .dataset_triggers import trigger_presence_error, trigger_terms, fixed_anima_prefix
+from .output_repetition import MAX_ANIMA_TAGS, anima_tag_count, anima_tags
 from .dataset_visible_content import PositiveContentError, positive_prompt_error, sanitize_positive_prompt
 from .scene_planner import (ScenePlanner, MAX_STORED_SCENE_CHARACTERS, MAX_STORED_IDEA_CHARACTERS,
                            reusable_scene_plan, scene_plan_signature, validate_saved_scene_plan,
@@ -31,7 +32,7 @@ def default_dataset_draft():
         "source_mode": "random", "inputs": "", "target": "Generic", "length": "Medium",
         "director_preset": "general_director", "variety": "Balanced", "constraints": "",
         "creativity": "Balanced", "results": [], "result_job_id": "",
-        "scene_plan": [], "scene_plan_signature": "",
+        "scene_plan": [], "scene_plan_signature": "", "plan_scenes_first": False,
     }
 
 
@@ -46,7 +47,7 @@ def validate_dataset_draft(value, *, generation=False, planning=False):
     if not isinstance(value, dict):
         raise ValueError("Invalid Dataset settings fields.")
     result = {**defaults, **{key: item for key, item in value.items() if key in defaults}}
-    result["trigger"] = _text(result["trigger"], "Trigger / prepend", 200, required=generation and not planning).strip()
+    result["trigger"] = _text(result["trigger"], "Trigger / prepend", 1000, required=generation and not planning).strip()
     result["subject"] = _text(result["subject"], "Dataset concept", 10000, required=generation).strip()
     for key, label, limit in (("custom_type", "Custom subject kind", 120), ("custom_style", "Custom visual style", 500),
                               ("inputs", "Guided inputs", 50000), ("constraints", "Dataset constraints", 10000),
@@ -60,10 +61,12 @@ def validate_dataset_draft(value, *, generation=False, planning=False):
     result["target"] = canonical_target(result["target"])
     if result["target"] not in TARGET_MODEL_NAMES:
         raise ValueError("Invalid target model.")
+    if generation and result["target"] == "Anima" and anima_tag_count(result["trigger"], tag_only=True) > MAX_ANIMA_TAGS:
+        raise ValueError("Anima allows at most 100 tags. Your supplied trigger already exceeds this limit; edit it before generating.")
     _text(result["director_preset"], "Director preset", 256)
     if type(result["amount"]) is not int or not 1 <= result["amount"] <= 25:
         raise ValueError("Dataset prompt amount must be between 1 and 25.")
-    for key in ("trigger_at_start", "trigger_connected", "expand_trigger"):
+    for key in ("trigger_at_start", "trigger_connected", "expand_trigger", "plan_scenes_first"):
         if type(result[key]) is not bool:
             raise ValueError(f"{key} must be enabled or disabled.")
     if result["trigger_type"] == "Custom" and generation and not result["custom_type"].strip():
@@ -146,6 +149,19 @@ class DatasetService:
         original = instruction
         def validate(raw):
             prompt = normalize_workflow_output(raw, data["target"], mode="Enhance", expected_visible_text=expected_text)
+            if prefix := fixed_anima_prefix(data):
+                tail = prompt[len(prefix):] if prompt.startswith(prefix) else None
+                if tail is not None and (not tail or tail.lstrip(" \t")[:1] in ",;:\r\n"):
+                    prompt = tail.lstrip(",;: \t\r\n")
+                if not prompt:
+                    raise WorkflowFormatError("The locked trigger is inserted by the app; return the accepted scene description as well.")
+                supplied = {tag.casefold().replace("_", " ") for tag in anima_tags(prefix, tag_only=True)}
+                generated = anima_tags(prompt)
+                if any(tag.casefold().replace("_", " ") in supplied for tag in generated):
+                    raise WorkflowFormatError("Generated scene tags repeat supplied tags. Return only useful new scene tags and scene prose; the app inserts the protected inventory once.")
+                if anima_tag_count(prefix, tag_only=True) + len(generated) > MAX_ANIMA_TAGS:
+                    raise WorkflowFormatError("Anima allows at most 100 tags, including supplied tags. Reduce added scene tags, preserving the scene prose.")
+                prompt = normalize_workflow_output(prefix + ", " + prompt, data["target"], mode="Enhance")
             return validate_positive_content(validate_trigger_contract(prompt, data, progress), data)
         for attempt in range(retries + 1):
             self.checkpoint()
@@ -192,7 +208,9 @@ class DatasetService:
                 session.emit_activity("validation", workflow="dataset", attempt=attempt, accepted=True)
                 return prompt
 
-    def run(self, request, data, progress, partial, *, scenes_only=False, scene_action=None, valid_only=False):
+    def run(self, request, data, progress, partial, *, scenes_only=False, scene_action=None, valid_only=False, resume=False):
+        if resume and (scenes_only or scene_action):
+            raise ValueError("Continue is only available for batch prompt generation.")
         effective, profile = resolve_director_config(self.config, request)
         backend = create_backend(effective)
         family = _effective_model_family(request, profile, effective)
@@ -226,7 +244,18 @@ class DatasetService:
             else:
                 scenes = [dict(row) for row in scenes]
                 progress("Reusing saved Dataset ideas and scenes for the selected target.")
+            completed = {}
+            if resume:
+                by_index = {row["index"]: row for row in scenes}
+                for item in data["results"]:
+                    row = by_index.get(item["index"])
+                    if (row and scene_is_usable(row, data) and row.get("prompt_status") == "valid"
+                            and item["prompt"].strip()
+                            and all(item.get(field) == row.get(field, "") for field in ("input", "idea", "scene"))):
+                        completed[item["index"]] = dict(item)
+                results = sorted(completed.values(), key=lambda item: item["index"])
             selected = [row["index"] for row in scenes if scene_is_usable(row, data)] if valid_only else list(range(1, data["amount"] + 1))
+            selected = [index for index in selected if index not in completed]
             if scene_action:
                 action, index = scene_action
                 selected = [index]
@@ -272,7 +301,7 @@ class DatasetService:
                 if scenes[index - 1].get("scene_status") != "failed":
                     scenes[index - 1].update(idea_status="duplicate_warning" if index in duplicates else "valid", prompt_status="not_generated")
             if scenes_only:
-                return {"ok": True, "kind": "dataset_scenes", "scene_plan": scenes,
+                return {"ok": True, "kind": "dataset_scenes", "prompts": [], "scene_plan": scenes,
                         "scene_plan_signature": signature, "backend": backend.name}
             publish()
             for index in selected:

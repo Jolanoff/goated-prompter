@@ -52,12 +52,12 @@ export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm
     return () => cancelAnimationFrame(frame);
   }, [confirmation, busy]);
 
-  function requestConfirmation(operation, options = {}) {
+  function requestConfirmation(operation, options = {}, input = draft) {
     if (pending.current) return;
     // The review lock disables the launcher before showModal can remember it.
     opener.current = document.activeElement;
     setError("");
-    void analyze({ input: draft, operation, options, baseSignature: datasetRequestSignature(draft) });
+    void analyze({ input, operation, options, baseSignature: datasetRequestSignature(draft) });
   }
 
   function cancelConfirmation() {
@@ -75,9 +75,9 @@ export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm
     const input = reviseDatasetRequest(confirmation.input, additions);
     const needsReplan = input !== confirmation.input;
     void analyze({ input, baseSignature: confirmation.baseSignature,
-      operation: needsReplan && confirmation.operation === "dataset/scene" ? "dataset" : confirmation.operation,
+      operation: needsReplan ? input.plan_scenes_first ? "dataset/scenes" : "dataset" : confirmation.operation,
       options: needsReplan ? {} : confirmation.options,
-      notice: needsReplan ? "New rules require fresh ideas and scenes for this batch." : confirmation.notice });
+      notice: needsReplan ? "New rules require fresh ideas and scenes. Review them before continuing to Dataset." : confirmation.notice });
   }
 
   async function confirmRequest() {

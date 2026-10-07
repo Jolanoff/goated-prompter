@@ -80,10 +80,88 @@ Descriptive prose is Chinese for a Chinese instruction, otherwise English. Visib
 MODEL_ADAPTERS = {
     "Generic": """Generic target: write clean, coherent natural-language visual description without model-specific syntax or tag chains.""",
    
-    "Anima": """Anima target: use a hybrid of Danbooru/Gelbooru-style character tags and natural-language scene description. Use lowercase-style tags where appropriate, subject-count/general character tags and useful scene tags. Model-supported quality/meta tags such as masterpiece, best quality and score tags are allowed where appropriate; this target-specific allowance overrides the generic quality-slogan default. Negative conditioning belongs only in a separate negative prompt if that channel exists; never concatenate it into positive prose.
-    When the user's input contains character tag blocks, preserve each named character's tags as a distinct block instead of merging all attributes into one global tag list. Keep character-specific count tags such as 1boy or 1girl inside their respective character blocks when supplied. A scene-level count such as 3boys, 3girls may appear once at the beginning.
-    After the character blocks, use fluent natural language to construct the requested scene. Clearly assign each character's position, pose, action, expression, interaction, and relationship to the environment by naming the character. Use the tagged appearance and clothing as character facts and do not randomly exchange attributes between characters.
-    Do not rewrite a well-structured character tag block into generic prose, and do not flatten multiple characters into one ambiguous tag pile. Add only useful shared scene tags when appropriate. The active Director, creativity, and prompt-length settings determine how elaborate the scene, composition, lighting, atmosphere, and visual direction should become.""",
+    "Anima": """Anima target: Generate a clean hybrid prompt combining Danbooru/Gelbooru-style tags with fluent natural-language scene descriptions.
+
+Output structure
+
+Start with one comma-separated sequence of relevant positive tags.
+
+Follow with concise natural-language prose describing the actual scene.
+
+Use lowercase tags with spaces instead of underscores, except for supported score tags.
+
+Quality tags such as masterpiece, best quality and score_7 are allowed when appropriate.
+
+Apply the selected visual medium naturally without announcing it.
+
+Character handling
+
+Begin with the correct total subject-count tag, unless a locked prefix already establishes it.
+
+Preserve every supplied character's identity, appearance, clothing, accessories and distinctive features.
+
+Keep character-specific tags grouped logically without unnecessary repetition.
+
+For multiple characters, use their names in natural-language prose to establish positions, expressions, actions, interactions and physical relationships.
+
+Never transfer attributes between characters or invent contradictory characteristics.
+
+Preserve user-supplied character blocks when explicitly provided. Do not invent named blocks for flat tag inputs.
+
+Tag selection
+
+Prefer recognizable visual tags describing subjects, appearance, clothing, poses, expressions, objects, environment, lighting and composition.
+
+Include only tags relevant to the requested image.
+
+Do not generate generic quality-control instructions such as believable anatomy, coherent relationships, static image, clear visibility or no cropping unless explicitly required.
+
+Never expand a constraint into a list of synonymous or increasingly specific exclusions.
+
+Do not introduce negative prompt terms into the positive prompt.
+
+Avoid duplicate tags, contradictory tags and redundant descriptions.
+
+Use substantially fewer than 100 tags whenever possible. The limit is a maximum, not a target.
+
+Scene prose
+
+Describe concrete, visually observable details.
+
+Explicitly clarify multi-character relationships and interactions.
+
+Preserve the supplied setting and action.
+
+Avoid repeating the complete tag inventory in prose.
+
+Never add generic commentary about the rendering medium.
+
+End after the scene is adequately described.
+
+Strict preservation
+
+Preserve supplied trigger text, tag wording, weights, ordering and repetitions when required.
+
+When Keep trigger connected and Trigger at start are enabled, preserve the entire connected trigger at the beginning.
+
+When a locked prefix is supplied, generate only the continuation.
+
+Do not silently rewrite or remove protected user-supplied text.
+
+Final validation
+Before returning the prompt, ensure that:
+
+The requested subjects and scene are accurately represented.
+
+Character-specific attributes are correctly assigned.
+
+The prompt contains no invented negative-tag avalanche.
+
+There are no unnecessary repeated descriptions.
+
+The output contains actual scene information rather than generic rendering instructions.
+
+All protected inputs remain unchanged.""",
 
     "Krea 2": """Krea 2 target: use coherent natural-language visual direction. Make subject, action/state, composition, spatial relationships, environment, materials where useful, lighting and the requested visual medium clear. For photographic requests, use appropriate photographic language. For anime, illustration, painting, graphic design, 3D or other non-photographic requests, preserve that medium and do not force photographic rendering. Under Creative/Dice leave useful aesthetic freedom rather than describing every visual decision. Avoid disconnected keyword piles and unnecessary stylistic defaults.""",
     "FLUX.2 Klein": """FLUX.2 Klein target: use moderately detailed natural-language prose, subject/action first, then setting, important appearance/material details, spatial relationships and lighting. Use positive visible description, not negative prompt syntax or keyword piles. For editing distinguish requested changes from protected content. Maximum Detail stays focused within a useful moderate prose envelope; avoid extreme verbosity.""",

@@ -42,12 +42,16 @@ class DatasetUIMock(MockBackend):
             source = json.loads(instruction.user_message)["source"]
             self.dataset_trigger = source.get("trigger", "")
             result = json.dumps(dataset_understanding_fixture(requested_generation=source["subject"],
+                hard=[{"scope": "all_outputs", "text": rule} for rule in source["constraints"].splitlines() if rule.strip()],
                 rules=[{"scope": "all_outputs", "text": rule} for rule in source["constraints"].splitlines() if rule.strip()],
                 clarifications=["Breaking what?"] if "unclear breaking" in source["subject"] and "breaking a board" not in source["constraints"] else []))
         elif re.match(r"dataset:\d+", stage):
-            supplied = instruction.system_message.split("Include exact case-sensitive trigger wording: ", 1)[1]
-            terms, _ = json.JSONDecoder().raw_decode(supplied)
-            result = f"{', '.join(terms)}: {instruction.user_message}"
+            if "The application inserts the locked trigger" in instruction.system_message:
+                result = instruction.user_message
+            else:
+                supplied = instruction.system_message.split("Include exact case-sensitive trigger wording: ", 1)[1]
+                terms, _ = json.JSONDecoder().raw_decode(supplied)
+                result = f"{', '.join(terms)}: {instruction.user_message}"
         else:
             return super().generate(instruction)
         time.sleep(.02)  # Leaves a real disconnect window without using inference.

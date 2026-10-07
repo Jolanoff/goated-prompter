@@ -69,7 +69,18 @@ class TargetControlTests(unittest.TestCase):
         self.assertIsNone(positive_prompt_error(prompt, "Anima"))
         self.assertIsNotNone(positive_prompt_error(prompt, "Generic"))
         self.assertIsNotNone(positive_prompt_error(prompt + "\nnegative prompt: bad anatomy", "Anima"))
-        self.assertIn("never concatenate it into positive prose", get_model_adapter("Anima"))
+        self.assertRegex(get_model_adapter("Anima"), r"(?i)negative (?:conditioning|prompt)[^\n]*(?:positive prose|positive prompt)")
+
+    def test_anima_adapter_uses_the_owner_supplied_plain_text_contract_once(self):
+        adapter = get_model_adapter("Anima")
+        self.assertEqual(adapter.count("Anima target:"), 1)
+        self.assertTrue(adapter.startswith("Anima target: Generate a clean hybrid prompt combining "))
+        for heading in ("Output structure", "Character handling", "Tag selection", "Scene prose", "Strict preservation"):
+            self.assertIn("\n\n" + heading + "\n\n", adapter)
+        self.assertIn("\n\nFinal validation\nBefore returning the prompt, ensure that:\n\n", adapter)
+        self.assertIn("Use lowercase tags with spaces instead of underscores, except for supported score tags.", adapter)
+        self.assertIn("When a locked prefix is supplied, generate only the continuation.", adapter)
+        self.assertTrue(adapter.endswith("All protected inputs remain unchanged."))
 
     def test_observer_adapter_retains_rich_frame_walk_and_lighting(self):
         message = self.instruction("Qwen Image 2.1", prompt_length="Maximum Detail")

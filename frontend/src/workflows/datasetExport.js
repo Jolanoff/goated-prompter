@@ -46,8 +46,12 @@ function secretValues(value, sensitive = false) {
   return Object.entries(value).flatMap(([key, child]) => secretValues(child, sensitive || sensitiveKey(key)));
 }
 
-function redactText(text, secrets) {
+const contentFields = new Set(["subject", "trigger", "inputs", "constraints", "input", "idea", "scene", "prompt",
+  "dataset_idea", "requested_generation", "text"]);
+
+function redactText(text, secrets, detectCredentials) {
   for (const secret of secrets) text = text.replaceAll(secret, "[REDACTED]");
+  if (!detectCredentials) return text;
   return text
     .replace(/\b(Bearer|Basic)\s+[^\s,;"']+/gi, "$1 [REDACTED]")
     .replace(/(\b(?:api[_ -]?key|access[_ -]?token|refresh[_ -]?token|confirmation[_ -]?token|client[_ -]?secret|private[_ -]?key|token|password|secret)\s*["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;&]+)/gi, "$1[REDACTED]")
@@ -56,11 +60,11 @@ function redactText(text, secrets) {
     .replace(/\beyJ[a-z0-9_-]+\.[a-z0-9_-]+\.[a-z0-9_-]+\b/gi, "[REDACTED]");
 }
 
-function sanitize(value, secrets) {
-  if (typeof value === "string") return redactText(value, secrets);
-  if (Array.isArray(value)) return value.map((item) => sanitize(item, secrets));
+function sanitize(value, secrets, field = "") {
+  if (typeof value === "string") return redactText(value, secrets, !contentFields.has(field));
+  if (Array.isArray(value)) return value.map((item) => sanitize(item, secrets, field));
   if (value && typeof value === "object") return Object.fromEntries(Object.entries(value)
-    .filter(([key]) => !sensitiveKey(key)).map(([key, child]) => [key, sanitize(child, secrets)]));
+    .filter(([key]) => !sensitiveKey(key)).map(([key, child]) => [key, sanitize(child, secrets, key)]));
   return value;
 }
 

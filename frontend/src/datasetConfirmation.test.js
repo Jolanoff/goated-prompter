@@ -122,6 +122,21 @@ test("confirmation waits for analysis, clarification answers and extra-instructi
   assert.equal(canConfirmDatasetReview({ ...ready, brief: { clarifications: ["Which object?"] } }, false), false);
 });
 
+test("writer completion and failure bookkeeping does not invalidate approval of the same scene", () => {
+  const scene = { index: 1, idea: "Reading", scene: "A person reads on a bench.", self_check: "PASS",
+    scene_status: "valid", prompt_status: "not_generated" };
+  const input = { subject: "A reader", scene_plan: [scene], results: [] };
+  const signature = datasetRequestSignature(input);
+  for (const prompt_status of ["valid", "failed"]) {
+    assert.equal(datasetRequestSignature({ ...input, scene_plan: [{ ...scene, prompt_status,
+      failure_stage: "prompt", failure_reason: "Writer failed." }] }), signature);
+  }
+  for (const change of [{ scene: "Edited scene" }, { self_check: "" }, { scene_status: "not_generated" },
+    { failure_stage: "scene", failure_reason: "Scene failed." }]) {
+    assert.notEqual(datasetRequestSignature({ ...input, scene_plan: [{ ...scene, ...change }] }), signature);
+  }
+});
+
 test("the existing modal renders the new brief, keeps extra instructions and blocks unresolved questions", async () => {
   const sourceUrl = new URL("./workflows/DatasetConfirmationModal.jsx", import.meta.url);
   const { code } = await transformWithEsbuild(await readFile(sourceUrl, "utf8"), sourceUrl.pathname,
@@ -170,6 +185,8 @@ test("the existing modal renders the new brief, keeps extra instructions and blo
   assert.match(markup, /<button[^>]*disabled=""[^>]*>Confirm and generate prompts<\/button>/);
   const resolved = { ...review, brief: { ...brief, physical_conflicts: [], clarifications: [] } };
   assert.doesNotMatch(render(resolved).match(/<button[^>]*>Confirm and generate prompts<\/button>/)[0], /disabled/);
+  assert.match(render({ ...resolved, operation: "dataset/scenes" }), /Confirm and generate scenes/);
+  assert.match(render({ ...resolved, options: { resume: true } }), /Confirm and continue/);
 });
 
 test("extra instructions create an isolated revised request without discarding old results", () => {

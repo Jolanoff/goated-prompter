@@ -128,3 +128,12 @@ test("generation log redacts signed URL queries, Basic authorization and private
     assert.ok(!json.includes(secret), `export leaked ${secret}`);
   }
 });
+
+test("generation log preserves ordinary basic clothing and a literal token trigger", () => {
+  const prompt = "token: walking through a garden in basic clothing.";
+  const log = JSON.parse(datasetGenerationLog({ draft: { subject: prompt, trigger: "token",
+    results: [{ index: 1, prompt }] }, job: { kind: "dataset", error: "Authorization: Basic abc-secret" } }));
+  assert.equal(log.settings.subject, prompt);
+  assert.equal(log.generated_prompts[0].prompt, prompt);
+  assert.ok(!log.job.error.includes("abc-secret"));
+});

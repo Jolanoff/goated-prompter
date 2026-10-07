@@ -9,7 +9,7 @@ from .workspace_store import WorkspaceConflict, locks, text
 from .minimax import default_minimax_draft, validate_minimax_draft
 from .dataset import default_dataset_draft, validate_dataset_draft, saved_dataset_draft
 from .dataset_assignments import dataset_assignments
-from .scene_planner import reusable_scene_plan
+from .scene_planner import reusable_scene_plan, FAILURE_METADATA, IDEA_DETAIL_FIELDS
 from .scene_eligibility import scene_eligibility
 from .dataset_scene import MAX_SCENE_CHARACTERS
 from .dataset_ideas import MAX_FIELD_CHARACTERS
@@ -109,12 +109,13 @@ class WorkflowSettingsStore:
                 record = self.dataset_checkpoints.project(record)
             return self._public(operation, record)
 
-    def checkpoint_dataset(self, job, *, snapshot=None):
+    def checkpoint_dataset(self, job, *, snapshot=None, approved_intent=None):
         # Never acquire a job lock while holding the settings lock.
         snapshot = job.snapshot() if snapshot is None else snapshot
         with self.lock:
             if self.dataset_checkpoints is not None:
-                self.dataset_checkpoints.save(job, self._read()["dataset"], snapshot=snapshot)
+                self.dataset_checkpoints.save(job, self._read()["dataset"], snapshot=snapshot,
+                                              approved_intent=approved_intent)
 
     def begin_dataset(self, job, data, revision=None):
         with self.lock:
@@ -137,7 +138,23 @@ class WorkflowSettingsStore:
             if type(revision) is not int or revision != record["revision"]:
                 raise WorkspaceConflict("These workflow settings changed in another tab. Reload saved settings before saving again.")
             if draft is not None:
-                record["draft"] = validate_draft(operation, draft)
+                updated = validate_draft(operation, draft)
+                if operation == "dataset":
+                    previous = (self.dataset_checkpoints.project(record)["draft"]
+                                if self.dataset_checkpoints is not None else record["draft"])
+                    by_index = {row["index"]: row for row in previous["scene_plan"]}
+                    invalidated = set()
+                    dependencies = ("input", "idea", "scene", *IDEA_DETAIL_FIELDS)
+                    for row in updated["scene_plan"]:
+                        old = by_index.get(row["index"])
+                        if old and (any(row.get(field) != old.get(field) for field in dependencies)
+                                    or row["self_check"] == "PASS" and old["self_check"] != "PASS"):
+                            row.update(self_check="", scene_status="not_generated", prompt_status="not_generated")
+                            for field in FAILURE_METADATA:
+                                row.pop(field, None)
+                            invalidated.add(row["index"])
+                    updated["results"] = [item for item in updated["results"] if item["index"] not in invalidated]
+                record["draft"] = updated
             if instructions is not None or reset:
                 record["overrides"] = {} if reset else validate_instructions(operation, instructions)
             record["revision"] += 1

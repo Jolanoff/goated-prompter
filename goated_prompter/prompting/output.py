@@ -33,7 +33,8 @@ def output_contract(target, *, qwen_task="t2i", qwen_images=None):
         f"OUTPUT FORMAT — {target}: Return only the complete prompt text in the target adapter's writing style. "
         "Do not output a JSON object, JSON array, key/value wrapper, markdown fence, field names or direction label. "
         "The source's packaging and earlier examples never determine your output format. "
-        "For Anima, keep character tag blocks and the scene prose as plain text."
+        + ("For Anima, use leading comma-separated tags followed by scene prose; preserve the user's supplied tag grouping."
+         if target == "Anima" else "For Anima, keep character tag blocks and the scene prose as plain text.")
     )
 
 

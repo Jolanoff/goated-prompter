@@ -57,30 +57,48 @@ test("scene self-check changes invalidate both approval and current-scene signat
   }
 });
 
-test("idea detail view renders every compact description as escaped text, without geometry fields", async () => {
+async function ideaComponents() {
   const sourceUrl = new URL("./workflows/DatasetIdeaDetails.jsx", import.meta.url);
   const { code } = await transformWithEsbuild(await readFile(sourceUrl, "utf8"), sourceUrl.pathname,
     { loader: "jsx", jsx: "automatic", sourcemap: false });
   const linked = code.replace(/from (["'])([^"']+)\1/g, (_match, _quote, specifier) =>
     `from ${JSON.stringify(specifier.startsWith(".") ? new URL(specifier, sourceUrl).href : import.meta.resolve(specifier))}`);
-  const { default: Details, DatasetSceneCheck: Check } = await import(`data:text/javascript;base64,${Buffer.from(linked).toString("base64")}`);
+  return import(`data:text/javascript;base64,${Buffer.from(linked).toString("base64")}`);
+}
+
+test("planning hints render as five accessible icons with escaped descriptions, not paragraphs", async () => {
+  const { default: Details } = await ideaComponents();
   const markup = renderToStaticMarkup(createElement(Details, { item: { ...item, context: "<script>untrusted</script>" } }));
-  for (const label of ["Placement", "Visibility", "Camera", "Framing", "Context"]) assert.match(markup, new RegExp(`<dt[^>]*>${label}</dt>`));
+  for (const label of ["Placement", "Visibility", "Camera", "Framing", "Context"]) {
+    assert.ok(markup.includes(`aria-label="${label}"`), `missing ${label} icon`);
+  }
+  assert.equal((markup.match(/<button\b/g) || []).length, 5);
   assert.match(markup, /Contact overlap preserves the exposed head/);
   assert.match(markup, /Idea suggestions, not requirements/);
-  assert.match(markup, /The checked scene may adjust these details to satisfy HARD/);
+  assert.match(markup, /required rules/);
   assert.match(markup, /&lt;script&gt;/);
-  assert.doesNotMatch(markup, /<script>|geometry|pose_type/);
+  assert.doesNotMatch(markup, /<(?:script|dl|dt|dd|p)\b|geometry|pose_type/);
   assert.equal(renderToStaticMarkup(createElement(Details, { item: { index: 1, idea: "Legacy" } })), "");
+});
+
+test("successful and pending scene checks stay in the status chips instead of repeating below the editor", async () => {
+  const { DatasetSceneCheck: Check } = await ideaComponents();
+  for (const self_check of ["PASS", " PASS ", "pass", ""]) {
+    assert.equal(renderToStaticMarkup(createElement(Check, { item: { ...item, self_check } })), "");
+  }
+  assert.equal(renderToStaticMarkup(createElement(Check, { item: { index: 1 } })), "");
+});
+
+test("scene checks still expose repair instructions as escaped warnings", async () => {
+  const { DatasetSceneCheck: Check } = await ideaComponents();
   const repair = "REPAIR:\nRequired left foot hidden.\nMove the left leg outward, keeping the <script>pose</script>.";
   const checked = renderToStaticMarkup(createElement(Check, { item: { ...item, self_check: repair } }));
-  assert.match(checked, /Scene self-check/);
+  assert.match(checked, /Scene needs attention/);
+  assert.match(checked, /role="note"/);
   assert.match(checked, /REPAIR:/);
   assert.match(checked, /Required left foot hidden/);
   assert.match(checked, /Move the left leg outward/);
   assert.match(checked, /&lt;script&gt;/);
   assert.doesNotMatch(checked, /<script>/);
-  assert.match(renderToStaticMarkup(createElement(Check, { item: { ...item, self_check: "PASS" } })), />PASS<\/p>/);
-  assert.match(renderToStaticMarkup(createElement(Check, { item: { ...item, self_check: "" } })), /Self-check pending/);
-  assert.match(renderToStaticMarkup(createElement(Check, { item })), /Self-check pending/);
+  assert.match(renderToStaticMarkup(createElement(Check, { item: { ...item, self_check: "Unknown check response" } })), /Unknown check response/);
 });

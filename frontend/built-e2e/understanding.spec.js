@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import AxeBuilder from "@axe-core/playwright";
+import { openDatasetPage } from "../e2e/datasetHelpers.js";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const fixture = JSON.parse(await readFile(process.env.GOATED_UNDERSTANDING_REPLAY ||
@@ -24,7 +25,9 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
     await page.setViewportSize(viewport);
     await page.goto("/");
     await page.getByRole("button", { name: "Dataset", exact: true }).click();
+    await openDatasetPage(page, "Dataset");
     await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(savedPrompt);
+    await openDatasetPage(page, "Configure");
     const response = page.waitForResponse((item) => item.url().endsWith("/api/workspace/dataset/understand") && item.status() === 202);
     await page.getByRole("button", { name: `Generate ${fixture.input.amount} prompts`, exact: true }).click();
     const jobId = (await (await response).json()).id;
@@ -57,6 +60,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
     expect(errors).toEqual([]);
     expect(downstream).toEqual([]);
     await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await openDatasetPage(page, "Dataset");
     await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(savedPrompt);
     const after = await (await request.get("/api/workspace/settings/dataset")).json();
     expect(after.draft.results[0].prompt).toBe(savedPrompt);

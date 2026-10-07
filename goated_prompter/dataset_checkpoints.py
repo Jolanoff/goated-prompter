@@ -8,6 +8,8 @@ import threading
 import time
 
 from .dataset import validate_dataset_draft, saved_dataset_draft
+from .dataset_intent import intent_source_signature, intent_signature
+from .dataset_understanding import understanding_instruction, validate_understanding
 
 CHECKPOINT_LIMIT = 20
 CHECKPOINT_BYTE_BUDGET = 14 * 1024 * 1024
@@ -31,7 +33,8 @@ def _result_fields(result, data):
 
 def generation_signature(data):
     # Scene prose/self-check and guided input are authoritative generation inputs.
-    value = {key: item for key, item in validate_dataset_draft(data).items() if key not in GENERATED_FIELDS}
+    value = {key: item for key, item in validate_dataset_draft(data).items()
+             if key not in GENERATED_FIELDS | {"plan_scenes_first"}}
     return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True,
                                     separators=(",", ":")).encode()).hexdigest()
 
@@ -47,6 +50,11 @@ def validate_checkpoints(value):
                 or not isinstance(row.get("snapshot"), dict) or not isinstance(row.get("input"), dict)):
             raise ValueError("Invalid Dataset checkpoint record.")
         data = _checkpoint_input(row["input"])
+        if row.get("approved_intent") is not None:
+            scopes = tuple(json.loads(understanding_instruction(data).user_message)["scopes"])
+            brief = validate_understanding(row["approved_intent"], scopes)
+            if brief["clarifications"]:
+                raise ValueError("Dataset checkpoint contains an unapproved request.")
         snapshot = row["snapshot"]
         if (snapshot.get("id") != row["job_id"] or not isinstance(snapshot.get("kind"), str)
                 or snapshot.get("status") not in TERMINAL | {"running", "paused", "pause_requested", "cancelling"}
@@ -94,7 +102,7 @@ class DatasetCheckpointStore:
             self._write(store, job.id)
         return record
 
-    def save(self, job, current, *, snapshot=None):
+    def save(self, job, current, *, snapshot=None, approved_intent=None):
         snapshot = job.snapshot() if snapshot is None else snapshot
         with self.lock:
             store = self.snapshot()
@@ -108,7 +116,23 @@ class DatasetCheckpointStore:
             snapshot["partial_responses"] = []
             snapshot.update(workflow_revision=row["workflow_revision"], input_signature=row["input_signature"], stale=row["stale"])
             row.update(snapshot=snapshot, updated_at=time.time())
+            if approved_intent is not None:
+                row["approved_intent"] = deepcopy(approved_intent)
             self._write(store, job.id)
+
+    def continuation_intent(self, data):
+        """Recover source approval, or an exact legacy plan, without retaining tickets."""
+        source = intent_source_signature(data)
+        for row in reversed(self.snapshot()["jobs"]):
+            result = row["snapshot"].get("result") or {}
+            if not result.get("scene_plan") or intent_source_signature(_checkpoint_input(row["input"])) != source:
+                continue
+            if row.get("approved_intent") is not None:
+                return deepcopy(row["approved_intent"])
+            generated = {**_checkpoint_input(row["input"]), **_result_fields(result, row["input"])}
+            if intent_signature(generated) == intent_signature(data):
+                return {}  # Older checkpoints have checked scenes, but no retained review.
+        return None
 
     def recover(self):
         """A restarted backend cannot resume a socket; keep the last completed chunk."""

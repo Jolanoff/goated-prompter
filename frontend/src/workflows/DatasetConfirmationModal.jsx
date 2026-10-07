@@ -29,7 +29,8 @@ export default function DatasetConfirmationModal({ review, busy, onRevise, onCon
   const summary = datasetUnderstandingSummary(brief);
   const working = ["analyzing", "confirming"].includes(review?.status);
   const canConfirm = canConfirmDatasetReview(review, busy, additions);
-  const confirmLabel = review?.operation === "dataset/scenes" ? "Confirm and plan scenes" : "Confirm and generate prompts";
+  const confirmLabel = review?.operation === "dataset/scenes" ? "Confirm and generate scenes"
+    : review?.options?.resume ? "Confirm and continue" : "Confirm and generate prompts";
   return <dialog ref={dialog} className="app-dialog dataset-confirmation-dialog"
     aria-labelledby="dataset-confirmation-title" aria-describedby="dataset-confirmation-description"
     onCancel={(event) => { event.preventDefault(); if (review?.status !== "confirming") onCancel(); }}>

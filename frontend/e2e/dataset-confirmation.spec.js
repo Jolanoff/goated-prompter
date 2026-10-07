@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { confirmDatasetReview } from "./datasetHelpers.js";
+import { confirmDatasetReview, openDatasetPage } from "./datasetHelpers.js";
 
 test.beforeEach(async ({ request }) => {
   const record = await (await request.get("/api/workspace/settings/dataset")).json();
@@ -15,7 +15,9 @@ test.beforeEach(async ({ request }) => {
 async function openDataset(page) {
   await page.goto("/");
   await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  await openDatasetPage(page, "Dataset");
   await expect(page.getByLabel("Dataset prompt 1")).toHaveValue("Previous manually edited prompt.");
+  await openDatasetPage(page, "Configure");
 }
 
 test("request review blocks generation, exposes the source, and cancellation preserves the batch", async ({ page, request }) => {
@@ -31,7 +33,7 @@ test("request review blocks generation, exposes the source, and cancellation pre
   await expect(dialog.getByRole("button", { name: "Confirm and generate prompts" })).toBeEnabled();
   await expect(dialog.getByText("Person 1 and person 2 fighting.", { exact: true }).first()).toBeVisible();
   await expect(dialog.locator(".dataset-review-identity")).toContainText("Randomized per independent prompt");
-  await expect(page.getByLabel("Dataset prompt 1")).toBeDisabled();
+  await expect(page.getByLabel("Dataset idea", { exact: true })).toBeDisabled();
   expect(calls).toHaveLength(0);
   expect((await (await request.get("/api/workspace/settings/dataset")).json()).draft.scene_plan).toEqual([]);
   expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
@@ -41,6 +43,7 @@ test("request review blocks generation, exposes the source, and cancellation pre
   await page.keyboard.press("Escape");
   await expect(dialog).not.toBeVisible();
   await expect(trigger).toBeFocused();
+  await openDatasetPage(page, "Dataset");
   await expect(page.getByLabel("Dataset prompt 1")).toHaveValue("Previous manually edited prompt.");
   const saved = (await (await request.get("/api/workspace/settings/dataset")).json()).draft;
   expect(saved.results[0].prompt).toBe("Previous manually edited prompt.");
@@ -85,6 +88,7 @@ test("blocking questions must be answered and reanalyzed before generation", asy
   await expect(confirm).toBeEnabled();
   await expect(dialog.getByText("Breaking what?", { exact: true })).toHaveCount(0);
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+  await openDatasetPage(page, "Scenes");
   await expect(page.getByLabel("Planned idea 1")).toHaveCount(0);
 });
 

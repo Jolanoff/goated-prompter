@@ -13,6 +13,7 @@ from urllib.request import Request, urlopen
 
 from .base import BackendConfigurationError, BackendGenerationError, BackendRunawayError, GoatedPrompterBackend
 from ..diagnostics import debug_prompts_enabled, log_request, log_response, payload_without_binary_images
+from ..output_repetition import repeated_tag
 from .interruptible_http import interruptible_urlopen
 
 
@@ -133,9 +134,14 @@ def _stream_part_text(content):
     return ""
 
 
-def _repetition_issue(text):
+def _repetition_issue(text, protected_terms=(), *, tag_loops=False):
     """Return a dominant repeated phrase when output has clearly degenerated."""
-    words = re.findall(r"[a-z0-9]+(?:'[a-z0-9]+)?", str(text or "").casefold())
+    if tag_loops and (tag := repeated_tag(text, protected_terms)):
+        return tag
+    value = str(text or "")
+    for term in sorted((term for term in protected_terms if term), key=len, reverse=True):
+        value = value.replace(term, " ")
+    words = re.findall(r"[a-z0-9]+(?:'[a-z0-9]+)?", value.casefold())
     if len(words) < 120:
         return None
     for width, minimum in ((2, 12), (3, 8), (4, 6)):
@@ -188,7 +194,14 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
             "max_tokens": self.max_tokens,
         }
         if self.is_llama_cpp and getattr(instruction, "json_output", False) is True:
-            payload["response_format"] = {"type": "json_object"}
+            schema = getattr(instruction, "json_schema", None)
+            if schema is None:
+                payload["response_format"] = {"type": "json_object"}
+            elif isinstance(schema, dict):
+                payload["response_format"] = {"type": "json_schema", "json_schema": {
+                    "name": "response", "strict": True, "schema": schema}}
+            else:
+                raise BackendConfigurationError("Request-local JSON schema must be an object.")
         for name, ceiling in (("temperature", 2.0), ("top_p", 1.0)):
             value = getattr(instruction, name, None)
             if value is not None:
@@ -203,6 +216,10 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
             else None
         )
         unlimited = getattr(instruction, "unlimited_tokens", False)
+        protected_terms = getattr(instruction, "repetition_protected_terms", ())
+        if not isinstance(protected_terms, tuple) or not all(isinstance(term, str) for term in protected_terms):
+            protected_terms = ()
+        tag_loops = getattr(instruction, "tag_repetition_checks", False) is True
         if hard_limit is not None:
             payload["max_tokens"] = hard_limit
         elif unlimited:
@@ -280,7 +297,8 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
                     character_limit = getattr(instruction, "stream_character_limit", None)
                     if type(character_limit) is not int or not 0 < character_limit <= 1048576:
                         character_limit = RUNAWAY_STREAM_CHARACTER_LIMIT
-                    result = self._stream_response(response, unlimited, hard_limit, character_limit)
+                    result = self._stream_response(response, unlimited, hard_limit, character_limit,
+                        protected_terms=protected_terms, tag_loops=tag_loops)
                     log_response(instruction, result)
                     return result
                 body = response.read().decode("utf-8")
@@ -344,7 +362,7 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
             )
             self.emit_activity("error", message=message)
             raise BackendRunawayError(message)
-        repeated = _repetition_issue(result)
+        repeated = _repetition_issue(result, protected_terms, tag_loops=tag_loops)
         if hard_limit and repeated:
             message = (
                 f'The prompt engine entered a repetition loop around "{repeated}". '
@@ -358,10 +376,11 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
         return result
 
     def _stream_response(self, response, unlimited, hard_max_tokens=None,
-                          stream_character_limit=RUNAWAY_STREAM_CHARACTER_LIMIT):
+                          stream_character_limit=RUNAWAY_STREAM_CHARACTER_LIMIT, protected_terms=(), tag_loops=False):
         pieces = []
         try:
-            return self._consume_stream(response, unlimited, hard_max_tokens, stream_character_limit, pieces)
+            return self._consume_stream(response, unlimited, hard_max_tokens, stream_character_limit, pieces,
+                protected_terms=protected_terms, tag_loops=tag_loops)
         except BackendGenerationError as exc:
             exc.partial_text = "".join(pieces)
             raise
@@ -372,7 +391,8 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
             raise BackendGenerationError("The prompt engine disconnected before completion; partial text was not accepted.",
                 completion_state="interrupted", partial_text="".join(pieces)) from exc
 
-    def _consume_stream(self, response, unlimited, hard_max_tokens, stream_character_limit, pieces):
+    def _consume_stream(self, response, unlimited, hard_max_tokens, stream_character_limit, pieces,
+                        protected_terms=(), tag_loops=False):
         streamed_characters = 0
         output_characters = 0
         hard_character_limit = hard_max_tokens * 12 if hard_max_tokens else None
@@ -422,7 +442,7 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
                 )
             if output_characters >= next_repetition_check:
                 output = "".join(pieces)
-                repeated = _repetition_issue(output)
+                repeated = _repetition_issue(output, protected_terms, tag_loops=tag_loops)
                 if repeated:
                     phrase = r"\b" + r"\W+".join(re.escape(word) for word in repeated.split()) + r"\b"
                     first_repeat = re.search(phrase, output, flags=re.IGNORECASE)

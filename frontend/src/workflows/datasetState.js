@@ -21,8 +21,13 @@ function canonicalValue(value) {
 }
 
 export function datasetRequestSignature(draft) {
-  return JSON.stringify(canonicalValue(Object.fromEntries(Object.entries(draft || {})
-    .filter(([key]) => !["results", "result_job_id"].includes(key)))));
+  const source = Object.fromEntries(Object.entries(draft || {})
+    .filter(([key]) => !["results", "result_job_id", "plan_scenes_first"].includes(key)));
+  if (source.scene_plan) source.scene_plan = source.scene_plan.map((row) => Object.fromEntries(
+    Object.entries(row).filter(([key]) => key !== "prompt_status" &&
+      !(row.failure_stage === "prompt" && ["failure_stage", "failure_reason"].includes(key))),
+  ));
+  return JSON.stringify(canonicalValue(source));
 }
 
 export function reviseDatasetRequest(input, additions) {
@@ -38,6 +43,15 @@ export function datasetReviewQuestions(brief) {
 export function canConfirmDatasetReview(review, busy, additions = "") {
   return review?.status === "ready" && !!review.confirmation_token && !busy &&
     !additions.trim() && !datasetReviewQuestions(review.brief).length;
+}
+
+export function freshDatasetRequest(draft) {
+  return { ...draft, scene_plan: [], scene_plan_signature: "" };
+}
+
+export function hasCompletedDatasetPrompt(row, results) {
+  return row.prompt_status === "valid" && results.some((item) => item.index === row.index && item.prompt?.trim() &&
+    ["input", "idea", "scene"].every((field) => item[field] === (row[field] || "")));
 }
 
 function understandingText(item) {

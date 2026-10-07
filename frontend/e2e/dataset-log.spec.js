@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { readFile } from "node:fs/promises";
-import { confirmDatasetReview } from "./datasetHelpers.js";
+import { generateDataset, openDatasetPage } from "./datasetHelpers.js";
 
 test.beforeEach(async ({ request }) => {
   const record = await (await request.get("/api/workspace/settings/dataset")).json();
@@ -30,9 +30,9 @@ test("export downloads only on click, retains confirmed understanding, and does 
   const downloads = [];
   page.on("download", (download) => downloads.push(download));
   await configure(page);
-  await page.getByRole("button", { name: "Generate 2 prompts", exact: true }).click();
-  await confirmDatasetReview(page);
+  await generateDataset(page);
   await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/duck_token/);
+  await openDatasetPage(page, "Configure");
   await expect(page.getByRole("button", { name: "Generate 2 prompts", exact: true })).toBeEnabled();
   await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
   expect(downloads).toHaveLength(0);
@@ -57,9 +57,9 @@ test("export downloads only on click, retains confirmed understanding, and does 
 
 test("review export omits approval credentials and does not confirm the request", async ({ page }) => {
   await configure(page);
-  await page.getByRole("button", { name: "Plan scenes first", exact: true }).click();
+  await page.getByRole("button", { name: "Generate 2 prompts", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Review your Dataset request" });
-  await expect(dialog.getByRole("button", { name: "Confirm and plan scenes" })).toBeEnabled();
+  await expect(dialog.getByRole("button", { name: "Confirm and generate prompts" })).toBeEnabled();
   const writes = [];
   page.on("request", (event) => { if (event.method() !== "GET") writes.push(event.url()); });
   const log = await exportLog(page, dialog);
@@ -68,7 +68,7 @@ test("review export omits approval credentials and does not confirm the request"
   expect(log.job.result.brief.requested_generation).toBe(log.dataset_idea);
   expect(log.scene_plan).toEqual([]);
   expect(writes).toEqual([]);
-  await expect(dialog.getByRole("button", { name: "Confirm and plan scenes" })).toBeEnabled();
+  await expect(dialog.getByRole("button", { name: "Confirm and generate prompts" })).toBeEnabled();
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   const cancelled = await exportLog(page);
   expect(cancelled.understanding.status).toBe("cancelled");
@@ -86,10 +86,10 @@ test("active and failed generation exports include partial output, retries and r
   await page.route("**/api/jobs/debug-dataset-job", (route) => route.fulfill({ json: failed ? { ...job, revision: 2,
     status: "failed", error: "Request timed out: api_key=inline-secret", finished_at: 1791374401,
     partial_responses: [{ partial_text: "Partial model text", completion_state: "timeout" }] } : job }));
-  await page.getByRole("button", { name: "Generate 2 prompts", exact: true }).click();
-  await confirmDatasetReview(page);
-  await expect(page.getByRole("button", { name: "Generating 2 prompts…", exact: true })).toBeDisabled();
+  await generateDataset(page);
   await expect(page.getByRole("dialog", { name: "Review your Dataset request" })).not.toBeVisible();
+  await openDatasetPage(page, "Configure");
+  await expect(page.getByRole("button", { name: "Generating 2 prompts…", exact: true })).toBeDisabled();
   const activeLog = await exportLog(page);
   expect(activeLog.job.status).toBe("running");
   expect(activeLog.job.result.attempts).toBe(2);

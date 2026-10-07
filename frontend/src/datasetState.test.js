@@ -1,10 +1,33 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { editDatasetPlan, invalidateDatasetPrompts, isDatasetSceneUsable, datasetRetryStage, datasetSceneSignature, isDatasetSceneCurrent } from "./workflows/datasetState.js";
+import { editDatasetPlan, invalidateDatasetPrompts, isDatasetSceneUsable, datasetRetryStage, datasetSceneSignature, isDatasetSceneCurrent,
+  freshDatasetRequest, hasCompletedDatasetPrompt } from "./workflows/datasetState.js";
 
 const draft = { scene_plan: [1, 2].map((index) => ({ index, idea: `idea ${index}`, scene: `scene ${index}`,
   self_check: "PASS", idea_status: "valid", scene_status: "valid", prompt_status: "valid" })),
   results: [1, 2].map((index) => ({ index, prompt: `prompt ${index}` })) };
+
+test("fresh generation clears reusable scenes in an isolated request without discarding the saved batch", () => {
+  const current = { ...draft, subject: "A duck exploring", amount: 2, trigger: "duck_token", target: "Generic",
+    scene_plan_signature: "current-plan", result_job_id: "saved-job" };
+  const before = structuredClone(current);
+  const fresh = freshDatasetRequest(current);
+  assert.deepEqual(fresh, { ...current, scene_plan: [], scene_plan_signature: "" });
+  assert.deepEqual(current, before);
+});
+
+test("completed prompts must match the checked scene, idea, input and index before Continue skips them", () => {
+  const row = { ...draft.scene_plan[0], input: "Guided action" };
+  const result = { index: row.index, input: row.input, idea: row.idea, scene: row.scene, prompt: "Exact edited prompt." };
+  assert.equal(hasCompletedDatasetPrompt(row, [result]), true);
+  for (const patch of [{ index: 2 }, { input: "Other action" }, { idea: "Other idea" }, { scene: "Other scene" }, { prompt: "  " }]) {
+    assert.equal(hasCompletedDatasetPrompt(row, [{ ...result, ...patch }]), false);
+  }
+  for (const prompt_status of ["not_generated", "failed"]) {
+    assert.equal(hasCompletedDatasetPrompt({ ...row, prompt_status }, [result]), false);
+  }
+  assert.equal(hasCompletedDatasetPrompt(row, []), false);
+});
 
 test("scene signatures ignore key order and downstream prompt bookkeeping", () => {
   const saved = { ...draft.scene_plan[0], prompt_status: "failed", failure_reason: "Writer failed" };
