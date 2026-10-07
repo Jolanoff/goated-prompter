@@ -213,7 +213,8 @@ def execute_workflow(state, job, request, config, workflow):
             return operation()
         except (ValueError, OSError) as exc:
             # Preserve expensive model output even when the disk cannot accept it.
-            job.result = {"recovery_prompt": prompt, "target": request.target_model}
+            with job.lock:
+                job.result = {"recovery_prompt": prompt, "target": request.target_model}
             raise ValueError(f"The prompt was generated, but saving failed. Copy the recovered result before leaving this page. {exc}") from exc
 
     def progress(message):
@@ -231,29 +232,36 @@ def execute_workflow(state, job, request, config, workflow):
         return
 
     if workflow["operation"] in {"dataset", "dataset_scenes"}:
-        def checkpoint_result():
+        def checkpoint_result(snapshot=None):
             try:
-                state.workflow_settings.checkpoint_dataset(job)
+                state.workflow_settings.checkpoint_dataset(job, snapshot=snapshot)
             except (ValueError, OSError) as exc:
                 raise ValueError(f"Dataset progress could not be saved. Earlier durable checkpoints remain intact; copy unsaved output from this job's diagnostics before leaving. {exc}") from exc
         def durable_result(result):
-            job.result = result
-            checkpoint_result()
+            snapshot = job.snapshot()
+            snapshot["result"] = result
+            try:
+                checkpoint_result(snapshot)
+            finally:
+                # Retain completed chunks for recovery even if persistence/cancellation fails.
+                with job.lock:
+                    job.result = result
             return result
         def partial(result):
-            with job.lock:
-                job.result = result
-                job.record_event(
-                    (f"Dataset prompt {result['completed']}/{result['total']} completed and is available."
-                     if result["completed"] else "Dataset planning stages saved; final prompts have not started."
-                     if any(row.get("scene_status") == "not_generated" for row in result["scene_plan"])
-                     else "Dataset scene plan is ready and available before prompt writing."),
-                    "result",
-                    revise=False,
-                )
-                job.revision += 1
+            def publish():
                 # Disk owns progress before it becomes available to a browser poll.
-                checkpoint_result()
+                durable_result(result)
+                with job.lock:
+                    job.record_event(
+                        (f"Dataset prompt {result['completed']}/{result['total']} completed and is available."
+                         if result["completed"] else "Dataset planning stages saved; final prompts have not started."
+                         if any(row.get("scene_status") == "not_generated" for row in result["scene_plan"])
+                         else "Dataset scene plan is ready and available before prompt writing."),
+                        "result",
+                        revise=False,
+                    )
+                    job.revision += 1
+            job.commit(publish)
         result = DatasetService(config, job.checkpoint, idea_history=state.idea_history).run(
             request, {**workflow["input"], "_confirmed_intent": workflow.get("intent")}, progress, partial,
             scenes_only=workflow["operation"] == "dataset_scenes", scene_action=workflow.get("scene_action"),

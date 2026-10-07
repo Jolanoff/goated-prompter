@@ -15,14 +15,15 @@ from tests.test_dataset import valid_draft
 
 
 class DatasetUnderstandingTests(unittest.TestCase):
-    def run_response(self, raw):
+    def run_response(self, raw, data=None):
         backend, session = Mock(), Mock()
         backend.generation_session.return_value = nullcontext(session)
         session.generate.return_value = raw
         service = DatasetUnderstandingService({"backend": "mock"}, lambda: None)
         with patch("goated_prompter.dataset_understanding.create_backend", return_value=backend):
             try:
-                return service.run(GoatedPrompterRequest(idea="A synthetic cup"), valid_draft(), lambda _message: None)
+                return service.run(GoatedPrompterRequest(idea="A synthetic cup"),
+                                   valid_draft() if data is None else data, lambda _message: None)
             finally:
                 session.generate.assert_called_once()
 
@@ -78,6 +79,40 @@ class DatasetUnderstandingTests(unittest.TestCase):
     def test_empty_response_has_a_specific_error_without_a_fabricated_brief(self):
         with self.assertRaisesRegex(BackendGenerationError, "empty.*No generation started"):
             self.run_response("  ")
+
+    def test_object_response_canonicalizes_integer_zero_without_another_model_call(self):
+        brief = dataset_understanding_fixture(character_count=0, identity_policy="not_applicable",
+            requested_generation="A chipped blue ceramic cup on a wooden table.")
+        data = {**valid_draft(), "subject": "A chipped blue ceramic cup on a wooden table.",
+                "trigger_type": "Object / product"}
+        result = self.run_response(json.dumps(brief), data)
+        self.assertEqual(result, {**brief, "character_count": None})
+        self.assertEqual(brief["character_count"], 0)
+
+    def test_object_count_normalization_does_not_relax_invalid_counts_or_identity(self):
+        data = {**valid_draft(), "trigger_type": "Object / product"}
+        invalid = [(count, "not_applicable") for count in (False, 0.0, "0", -1, 101)]
+        invalid.extend((0, policy) for policy in ("fixed", "random_per_prompt", "mixed"))
+        for count, policy in invalid:
+            with self.subTest(count=count, policy=policy), self.assertRaises(BackendGenerationError):
+                self.run_response(json.dumps(dataset_understanding_fixture(
+                    character_count=count, identity_policy=policy)), data)
+
+    def test_non_object_response_still_rejects_zero_even_with_not_applicable_identity(self):
+        brief = dataset_understanding_fixture(character_count=0, identity_policy="not_applicable")
+        with self.assertRaises(BackendGenerationError):
+            self.run_response(json.dumps(brief), {**valid_draft(), "trigger_type": "Character"})
+
+    def test_object_count_normalization_preserves_valid_counts_and_other_validation(self):
+        data = {**valid_draft(), "trigger_type": "Object / product"}
+        for count in (None, 1, 100):
+            brief = dataset_understanding_fixture(character_count=count, identity_policy="not_applicable")
+            with self.subTest(count=count):
+                self.assertEqual(self.run_response(json.dumps(brief), data), brief)
+        brief = dataset_understanding_fixture(character_count=0, identity_policy="not_applicable",
+            fixed=[{"scope": "guided:99", "text": "A cup."}])
+        with self.assertRaises(BackendGenerationError):
+            self.run_response(json.dumps(brief), data)
 
     def test_understanding_requests_llama_json_decoding_only_for_its_model_call(self):
         instruction = understanding_instruction(valid_draft())

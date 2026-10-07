@@ -281,7 +281,14 @@ class DatasetUnderstandingService:
             raw = session.generate(instruction)
             self.checkpoint()
         try:
-            return validate_understanding(_brief_json(raw), scopes)
+            brief = _brief_json(raw)
+            # Object-only model responses may encode "not applicable" as zero.
+            # Canonicalize that representation here; keep the shared validator strict.
+            if (isinstance(brief, dict) and data.get("trigger_type") == "Object / product"
+                    and brief.get("identity_policy") == "not_applicable"
+                    and type(brief.get("character_count")) is int and brief["character_count"] == 0):
+                brief = {**brief, "character_count": None}
+            return validate_understanding(brief, scopes)
         except (ValueError, TypeError, RecursionError) as error:
             raise BackendGenerationError("Dataset understanding returned an invalid brief: " + str(error)
                                          + " No generation started.") from error

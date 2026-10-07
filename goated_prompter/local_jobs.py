@@ -23,6 +23,7 @@ class Job:
         self.result = None
         self.error = None
         self.lock = threading.RLock()
+        self._commit_lock = threading.RLock()
         self.gate = threading.Event()
         self.gate.set()
         self.stopping = False
@@ -230,32 +231,35 @@ class Job:
 
     def deliver(self, result):
         """Deliver a result (or a durable-result factory) at a cancellable checkpoint."""
-        while True:
+        with self._commit_lock:
             self.checkpoint()
-            with self.lock:
-                if not self.gate.is_set():
-                    continue
+            # Persistence may finish after cancellation; never publish success then.
+            # Keep its result across a pause without repeating durable side effects.
+            value = result() if callable(result) else result
+            while True:
                 self.checkpoint()
-                self.result = result() if callable(result) else result
-                self.status = "succeeded"
-                self.completion_state = "completed"
-                self.status_reason = "Generation completed successfully."
-                self._append_event(self.status_reason, "success")
-                self.finished_at = time.time()
-                self.revision += 1
-                return
+                with self.lock:
+                    if not self.gate.is_set():
+                        continue
+                    self.checkpoint()
+                    self.result = value
+                    self.status = "succeeded"
+                    self.completion_state = "completed"
+                    self.status_reason = "Generation completed successfully."
+                    self._append_event(self.status_reason, "success")
+                    self.finished_at = time.time()
+                    self.revision += 1
+                    return
 
     def commit(self, operation, finish=False):
         """Serialize a durable result with cancellation, without waiting under the lock."""
         if finish:
             return self.deliver(operation)
-        while True:
+        with self._commit_lock:
             self.checkpoint()
-            with self.lock:
-                if not self.gate.is_set():
-                    continue
-                self.checkpoint()
-                return operation()
+            value = operation()
+            self.checkpoint()
+            return value
 
 
 class JobCancelled(Exception):
