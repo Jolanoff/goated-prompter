@@ -14,7 +14,7 @@ from tests.helpers import dataset_idea_fixture, dataset_understanding_fixture
 from tests.test_dataset import valid_draft
 
 
-REPAIR = "REPAIR:\nThe boxer's required left foot is hidden behind the training bag.\nMove the left leg outward while preserving the punching pose."
+REPAIR = "REPAIR:\nThe user requires both an extreme close-up of only his eyes and clearly visible shoes; the eyes-only crop excludes the shoes.\nShould the image show only eyes, or widen the crop to include the shoes?"
 SCENE = "A boxer extends one glove into a training bag, with planted feet and the opposite glove readable in a full-body three-quarter arena view."
 
 
@@ -46,7 +46,32 @@ class DatasetSceneTests(unittest.TestCase):
         self.assertEqual(json.loads(instruction.user_message)["confirmed_intent"], self.data["_confirmed_intent"])
         self.assertEqual(instruction.diagnostic_stage, "dataset:build_scene")
 
-    def test_repair_is_returned_without_automatic_rewrite_or_second_evaluator(self):
+    def test_scene_can_correct_generated_crop_in_its_existing_call(self):
+        self.data["_confirmed_intent"] = dataset_understanding_fixture(
+            hard=[{"scope": "all_outputs", "text": "One red ceramic cup; base touching the table visible."}],
+            soft=[{"scope": "all_outputs", "text": "Close camera."}],
+            free=[{"scope": "all_outputs", "text": "Background."}])
+        self.idea.update(idea="A red ceramic cup resting on a table.",
+            framing="Tight upper-half crop.")
+        instruction = scene_instruction(self.data, self.assignment, self.idea)
+        self.assertIn("IDEAS are suggestions, not immutable requirements", instruction.system_message)
+        self.assertIn("Repair generated conflicts within this same call", instruction.system_message)
+        self.assertIn("Only return REPAIR when two actual user HARD requirements", instruction.system_message)
+        self.assertNotIn("Preserve the idea's placement, visibility, camera, framing and context", instruction.system_message)
+        self.assertNotIn("Do not silently apply a correction", instruction.system_message)
+        self.assertEqual(json.loads(instruction.user_message)["assignments"][0]["framing"], "Tight upper-half crop.")
+        self.assertEqual(json.loads(instruction.user_message)["confirmed_intent"]["hard"], self.data["_confirmed_intent"]["hard"])
+
+    def test_scene_check_compares_four_specific_relationships_before_pass(self):
+        instruction = scene_instruction(self.data, self.assignment, self.idea)
+        for obligation in ("Every HARD requirement", "Camera/framing", "Spatial relationships", "No invented detail"):
+            self.assertIn(obligation, instruction.system_message)
+        self.assertIn("one compact self-check", instruction.system_message)
+
+    def test_user_conflict_repair_response_blocks_writer_without_a_second_call(self):
+        self.data["_confirmed_intent"] = dataset_understanding_fixture(hard=[
+            {"scope": "all_outputs", "text": "Extreme close-up of only his eyes."},
+            {"scope": "all_outputs", "text": "Show his shoes clearly."}])
         row = self.build(REPAIR)
         self.assertEqual(row["self_check"], REPAIR)
         self.assertEqual(row["scene"], SCENE)

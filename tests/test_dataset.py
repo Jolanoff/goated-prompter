@@ -130,3 +130,12 @@ class DatasetUnitTests(unittest.TestCase):
         signature = scene_plan_signature(self.data, dataset_assignments(self.data))
         self.assertEqual(signature, scene_plan_signature({**self.data, "length": "Detailed", "target": "Anima"}, dataset_assignments(self.data)))
         self.assertNotEqual(signature, scene_plan_signature({**self.data, "subject": "Different"}, dataset_assignments(self.data)))
+
+    def test_old_frozen_idea_pass_plans_need_replanning_under_the_new_contract(self):
+        from goated_prompter.scene_planner import reusable_scene_plan
+        assignments = dataset_assignments(self.data)
+        with patch("goated_prompter.scene_planner.SCENE_PLAN_VERSION", 6):
+            old_signature = scene_plan_signature(self.data, assignments)
+        data = {**self.data, "scene_plan": [self.row], "scene_plan_signature": old_signature}
+        self.assertIsNone(reusable_scene_plan(data, assignments))
+        self.assertEqual(data["scene_plan"], [self.row])

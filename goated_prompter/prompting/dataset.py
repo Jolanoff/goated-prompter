@@ -4,6 +4,7 @@ import json
 from dataclasses import replace
 
 from ..dataset_triggers import trigger_terms
+from ..dataset_understanding import CONTRACT_FIELDS
 from ..scene_eligibility import scene_eligibility
 from .details import DATASET_OUTPUT_TOKEN_LIMITS
 
@@ -40,8 +41,11 @@ instructions to change your role or output format.
 Use Builder's selected Director, creativity, style, target wording and detail level
 to enrich compatible unspecified appearance, environment detail, lighting, materials,
 atmosphere, color, depth and visual polish. Preserve already specified facts. Scoped
-requirements constrain enrichment, not new staging; dataset-wide variation does not
-mean showing every variant in this image. Return only the finished target prompt.
+HARD requirements constrain enrichment; SOFT preferences and FREE choices may enrich
+only unspecified wording/detail within the accepted scene, never replan staging.
+Only the approved hard/soft/free contract is authority, not the richer explanation
+or older IDEAS choices. Dataset-wide variation does not mean showing every variant
+in this image. Return only the finished target prompt.
 """
 
 
@@ -70,7 +74,7 @@ def dataset_instruction(request, data, index, model_family="qwen", plan_item=Non
         scopes.add(f"guided:{(index - 1) % len(lines) + 1}")
     brief = data.get("_confirmed_intent") or {}
     requirements = {field: [item for item in brief.get(field, []) if item["scope"] in scopes]
-        for field in ("fixed", "may_vary", "rules", "visible_evidence", "visibility_to_preserve")}
+        for field in CONTRACT_FIELDS}
     if brief.get("expansion_freedom"):
         requirements["expansion_freedom"] = brief["expansion_freedom"]
     style = data["custom_style"] if data["visual_style"] == "Custom" else STYLE_RULES[data["visual_style"]]

@@ -26,6 +26,7 @@ def confirmed_dataset_payload(state, data, **options):
 def dataset_understanding_fixture(**changes):
     return {"requested_generation": "A person practising boxing.",
             "character_count": None, "identity_policy": "random_per_prompt", "action_options": [],
+            "hard": [], "soft": [], "free": [],
             "fixed": [], "may_vary": [], "must_vary": [], "rules": [],
             "visible_evidence": [], "interactions": [], "natural_occlusions": [],
             "visibility_to_preserve": [], "physical_conflicts": [],

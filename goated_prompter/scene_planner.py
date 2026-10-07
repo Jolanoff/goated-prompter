@@ -8,7 +8,7 @@ from .dataset_scene import DatasetSceneService, validate_self_check
 from .scene_eligibility import scene_eligibility
 
 
-SCENE_PLAN_VERSION = 6
+SCENE_PLAN_VERSION = 7
 MAX_STORED_SCENE_CHARACTERS = 10000
 MAX_STORED_IDEA_CHARACTERS = 10000
 FAILURE_METADATA = {"failure_reason", "failure_stage"}

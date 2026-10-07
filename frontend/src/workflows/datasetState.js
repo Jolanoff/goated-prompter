@@ -43,6 +43,7 @@ export function canConfirmDatasetReview(review, busy, additions = "") {
 export function datasetUnderstandingSections(brief) {
   if (!brief?.requested_generation) return [];
   const labels = {
+    hard: "HARD — must satisfy", soft: "SOFT — preferences, adjustable", free: "FREE — creative choices",
     fixed: "What stays fixed", may_vary: "What may vary", must_vary: "What must vary",
     rules: "Rules every output must follow", visible_evidence: "Required visible evidence",
     interactions: "Required interactions", natural_occlusions: "Natural overlaps and occlusions",

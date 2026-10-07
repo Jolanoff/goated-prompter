@@ -3,12 +3,15 @@ import { datasetIdeaDetails } from "./datasetState.js";
 export default function DatasetIdeaDetails({ item }) {
   const details = datasetIdeaDetails(item);
   if (!details.length) return null;
-  return <dl className="grid gap-3 text-xs leading-relaxed" aria-label={`Idea ${item.index} planning details`}>
-    {details.map(({ field, label, text }) => <div key={field}>
-      <dt className="font-semibold">{label}</dt>
-      <dd className="mt-1 wrap-anywhere text-muted">{text}</dd>
-    </div>)}
-  </dl>;
+  return <>
+    <p className="mb-3 text-xs leading-relaxed text-muted">Idea suggestions, not requirements. The checked scene may adjust these details to satisfy HARD requirements.</p>
+    <dl className="grid gap-3 text-xs leading-relaxed" aria-label={`Idea ${item.index} planning details`}>
+      {details.map(({ field, label, text }) => <div key={field}>
+        <dt className="font-semibold">{label}</dt>
+        <dd className="mt-1 wrap-anywhere text-muted">{text}</dd>
+      </div>)}
+    </dl>
+  </>;
 }
 
 export function DatasetSceneCheck({ item }) {

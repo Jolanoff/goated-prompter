@@ -67,6 +67,8 @@ test("idea detail view renders every compact description as escaped text, withou
   const markup = renderToStaticMarkup(createElement(Details, { item: { ...item, context: "<script>untrusted</script>" } }));
   for (const label of ["Placement", "Visibility", "Camera", "Framing", "Context"]) assert.match(markup, new RegExp(`<dt[^>]*>${label}</dt>`));
   assert.match(markup, /Contact overlap preserves the exposed head/);
+  assert.match(markup, /Idea suggestions, not requirements/);
+  assert.match(markup, /The checked scene may adjust these details to satisfy HARD/);
   assert.match(markup, /&lt;script&gt;/);
   assert.doesNotMatch(markup, /<script>|geometry|pose_type/);
   assert.equal(renderToStaticMarkup(createElement(Details, { item: { index: 1, idea: "Legacy" } })), "");

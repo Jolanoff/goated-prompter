@@ -20,6 +20,7 @@ REQUIREMENT_FIELDS = (
     "fixed", "may_vary", "must_vary", "rules", "visible_evidence",
     "interactions", "natural_occlusions", "visibility_to_preserve",
 )
+CONTRACT_FIELDS = ("hard", "soft", "free")
 SUMMARY_FIELDS = ("requested_generation", "expansion_freedom", "dataset_contents")
 DETAIL_FIELDS = ("character_count", "identity_policy", "action_options")
 MAX_ITEMS = 24
@@ -93,7 +94,23 @@ Natural contact may obscure its interface. Do not demand every interacting surfa
 be completely unobstructed, invent separate views, or remove contact to expose it.
 Record the natural overlap and the evidence that must survive it separately.
 
-Flag real conflicts, not merely unusual poses. A compatible_resolution is only a
+Summarize downstream authority in three small scoped lists:
+hard: user requirements that must be satisfied after the user approves this brief.
+Include required counts, identities/traits, actions, contacts, exclusions, explicit
+camera/crop constraints, demanded visible evidence and mandatory dataset diversity.
+Keep qualifiers and local scopes. A semantic trait can remain hidden unless visible
+evidence is required; a trigger identifier is not image lettering. Do not invent locks.
+soft: preferences that may be adjusted to satisfy HARD, such as a preferred close
+camera, dramatic framing or warm lighting. Never demote an actual obligation here.
+free: unspecified or explicitly open choices, such as background or exact angle,
+within the user's expansion limits. FREE never overrides HARD.
+These three lists are the downstream contract. The richer sections explain it, not
+additional independent locks. Keep the contract concise but complete; do not let
+later stages infer which requirements are sacred from generated choices or prose.
+If a soft preference conflicts with HARD, adjust the preference, not the requirement.
+
+Flag incompatible HARD requirements, not adjustable SOFT preferences or merely
+unusual poses. A compatible_resolution is only a
 brief feasibility approach preserving all requirements, not a generated scene or
 proof of physical correctness. If both cannot be satisfied without changing an
 explicit requirement, use null and ask for clarification. Never secretly relax it.
@@ -121,6 +138,9 @@ authoritative; this summary does not globalize local identities;
 action_options: supplied action alternatives with their scopes and essential meaning.
 Do not brainstorm new actions here, combine alternatives into one image, or treat
 a required joint interaction as mutually exclusive options;
+hard: compact user obligations; only these become immutable after approval;
+soft: adjustable preferences, never obligations;
+free: unspecified or permitted creative choices;
 fixed: requirements that must stay unchanged;
 may_vary: explicitly allowed or unspecified freedoms;
 must_vary: required differences across outputs, not optional freedoms;
@@ -137,8 +157,8 @@ coverage, separating dataset-wide diversity from per-output requirements;
 clarifications: necessary questions, or an empty array.
 
 requested_generation, expansion_freedom and dataset_contents are nonempty strings.
-fixed, may_vary, must_vary, rules, visible_evidence, interactions, natural_occlusions
-and visibility_to_preserve are arrays of {"scope": "one supplied scope", "text":
+hard, soft, free, fixed, may_vary, must_vary, rules, visible_evidence, interactions,
+natural_occlusions and visibility_to_preserve are arrays of {"scope": "one supplied scope", "text":
 "concise requirement or interpretation"}. Use empty arrays when not applicable.
 Scopes are all_outputs, dataset, or a supplied guided:N scope. all_outputs means
 every image; dataset means the set as a whole; guided:N means that local input only.
@@ -202,7 +222,7 @@ def _brief_json(raw):
 
 def validate_understanding(value: dict, scopes: tuple[str, ...]) -> dict:
     """Validate the brief's shape and scopes, not the model's semantic judgment."""
-    fields = {*SUMMARY_FIELDS, *REQUIREMENT_FIELDS, *DETAIL_FIELDS, "physical_conflicts", "clarifications"}
+    fields = {*SUMMARY_FIELDS, *REQUIREMENT_FIELDS, *CONTRACT_FIELDS, *DETAIL_FIELDS, "physical_conflicts", "clarifications"}
     if not isinstance(value, dict) or set(value) != fields:
         raise ValueError("Understanding must contain exactly the required brief fields.")
     result = {field: _text(value[field], field) for field in SUMMARY_FIELDS}
@@ -214,7 +234,7 @@ def validate_understanding(value: dict, scopes: tuple[str, ...]) -> dict:
     if not isinstance(policy, str) or policy not in {"fixed", "random_per_prompt", "not_applicable", "mixed"}:
         raise ValueError("Unknown identity policy.")
     result["identity_policy"] = policy
-    for field in (*REQUIREMENT_FIELDS, "action_options", "physical_conflicts", "clarifications"):
+    for field in (*REQUIREMENT_FIELDS, *CONTRACT_FIELDS, "action_options", "physical_conflicts", "clarifications"):
         items = value[field]
         if not isinstance(items, list) or len(items) > MAX_ITEMS:
             raise ValueError(f"{field} must be an array within the understanding limit.")

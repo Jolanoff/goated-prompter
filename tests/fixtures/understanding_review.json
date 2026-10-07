@@ -11,6 +11,12 @@
     "dataset_contents": "Three distinct sparring images with different people, keeping their identities consistent within each image.",
     "character_count": 2,
     "identity_policy": "random_per_prompt",
+    "hard": [
+      {"scope": "all_outputs", "text": "Two adults sparring; one punch or block, not both; both wear readable gloves and at least one has visibly blond hair."},
+      {"scope": "dataset", "text": "Three distinct images with different people; identities stay consistent within each image."}
+    ],
+    "soft": [],
+    "free": [{"scope": "all_outputs", "text": "Unspecified clothing, lighting and setting."}],
     "fixed": [{"scope": "all_outputs", "text": "Two adults; at least one has blond hair."}],
     "may_vary": [{"scope": "all_outputs", "text": "Unspecified clothing, lighting and setting."}],
     "must_vary": [{"scope": "dataset", "text": "Use different people across images."}],

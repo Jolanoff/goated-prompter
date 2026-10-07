@@ -15,6 +15,43 @@ from tests.test_dataset import valid_draft
 
 
 class DatasetUnderstandingTests(unittest.TestCase):
+    def test_hard_soft_free_contract_is_validated_without_promoting_generated_choices(self):
+        brief = dataset_understanding_fixture(
+            hard=[{"scope": "all_outputs", "text": "One red ceramic cup; its base touching the table is visible."}],
+            soft=[{"scope": "all_outputs", "text": "Prefer a close camera and warm lighting."}],
+            free=[{"scope": "all_outputs", "text": "Background and exact camera angle."}])
+        self.assertEqual(validate_understanding(brief, ("all_outputs", "dataset")), brief)
+        instruction = understanding_instruction(valid_draft(subject="One red cup on a table."))
+        self.assertIn("hard: user requirements", instruction.system_message)
+        self.assertIn("soft: preferences", instruction.system_message)
+        self.assertIn("free: unspecified", instruction.system_message)
+
+    def test_contract_categories_require_explicit_scoped_bounded_arrays(self):
+        for field in ("hard", "soft", "free"):
+            for invalid in (None, "cup", ["cup"], [{"scope": "guided:99", "text": "Cup"}],
+                    [{"scope": "all_outputs", "text": "Cup", "approved": True}],
+                    [{"scope": "all_outputs", "text": ""}],
+                    [{"scope": "all_outputs", "text": "x" * 2001}],
+                    [{"scope": "all_outputs", "text": "Cup"}] * 25):
+                with self.subTest(field=field, invalid=invalid), self.assertRaises(ValueError):
+                    validate_understanding(dataset_understanding_fixture(**{field: invalid}), ("all_outputs", "dataset"))
+            legacy = dataset_understanding_fixture()
+            del legacy[field]
+            with self.subTest(missing=field), self.assertRaises(ValueError):
+                validate_understanding(legacy, ("all_outputs", "dataset"))
+
+    def test_scoped_contract_and_user_conflicts_survive_one_understanding_call(self):
+        brief = dataset_understanding_fixture(
+            hard=[{"scope": "guided:1", "text": "Extreme close-up of only his eyes."},
+                  {"scope": "guided:1", "text": "Show his shoes clearly in the same image."}],
+            soft=[{"scope": "all_outputs", "text": "Warm lighting."}],
+            free=[{"scope": "guided:2", "text": "Background."}],
+            physical_conflicts=[{"scope": "guided:1", "conflict": "Eyes-only crop excludes shoes.",
+                                 "compatible_resolution": None}],
+            clarifications=["Should the crop show only eyes, or also the shoes?"])
+        data = valid_draft(source_mode="guided", inputs="Eyes only, with shoes visible\nA cup")
+        self.assertEqual(self.run_response(json.dumps(brief), data), brief)
+
     def run_response(self, raw, data=None):
         backend, session = Mock(), Mock()
         backend.generation_session.return_value = nullcontext(session)
