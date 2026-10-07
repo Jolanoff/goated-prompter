@@ -100,6 +100,30 @@ class DatasetSceneTests(unittest.TestCase):
                 idea=self.idea, progress=lambda _message: None)
         self.session.generate.assert_called_once()
 
+    def test_complete_json_fence_preserves_scene_and_check_in_one_call(self):
+        for check in ("PASS", REPAIR):
+            for label in ("", "json", "JSON"):
+                with self.subTest(check=check, label=label):
+                    self.session.reset_mock()
+                    self.session.generate.return_value = f"```{label}\n{json.dumps({'scene': SCENE, 'self_check': check})}\n```"
+                    row = self.service.run(session=self.session, data=self.data, assignment=self.assignment,
+                        idea=self.idea, progress=lambda _message: None)
+                    self.assertEqual(row["scene"], SCENE)
+                    self.assertEqual(row["self_check"], check)
+                    self.assertEqual(row["scene_status"], "valid" if check == "PASS" else "repair_required")
+                    self.session.generate.assert_called_once()
+
+    def test_scene_fence_cannot_hide_incomplete_prose_duplicate_keys_or_extra_values(self):
+        good = json.dumps({"scene": SCENE, "self_check": "PASS"})
+        invalid = [f"```json\n{good}", f"```text\n{good}\n```",
+            f"Explanation\n```json\n{good}\n```", f"```json\n{good}\n```\nExplanation",
+            f"```json\n{good}\n{good}\n```",
+            '```json\n{"scene":"one","scene":"two","self_check":"PASS"}\n```',
+            '```json\n{"scene":"Frozen scene","self_check":"PASS because"}\n```']
+        for raw in invalid:
+            with self.subTest(raw=raw), self.assertRaises(ValueError):
+                validate_scene(raw)
+
     def test_backend_error_is_not_retried(self):
         self.session.generate.side_effect = BackendGenerationError("Synthetic engine failure")
         with self.assertRaisesRegex(BackendGenerationError, "Synthetic engine failure"):

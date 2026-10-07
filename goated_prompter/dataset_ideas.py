@@ -5,7 +5,7 @@ import json
 from .backends.base import BackendGenerationError
 from .core import PromptInstruction
 from .dataset_quality import analyze_idea_diversity
-from .dataset_understanding import understanding_instruction, validate_understanding
+from .dataset_understanding import understanding_instruction, validate_understanding, unwrap_json_fence
 
 
 IDEA_FIELDS = ("idea", "placement", "visibility", "camera", "framing", "context")
@@ -54,6 +54,8 @@ Return ONLY a JSON array in the requested assignment order. Each object contains
 exactly index (the supplied integer) and idea, placement, visibility, camera, framing,
 context (nonempty concise strings, at most 600 characters each). A short sentence or
 phrase per field is enough. No minimum word quota, extra fields, Markdown or reasoning.
+Even for a single requested assignment, wrap its record in an array [...];
+never return a bare object or an object containing an ideas array.
 """
 
 
@@ -99,7 +101,7 @@ def validate_ideas(raw, indexes):
     """Validate compact shape only, not a claim that a pose has been physically verified."""
     if not isinstance(raw, str) or len(raw) > 1024 + len(indexes) * (len(IDEA_FIELDS) * MAX_FIELD_CHARACTERS + 200):
         raise ValueError("Ideas response exceeds its text limit.")
-    rows = json.loads(raw, object_pairs_hook=_unique_object)
+    rows = json.loads(unwrap_json_fence(raw), object_pairs_hook=_unique_object)
     if not isinstance(rows, list) or len(rows) != len(indexes):
         raise ValueError("Ideas must return exactly one record per requested assignment.")
     result = []
