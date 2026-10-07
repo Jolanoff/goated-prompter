@@ -4,9 +4,9 @@ Dataset produces prompts, not images. There is one pipeline:
 
 ```text
 concept + rules + local guided input
-  → UNDERSTAND → human approval
-  → IDEAS (Idea, Placement, Visibility, Camera, Framing, Context)
-  → frozen SCENE + same-call self-check (PASS / REPAIR:)
+  → UNDERSTAND (hard / soft / free) → human approval
+  → IDEAS suggestions (Idea, Placement, Visibility, Camera, Framing, Context)
+  → SCENE + same-call correction and self-check (PASS / REPAIR:)
   → Builder ENHANCE / Direct → FINAL PROMPT
 ```
 
@@ -19,7 +19,7 @@ concept + rules + local guided input
 | Guided assignment indexes and cycling | `goated_prompter/dataset_assignments.py` |
 | Six-field ideas and lexical duplicate hints | `goated_prompter/dataset_ideas.py`, `dataset_quality.py` |
 | Recent-idea RAM guidance | `goated_prompter/dataset_idea_history.py` |
-| Frozen scene, self-check and explicitly requested repair | `goated_prompter/dataset_scene.py` |
+| Frozen scene, same-call correction and self-check | `goated_prompter/dataset_scene.py` |
 | Compact orchestration and versioned saved-plan validation | `goated_prompter/scene_planner.py` |
 | PASS eligibility, shared by API and enhancement | `goated_prompter/scene_eligibility.py` |
 | Builder instruction handoff, trigger/style controls | `goated_prompter/prompting/dataset.py` |
@@ -40,27 +40,46 @@ expansion, visible evidence, interactions, natural occlusions and physical confl
 line's assignments. Clarifications prevent approval. Added instructions require
 reanalysis; the approval ticket is bound to source settings and saved scene edits.
 
+The brief also exposes three small scoped lists for approval: **hard** obligations,
+**soft** preferences that may yield to hard requirements, and **free** creative
+choices within the user's expansion limits. Only approved hard requirements are
+immutable. The richer interpretation explains this contract; downstream stages do
+not infer extra locks from it or promote their own inventions into requirements.
+Explicit user counts, actions, contacts, exclusions and required visual evidence
+belong in hard, retaining their scope and qualifiers. A semantic trait does not
+automatically require exposure. Unresolved user conflicts block approval.
+
 IDEAS makes one batch call with six short descriptions per image, each at most 600
 characters. An explicit replacement requests only its index. History and diversity
-hints never override a guided action or approved fixed requirement. There is no
+hints never override a guided action or approved hard requirement. The six fields
+are proposals, not frozen staging: SCENE may adjust generated details. There is no
 Fast/Quality dispatch, automatic substitute idea or fallback plan.
 
-SCENE makes one call per image. It expands the fixed idea into one spatial paragraph
-of at most 3,000 characters and checks that paragraph in the same call. The check is
-exactly `PASS`, or three lines beginning `REPAIR:`, followed by a specific defect and
-local correction. This is model self-checking, not independently verified physics.
-There is no structured geometry output or separate evaluator.
+SCENE makes one call per image. It expands a suggested idea into one spatial
+paragraph of at most 3,000 characters. Before returning `PASS`, its single focused
+self-check compares hard requirements and demanded evidence with the camera/crop,
+spatial relationships and invented details. Generated conflicts are corrected in
+that same call. For example, a generated upper-half cup crop yields to a hard
+requirement to show its base touching the table. User-required crops stay hard.
+This is model self-checking, not independently verified physics. There is no
+structured geometry output, separate evaluator or extra correction call.
 
-REPAIR blocks enhancement for that image. **Repair scene** explicitly requests one
-targeted build/check attempt, preserving the fixed idea and other valid relationships.
-Another REPAIR verdict stays blocked; nothing automatically loops, replaces the scene
-or weakens requirements. Invalid IDEAS/SCENE output stops that stage without automatic
-retry; already published ideas and completed scenes remain checkpointed.
+`REPAIR:` is reserved for incompatible actual user hard requirements: its two further
+lines name the conflict and ask the needed clarification. It blocks enhancement.
+Revise conflicting requirements through UNDERSTAND and approve them again; **Repair
+scene** cannot waive them. That button remains a single explicit build/check attempt
+for saved diagnoses, preserving hard requirements and compatible scene content.
+Another REPAIR stays blocked; nothing automatically loops or weakens requirements.
+Invalid IDEAS/SCENE output stops that stage without automatic retry; already
+published ideas and completed scenes remain checkpointed. The parser validates
+the response shape, not whether the model's conflict diagnosis is semantically true.
 
 Accepted scene prose is Builder's entire creative input. `dataset_instruction`
 calls the existing `assemble_instruction` with **Enhance / Direct**, preserving
 subject, composition and camera. Director, creativity, length, style and target
 controls enrich compatible unspecified detail, not a different event or crop.
+Only the applicable hard/soft/free contract is supplied as approved requirements;
+older idea staging is not restored after SCENE corrects it.
 Dataset has no separate final writer or semantic/support reviewer. Shared Builder
 and MiniMax planning/validation remain independent and available.
 
@@ -83,12 +102,14 @@ score or universal ban on words such as “no.”
 ## Edits, freshness and persistence
 
 Idea edits discard stale five-field descriptions and invalidate that scene/check/prompt.
-Scene edits retain the fixed idea descriptions but invalidate its check and prompt.
+Scene edits retain the suggested idea descriptions but invalidate its check and prompt.
 A manual scene must be checked before enhancement. Output-setting changes reuse
 checked scenes; concept, guided input, amount, type, variety, rules or visual-style
 changes invalidate the plan. Server eligibility is accepted only while the client's
 scene matches its saved dependency projection; key order and prompt bookkeeping do
 not affect identity.
+Plans created under the earlier frozen-idea contract also need replanning; their
+saved text and final prompts are not deleted or migrated.
 
 The backend atomically checkpoints generated progress before publishing it. Workflow
 revision and input signatures prevent stale jobs from replacing newer edits. Restart

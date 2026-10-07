@@ -7,6 +7,18 @@ import { transformWithEsbuild } from "vite";
 import { canConfirmDatasetReview, datasetRequestSignature, datasetUnderstandingSections,
   reviseDatasetRequest } from "./workflows/datasetState.js";
 
+test("approval shows hard obligations, soft preferences and free choices before rich interpretation", () => {
+  const sections = datasetUnderstandingSections({ requested_generation: "One red ceramic cup",
+    hard: [{ scope: "all_outputs", text: "Cup base touching table visible" }],
+    soft: [{ scope: "all_outputs", text: "Close camera" }],
+    free: [{ scope: "guided:2", text: "Background" }] });
+  assert.deepEqual(sections.slice(0, 3), [
+    { label: "HARD — must satisfy", items: ["Every output: Cup base touching table visible"] },
+    { label: "SOFT — preferences, adjustable", items: ["Every output: Close camera"] },
+    { label: "FREE — creative choices", items: ["Guided input 2: Background"] },
+  ]);
+});
+
 test("request approval ignores result bookkeeping but detects every source and saved-scene edit", () => {
   const input = { subject: "Two people boxing", trigger: "person 1, person 2", amount: 2, target: "Generic",
     length: "Medium", constraints: "Arena. Gloves.", scene_plan: [{ index: 1, scene: "Boxing" }], results: [] };
@@ -29,11 +41,11 @@ test("understanding review retains all requirement categories and local scope", 
     visibility_to_preserve: [{ scope: "all_outputs", text: "Enough of the head remains exposed" }],
     physical_conflicts: [{ scope: "all_outputs", conflict: "Unobstructed cheek conflicts with contact.", compatible_resolution: null }] };
   const sections = datasetUnderstandingSections(brief);
-  assert.equal(sections.length, 9);
-  assert.equal(sections[0].items[0], "Every output: Two adults");
-  assert.equal(sections[1].items[0], "Across the dataset: Lighting");
-  assert.equal(sections[3].items[0], "Guided input 2: In a gym");
-  assert.match(sections[8].items[0], /Needs clarification/);
+  assert.equal(sections.length, 12);
+  assert.equal(sections[3].items[0], "Every output: Two adults");
+  assert.equal(sections[4].items[0], "Across the dataset: Lighting");
+  assert.equal(sections[6].items[0], "Guided input 2: In a gym");
+  assert.match(sections[11].items[0], /Needs clarification/);
 });
 
 test("richer understanding keeps scoped action alternatives separate from required interactions", () => {
@@ -62,6 +74,9 @@ test("the existing modal renders the new brief, keeps extra instructions and blo
     `from ${JSON.stringify(specifier.startsWith(".") ? new URL(specifier, sourceUrl).href : import.meta.resolve(specifier))}`);
   const { default: Modal } = await import(`data:text/javascript;base64,${Buffer.from(linked).toString("base64")}`);
   const brief = { requested_generation: "Boxing <script>not markup</script>", expansion_freedom: "Preserve the contact",
+    hard: [{ scope: "all_outputs", text: "Two adults with readable gloves" }],
+    soft: [{ scope: "all_outputs", text: "Warm lighting" }],
+    free: [{ scope: "guided:1", text: "Background <script>not markup</script>" }],
     character_count: 2, identity_policy: "random_per_prompt",
     action_options: [{ scope: "guided:1", text: "Punch or block <script>not markup</script>" }],
     dataset_contents: "One prompt", fixed: [{ scope: "all_outputs", text: "Two adults" }],
@@ -81,6 +96,10 @@ test("the existing modal renders the new brief, keeps extra instructions and blo
   assert.match(markup, /What the dataset will contain/);
   assert.match(markup, /Characters and identity/);
   assert.match(markup, /Randomized per independent prompt/);
+  assert.match(markup, /HARD — must satisfy/);
+  assert.match(markup, /SOFT — preferences, adjustable/);
+  assert.match(markup, /FREE — creative choices/);
+  assert.match(markup, /Generated ideas are suggestions, not new requirements/);
   assert.match(markup, /Guided input 1: Punch or block &lt;script&gt;/);
   assert.match(markup, /Extra instructions or answers/);
   assert.match(markup, /Update summary/);

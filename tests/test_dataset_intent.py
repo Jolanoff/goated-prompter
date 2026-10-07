@@ -23,6 +23,9 @@ class UnderstandingBackend(CaptureBackend):
     def __init__(self):
         super().__init__()
         self.summary = dataset_understanding_fixture(
+            hard=[{"scope": "all_outputs", "text": "Arena"}, {"scope": "all_outputs", "text": "Gloves"},
+                  {"scope": "all_outputs", "text": "Gloved hands must be readable"}],
+            free=[{"scope": "dataset", "text": "Unspecified appearance"}],
             rules=[{"scope": "all_outputs", "text": "Arena"}, {"scope": "all_outputs", "text": "Gloves"}],
             may_vary=[{"scope": "dataset", "text": "Unspecified appearance"}],
             visible_evidence=[{"scope": "all_outputs", "text": "Gloved hands must be readable"}])
@@ -47,6 +50,23 @@ class UnderstandingBackend(CaptureBackend):
 
 
 class DatasetIntentTicketTests(unittest.TestCase):
+    def test_approval_preserves_the_contract_without_promotion_or_shared_mutation(self):
+        data = valid_draft(amount=1, subject="One red ceramic cup on a table.")
+        brief = dataset_understanding_fixture(
+            hard=[{"scope": "all_outputs", "text": "Cup base touching the table visible."}],
+            soft=[{"scope": "all_outputs", "text": "Close camera."}],
+            free=[{"scope": "all_outputs", "text": "Background."}],
+            may_vary=[{"scope": "all_outputs", "text": "Explanatory freedoms, not hard locks."}])
+        tickets = DatasetIntentTickets()
+        registered = tickets.register(data, brief)
+        expected = deepcopy(brief)
+        brief["hard"].clear()
+        registered["brief"]["soft"].clear()
+        approved = tickets.approve(registered["confirmation_token"], data)
+        self.assertEqual(approved, expected)
+        approved["free"].clear()
+        self.assertEqual(tickets.approve(registered["confirmation_token"], data), expected)
+
     def test_new_brief_approval_keeps_local_scope_and_isolated_copy(self):
         data = valid_draft(amount=1, source_mode="guided", inputs="A handshake\nA portrait")
         brief = dataset_understanding_fixture(visible_evidence=[{"scope": "guided:2", "text": "Eyes"}])
@@ -251,6 +271,44 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([call.diagnostic_stage for call in self.backend.calls],
             ["dataset:understanding", "dataset:ideas", "dataset:build_scene", "dataset:1"])
 
+    async def test_corrected_cup_scene_reaches_builder_without_restoring_the_generated_crop(self):
+        data = valid_draft(amount=1, trigger_type="Object / product",
+            subject="One red ceramic cup with its base touching the table visible.")
+        self.backend.summary = dataset_understanding_fixture(identity_policy="not_applicable",
+            requested_generation=data["subject"],
+            hard=[{"scope": "all_outputs", "text": text} for text in
+                  ("Cup base touching table visible.", "Red ceramic cup.", "One cup only.")],
+            soft=[{"scope": "all_outputs", "text": "Close camera and warm lighting."}],
+            free=[{"scope": "all_outputs", "text": "Background and exact angle."}])
+        approved = await self.analyze(data)
+        proposal = dataset_idea_fixture(idea="A red ceramic cup rests on a table.",
+            placement="Cup on tabletop.", visibility="Base touching table visible.",
+            camera="Front three-quarter view.", framing="Tight upper-half crop.", context="Simple table setting.")
+        scene = "One red ceramic cup rests upright on the tabletop. A wider front three-quarter composition includes the entire cup base in visible contact with the table, under warm lighting."
+        self.backend.raw_idea_outputs = [json.dumps([proposal])]
+        self.backend.raw_scene_outputs = [json.dumps({"scene": scene, "self_check": "PASS"})]
+        response = await self.client.post("/api/workspace/dataset", json={"input": data,
+            "confirmation_token": approved["confirmation_token"]})
+        self.assertEqual(response.status, 202, await response.text())
+        finished = await self.terminal(await response.json())
+        self.assertEqual(finished["status"], "succeeded", finished.get("error"))
+        self.assertEqual(finished["result"]["completed"], 1)
+        self.assertEqual([call.diagnostic_stage for call in self.backend.calls],
+            ["dataset:understanding", "dataset:ideas", "dataset:build_scene", "dataset:1"])
+        ideas, composer, builder = self.backend.calls[1:]
+        for call in (ideas, composer):
+            self.assertEqual(json.loads(call.user_message)["confirmed_intent"], approved["brief"])
+        self.assertIn("Repair generated conflicts within this same call", composer.system_message)
+        self.assertEqual(json.loads(composer.user_message)["assignments"][0]["framing"], proposal["framing"])
+        self.assertEqual(builder.user_message, scene)
+        self.assertNotIn(proposal["framing"], builder.user_message + builder.system_message)
+        self.assertIn('"hard"', builder.system_message)
+        self.assertIn("Cup base touching table visible.", builder.system_message)
+        saved = await (await self.client.get("/api/workspace/settings/dataset")).json()
+        self.assertEqual(saved["draft"]["scene_plan"][0]["scene"], scene)
+        self.assertEqual(saved["draft"]["scene_plan"][0]["framing"], proposal["framing"])
+        self.assertTrue(saved["scene_eligibility"]["1"]["usable"])
+
     async def test_build_scene_returns_one_frozen_scene_and_compact_check_without_geometry_or_evaluator_calls(self):
         data = valid_draft(amount=1, constraints="Arena. Gloves.")
         accepted = await self.analyze(data)
@@ -383,6 +441,7 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
     async def test_cycled_guided_scope_reaches_ideas_composer_and_writer(self):
         data = valid_draft(amount=3, source_mode="guided", inputs="Training drill\n\nDefensive drill")
         self.backend.summary["rules"].append({"scope": "guided:2", "text": "At the ropes"})
+        self.backend.summary["hard"].append({"scope": "guided:2", "text": "At the ropes"})
         accepted = await self.analyze(data)
         self.backend.calls.clear()
         response = await self.client.post("/api/workspace/dataset", json={"input": data,
@@ -459,7 +518,8 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
         writer = self.backend.calls[-1]
         self.assertIn("SCOPED APPROVED REQUIREMENTS", writer.system_message)
         self.assertNotIn("Do not invent identity;", writer.system_message)
-        self.assertIn('"visible_evidence"', writer.system_message)
+        self.assertIn('"hard"', writer.system_message)
+        self.assertNotIn('"visible_evidence"', writer.system_message)
         self.assertIn('"text": "Gloves"', writer.system_message)
         self.assertIn("ENHANCE THE ACCEPTED SCENE", writer.system_message)
         self.assertEqual(writer.user_message, job["result"]["scene_plan"][0]["scene"])

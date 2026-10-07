@@ -37,7 +37,7 @@ export default function DatasetConfirmationModal({ review, busy, onRevise, onCon
       <button className={ui.iconButton} type="button" aria-label="Cancel request review" disabled={review?.status === "confirming"}
         onClick={onCancel} autoFocus><X size={18} aria-hidden="true" /></button>
     </header>
-    <p id="dataset-confirmation-description" className="text-xs leading-relaxed text-muted">Confirm what the engine understood before it creates ideas, scenes or prompts. These are interpreted requirements, not output checks.</p>
+    <p id="dataset-confirmation-description" className="text-xs leading-relaxed text-muted">Confirm what the engine understood before it creates ideas, scenes or prompts. HARD requirements must be satisfied; SOFT preferences may adjust; FREE choices remain open. Generated ideas are suggestions, not new requirements. This is an interpretation, not an output check.</p>
     {working && <p className="mt-4 flex items-center gap-2 text-xs" role="status"><LoaderCircle size={16} className="dataset-loader" aria-hidden="true" />{review.status === "analyzing" ? "Understanding your request…" : "Starting confirmed generation…"}</p>}
     {review?.error && <p className={`${ui.warningNote} mt-4`} role="alert">{review.error}</p>}
     {review?.notice && <p className={`${ui.subtleNote} mt-4`}>{review.notice}</p>}

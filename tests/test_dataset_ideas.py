@@ -35,6 +35,17 @@ class DatasetIdeasTests(unittest.TestCase):
         self.assertFalse(instruction.unlimited_tokens)
         self.assertEqual(self.data, before)
 
+    def test_idea_choices_are_suggestions_under_the_approved_contract(self):
+        self.data["_confirmed_intent"] = dataset_understanding_fixture(
+            hard=[{"scope": "all_outputs", "text": "Cup base touching the table must be visible."}],
+            soft=[{"scope": "all_outputs", "text": "Close camera."}],
+            free=[{"scope": "all_outputs", "text": "Exact angle."}])
+        instruction = ideas_instruction(self.data, dataset_assignments(self.data))
+        self.assertIn("creative suggestions, not immutable requirements", instruction.system_message)
+        self.assertIn("SCENE may", instruction.system_message)
+        self.assertIn("adjust any generated choice that conflicts with HARD", instruction.system_message)
+        self.assertEqual(json.loads(instruction.user_message)["confirmed_intent"], self.data["_confirmed_intent"])
+
     def test_missing_understanding_or_unanswered_clarifications_never_call_model(self):
         for brief in (None, dataset_understanding_fixture(clarifications=["Which subject?"])):
             with self.subTest(brief=brief):

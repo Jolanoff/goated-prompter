@@ -85,17 +85,34 @@ class DatasetEnhanceTests(unittest.TestCase):
         self.assertNotIn("OBSOLETE", instruction.user_message + instruction.system_message)
         self.assertNotIn(REPAIR, instruction.user_message + instruction.system_message)
 
+    def test_builder_receives_only_the_scoped_hard_soft_free_authority_contract(self):
+        hard = [{"scope": "all_outputs", "text": "One red ceramic cup; base touching table visible."},
+                {"scope": "guided:2", "text": "A blue glass instead."}]
+        soft = [{"scope": "all_outputs", "text": "Warm lighting."}]
+        free = [{"scope": "guided:1", "text": "Background."}]
+        self.scene.update(scene="One red ceramic cup rests on a table; a wider crop shows its base in contact with the tabletop.",
+            framing="Tight upper-half crop from IDEAS.")
+        brief = dataset_understanding_fixture(hard=hard, soft=soft, free=free,
+            rules=[{"scope": "all_outputs", "text": "Explanatory legacy section must not become another lock."}])
+        instruction = self.assemble(source_mode="guided", inputs="First cup\nSecond cup", _confirmed_intent=brief)
+        contract, _ = json.JSONDecoder().raw_decode(instruction.system_message.split("SCOPED APPROVED REQUIREMENTS\n", 1)[1])
+        self.assertEqual(contract, {"hard": hard[:1], "soft": soft, "free": free,
+            "expansion_freedom": brief["expansion_freedom"]})
+        self.assertEqual(instruction.user_message, self.scene["scene"])
+        self.assertNotIn("Tight upper-half", instruction.system_message + instruction.user_message)
+        self.assertNotIn("Explanatory legacy", instruction.system_message)
+
     def test_scoped_requirements_do_not_leak_another_guided_inputs_appearance_rules(self):
-        brief = dataset_understanding_fixture(rules=[{"scope": "guided:1", "text": "Blue gloves"},
+        brief = dataset_understanding_fixture(hard=[{"scope": "guided:1", "text": "Blue gloves"},
             {"scope": "guided:2", "text": "Red gloves"}, {"scope": "all_outputs", "text": "Two adults"},
             {"scope": "dataset", "text": "Varied compatible lighting"}])
         instruction = self.assemble(source_mode="guided", inputs="First drill\nSecond drill", _confirmed_intent=brief)
         requirements, _ = json.JSONDecoder().raw_decode(instruction.system_message.split("SCOPED APPROVED REQUIREMENTS\n", 1)[1])
-        self.assertEqual(requirements["rules"], [brief["rules"][0], *brief["rules"][2:]])
+        self.assertEqual(requirements["hard"], [brief["hard"][0], *brief["hard"][2:]])
         self.assertNotIn("Red gloves", instruction.system_message)
 
     def test_approved_and_absent_briefs_preserve_scene_and_rendering_handoff(self):
-        brief = dataset_understanding_fixture(rules=[{"scope": "all_outputs", "text": "Green training outfit"}])
+        brief = dataset_understanding_fixture(hard=[{"scope": "all_outputs", "text": "Green training outfit"}])
         for approved in (None, brief):
             with self.subTest(approved=bool(approved)):
                 data = {**self.data, "_confirmed_intent": approved}
@@ -106,7 +123,7 @@ class DatasetEnhanceTests(unittest.TestCase):
                 self.assertIn("lighting, materials", instruction.system_message)
                 requirements, _ = json.JSONDecoder().raw_decode(
                     instruction.system_message.split("SCOPED APPROVED REQUIREMENTS\n", 1)[1])
-                self.assertEqual(requirements["rules"], brief["rules"] if approved else [])
+                self.assertEqual(requirements["hard"], brief["hard"] if approved else [])
                 self.assertEqual((data, self.scene), before)
 
     def test_final_generation_keeps_one_enhancement_call_without_old_scene_or_semantic_evaluators(self):
