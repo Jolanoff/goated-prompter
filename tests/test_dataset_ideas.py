@@ -71,6 +71,14 @@ class DatasetIdeasTests(unittest.TestCase):
             with self.subTest(indexes=indexes), self.assertRaises(ValueError):
                 ideas_instruction(self.data, dataset_assignments(self.data), indexes=indexes)
 
+    def test_one_assignment_still_requests_an_outer_array_not_a_bare_object(self):
+        instruction = ideas_instruction(self.data, dataset_assignments(self.data), indexes=[1])
+        self.assertIn("Even for a single requested assignment", instruction.system_message)
+        self.assertIn("never return a bare object", instruction.system_message)
+        self.assertEqual(len(json.loads(instruction.user_message)["assignments"]), 1)
+        with self.assertRaises(ValueError):
+            validate_ideas(json.dumps(dataset_idea_fixture()), [1])
+
     def test_camera_and_context_changes_do_not_make_identical_events_distinct(self):
         first = dataset_idea_fixture(1)
         second = dataset_idea_fixture(2, idea=first["idea"], camera="Side view", context="Different arena")
@@ -96,6 +104,28 @@ class DatasetIdeasTests(unittest.TestCase):
             self.service.run(session=self.session, data=self.data, assignments=dataset_assignments(self.data),
                 progress=lambda _message: None)
         self.session.generate.assert_called_once()
+
+    def test_complete_json_fence_is_accepted_in_one_idea_call(self):
+        expected = [dataset_idea_fixture(1), dataset_idea_fixture(2)]
+        for label in ("", "json", "JSON"):
+            with self.subTest(label=label):
+                self.session.reset_mock()
+                self.session.generate.return_value = f"```{label}\n{json.dumps(expected)}\n```"
+                rows = self.service.run(session=self.session, data=self.data,
+                    assignments=dataset_assignments(self.data), progress=lambda _message: None)
+                self.assertEqual(rows, expected)
+                self.session.generate.assert_called_once()
+
+    def test_json_fences_do_not_hide_prose_multiple_values_or_invalid_ideas(self):
+        good = json.dumps([dataset_idea_fixture()])
+        duplicate = good.replace('"camera":', '"camera":"Front", "camera":')
+        invalid = [f"```json\n{good}", f"```text\n{good}\n```",
+            f"Explanation\n```json\n{good}\n```", f"```json\n{good}\n```\nExplanation",
+            f"```json\n{good}\n{good}\n```", f"```json\n{duplicate}\n```",
+            f"```json\n{json.dumps([{**dataset_idea_fixture(), 'index': True}])}\n```"]
+        for raw in invalid:
+            with self.subTest(raw=raw), self.assertRaises(ValueError):
+                validate_ideas(raw, [1])
 
     def test_backend_failure_is_not_retried(self):
         self.session.generate.side_effect = BackendGenerationError("Synthetic engine failure")

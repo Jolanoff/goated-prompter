@@ -5,7 +5,7 @@ import json
 from .backends.base import BackendGenerationError
 from .core import PromptInstruction
 from .dataset_ideas import IDEA_FIELDS
-from .dataset_understanding import understanding_instruction, validate_understanding
+from .dataset_understanding import understanding_instruction, validate_understanding, unwrap_json_fence
 
 
 MAX_SCENE_CHARACTERS = 3000
@@ -86,7 +86,7 @@ def _unique_object(pairs):
 def validate_scene(raw):
     if not isinstance(raw, str) or len(raw) > (MAX_SCENE_CHARACTERS + MAX_CHECK_CHARACTERS) * 6 + 200:
         raise ValueError("Scene response exceeds its text limit.")
-    value = json.loads(raw, object_pairs_hook=_unique_object)
+    value = json.loads(unwrap_json_fence(raw), object_pairs_hook=_unique_object)
     if not isinstance(value, dict) or set(value) != {"scene", "self_check"}:
         raise ValueError("Scene must contain only scene and self_check.")
     scene = value["scene"]

@@ -48,8 +48,10 @@ def live_case(case, workflow, config, args, run=1):
     # it is evaluation scaffolding, not a new production planning step.
     source = case["request"] if workflow == "minimax" else "eval_subject represents " + case["request"]
     common_rules = STYLE_RULES[args.style] + "\n" + rules
+    identity_rules = ""
     if workflow != "minimax":
-        common_rules += "\nInclude the exact subject identifier eval_subject. Do not invent stable identity traits or gender; compatible temporary clothing and scene detail are allowed."
+        identity_rules = "Include the exact subject identifier eval_subject. Do not invent stable identity traits or gender; compatible temporary clothing and scene detail are allowed."
+        common_rules += "\n" + identity_rules
     request = GoatedPrompterRequest(idea=source, target_model=args.target, prompt_length=length,
         director_preset=args.director, creativity=args.creativity, planning_mode=args.planning,
         custom_instructions=common_rules)
@@ -78,7 +80,8 @@ def live_case(case, workflow, config, args, run=1):
             data = {**default_dataset_draft(), "subject": case["request"], "trigger": "eval_subject",
                     "trigger_type": case.get("dataset_type", "Character"),
                     "amount": 1, "target": args.target, "length": length, "director_preset": args.director,
-                    "visual_style": args.style, "creativity": args.creativity, "constraints": rules}
+                     "visual_style": args.style, "creativity": args.creativity,
+                     "constraints": rules + "\n" + identity_rules}
             data.update(source_mode="guided", inputs=case["request"].replace("\n", " "))
             data = approve_dataset(config, request, data)
             result = DatasetService(config, lambda: None).run(request, data, lambda _message: None, lambda _partial: None)

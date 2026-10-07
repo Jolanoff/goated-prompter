@@ -108,6 +108,22 @@ class EvaluationRunnerTests(unittest.TestCase):
         self.assertEqual(len(row["calls"]), 1)
         self.assertEqual(row["calls"][0]["stage"], "dataset:understanding")
 
+    def test_dataset_receives_the_same_protected_identity_rules_as_builder(self):
+        case = {"id": "portrait", "request": "A person with brown eyes. No jewelry.",
+                "rules": "Keep brown eyes", "anchors": {}}
+        admitted = {}
+        def stop_before_inference(config, request, data):
+            admitted.update(request=request, data=data)
+            raise ValueError("Synthetic admission capture; no inference.")
+        with patch("tests.eval.runner.approve_dataset", side_effect=stop_before_inference):
+            row = live_case(case, "dataset", {"backend": "mock"}, self.args())
+        self.assertIn("Synthetic admission capture", row["error"])
+        for rule in ("Keep brown eyes", "no jewelry", "Include the exact subject identifier eval_subject.",
+                     "Do not invent stable identity traits or gender; compatible temporary clothing and scene detail are allowed."):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, admitted["request"].custom_instructions)
+                self.assertIn(rule, admitted["data"]["constraints"])
+
     def test_novelty_uses_approved_ideation_and_matched_settings(self):
         inputs, histories = [], []
         def run(service, request, data, *callbacks, **kwargs):

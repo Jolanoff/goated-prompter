@@ -59,7 +59,12 @@ What should the final dataset contain?
 
 Preserve explicit counts, identities, attributes, actions, contact relationships,
 literal text, exclusions, and local versus global rule scope. Trigger labels alone
-do not establish appearance. Unspecified values stay unspecified; do not invent
+do not establish appearance. A trigger is a prompt identifier, not visible image lettering
+unless the user explicitly requests that lettering. Do not add it to visible_evidence
+or turn it into a sign, caption or watermark. trigger_at_start=false does not forbid
+placing the trigger first; it prefers a natural introduction before a later trigger,
+not a hard exclusion rule.
+Unspecified values stay unspecified; do not invent
 identity, clothing, setting, props, anatomy or a mandatory camera to fill the brief.
 Distinguish permission to vary from an obligation to vary. Diversity and creativity
 fill permitted gaps; they never change a fixed action, identity or rule. Action
@@ -106,7 +111,10 @@ purpose, participants, event and important distinctions where relevant, not mere
 a generic label or repetition of the source;
 character_count: integer 1-100 for an explicit shared per-image count of people or
 animal characters, or null if unknown, not applicable, or differing by local input.
-Never confuse this with dataset amount or infer it only from trigger labels;
+Never use 0: for an object-only scene with no people or animal characters, use
+"character_count": null, "identity_policy": "not_applicable". Object counts belong
+in scoped requirements, not character_count. Never confuse this with dataset amount
+or infer it only from trigger labels;
 identity_policy: fixed, random_per_prompt, not_applicable, or mixed when identities
 have different policies or local guided inputs disagree. Scoped requirements are
 authoritative; this summary does not globalize local identities;
@@ -168,19 +176,25 @@ def _unique_object(pairs):
     return result
 
 
+def unwrap_json_fence(raw):
+    """Remove one complete plain/JSON wrapper without extracting embedded JSON."""
+    text = raw.strip().removeprefix("\ufeff").strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        if len(lines) < 3 or lines[0].strip().casefold() not in {"```", "```json"} or lines[-1].strip() != "```":
+            raise ValueError("Dataset output must use one complete plain or JSON fence.")
+        text = "\n".join(lines[1:-1]).strip()
+    return text
+
+
 def _brief_json(raw):
     if not isinstance(raw, str):
         raise ValueError("Understanding response must be text.")
     if len(raw) > MAX_OUTPUT_CHARACTERS:
         raise ValueError("Understanding response exceeds its text limit.")
-    text = raw.strip().removeprefix("\ufeff").strip()
+    text = unwrap_json_fence(raw)
     if not text:
         raise ValueError("Understanding response was empty.")
-    if text.startswith("```"):
-        lines = text.splitlines()
-        if len(lines) < 3 or lines[0].strip().casefold() not in {"```", "```json"} or lines[-1].strip() != "```":
-            raise ValueError("Understanding must return one complete JSON object.")
-        text = "\n".join(lines[1:-1]).strip()
     if not text.startswith("{"):
         raise ValueError("Understanding must return one JSON object, not prose or reasoning.")
     return json.loads(text, object_pairs_hook=_unique_object)

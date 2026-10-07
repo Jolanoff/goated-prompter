@@ -43,6 +43,21 @@ class DatasetUnderstandingTests(unittest.TestCase):
         self.assertEqual(validate_understanding(dataset_understanding_fixture(), ("all_outputs", "dataset")),
             dataset_understanding_fixture())
 
+    def test_object_understanding_explicitly_uses_null_not_zero_characters(self):
+        instruction = understanding_instruction(valid_draft(subject="A chipped blue ceramic cup.",
+            trigger_type="Object / product"))
+        self.assertIn('"character_count": null, "identity_policy": "not_applicable"', instruction.system_message)
+        self.assertIn("Never use 0", instruction.system_message)
+        source = json.loads(instruction.user_message)["source"]
+        self.assertEqual(source["trigger_type"], "Object / product")
+        self.assertEqual(source["subject"], "A chipped blue ceramic cup.")
+
+    def test_trigger_label_is_not_image_lettering_or_a_negative_start_rule(self):
+        instruction = understanding_instruction(valid_draft(trigger="eval_subject", trigger_at_start=False))
+        self.assertIn("not visible image lettering", instruction.system_message)
+        self.assertIn("trigger_at_start=false does not forbid", instruction.system_message)
+        self.assertEqual(json.loads(instruction.user_message)["source"]["trigger"], "eval_subject")
+
     def test_richer_identity_and_action_metadata_still_rejects_invalid_types_and_scopes(self):
         for changes in ({"character_count": True}, {"character_count": 0}, {"character_count": 101},
                         {"identity_policy": []}, {"identity_policy": "same random person"},
