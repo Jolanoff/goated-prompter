@@ -51,10 +51,25 @@ cycled inputs. Keep every local anchor. A fixed, fully specified guided event ma
 complete missing pieces only. Do not globalize another input's restrictions.
 
 Compare core actions/poses and interactions with other proposed ideas, existing_ideas
-and recently_used_ideas. Meaningful differences are not merely renamed subjects or
-changed cameras, light, outfits or rooms. Novelty never overrides HARD actions or
-guided anchors; when those are locked, vary only what the contract permits.
-History is reference-only guidance, not an output menu or absolute exclusions.
+and recently_used_ideas.
+
+Prioritize semantic variation in the event itself before presentation changes.
+Meaningful variation should come from differences such as the moment in the event,
+participant roles, action phase, movement, interaction, power dynamic, reaction,
+positioning, or outcome-in-progress.
+
+Do not count renamed subjects or changes to camera, lighting, outfit, weather,
+background or location alone as a meaningfully different idea.
+
+For example, for "duck fighting dinosaur", meaningful variation could include:
+the duck charging, dodging an attack, counterattacking, being cornered, retreating,
+attacking from above, or both subjects facing off before the next attack.
+The same fight moved to a forest, rain, sunset or a different camera angle is not
+a new core idea by itself.
+
+Novelty never overrides HARD actions or guided anchors; when those are locked,
+vary only what the contract permits. History is reference-only guidance, not an
+output menu or absolute exclusions.
 For a replacement, return only the requested indexes; do not regenerate siblings.
 
 Return ONLY a JSON array in the requested assignment order. Each object contains
