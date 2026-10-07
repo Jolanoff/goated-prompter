@@ -16,11 +16,13 @@ export default function MiniMaxTab({ visible, job, busy, active, noEngine, engin
   const preferences = useWorkflowSettings("minimax");
   const { draft, update } = preferences;
   const textarea = useRef(null);
+  const cursorRevision = useRef(0);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState("");
   const submission = useRef(false);
 
   async function clearDraft() {
+    cursorRevision.current++;
     // Retain the acknowledgement ID until cleanup finishes so a still-visible
     // terminal snapshot cannot rehydrate the output we just discarded.
     update({ user_request: "", generated_prompt: "", references: [] });
@@ -44,9 +46,10 @@ export default function MiniMaxTab({ visible, job, busy, active, noEngine, engin
   const canGenerate = draft && !disabled && !noEngine && !preferences.conflict && director && draft.user_request.trim() && !parsed.invalid.length && !missingReferences.length && !parsedShots.invalid.length && parsedShots.ordered;
 
   function restoreCursor(input, cursor) {
+    const revision = ++cursorRevision.current;
     const focusOwner = document.activeElement;
     requestAnimationFrame(() => {
-      if (!input.isConnected || document.activeElement !== focusOwner) return;
+      if (revision !== cursorRevision.current || !input.isConnected || document.activeElement !== focusOwner) return;
       input.focus();
       input.setSelectionRange(cursor, cursor);
     });
@@ -74,6 +77,7 @@ export default function MiniMaxTab({ visible, job, busy, active, noEngine, engin
     restoreCursor(input, next.cursor);
   }
   function editRequest(value) {
+    cursorRevision.current++;
     const typed = parseReferences(value).references;
     if (typed.length > 12) {
       // Keep the user's text, but never silently register unsupported references.
