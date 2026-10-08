@@ -45,6 +45,13 @@ The brief also exposes three small scoped lists for approval: **hard** obligatio
 choices within the user's expansion limits. Only approved hard requirements are
 immutable. The richer interpretation explains this contract; downstream stages do
 not infer extra locks from it or promote their own inventions into requirements.
+UNDERSTAND generates each scoped fact once in a hard, soft, free or explanatory
+context bucket, tagged with the review sections it belongs to. The generation schema
+reserves one HARD slot for the app-retained character trigger when needed, without
+reducing the other buckets' capacities. The app expands these facts into the same public
+brief, supplies output-setting prose from the request, and retains the supplied
+character trigger before approval. Existing full briefs remain valid; saved reviews,
+approval tickets, IDEAS and SCENE still consume the unchanged public contract.
 Explicit user counts, actions, contacts, exclusions and required visual evidence
 belong in hard, retaining their scope and qualifiers. A semantic trait does not
 automatically require exposure. Unresolved user conflicts block approval.
