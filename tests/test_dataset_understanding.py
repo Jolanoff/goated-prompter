@@ -456,7 +456,6 @@ class DatasetUnderstandingTests(unittest.TestCase):
         source = json.loads(instruction.user_message)["source"]
         self.assertEqual(source["subject"], data["subject"])
         self.assertEqual(source["constraints"], data["constraints"])
-        self.assertNotIn("selected visual_style", instruction.system_message)
 
     def test_scoped_contract_and_user_conflicts_survive_one_understanding_call(self):
         brief = dataset_understanding_fixture(

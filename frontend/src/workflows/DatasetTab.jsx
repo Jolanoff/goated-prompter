@@ -63,11 +63,11 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
   const navigatedJob = useRef("");
   const availablePresets = orderDisplayPresets(presets || []);
   const director = availablePresets.find((item) => item.id === draft?.director_preset);
-  const { starting, error, resettingIdeas, noveltyNotice, workflowActive, disabled,
+  const { starting, error, workflowActive, disabled,
     guidedLines, canPlanScenes, staleScenePlan, sceneUsable, validSceneCount, retryStage,
     canWrite, canContinue, remainingPromptCount, updateSceneSettings, updateWriterSettings,
     sceneAction, generateDataset, generateScenes, continueDataset, editResult, releaseCheckpoints, clearResults,
-    resetRecentIdeas, confirmation, understanding, reviseConfirmation, cancelConfirmation, confirmRequest } = useDatasetWorkflow({ preferences, job, busy, active, noEngine,
+    confirmation, understanding, reviseConfirmation, cancelConfirmation, confirmRequest } = useDatasetWorkflow({ preferences, job, busy, active, noEngine,
       director, onGenerate: startGeneration, onReleaseJobs });
   const [clock, setClock] = useState(Date.now());
 
@@ -123,8 +123,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
   function exportGenerationLog() {
     download("dataset-generation-log.json", datasetGenerationLog({ draft, review: understanding, job, record: preferences.record,
       state: { active: workflowActive, starting, error, settings_status: preferences.status, settings_error: preferences.error,
-        settings_conflict: preferences.conflict, stale_scene_plan: staleScenePlan, valid_scene_count: validSceneCount,
-        novelty_notice: noveltyNotice } }), "application/json;charset=utf-8");
+        settings_conflict: preferences.conflict, stale_scene_plan: staleScenePlan, valid_scene_count: validSceneCount } }), "application/json;charset=utf-8");
   }
 
   function goToStep(step) {
@@ -265,14 +264,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
             </div>
               </div>
              </details>
-                 <div className="flex flex-wrap items-center gap-2">
-                   <button className={ui.button} disabled={disabled || resettingIdeas || !draft.subject.trim()} onClick={resetRecentIdeas}>
-                     <RefreshCw size={14} />{resettingIdeas ? "Resetting…" : "Reset recent ideas"}
-                   </button>
-                   <small className="text-xs text-muted">Resets temporary novelty hints, not your current scenes.</small>
-                 </div>
-                 {noveltyNotice && <p className={ui.subtleNote} role="status">{noveltyNotice}</p>}
-                   <HelpDetails>Generate prompts starts fresh: confirm the request once, then ideas, scenes and prompts run automatically in order. Generate scenes only pauses for manual review; Continue keeps your approved plan and completed prompts, and generates only missing prompts. Repeated or invalid ideas are repaired once after valid work finishes, without discarding good results. Changed settings or expired approval need a new review. Scene edits need a new check before enhancement; Repair scene checks one scene without changing its siblings. Recent-idea hints stay in RAM and expire automatically.</HelpDetails>
+                    <HelpDetails>Generate prompts starts fresh: confirm the request once, then ideas, scenes and prompts run automatically in order. Generate scenes only pauses for manual review; Continue keeps your approved plan and completed prompts, and generates only missing prompts. Repeated or invalid ideas are repaired once after valid work finishes, without discarding good results. Changed settings or expired approval need a new review. Scene edits need a new check before enhancement; Repair scene checks one scene without changing its siblings. Ideas uses temporary recent-event history to avoid repeats; scenes and prompts follow the accepted idea.</HelpDetails>
                </div>
              </details>
           </fieldset>

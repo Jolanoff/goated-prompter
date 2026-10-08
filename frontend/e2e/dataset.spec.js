@@ -348,26 +348,6 @@ test("per-scene actions preserve siblings; idea edits invalidate stale details",
   await expect(page.getByLabel("Planned scene 1")).toHaveCount(0);
 });
 
-test("reset recent ideas leaves current scenes and prompts unchanged", async ({ page }) => {
-  await openDataset(page);
-  await generateDataset(page);
-  await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/saved_person/);
-  await openDatasetPage(page, "Scenes");
-  const idea = await page.getByLabel("Planned idea 1").inputValue();
-  await openDatasetPage(page, "Dataset");
-  const prompt = await page.getByLabel("Dataset prompt 1").inputValue();
-  const reset = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset/novelty/reset"));
-  await openDatasetPage(page, "Configure");
-  await page.getByText("Advanced options", { exact: true }).click();
-  await page.getByRole("button", { name: "Reset recent ideas", exact: true }).click();
-  expect((await reset).ok()).toBe(true);
-  await expect(page.getByText("Recent ideas reset for this concept. Current scenes and prompts are unchanged.", { exact: true })).toBeVisible();
-  await openDatasetPage(page, "Scenes");
-  await expect(page.getByLabel("Planned idea 1")).toHaveValue(idea);
-  await openDatasetPage(page, "Dataset");
-  await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(prompt);
-});
-
 test("target changes require fresh approval while reusing checked scenes for Builder enhancement", async ({ page, request }) => {
   await openDataset(page);
   await generateDataset(page);

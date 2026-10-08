@@ -46,20 +46,6 @@ test("Dataset exports omit retired coverage metadata from legacy results", () =>
   assert.equal("coverage_conflicts" in row, false);
 });
 
-test("generation log omits retired style and variety settings in legacy drafts and reviews", () => {
-  const input = { subject: "A portrait", source_mode: "guided", inputs: "Reading", variety: "Wide",
-    visual_style: "Custom", custom_style: "RETIRED STYLE" };
-  const before = structuredClone(input);
-  const log = JSON.parse(datasetGenerationLog({ draft: input, review: { input } }));
-  for (const settings of [log.settings, log.understanding.input]) {
-    assert.equal(settings.subject, "A portrait");
-    assert.equal(settings.source_mode, "guided");
-    assert.equal(settings.inputs, "Reading");
-    for (const field of ["variety", "visual_style", "custom_style"]) assert.equal(field in settings, false);
-  }
-  assert.deepEqual(input, before);
-});
-
 test("generation log is an indented snapshot of settings, review, progress and failures without mutations", () => {
   const context = {
     draft: { subject: "Duck confronting a dinosaur", trigger: "duck_token", amount: 2, target: "Generic",

@@ -18,11 +18,11 @@ concept + rules + local guided input
 | Source-bound, expiring approval tickets | `goated_prompter/dataset_intent.py` |
 | Guided assignment indexes and cycling | `goated_prompter/dataset_assignments.py` |
 | Six-field ideas and lexical duplicate hints | `goated_prompter/dataset_ideas.py`, `dataset_quality.py` |
-| Recent-idea RAM guidance | `goated_prompter/dataset_idea_history.py` |
+| Recent-event RAM history, read and written only by Ideas | `goated_prompter/dataset_ideas.py`, `dataset_idea_history.py` |
 | Frozen scene, same-call correction and self-check | `goated_prompter/dataset_scene.py` |
 | Compact orchestration and versioned saved-plan validation | `goated_prompter/scene_planner.py` |
 | PASS eligibility, shared by API and enhancement | `goated_prompter/scene_eligibility.py` |
-| Builder instruction handoff, trigger/style controls | `goated_prompter/prompting/dataset.py` |
+| Builder instruction handoff and trigger controls | `goated_prompter/prompting/dataset.py` |
 | Batch/actions and bounded final-output recovery | `goated_prompter/dataset.py` |
 | Target syntax and output normalization | `goated_prompter/prompting/target_models.py`, `workflow_output.py` |
 | Editable drafts and durable generated progress | `goated_prompter/workflow_settings.py`, `dataset_checkpoints.py` |
@@ -97,6 +97,14 @@ similarity remains a nonblocking hint, not semantic verification. There is no se
 rejection threshold at 20 items. Globally malformed JSON or a wrong batch size is
 still rejected rather than guessing missing assignments.
 
+IDEAS owns recent-event memory and checks normalized exact repeats against it,
+including when only camera or context changed. Fresh accepted ideas are remembered;
+failed slots are not. An explicit guided input matching the event can still repeat.
+History stays bounded in RAM per concept and expires automatically. There is no
+manual reset control or endpoint. SCENE and the writer do not read this history or
+change an accepted event for novelty. Semantic variation beyond exact repeats
+remains model-guided, not independently verified.
+
 SCENE makes one call per image. It expands a suggested idea into one spatial
 paragraph of at most 3,000 characters. Before returning `PASS`, its single focused
 self-check compares hard requirements and demanded evidence with the camera/crop,
@@ -124,7 +132,7 @@ the response shape, not whether the model's conflict diagnosis is semantically t
 
 Accepted scene prose is Builder's entire creative input. `dataset_instruction`
 calls the existing `assemble_instruction` with **Enhance / Direct**, preserving
-subject, composition and camera. Director, creativity, length, style and target
+subject, composition and camera. Director, creativity, length and target
 controls enrich compatible unspecified detail, not a different event or crop.
 Only the applicable hard/soft/free contract is supplied as approved requirements;
 older idea staging is not restored after SCENE corrects it.

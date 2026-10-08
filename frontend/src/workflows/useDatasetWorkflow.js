@@ -9,8 +9,6 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, d
   const { draft, update, refreshGenerated } = preferences;
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState("");
-  const [resettingIdeas, setResettingIdeas] = useState(false);
-  const [noveltyNotice, setNoveltyNotice] = useState("");
   const submission = useRef(false);
   const synced = useRef("");
   const confirmationFlow = useDatasetConfirmation({ draft, job, busy, onGenerate,
@@ -121,19 +119,9 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, d
     await releaseCheckpoints();
   }
 
-  async function resetRecentIdeas() {
-    setResettingIdeas(true);
-    setNoveltyNotice("");
-    try {
-      await api("/workspace/dataset/novelty/reset", { input: draft });
-      setNoveltyNotice("Recent ideas reset for this concept. Current scenes and prompts are unchanged.");
-    } catch (err) { setError(err.message); }
-    finally { setResettingIdeas(false); }
-  }
-
-  return { starting, error, resettingIdeas, noveltyNotice, workflowActive, disabled,
+  return { starting, error, workflowActive, disabled,
     ...confirmationFlow,
     guidedLines, canPlanScenes, staleScenePlan, sceneUsable, validSceneCount, retryStage,
     scenePlanReady, canWrite, canContinue, remainingPromptCount, updateSceneSettings, updateWriterSettings,
-    sceneAction, generateDataset, generateScenes, continueDataset, editResult, releaseCheckpoints, clearResults, resetRecentIdeas };
+    sceneAction, generateDataset, generateScenes, continueDataset, editResult, releaseCheckpoints, clearResults };
 }

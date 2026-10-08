@@ -94,11 +94,13 @@ The same fight moved to a forest, rain, sunset or a different camera angle is no
 a new core idea by itself.
 
 Novelty never overrides HARD actions or guided anchors; when those are locked,
-vary only what the contract permits. History is reference-only guidance, not an
-output menu or absolute exclusions.
+vary only what the contract permits. Do not repeat a recently_used_ideas event
+when creative choices remain open. History contains previous events to vary away
+from, not an output menu. SCENE and the final writer follow the accepted idea;
+they do not invent novelty or replace its event to avoid a repeat.
 For a replacement, return only the requested indexes; do not regenerate siblings.
 Before returning, compare every proposed core event with the other proposed events
-and the supplied existing ideas. Resolve generated repeats within this same call
+and the supplied existing ideas and recently_used_ideas. Resolve generated repeats within this same call
 using permitted differences in action, roles or interaction, not camera/context
 changes alone. Preserve locked actions and authoritative guided repeats; novelty
 never permits inventing a different user requirement. Do not output this check.
@@ -130,7 +132,7 @@ def _ideas_schema(indexes):
             for index in indexes]}
 
 
-def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existing=()):
+def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existing=(), recent=()):
     source_context = json.loads(understanding_instruction(data).user_message)
     brief = validate_understanding(data.get("_confirmed_intent"), tuple(source_context["scopes"]))
     if brief["clarifications"]:
@@ -151,7 +153,7 @@ def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existin
         "output_contract": {"record_count": len(indexes), "indexes": indexes},
         "assignments": selected,
         "existing_ideas": [{key: row[key] for key in ("index", *IDEA_FIELDS) if key in row} for row in existing],
-        "recently_used_ideas": list(data.get("_recent_ideas", ()))[:40]}
+        "recently_used_ideas": list(recent)[:40]}
     budget = 512 + len(indexes) * 512
     return PromptInstruction(system_message=IDEAS_SYSTEM, user_message=json.dumps(context,
         ensure_ascii=False, separators=(",", ":")),
@@ -207,14 +209,15 @@ def validate_ideas(raw, indexes, *, allow_partial=False):
 
 
 class DatasetIdeasService:
-    """Use the Dataset-owned session once; no automatic retry, fallback or persistence."""
+    """Own repeat avoidance in the shared session; no automatic retry or disk persistence."""
 
-    def __init__(self, checkpoint):
-        self.checkpoint = checkpoint
+    def __init__(self, checkpoint, idea_history=None):
+        self.checkpoint, self.idea_history = checkpoint, idea_history
 
     def run(self, *, session, data, assignments, family="qwen", progress, indexes=None, existing=(), allow_partial=False):
         self.checkpoint()
-        instruction = ideas_instruction(data, assignments, family, indexes=indexes, existing=existing)
+        recent = self.idea_history.recent(data) if self.idea_history is not None else []
+        instruction = ideas_instruction(data, assignments, family, indexes=indexes, existing=existing, recent=recent)
         selected = json.loads(instruction.user_message)["assignments"]
         indexes = [row["index"] for row in selected]
         progress("Creating ideas from your approved understanding…")
@@ -225,6 +228,13 @@ class DatasetIdeasService:
             rows = validate_ideas(raw, indexes, allow_partial=allow_partial)
             previous = {row["index"]: row for row in existing if row["index"] in indexes}
             inputs = {row["index"]: row["input"] for row in assignments}
+            recent_events = {" ".join(idea.casefold().split()) for idea in recent}
+
+            def repeats_history(row):
+                event = " ".join(row["idea"].casefold().split())
+                anchored = data.get("source_mode") == "guided" and event == " ".join(inputs[row["index"]].casefold().split())
+                return event in recent_events and not anchored
+
             if allow_partial:
                 accepted = [{**row, "input": inputs[row["index"]]} for row in existing
                     if row["index"] not in indexes and row.get("idea_status") != "failed"]
@@ -237,15 +247,21 @@ class DatasetIdeasService:
                         audit = analyze_idea_diversity(data, [*accepted, candidate])
                         duplicate = any(issue["code"] == "exact_duplicate_idea" for record in audit["ideas"]
                             if record["index"] == row["index"] for issue in record["issues"])
-                        if unchanged or duplicate:
+                        if repeats_history(row):
+                            row = _failed_idea(row, row["index"], "The idea repeats a recently generated event. Choose a different permitted action or interaction.")
+                        elif unchanged or duplicate:
                             row = _failed_idea(row, row["index"], "The idea repeats an existing event or unchanged planning choices.")
                         else:
                             accepted.append(candidate)
                     if row.get("idea_status") == "failed":
                         progress(f"Idea {row['index']} queued for targeted repair; other ideas are retained.")
                     retained.append(row)
+                if self.idea_history is not None:
+                    self.idea_history.remember(data, retained)
                 return retained
             for row in rows:
+                if repeats_history(row):
+                    raise ValueError(f"Idea {row['index']} repeats a recently generated event. Choose a different permitted action or interaction.")
                 if row["index"] in previous and all(row[field] == previous[row["index"]].get(field) for field in IDEA_FIELDS):
                     raise ValueError("The replacement repeated the unchanged idea and all its planning choices.")
             comparison = [{**row, "input": inputs[row["index"]]} for row in rows]
@@ -257,6 +273,8 @@ class DatasetIdeasService:
             if duplicate_indexes:
                 raise ValueError("Ideas repeated the same core event; camera or context changes alone are not different ideas. "
                     "Duplicate idea indexes: " + ", ".join(map(str, duplicate_indexes)) + ".")
+            if self.idea_history is not None:
+                self.idea_history.remember(data, rows)
             return rows
         except (ValueError, TypeError, RecursionError) as error:
             raise BackendGenerationError("Dataset ideas returned invalid output: " + str(error)

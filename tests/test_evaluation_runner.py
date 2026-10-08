@@ -136,6 +136,5 @@ class EvaluationRunnerTests(unittest.TestCase):
         self.assertEqual(len(rows), 5)
         self.assertTrue(all(len(row["ideas"]) == 10 for row in rows))
         self.assertTrue(all("_confirmed_intent" in row and row["length"] == "Detailed" for row in inputs))
-        self.assertTrue(all(not {"variety", "visual_style", "custom_style"} & row.keys() for row in inputs))
         self.assertIs(histories[0], histories[-1])
         self.assertIsNotNone(histories[0])

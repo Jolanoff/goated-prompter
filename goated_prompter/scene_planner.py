@@ -121,13 +121,8 @@ class ScenePlanner:
         return rows
 
     def plan_ideas(self, *, session, data, assignments, family="qwen", progress, indexes=None, existing=(), allow_partial=False):
-        if self.idea_history is not None:
-            data = {**data, "_recent_ideas": self.idea_history.recent(data)}
-        rows = DatasetIdeasService(self.checkpoint).run(session=session, data=data,
+        return DatasetIdeasService(self.checkpoint, self.idea_history).run(session=session, data=data,
             assignments=assignments, family=family, progress=progress, indexes=indexes, existing=existing, allow_partial=allow_partial)
-        if self.idea_history is not None:
-            self.idea_history.remember(data, rows)
-        return rows
 
     def compose(self, *, session, data, assignments, ideas, family="qwen", progress, plan_update=None):
         rows = [{**idea, "self_check": "", "scene": idea.get("scene", ""),

@@ -16,18 +16,6 @@ async function loadReviewModal() {
   return (await import(`data:text/javascript;base64,${Buffer.from(linked).toString("base64")}`)).default;
 }
 
-test("the approval modal omits the retired style control even for a legacy request", async () => {
-  const Modal = await loadReviewModal();
-  const markup = renderToStaticMarkup(createElement(Modal, {
-    review: { status: "ready", confirmation_token: "synthetic", operation: "dataset",
-      input: { subject: "A portrait", visual_style: "Custom", custom_style: "RETIRED STYLE", variety: "Wide" },
-      brief: { requested_generation: "A portrait", clarifications: [] } },
-    busy: false, onRevise() {}, onConfirm() {}, onCancel() {},
-  }));
-  assert.doesNotMatch(markup, /Visual style|RETIRED STYLE|Variety/);
-  assert.match(markup, /A portrait/);
-});
-
 test("approval shows hard obligations, soft preferences and free choices before rich interpretation", () => {
   const sections = datasetUnderstandingSections({ requested_generation: "One red ceramic cup",
     hard: [{ scope: "all_outputs", text: "Cup base touching table visible" }],
