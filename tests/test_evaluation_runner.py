@@ -60,7 +60,7 @@ class EvaluationRunnerTests(unittest.TestCase):
 
     def args(self):
         return SimpleNamespace(target="Generic", length="Detailed", director="general_director",
-            creativity="Balanced", planning="Direct", style="Photorealistic", variety="Wide", history="on")
+            creativity="Balanced", planning="Direct", history="on")
 
     def test_real_workflow_entrypoints_use_frozen_responses_without_inference(self):
         calls = []
@@ -135,6 +135,7 @@ class EvaluationRunnerTests(unittest.TestCase):
             rows = novelty_cases({"id": "workshop", "concept": "Repair workshop", "runs": 5, "amount": 10}, {"backend": "mock"}, self.args())
         self.assertEqual(len(rows), 5)
         self.assertTrue(all(len(row["ideas"]) == 10 for row in rows))
-        self.assertTrue(all("_confirmed_intent" in row and row["variety"] == "Wide" and row["length"] == "Detailed" for row in inputs))
+        self.assertTrue(all("_confirmed_intent" in row and row["length"] == "Detailed" for row in inputs))
+        self.assertTrue(all(not {"variety", "visual_style", "custom_style"} & row.keys() for row in inputs))
         self.assertIs(histories[0], histories[-1])
         self.assertIsNotNone(histories[0])

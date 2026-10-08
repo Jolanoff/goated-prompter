@@ -152,12 +152,11 @@ def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existin
         "assignments": selected,
         "existing_ideas": [{key: row[key] for key in ("index", *IDEA_FIELDS) if key in row} for row in existing],
         "recently_used_ideas": list(data.get("_recent_ideas", ()))[:40]}
-    temperature, top_p = {"Focused": (.45, .85), "Balanced": (.7, .92), "Wide": (.85, .96)}[data["variety"]]
     budget = 512 + len(indexes) * 512
     return PromptInstruction(system_message=IDEAS_SYSTEM, user_message=json.dumps(context,
         ensure_ascii=False, separators=(",", ":")),
         model_family=family, diagnostic_stage="dataset:ideas", max_tokens=budget,
-        hard_max_tokens=budget, unlimited_tokens=False, temperature=temperature, top_p=top_p,
+        hard_max_tokens=budget, unlimited_tokens=False, temperature=.7, top_p=.92,
         json_output=True, json_schema=_ideas_schema(indexes),
         stream_character_limit=1024 + len(indexes) * (len(IDEA_FIELDS) * MAX_FIELD_CHARACTERS + 200))
 

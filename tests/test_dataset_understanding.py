@@ -259,13 +259,13 @@ class DatasetUnderstandingTests(unittest.TestCase):
         compact = self.compact_brief(identity_policy="mixed", requirements=facts)
         before = deepcopy(compact)
         data = valid_draft(source_mode="guided", inputs="Punch or block\nTwo strangers",
-            amount=10, target="Krea 2", length="Maximum Detail", variety="Wide")
+            amount=10, target="Krea 2", length="Maximum Detail")
         result = self.run_response(json.dumps(compact), data)
         entries = [{"scope": fact["scope"], "text": fact["text"]} for fact in facts]
         expected = dataset_understanding_fixture(
             requested_generation=compact["requested_generation"], character_count=2, identity_policy="mixed",
             expansion_freedom=compact["expansion_freedom"],
-            dataset_contents="10 image prompts; target: Krea 2; detail: Maximum Detail; visual style: Photorealistic; variety: Wide.",
+            dataset_contents="10 image prompts; target: Krea 2; detail: Maximum Detail.",
             hard=[entries[0], entries[1], entries[2], entries[5]], soft=[entries[3]], free=[entries[4]],
             fixed=[entries[0]], rules=[entries[0]], action_options=[entries[1]], interactions=[entries[1]],
             visible_evidence=[entries[2]], visibility_to_preserve=[entries[2]], may_vary=[entries[4]],
@@ -332,12 +332,12 @@ class DatasetUnderstandingTests(unittest.TestCase):
             self.run_response(json.dumps(self.compact_brief(requirements=[{**item, "sections": []}
                 for item in facts + [{**fact, "text": "Extra."}]])))
 
-    def test_compact_object_zero_normalization_and_custom_settings_are_preserved(self):
-        data = valid_draft(trigger_type="Object / product", visual_style="Custom", custom_style="Ink wash")
+    def test_compact_object_zero_normalization_is_preserved(self):
+        data = valid_draft(trigger_type="Object / product")
         result = self.run_response(json.dumps(self.compact_brief(character_count=0,
             identity_policy="not_applicable")), data)
         self.assertIsNone(result["character_count"])
-        self.assertIn("visual style: Ink wash", result["dataset_contents"])
+        self.assertEqual(result["dataset_contents"], "12 image prompts; target: Generic; detail: Medium.")
 
     def test_multiple_character_source_survives_a_lossy_brief_before_review(self):
         trigger = "2 girls, mira, (blue hair:1.2), bat wings, bat wings, hana, blonde hair, crystal wings"
@@ -450,20 +450,13 @@ class DatasetUnderstandingTests(unittest.TestCase):
         self.assertIn("Keep it fixed without forcing later stages to expose it", rules)
         self.assertEqual(json.loads(instruction.user_message)["source"]["subject"], data["subject"])
 
-    def test_selected_ui_styles_are_hard_unless_explicitly_optional(self):
-        for style, custom, constraints in (("Photorealistic", "", ""),
-                ("Custom", "Ink wash", ""),
-                ("Photorealistic", "", "The selected style is optional.")):
-            with self.subTest(style=style, optional=bool(constraints)):
-                instruction = understanding_instruction(valid_draft(
-                    visual_style=style, custom_style=custom, constraints=constraints))
-                rules = " ".join(instruction.system_message.split())
-                self.assertIn("An explicitly selected visual_style or custom_style is HARD unless the source explicitly marks that style as optional", rules)
-                self.assertIn("do not classify it as SOFT merely because it came from a UI selection", rules)
-                source = json.loads(instruction.user_message)["source"]
-                self.assertEqual(source["visual_style"], style)
-                self.assertEqual(source["custom_style"], custom)
-                self.assertEqual(source["constraints"], constraints)
+    def test_user_written_style_requirements_still_reach_understanding(self):
+        data = valid_draft(subject="A cup in ink wash.", constraints="Keep ink wash rendering in every image.")
+        instruction = understanding_instruction(data)
+        source = json.loads(instruction.user_message)["source"]
+        self.assertEqual(source["subject"], data["subject"])
+        self.assertEqual(source["constraints"], data["constraints"])
+        self.assertNotIn("selected visual_style", instruction.system_message)
 
     def test_scoped_contract_and_user_conflicts_survive_one_understanding_call(self):
         brief = dataset_understanding_fixture(

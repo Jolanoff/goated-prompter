@@ -34,7 +34,6 @@ def analyze_idea_diversity(data, rows):
     rows = [row for row in rows if row.get("idea", "").strip()]
     records = {row["index"]: {"index": row["index"], "issues": []} for row in rows}
     guided = data.get("source_mode") == "guided"
-    focused = data.get("variety") == "Focused"
     scope = (data.get("subject", "") + " " + data.get("constraints", "")).casefold()
     expression_scope = bool(re.search(r"(?:different|various|funny|facial)\s+(?:facial\s+)?expressions\b", scope))
     for position, left in enumerate(rows):
@@ -48,12 +47,12 @@ def analyze_idea_diversity(data, rows):
             code = None
             if a == b:
                 code = "exact_duplicate_idea"
-            elif facial and expression_scope or focused:
+            elif facial and expression_scope:
                 continue
             elif (aw and aw == bw and not facial) or (min(len(aw), len(bw)) >= 3 and len(aw & bw) / len(aw | bw) >= .85):
                 code = "similar_idea_category"
             if code:
                 for current, other in ((left, right), (right, left)):
                     records[current["index"]]["issues"].append({"code": code, "severity": "warning", "related": other["index"],
-                        "message": f"Idea may repeat the concept of idea {other['index']}. Check semantic variety, not just presentation differences."})
+                        "message": f"Idea may repeat the concept of idea {other['index']}. Check distinct activities, not just presentation differences."})
     return {"ideas": list(records.values()), "method": "concept-aware lexical hints; not semantic verification"}

@@ -1,6 +1,5 @@
 {
   "amount": 1,
-  "variety": "Balanced",
   "criteria": [
     "Concept adherence", "Semantic diversity", "Visual depictability", "One primary event",
     "Scene clarity", "Identity stability", "Constraint adherence",

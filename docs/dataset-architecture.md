@@ -165,7 +165,7 @@ score or universal ban on words such as “no.”
 Idea edits discard stale five-field descriptions and invalidate that scene/check/prompt.
 Scene edits retain the suggested idea descriptions but invalidate its check and prompt.
 A manual scene must be checked before enhancement. Output-setting changes reuse
-checked scenes; concept, guided input, amount, type, variety, rules or visual-style
+checked scenes; concept, guided input, amount, type or rules
 changes invalidate the plan. Server eligibility is accepted only while the client's
 scene matches its saved dependency projection; key order and prompt bookkeeping do
 not affect identity.

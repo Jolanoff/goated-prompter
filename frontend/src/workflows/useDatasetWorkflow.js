@@ -20,10 +20,9 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, d
   const disabled = busy || starting || preferences.working || !!confirmationFlow.confirmation;
   const guidedLines = draft?.inputs.split("\n").filter((line) => line.trim()).length || 0;
   const customReady = draft?.trigger_type !== "Custom" || draft.custom_type.trim();
-  const styleReady = draft?.visual_style !== "Custom" || draft.custom_style.trim();
   const sourceReady = draft?.source_mode !== "guided" || guidedLines > 0;
   const canPlanScenes = draft && !disabled && !noEngine && !preferences.conflict &&
-    draft.subject.trim() && customReady && styleReady && sourceReady;
+    draft.subject.trim() && customReady && sourceReady;
   const staleScenePlan = !!draft?.scene_plan_signature &&
     preferences.record?.scene_plan_matches_settings === false &&
     preferences.record?.draft.scene_plan_signature === draft.scene_plan_signature;

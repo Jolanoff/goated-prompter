@@ -24,7 +24,7 @@ PLAN_FIELDS = {"index", "input", "idea", "scene", "self_check",
 def scene_plan_signature(data, assignments):
     semantic = {key: data.get(key) for key in (
         "subject", "amount", "source_mode", "inputs", "trigger_type", "custom_type",
-        "variety", "constraints", "visual_style", "custom_style")}
+        "constraints")}
     semantic.update(version=SCENE_PLAN_VERSION, assignments=assignments)
     return hashlib.sha256(json.dumps(semantic, ensure_ascii=False, sort_keys=True,
                                     separators=(",", ":")).encode("utf-8")).hexdigest()[:20]

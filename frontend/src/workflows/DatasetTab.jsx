@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AlignLeft, ArrowRight, ChevronDown, Circle, CircleAlert, CircleCheck, CircleHelp, Copy, Cpu, Database, Download, FileJson, Layers3, Lightbulb, LoaderCircle, Palette, RefreshCw, SlidersHorizontal, Sparkles, Tag, Trash2, WandSparkles, Wrench } from "lucide-react";
+import { AlignLeft, ArrowRight, ChevronDown, Circle, CircleAlert, CircleCheck, CircleHelp, Copy, Cpu, Database, Download, FileJson, Layers3, Lightbulb, LoaderCircle, RefreshCw, SlidersHorizontal, Sparkles, Tag, Trash2, WandSparkles, Wrench } from "lucide-react";
 import { ui } from "../ui.js";
 import { orderDisplayPresets, presetDisplayLabel } from "../presetPresentation.js";
 import { TargetSelect } from "./WorkflowControls.jsx";
@@ -13,8 +13,6 @@ import DatasetIdeaDetails, { DatasetSceneCheck } from "./DatasetIdeaDetails.jsx"
 
 const triggerTypes = ["Character", "Multiple characters", "Animal", "Object / product", "Visual style",
   "Location / environment", "Brand / logo", "Typography / text", "Concept", "Custom"];
-const visualStyles = ["Photorealistic", "Cinematic photography", "Anime / manga", "Illustration", "3D render", "Graphic design", "Keep described style", "Mixed styles", "Custom"];
-const varieties = ["Focused", "Balanced", "Wide"];
 const datasetPages = [["configure", "Configure"], ["scenes", "Scenes"], ["dataset", "Dataset"]];
 
 function StatusChip({ label, status }) {
@@ -219,12 +217,6 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                     <option key={amount} value={amount}>{amount}</option>)}
                 </select>
               </label>
-              <label className={ui.field}><span>Variety</span>
-                <select className={ui.select} aria-label="Dataset variety" value={draft.variety}
-                  onChange={(event) => updateSceneSettings({ variety: event.target.value })}>
-                  {varieties.map((item) => <option key={item}>{item}</option>)}
-                </select>
-              </label>
             </div>
             {draft.trigger_type === "Custom" && <label className={ui.field}><span>Custom subject kind</span>
               <input className={ui.input} aria-label="Custom subject kind" maxLength={120} value={draft.custom_type}
@@ -292,11 +284,6 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
           </header>
           <fieldset disabled={disabled}>
             <div className="grid grid-cols-2 gap-4 tiny:grid-cols-1">
-              <label className={ui.field}><span><Palette size={14} aria-hidden="true" />Visual style</span>
-                <select className={ui.select} aria-label="Visual style" value={draft.visual_style} onChange={(event) => updateSceneSettings({ visual_style: event.target.value })}>
-                  {visualStyles.map((item) => <option key={item}>{item}</option>)}
-                </select>
-              </label>
               <label className={ui.field}><span><SlidersHorizontal size={14} aria-hidden="true" />Director preset</span>
                 <select className={ui.select} aria-label="Dataset director preset" value={draft.director_preset} onChange={(event) => updateWriterSettings({ director_preset: event.target.value })}>
                   {!director && <option value={draft.director_preset}>Unavailable — choose a preset</option>}
@@ -304,10 +291,6 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                 </select>
               </label>
             </div>
-            {draft.visual_style === "Custom" && <label className={`${ui.field} mt-4`}><span>Custom visual style</span>
-              <input className={ui.input} aria-label="Custom visual style" maxLength={500} value={draft.custom_style}
-                onChange={(event) => updateSceneSettings({ custom_style: event.target.value })} placeholder="Describe medium, realism, rendering, texture and finish…" />
-            </label>}
             <div className="mt-4 grid grid-cols-2 gap-4 tiny:grid-cols-1">
               <TargetSelect label="Target model" ariaLabel="Dataset target model" icon={<Cpu size={14} aria-hidden="true" />} value={draft.target} targets={targets} disabled={disabled} onChange={(target) => updateWriterSettings({ target })} />
               <label className={ui.field}><span><AlignLeft size={14} aria-hidden="true" />Prompt length</span>
