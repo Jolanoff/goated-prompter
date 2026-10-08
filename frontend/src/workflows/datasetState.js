@@ -74,18 +74,28 @@ function uniqueRequirements(items) {
 }
 
 export function datasetUnderstandingSummary(brief) {
-  const fixed = brief?.fixed || [];
-  const fixedKeys = new Set(fixed.map(requirementKey));
+  const mustVary = uniqueRequirements(brief?.must_vary || []);
+  const variationKeys = new Set(mustVary.map(requirementKey));
+  const fixed = uniqueRequirements(brief?.fixed || []).filter((item) => !variationKeys.has(requirementKey(item)));
+  const classifiedKeys = new Set([...fixed, ...mustVary].map(requirementKey));
   const contract = brief?.hard?.length ? brief.hard : ["rules", "visible_evidence", "interactions", "visibility_to_preserve"]
     .flatMap((field) => brief?.[field] || []);
-  const required = uniqueRequirements(contract).filter((item) => !fixedKeys.has(requirementKey(item)));
+  const required = uniqueRequirements(contract).filter((item) => !classifiedKeys.has(requirementKey(item)));
   return {
-    consistent: uniqueRequirements(fixed).map(scopedRequirement),
+    consistent: fixed.map(scopedRequirement),
     mayVary: uniqueRequirements([...(brief?.may_vary || []), ...(brief?.free || [])]).map(scopedRequirement),
-    mustVary: uniqueRequirements(brief?.must_vary || []).map(scopedRequirement),
+    mustVary: mustVary.map(scopedRequirement),
     everyImage: required.filter((item) => item.scope === "all_outputs").map(scopedRequirement),
     scoped: required.filter((item) => item.scope !== "all_outputs").map(scopedRequirement),
   };
+}
+
+function reviewAuthority(field, item, brief) {
+  if (["hard", "soft", "free", "physical_conflicts"].includes(field)) return field;
+  if (field === "may_vary") return "free";
+  if (field === "natural_occlusions") return ["hard", "soft", "free"].find((kind) =>
+    (brief[kind] || []).some((entry) => requirementKey(entry) === requirementKey(item))) || "context";
+  return "hard";
 }
 
 export function datasetUnderstandingSections(brief) {
@@ -98,13 +108,29 @@ export function datasetUnderstandingSections(brief) {
     visibility_to_preserve: "What must remain visible", physical_conflicts: "Physical conflicts and possible resolutions",
   };
   if (brief.action_options) labels.action_options = "Action alternatives—not all in one image";
-  return Object.entries(labels).map(([field, label]) => ({ label,
-    items: (brief[field] || []).map((item) => {
+  const facts = new Map();
+  return Object.entries(labels).map(([field, label]) => {
+    const records = [];
+    for (const item of brief[field] || []) {
       const text = field === "physical_conflicts"
         ? `${item.conflict} ${item.compatible_resolution || "Needs clarification; no compatible resolution established."}`
         : item.text;
-      return scopedRequirement({ ...item, text });
-    }),
+      const key = field === "physical_conflicts"
+        ? JSON.stringify([field, item.scope, item.conflict, item.compatible_resolution])
+        : JSON.stringify([reviewAuthority(field, item, brief), requirementKey(item)]);
+      const existing = facts.get(key);
+      if (existing) {
+        if (existing.label !== label && !existing.annotations.includes(label)) existing.annotations.push(label);
+      } else {
+        const record = { label, text: scopedRequirement({ ...item, text }), annotations: [] };
+        facts.set(key, record);
+        records.push(record);
+      }
+    }
+    return { label, records };
+  }).map(({ label, records }) => ({ label, items: records.map(({ text }) => text),
+    ...(records.some(({ annotations }) => annotations.length)
+      ? { annotations: records.map(({ annotations }) => annotations) } : {}),
   }));
 }
 
@@ -131,6 +157,7 @@ export function isDatasetSceneCurrent(row, record) {
 }
 
 export function datasetRetryStage(row, eligibility) {
+  if (row.failure_stage === "idea" || row.idea_status === "failed") return "idea";
   if (isDatasetSceneUsable(eligibility)) return "prompt";
   return row.idea?.trim() ? "scene" : "idea";
 }

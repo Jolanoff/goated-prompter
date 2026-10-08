@@ -52,6 +52,27 @@ reducing the other buckets' capacities. The app expands these facts into the sam
 brief, supplies output-setting prose from the request, and retains the supplied
 character trigger before approval. Existing full briefs remain valid; saved reviews,
 approval tickets, IDEAS and SCENE still consume the unchanged public contract.
+Generation uses bucket-specific review-tag schemas: HARD excludes `may_vary`, FREE
+allows only `may_vary`, SOFT has no review tags, and CONTEXT requires exactly
+`natural_occlusions`. Required overlaps may still be HARD. This prevents constrained
+decoding from producing cross-authority tags that the projection would reject;
+nonconforming responses remain rejected, without moving or dropping their facts.
+The generation instructions request minified, single-line JSON, preserving whitespace
+inside string values. This is model guidance, not a JSON-schema whitespace guarantee;
+valid pretty-printed responses remain accepted without a formatting retry.
+UNDERSTAND also requests semantic brevity: no synonymous restatements or separate
+facts already contained in another same-scope, same-authority fact. Ordinary
+unspecified freedoms are grouped categorically by scope and policy rather than
+enumerating every possible trait. Explicit restrictions, owners and choose-once
+versus per-image policies remain distinct. Array limits are ceilings, not targets;
+complex requests retain their full existing capacity. This is model guidance, not
+automatic semantic deduplication or truncation of a generated brief.
+The review summary lists mandatory variation once instead of repeating it among
+image/scoped requirements. Within the optional details view, exact scoped facts
+with the same authority appear once, with their additional review categories shown
+as annotations. Different wording, literal case/spacing, scopes or authorities
+remain separate, and conflict resolutions remain inspectable. The original brief,
+approval and downstream inputs are not rewritten by these display changes.
 Explicit user counts, actions, contacts, exclusions and required visual evidence
 belong in hard, retaining their scope and qualifiers. A semantic trait does not
 automatically require exposure. Unresolved user conflicts block approval.
@@ -61,6 +82,20 @@ characters. An explicit replacement requests only its index. History and diversi
 hints never override a guided action or approved hard requirement. The six fields
 are proposals, not frozen staging: SCENE may adjust generated details. There is no
 Fast/Quality dispatch, automatic substitute idea or fallback plan.
+IDEAS requests minified, single-line JSON and asks the model to resolve generated
+repeats within that same call using permitted event differences. During a fresh
+batch, exact normalized duplicates retain the first valid idea and mark only later
+repeats for repair; permitted guided repeats remain accepted. Invalid individual
+rows also become explicit failed slots without dropping valid siblings. Valid scenes
+and prompts finish first, then one replacement call requests only failed idea indexes,
+followed by their scene/writer calls. Replacement validation still rejects unchanged
+or repeated ideas; unsuccessful repairs leave an inspectable partial batch, not an
+unbounded retry loop. Replacement scenes are composed independently: a scene failure
+is recorded on that slot while other usable replacements reach the writer. No failed
+scene is retried automatically. Explicit single-idea replacement remains strict. Lexical
+similarity remains a nonblocking hint, not semantic verification. There is no separate
+rejection threshold at 20 items. Globally malformed JSON or a wrong batch size is
+still rejected rather than guessing missing assignments.
 
 SCENE makes one call per image. It expands a suggested idea into one spatial
 paragraph of at most 3,000 characters. Before returning `PASS`, its single focused
@@ -70,6 +105,10 @@ that same call. For example, a generated upper-half cup crop yields to a hard
 requirement to show its base touching the table. User-required crops stay hard.
 This is model self-checking, not independently verified physics. There is no
 structured geometry output, separate evaluator or extra correction call.
+SCENE also requests minified, single-line JSON. A three-line `REPAIR:` remains a
+single JSON string with escaped line breaks. Both stages send compact input JSON,
+retain their sampling and token budgets, and accept valid pretty-printed responses
+without a formatting retry. Generation guidance alone does not guarantee minification.
 
 `REPAIR:` is reserved for incompatible actual user hard requirements: its two further
 lines name the conflict and ask the needed clarification. It blocks enhancement.
@@ -77,8 +116,10 @@ Revise conflicting requirements through UNDERSTAND and approve them again; **Rep
 scene** cannot waive them. That button remains a single explicit build/check attempt
 for saved diagnoses, preserving hard requirements and compatible scene content.
 Another REPAIR stays blocked; nothing automatically loops or weakens requirements.
-Invalid IDEAS/SCENE output stops that stage without automatic retry; already
-published ideas and completed scenes remain checkpointed. The parser validates
+Invalid SCENE output stops the initial scene stage without automatic retry; already
+published ideas and completed scenes remain checkpointed. During deferred idea
+recovery, it fails only that replacement slot and leaves siblings progressing.
+The parser validates
 the response shape, not whether the model's conflict diagnosis is semantically true.
 
 Accepted scene prose is Builder's entire creative input. `dataset_instruction`
@@ -92,12 +133,25 @@ and MiniMax planning/validation remain independent and available.
 
 ## Recovery and text preservation
 
+Normal **Generate prompts** always runs ideas → scenes → prompts after the first
+UNDERSTAND approval, regardless of the legacy `plan_scenes_first` saved flag.
+**Generate scenes only** is an explicit separate action for manual scene review;
+Continue reuses the accepted plan and writes only its missing prompts.
+
 Final enhancement retains up to three bounded retries for transport errors, malformed
 target output, missing protected triggers, positive-content leakage and runaway
 generation. These retries never replan or repair the scene. Transport retries repeat
 the instruction; output correction stays within the accepted scene and target format.
 Runaway retries reduce the output allowance. A sentence-complete prefix may be
 accepted only after normal output validation.
+
+With trigger expansion disabled, Dataset restores a missing literal numeric count
+from its equivalent English number-word phrase (1–20) before strict validation,
+for example `two men` → `2 men`. This changes spelling only: it does not add subjects,
+rewrite synonyms, infer counts or change the accepted scene. Quoted lettering,
+identifier boundaries, compound numbers and already-present exact terms are left
+alone. Ideogram restoration is limited to `high_level_description`. The correction
+is reported in progress/activity; missing triggers still use the bounded writer retries.
 
 Generic text cleanup trims outer whitespace only. Dataset's conservative sanitizer
 removes complete standalone exclusion/meta clauses, not useful mixed prose, quoted

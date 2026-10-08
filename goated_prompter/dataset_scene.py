@@ -112,7 +112,11 @@ If repair_request is supplied, address its diagnosis while preserving HARD and o
 valid relationships. A previous REPAIR diagnosis is not authority to weaken HARD.
 An unresolved user conflict still needs clarification; the repair button cannot waive it.
 
-Return ONLY one JSON object with exactly scene (nonempty paragraph, at most 3000
+Return ONLY one minified JSON object on a single line. No indentation or optional
+whitespace outside string values. Preserve supplied literal text inside strings;
+escape control characters normally as JSON, including the REPAIR line breaks.
+Formatting compaction must not omit facts or change qualifiers.
+Include exactly scene (nonempty paragraph, at most 3000
 characters) and self_check (PASS or the three-line REPAIR text, at most 1200 characters).
 No Markdown fences, extra fields, geometry object or downstream prompt syntax.
 
@@ -180,7 +184,8 @@ def scene_instruction(data, assignment, idea, family="qwen", *, repair=False):
         context["current_scene"] = idea["scene"]
     if repair and idea.get("self_check", "").startswith("REPAIR:"):
         context["repair_request"] = validate_self_check(idea["self_check"])
-    return PromptInstruction(system_message=SCENE_SYSTEM, user_message=json.dumps(context, ensure_ascii=False),
+    return PromptInstruction(system_message=SCENE_SYSTEM, user_message=json.dumps(context,
+        ensure_ascii=False, separators=(",", ":")),
         model_family=family, diagnostic_stage="dataset:build_scene", max_tokens=1536,
         hard_max_tokens=1536, unlimited_tokens=False, temperature=.25, top_p=.85,
         json_output=True,

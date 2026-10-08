@@ -18,7 +18,6 @@ export async function confirmDatasetReview(page) {
 
 export async function generateDataset(page, amount = "2") {
   await openDatasetPage(page, "Configure");
-  await page.getByLabel("Plan scenes first", { exact: true }).uncheck();
   const admission = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset") && response.status() === 202);
   await page.getByRole("button", { name: `Generate ${amount} ${Number(amount) === 1 ? "prompt" : "prompts"}`, exact: true }).click();
   await confirmDatasetReview(page);
@@ -27,9 +26,8 @@ export async function generateDataset(page, amount = "2") {
 
 export async function planDatasetScenes(page, amount = "2") {
   await openDatasetPage(page, "Configure");
-  await page.getByLabel("Plan scenes first", { exact: true }).check();
   const admission = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset/scenes") && response.status() === 202);
-  await page.getByRole("button", { name: `Generate ${amount} ${Number(amount) === 1 ? "scene" : "scenes"}`, exact: true }).click();
+  await page.getByRole("button", { name: `Generate ${amount} ${Number(amount) === 1 ? "scene" : "scenes"} only`, exact: true }).click();
   await confirmDatasetReview(page);
   await expect(page.getByRole("tab", { name: "Scenes", exact: true })).toHaveAttribute("aria-selected", "true");
   return admission;

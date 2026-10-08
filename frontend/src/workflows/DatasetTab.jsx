@@ -68,7 +68,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
   const { starting, error, resettingIdeas, noveltyNotice, workflowActive, disabled,
     guidedLines, canPlanScenes, staleScenePlan, sceneUsable, validSceneCount, retryStage,
     canWrite, canContinue, remainingPromptCount, updateSceneSettings, updateWriterSettings,
-    sceneAction, generateDataset, continueDataset, editResult, releaseCheckpoints, clearResults,
+    sceneAction, generateDataset, generateScenes, continueDataset, editResult, releaseCheckpoints, clearResults,
     resetRecentIdeas, confirmation, understanding, reviseConfirmation, cancelConfirmation, confirmRequest } = useDatasetWorkflow({ preferences, job, busy, active, noEngine,
       director, onGenerate: startGeneration, onReleaseJobs });
   const [clock, setClock] = useState(Date.now());
@@ -87,8 +87,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
   const isGenerating = active && job?.kind === "dataset";
   const scenePlannerBusy = active && job?.kind === "dataset_scenes";
   const generationBusy = starting || isGenerating || scenePlannerBusy;
-  const canGenerate = draft?.plan_scenes_first ? canPlanScenes : canWrite;
-  const generationUnit = `${draft?.plan_scenes_first ? "scene" : "prompt"}${draft?.amount === 1 ? "" : "s"}`;
+  const generationUnit = `prompt${draft?.amount === 1 ? "" : "s"}`;
   const showContinue = !!draft?.scene_plan.length && (draft.plan_scenes_first || remainingPromptCount > 0);
 
   useEffect(() => {
@@ -281,7 +280,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                    <small className="text-xs text-muted">Resets temporary novelty hints, not your current scenes.</small>
                  </div>
                  {noveltyNotice && <p className={ui.subtleNote} role="status">{noveltyNotice}</p>}
-                  <HelpDetails>Generate starts fresh: confirm the request once, then ideas, scenes and prompts run in order. Enable Plan scenes first to pause for review; Continue then keeps your approved plan and completed prompts, and generates only missing prompts. Changed settings or expired approval need a new review. Scene edits need a new check before enhancement; Repair scene checks one scene without changing its siblings. Recent-idea hints stay in RAM and expire automatically.</HelpDetails>
+                   <HelpDetails>Generate prompts starts fresh: confirm the request once, then ideas, scenes and prompts run automatically in order. Generate scenes only pauses for manual review; Continue keeps your approved plan and completed prompts, and generates only missing prompts. Repeated or invalid ideas are repaired once after valid work finishes, without discarding good results. Changed settings or expired approval need a new review. Scene edits need a new check before enhancement; Repair scene checks one scene without changing its siblings. Recent-idea hints stay in RAM and expire automatically.</HelpDetails>
                </div>
              </details>
           </fieldset>
@@ -348,15 +347,13 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
         </section>
       </div>
         <footer className="dataset-config-actions">
-          <label className="flex items-center gap-2 text-xs text-muted">
-            <input type="checkbox" aria-label="Plan scenes first" checked={draft.plan_scenes_first === true}
-              disabled={disabled} onChange={(event) => update({ plan_scenes_first: event.target.checked })} />
-            Plan scenes first
-          </label>
+          <button className={ui.button} disabled={!canPlanScenes} onClick={generateScenes}>
+            <Layers3 size={15} />Generate {draft.amount} {draft.amount === 1 ? "scene" : "scenes"} only
+          </button>
           <div>
             {showContinue && <button className={ui.button} disabled={!canContinue}
               onClick={continueToDataset}><ArrowRight size={15} />Continue</button>}
-            <button className={ui.primaryButton} disabled={!canGenerate} onClick={generateDataset}>
+            <button className={ui.primaryButton} disabled={!canWrite} onClick={generateDataset}>
               <Sparkles size={17} />{generationBusy ? "Generating" : "Generate"} {draft.amount} {generationUnit}{generationBusy ? "…" : ""}
             </button>
           </div>
@@ -421,7 +418,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
         <div className="mt-4 flex flex-wrap gap-3">
           {showContinue && <button className={ui.primaryButton} disabled={!canContinue}
             onClick={continueToDataset}><ArrowRight size={15} />Continue</button>}
-          <button className={ui.button} disabled={!canGenerate} onClick={generateDataset}><RefreshCw size={14} />Generate new scenes</button>
+          <button className={ui.button} disabled={!canPlanScenes} onClick={generateScenes}><RefreshCw size={14} />Generate new scenes</button>
           <button className={ui.button} disabled={!draft.scene_plan.length}
              onClick={() => exportDataset("dataset-scenes.json", JSON.stringify(draft.scene_plan, null, 2), "application/json")}><FileJson size={14} />Scenes JSON</button>
         </div>

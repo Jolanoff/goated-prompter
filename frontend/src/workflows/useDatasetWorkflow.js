@@ -88,8 +88,13 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, d
   }
 
   function generateDataset() {
-    if (!(draft?.plan_scenes_first ? canPlanScenes : canWrite) || submission.current) return;
-    confirmationFlow.requestConfirmation(draft.plan_scenes_first ? "dataset/scenes" : "dataset", {}, freshDatasetRequest(draft));
+    if (!canWrite || submission.current) return;
+    confirmationFlow.requestConfirmation("dataset", {}, freshDatasetRequest(draft));
+  }
+
+  function generateScenes() {
+    if (!canPlanScenes || submission.current) return;
+    confirmationFlow.requestConfirmation("dataset/scenes", {}, freshDatasetRequest(draft));
   }
 
   async function continueDataset() {
@@ -131,5 +136,5 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, d
     ...confirmationFlow,
     guidedLines, canPlanScenes, staleScenePlan, sceneUsable, validSceneCount, retryStage,
     scenePlanReady, canWrite, canContinue, remainingPromptCount, updateSceneSettings, updateWriterSettings,
-    sceneAction, generateDataset, continueDataset, editResult, releaseCheckpoints, clearResults, resetRecentIdeas };
+    sceneAction, generateDataset, generateScenes, continueDataset, editResult, releaseCheckpoints, clearResults, resetRecentIdeas };
 }

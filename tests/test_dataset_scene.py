@@ -37,6 +37,40 @@ class DatasetSceneTests(unittest.TestCase):
         return self.service.run(session=self.session, data=self.data, assignment=self.assignment,
             idea=self.idea, progress=lambda _message: None, **options)
 
+    def test_scene_requests_minified_generation_without_changing_repair_lines_or_sampling(self):
+        self.idea.update(scene=SCENE, self_check=REPAIR)
+        for repair in (False, True):
+            with self.subTest(repair=repair):
+                instruction = scene_instruction(self.data, self.assignment, self.idea, repair=repair)
+                rules = " ".join(instruction.system_message.split())
+                self.assertTrue("Return ONLY one minified JSON object on a single line" in rules)
+                self.assertTrue("No indentation or optional whitespace outside string values" in rules)
+                self.assertTrue("Formatting compaction must not omit facts or change qualifiers" in rules)
+                context = json.loads(instruction.user_message)
+                self.assertEqual(instruction.user_message, json.dumps(context, ensure_ascii=False, separators=(",", ":")))
+                self.assertEqual(context["current_scene"], SCENE)
+                if repair:
+                    self.assertEqual(context["repair_request"], REPAIR)
+                self.assertEqual((instruction.max_tokens, instruction.hard_max_tokens), (1536, 1536))
+                self.assertEqual((instruction.temperature, instruction.top_p), (.25, .85))
+                self.assertTrue(instruction.json_output)
+                self.assertIsNone(instruction.json_schema)
+
+    def test_minified_scene_and_repair_responses_match_pretty_json_in_one_call(self):
+        scene = 'A guard holds a sign reading "NO ENTRY" outside a caf\u00e9, viewed at eye level.'
+        for check in ("PASS", REPAIR):
+            for formatting in ({"indent": 2}, {"separators": (",", ":")}):
+                with self.subTest(check=check, formatting=formatting):
+                    self.session.reset_mock()
+                    self.session.generate.return_value = json.dumps({"scene": scene, "self_check": check},
+                        ensure_ascii=False, **formatting)
+                    row = self.service.run(session=self.session, data=self.data, assignment=self.assignment,
+                        idea=self.idea, progress=lambda _message: None)
+                    self.assertEqual(row["scene"], scene)
+                    self.assertEqual(row["self_check"], check)
+                    self.assertEqual(row["scene_status"], "valid" if check == "PASS" else "repair_required")
+                    self.session.generate.assert_called_once()
+
     def test_build_and_self_check_share_one_call_and_preserve_fixed_idea_descriptions(self):
         before = deepcopy(self.idea)
         row = self.build()
