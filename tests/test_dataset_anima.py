@@ -126,7 +126,7 @@ class DatasetAnimaTests(unittest.TestCase):
         instruction = dataset_instruction(self.request, self.data, 1, plan_item=self.scene)
         message = instruction.system_message
         self.assertNotIn("ANIMA DATASET OUTPUT", message, "A second Anima layout overrides the target adapter.")
-        self.assertRegex(message, r"Do not (?:split a flat tag list into named character blocks|invent named blocks for flat tag inputs)")
+        self.assertIn("Do not output or repeat it, rebuild character tag blocks", message)
         self.assertIn("The application inserts the locked trigger unchanged at the beginning", message)
         self.assertNotIn("For Anima, keep character tag blocks", message)
         self.assertIn(json.dumps([CHARACTER_TRIGGER]), message)
