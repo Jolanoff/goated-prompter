@@ -55,11 +55,13 @@ test("export downloads only on click, retains confirmed understanding, and does 
   expect(downloads).toHaveLength(1);
 });
 
-test("review export omits approval credentials and does not confirm the request", async ({ page }) => {
+test("review export omits approval credentials and does not confirm the request", async ({ page, request }) => {
   await configure(page);
+  await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Generate 2 prompts", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Review your Dataset request" });
   await expect(dialog.getByRole("button", { name: "Confirm and generate prompts" })).toBeEnabled();
+  const before = await (await request.get("/api/workspace/settings/dataset")).json();
   const writes = [];
   page.on("request", (event) => { if (event.method() !== "GET") writes.push(event.url()); });
   const log = await exportLog(page, dialog);
@@ -68,6 +70,7 @@ test("review export omits approval credentials and does not confirm the request"
   expect(log.job.result.brief.requested_generation).toBe(log.dataset_idea);
   expect(log.scene_plan).toEqual([]);
   expect(writes).toEqual([]);
+  expect(await (await request.get("/api/workspace/settings/dataset")).json()).toEqual(before);
   await expect(dialog.getByRole("button", { name: "Confirm and generate prompts" })).toBeEnabled();
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   const cancelled = await exportLog(page);

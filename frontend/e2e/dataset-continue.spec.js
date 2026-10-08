@@ -112,9 +112,6 @@ test("Continue keeps the plan and completed prompt, generates only missing promp
   await page.getByRole("button", { name: "Dataset", exact: true }).click();
   const writes = [];
   page.on("request", (event) => { if (event.method() === "POST") writes.push(event.url()); });
-  await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await expect(page.getByRole("tab", { name: "Scenes", exact: true })).toHaveAttribute("aria-selected", "true");
-  expect(writes).toEqual([]);
   const admission = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset") && response.status() === 202);
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   const accepted = await admission;
@@ -132,4 +129,31 @@ test("Continue keeps the plan and completed prompt, generates only missing promp
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page.getByRole("tab", { name: "Dataset", exact: true })).toHaveAttribute("aria-selected", "true");
   expect(writes).toEqual([]);
+});
+
+test("Continue is absent without scenes, including when Plan scenes first is enabled", async ({ page }) => {
+  await openDataset(page);
+  await expect(page.getByRole("button", { name: "Continue", exact: true })).toHaveCount(0);
+  await page.getByLabel("Plan scenes first", { exact: true }).check();
+  await expect(page.getByRole("button", { name: "Continue", exact: true })).toHaveCount(0);
+  await openDatasetPage(page, "Scenes");
+  await expect(page.getByRole("button", { name: "Continue", exact: true })).toHaveCount(0);
+});
+
+test("Configure Continue writes existing scenes even when Plan scenes first is off", async ({ page, request }) => {
+  const record = await seedCurrentPlan(request);
+  expect((await request.put("/api/workspace/settings/dataset", {
+    data: { revision: record.revision, draft: { ...record.draft, plan_scenes_first: false } },
+  })).ok()).toBe(true);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  await expect(page.getByLabel("Plan scenes first", { exact: true })).not.toBeChecked();
+  const admission = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset") && response.status() === 202);
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  const accepted = await admission;
+  expect(accepted.request().postDataJSON().resume).toBe(true);
+  const completed = await finish(request, (await accepted.json()).id);
+  expect(completed.llm_trace.request_number).toBe(2);
+  expect(completed.result.scene_plan.map((row) => row.scene)).toEqual(record.draft.scene_plan.map((row) => row.scene));
+  await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/duck_token/);
 });

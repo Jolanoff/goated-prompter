@@ -62,6 +62,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
   const { draft, update } = preferences;
   const [page, setPage] = useState("configure");
   const advancingJob = useRef("");
+  const navigatedJob = useRef("");
   const availablePresets = orderDisplayPresets(presets || []);
   const director = availablePresets.find((item) => item.id === draft?.director_preset);
   const { starting, error, resettingIdeas, noveltyNotice, workflowActive, disabled,
@@ -88,8 +89,14 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
   const generationBusy = starting || isGenerating || scenePlannerBusy;
   const canGenerate = draft?.plan_scenes_first ? canPlanScenes : canWrite;
   const generationUnit = `${draft?.plan_scenes_first ? "scene" : "prompt"}${draft?.amount === 1 ? "" : "s"}`;
+  const showContinue = !!draft?.scene_plan.length && (draft.plan_scenes_first || remainingPromptCount > 0);
 
   useEffect(() => {
+    if (active && job?.kind === "dataset" && navigatedJob.current !== job.id) {
+      navigatedJob.current = job.id;
+      advancingJob.current = job.id;
+      setPage("scenes");
+    }
     if (!advancingJob.current || job?.id !== advancingJob.current) return;
     const scenes = job.result?.scene_plan || [];
     if (job.status === "succeeded" || job.result?.completed > 0 || (scenes.length && scenes.every((row) =>
@@ -100,7 +107,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
     } else if (["failed", "cancelled", "interrupted"].includes(job.status)) {
       advancingJob.current = "";
     }
-  }, [job]);
+  }, [job, active]);
   const triggerParts = draft?.trigger_connected === false
     ? draft.trigger.split(/(?:[,\n]+|\s+and\s+)/i).map((part) => part.trim()).filter(Boolean)
     : draft?.trigger.trim() ? [draft.trigger.trim()] : [];
@@ -128,6 +135,11 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
     window.scrollTo({ top: 0 });
   }
 
+  function continueToDataset() {
+    if (remainingPromptCount) void continueDataset();
+    else goToStep("dataset");
+  }
+
   function navigateTabs(event, index) {
     const nextIndex = event.key === "ArrowRight" ? (index + 1) % datasetPages.length
       : event.key === "ArrowLeft" ? (index + datasetPages.length - 1) % datasetPages.length
@@ -141,9 +153,11 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
 
   async function startGeneration(operation, input) {
     const accepted = await onGenerate(operation, input);
+    if (accepted && operation === "dataset/scene") navigatedJob.current = accepted.id;
     if (accepted && operation === "dataset/scenes") goToStep("scenes");
     if (accepted && operation === "dataset") {
       const planning = !input.input.scene_plan.length;
+      navigatedJob.current = accepted.id;
       advancingJob.current = planning ? accepted.id : "";
       goToStep(planning ? "scenes" : "dataset");
     }
@@ -340,8 +354,8 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
             Plan scenes first
           </label>
           <div>
-            {draft.plan_scenes_first && <button className={ui.button} disabled={disabled || staleScenePlan || !draft.scene_plan.length}
-              onClick={() => goToStep("scenes")}><ArrowRight size={15} />Continue</button>}
+            {showContinue && <button className={ui.button} disabled={!canContinue}
+              onClick={continueToDataset}><ArrowRight size={15} />Continue</button>}
             <button className={ui.primaryButton} disabled={!canGenerate} onClick={generateDataset}>
               <Sparkles size={17} />{generationBusy ? "Generating" : "Generate"} {draft.amount} {generationUnit}{generationBusy ? "…" : ""}
             </button>
@@ -405,8 +419,8 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
           </article>)}
         </div>
         <div className="mt-4 flex flex-wrap gap-3">
-          {draft.plan_scenes_first && <button className={ui.primaryButton} disabled={!canContinue}
-            onClick={() => remainingPromptCount ? continueDataset() : goToStep("dataset")}><ArrowRight size={15} />Continue</button>}
+          {showContinue && <button className={ui.primaryButton} disabled={!canContinue}
+            onClick={continueToDataset}><ArrowRight size={15} />Continue</button>}
           <button className={ui.button} disabled={!canGenerate} onClick={generateDataset}><RefreshCw size={14} />Generate new scenes</button>
           <button className={ui.button} disabled={!draft.scene_plan.length}
              onClick={() => exportDataset("dataset-scenes.json", JSON.stringify(draft.scene_plan, null, 2), "application/json")}><FileJson size={14} />Scenes JSON</button>

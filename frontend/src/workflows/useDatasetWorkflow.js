@@ -34,7 +34,7 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, d
   const retryStage = (row) => datasetRetryStage(row, { usable: sceneUsable(row) });
   const scenePlanReady = !staleScenePlan && !!draft?.scene_plan_signature && validSceneCount > 0;
   const canWrite = canPlanScenes && director && draft.trigger.trim();
-  const canContinue = draft?.plan_scenes_first && canWrite && scenePlanReady;
+  const canContinue = canWrite && scenePlanReady;
   const remainingPromptCount = draft?.scene_plan?.filter((row) => sceneUsable(row) && !hasCompletedDatasetPrompt(row, draft.results)).length || 0;
 
   useEffect(() => {

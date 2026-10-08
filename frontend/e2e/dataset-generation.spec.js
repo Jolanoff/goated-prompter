@@ -22,6 +22,30 @@ function datasetPosts(page) {
   return posts;
 }
 
+test("reloading an automatic batch advances to Dataset without a Continue click or second submission", async ({ page, request }) => {
+  let finishJob = false;
+  const automatic = { id: "restored-auto-dataset", kind: "dataset", revision: 1,
+    status: "running", progress: "Planning scenes", result: { scene_plan: [], completed: 0 }, events: [] };
+  await page.route("**/api/bootstrap", async (route) => {
+    const response = await route.fetch();
+    await route.fulfill({ response, json: { ...await response.json(), active_job: automatic } });
+  });
+  await page.route("**/api/jobs/restored-auto-dataset", (route) => route.fulfill({ json: finishJob
+    ? { ...automatic, revision: 2, status: "succeeded", result: { scene_plan: [{ index: 1, scene_status: "valid" }], completed: 1 } }
+    : automatic }));
+  await page.goto("/");
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  const posts = datasetPosts(page);
+  await expect(page.locator(".dataset-view").getByRole("status").filter({ hasText: "Planning scenes" })).toBeVisible();
+  const saved = await (await request.get("/api/workspace/settings/dataset")).json();
+  expect((await request.put("/api/workspace/settings/dataset", { data: { revision: saved.revision,
+    draft: { ...saved.draft, results: [{ index: 1, input: "", idea: "A duck rests", scene: "A duck rests on a bench", prompt: "duck_token: a duck rests on a bench" }] } } })).ok()).toBe(true);
+  finishJob = true;
+  await expect(page.getByRole("tab", { name: "Dataset", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByLabel("Dataset prompt 1")).toHaveValue("duck_token: a duck rests on a bench");
+  expect(posts).toEqual([]);
+});
+
 test("Configure Generate completes scenes and prompts after one Understanding review", async ({ page, request }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Dataset", exact: true }).click();
