@@ -55,14 +55,13 @@ for (const theme of ["dark", "light"]) for (const width of [1440, 390]) {
   });
 }
 
-test("Plan scenes first confirms fresh scenes and stops without creating prompts", async ({ page, request }) => {
+test("Generate scenes only confirms fresh scenes and stops without creating prompts", async ({ page, request }) => {
   await openDataset(page);
-  await page.getByLabel("Plan scenes first", { exact: true }).check();
   const prompts = [];
   page.on("request", (event) => {
     if (event.method() === "POST" && new URL(event.url()).pathname === "/api/workspace/dataset") prompts.push(event);
   });
-  await page.getByRole("button", { name: /^Generate 2 (prompts|scenes)$/ }).click();
+  await page.getByRole("button", { name: "Generate 2 scenes only", exact: true }).click();
   await confirmDatasetReview(page);
   await expect(page.getByRole("tab", { name: "Scenes", exact: true })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByLabel("Planned scene 2")).toHaveValue(/mock scene 2/);
@@ -87,7 +86,7 @@ test("Generate reviews an isolated fresh request without changing a saved edited
   await page.goto("/");
   await page.getByRole("button", { name: "Dataset", exact: true }).click();
   const analysis = page.waitForRequest("**/api/workspace/dataset/understand");
-  await page.getByRole("button", { name: /^Generate 2 (prompts|scenes)$/ }).click();
+  await page.getByRole("button", { name: "Generate 2 scenes only", exact: true }).click();
   const reviewed = (await analysis).postDataJSON().input;
   expect(reviewed.scene_plan).toEqual([]);
   expect(reviewed.scene_plan_signature).toBe("");
@@ -131,23 +130,20 @@ test("Continue keeps the plan and completed prompt, generates only missing promp
   expect(writes).toEqual([]);
 });
 
-test("Continue is absent without scenes, including when Plan scenes first is enabled", async ({ page }) => {
+test("Continue is absent without scenes", async ({ page }) => {
   await openDataset(page);
-  await expect(page.getByRole("button", { name: "Continue", exact: true })).toHaveCount(0);
-  await page.getByLabel("Plan scenes first", { exact: true }).check();
   await expect(page.getByRole("button", { name: "Continue", exact: true })).toHaveCount(0);
   await openDatasetPage(page, "Scenes");
   await expect(page.getByRole("button", { name: "Continue", exact: true })).toHaveCount(0);
 });
 
-test("Configure Continue writes existing scenes even when Plan scenes first is off", async ({ page, request }) => {
+test("Configure Continue writes existing scenes with a legacy false plan setting", async ({ page, request }) => {
   const record = await seedCurrentPlan(request);
   expect((await request.put("/api/workspace/settings/dataset", {
     data: { revision: record.revision, draft: { ...record.draft, plan_scenes_first: false } },
   })).ok()).toBe(true);
   await page.goto("/");
   await page.getByRole("button", { name: "Dataset", exact: true }).click();
-  await expect(page.getByLabel("Plan scenes first", { exact: true })).not.toBeChecked();
   const admission = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset") && response.status() === 202);
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   const accepted = await admission;

@@ -67,6 +67,26 @@ test("Configure Generate completes scenes and prompts after one Understanding re
   await expect(page.getByRole("button", { name: "Continue", exact: true })).toHaveCount(0);
 });
 
+test("a saved scene-review setting never makes normal Generate stop before prompts", async ({ page, request }) => {
+  const record = await (await request.get("/api/workspace/settings/dataset")).json();
+  await request.put("/api/workspace/settings/dataset", { data: { revision: record.revision,
+    draft: { ...record.draft, subject: "One red duck and two men travel together as best friends.",
+      trigger: "duck_token", amount: 2, plan_scenes_first: true } } });
+  await page.goto("/");
+  const posts = datasetPosts(page);
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  await openDatasetPage(page, "Configure");
+  await expect(page.getByRole("button", { name: "Generate 2 prompts", exact: true })).toBeEnabled();
+  const admitted = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset") && response.status() === 202);
+  await page.getByRole("button", { name: "Generate 2 prompts", exact: true }).click();
+  await confirmDatasetReview(page);
+  const job = await (await admitted).json();
+  const result = await finish(request, job.id);
+  expect(result.completed).toBe(2);
+  await expect(page.getByRole("tab", { name: "Dataset", exact: true })).toHaveAttribute("aria-selected", "true");
+  expect(posts).toEqual(["/api/workspace/dataset/understand", "/api/workspace/dataset"]);
+});
+
 test("Scene Continue resumes a saved approved plan without rerunning Understanding", async ({ page, request }) => {
   const record = await (await request.get("/api/workspace/settings/dataset")).json();
   const input = { ...record.draft, subject: "A duck exploring a garden.", trigger: "duck_token", amount: 2,
@@ -131,16 +151,15 @@ test("Scene Continue with a lost session ticket resumes writing rather than Unde
   expect(after.scene_plan.map((row) => row.scene)).toEqual(saved.draft.scene_plan.map((row) => row.scene));
 });
 
-test("Plan scenes first is opt-in and Continue reuses the initial Understanding approval", async ({ page }) => {
+test("explicit scenes-only generation pauses and Continue reuses the initial Understanding approval", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Dataset", exact: true }).click();
   await page.getByLabel("Dataset idea", { exact: true }).fill("A duck exploring a garden.");
   await page.getByLabel("Trigger text or terms").fill("duck_token");
   await page.getByLabel("Number of prompts").selectOption("2");
-  await expect(page.getByLabel("Plan scenes first", { exact: true })).not.toBeChecked();
-  await page.getByLabel("Plan scenes first", { exact: true }).check();
+  await expect(page.getByRole("button", { name: "Generate 2 prompts", exact: true })).toBeEnabled();
   const posts = datasetPosts(page);
-  await page.getByRole("button", { name: "Generate 2 scenes", exact: true }).click();
+  await page.getByRole("button", { name: "Generate 2 scenes only", exact: true }).click();
   await confirmDatasetReview(page);
   await expect(page.getByLabel("Planned scene 2")).toHaveValue(/mock scene 2/);
   await expect(page.getByRole("tab", { name: "Scenes", exact: true })).toHaveAttribute("aria-selected", "true");

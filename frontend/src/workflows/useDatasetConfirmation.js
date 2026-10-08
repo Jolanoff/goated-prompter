@@ -75,7 +75,7 @@ export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm
     const input = reviseDatasetRequest(confirmation.input, additions);
     const needsReplan = input !== confirmation.input;
     void analyze({ input, baseSignature: confirmation.baseSignature,
-      operation: needsReplan ? input.plan_scenes_first ? "dataset/scenes" : "dataset" : confirmation.operation,
+      operation: confirmation.operation === "dataset/scenes" ? "dataset/scenes" : needsReplan ? "dataset" : confirmation.operation,
       options: needsReplan ? {} : confirmation.options,
       notice: needsReplan ? "New rules require fresh ideas and scenes. Review them before continuing to Dataset." : confirmation.notice });
   }

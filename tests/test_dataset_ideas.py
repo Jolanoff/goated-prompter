@@ -28,6 +28,97 @@ class DatasetIdeasTests(unittest.TestCase):
         return self.service.run(session=self.session, data=self.data, assignments=dataset_assignments(self.data),
             progress=lambda _message: None, **options)
 
+    def festival_ideas(self, amount):
+        actions = ["raises a tent pole", "ties a banner to a railing", "unloads chairs from a cart",
+            "unrolls a tablecloth", "places flowers in a vase", "hands a ticket to a visitor",
+            "guides a delivery van", "carries a crate of cups", "tests a microphone",
+            "adjusts a stage light", "marks a queue lane with tape", "arranges books on a stall",
+            "fills a water dispenser", "stacks clean trays", "sorts recycling",
+            "folds a program leaflet", "demonstrates a paper craft", "serves soup into a bowl",
+            "collects used dishes", "fastens a cable cover", "helps a visitor read a map",
+            "weighs produce at a stall", "secures a balloon string", "sweeps the entrance",
+            "rolls up a finished display"]
+        return [dataset_idea_fixture(index, idea=f"A festival volunteer {action}.",
+            placement="Volunteer beside the relevant festival station.", visibility="Hands and task remain readable.",
+            camera="Eye-level three-quarter view.", framing="Medium-full view.", context="Community festival grounds.")
+            for index, action in enumerate(actions[:amount], 1)]
+
+    def test_ideas_request_minified_generation_and_compact_input_without_changing_contract(self):
+        self.data.update(amount=25, subject='Volunteers hold signs reading "Bienvenue, caf\u00e9!".')
+        instruction = ideas_instruction(self.data, dataset_assignments(self.data))
+        rules = " ".join(instruction.system_message.split())
+        self.assertTrue("Return ONLY a minified JSON array on a single line" in rules)
+        self.assertTrue("No indentation or optional whitespace outside string values" in rules)
+        self.assertTrue("Formatting compaction must not omit facts or change qualifiers" in rules)
+        self.assertTrue("Resolve generated repeats within this same call" in rules)
+        context = json.loads(instruction.user_message)
+        self.assertEqual(context["source"]["subject"], self.data["subject"])
+        self.assertEqual(instruction.user_message, json.dumps(context, ensure_ascii=False, separators=(",", ":")))
+        self.assertEqual(context["output_contract"], {"record_count": 25, "indexes": list(range(1, 26))})
+        self.assertEqual(instruction.json_schema["maxItems"], 25)
+        self.assertEqual(instruction.hard_max_tokens, 13312)
+        self.assertEqual((instruction.temperature, instruction.top_p), (.7, .92))
+
+    def test_distinct_large_batches_accept_minified_and_pretty_json_without_additional_calls(self):
+        for amount in (20, 21, 25):
+            self.data.update(amount=amount, subject="Community volunteers preparing and running a neighborhood festival")
+            rows = self.festival_ideas(amount)
+            for formatting in ({"indent": 2}, {"separators": (",", ":")}):
+                with self.subTest(amount=amount, formatting=formatting):
+                    self.session.reset_mock()
+                    self.session.generate.return_value = json.dumps(rows, ensure_ascii=False, **formatting)
+                    result = self.service.run(session=self.session, data=self.data,
+                        assignments=dataset_assignments(self.data), progress=lambda _message: None)
+                    self.assertEqual(result, rows)
+                    self.session.generate.assert_called_once()
+
+    def test_large_batch_duplicate_error_identifies_indexes_without_echoing_content_or_retrying(self):
+        self.data.update(amount=25)
+        rows = self.festival_ideas(25)
+        rows[20]["idea"] = rows[4]["idea"].upper()
+        rows[24]["idea"] = rows[4]["idea"]
+        with self.assertRaisesRegex(BackendGenerationError, "Duplicate idea indexes: 5, 21, 25") as caught:
+            self.run_ideas(rows)
+        self.assertIn("same core event", str(caught.exception))
+        self.assertNotIn(rows[4]["idea"], str(caught.exception))
+        self.assertIn("No automatic retry", str(caught.exception))
+        self.session.generate.assert_called_once()
+
+    def test_replacement_reports_only_duplicates_involving_the_requested_index(self):
+        self.data.update(amount=25)
+        existing = self.festival_ideas(25)
+        existing[1]["idea"] = existing[0]["idea"]
+        replacement = {**existing[20], "idea": existing[4]["idea"]}
+        with self.assertRaisesRegex(BackendGenerationError, "Duplicate idea indexes: 5, 21\\.") as caught:
+            self.run_ideas([replacement], indexes=[21], existing=existing)
+        self.assertNotIn("indexes: 1,", str(caught.exception))
+        self.session.generate.assert_called_once()
+
+    def test_large_guided_repeats_remain_valid_when_the_user_requires_the_same_event(self):
+        self.data.update(amount=25, source_mode="guided", inputs="A volunteer hands a ticket to a visitor.")
+        first = self.festival_ideas(1)[0]
+        first["idea"] = "A volunteer hands a ticket to a visitor."
+        rows = [{**first, "index": index} for index in range(1, 26)]
+        self.assertEqual(self.run_ideas(rows), rows)
+        self.session.generate.assert_called_once()
+
+    def test_partial_guided_repeats_remain_valid_without_failed_slots(self):
+        self.data.update(amount=25, source_mode="guided", inputs="A volunteer hands a ticket to a visitor.")
+        first = self.festival_ideas(1)[0]
+        first["idea"] = "A volunteer hands a ticket to a visitor."
+        rows = [{**first, "index": index} for index in range(1, 26)]
+        result = self.run_ideas(rows, allow_partial=True)
+        self.assertEqual(result, rows)
+        self.session.generate.assert_called_once()
+
+    def test_similar_large_batch_events_with_reversed_roles_are_not_exact_duplicates(self):
+        self.data.update(amount=25)
+        rows = self.festival_ideas(25)
+        rows[0]["idea"] = "Volunteer A hands flowers to volunteer B."
+        rows[1]["idea"] = "Volunteer B hands flowers to volunteer A."
+        self.assertEqual(self.run_ideas(rows), rows)
+        self.session.generate.assert_called_once()
+
     def test_one_call_returns_only_six_short_descriptions_per_requested_index(self):
         expected = [dataset_idea_fixture(1), dataset_idea_fixture(2)]
         before = deepcopy(self.data)

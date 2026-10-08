@@ -30,7 +30,6 @@ async function finish(request, id) {
 async function submit(page, button, endpoint = "/api/workspace/dataset", reviewRequired = false) {
   await openDatasetPage(page, button.startsWith("Retry failed") ? "Dataset"
     : endpoint === "/api/workspace/dataset/scenes" ? "Configure" : "Scenes");
-  if (endpoint === "/api/workspace/dataset/scenes") await page.getByLabel("Plan scenes first", { exact: true }).check();
   const accepted = page.waitForResponse((response) => response.url().endsWith(endpoint) && response.status() === 202);
   await page.getByRole("button", { name: button, exact: true }).first().click();
   if (reviewRequired || endpoint === "/api/workspace/dataset/scenes") await confirmDatasetReview(page);
@@ -78,7 +77,7 @@ test("backend completes and persists Dataset after the generating browser closes
 
 test("creativity persists and Builder receives the exact checked scene", async ({ page, request }) => {
   await openDataset(page, "1");
-  await submit(page, "Generate 1 scene", "/api/workspace/dataset/scenes");
+  await submit(page, "Generate 1 scene only", "/api/workspace/dataset/scenes");
   await expect(page.getByLabel("Planned scene 1")).toHaveValue(/mock scene 1/);
   await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
   const before = (await settings(request)).draft;
@@ -123,7 +122,7 @@ test("prompt failure retries enhancement, not scene construction", async ({ page
 
 test("writer-setting acknowledgements retain eligibility despite reordered JSON keys", async ({ page, request }) => {
   await openDataset(page, "1");
-  await submit(page, "Generate 1 scene", "/api/workspace/dataset/scenes");
+  await submit(page, "Generate 1 scene only", "/api/workspace/dataset/scenes");
   await expect(page.getByLabel("Planned scene 1")).toHaveValue(/mock scene 1/);
   await page.route("**/api/workspace/settings/dataset", async (route) => {
     const response = await route.fetch();
@@ -225,7 +224,7 @@ test("accepted replacement survives a lost admission response", async ({ page, r
 
 test("one idea call precedes ten independent scene/self-check calls", async ({ page, request }) => {
   await openDataset(page, "10");
-  const response = await submit(page, "Generate 10 scenes", "/api/workspace/dataset/scenes");
+  const response = await submit(page, "Generate 10 scenes only", "/api/workspace/dataset/scenes");
   const finished = await finish(request, (await response.json()).id);
   expect(finished.llm_trace.request_number).toBe(11);
   expect(finished.result.scene_plan.map((row) => row.index)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
@@ -235,7 +234,7 @@ test("one idea call precedes ten independent scene/self-check calls", async ({ p
 
 test("REPAIR blocks only its scene and explicit repair preserves the fixed idea", async ({ page, request }) => {
   await openDataset(page);
-  await submit(page, "Generate 2 scenes", "/api/workspace/dataset/scenes");
+  await submit(page, "Generate 2 scenes only", "/api/workspace/dataset/scenes");
   await expect(page.getByLabel("Planned scene 2")).toHaveValue(/mock scene 2/);
   await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
   const saved = await settings(request);
@@ -377,7 +376,6 @@ test("target changes require fresh approval while reusing checked scenes for Bui
   const before = (await settings(request)).draft;
   await openDatasetPage(page, "Configure");
   await page.getByLabel("Dataset target model").selectOption("Anima");
-  await page.getByLabel("Plan scenes first", { exact: true }).check();
   await expect.poll(async () => (await settings(request)).draft.target).toBe("Anima");
   const first = await finish(request, (await (await submit(page, "Regenerate prompt", "/api/workspace/dataset/scene", true)).json()).id);
   expect(first.llm_trace.request_number).toBe(1);

@@ -13,7 +13,7 @@ from .prompting.target_models import TARGET_MODEL_NAMES, canonical_target
 from .workflow_output import WorkflowFormatError, normalize_workflow_output, sanitize_prompt_text, requested_visible_text
 from .dataset_assignments import dataset_assignments
 from .dataset_quality import analyze_idea_diversity
-from .dataset_triggers import trigger_presence_error, trigger_terms, fixed_anima_prefix
+from .dataset_triggers import trigger_presence_error, trigger_terms, fixed_anima_prefix, restore_numeric_trigger_spelling
 from .output_repetition import MAX_ANIMA_TAGS, anima_tag_count, anima_tags
 from .dataset_visible_content import PositiveContentError, positive_prompt_error, sanitize_positive_prompt
 from .scene_planner import (ScenePlanner, MAX_STORED_SCENE_CHARACTERS, MAX_STORED_IDEA_CHARACTERS,
@@ -162,6 +162,12 @@ class DatasetService:
                 if anima_tag_count(prefix, tag_only=True) + len(generated) > MAX_ANIMA_TAGS:
                     raise WorkflowFormatError("Anima allows at most 100 tags, including supplied tags. Reduce added scene tags, preserving the scene prose.")
                 prompt = normalize_workflow_output(prefix + ", " + prompt, data["target"], mode="Enhance")
+            if not data["expand_trigger"]:
+                corrected = restore_numeric_trigger_spelling(prompt, data["trigger"], data["target"])
+                if corrected != prompt:
+                    session.emit_activity("normalization", workflow="dataset", index=index, operation="numeric_trigger_spelling")
+                    progress(f"Dataset prompt {index}: restored the supplied numeric trigger spelling.")
+                    prompt = corrected
             return validate_positive_content(validate_trigger_contract(prompt, data, progress), data)
         for attempt in range(retries + 1):
             self.checkpoint()
@@ -237,6 +243,42 @@ class DatasetService:
                            "scene_status": row.get("scene_status", "valid"), "prompt_status": row.get("prompt_status", "not_generated")}
                           for row, assignment in zip(rows, assignments)]
                 publish()
+            def save_composed(rows):
+                for composed in rows:
+                    original = scenes[composed["index"] - 1]
+                    scenes[composed["index"] - 1] = {**original, **composed}
+                publish()
+            def repair_pending_ideas():
+                indexes = [row["index"] for row in scenes if row.get("failure_stage") == "idea"]
+                if not indexes or scene_action or valid_only or resume:
+                    return []
+                self.checkpoint()
+                progress(f"Repairing {len(indexes)} failed/repeated ideas after the valid batch work…")
+                try:
+                    repaired = planner.plan_ideas(session=session, data=data, assignments=assignments, family=family,
+                        progress=progress, indexes=indexes, existing=scenes, allow_partial=True)
+                except BackendGenerationError as error:
+                    self.checkpoint()
+                    for index in indexes:
+                        scenes[index - 1] = {**scenes[index - 1], "failure_reason": "Idea repair failed: " + failure_reason(error)}
+                    publish()
+                    return []
+                for row in repaired:
+                    scenes[row["index"] - 1] = {**row, "input": assignments[row["index"] - 1]["input"],
+                        "scene": "", "self_check": "", "scene_status": row.get("scene_status", "not_generated"),
+                        "prompt_status": row.get("prompt_status", "not_generated"), "idea_status": row.get("idea_status", "valid")}
+                publish()
+                valid = [row for row in repaired if row.get("idea_status") != "failed"]
+                for row in valid:
+                    try:
+                        planner.compose(session=session, data=data, assignments=assignments, ideas=[row],
+                            family=family, progress=progress, plan_update=save_composed)
+                    except BackendGenerationError as error:
+                        self.checkpoint()
+                        index = row["index"]
+                        scenes[index - 1] = failed_scene(scenes[index - 1], failure_reason(error), stage="scene")
+                        publish()
+                return [row["index"] for row in valid if scene_is_usable(scenes[row["index"] - 1], data)]
             if scenes is None:
                 planned = planner.plan_batch(session=session, data=data, assignments=assignments, family=family,
                     progress=progress, plan_update=save_planning_stage)
@@ -288,11 +330,6 @@ class DatasetService:
             if pending:
                 if scene_action and scene_action[0] == "regenerate_prompt":
                     raise ValueError("Compose or repair this scene before regenerating its prompt.")
-                def save_composed(rows):
-                    for composed in rows:
-                        original = scenes[composed["index"] - 1]
-                        scenes[composed["index"] - 1] = {**original, **composed}
-                    publish()
                 composed = planner.compose(session=session, data=data, assignments=assignments, ideas=pending,
                     family=family, progress=progress, plan_update=save_composed)
                 save_composed(composed)
@@ -301,28 +338,32 @@ class DatasetService:
                 if scenes[index - 1].get("scene_status") != "failed":
                     scenes[index - 1].update(idea_status="duplicate_warning" if index in duplicates else "valid", prompt_status="not_generated")
             if scenes_only:
+                repair_pending_ideas()
                 return {"ok": True, "kind": "dataset_scenes", "prompts": [], "scene_plan": scenes,
                         "scene_plan_signature": signature, "backend": backend.name}
             publish()
-            for index in selected:
-                self.checkpoint()
-                if not scene_is_usable(scenes[index - 1], data):
-                    continue
-                plan_item = {**assignments[index - 1], **scenes[index - 1]}
-                instruction = dataset_instruction(request, data, index, model_family=family, plan_item=plan_item)
-                try:
-                    prompt = self._generate(session, instruction, data, index, progress, plan_item)
-                except BackendGenerationError as exc:
+            def write_prompts(indexes):
+                for index in indexes:
                     self.checkpoint()
-                    scenes[index - 1].update(prompt_status="failed", failure_stage="prompt", failure_reason=failure_reason(exc))
+                    if not scene_is_usable(scenes[index - 1], data):
+                        continue
+                    plan_item = {**assignments[index - 1], **scenes[index - 1]}
+                    instruction = dataset_instruction(request, data, index, model_family=family, plan_item=plan_item)
+                    try:
+                        prompt = self._generate(session, instruction, data, index, progress, plan_item)
+                    except BackendGenerationError as exc:
+                        self.checkpoint()
+                        scenes[index - 1].update(prompt_status="failed", failure_stage="prompt", failure_reason=failure_reason(exc))
+                        publish()
+                        continue
+                    results.append({"index": index, "prompt": prompt, "input": plan_item["input"],
+                                    "scene": plan_item["scene"], "idea": plan_item["idea"]})
+                    results.sort(key=lambda row: row["index"])
+                    scenes[index - 1] = {key: value for key, value in scenes[index - 1].items() if key not in FAILURE_METADATA}
+                    scenes[index - 1]["prompt_status"] = "valid"
                     publish()
-                    continue
-                results.append({"index": index, "prompt": prompt, "input": plan_item["input"],
-                                "scene": plan_item["scene"], "idea": plan_item["idea"]})
-                results.sort(key=lambda row: row["index"])
-                scenes[index - 1] = {key: value for key, value in scenes[index - 1].items() if key not in FAILURE_METADATA}
-                scenes[index - 1]["prompt_status"] = "valid"
-                publish()
+            write_prompts(selected)
+            write_prompts(repair_pending_ideas())
         return {"ok": True, "kind": "dataset", "prompts": results,
                 "failed": sum(row.get("prompt_status") == "failed" for row in scenes),
                 "completed": len(results), "total": data["amount"], "target": data["target"],

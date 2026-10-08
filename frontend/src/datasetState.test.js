@@ -97,6 +97,13 @@ test("retry stages keep good ideas and eligible scenes", () => {
   assert.equal(datasetRetryStage({ idea: "", scene: "", scene_status: "failed" }), "idea");
 });
 
+test("an unsuccessful duplicate-idea repair retries the idea rather than composing its rejected event", () => {
+  const rejected = { idea: "Repeated event retained for inspection", scene: "", self_check: "",
+    idea_status: "failed", scene_status: "failed", prompt_status: "failed", failure_stage: "idea" };
+  assert.equal(datasetRetryStage(rejected, { usable: false }), "idea");
+  assert.equal(datasetRetryStage({ ...rejected, failure_stage: undefined }, { usable: false }), "idea");
+});
+
 test("writer settings preserve scene failures but clear prompt-only errors", () => {
   const failed = { ...draft, scene_plan: [
     { ...draft.scene_plan[0], scene_status: "failed", failure_reason: "Scene interrupted", failure_stage: "scene" },

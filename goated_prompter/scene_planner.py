@@ -105,18 +105,26 @@ class ScenePlanner:
         self.checkpoint, self.idea_history = checkpoint, idea_history
 
     def plan_batch(self, *, session, data, assignments, family="qwen", progress, plan_update=None):
-        ideas = self.plan_ideas(session=session, data=data, assignments=assignments, family=family, progress=progress)
-        if plan_update:
-            plan_update([{**row, "scene": "", "self_check": "", "scene_status": "not_generated",
-                          "prompt_status": "not_generated"} for row in ideas])
-        return self.compose(session=session, data=data, assignments=assignments, ideas=ideas,
-                            family=family, progress=progress, plan_update=plan_update)
+        ideas = self.plan_ideas(session=session, data=data, assignments=assignments, family=family,
+            progress=progress, allow_partial=True)
+        rows = [{**row, "scene": "", "self_check": "", "scene_status": row.get("scene_status", "not_generated"),
+            "prompt_status": row.get("prompt_status", "not_generated")} for row in ideas]
+        def update(composed):
+            for row in composed:
+                rows[row["index"] - 1] = row
+            if plan_update:
+                plan_update([dict(row) for row in rows])
+        update([])
+        self.compose(session=session, data=data, assignments=assignments,
+            ideas=[row for row in ideas if row.get("idea_status") != "failed"],
+            family=family, progress=progress, plan_update=update)
+        return rows
 
-    def plan_ideas(self, *, session, data, assignments, family="qwen", progress, indexes=None, existing=()):
+    def plan_ideas(self, *, session, data, assignments, family="qwen", progress, indexes=None, existing=(), allow_partial=False):
         if self.idea_history is not None:
             data = {**data, "_recent_ideas": self.idea_history.recent(data)}
         rows = DatasetIdeasService(self.checkpoint).run(session=session, data=data,
-            assignments=assignments, family=family, progress=progress, indexes=indexes, existing=existing)
+            assignments=assignments, family=family, progress=progress, indexes=indexes, existing=existing, allow_partial=allow_partial)
         if self.idea_history is not None:
             self.idea_history.remember(data, rows)
         return rows

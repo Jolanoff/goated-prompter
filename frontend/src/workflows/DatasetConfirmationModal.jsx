@@ -10,11 +10,13 @@ const identityLabels = {
   mixed: "Mixed identity policies; follow the requirements for each subject and guided input",
 };
 
-function SummaryList({ label, items }) {
+function SummaryList({ label, items, annotations }) {
   if (!items?.length) return null;
   return <div className="dataset-review-list"><h3>{label}</h3>
     <ul>
-      {items.map((item, index) => <li className="wrap-anywhere" key={index}>{item}</li>)}
+      {items.map((item, index) => <li className="wrap-anywhere" key={index}>{item}
+        {!!annotations?.[index]?.length && <small className="block dataset-review-note">Also: {annotations[index].join(" · ")}</small>}
+      </li>)}
     </ul></div>;
 }
 
@@ -99,7 +101,8 @@ export default function DatasetConfirmationModal({ review, busy, onRevise, onCon
         <div className="dataset-review-grid mt-4">
           <SummaryList label="Characters and identity" items={[`${brief.character_count ?? "Unspecified / not applicable"}. ${identityLabels[brief.identity_policy]}`]} />
           <SummaryList label="What the dataset will contain" items={[brief.dataset_contents]} />
-          {datasetUnderstandingSections(brief).map(({ label, items }) => <SummaryList key={label} label={label} items={items} />)}
+          {datasetUnderstandingSections(brief).map(({ label, items, annotations }) =>
+            <SummaryList key={label} label={label} items={items} annotations={annotations} />)}
         </div>
       </>}
     </details>}

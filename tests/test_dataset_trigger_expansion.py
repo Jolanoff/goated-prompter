@@ -7,12 +7,107 @@ from unittest.mock import Mock
 from goated_prompter.backends.base import BackendGenerationError, BackendRunawayError
 from goated_prompter.core import GoatedPrompterRequest
 from goated_prompter.dataset import DatasetService, validate_trigger_contract
-from goated_prompter.dataset_triggers import trigger_presence_error, trigger_contract_error
+from goated_prompter.dataset_triggers import trigger_presence_error, trigger_contract_error, restore_numeric_trigger_spelling
 from goated_prompter.prompting.dataset import dataset_instruction
 from tests.test_dataset import valid_draft
 
 
 class TriggerExpansionTests(unittest.TestCase):
+    def test_number_word_trigger_spelling_keeps_the_scene_and_avoids_a_writer_retry(self):
+        data = valid_draft(amount=1, trigger="duck, 2 men", trigger_type="Multiple characters")
+        scene = "At a mountain trailhead, one red duck stands between two men, one checking a map."
+        row = {"idea": "Travel together", "scene": scene, "self_check": "PASS"}
+        instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=row)
+        session = Mock()
+        session.generate.return_value = scene
+        result = DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None, row)
+        self.assertEqual(result, scene.replace("two men", "2 men"))
+        self.assertEqual(row["scene"], scene)
+        self.assertEqual(instruction.user_message, scene)
+        session.generate.assert_called_once()
+        self.assertIsNone(trigger_presence_error(result, data["trigger"], data["target"]))
+
+    def test_numeric_spelling_preserves_qualifiers_counts_and_literal_boundaries(self):
+        prompt = 'At least two men stand beside one red duck; not both wear hats. A sign reads "two men".'
+        expected = 'At least 2 men stand beside one red duck; not both wear hats. A sign reads "two men".'
+        self.assertEqual(restore_numeric_trigger_spelling(prompt, "duck, 2 men", "Generic"), expected)
+        for text in ('A sign reads "two men".', "A sign reads 'two men'.", 'A sign reads “two men”.',
+                'A sign reads "two men; two men stand nearby.', "Twenty-two men stand together.",
+                "A sign reads 'two men; two men stand nearby.", "twenty two men stand together",
+                "one hundred and two men stand together",
+                "three men travel together", "two men_token travel together", "two men-extra travel together",
+                "two men2 travel together"):
+            with self.subTest(text=text):
+                self.assertEqual(restore_numeric_trigger_spelling(text, "2 men", "Generic"), text)
+
+    def test_numeric_spelling_accepts_possessive_apostrophes_without_editing_lettering(self):
+        for prompt in ("Two men share bread; the subjects' hands are near the plate.",
+                "Two men share bread; the men's hands are near the plate.",
+                "Two men share bread; the men’s hands are near the plate.",
+                "Two men hold a sign reading ‘two men’; the subjects’ hands support it."):
+            with self.subTest(prompt=prompt):
+                self.assertEqual(restore_numeric_trigger_spelling(prompt, "2 men", "Generic"),
+                    prompt.replace("Two men", "2 men"))
+
+    def test_numeric_spelling_does_not_rewrite_identifiers_other_triggers_or_existing_exact_terms(self):
+        for trigger, text in (("2_men", "two_men stand together"), ("2men", "twomen stand together"),
+                ("2 men1", "two men1 stand together"), ("22 men", "twenty-two men stand together"),
+                ("2 men, two men", "two men stand together"), ("2 men", "2 men meet two men on a trail.")):
+            with self.subTest(trigger=trigger):
+                self.assertEqual(restore_numeric_trigger_spelling(text, trigger, "Generic"), text)
+
+    def test_numeric_spelling_does_not_change_compound_or_fractional_numbers(self):
+        for text in ("Twenty–two men stand together.", "Twenty—two men stand together.",
+                "one point two men", "one hundred & two men", "0.two men", "-two men"):
+            with self.subTest(text=text):
+                self.assertEqual(restore_numeric_trigger_spelling(text, "2 men", "Generic"), text)
+
+    def test_expanded_numeric_trigger_keeps_generated_spelling(self):
+        data = valid_draft(amount=1, trigger="duck, 2 men", expand_trigger=True)
+        scene = "One red duck and two men travel together."
+        row = {"scene": scene, "self_check": "PASS"}
+        instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=row)
+        session = Mock()
+        session.generate.return_value = scene
+        result = DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None, row)
+        self.assertEqual(result, scene)
+        session.generate.assert_called_once()
+
+    def test_numeric_spelling_changes_only_the_ideogram_description_not_text_elements(self):
+        caption = {"high_level_description": 'Two men hold a sign reading "two men" beside a red duck.',
+            "style_description": {"aesthetics": "two men"},
+            "compositional_deconstruction": {"background": "two men", "elements": [
+                {"type": "text", "text": "two men", "desc": "two men"}]}}
+        restored = json.loads(restore_numeric_trigger_spelling(json.dumps(caption), "duck, 2 men", "Ideogram4"))
+        self.assertEqual(restored["high_level_description"], '2 men hold a sign reading "two men" beside a red duck.')
+        self.assertEqual(restored["style_description"], caption["style_description"])
+        self.assertEqual(restored["compositional_deconstruction"], caption["compositional_deconstruction"])
+
+    def test_numeric_spelling_restores_only_exact_noun_phrases_for_each_supported_count(self):
+        numbers = ("one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+            "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty")
+        for count, word in enumerate(numbers, 1):
+            with self.subTest(count=count):
+                prompt = f"At most {word} red cups rest on a table."
+                expected = f"At most {count} red cups rest on a table."
+                self.assertEqual(restore_numeric_trigger_spelling(prompt, f"{count} red cups", "Generic"), expected)
+                self.assertEqual(restore_numeric_trigger_spelling(prompt, f"{count} blue cups", "Generic"), prompt)
+        prompt = "At least two men and three women travel together; none wear hats."
+        self.assertEqual(restore_numeric_trigger_spelling(prompt, "2 men, 3 women", "Generic"),
+            "At least 2 men and 3 women travel together; none wear hats.")
+        self.assertEqual(restore_numeric_trigger_spelling("two human males travel", "2 men", "Generic"),
+            "two human males travel")
+
+    def test_a_missing_or_different_count_still_requires_writer_correction(self):
+        data = valid_draft(amount=1, trigger="duck, 2 men")
+        row = {"scene": "One red duck and two men travel.", "self_check": "PASS"}
+        instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=row)
+        session = Mock()
+        session.generate.side_effect = ["One red duck and three men travel.", "One red duck and two men travel."]
+        output = DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None, row)
+        self.assertEqual(output, "One red duck and 2 men travel.")
+        self.assertEqual(session.generate.call_count, 2)
+
     def data(self, **changes):
         return valid_draft(amount=1, trigger="a banana, an apple", trigger_connected=False,
                            expand_trigger=True, **changes)

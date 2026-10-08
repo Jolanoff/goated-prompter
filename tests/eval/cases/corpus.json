@@ -1,6 +1,7 @@
 {
   "version": 1,
   "cases": [
+    {"id":"friends-travel","dataset_type":"Multiple characters","trigger":"duck, 2 men","workflows":["dataset"],"request":"One red duck and two men are best friends traveling together to random places.","anchors":{"scene":["one red duck","two men"],"action":["traveling together"],"pose":[],"constraint":["best friends"]}},
     {"id":"object","dataset_type":"Object / product","workflows":["builder","dataset"],"request":"A chipped blue ceramic cup on a wooden table.","anchors":{"scene":["one blue ceramic cup","wooden table"],"action":[],"pose":[],"constraint":["chipped rim"]}},
     {"id":"portrait","workflows":["builder","dataset"],"request":"Close portrait of a person with short black hair and brown eyes, lit by a window. No jewelry.","rules":"same short black hair; no jewelry","anchors":{"scene":["close portrait","window illumination"],"action":[],"pose":[],"constraint":["short black hair","brown eyes"]}},
     {"id":"performance","workflows":["builder","dataset"],"request":"A performer hangs sideways from an aerial hoop, one knee hooked over its upper rim, the other leg reaching down, torso twisted toward the viewer. Show all limb contacts.","anchors":{"scene":["aerial hoop","one performer"],"action":["sideways suspension"],"pose":["one knee hooked","opposite leg downward","torso twist toward viewer"],"constraint":["all limb contacts visible"]}},

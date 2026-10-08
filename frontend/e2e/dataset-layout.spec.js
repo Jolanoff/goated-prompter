@@ -72,8 +72,7 @@ test("Dataset respects reduced-motion for cards, loading and disclosures", async
   await page.getByRole("button", { name: "Dataset", exact: true }).click();
   await page.getByLabel("Dataset idea", { exact: true }).fill("A traveler exploring exhibits.");
   await page.getByLabel("Number of prompts").selectOption("2");
-  await page.getByLabel("Plan scenes first", { exact: true }).check();
-  await page.getByRole("button", { name: "Generate 2 scenes", exact: true }).click();
+  await page.getByRole("button", { name: "Generate 2 scenes only", exact: true }).click();
   await confirmDatasetReview(page);
   await expect(page.getByLabel("Planned scene 2")).toHaveValue(/mock scene/);
   await expect(page.locator(".dataset-card").first()).toHaveCSS("animation-name", "none");

@@ -97,8 +97,16 @@ Novelty never overrides HARD actions or guided anchors; when those are locked,
 vary only what the contract permits. History is reference-only guidance, not an
 output menu or absolute exclusions.
 For a replacement, return only the requested indexes; do not regenerate siblings.
+Before returning, compare every proposed core event with the other proposed events
+and the supplied existing ideas. Resolve generated repeats within this same call
+using permitted differences in action, roles or interaction, not camera/context
+changes alone. Preserve locked actions and authoritative guided repeats; novelty
+never permits inventing a different user requirement. Do not output this check.
 
-Return ONLY a JSON array in the requested assignment order. Each object contains
+Return ONLY a minified JSON array on a single line in the requested assignment order.
+No indentation or optional whitespace outside string values. Preserve supplied
+literal text inside strings; escape control characters normally as JSON.
+Formatting compaction must not omit facts or change qualifiers. Each object contains
 exactly index (the supplied integer) and idea, placement, visibility, camera, framing,
 context (nonempty concise strings, at most 600 characters each). A short sentence or
 phrase per field is enough. No minimum word quota, extra fields, Markdown or reasoning.
@@ -146,7 +154,8 @@ def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existin
         "recently_used_ideas": list(data.get("_recent_ideas", ()))[:40]}
     temperature, top_p = {"Focused": (.45, .85), "Balanced": (.7, .92), "Wide": (.85, .96)}[data["variety"]]
     budget = 512 + len(indexes) * 512
-    return PromptInstruction(system_message=IDEAS_SYSTEM, user_message=json.dumps(context, ensure_ascii=False),
+    return PromptInstruction(system_message=IDEAS_SYSTEM, user_message=json.dumps(context,
+        ensure_ascii=False, separators=(",", ":")),
         model_family=family, diagnostic_stage="dataset:ideas", max_tokens=budget,
         hard_max_tokens=budget, unlimited_tokens=False, temperature=temperature, top_p=top_p,
         json_output=True, json_schema=_ideas_schema(indexes),
@@ -162,7 +171,13 @@ def _unique_object(pairs):
     return result
 
 
-def validate_ideas(raw, indexes):
+def _failed_idea(row, index, reason):
+    return {**row, "index": index, "idea": row.get("idea", ""), "scene": "", "self_check": "",
+        "idea_status": "failed", "scene_status": "failed", "prompt_status": "failed",
+        "failure_stage": "idea", "failure_reason": reason[:2000]}
+
+
+def validate_ideas(raw, indexes, *, allow_partial=False):
     """Validate compact shape only, not a claim that a pose has been physically verified."""
     if not isinstance(raw, str) or len(raw) > 1024 + len(indexes) * (len(IDEA_FIELDS) * MAX_FIELD_CHARACTERS + 200):
         raise ValueError("Ideas response exceeds its text limit.")
@@ -174,16 +189,21 @@ def validate_ideas(raw, indexes):
         raise ValueError(f"Ideas returned {len(rows)} records; expected exactly {len(indexes)} for requested indexes {indexes}.")
     result = []
     for row, index in zip(rows, indexes):
-        if (not isinstance(row, dict) or set(row) != {"index", *IDEA_FIELDS}
-                or type(row["index"]) is not int or row["index"] != index):
-            raise ValueError("Ideas require the supplied integer index and exactly six description fields.")
-        cleaned = {"index": index}
-        for field in IDEA_FIELDS:
-            text = row[field]
-            if not isinstance(text, str) or not text.strip() or len(text) > MAX_FIELD_CHARACTERS or "```" in text:
-                raise ValueError(f"{field} must be concise nonempty text within the idea limit.")
-            cleaned[field] = " ".join(text.split())
-        result.append(cleaned)
+        try:
+            if (not isinstance(row, dict) or set(row) != {"index", *IDEA_FIELDS}
+                    or type(row["index"]) is not int or row["index"] != index):
+                raise ValueError("Ideas require the supplied integer index and exactly six description fields.")
+            cleaned = {"index": index}
+            for field in IDEA_FIELDS:
+                text = row[field]
+                if not isinstance(text, str) or not text.strip() or len(text) > MAX_FIELD_CHARACTERS or "```" in text:
+                    raise ValueError(f"{field} must be concise nonempty text within the idea limit.")
+                cleaned[field] = " ".join(text.split())
+            result.append(cleaned)
+        except ValueError as error:
+            if not allow_partial:
+                raise
+            result.append(_failed_idea({}, index, str(error)))
     return result
 
 
@@ -193,7 +213,7 @@ class DatasetIdeasService:
     def __init__(self, checkpoint):
         self.checkpoint = checkpoint
 
-    def run(self, *, session, data, assignments, family="qwen", progress, indexes=None, existing=()):
+    def run(self, *, session, data, assignments, family="qwen", progress, indexes=None, existing=(), allow_partial=False):
         self.checkpoint()
         instruction = ideas_instruction(data, assignments, family, indexes=indexes, existing=existing)
         selected = json.loads(instruction.user_message)["assignments"]
@@ -203,18 +223,41 @@ class DatasetIdeasService:
         raw = session.generate(instruction)
         self.checkpoint()
         try:
-            rows = validate_ideas(raw, indexes)
+            rows = validate_ideas(raw, indexes, allow_partial=allow_partial)
             previous = {row["index"]: row for row in existing if row["index"] in indexes}
+            inputs = {row["index"]: row["input"] for row in assignments}
+            if allow_partial:
+                accepted = [{**row, "input": inputs[row["index"]]} for row in existing
+                    if row["index"] not in indexes and row.get("idea_status") != "failed"]
+                retained = []
+                for row in rows:
+                    if row.get("idea_status") != "failed":
+                        unchanged = row["index"] in previous and all(
+                            row[field] == previous[row["index"]].get(field) for field in IDEA_FIELDS)
+                        candidate = {**row, "input": inputs[row["index"]]}
+                        audit = analyze_idea_diversity(data, [*accepted, candidate])
+                        duplicate = any(issue["code"] == "exact_duplicate_idea" for record in audit["ideas"]
+                            if record["index"] == row["index"] for issue in record["issues"])
+                        if unchanged or duplicate:
+                            row = _failed_idea(row, row["index"], "The idea repeats an existing event or unchanged planning choices.")
+                        else:
+                            accepted.append(candidate)
+                    if row.get("idea_status") == "failed":
+                        progress(f"Idea {row['index']} queued for targeted repair; other ideas are retained.")
+                    retained.append(row)
+                return retained
             for row in rows:
                 if row["index"] in previous and all(row[field] == previous[row["index"]].get(field) for field in IDEA_FIELDS):
                     raise ValueError("The replacement repeated the unchanged idea and all its planning choices.")
-            inputs = {row["index"]: row["input"] for row in assignments}
             comparison = [{**row, "input": inputs[row["index"]]} for row in rows]
             comparison.extend({**row, "input": inputs[row["index"]]} for row in existing if row["index"] not in indexes)
             audit = analyze_idea_diversity(data, comparison)
-            if any(issue["code"] == "exact_duplicate_idea" for record in audit["ideas"]
-                   if record["index"] in indexes for issue in record["issues"]):
-                raise ValueError("Ideas repeated the same core event; camera or context changes alone are not different ideas.")
+            duplicate_indexes = sorted({index for record in audit["ideas"] if record["index"] in indexes
+                for issue in record["issues"] if issue["code"] == "exact_duplicate_idea"
+                for index in (record["index"], issue["related"])})
+            if duplicate_indexes:
+                raise ValueError("Ideas repeated the same core event; camera or context changes alone are not different ideas. "
+                    "Duplicate idea indexes: " + ", ".join(map(str, duplicate_indexes)) + ".")
             return rows
         except (ValueError, TypeError, RecursionError) as error:
             raise BackendGenerationError("Dataset ideas returned invalid output: " + str(error)

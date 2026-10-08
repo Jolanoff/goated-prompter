@@ -3,6 +3,12 @@
 import json
 import re
 
+from .planning.rule_compiler import QUOTED
+
+
+_COUNT_WORDS = ("", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+    "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty")
+
 
 def fixed_anima_prefix(data):
     """The app owns a protected connected trigger placed before Anima scene prose."""
@@ -47,6 +53,44 @@ def trigger_text_target(prompt, target):
     if not isinstance(description, str):
         raise ValueError('The Ideogram4 result has no string "high_level_description" field.')
     return description.strip()
+
+
+def restore_numeric_trigger_spelling(prompt, trigger, target):
+    """Restore only an equivalent number-word count to a supplied literal count.
+
+    Do not add missing subjects, infer synonyms, change counts or edit lettering.
+    The normal strict validator still checks the resulting exact trigger terms.
+    """
+    original = text = trigger_text_target(prompt, target)
+    terms = trigger_terms(trigger, False)
+    unquoted = QUOTED.sub(lambda match: " " * len(match[0]), text)
+    if re.search(r'''["“”‘]|(?<![\w\\])'(?=\S)''', unquoted):
+        # An unclosed quote makes lettering uncertain; possessives are not quotes.
+        return prompt
+    for term in terms:
+        count = re.fullmatch(r"([1-9]|1[0-9]|20) ([A-Za-z]+(?: [A-Za-z]+)*)", term)
+        if not count or _term_present(text, term, False):
+            continue
+        alias = _COUNT_WORDS[int(count[1])] + " " + count[2]
+        protected = [match.span() for match in QUOTED.finditer(text)]
+        for required in terms:
+            protected.extend(match.span() for match in re.finditer(re.escape(required), text))
+        pattern = re.compile(r"(?<![\w'’\-–—])" + re.escape(alias) + r"(?![\w'’\-–—])", re.IGNORECASE)
+        def replace_count(match):
+            if re.search(r"(?:\b(?:twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|million)"
+                    r"(?:\s+(?:and|&))?\s+|\bpoint\s+|\d\.\s*)$", text[:match.start()], re.IGNORECASE):
+                return match[0]  # Never reinterpret the tail of a compound number.
+            if any(start < match.end() and end > match.start() for start, end in protected):
+                return match[0]
+            return term
+        text = pattern.sub(replace_count, text)
+    if text == original:
+        return prompt
+    if target != "Ideogram4":
+        return text
+    caption = json.loads(prompt)
+    caption["high_level_description"] = text
+    return json.dumps(caption, ensure_ascii=False)
 
 
 def _expanded_term_spans(text, term):

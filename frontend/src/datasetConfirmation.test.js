@@ -7,6 +7,15 @@ import { transformWithEsbuild } from "vite";
 import { canConfirmDatasetReview, datasetRequestSignature, datasetUnderstandingSections, datasetUnderstandingSummary,
   reviseDatasetRequest } from "./workflows/datasetState.js";
 
+async function loadReviewModal() {
+  const sourceUrl = new URL("./workflows/DatasetConfirmationModal.jsx", import.meta.url);
+  const { code } = await transformWithEsbuild(await readFile(sourceUrl, "utf8"), sourceUrl.pathname,
+    { loader: "jsx", jsx: "automatic", sourcemap: false });
+  const linked = code.replace(/from (["'])([^"']+)\1/g, (_match, _quote, specifier) =>
+    `from ${JSON.stringify(specifier.startsWith(".") ? new URL(specifier, sourceUrl).href : import.meta.resolve(specifier))}`);
+  return (await import(`data:text/javascript;base64,${Buffer.from(linked).toString("base64")}`)).default;
+}
+
 test("approval shows hard obligations, soft preferences and free choices before rich interpretation", () => {
   const sections = datasetUnderstandingSections({ requested_generation: "One red ceramic cup",
     hard: [{ scope: "all_outputs", text: "Cup base touching table visible" }],
@@ -63,6 +72,133 @@ test("understanding summary groups global rules once without repeating their ima
   assert.deepEqual(summary.mayVary, ["Across the dataset: Locations"]);
   assert.deepEqual(summary.mustVary, ["Across the dataset: Poses"]);
   assert.doesNotMatch(JSON.stringify(summary), /every image/i);
+});
+
+test("mandatory variation appears once in the summary without losing its scope", () => {
+  const location = { scope: "dataset", text: "Vary the destinations across the dataset." };
+  const local = { scope: "guided:2", text: "Vary only the background for this input." };
+  const consistency = { scope: "all_outputs", text: "Exactly one red duck and two men." };
+  const brief = { hard: [location, local, consistency, location], fixed: [consistency],
+    must_vary: [location, local, location], rules: [location],
+    free: [{ scope: "dataset", text: "Choose one shared vehicle once." }] };
+  const before = structuredClone(brief);
+  assert.deepEqual(datasetUnderstandingSummary(brief), {
+    consistent: ["Exactly one red duck and two men."],
+    mayVary: ["Across the dataset: Choose one shared vehicle once."],
+    mustVary: ["Across the dataset: Vary the destinations across the dataset.",
+      "Guided input 2: Vary only the background for this input."], everyImage: [], scoped: [],
+  });
+  assert.deepEqual(brief, before);
+});
+
+test("details show each exact scoped fact once and retain all of its review tags", () => {
+  const duck = { scope: "all_outputs", text: "Exactly one red duck." };
+  const travel = { scope: "all_outputs", text: "The duck and two men travel together as best friends." };
+  const destinations = { scope: "dataset", text: "Vary destinations." };
+  const freedom = { scope: "guided:2", text: "Unspecified clothing, setting and composition remain open." };
+  const brief = { requested_generation: "Traveling friends", hard: [duck, travel, destinations, duck],
+    fixed: [duck], rules: [duck, travel], interactions: [travel], must_vary: [destinations],
+    free: [freedom], may_vary: [freedom, freedom] };
+  const before = structuredClone(brief);
+  const sections = datasetUnderstandingSections(brief);
+  assert.deepEqual(sections[0].items, [duck.text, travel.text, "Across the dataset: Vary destinations."]);
+  assert.deepEqual(sections[0].annotations, [
+    ["What stays fixed", "Rules every output must follow"],
+    ["Rules every output must follow", "Required interactions"], ["What must vary"],
+  ]);
+  assert.deepEqual(sections[2].items, ["Guided input 2: Unspecified clothing, setting and composition remain open."]);
+  assert.deepEqual(sections[2].annotations, [["What may vary"]]);
+  assert.equal(sections.flatMap(({ items }) => items).length, 4);
+  assert.deepEqual(brief, before);
+});
+
+test("display deduplication preserves authority, qualifiers, literal whitespace and scopes", () => {
+  const same = { scope: "all_outputs", text: "Warm lighting" };
+  const brief = { requested_generation: "A sign",
+    hard: [same, { scope: "all_outputs", text: 'Show the text "NO  ENTRY"' },
+      { scope: "all_outputs", text: 'Show the text "NO ENTRY"' },
+      { scope: "all_outputs", text: 'Show the text "no entry"' },
+      { scope: "guided:1", text: "Warm lighting" }, { scope: "guided:2", text: "Warm lighting" },
+      { scope: "all_outputs", text: "At least one man is blond" },
+      { scope: "all_outputs", text: "Both men are blond" }],
+    soft: [same], free: [same], fixed: [same],
+    rules: [{ scope: "all_outputs", text: "Warm lighting is required" }] };
+  const before = structuredClone(brief);
+  const sections = datasetUnderstandingSections(brief);
+  assert.equal(sections[0].items.length, 8);
+  assert.deepEqual(sections[1].items, ["Warm lighting"]);
+  assert.deepEqual(sections[2].items, ["Warm lighting"]);
+  assert.equal(sections.flatMap(({ items }) => items).length, 11);
+  assert.ok(sections.flatMap(({ items }) => items).includes("Warm lighting is required"));
+  const summary = datasetUnderstandingSummary(brief);
+  assert.deepEqual(summary.consistent, ["Warm lighting"]);
+  assert.deepEqual(summary.mayVary, ["Warm lighting"]);
+  assert.deepEqual(summary.scoped, ["Guided input 1: Warm lighting", "Guided input 2: Warm lighting"]);
+  assert.equal(summary.everyImage.length, 5);
+  assert.deepEqual(brief, before);
+});
+
+test("legacy review tags retain their categories when no contract arrays are supplied", () => {
+  const contact = { scope: "guided:1", text: "One glove contacts the cheek." };
+  const overlap = { scope: "guided:1", text: "Contact naturally hides part of the cheek." };
+  const brief = { requested_generation: "Sparring", interactions: [contact, contact],
+    visible_evidence: [contact], natural_occlusions: [overlap, overlap] };
+  const sections = datasetUnderstandingSections(brief);
+  const evidence = sections.find(({ label }) => label === "Required visible evidence");
+  assert.deepEqual(evidence.items, ["Guided input 1: One glove contacts the cheek."]);
+  assert.deepEqual(evidence.annotations, [["Required interactions"]]);
+  assert.deepEqual(sections.flatMap(({ items }) => items), [
+    "Guided input 1: One glove contacts the cheek.", "Guided input 1: Contact naturally hides part of the cheek.",
+  ]);
+});
+
+test("overlap explanations and action alternatives retain their authority and category labels", () => {
+  const required = { scope: "guided:1", text: "The required hand contact may hide its interface." };
+  const context = { scope: "guided:1", text: "A raised sleeve can naturally obscure the wrist." };
+  const options = { scope: "guided:2", text: "Punch or block, not both in one frozen image." };
+  const brief = { requested_generation: "Sparring", hard: [required, options],
+    natural_occlusions: [required, context], interactions: [options], action_options: [options] };
+  const sections = datasetUnderstandingSections(brief);
+  assert.deepEqual(sections[0].annotations, [["Natural overlaps and occlusions"],
+    ["Required interactions", "Action alternatives—not all in one image"]]);
+  assert.deepEqual(sections.find(({ label }) => label === "Natural overlaps and occlusions").items,
+    ["Guided input 1: A raised sleeve can naturally obscure the wrist."]);
+  assert.equal(sections.flatMap(({ items }) => items).length, 3);
+});
+
+test("conflict deduplication never hides distinct resolutions or unresolved questions", () => {
+  const conflict = { scope: "guided:1", conflict: "Eyes-only crop excludes shoes.", compatible_resolution: null };
+  const brief = { requested_generation: "A portrait", physical_conflicts: [conflict, conflict,
+    { ...conflict, compatible_resolution: "Show a reflection preserving both requirements." },
+    { ...conflict, scope: "guided:2" }], clarifications: ["Which crop is required?"] };
+  const sections = datasetUnderstandingSections(brief);
+  const conflicts = sections.find(({ label }) => label === "Physical conflicts and possible resolutions");
+  assert.equal(conflicts.items.length, 3);
+  assert.match(conflicts.items[0], /Needs clarification/);
+  assert.match(conflicts.items[1], /Show a reflection/);
+  assert.match(conflicts.items[2], /Guided input 2/);
+  assert.equal(canConfirmDatasetReview({ status: "ready", confirmation_token: "synthetic", brief }, false), false);
+});
+
+test("the modal renders duplicate facts once per view while retaining tag labels", async () => {
+  const Modal = await loadReviewModal();
+  const fact = { scope: "dataset", text: 'Vary destinations marked "DUCK & friends".' };
+  const brief = { requested_generation: "Traveling friends", hard: [fact, fact], must_vary: [fact],
+    rules: [fact], expansion_freedom: "Keep the required group.", dataset_contents: "Two prompts",
+    character_count: 3, identity_policy: "random_per_prompt", clarifications: [] };
+  const review = { status: "ready", confirmation_token: "synthetic", operation: "dataset",
+    input: { subject: "Traveling friends", amount: 2, trigger: "duck, 2 men" }, brief };
+  const markup = renderToStaticMarkup(createElement(Modal, { review, busy: false,
+    onRevise() {}, onConfirm() {}, onCancel() {} }));
+  const [summary, details] = markup.split(/<details[^>]*>/);
+  assert.equal(summary.split("Vary destinations marked").length - 1, 1);
+  assert.equal(details.split("Vary destinations marked").length - 1, 1);
+  assert.match(summary, /Must vary/);
+  assert.doesNotMatch(summary, /Scoped requirements/);
+  assert.match(details, /What must vary/);
+  assert.match(details, /Rules every output must follow/);
+  assert.match(markup, /DUCK &amp; friends/);
+  assert.doesNotMatch(markup.match(/<button[^>]*>Confirm and generate prompts<\/button>/)[0], /disabled/);
 });
 
 test("understanding grouping preserves local scope, qualifiers and distinct obligations", () => {
@@ -138,12 +274,7 @@ test("writer completion and failure bookkeeping does not invalidate approval of 
 });
 
 test("the existing modal renders the new brief, keeps extra instructions and blocks unresolved questions", async () => {
-  const sourceUrl = new URL("./workflows/DatasetConfirmationModal.jsx", import.meta.url);
-  const { code } = await transformWithEsbuild(await readFile(sourceUrl, "utf8"), sourceUrl.pathname,
-    { loader: "jsx", jsx: "automatic", sourcemap: false });
-  const linked = code.replace(/from (["'])([^"']+)\1/g, (_match, _quote, specifier) =>
-    `from ${JSON.stringify(specifier.startsWith(".") ? new URL(specifier, sourceUrl).href : import.meta.resolve(specifier))}`);
-  const { default: Modal } = await import(`data:text/javascript;base64,${Buffer.from(linked).toString("base64")}`);
+  const Modal = await loadReviewModal();
   const brief = { requested_generation: "Boxing <script>not markup</script>", expansion_freedom: "Preserve the contact",
     hard: [{ scope: "all_outputs", text: "Two adults with readable gloves" }],
     soft: [{ scope: "all_outputs", text: "Warm lighting" }],
