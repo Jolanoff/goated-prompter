@@ -5,6 +5,7 @@ import re
 
 from .prompting.target_models import canonical_target, get_target_capabilities
 from .minimax_format import normalize_h3_sections
+from .output_repetition import MAX_ANIMA_TAGS, anima_tag_count
 
 
 class WorkflowFormatError(ValueError):
@@ -116,6 +117,9 @@ def normalize_workflow_output(raw, target, *, expected_visible_text=(), mode=Non
             # Catch incomplete wrappers and JSON preceded by a model-written heading.
             if value.startswith("{") or re.search(r'(?m)^\s*[\[{]\s*(?:["{\[]|$)', value) or "```" in value:
                 raise WorkflowFormatError("This target requires prompt text, but structured or incomplete output was returned.")
+            if target == "Anima" and anima_tag_count(value) > MAX_ANIMA_TAGS:
+                raise WorkflowFormatError("Anima allows at most 100 tags, including supplied tags. Keep the fixed prefix, "
+                                          "reduce added tags and then describe the scene normally; do not truncate the scene.")
             return value
         if structured:
             if not _ideogram_caption(decoded):

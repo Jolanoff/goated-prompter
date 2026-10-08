@@ -12,6 +12,7 @@ from .workspace_store import WorkspaceConflict, locks, text
 from .minimax import MiniMaxService, validate_minimax_draft
 from .dataset import DatasetService, validate_dataset_draft
 from .dataset_assignments import dataset_assignments
+from .dataset_intent import intent_signature
 from .dataset_understanding import DatasetUnderstandingService
 from .presets import get_director_preset
 from .scene_planner import reusable_scene_plan, scene_is_usable, scene_unusable_reason
@@ -37,12 +38,17 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
         understanding = request.path.endswith("/understand")
         if set(payload) - ({"input", "settings", "workflow_revision"} if understanding else
                            {"input", "settings", "action", "index", "workflow_revision", "confirmation_token"} if local_scene else
-                           {"input", "settings", "valid_only", "workflow_revision", "confirmation_token"}):
+                            {"input", "settings", "valid_only", "resume", "workflow_revision", "confirmation_token"}):
             raise ValueError("Expected Dataset input and prompt-engine settings.")
         scenes_only = request.path.endswith("/scenes")
         valid_only = payload.get("valid_only", False)
         if type(valid_only) is not bool or (valid_only and scenes_only):
             raise ValueError("Valid-scenes-only generation must be a boolean for prompt generation.")
+        resume = payload.get("resume", False)
+        if type(resume) is not bool or (resume and (scenes_only or local_scene or understanding)):
+            raise ValueError("Continue must be a boolean for batch prompt generation.")
+        if resume and not valid_only:
+            raise ValueError("Continue requires valid-scenes-only generation from the saved plan.")
         data = validate_dataset_draft(payload.get("input"), generation=True, planning=scenes_only or understanding)
         if valid_only:
             rows = reusable_scene_plan(data, dataset_assignments(data), require_scenes=False, allow_pending=True)
@@ -71,7 +77,19 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
             if active:
                 return web.json_response({"error": "Wait for the active generation before generating again.",
                                           "active_job": active}, status=409)
-            intent = None if understanding else state.dataset_intents.approve(payload.get("confirmation_token"), data)
+            if understanding:
+                intent = None
+            elif resume:
+                saved = state.workflow_settings.snapshot("dataset")["draft"]
+                if intent_signature(data) != intent_signature(saved):
+                    raise ValueError("Continue requires the current saved scene plan. Save your changes before continuing.")
+                retained = state.dataset_checkpoints.continuation_intent(data)
+                if retained is None:
+                    raise ValueError("No matching saved scene checkpoint is available. Use Generate scenes in Configure to start a new plan.")
+                intent = (state.dataset_intents.approve(payload["confirmation_token"], data)
+                          if payload.get("confirmation_token") else retained or None)
+            else:
+                intent = state.dataset_intents.approve(payload.get("confirmation_token"), data)
             config = state.config()
             configured = canonical_backend_name(config.get("backend")) in {"mock", "openai_compatible"}
             director_request = GoatedPrompterRequest(
@@ -87,7 +105,7 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
             )
             kind = "dataset_understanding" if understanding else "dataset_scenes" if scenes_only else "dataset"
             return web.json_response(state.start_job(kind, director_request, config, True,
-                {"operation": kind, "input": data, "intent": intent, "scene_action": scene_action, "valid_only": valid_only,
+                {"operation": kind, "input": data, "intent": intent, "scene_action": scene_action, "valid_only": valid_only, "resume": resume,
                  "workflow_revision": payload.get("workflow_revision")},
                 job_factory=job_factory), status=202)
 
@@ -173,8 +191,21 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
     async def settings_endpoint(request):
         state = request.app[state_key]
         operation = request.match_info["operation"]
+
+        def response(record):
+            if operation == "dataset":
+                data = record["draft"]
+                token = state.dataset_intents.continuation_token(data)
+                if not token and data["scene_plan"]:
+                    retained = state.dataset_checkpoints.continuation_intent(data)
+                    if retained:
+                        state.dataset_intents.remember_generated(data, retained)
+                        token = state.dataset_intents.continuation_token(data)
+                record = {**record, "continuation_token": token}
+            return web.json_response(record)
+
         if request.method == "GET":
-            return web.json_response(await asyncio.to_thread(state.workflow_settings.snapshot, operation))
+            return response(await asyncio.to_thread(state.workflow_settings.snapshot, operation))
         payload = await json_object(request)
         try:
             if request.method == "PUT":
@@ -190,7 +221,7 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
                         raise ValueError("Choose save with instructions, or reset.")
                     result = await asyncio.to_thread(state.workflow_settings.update, operation, payload.get("revision"),
                                                      instructions=payload.get("instructions"), reset=action == "reset")
-            return web.json_response(result)
+            return response(result)
         except WorkspaceConflict as exc:
             return web.json_response({"error": str(exc)}, status=409)
 
@@ -234,7 +265,8 @@ def execute_workflow(state, job, request, config, workflow):
     if workflow["operation"] in {"dataset", "dataset_scenes"}:
         def checkpoint_result(snapshot=None):
             try:
-                state.workflow_settings.checkpoint_dataset(job, snapshot=snapshot)
+                state.workflow_settings.checkpoint_dataset(job, snapshot=snapshot,
+                                                            approved_intent=workflow.get("intent"))
             except (ValueError, OSError) as exc:
                 raise ValueError(f"Dataset progress could not be saved. Earlier durable checkpoints remain intact; copy unsaved output from this job's diagnostics before leaving. {exc}") from exc
         def durable_result(result):
@@ -242,6 +274,10 @@ def execute_workflow(state, job, request, config, workflow):
             snapshot["result"] = result
             try:
                 checkpoint_result(snapshot)
+                if workflow.get("intent") and result.get("scene_plan"):
+                    generated = {**workflow["input"], "scene_plan": result["scene_plan"],
+                                 "scene_plan_signature": result["scene_plan_signature"]}
+                    state.dataset_intents.remember_generated(generated, workflow["intent"])
             finally:
                 # Retain completed chunks for recovery even if persistence/cancellation fails.
                 with job.lock:
@@ -265,7 +301,7 @@ def execute_workflow(state, job, request, config, workflow):
         result = DatasetService(config, job.checkpoint, idea_history=state.idea_history).run(
             request, {**workflow["input"], "_confirmed_intent": workflow.get("intent")}, progress, partial,
             scenes_only=workflow["operation"] == "dataset_scenes", scene_action=workflow.get("scene_action"),
-            valid_only=workflow.get("valid_only", False))
+            valid_only=workflow.get("valid_only", False), resume=workflow.get("resume", False))
         job.commit(lambda: durable_result(result), finish=True)
         return
 

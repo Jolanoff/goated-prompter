@@ -21,8 +21,13 @@ function canonicalValue(value) {
 }
 
 export function datasetRequestSignature(draft) {
-  return JSON.stringify(canonicalValue(Object.fromEntries(Object.entries(draft || {})
-    .filter(([key]) => !["results", "result_job_id"].includes(key)))));
+  const source = Object.fromEntries(Object.entries(draft || {})
+    .filter(([key]) => !["results", "result_job_id", "plan_scenes_first"].includes(key)));
+  if (source.scene_plan) source.scene_plan = source.scene_plan.map((row) => Object.fromEntries(
+    Object.entries(row).filter(([key]) => key !== "prompt_status" &&
+      !(row.failure_stage === "prompt" && ["failure_stage", "failure_reason"].includes(key))),
+  ));
+  return JSON.stringify(canonicalValue(source));
 }
 
 export function reviseDatasetRequest(input, additions) {
@@ -40,10 +45,53 @@ export function canConfirmDatasetReview(review, busy, additions = "") {
     !additions.trim() && !datasetReviewQuestions(review.brief).length;
 }
 
+export function freshDatasetRequest(draft) {
+  return { ...draft, scene_plan: [], scene_plan_signature: "" };
+}
+
+export function hasCompletedDatasetPrompt(row, results) {
+  return row.prompt_status === "valid" && results.some((item) => item.index === row.index && item.prompt?.trim() &&
+    ["input", "idea", "scene"].every((field) => item[field] === (row[field] || "")));
+}
+
+function understandingText(item) {
+  if (item.scope !== "all_outputs") return item.text;
+  return item.text.replace(/^(?:every|each|all)\s+(?:images?|outputs?|prompts?)(?:\s*[:—-]\s*|\s+)/i, "").trim();
+}
+
+function requirementKey(item) {
+  return `${item.scope}:${understandingText(item)}`;
+}
+
+function scopedRequirement(item) {
+  const scope = item.scope === "all_outputs" ? ""
+    : item.scope === "dataset" ? "Across the dataset: " : `Guided input ${item.scope.split(":")[1]}: `;
+  return `${scope}${understandingText(item)}`;
+}
+
+function uniqueRequirements(items) {
+  return [...new Map(items.map((item) => [requirementKey(item), item])).values()];
+}
+
+export function datasetUnderstandingSummary(brief) {
+  const fixed = brief?.fixed || [];
+  const fixedKeys = new Set(fixed.map(requirementKey));
+  const contract = brief?.hard?.length ? brief.hard : ["rules", "visible_evidence", "interactions", "visibility_to_preserve"]
+    .flatMap((field) => brief?.[field] || []);
+  const required = uniqueRequirements(contract).filter((item) => !fixedKeys.has(requirementKey(item)));
+  return {
+    consistent: uniqueRequirements(fixed).map(scopedRequirement),
+    mayVary: uniqueRequirements([...(brief?.may_vary || []), ...(brief?.free || [])]).map(scopedRequirement),
+    mustVary: uniqueRequirements(brief?.must_vary || []).map(scopedRequirement),
+    everyImage: required.filter((item) => item.scope === "all_outputs").map(scopedRequirement),
+    scoped: required.filter((item) => item.scope !== "all_outputs").map(scopedRequirement),
+  };
+}
+
 export function datasetUnderstandingSections(brief) {
   if (!brief?.requested_generation) return [];
   const labels = {
-    hard: "HARD — must satisfy", soft: "SOFT — preferences, adjustable", free: "FREE — creative choices",
+    hard: "Requirements", soft: "Adjustable preferences", free: "Open creative choices",
     fixed: "What stays fixed", may_vary: "What may vary", must_vary: "What must vary",
     rules: "Rules every output must follow", visible_evidence: "Required visible evidence",
     interactions: "Required interactions", natural_occlusions: "Natural overlaps and occlusions",
@@ -52,12 +100,10 @@ export function datasetUnderstandingSections(brief) {
   if (brief.action_options) labels.action_options = "Action alternatives—not all in one image";
   return Object.entries(labels).map(([field, label]) => ({ label,
     items: (brief[field] || []).map((item) => {
-      const scope = item.scope === "all_outputs" ? "Every output"
-        : item.scope === "dataset" ? "Across the dataset" : `Guided input ${item.scope.split(":")[1]}`;
       const text = field === "physical_conflicts"
         ? `${item.conflict} ${item.compatible_resolution || "Needs clarification; no compatible resolution established."}`
         : item.text;
-      return `${scope}: ${text}`;
+      return scopedRequirement({ ...item, text });
     }),
   }));
 }

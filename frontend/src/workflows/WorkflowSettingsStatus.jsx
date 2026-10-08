@@ -1,7 +1,7 @@
 import { ui } from "../ui.js";
 
-export default function WorkflowSettingsStatus({ settings, label }) {
-  return <div className="mb-4 text-xs text-muted" role="group" aria-label={`${label} settings save status`}>
+export default function WorkflowSettingsStatus({ settings, label, className = "mb-4" }) {
+  return <div className={`${className} text-xs text-muted`} role="group" aria-label={`${label} settings save status`}>
     <span aria-live="polite">{label} settings: {settings.status}</span>
     {settings.error && <div className={`${ui.message} mt-3`} role="alert">
       <span>{settings.error} Your local draft is kept.</span>

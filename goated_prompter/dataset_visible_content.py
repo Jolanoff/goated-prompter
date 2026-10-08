@@ -5,6 +5,7 @@ import re
 
 from .prompting.target_models import canonical_target
 from .planning.rule_compiler import QUOTED as _QUOTED
+from .output_repetition import repeated_tag, anima_tags
 
 
 # Phrase patterns, not a ban on "no", "without" or "avoid" in ordinary prose.
@@ -42,6 +43,13 @@ _EXCLUSION_CLAUSE = re.compile(
 )
 _META_CLAUSE = re.compile(
     r"masterpiece|(?:best|worst|low)\s+quality|(?:bad|correct)\s+anatomy|extra\s+limbs|watermark|signature",
+    re.IGNORECASE,
+)
+_STYLE_METADATA = re.compile(
+    r"(?:^|[,.;\n])\s*(?:(?:the\s+)?(?:visual\s+)?style\s*(?:is\b|:)"
+    r"|render\s+(?:the\s+)?scene\s+as\b"
+    r"|(?:the\s+)?(?:scene|image)\s+is\s+rendered\s+in\b"
+    r"|(?:the\s+)?anime\s*(?:/\s*manga)?\s+style\s+is\s+evident\b)",
     re.IGNORECASE,
 )
 
@@ -145,7 +153,7 @@ def sanitize_positive_prompt(prompt, target, protected_terms=()):
     return json.dumps(value, ensure_ascii=False)
 
 
-def visible_content_error(text, protected_terms=()):
+def visible_content_error(text, protected_terms=(), *, detect_style_metadata=False):
     """Detect specific exclusion/meta phrases, preserving literal text and tokens."""
     for term in sorted((term for term in protected_terms if term), key=len, reverse=True):
         text = text.replace(term, "[protected anchor]")
@@ -159,6 +167,9 @@ def visible_content_error(text, protected_terms=()):
         return match.group(0)
 
     text = _QUOTED.sub(quoted_content, text)
+    if detect_style_metadata and _STYLE_METADATA.search(text):
+        return ("Style-setting commentary leaked into the Anima prompt. Apply the selected medium silently, "
+                "preserving concrete rendering, setting and lighting facts without sentences announcing or explaining the style.")
     metadata = re.search(r"\b(?:self_check|idea_status|scene_status|prompt_status)\s*[:=]", text, re.I)
     if _LEAKAGE.search(text) or metadata:
         return "Exclusion or quality/meta language leaked into positive content. Describe the intended visible state affirmatively; apply exclusions silently."
@@ -168,9 +179,28 @@ def visible_content_error(text, protected_terms=()):
 def positive_prompt_error(prompt, target, protected_terms=()):
     """Check all Ideogram prose fields, not its keys, palettes or literal text."""
     if canonical_target(target) == "Anima":
+        generated = prompt
+        for term in protected_terms:
+            generated = generated.replace(term, "")
+        if any(re.match(r"no\s+(?:cropping|camera\b|action\b|changed\b|extra\b|background clutter\b|visual confusion\b)", tag, re.I)
+               for tag in anima_tags(generated)):
+            return "Negative constraint tags leaked into the Anima inventory. Apply constraints silently and describe the visible scene affirmatively."
+        prose = _QUOTED.sub("[literal text]", generated).casefold().replace("_", " ")
+        inventories = " ".join(match.group() for match in re.finditer(
+            r"\b(?:with|has|have|wears|wearing)\b[^.!?\n;]+", prose) if match.group().count(",") >= 2)
+        for term in protected_terms:
+            appearance = {tag.casefold().replace("_", " ") for tag in anima_tags(term, tag_only=True)
+                if re.search(r"\b(?:eyes?|hair|ponytail|wings?|caps?|shirts?|jackets?|skirts?|dress(?:es)?|shoes?|ribbons?|ears?|tails?|fur|scales|feathers|glasses)\b", tag, re.I)}
+            repeated = sum(bool(re.search(r"(?<!\w)" + re.escape(tag) + r"(?!\w)", inventories)) for tag in appearance)
+            if repeated >= 5 and repeated >= len(appearance) * .7:
+                return ("A second appearance inventory repeats the supplied character tags in prose. "
+                        "The protected prefix already carries those facts; use names to describe positions, actions and interactions in the scene.")
+        if tag := repeated_tag(prompt, protected_terms):
+            return (f"Anima tag '{tag}' loops in generated content. Preserve the supplied trigger and its repetitions "
+                    "without adding a second tag inventory; then describe the accepted scene once and stop.")
         protected_terms = (*protected_terms, *_anima_quality_tags(prompt))
     if target != "Ideogram4":
-        return visible_content_error(prompt, protected_terms)
+        return visible_content_error(prompt, protected_terms, detect_style_metadata=canonical_target(target) == "Anima")
     value = json.loads(prompt)
     descriptions = [value["high_level_description"], value["compositional_deconstruction"]["background"]]
     descriptions.extend(content for content in value["style_description"].values() if isinstance(content, str))

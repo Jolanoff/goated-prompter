@@ -62,9 +62,18 @@ class DatasetUnitTests(unittest.TestCase):
 
     def test_bounds_and_guided_requirements(self):
         for changes in ({"amount": True}, {"amount": 26}, {"source_mode": "guided", "inputs": ""},
-                        {"length": "Huge"}, {"trigger_connected": 1}, {"creativity": "invalid"}):
+                        {"length": "Huge"}, {"trigger_connected": 1}, {"creativity": "invalid"}, {"plan_scenes_first": 1}):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 validate_dataset_draft(valid_draft(**changes), generation=True)
+
+    def test_trigger_length_boundary_for_saved_and_generation_drafts(self):
+        for options in ({}, {"generation": True}, {"generation": True, "planning": True}):
+            for length in (201, 999, 1000):
+                with self.subTest(options=options, length=length):
+                    trigger = "t" * length
+                    self.assertEqual(validate_dataset_draft(valid_draft(trigger=trigger), **options)["trigger"], trigger)
+            with self.subTest(options=options, length=1001), self.assertRaisesRegex(ValueError, "at most 1000 characters"):
+                validate_dataset_draft(valid_draft(trigger="t" * 1001), **options)
 
     def test_guided_lines_cycle_without_invented_staging(self):
         data = valid_draft(amount=3, source_mode="guided", inputs="First action\nSecond action")

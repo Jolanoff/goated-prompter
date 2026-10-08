@@ -4,6 +4,14 @@ import json
 import re
 
 
+def fixed_anima_prefix(data):
+    """The app owns a protected connected trigger placed before Anima scene prose."""
+    if (data["target"] == "Anima" and data["trigger_connected"] and data["trigger_at_start"]
+            and not data["expand_trigger"]):
+        return data["trigger"].strip()
+    return ""
+
+
 def trigger_terms(trigger, connected=True):
     """Return exact required trigger terms in their configured grouping."""
     value = str(trigger or "").strip()

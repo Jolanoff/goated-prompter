@@ -141,19 +141,24 @@ for (const theme of ["dark", "light"]) {
     await page.getByLabel("Dataset idea", { exact: true }).fill("A traveler in a blue coat.");
     await page.getByLabel("Trigger text or terms").fill("ohwx_traveler");
     await page.getByLabel("Number of prompts").selectOption("2");
+    await page.getByText("Advanced options", { exact: true }).click();
     await page.getByText("Training trigger & controls", { exact: true }).click();
     await page.getByLabel(/Provide my own scene ideas/).check();
     await page.getByLabel("Guided dataset inputs").fill("standing on a platform\nreading a map");
-    await page.getByRole("button", { name: "Generate 2 prompts", exact: true }).click();
-    await confirmDatasetReview(page);
+    await generateDataset(page);
     await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/ohwx_traveler/);
     await expect(page.getByRole("region", { name: "Dataset quality report" })).toHaveCount(0);
-    await expect(page.getByLabel("Scene 1 self-check", { exact: true })).toContainText("PASS");
-    await expect(page.getByLabel("Scene 2 self-check", { exact: true })).toContainText("PASS");
+    await openDatasetPage(page, "Scenes");
+    for (const index of [1, 2]) {
+      await expect(page.getByLabel(`Scene ${index} self-check`, { exact: true })).toHaveCount(0);
+      await expect(page.getByRole("article", { name: `Scene ${index} card`, exact: true })
+        .getByLabel("Scene: success", { exact: true })).toBeVisible();
+    }
+    await openDatasetPage(page, "Dataset");
     // A contrast audit during the cards' entrance fade measures transient
     // opacity, not the settled theme. Wait for finite animations/transitions.
     await page.evaluate(() => Promise.all(document.getAnimations()
-      .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
+      .filter((animation) => animation.effect?.target?.checkVisibility() && animation.effect.getComputedTiming().iterations !== Infinity)
       .map((animation) => animation.finished.catch(() => {}))));
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze();
@@ -185,4 +190,4 @@ test("populated Refine history, instruction editor and activity log remain acces
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("activity-log-mobile.png") });
 });
-import { confirmDatasetReview } from "./datasetHelpers.js";
+import { generateDataset, openDatasetPage } from "./datasetHelpers.js";

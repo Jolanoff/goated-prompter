@@ -4,6 +4,7 @@ import { canConfirmDatasetReview, datasetRequestSignature, reviseDatasetRequest 
 
 export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm, setError }) {
   const [confirmation, setConfirmation] = useState(null);
+  const [understanding, setUnderstanding] = useState(null);
   const pending = useRef(null);
   const opener = useRef(null);
   const latestDraft = useRef(draft);
@@ -11,6 +12,7 @@ export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm
 
   async function analyze(item) {
     pending.current = item;
+    setUnderstanding(null);
     setConfirmation({ ...item, status: "analyzing", brief: null, confirmation_token: "", error: "" });
     try {
       const accepted = await onGenerate("dataset/understand", { input: item.input });
@@ -29,12 +31,14 @@ export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm
   useEffect(() => {
     if (!confirmation?.jobId || job?.id !== confirmation.jobId || confirmation.status !== "analyzing") return;
     if (job.status === "succeeded") {
-      setConfirmation((current) => current && { ...current, ...job.result, status: "ready" });
+      const reviewed = { ...confirmation, ...job.result, status: "ready" };
+      setConfirmation(reviewed);
+      setUnderstanding(reviewed);
     } else if (["failed", "cancelled", "interrupted"].includes(job.status)) {
       setConfirmation((current) => current && { ...current, status: "failed",
         error: job.error || "Request analysis stopped. No ideas, scenes or prompts were generated." });
     }
-  }, [confirmation?.jobId, confirmation?.status, job]);
+  }, [confirmation, job]);
 
   useEffect(() => () => { pending.current = null; }, []);
 
@@ -48,17 +52,18 @@ export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm
     return () => cancelAnimationFrame(frame);
   }, [confirmation, busy]);
 
-  function requestConfirmation(operation, options = {}) {
+  function requestConfirmation(operation, options = {}, input = draft) {
     if (pending.current) return;
     // The review lock disables the launcher before showModal can remember it.
     opener.current = document.activeElement;
     setError("");
-    void analyze({ input: draft, operation, options, baseSignature: datasetRequestSignature(draft) });
+    void analyze({ input, operation, options, baseSignature: datasetRequestSignature(draft) });
   }
 
   function cancelConfirmation() {
     const item = pending.current;
     pending.current = null;
+    if (confirmation) setUnderstanding({ ...confirmation, status: "cancelled" });
     setConfirmation(null);
     if (item?.jobId && job?.id === item.jobId && !["succeeded", "failed", "cancelled", "interrupted"].includes(job.status)) {
       void api(`/jobs/${item.jobId}/cancel`, {}).catch((err) => setError(err.message));
@@ -70,9 +75,9 @@ export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm
     const input = reviseDatasetRequest(confirmation.input, additions);
     const needsReplan = input !== confirmation.input;
     void analyze({ input, baseSignature: confirmation.baseSignature,
-      operation: needsReplan && confirmation.operation === "dataset/scene" ? "dataset" : confirmation.operation,
+      operation: needsReplan ? input.plan_scenes_first ? "dataset/scenes" : "dataset" : confirmation.operation,
       options: needsReplan ? {} : confirmation.options,
-      notice: needsReplan ? "New rules require fresh ideas and scenes for this batch." : confirmation.notice });
+      notice: needsReplan ? "New rules require fresh ideas and scenes. Review them before continuing to Dataset." : confirmation.notice });
   }
 
   async function confirmRequest() {
@@ -88,11 +93,13 @@ export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm
       const accepted = await onConfirm(item);
       if (!accepted) throw new Error("Generation did not start. Your previous batch is unchanged; try again.");
       pending.current = null;
+      setUnderstanding({ ...item, status: "confirmed" });
       setConfirmation(null);
     } catch (err) {
       setConfirmation({ ...item, status: "ready", error: err.message });
     }
   }
 
-  return { confirmation, requestConfirmation, reviseConfirmation, cancelConfirmation, confirmRequest };
+  return { confirmation, understanding: confirmation || understanding,
+    requestConfirmation, reviseConfirmation, cancelConfirmation, confirmRequest };
 }

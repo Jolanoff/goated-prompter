@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { LoaderCircle, X } from "lucide-react";
+import { ChevronDown, Download, LoaderCircle, X } from "lucide-react";
 import { ui } from "../ui.js";
-import { canConfirmDatasetReview, datasetReviewQuestions, datasetUnderstandingSections } from "./datasetState.js";
+import { canConfirmDatasetReview, datasetReviewQuestions, datasetUnderstandingSections, datasetUnderstandingSummary } from "./datasetState.js";
 
 const identityLabels = {
   fixed: "Fixed; preserve the specified identities",
@@ -12,13 +12,13 @@ const identityLabels = {
 
 function SummaryList({ label, items }) {
   if (!items?.length) return null;
-  return <div className="mt-4"><h3 className="text-xs font-semibold">{label}</h3>
-    <ul className="mt-2 grid gap-2 pl-4 text-xs leading-relaxed text-muted list-disc">
+  return <div className="dataset-review-list"><h3>{label}</h3>
+    <ul>
       {items.map((item, index) => <li className="wrap-anywhere" key={index}>{item}</li>)}
     </ul></div>;
 }
 
-export default function DatasetConfirmationModal({ review, busy, onRevise, onConfirm, onCancel }) {
+export default function DatasetConfirmationModal({ review, busy, onRevise, onConfirm, onCancel, onExport }) {
   const dialog = useRef(null);
   const [additions, setAdditions] = useState("");
   useEffect(() => {
@@ -26,52 +26,97 @@ export default function DatasetConfirmationModal({ review, busy, onRevise, onCon
     else if (!review && dialog.current?.open) dialog.current.close();
   }, [review]);
   const brief = review?.brief;
+  const summary = datasetUnderstandingSummary(brief);
   const working = ["analyzing", "confirming"].includes(review?.status);
   const canConfirm = canConfirmDatasetReview(review, busy, additions);
-  const confirmLabel = review?.operation === "dataset/scenes" ? "Confirm and plan scenes" : "Confirm and generate prompts";
+  const confirmLabel = review?.operation === "dataset/scenes" ? "Confirm and generate scenes"
+    : review?.options?.resume ? "Confirm and continue" : "Confirm and generate prompts";
   return <dialog ref={dialog} className="app-dialog dataset-confirmation-dialog"
     aria-labelledby="dataset-confirmation-title" aria-describedby="dataset-confirmation-description"
     onCancel={(event) => { event.preventDefault(); if (review?.status !== "confirming") onCancel(); }}>
-    <header className="mb-4 flex items-center gap-3 border-b border-line pb-4">
-      <h2 id="dataset-confirmation-title" className="min-w-0 flex-1 font-display text-lg font-bold">Review your Dataset request</h2>
+    <header className="dataset-review-header">
+      <div className="min-w-0 flex-1">
+        <h2 id="dataset-confirmation-title" className="font-display text-lg font-bold">Review your Dataset request</h2>
+        <p id="dataset-confirmation-description">Check the interpretation, add corrections if needed, then confirm.</p>
+      </div>
+      {onExport && <button className={ui.iconButton} type="button" aria-label="Export generation log" title="Export generation log" onClick={onExport}><Download size={18} aria-hidden="true" /></button>}
       <button className={ui.iconButton} type="button" aria-label="Cancel request review" disabled={review?.status === "confirming"}
         onClick={onCancel} autoFocus><X size={18} aria-hidden="true" /></button>
     </header>
-    <p id="dataset-confirmation-description" className="text-xs leading-relaxed text-muted">Confirm what the engine understood before it creates ideas, scenes or prompts. HARD requirements must be satisfied; SOFT preferences may adjust; FREE choices remain open. Generated ideas are suggestions, not new requirements. This is an interpretation, not an output check.</p>
+    <div className="dataset-review-body">
     {working && <p className="mt-4 flex items-center gap-2 text-xs" role="status"><LoaderCircle size={16} className="dataset-loader" aria-hidden="true" />{review.status === "analyzing" ? "Understanding your request…" : "Starting confirmed generation…"}</p>}
     {review?.error && <p className={`${ui.warningNote} mt-4`} role="alert">{review.error}</p>}
     {review?.notice && <p className={`${ui.subtleNote} mt-4`}>{review.notice}</p>}
     {brief && <>
-      <dl className="mt-5 grid gap-4 text-xs leading-relaxed">
-        <div><dt className="font-semibold">What you want</dt><dd className="mt-1 whitespace-pre-wrap wrap-anywhere text-muted">{brief.requested_generation}</dd></div>
-        <div><dt className="font-semibold">Characters and identity</dt>
-          <dd className="mt-1 text-muted">{brief.character_count ?? "Unspecified / not applicable"}. {identityLabels[brief.identity_policy]}</dd></div>
-        <div><dt className="font-semibold">How far the idea may expand</dt><dd className="mt-1 wrap-anywhere text-muted">{brief.expansion_freedom}</dd></div>
-        <div><dt className="font-semibold">What the dataset will contain</dt><dd className="mt-1 wrap-anywhere text-muted">{brief.dataset_contents}</dd></div>
-        <div><dt className="font-semibold">Triggers</dt><dd className="mt-1 whitespace-pre-wrap wrap-anywhere text-muted">{review.input.trigger || "None; planning only"}</dd></div>
-      </dl>
-      {datasetUnderstandingSections(brief).map(({ label, items }) => <SummaryList key={label} label={label} items={items} />)}
-      <SummaryList label="Answer before generating" items={datasetReviewQuestions(brief)} />
+      <section className="dataset-review-concept" aria-label="Concept">
+        <h3>Concept</h3>
+        <p className="whitespace-pre-wrap wrap-anywhere">{brief.requested_generation}</p>
+        <p className="dataset-review-identity">{brief.character_count != null && `${brief.character_count} characters per image. `}{identityLabels[brief.identity_policy]}</p>
+      </section>
+      <div className="dataset-review-grid">
+        <section aria-label="What stays consistent">
+          <h3>What stays consistent</h3>
+          {summary.consistent.length ? <SummaryList label="Required consistency" items={summary.consistent} />
+            : <p className="dataset-review-note">Follow the concept and image requirements below.</p>}
+        </section>
+        <section aria-label="What should vary">
+          <h3>What should vary</h3>
+          <SummaryList label="May vary" items={summary.mayVary} />
+          <SummaryList label="Must vary" items={summary.mustVary} />
+          <p className="dataset-review-note">{brief.expansion_freedom}</p>
+        </section>
+      </div>
+      <section className="dataset-review-requirements" aria-label="Image requirements">
+        <SummaryList label="Every image should" items={summary.everyImage} />
+        <SummaryList label="Scoped requirements" items={summary.scoped} />
+        {!summary.everyImage.length && !summary.scoped.length && <>
+          <h3>Every image should</h3><p className="dataset-review-note">Follow the concept and consistency rules above.</p>
+        </>}
+      </section>
+      <section className="dataset-review-output" aria-label="Output settings">
+        <h3>Output settings</h3>
+        <dl>
+          <div><dt>Amount</dt><dd>{review.input.amount ? `${review.input.amount} prompts` : "Not specified"}</dd></div>
+          <div><dt>Target model</dt><dd>{review.input.target || "Not specified"}</dd></div>
+          <div><dt>Prompt length</dt><dd>{review.input.length || "Not specified"}</dd></div>
+          <div><dt>Visual style</dt><dd>{review.input.visual_style === "Custom" ? review.input.custom_style : review.input.visual_style || "Not specified"}</dd></div>
+          <div><dt>Creativity</dt><dd>{review.input.creativity || "Balanced"}</dd></div>
+          <div><dt>Trigger text</dt><dd className="whitespace-pre-wrap">{review.input.trigger || "None; planning only"}</dd></div>
+        </dl>
+      </section>
+      {!!datasetReviewQuestions(brief).length && <section className="dataset-review-questions" role="note">
+        <SummaryList label="Answer before generating" items={datasetReviewQuestions(brief)} />
+      </section>}
     </>}
-    {review && <details className="dataset-details mt-5 rounded-lg border border-line p-3 text-xs">
-      <summary>Original request and current rules</summary>
+    {review && <details className="dataset-details dataset-review-details">
+      <summary>Show details<ChevronDown size={14} aria-hidden="true" /></summary>
+      <p className="mt-3 text-muted">Requirements must be satisfied; preferences may adjust; creative choices remain open. Generated ideas are suggestions, not new requirements. This is an interpretation, not an output check. Unless noted, rules apply to every image.</p>
+      <h3 className="mt-4 font-semibold">Original request and current rules</h3>
       <p className="mt-3 whitespace-pre-wrap wrap-anywhere text-muted">{review.input.subject}</p>
       {review.input.constraints && <p className="mt-3 whitespace-pre-wrap wrap-anywhere text-muted">{review.input.constraints}</p>}
       {review.input.source_mode === "guided" && <p className="mt-3 whitespace-pre-wrap wrap-anywhere text-muted">{review.input.inputs}</p>}
+      {brief && <>
+        <div className="dataset-review-grid mt-4">
+          <SummaryList label="Characters and identity" items={[`${brief.character_count ?? "Unspecified / not applicable"}. ${identityLabels[brief.identity_policy]}`]} />
+          <SummaryList label="What the dataset will contain" items={[brief.dataset_contents]} />
+          {datasetUnderstandingSections(brief).map(({ label, items }) => <SummaryList key={label} label={label} items={items} />)}
+        </div>
+      </>}
     </details>}
     <label className={`${ui.field} mt-5`}><span>Extra instructions or answers</span>
       <textarea className={ui.notesInput} aria-label="Extra instructions or answers" value={additions}
         maxLength={Math.max(0, 10000 - (review?.input.constraints?.length || 0) - 1)} disabled={working || busy}
-        placeholder="Randomize the people, but at least one must have blond hair in every image."
+        placeholder="Add a correction, missing rule, or answer to a question…"
         onChange={(event) => setAdditions(event.target.value)} />
       <small className="text-muted">Update the summary after edits, then confirm it. Cancel leaves your saved batch unchanged.</small>
     </label>
-    <div className="mt-5 flex flex-wrap justify-end gap-3">
+    </div>
+    <footer className="dataset-review-actions">
       <button className={ui.button} type="button" disabled={review?.status === "confirming"} onClick={onCancel}>Cancel</button>
       <button className={ui.button} type="button" disabled={working || busy} onClick={() => {
         onRevise(additions); setAdditions("");
       }}>{review?.status === "failed" ? "Retry analysis" : "Update summary"}</button>
       <button className={ui.primaryButton} type="button" disabled={!canConfirm} onClick={onConfirm}>{confirmLabel}</button>
-    </div>
+    </footer>
   </dialog>;
 }

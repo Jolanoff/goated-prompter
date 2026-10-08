@@ -225,11 +225,16 @@ class PromptInstruction:
     # Optional bounded stream ceiling for structured batch planning. Individual
     # prompt workflows retain the transport's default runaway-output ceiling.
     stream_character_limit: int = None
+    # Exact user wording is not evidence of a generated tag loop.
+    repetition_protected_terms: tuple = ()
+    # Tag syntax is a writer contract, not a rule for structured planning text.
+    tag_repetition_checks: bool = False
     # Request-local sampling; supporting planners use conservative values.
     temperature: float = None
     top_p: float = None
     # Structured stages can request llama.cpp JSON decoding without changing writers.
     json_output: bool = False
+    json_schema: dict = None
 
     def _user_content(self, text):
         if not reference_images(self):

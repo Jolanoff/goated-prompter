@@ -115,9 +115,10 @@ class SupportingPlanningTests(unittest.TestCase):
     def test_direct_messages_match_pre_feature_golden_for_every_target(self):
         # SHA256 of to_messages() from HEAD core.py before this feature. Isolated
         # built-in Directors ensure saved custom presets cannot affect fixtures.
+        # Anima alone uses the owner-approved hybrid adapter and flat-prefix format.
         golden = {
             "Generic": "4c7fc074364d98c431ad5873ae1399922a8e4859a2aaa89c5e7fa4d9c891260f",
-            "Anima": "77dcf5ada02ba979a2a1f1a7d31405c2b47e1a4ffcbd36f66ce2fcc944d84f7d",
+            "Anima": "b33494c03ffc7fa1f185d258748de6af41fa1a1fd8837e9ed769b564b6819e62",
             "Krea 2": "40f51d4b33d4cf4f45517037d8ccbf16ca5fca7267feaeb7381ae77a4dd32804",
             "FLUX.2 Klein": "2b324dbf43653369ca2d76c75c1efd99a9e252cda2e9101febb0215a266ad738",
             "Z-Image Base": "864d3f465d9b5867678ebb272bc5e7f8f3dabb5cd3245f0df76837214cf47e2a",

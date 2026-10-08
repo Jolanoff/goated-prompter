@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api.js";
-import { datasetRetryStage, invalidateDatasetPrompts, isDatasetSceneCurrent } from "./datasetState.js";
+import { datasetRetryStage, freshDatasetRequest, hasCompletedDatasetPrompt, invalidateDatasetPrompts, isDatasetSceneCurrent } from "./datasetState.js";
 import { useDatasetConfirmation } from "./useDatasetConfirmation.js";
 
 /** Dataset requests and job projections; editable-draft revisions stay in useWorkflowSettings. */
@@ -34,8 +34,8 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, d
   const retryStage = (row) => datasetRetryStage(row, { usable: sceneUsable(row) });
   const scenePlanReady = !staleScenePlan && !!draft?.scene_plan_signature && validSceneCount > 0;
   const canWrite = canPlanScenes && director && draft.trigger.trim();
-  const canGenerate = canWrite && !draft.scene_plan?.some((item) =>
-    item.scene_status !== "failed" && item.idea !== undefined && !item.idea.trim());
+  const canContinue = canWrite && scenePlanReady;
+  const remainingPromptCount = draft?.scene_plan?.filter((row) => sceneUsable(row) && !hasCompletedDatasetPrompt(row, draft.results)).length || 0;
 
   useEffect(() => {
     if (!datasetJob || !["failed", "interrupted"].includes(job.status)) return;
@@ -60,7 +60,8 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, d
 
   function sceneAction(index, action) {
     if (disabled || staleScenePlan || !canWrite || submission.current) return;
-    confirmationFlow.requestConfirmation("dataset/scene", { index, action });
+    void admitConfirmed({ operation: "dataset/scene", input: draft, options: { index, action } })
+      .catch((err) => setError(err.message));
   }
 
   async function admitConfirmed(review) {
@@ -70,16 +71,33 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, d
     setError("");
     try {
       await preferences.flush();
+      let token = review.confirmation_token;
+      if (!token) {
+        const saved = await api("/workspace/settings/dataset");
+        if (!saved.continuation_token && !review.options?.resume) {
+          confirmationFlow.requestConfirmation(review.operation, review.options, review.input);
+          return null;
+        }
+        token = saved.continuation_token;
+      }
       return await onGenerate(review.operation, { input: { ...review.input, results: draft.results,
         result_job_id: draft.result_job_id }, ...review.options,
-        confirmation_token: review.confirmation_token, workflow_revision: preferences.revision() });
+        confirmation_token: token, workflow_revision: preferences.revision() });
     }
     finally { submission.current = false; setStarting(false); }
   }
 
-  function generate(scenesOnly = false, validOnly = false) {
-    if (!(scenesOnly ? canPlanScenes : validOnly ? canWrite && scenePlanReady : canGenerate) || submission.current) return;
-    confirmationFlow.requestConfirmation(scenesOnly ? "dataset/scenes" : "dataset", validOnly ? { valid_only: true } : {});
+  function generateDataset() {
+    if (!(draft?.plan_scenes_first ? canPlanScenes : canWrite) || submission.current) return;
+    confirmationFlow.requestConfirmation(draft.plan_scenes_first ? "dataset/scenes" : "dataset", {}, freshDatasetRequest(draft));
+  }
+
+  async function continueDataset() {
+    if (!canContinue || submission.current) return;
+    try {
+      const accepted = await admitConfirmed({ operation: "dataset", input: draft, options: { valid_only: true, resume: true } });
+      if (accepted === false) throw new Error("Continuation did not start. Your saved plan and prompts are unchanged; try again.");
+    } catch (err) { setError(err.message); }
   }
 
   function editResult(index, prompt) {
@@ -112,6 +130,6 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, d
   return { starting, error, resettingIdeas, noveltyNotice, workflowActive, disabled,
     ...confirmationFlow,
     guidedLines, canPlanScenes, staleScenePlan, sceneUsable, validSceneCount, retryStage,
-    scenePlanReady, canWrite, canGenerate, updateSceneSettings, updateWriterSettings,
-    sceneAction, generate, editResult, releaseCheckpoints, clearResults, resetRecentIdeas };
+    scenePlanReady, canWrite, canContinue, remainingPromptCount, updateSceneSettings, updateWriterSettings,
+    sceneAction, generateDataset, continueDataset, editResult, releaseCheckpoints, clearResults, resetRecentIdeas };
 }
