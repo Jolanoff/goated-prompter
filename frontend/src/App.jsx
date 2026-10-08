@@ -573,6 +573,7 @@ function App() {
       const next = await api("/generate", {
         settings: {
           ...settings,
+          planning_mode: "Direct",
           linked_references: true,
           prompt_model: "Custom",
           director_profile: configuredBackend ? "" : selectedProfile?.id || "",

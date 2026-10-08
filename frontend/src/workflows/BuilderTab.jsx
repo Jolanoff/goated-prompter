@@ -3,7 +3,6 @@ import { ArrowUpRight, Bookmark, ChevronDown, Copy, FileText, Layers3,
 import { Panel } from "../components/StudioPrimitives.jsx";
 import { orderDisplayPresets, presetDisplayLabel } from "../presetPresentation.js";
 import { ui } from "../ui.js";
-import { PlanningSelect } from "./WorkflowControls.jsx";
 
 const taskLabels = {
   Enhance: "Improve a prompt",
@@ -94,10 +93,6 @@ export default function BuilderTab({ settings, inputs, presets, preset, engine, 
                 <button className={ui.textButton} onClick={onManagePresets}>Manage instruction presets</button>
               </div>
               {field("target_model", "Target model")}
-              <PlanningSelect value={settings.planning_mode} disabled={busy || actionBusy || settingsBusy}
-                onChange={(value) => onChange("planning_mode", value)} />
-              {job?.kind === "builder" && job?.result?.planning_status === "planned" &&
-                <p className={ui.subtleNote} role="status">Supporting scene planning used for the latest generation.</p>}
               <div className={`${ui.fields} ${ui.threeFields} mt-5`}>
                 {field("creativity", "Creativity")}
                 {field("prompt_length", "Prompt length", ["Short", "Medium", "Detailed", "Maximum Detail"].map(

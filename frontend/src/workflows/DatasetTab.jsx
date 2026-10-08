@@ -280,17 +280,15 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
 
         <section className="dataset-config-column" aria-label="Dataset generation settings">
           <header className="dataset-config-heading">
-            <h3>Model &amp; output settings</h3><p>Choose the visual treatment and prompt format.</p>
+            <h3>Model &amp; output settings</h3><p>Choose instructions and prompt format.</p>
           </header>
           <fieldset disabled={disabled}>
-            <div className="grid grid-cols-2 gap-4 tiny:grid-cols-1">
-              <label className={ui.field}><span><SlidersHorizontal size={14} aria-hidden="true" />Director preset</span>
-                <select className={ui.select} aria-label="Dataset director preset" value={draft.director_preset} onChange={(event) => updateWriterSettings({ director_preset: event.target.value })}>
-                  {!director && <option value={draft.director_preset}>Unavailable — choose a preset</option>}
-                  {availablePresets.map((item) => <option key={item.id} value={item.id}>{presetDisplayLabel(item)}</option>)}
-                </select>
-              </label>
-            </div>
+            <label className={ui.field}><span><SlidersHorizontal size={14} aria-hidden="true" />Director preset</span>
+              <select className={ui.select} aria-label="Dataset director preset" value={draft.director_preset} onChange={(event) => updateWriterSettings({ director_preset: event.target.value })}>
+                {!director && <option value={draft.director_preset}>Unavailable — choose a preset</option>}
+                {availablePresets.map((item) => <option key={item.id} value={item.id}>{presetDisplayLabel(item)}</option>)}
+              </select>
+            </label>
             <div className="mt-4 grid grid-cols-2 gap-4 tiny:grid-cols-1">
               <TargetSelect label="Target model" ariaLabel="Dataset target model" icon={<Cpu size={14} aria-hidden="true" />} value={draft.target} targets={targets} disabled={disabled} onChange={(target) => updateWriterSettings({ target })} />
               <label className={ui.field}><span><AlignLeft size={14} aria-hidden="true" />Prompt length</span>
