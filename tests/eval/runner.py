@@ -39,7 +39,6 @@ def capture(calls, event):
 def live_case(case, workflow, config, args, run=1):
     from goated_prompter.core import GoatedPrompterRequest, GoatedPrompterService
     from goated_prompter.dataset import DatasetService, default_dataset_draft
-    from goated_prompter.prompting.dataset import STYLE_RULES
     from goated_prompter.minimax import MiniMaxService
     from goated_prompter.planning.constraints import compile_request
     calls = []
@@ -52,7 +51,7 @@ def live_case(case, workflow, config, args, run=1):
     # Match Dataset's explicit trigger/identity restriction in Builder parity;
     # it is evaluation scaffolding, not a new production planning step.
     source = case["request"] if workflow == "minimax" else "eval_subject represents " + case["request"]
-    common_rules = STYLE_RULES[args.style] + "\n" + rules
+    common_rules = rules
     identity_rules = ""
     if workflow != "minimax":
         identity_rules = "Include the exact subject identifier eval_subject. Do not invent stable identity traits or gender; compatible temporary clothing and scene detail are allowed."
@@ -61,13 +60,13 @@ def live_case(case, workflow, config, args, run=1):
         director_preset=args.director, creativity=args.creativity, planning_mode=args.planning,
         custom_instructions=common_rules)
     sample_id = "|".join(str(value) for value in (case["id"], workflow, args.target, length, args.director,
-                                               args.style, args.creativity, args.planning, run))
+                                               args.creativity, args.planning, run))
     if workflow == "dataset":
         sample_id += "|pipeline"
     row = {"sample_id": sample_id, "case_id": case["id"], "workflow": workflow,
            "run": run, "request": case["request"], "anchors": case["anchors"], "rules": rules,
            "target": "MiniMax H3" if workflow == "minimax" else args.target, "length": length, "director": args.director,
-           "style": args.style, "creativity": args.creativity, "planning": args.planning,
+           "creativity": args.creativity, "planning": args.planning,
             "effective_request": source, "calls": calls}
     if workflow != "minimax":
         row.update(trigger="eval_subject", expand_trigger=False)
@@ -85,7 +84,7 @@ def live_case(case, workflow, config, args, run=1):
             data = {**default_dataset_draft(), "subject": case["request"], "trigger": "eval_subject",
                     "trigger_type": case.get("dataset_type", "Character"),
                     "amount": 1, "target": args.target, "length": length, "director_preset": args.director,
-                     "visual_style": args.style, "creativity": args.creativity,
+                     "creativity": args.creativity,
                      "constraints": rules + "\n" + identity_rules}
             data.update(source_mode="guided", inputs=case["request"].replace("\n", " "))
             data = approve_dataset(config, request, data)
@@ -125,9 +124,9 @@ def novelty_cases(spec, config, args):
     for run in range(1, spec["runs"] + 1):
         calls = []
         data = {**default_dataset_draft(), "subject": spec["concept"], "amount": spec["amount"],
-                 "variety": args.variety, "trigger": "eval_subject",
+                 "trigger": "eval_subject",
                 "target": args.target, "length": args.length, "director_preset": args.director,
-                "visual_style": args.style, "creativity": args.creativity}
+                 "creativity": args.creativity}
         start = time.perf_counter()
         row = {"sample_id": f"novelty:{spec['id']}|dataset|{run}", "workflow": "dataset",
                "case_id": spec["id"], "concept": spec["concept"], "run": run,
@@ -215,10 +214,8 @@ def main(argv=None, gpu=False):
     parser.add_argument("--target", default="Generic")
     parser.add_argument("--length", default="Detailed")
     parser.add_argument("--director", default="general_director")
-    parser.add_argument("--style", default="Photorealistic")
     parser.add_argument("--creativity", default="Balanced")
     parser.add_argument("--planning", choices=["Direct", "Auto", "Always"], default="Direct")
-    parser.add_argument("--variety", choices=["Focused", "Balanced", "Wide"], default="Balanced")
     parser.add_argument("--novelty", action="store_true")
     parser.add_argument("--history", choices=["on", "off"], default="on")
     parser.add_argument("--repeats", type=int, choices=range(1, 6), default=1)

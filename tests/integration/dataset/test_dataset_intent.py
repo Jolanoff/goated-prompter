@@ -207,7 +207,7 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_full_four_stage_flow_uses_existing_builder_with_accepted_scene_as_the_entire_input(self):
         from goated_prompter.core import assemble_instruction
-        data = valid_draft(amount=1, target="Anima", length="Maximum Detail", creativity="Creative", visual_style="Anime / manga")
+        data = valid_draft(amount=1, target="Anima", length="Maximum Detail", creativity="Creative")
         accepted = await self.analyze(data)
         with patch("goated_prompter.core.assemble_instruction", wraps=assemble_instruction) as builder:
             response = await self.client.post("/api/workspace/dataset", json={"input": data,
@@ -360,7 +360,7 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(token)
         self.backend.calls.clear()
         for field, value in (("subject", "Changed concept"), ("constraints", "New hard rule"),
-                             ("visual_style", "Watercolor"), ("length", "Detailed"), ("trigger", "new_token")):
+                             ("length", "Detailed"), ("trigger", "new_token")):
             with self.subTest(field=field):
                 changed = {**saved["draft"], field: value}
                 rejected = await self.client.post("/api/workspace/dataset", json={"input": changed,

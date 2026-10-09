@@ -30,9 +30,17 @@ class DatasetUIMock(MockBackend):
         elif stage == "dataset:ideas":
             from tests.helpers import dataset_idea_fixture
             context = json.loads(instruction.user_message)
-            result = json.dumps([dataset_idea_fixture(row["index"],
-                idea=row["input"] or f"Mock activity{row['index']}" + (" revised" if context["existing_ideas"] else ""))
-                for row in context["assignments"]])
+            used = {" ".join(idea.casefold().split()) for idea in context["recently_used_ideas"]}
+            used.update(" ".join(row["idea"].casefold().split()) for row in context["existing_ideas"])
+            rows = []
+            for row in context["assignments"]:
+                idea = row["input"] or f"Mock activity{row['index']}"
+                if not row["input"]:
+                    while " ".join(idea.casefold().split()) in used:
+                        idea += " revised"
+                used.add(" ".join(idea.casefold().split()))
+                rows.append(dataset_idea_fixture(row["index"], idea=idea))
+            result = json.dumps(rows)
         elif stage == "builder:scene_planning":
             context = json.loads(instruction.user_message)
             return json.dumps({"primary_action": context["user_request"],

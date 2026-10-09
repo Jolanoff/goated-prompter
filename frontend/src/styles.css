@@ -179,7 +179,7 @@
   .dataset-config-heading h3 { font-family: var(--font-display); font-size: 16px; font-weight: 750; letter-spacing: -.3px; }
   .dataset-config-heading p { margin-top: 4px; color: var(--color-muted); font-size: 12px; }
   .dataset-config-fields { display: grid; gap: 14px; }
-  .dataset-subject-fields { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, .7fr) minmax(0, 1fr); gap: 12px; }
+  .dataset-subject-fields { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, .7fr); gap: 12px; }
   .dataset-configuration .field { gap: 6px; }
   .dataset-configuration .idea-input { height: 116px; min-height: 100px; padding: 12px; line-height: 1.6; }
   .dataset-configuration .dataset-trigger-input { height: 68px; min-height: 60px; padding: 10px 12px; line-height: 1.6; }
@@ -491,7 +491,6 @@
     .dataset-step-number { width: 22px; height: 22px; }
     .dataset-config-column { padding: 18px; }
     .dataset-subject-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .dataset-subject-fields > label:first-child { grid-column: 1 / -1; }
     .dataset-config-actions { padding: 16px 18px; }
     .dataset-config-actions > div { width: 100%; }
     .dataset-config-actions .button { width: 100%; }

@@ -13,7 +13,7 @@ from .director_profiles import resolve_director_config
 SOURCE_FIELDS = (
     "subject", "trigger_type", "custom_type", "constraints", "amount",
     "source_mode", "inputs", "trigger", "trigger_connected", "trigger_at_start",
-    "expand_trigger", "visual_style", "custom_style", "variety", "creativity",
+    "expand_trigger", "creativity",
     "target", "length", "director_preset",
 )
 REQUIREMENT_FIELDS = (
@@ -127,9 +127,6 @@ Include required counts, identities/traits, actions, contacts, exclusions, expli
 camera/crop constraints, demanded visible evidence and mandatory dataset diversity.
 Keep qualifiers and local scopes. A semantic trait can remain hidden unless visible
 evidence is required; a trigger identifier is not image lettering. Do not invent locks.
-An explicitly selected visual_style or custom_style is HARD unless the source
-explicitly marks that style as optional. Record the selected style with its supplied
-scope in hard; do not classify it as SOFT merely because it came from a UI selection.
 soft: preferences that may be adjusted to satisfy HARD, such as a preferred close
 camera, dramatic framing or warm lighting. Never demote an actual obligation here.
 
@@ -200,7 +197,7 @@ clarifications: necessary questions, or an empty array.
 
 The app supplies dataset_contents from the known output settings. Do not regenerate
 amount, target, detail, creativity or trigger-placement settings in prose. Preserve
-selected mandatory style and genuine dataset coverage obligations in requirements.
+genuine dataset coverage obligations in requirements.
 requested_generation and expansion_freedom are nonempty strings.
 Use empty arrays when no facts, conflicts or clarifications apply.
 Scopes are all_outputs, dataset, or a supplied guided:N scope. all_outputs means
@@ -323,10 +320,9 @@ def _expand_understanding(value, data, scopes):
         facts = grouped
     if not isinstance(facts, list) or len(facts) > MAX_COMPACT_ITEMS:
         raise ValueError("Compact requirements must be an array within the understanding limit.")
-    style = data.get("custom_style") if data.get("visual_style") == "Custom" else data.get("visual_style")
     result = {key: value[key] for key in COMPACT_FIELDS if key != "requirements"}
     result["dataset_contents"] = (f"{data['amount']} image prompts; target: {data['target']}; "
-        f"detail: {data['length']}; visual style: {style}; variety: {data['variety']}.")
+        f"detail: {data['length']}.")
     result.update({field: [] for field in (*CONTRACT_FIELDS, *SECTION_FIELDS)})
     hard_sections = set(SECTION_FIELDS) - {"may_vary", "natural_occlusions"}
     for fact in facts:

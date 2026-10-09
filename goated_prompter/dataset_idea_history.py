@@ -1,4 +1,4 @@
-"""Bounded RAM-only novelty hints, never saved plans or absolute exclusions."""
+"""Bounded RAM-only event history for Ideas; never saved scenes or prompts."""
 
 from collections import OrderedDict
 import hashlib
@@ -48,9 +48,7 @@ class RecentIdeaHistory:
             while len(self._entries) > self.concepts:
                 self._entries.popitem(last=False)
 
-    def clear(self, data=None):
+    def clear(self):
+        """Release all in-memory events when the application shuts down."""
         with self._lock:
-            if data is None:
-                self._entries.clear()
-            else:
-                self._entries.pop(self.key(data), None)
+            self._entries.clear()

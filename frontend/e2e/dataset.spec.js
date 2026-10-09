@@ -260,7 +260,9 @@ test("guided Dataset persists and exports on mobile without retired controls", a
   page.on("pageerror", (error) => errors.push(error.message));
   await page.setViewportSize({ width: 390, height: 844 });
   await openDataset(page, "3");
-  await page.getByLabel("Visual style").selectOption("Anime / manga");
+  await expect(page.getByLabel("Visual style", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Variety", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Reset recent ideas", exact: true })).toHaveCount(0);
   await page.getByLabel(/Provide my own scene ideas/).check();
   await page.getByLabel("Guided dataset inputs").fill("standing portrait in a city at night\nrunning through a sunlit field");
   await generateDataset(page, "3");
@@ -346,26 +348,6 @@ test("per-scene actions preserve siblings; idea edits invalidate stale details",
   await page.getByLabel("Dataset idea", { exact: true }).fill("A dog on small adventures.");
   await openDatasetPage(page, "Scenes");
   await expect(page.getByLabel("Planned scene 1")).toHaveCount(0);
-});
-
-test("reset recent ideas leaves current scenes and prompts unchanged", async ({ page }) => {
-  await openDataset(page);
-  await generateDataset(page);
-  await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/saved_person/);
-  await openDatasetPage(page, "Scenes");
-  const idea = await page.getByLabel("Planned idea 1").inputValue();
-  await openDatasetPage(page, "Dataset");
-  const prompt = await page.getByLabel("Dataset prompt 1").inputValue();
-  const reset = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset/novelty/reset"));
-  await openDatasetPage(page, "Configure");
-  await page.getByText("Advanced options", { exact: true }).click();
-  await page.getByRole("button", { name: "Reset recent ideas", exact: true }).click();
-  expect((await reset).ok()).toBe(true);
-  await expect(page.getByText("Recent ideas reset for this concept. Current scenes and prompts are unchanged.", { exact: true })).toBeVisible();
-  await openDatasetPage(page, "Scenes");
-  await expect(page.getByLabel("Planned idea 1")).toHaveValue(idea);
-  await openDatasetPage(page, "Dataset");
-  await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(prompt);
 });
 
 test("target changes require fresh approval while reusing checked scenes for Builder enhancement", async ({ page, request }) => {

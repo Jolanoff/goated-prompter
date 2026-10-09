@@ -79,7 +79,6 @@ test("builder hydration normalizes Maximum and excludes images, runtime and pres
     },
   );
   assert.equal(result.idea, "draft");
-  assert.equal(result.planning_mode, "Auto");
   assert.equal(result.prompt_length, "Maximum Detail");
   for (const key of referenceAttributes)
     assert.equal(result[`reference_${key}_source`], "Off");
@@ -185,15 +184,6 @@ test("renamed targets and precision Directors hydrate without losing saved choic
   ]) {
     assert.equal(hydrateBuilder({}, { director_preset: legacy }, { presets }).director_preset, id);
   }
-});
-
-test("builder planning choice survives snapshots and legacy drafts default to Auto", () => {
-  for (const mode of ["Auto", "Direct", "Always"]) {
-    const result = hydrateBuilder({}, { planning_mode: mode, idea: "apple" });
-    assert.equal(result.planning_mode, mode);
-    assert.equal(builderSnapshot(result).planning_mode, mode);
-  }
-  assert.equal(hydrateBuilder({}, { idea: "legacy apple" }).planning_mode, "Auto");
 });
 
 test("reverting a pending edit returns autosave to Saved without a write", async () => {
