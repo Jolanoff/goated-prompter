@@ -2,6 +2,7 @@
 
 import json
 from ..contracts import PromptInstruction
+from ..minimax_contract import exact_dialogue, parse_shot_outline
 from .constraints import compile_request, COMPILED_CONTRACT
 from .scene_planner import AUTHORITY, supporting_pass
 from .validation import validate_plan
@@ -9,7 +10,6 @@ from .video_plan import VideoScenePlan
 
 
 def video_planning_instruction(data, reference_analysis, compiled, *, family="qwen"):
-    from ..prompting.minimax import parse_shot_outline, exact_dialogue
     shots = parse_shot_outline(data["user_request"], data["duration_seconds"])
     return PromptInstruction(system_message=AUTHORITY + "\n" + COMPILED_CONTRACT + """
 VIDEO SCENE PLANNING, NOT H3 WRITING
@@ -53,7 +53,6 @@ Normally fewer than 450 words.
 
 
 def plan_video_scene(session, data, reference_analysis, *, family="qwen", checkpoint=None, progress=None, semantic_validation=False):
-    from ..prompting.minimax import parse_shot_outline, exact_dialogue
     compiled = compile_request(data["user_request"], has_context=bool(reference_analysis["references"]))
     shots = parse_shot_outline(data["user_request"], data["duration_seconds"])
     def validate(raw):

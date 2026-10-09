@@ -6,7 +6,14 @@ from .backends.factory import create_backend
 from .contracts import effective_model_family
 from .director_profiles import resolve_director_config
 from .presets import get_director_preset
-from .prompting.minimax import *
+from .minimax_contract import (
+    exact_dialogue, parse_shot_outline, reference_warnings, validate_analysis, validate_minimax_draft, validate_output,
+)
+from .prompting.minimax import REPAIR_ATTEMPTS, analysis_instruction, generation_instruction, repair_instruction
+# Names existing callers import from this module.
+from .minimax_contract import (  # noqa: F401
+    default_minimax_draft, frame_instruction, parse_reference_tokens, requested_spoken_lines,
+)
 
 
 class MiniMaxService:

@@ -2,7 +2,7 @@
 
 from aiohttp import web
 
-from ..minimax import validate_minimax_draft
+from ..minimax_contract import validate_minimax_draft
 from .common import active_job_conflict, engine_request
 
 

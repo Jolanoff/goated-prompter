@@ -370,7 +370,7 @@ goated-prompter/
 │   │   ├── creativity.py       # Creativity controls
 │   │   ├── details.py          # Detail, preservation and reference controls
 │   │   ├── refine.py           # Refine prompt construction
-│   │   ├── minimax.py          # MiniMax prompt schemas and validation
+│   │   ├── minimax.py          # MiniMax prompt text and instruction builders
 │   │   ├── dataset.py          # Dataset prompt construction
 │   │   └── scene_planner.py    # Dataset-only scene ideation instructions
 │   ├── presets.py              # Instruction-preset storage and library management
@@ -380,6 +380,7 @@ goated-prompter/
 │   ├── workflow_settings.py    # Per-workflow drafts and instruction overrides
 │   ├── api/                    # Workflow HTTP routes (Dataset, MiniMax, Refine/history, workflow settings)
 │   ├── workflow_runners.py     # One execution entry point per workflow
+│   ├── minimax_contract.py     # MiniMax draft, reference/shot parsing and output validation
 │   ├── workspace_api.py        # Registers the workflow routes
 │   ├── workspace_store.py      # Atomic versions and branching undo/redo
 │   ├── reference_map.py        # Attribute-to-image source mapping
