@@ -155,9 +155,10 @@ DIRECTION_AXES = {
               "night lit by practical lights", "dramatic single-source light", "overcast diffuse light",
               "warm lamplight from windows or lanterns"),
 }
-# A required action must be visible in every image, so these items get no
-# moment and only moods that fit someone actively doing it.
-ACTIVE_MOODS = ("joyful", "tense", "determined", "mischievous", "chaotic", "playful")
+# A required action must be visible in every image. Manual runs showed moment,
+# mood and setting directions (rest, water break, climbing a ladder) replacing it,
+# so those items only vary how the image is shot.
+ACTION_SAFE_AXES = ("framing", "light")
 _DIRECTION_SOURCE = ("subject", "trigger", "trigger_type", "custom_type", "constraints", "inputs", "source_mode")
 
 
@@ -168,7 +169,7 @@ def creative_directions(data, indexes):
     dataset, so every value is used before any repeats and replacements keep
     their original direction. Guided inputs already fix the event, so they get
     no moment. When the approved brief requires an action for an image, that
-    image gets no moment and only active moods, because quiet or aftermath
+    image only gets framing and light, because moment, mood and setting
     directions otherwise replace the required action.
     """
     source = json.dumps({key: data.get(key) for key in _DIRECTION_SOURCE}, sort_keys=True, ensure_ascii=False)
@@ -179,7 +180,7 @@ def creative_directions(data, indexes):
     action_scopes = {item.get("scope") for key in ("interactions", "action_options")
                      for item in brief.get(key) or () if isinstance(item, dict)}
     orders = {}
-    for position, (axis, values) in enumerate((*DIRECTION_AXES.items(), ("active_mood", ACTIVE_MOODS))):
+    for position, (axis, values) in enumerate(DIRECTION_AXES.items()):
         order = list(values)
         random.Random(seed + position).shuffle(order)
         orders[axis] = order
@@ -187,13 +188,8 @@ def creative_directions(data, indexes):
     for index in indexes:
         scopes = {"all_outputs", *([f"guided:{(index - 1) % len(lines) + 1}"] if guided else [])}
         required_action = bool(action_scopes & scopes)
-        pick = lambda axis: orders[axis][(index - 1) % len(orders[axis])]
-        direction = {}
-        for axis in DIRECTION_AXES:
-            if axis == "moment" and (guided or required_action):
-                continue
-            direction[axis] = pick("active_mood") if axis == "mood" and required_action else pick(axis)
-        directions[index] = direction
+        directions[index] = {axis: order[(index - 1) % len(order)] for axis, order in orders.items()
+                             if (axis in ACTION_SAFE_AXES if required_action else not (guided and axis == "moment"))}
     return directions
 
 
