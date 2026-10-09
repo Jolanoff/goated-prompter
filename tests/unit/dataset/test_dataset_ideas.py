@@ -10,7 +10,8 @@ from urllib.error import HTTPError
 from goated_prompter.backends.base import BackendGenerationError
 from goated_prompter.backends.openai_compatible import OpenAICompatibleBackend
 from goated_prompter.features.dataset.assignments import dataset_assignments
-from goated_prompter.features.dataset.ideas import DatasetIdeasService, IDEA_FIELDS, ideas_instruction, validate_ideas
+from goated_prompter.features.dataset.ideas import (DIRECTION_AXES, DatasetIdeasService, IDEA_FIELDS, IDEAS_SYSTEM,
+    creative_directions, ideas_instruction, validate_ideas)
 from goated_prompter.features.dataset.plan import validate_saved_scene_plan
 from tests.helpers import dataset_idea_fixture, dataset_understanding_fixture
 from tests.support.dataset import valid_draft
@@ -22,6 +23,28 @@ class DatasetIdeasTests(unittest.TestCase):
             _confirmed_intent=dataset_understanding_fixture())
         self.session = Mock()
         self.service = DatasetIdeasService(lambda: None)
+
+    def test_creative_directions_spread_the_batch_and_are_reproducible(self):
+        data = valid_draft(amount=16, subject="A boxer training.", _confirmed_intent=dataset_understanding_fixture())
+        directions = creative_directions(data, range(1, 17))
+        self.assertEqual(directions, creative_directions(deepcopy(data), range(1, 17)))
+        self.assertEqual(creative_directions(data, [5]), {5: directions[5]}, "A replacement keeps its direction.")
+        for axis, values in DIRECTION_AXES.items():
+            used = [directions[index][axis] for index in range(1, 17)]
+            self.assertEqual(set(used[:len(values)]), set(values), f"Every {axis} is used before any repeats.")
+        self.assertGreater(len({tuple(item.values()) for item in directions.values()}), 15)
+        other = creative_directions({**data, "subject": "A chef plating dessert."}, range(1, 17))
+        self.assertNotEqual(directions, other)
+
+    def test_guided_items_get_no_moment_and_the_prompt_ranks_directions_last(self):
+        data = valid_draft(amount=2, source_mode="guided", inputs="punches a bag\nskips rope",
+            _confirmed_intent=dataset_understanding_fixture())
+        self.assertTrue(all("moment" not in item for item in creative_directions(data, [1, 2]).values()))
+        context = json.loads(ideas_instruction(self.data, dataset_assignments(self.data)).user_message)
+        self.assertEqual([row["creative_direction"] for row in context["assignments"]],
+                         list(creative_directions(self.data, [1, 2]).values()))
+        self.assertIn("WHAT MAKES A STRONG IDEA", IDEAS_SYSTEM)
+        self.assertIn("drop only the conflicting part of a direction, never the requirement", IDEAS_SYSTEM)
 
     def run_ideas(self, rows, **options):
         self.session.generate.return_value = json.dumps(rows)
