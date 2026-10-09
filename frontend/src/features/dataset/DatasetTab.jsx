@@ -5,6 +5,7 @@ import { orderDisplayPresets, presetDisplayLabel } from "../../presetPresentatio
 import { TargetSelect } from "../../shared/workflow/WorkflowControls.jsx";
 import { useWorkflowSettings } from "../../shared/workflow/useWorkflowSettings.js";
 import WorkflowSettingsStatus from "../../shared/workflow/WorkflowSettingsStatus.jsx";
+import LibraryStatus from "../../shared/workflow/LibraryStatus.jsx";
 import { datasetCopyText, datasetJsonl, datasetGenerationLog } from "./datasetExport.js";
 import { editDatasetPlan } from "./datasetState.js";
 import { useDatasetWorkflow } from "./useDatasetWorkflow.js";
@@ -301,7 +302,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
               <div className="mt-2 grid grid-cols-3 gap-2 tiny:grid-cols-1">
                 {[['random', 'Invent scenes', 'Let Scene Planner invent scenes', 'Distinct situations from your concept.'],
                   ['guided', 'Use my scene ideas', 'Provide my own scene ideas', 'One idea per line; the action stays fixed.'],
-                  ['library', 'From my library', 'Recast saved prompts from my prompt library', 'Your saved prompts for this target, recast with your characters.']].map(([value, label, accessibleLabel, help]) =>
+                  ['library', 'From my library', 'Recast saved prompts from my prompt library', 'Your saved prompts, recast with your cast.']].map(([value, label, accessibleLabel, help]) =>
                    <label key={value} className={`${ui.choiceCard} block`}>
                      <span className="flex items-center gap-2 text-xs font-semibold"><input type="radio" name="dataset-source" value={value} aria-label={`${label}: ${accessibleLabel}`}
                        checked={draft.source_mode === value} onChange={() => updateSceneSettings({ source_mode: value })} />{label}</span>
