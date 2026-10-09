@@ -53,7 +53,7 @@ def register(app, state_key, job_factory, json_object):
             raise ValueError("Invalid Dataset prompt-engine settings.")
         director = None if scenes_only or understanding else get_director_preset(data["director_preset"], strict=True)
         async with state.admission:
-            if conflict := active_job_conflict(state, "Wait for the active generation before generating again."):
+            if (conflict := active_job_conflict(state, "Wait for the active generation before generating again.")) is not None:
                 return conflict
             if understanding:
                 intent = None

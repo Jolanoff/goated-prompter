@@ -34,7 +34,7 @@ def register(app, state_key, job_factory, json_object):
                 result = await asyncio.to_thread(state.workflow_settings.update, operation, payload["revision"], draft=payload["draft"])
             else:
                 async with state.admission:
-                    if conflict := active_job_conflict(state, "End generation before changing saved instructions."):
+                    if (conflict := active_job_conflict(state, "End generation before changing saved instructions.")) is not None:
                         return conflict
                     action = payload.get("action")
                     if action not in ("save", "reset") or (action == "save" and not isinstance(payload.get("instructions"), dict)):

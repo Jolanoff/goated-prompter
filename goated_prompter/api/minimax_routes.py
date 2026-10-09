@@ -17,7 +17,7 @@ def register(app, state_key, job_factory, json_object):
         if not isinstance(settings, dict) or set(settings) - {"director_profile"}:
             raise ValueError("Invalid MiniMax prompt-engine settings.")
         async with state.admission:
-            if conflict := active_job_conflict(state, "Wait for the active generation before generating again."):
+            if (conflict := active_job_conflict(state, "Wait for the active generation before generating again.")) is not None:
                 return conflict
             config = state.config()
             director_request = engine_request(state, config, settings, idea=data["user_request"])
