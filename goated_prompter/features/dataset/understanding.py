@@ -83,6 +83,9 @@ placing the trigger first; it prefers a natural introduction before a later trig
 not a hard exclusion rule.
 Unspecified values stay unspecified; do not invent
 identity, clothing, setting, props, anatomy or a mandatory camera to fill the brief.
+By default an unspecified choice may differ in every image: give that free fact the
+all_outputs scope. Use dataset scope for a free choice only when the user's own words
+require one value shared by every image.
 When the user leaves a creative choice unspecified but requires the chosen value
 to remain shared across the dataset, keep that freedom dataset-scoped. Later stages
 may choose it once, but must not independently choose a different value per image.
@@ -128,8 +131,9 @@ Include required counts, identities/traits, actions, contacts, exclusions, expli
 camera/crop constraints, demanded visible evidence and mandatory dataset diversity.
 Keep qualifiers and local scopes. A semantic trait can remain hidden unless visible
 evidence is required; a trigger identifier is not image lettering. Do not invent locks.
-soft: preferences that may be adjusted to satisfy HARD, such as a preferred close
-camera, dramatic framing or warm lighting. Never demote an actual obligation here.
+soft: preferences the user actually stated that may be adjusted to satisfy HARD.
+Never demote an actual obligation here. Never add a style, lighting, camera, framing or
+mood preference the user did not state; an empty soft list is normal.
 
 free: unspecified or explicitly open categories of choice within the user's expansion
 limits. Distinguish dataset-shared choices from per-image freedoms; describe their
@@ -320,6 +324,19 @@ def _expand_understanding(value, data, scopes):
         f"detail: {data['length']}.")
     result.update({field: [] for field in (*CONTRACT_FIELDS, *SECTION_FIELDS)})
     hard_sections = set(SECTION_FIELDS) - {"may_vary", "natural_occlusions"}
+    # The model sometimes repeats one fact in the same bucket and scope; keep the
+    # first copy and merge its review tags so the approved contract lists it once.
+    unique, first = [], {}
+    for fact in facts:
+        if isinstance(fact, dict) and isinstance(fact.get("text"), str) and isinstance(fact.get("sections"), list):
+            key = (fact.get("kind"), fact.get("scope"), " ".join(fact["text"].casefold().split()))
+            if key in first:
+                kept = first[key]
+                kept["sections"] = kept["sections"] + [tag for tag in fact["sections"] if tag not in kept["sections"]]
+                continue
+            fact = first[key] = {**fact, "sections": list(fact["sections"])}
+        unique.append(fact)
+    facts = unique
     for fact in facts:
         if not isinstance(fact, dict) or set(fact) != {"scope", "text", "kind", "sections"}:
             raise ValueError("Compact facts require exactly scope, text, kind and sections.")

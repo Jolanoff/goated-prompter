@@ -19,13 +19,36 @@ from goated_prompter.features.dataset.assignments import dataset_assignments
 from goated_prompter.features.dataset.ideas import ideas_instruction
 from goated_prompter.features.dataset.intent import DatasetIntentTickets
 from goated_prompter.features.dataset.scene import scene_instruction
-from goated_prompter.features.dataset.understanding import DatasetUnderstandingService, understanding_instruction, validate_understanding
+from goated_prompter.features.dataset.understanding import (UNDERSTANDING_SYSTEM, DatasetUnderstandingService, _expand_understanding,
+    understanding_instruction, validate_understanding)
 from goated_prompter.features.dataset.prompting import dataset_instruction
 from tests.helpers import dataset_understanding_fixture
 from tests.support.dataset import saved_scene, valid_draft
 
 
 class DatasetUnderstandingTests(unittest.TestCase):
+    def test_repeated_facts_are_listed_once_with_merged_review_tags(self):
+        # Reported brief: "two kids" appeared twice in HARD.
+        compact = {"requested_generation": "Two kids build a treehouse.", "character_count": 2,
+            "identity_policy": "random_per_prompt", "expansion_freedom": "Setting may vary.",
+            "physical_conflicts": [], "clarifications": [], "requirements": {"soft": [], "free": [], "context": [], "hard": [
+                {"scope": "all_outputs", "text": "two kids", "sections": ["fixed"]},
+                {"scope": "all_outputs", "text": "Two  Kids", "sections": ["rules"]},
+                {"scope": "dataset", "text": "two kids", "sections": ["fixed"]}]}}
+        brief = _expand_understanding(compact, valid_draft(), ("all_outputs", "dataset"))
+        self.assertEqual(brief["hard"], [{"scope": "all_outputs", "text": "two kids"}, {"scope": "dataset", "text": "two kids"}])
+        self.assertEqual(brief["rules"], [{"scope": "all_outputs", "text": "two kids"}])
+        self.assertEqual(len(brief["fixed"]), 2)
+
+    def test_prompt_defaults_free_choices_to_per_image_and_adds_no_unstated_preferences(self):
+        # Reported briefs: an unrequested "dramatic lighting and cinematic composition" SOFT
+        # preference, and every free choice scoped to "dataset" despite open variation.
+        self.assertNotIn("dramatic framing or warm lighting", UNDERSTANDING_SYSTEM)
+        self.assertIn("Never add a style, lighting, camera, framing or\nmood preference the user did not state", UNDERSTANDING_SYSTEM)
+        self.assertIn("By default an unspecified choice may differ in every image", UNDERSTANDING_SYSTEM)
+        self.assertLess(UNDERSTANDING_SYSTEM.index("By default an unspecified choice"),
+                        UNDERSTANDING_SYSTEM.index("keep that freedom dataset-scoped"))
+
     def compact_brief(self, **changes):
         return {"requested_generation": "Two athletes practice a controlled grappling throw.",
             "character_count": 2, "identity_policy": "random_per_prompt",
