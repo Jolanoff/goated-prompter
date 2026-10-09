@@ -19,13 +19,171 @@ from goated_prompter.features.dataset.assignments import dataset_assignments
 from goated_prompter.features.dataset.ideas import ideas_instruction
 from goated_prompter.features.dataset.intent import DatasetIntentTickets
 from goated_prompter.features.dataset.scene import scene_instruction
-from goated_prompter.features.dataset.understanding import DatasetUnderstandingService, understanding_instruction, validate_understanding
+from goated_prompter.features.dataset.understanding import (UNDERSTANDING_SYSTEM, DatasetUnderstandingService,
+    understanding_instruction, validate_understanding)
 from goated_prompter.features.dataset.prompting import dataset_instruction
 from tests.helpers import dataset_understanding_fixture
 from tests.support.dataset import saved_scene, valid_draft
 
 
 class DatasetUnderstandingTests(unittest.TestCase):
+    def test_repeated_facts_are_listed_once_with_merged_review_tags(self):
+        # Reported brief: "two kids" appeared twice in HARD.
+        compact = {"requested_generation": "Two kids build a treehouse.", "character_count": 2,
+            "identity_policy": "random_per_prompt", "expansion_freedom": "Setting may vary.",
+            "physical_conflicts": [], "clarifications": [], "requirements": {"soft": [], "free": [], "context": [], "hard": [
+                {"scope": "all_outputs", "text": "two kids", "sections": ["fixed"]},
+                {"scope": "all_outputs", "text": "two kids", "sections": ["rules"]},
+                {"scope": "all_outputs", "text": "two kids", "sections": ["fixed", "rules"]},
+                {"scope": "dataset", "text": "two kids", "sections": ["fixed"]}]}}
+        brief = self.run_response(json.dumps(compact))
+        self.assertEqual(brief["hard"], [{"scope": "all_outputs", "text": "two kids"}, {"scope": "dataset", "text": "two kids"}])
+        self.assertEqual(brief["rules"], [{"scope": "all_outputs", "text": "two kids"}])
+        self.assertEqual(len(brief["fixed"]), 2)
+
+    def test_distinct_literal_case_and_spacing_survive_understanding_and_approval(self):
+        for first, second in (('Display "A".', 'Display "a".'),
+                ('Display "NO ENTRY".', 'Display "NO  ENTRY".'),
+                ('Display "GO NOW".', 'Display "GO\nNOW".')):
+            with self.subTest(first=first, second=second):
+                compact = self.compact_brief(requirements={"hard": [
+                    {"scope": "all_outputs", "text": first, "sections": ["rules"]},
+                    {"scope": "all_outputs", "text": second, "sections": ["rules"]}],
+                    "soft": [], "free": [], "context": []})
+                data = valid_draft()
+                brief = self.run_response(json.dumps(compact), data)
+                expected = [{"scope": "all_outputs", "text": first},
+                    {"scope": "all_outputs", "text": second}]
+                self.assertEqual(brief["hard"], expected)
+                self.assertEqual(brief["rules"], expected)
+                tickets = DatasetIntentTickets()
+                token = tickets.register(data, brief)["confirmation_token"]
+                self.assertEqual(tickets.approve(token, data)["hard"], expected)
+
+    def test_repeated_valid_review_tags_are_projected_once_without_retry(self):
+        cases = (("hard", ["rules", "fixed", "rules"], ["rules", "fixed"]),
+            ("hard", ["fixed"] * 9, ["fixed"]),
+            ("free", ["may_vary", "may_vary"], ["may_vary"]),
+            ("context", ["natural_occlusions", "natural_occlusions"], ["natural_occlusions"]))
+        for grouped in (True, False):
+            for kind, repeated, distinct in cases:
+                with self.subTest(grouped=grouped, kind=kind, repeated=repeated):
+                    fact = {"scope": "all_outputs", "text": "A scoped fact.", "sections": repeated}
+                    requirements = ({"hard": [], "soft": [], "free": [], "context": [], kind: [fact]}
+                        if grouped else [{**fact, "kind": kind}])
+                    brief = self.run_response(json.dumps(self.compact_brief(requirements=requirements)))
+                    expected = [{"scope": "all_outputs", "text": "A scoped fact."}]
+                    for authority in ("hard", "soft", "free"):
+                        self.assertEqual(brief[authority], expected if authority == kind else [])
+                    for section in ("rules", "fixed", "may_vary", "natural_occlusions"):
+                        self.assertEqual(brief[section], expected if section in distinct else [])
+
+    def test_valid_duplicate_facts_merge_repeated_review_tags_without_losing_facts(self):
+        requirements = {"hard": [
+            {"scope": "all_outputs", "text": "Both athletes wear gloves.", "sections": ["fixed", "fixed"]},
+            {"scope": "all_outputs", "text": "Both athletes wear gloves.", "sections": ["rules", "rules"]},
+            {"scope": "all_outputs", "text": "Show both hands.", "sections": ["visible_evidence", "visible_evidence"]}],
+            "soft": [], "free": [], "context": []}
+        brief = self.run_response(json.dumps(self.compact_brief(requirements=requirements)))
+        gloves = {"scope": "all_outputs", "text": "Both athletes wear gloves."}
+        hands = {"scope": "all_outputs", "text": "Show both hands."}
+        self.assertEqual(brief["hard"], [gloves, hands])
+        self.assertEqual(brief["fixed"], [gloves])
+        self.assertEqual(brief["rules"], [gloves])
+        self.assertEqual(brief["visible_evidence"], [hands])
+
+    def test_malformed_duplicate_facts_are_rejected_before_merging(self):
+        cases = (("hard", ["fixed"], {"sections": ["unknown", "unknown"]}),
+            ("hard", ["fixed"], {"sections": ["fixed", 1, 1]}),
+            ("hard", ["fixed"], {"sections": "fixed"}),
+            ("hard", ["fixed"], {"sections": ["fixed"] * 10}),
+            ("hard", ["fixed"], {"sections": ["may_vary", "may_vary"]}),
+            ("context", ["natural_occlusions"], {"sections": []}),
+            ("context", ["natural_occlusions"], {"sections": ["natural_occlusions", "fixed", "fixed"]}),
+            ("hard", ["fixed"], {"extra": True}))
+        for grouped in (True, False):
+            for kind, sections, change in cases:
+                with self.subTest(grouped=grouped, kind=kind, change=change):
+                    fact = {"scope": "all_outputs", "text": "A scoped fact.", "sections": sections}
+                    facts = [fact, {**fact, **change}]
+                    requirements = ({"hard": [], "soft": [], "free": [], "context": [], kind: facts}
+                        if grouped else [{**item, "kind": kind} for item in facts])
+                    with self.assertRaisesRegex(BackendGenerationError, "No generation started"):
+                        self.run_response(json.dumps(self.compact_brief(requirements=requirements)))
+
+    def test_identical_facts_in_different_authorities_are_not_merged(self):
+        fact = {"scope": "all_outputs", "text": "A scoped fact.", "sections": []}
+        brief = self.run_response(json.dumps(self.compact_brief(requirements={
+            "hard": [fact], "soft": [fact], "free": [fact], "context": []})))
+        expected = [{"scope": "all_outputs", "text": "A scoped fact."}]
+        for kind in ("hard", "soft", "free"):
+            with self.subTest(kind=kind):
+                self.assertEqual(brief[kind], expected)
+
+    def test_punctuation_only_clarifications_do_not_block_approval(self):
+        placeholders = ["*", " ** ", "...", "—", "？", "*\n*"]
+        for compact in (True, False):
+            with self.subTest(compact=compact):
+                source = (self.compact_brief(clarifications=placeholders) if compact else
+                    dataset_understanding_fixture(clarifications=placeholders))
+                before = deepcopy(source)
+                data = valid_draft()
+                brief = self.run_response(json.dumps(source), data)
+                self.assertEqual(brief["clarifications"], [])
+                tickets = DatasetIntentTickets()
+                token = tickets.register(data, source if not compact else brief)["confirmation_token"]
+                self.assertTrue(token)
+                self.assertEqual(tickets.approve(token, data)["clarifications"], [])
+                self.assertEqual(source, before)
+
+    def test_real_clarifications_survive_placeholders_and_still_block_approval(self):
+        questions = ["Which crop is required?", 'Should the sign read "*" or "**"?',
+            "Specify the required object", "どちらの人物ですか？"]
+        data = valid_draft()
+        brief = self.run_response(json.dumps(self.compact_brief(
+            clarifications=["*", *questions, "..."], physical_conflicts=[{
+                "scope": "all_outputs", "conflict": "Eyes-only crop excludes shoes.",
+                "compatible_resolution": None}])), data)
+        self.assertEqual(brief["clarifications"], questions)
+        review = DatasetIntentTickets().register(data, brief)
+        self.assertEqual(review["confirmation_token"], "")
+        self.assertEqual(review["brief"]["clarifications"], questions)
+
+    def test_placeholder_clarifications_cannot_waive_unresolved_conflicts(self):
+        conflict = {"scope": "all_outputs", "conflict": "Eyes-only crop excludes shoes.",
+            "compatible_resolution": None}
+        for compact in (True, False):
+            with self.subTest(compact=compact):
+                changes = {"physical_conflicts": [conflict], "clarifications": ["*", "..."]}
+                source = self.compact_brief(**changes) if compact else dataset_understanding_fixture(**changes)
+                with self.assertRaisesRegex(BackendGenerationError, "Unresolved physical conflicts require clarification"):
+                    self.run_response(json.dumps(source))
+
+    def test_clarification_filter_keeps_type_text_and_array_limits_strict(self):
+        for clarifications in (None, "*", [None], [123], [{}], [""], ["  "],
+                ["*" * 2001], ["Which object?" * 200], ["*"] * 25):
+            with self.subTest(clarifications=clarifications), self.assertRaises(ValueError):
+                validate_understanding(dataset_understanding_fixture(clarifications=clarifications),
+                    ("all_outputs", "dataset"))
+
+    def test_prompt_treats_vague_wording_as_open_choices_not_questions(self):
+        # Reported: "funny acts" produced a question asking which acts.
+        self.assertIn('"funny acts"', UNDERSTANDING_SYSTEM)
+        self.assertIn("never ask the user to narrow it", UNDERSTANDING_SYSTEM)
+        self.assertIn("Never ask about\ndetails the user left open", UNDERSTANDING_SYSTEM)
+        self.assertIn("sexual content with characters who may be minors", UNDERSTANDING_SYSTEM)
+        for removed in ("identify it and ask rather than silently choosing", "may need clarification"):
+            self.assertNotIn(removed, UNDERSTANDING_SYSTEM)
+
+    def test_prompt_defaults_free_choices_to_per_image_and_adds_no_unstated_preferences(self):
+        # Reported briefs: an unrequested "dramatic lighting and cinematic composition" SOFT
+        # preference, and every free choice scoped to "dataset" despite open variation.
+        self.assertNotIn("dramatic framing or warm lighting", UNDERSTANDING_SYSTEM)
+        self.assertIn("Never add a style, lighting, camera, framing or\nmood preference the user did not state", UNDERSTANDING_SYSTEM)
+        self.assertIn("By default an unspecified choice may differ in every image", UNDERSTANDING_SYSTEM)
+        self.assertLess(UNDERSTANDING_SYSTEM.index("By default an unspecified choice"),
+                        UNDERSTANDING_SYSTEM.index("keep that freedom dataset-scoped"))
+
     def compact_brief(self, **changes):
         return {"requested_generation": "Two athletes practice a controlled grappling throw.",
             "character_count": 2, "identity_policy": "random_per_prompt",
@@ -117,7 +275,7 @@ class DatasetUnderstandingTests(unittest.TestCase):
 
     def test_generation_schema_reserves_the_character_source_slot_without_limiting_other_kinds(self):
         for subject_type, trigger, hard_limit in (("Multiple characters", "athlete_1, athlete_2", 23),
-                ("Multiple characters", "", 24), ("Character", "athlete_1", 24)):
+                ("Multiple characters", "", 23), ("Character", "athlete_1", 24)):
             with self.subTest(subject_type=subject_type, trigger=trigger):
                 schema = understanding_instruction(valid_draft(trigger_type=subject_type, trigger=trigger)).json_schema
                 requirements = schema["properties"]["requirements"]
@@ -307,7 +465,7 @@ class DatasetUnderstandingTests(unittest.TestCase):
         fact = {"scope": "all_outputs", "text": "Two athletes.", "kind": "hard", "sections": ["fixed"]}
         invalid = [{**fact, **change} for change in (
             {"scope": "guided:99"}, {"kind": "unknown"}, {"text": ""}, {"sections": "fixed"},
-            {"sections": ["unknown"]}, {"sections": ["fixed", "fixed"]}, {"extra": True},
+            {"sections": ["unknown"]}, {"sections": ["fixed", "unknown", "unknown"]}, {"extra": True},
             {"kind": "soft"}, {"kind": "context"}, {"sections": ["may_vary"]})]
         invalid.append({**fact, "kind": "context", "sections": []})
         for entry in invalid:
@@ -338,6 +496,67 @@ class DatasetUnderstandingTests(unittest.TestCase):
             identity_policy="not_applicable")), data)
         self.assertIsNone(result["character_count"])
         self.assertEqual(result["dataset_contents"], "12 image prompts; target: Generic; detail: Medium.")
+
+    def test_multiple_character_visibility_reaches_every_stage_after_approval(self):
+        cases = ((2, "Two men talk: Alex has red hair; Ben has black hair.",
+                "Alex: red hair\nBen: black hair"),
+            (10, "Ten adults sit around a table.", ""),
+            (2, "Two strangers shake hands in a medium two-shot.", "person_1, person_2"))
+        for count, subject, trigger in cases:
+            with self.subTest(count=count, trigger=trigger):
+                data = valid_draft(trigger_type="Multiple characters", trigger=trigger, subject=subject)
+                self.assertIn("clearly and individually", understanding_instruction(data).system_message)
+                brief = self.run_response(json.dumps(self.compact_brief(character_count=count,
+                    requested_generation=subject, requirements={"hard": [{"scope": "all_outputs",
+                        "text": subject, "sections": ["fixed"]}], "soft": [], "free": [], "context": []})), data)
+                visibility = brief["hard"][-1]
+                self.assertEqual(visibility["scope"], "all_outputs")
+                self.assertIn("clearly and individually", visibility["text"])
+                self.assertIn("isolated limb", visibility["text"])
+                self.assertIn("does not require full-body framing", visibility["text"])
+                self.assertEqual(brief["character_count"], count)
+                self.assertEqual(brief["identity_policy"], "random_per_prompt")
+                tickets = DatasetIntentTickets()
+                token = tickets.register(data, brief)["confirmation_token"]
+                approved = {**data, "_confirmed_intent": tickets.approve(token, data)}
+                assignment = dataset_assignments(approved)[0]
+                row = saved_scene(input=assignment["input"])
+                for instruction in (ideas_instruction(approved, dataset_assignments(approved)),
+                        scene_instruction(approved, assignment, row)):
+                    self.assertIn(visibility, json.loads(instruction.user_message)["confirmed_intent"]["hard"])
+                for target in ("Generic", "Anima", "Ideogram4"):
+                    with self.subTest(target=target):
+                        instruction = dataset_instruction(GoatedPrompterRequest(idea=subject),
+                            {**approved, "target": target}, 1, plan_item=row)
+                        contract, _ = json.JSONDecoder().raw_decode(
+                            instruction.system_message.split("SCOPED APPROVED REQUIREMENTS\n", 1)[1])
+                        self.assertIn(visibility, contract["hard"])
+
+    def test_multiple_character_visibility_preserves_local_counts_and_identity_policies(self):
+        data = valid_draft(trigger_type="Multiple characters", trigger="", source_mode="guided",
+            inputs="Mira with a random partner\nTen strangers")
+        local = [{"scope": "guided:1", "text": "Mira is fixed; her partner is random. Two people."},
+            {"scope": "guided:2", "text": "Ten strangers with random identities."}]
+        source = dataset_understanding_fixture(character_count=None, identity_policy="mixed", hard=local)
+        brief = self.run_response(json.dumps(source), data)
+        self.assertEqual(brief["hard"][:-1], local)
+        self.assertIn("scoped count", brief["hard"][-1]["text"])
+        self.assertIsNone(brief["character_count"])
+        self.assertEqual(brief["identity_policy"], "mixed")
+
+    def test_multiple_character_visibility_without_trigger_reserves_one_hard_slot(self):
+        data = valid_draft(trigger_type="Multiple characters", trigger="", subject="Ten adults sit together.")
+        source = dataset_understanding_fixture(character_count=10, hard=[
+            {"scope": "all_outputs", "text": f"Requirement {index}."} for index in range(23)])
+        brief = self.run_response(json.dumps(source), data)
+        self.assertEqual(brief["hard"][:-1], source["hard"])
+        self.assertEqual(len(brief["hard"]), 24)
+        self.assertIn("clearly and individually", brief["hard"][-1]["text"])
+        self.assertNotIn("Supplied character trigger", brief["hard"][-1]["text"])
+        self.assertEqual(self.run_response(json.dumps(brief), data), brief)
+        source["hard"].append({"scope": "all_outputs", "text": "Another required fact."})
+        with self.assertRaisesRegex(BackendGenerationError, "leave one HARD entry"):
+            self.run_response(json.dumps(source), data)
 
     def test_multiple_character_source_survives_a_lossy_brief_before_review(self):
         trigger = "2 girls, mira, (blue hair:1.2), bat wings, bat wings, hana, blonde hair, crystal wings"
@@ -657,7 +876,7 @@ class DatasetUnderstandingTests(unittest.TestCase):
                 self.assertEqual(set(requirements["required"]), {"hard", "soft", "free", "context"})
                 for kind in ("hard", "soft", "free", "context"):
                     array = requirements["properties"][kind]
-                    self.assertEqual(array["maxItems"], 23 if kind == "hard" and subject_type == "Multiple characters" and trigger else 24)
+                    self.assertEqual(array["maxItems"], 23 if kind == "hard" and subject_type == "Multiple characters" else 24)
                     item = array["items"]
                     self.assertEqual(set(item["required"]), {"scope", "text", "sections"})
                     self.assertEqual(set(item["properties"]), {"scope", "text", "sections"})
