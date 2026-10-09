@@ -26,7 +26,7 @@ def validate_settings(payload):
     if "builder" in payload:
         builder = payload["builder"]
         strings = {"idea", "system_prompt_override", "custom_instructions", "generated_prompt", "director_preset"}
-        combos = {"mode", "target_model", "creativity", "prompt_length", "planning_mode"}
+        combos = {"mode", "target_model", "creativity", "style", "prompt_length", "planning_mode"}
         sources = {f"reference_{key}_source" for key, _ in REFERENCE_ATTRIBUTES}
         if not isinstance(builder, dict):
             raise ValueError("builder must be an object.")

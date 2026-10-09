@@ -25,6 +25,7 @@ from ...prompting.base import (
     TEXT_ONLY_PRIORITY_CONTRACT,
 )
 from ...prompting.creativity import CREATIVITY_ADAPTERS as _CREATIVITY_ADAPTERS
+from ...prompting.styles import style_section
 from ...prompting.details import LENGTH_ADAPTERS as _LENGTH_ADAPTERS, MAXIMUM_DETAIL_GUIDANCE as _MAXIMUM_DETAIL_GUIDANCE, PRESERVATION_ADAPTERS as _PRESERVATION_ADAPTERS, PRESERVATION_LINKED_LOCK, PRESERVATION_NO_LINKED_LOCKS, PRESERVATION_NONE
 from .prompting import EVIDENCE_ANALYSIS_SYSTEM_PROMPT, evidence_analysis_user_message
 from ...prompting.modes import get_mode_adapter, get_vision_mode_adapter
@@ -162,6 +163,8 @@ def assemble_instruction(
         _CREATIVITY_ADAPTERS.get(request.creativity, _CREATIVITY_ADAPTERS["Balanced"]),
         resolve_target_length(request.target_model, request.prompt_length),
     ])
+    if style := style_section(request.style, request.target_model):
+        sections.append(style)
 
     sections.append(_preservation_section(
         replace(request, linked_references=False) if text_only else request,
@@ -266,6 +269,7 @@ def _diagnostic_context(request, evidence_digest="NONE"):
         "length": request.prompt_length,
         "target": request.target_model,
         "creativity": request.creativity,
+        "style": request.style,
         "director_override": bool(request.system_prompt_override.strip()),
         "workflow_rules": bool(request.custom_instructions.strip()),
         "image_references": len(reference_images(request)),

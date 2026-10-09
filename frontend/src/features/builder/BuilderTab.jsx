@@ -68,6 +68,7 @@ export default function BuilderTab({ settings, inputs, presets, preset, engine, 
                   })))}
                   {field("target_model", "Target model", "Model")}
                   {field("creativity", "Creativity")}
+                  {field("style", "Style")}
                   {field("prompt_length", "Prompt length", "Length", ["Short", "Medium", "Detailed", "Maximum Detail"].map(
                     (value) => ({ value, label: value })))}
                   <label className={ui.pillField}>

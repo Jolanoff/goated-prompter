@@ -71,6 +71,7 @@ def dataset_instruction(request, data, index, model_family="qwen", plan_item=Non
             "guided_input": plan_item.get("input", "")}, ensure_ascii=False)
     builder_request = replace(request, idea=plan_item["scene"], mode="Enhance", planning_mode="Direct",
         target_model=data["target"], prompt_length=data["length"], creativity=data["creativity"],
+        style=data.get("style", "Auto"),
         director_preset=data["director_preset"], preserve_subject=True, preserve_composition=True, preserve_camera=True,
         image=None, image_2=None, image_3=None, image_4=None, linked_references=False, reference_map=None,
         custom_instructions="\n\n".join((ENHANCE_SCENE_CONTRACT, grouping + " " + placement,

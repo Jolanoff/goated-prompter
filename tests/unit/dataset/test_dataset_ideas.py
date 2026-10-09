@@ -10,7 +10,7 @@ from urllib.error import HTTPError
 from goated_prompter.backends.base import BackendGenerationError
 from goated_prompter.backends.openai_compatible import OpenAICompatibleBackend
 from goated_prompter.features.dataset.assignments import dataset_assignments
-from goated_prompter.features.dataset.ideas import (ACTION_SAFE_AXES, DIRECTION_AXES, DatasetIdeasService, IDEA_FIELDS, IDEAS_SYSTEM,
+from goated_prompter.features.dataset.ideas import (ACTION_SAFE_AXES, DIRECTION_AXES, GROUP_FRAMING, DatasetIdeasService, IDEA_FIELDS, IDEAS_SYSTEM,
     creative_directions, ideas_instruction, validate_ideas)
 from goated_prompter.features.dataset.plan import validate_saved_scene_plan
 from tests.helpers import dataset_idea_fixture, dataset_understanding_fixture
@@ -52,6 +52,32 @@ class DatasetIdeasTests(unittest.TestCase):
         self.assertTrue(all("mood" in local_directions[index] for index in (1, 3)))
         open_brief = creative_directions(self.data, [1, 2])
         self.assertTrue(all("moment" in item for item in open_brief.values()))
+
+    def test_multiple_characters_only_get_framing_that_keeps_everyone_in_frame(self):
+        # Reported run: close-ups and over-the-shoulder views left one of two characters cropped.
+        for data in (valid_draft(amount=10, trigger_type="Multiple characters", trigger="2boys, a, b",
+                                 _confirmed_intent=dataset_understanding_fixture()),
+                     valid_draft(amount=10, _confirmed_intent=dataset_understanding_fixture(character_count=2))):
+            framings = {item["framing"] for item in creative_directions(data, range(1, 11)).values()}
+            self.assertEqual(framings, set(GROUP_FRAMING))
+        single = {item["framing"] for item in creative_directions(self.data, range(1, 11), salt=3).values()}
+        self.assertIn("close-up", set(DIRECTION_AXES["framing"]))
+        self.assertTrue(single <= set(DIRECTION_AXES["framing"]))
+
+    def test_each_ideas_run_uses_new_directions(self):
+        # Reported: running the same 10 again produced very close results.
+        data = valid_draft(amount=10, subject="A boxer training.", _confirmed_intent=dataset_understanding_fixture())
+        self.assertEqual(creative_directions(data, range(1, 11), salt=7), creative_directions(data, range(1, 11), salt=7))
+        self.assertNotEqual(creative_directions(data, range(1, 11), salt=7), creative_directions(data, range(1, 11), salt=8))
+        seen = []
+        for _ in range(2):
+            self.session.reset_mock()
+            self.session.generate.return_value = json.dumps([dataset_idea_fixture(1), dataset_idea_fixture(2)])
+            self.service.run(session=self.session, data=self.data, assignments=dataset_assignments(self.data),
+                             progress=lambda _message: None)
+            context = json.loads(self.session.generate.call_args.args[0].user_message)
+            seen.append([row["creative_direction"] for row in context["assignments"]])
+        self.assertNotEqual(seen[0], seen[1])
 
     def test_directions_stay_inside_the_subjects_world(self):
         values = " ".join(value for axis in DIRECTION_AXES.values() for value in axis).casefold()
