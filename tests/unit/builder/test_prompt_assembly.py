@@ -1,6 +1,7 @@
 """Builder system prompts contain only sections that apply to the request."""
 
 import json
+import re
 import unittest
 
 from goated_prompter.contracts import GoatedPrompterRequest
@@ -72,6 +73,14 @@ class BuilderPromptAssemblyTests(unittest.TestCase):
                     normalize_workflow_output(output, target, expected_visible_text=requested_visible_text(request),
                                               mode="Enhance")
         json.loads(TARGET_EXAMPLES["Ideogram4"][1])
+
+    def test_anima_example_never_pairs_solo_with_several_characters(self):
+        tags = [tag.strip() for tag in TARGET_EXAMPLES["Anima"][1].split("\n\n")[0].split(",")]
+        characters = sum(int(match[1]) for tag in tags if (match := re.fullmatch(r"(\d+)(?:boys?|girls?|others?)", tag)))
+        self.assertGreater(characters, 1, "The example should show multi-character count tags.")
+        self.assertNotIn("solo", tags)
+        message = system_message(target_model="Anima", idea="three boys jumping on top of a train")
+        self.assertIn("use solo only when exactly one character appears", message)
 
     def test_qwen21_edit_uses_the_edit_example(self):
         message = system_message(target_model="Qwen Image 2.1", image=IMAGE)

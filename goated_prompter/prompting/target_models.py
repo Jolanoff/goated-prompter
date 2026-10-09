@@ -72,7 +72,7 @@ Descriptive prose is Chinese for a Chinese instruction, otherwise English. Visib
 
 MODEL_ADAPTERS = {
     "Generic": """Generic target: write clean, coherent natural-language visual description without model-specific syntax or tag chains.""",
-    "Anima": """Anima target: use a hybrid of Danbooru/Gelbooru-style tags and concise natural-language scene prose. Start with one comma-separated sequence of relevant lowercase tags, including the correct subject-count tag, followed by fluent prose describing the composition, actions, expressions, spatial relationships and interactions. Use recognizable tags for character appearance, clothing, poses, objects, environment and visual style. Quality and score tags such as masterpiece, best quality and score_7 are allowed where appropriate. Preserve each character's supplied identity and attributes, keeping them correctly assigned in multi-character scenes. Avoid redundant tags, excessive tag counts, negative prompt terms and repeating the tag inventory in prose. Preserve supplied tag wording, order, weights, repetitions and locked trigger prefixes when required. Keep the result visually specific, coherent and focused on the requested image.""",
+    "Anima": """Anima target: use a hybrid of Danbooru/Gelbooru-style tags and concise natural-language scene prose. Start with one comma-separated sequence of relevant lowercase tags, including the correct subject-count tags (for example 3boys, or 1boy, 1girl); use solo only when exactly one character appears, never with several. Follow the tags with fluent prose describing the composition, actions, expressions, spatial relationships and interactions. Use recognizable tags for character appearance, clothing, poses, objects, environment and visual style. Quality and score tags such as masterpiece, best quality and score_7 are allowed where appropriate. Preserve each character's supplied identity and attributes, keeping them correctly assigned in multi-character scenes. Avoid redundant tags, excessive tag counts, negative prompt terms and repeating the tag inventory in prose. Preserve supplied tag wording, order, weights, repetitions and locked trigger prefixes when required. Keep the result visually specific, coherent and focused on the requested image.""",
     "Krea 2": """Krea 2 target: use coherent natural-language visual direction. Make subject, action/state, composition, spatial relationships, environment, materials where useful, lighting and the requested visual medium clear. For photographic requests, use appropriate photographic language. For anime, illustration, painting, graphic design, 3D or other non-photographic requests, preserve that medium and do not force photographic rendering. Under Creative/Dice leave useful aesthetic freedom rather than describing every visual decision. Avoid disconnected keyword piles and unnecessary stylistic defaults.""",
     "FLUX.2 Klein": """FLUX.2 Klein target: use moderately detailed natural-language prose, subject/action first, then setting, important appearance/material details, spatial relationships and lighting. Use positive visible description, not negative prompt syntax or keyword piles. For editing distinguish requested changes from protected content.""",
     "Z-Image Base": """Z-Image Base target: the non-distilled Base variant. Use straightforward descriptive prose with clear subjects, action and visual relationships. Keep generator settings and separate negative conditioning out of positive prose.""",
@@ -119,12 +119,12 @@ TARGET_EXAMPLES = {
         "the boat fills the left two-thirds of the frame while the calm grey sea fades into mist on the right.",
     ),
     "Anima": (
-        "girl in a yellow raincoat jumping in a puddle, neon city at night",
-        "1girl, solo, short silver hair, green eyes, yellow raincoat, rubber boots, holding umbrella, jumping, "
-        "puddle, splashing, city street, night, rain, neon lights, reflection, full body\n\n"
-        "A girl in a bright yellow raincoat leaps into a puddle on a narrow city street, clear umbrella held high "
-        "as rain streaks through the pink and blue glow of neon signs. Water sprays around her boots and her "
-        "rippling reflection breaks apart beneath her as she laughs.",
+        "a boy and a girl sharing an umbrella at a rainy bus stop at night",
+        "1boy, 1girl, sharing umbrella, transparent umbrella, bus stop, rain, night, city lights, puddle, "
+        "reflection, standing, side-by-side, school uniform, yellow raincoat, full body\n\n"
+        "A boy in a dark school uniform and a girl in a bright yellow raincoat stand side by side under one clear "
+        "umbrella at a rain-soaked bus stop, the boy on the left holding the handle. She glances up at him with a "
+        "shy smile while streetlights and passing headlights shimmer in the puddles at their feet.",
     ),
     "Krea 2": (
         "watercolor fox sleeping in the snow",
