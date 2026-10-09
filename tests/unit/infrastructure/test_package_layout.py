@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from goated_prompter import config, presets
 from goated_prompter.director_profiles import resolve_models_directory
-from goated_prompter.input_schema import builder_input_schema
+from goated_prompter.features.builder.input_schema import builder_input_schema
 
 
 from tests.support.paths import ROOT

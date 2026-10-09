@@ -4,9 +4,9 @@ from copy import deepcopy
 import json
 import unittest
 
-from goated_prompter.dataset import validate_dataset_draft
-from goated_prompter.dataset_intent import DatasetIntentTickets
-from goated_prompter.dataset_understanding import validate_understanding
+from goated_prompter.features.dataset.service import validate_dataset_draft
+from goated_prompter.features.dataset.intent import DatasetIntentTickets
+from goated_prompter.features.dataset.understanding import validate_understanding
 from tests.helpers import dataset_understanding_fixture, dataset_idea_fixture
 from tests.support.dataset import saved_scene, valid_draft
 
@@ -56,8 +56,8 @@ class DatasetIntentTicketTests(unittest.TestCase):
         self.assertEqual(result["confirmation_token"], "")
 
     def test_developed_ideas_and_longer_scenes_fit_the_new_limits_without_minimum_padding(self):
-        from goated_prompter.dataset_ideas import validate_ideas
-        from goated_prompter.dataset_scene import validate_scene
+        from goated_prompter.features.dataset.ideas import validate_ideas
+        from goated_prompter.features.dataset.scene import validate_scene
         idea = "A meaningful action " + "descriptive " * 47
         self.assertEqual(len(idea.split()), 50)
         self.assertEqual(validate_ideas(json.dumps([dataset_idea_fixture(idea=idea)]), [1])[0]["idea"], idea.strip())

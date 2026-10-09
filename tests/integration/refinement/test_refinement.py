@@ -63,7 +63,7 @@ class RefinementEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.backend = ControlledBackend()
-        enter_context(self, patch("goated_prompter.refinement.create_backend", return_value=self.backend))
+        enter_context(self, patch("goated_prompter.features.refine.service.create_backend", return_value=self.backend))
         self.app = local.create_app(config_loader=lambda: {"backend": "mock"}, settings_path=Path(self.temp.name) / "settings.json")
         self.client = TestClient(TestServer(self.app), headers={"Host": "127.0.0.1:8190"})
         await self.client.start_server()

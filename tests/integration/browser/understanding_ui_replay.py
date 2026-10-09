@@ -45,9 +45,9 @@ if __name__ == "__main__":
 
     _, scratch = task_paths(os.environ.get("GOATED_TEST_TASK_KEY", "browser-tests"), "browser")
     with synthetic_storage(scratch) as storage:
-        with patch("goated_prompter.dataset_understanding.create_backend", side_effect=backend), \
-                patch("goated_prompter.dataset.create_backend", side_effect=backend), \
-                patch("goated_prompter.core.create_backend", side_effect=backend), \
+        with patch("goated_prompter.features.dataset.understanding.create_backend", side_effect=backend), \
+                patch("goated_prompter.features.dataset.service.create_backend", side_effect=backend), \
+                patch("goated_prompter.features.builder.service.create_backend", side_effect=backend), \
                 patch("local_app.get_process_manager"):
             web.run_app(create_app(port=8192, config_loader=lambda: {"backend": "mock"},
                                    settings_path=Path(storage) / "settings.json"),

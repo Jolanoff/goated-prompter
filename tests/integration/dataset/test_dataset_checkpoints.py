@@ -5,10 +5,10 @@ import unittest
 from unittest.mock import patch
 
 import local_app as local
-from goated_prompter.core import GoatedPrompterRequest
-from goated_prompter.dataset import default_dataset_draft
-from goated_prompter.dataset_checkpoints import generation_signature
-from goated_prompter.workspace_api import execute_workflow
+from goated_prompter.contracts import GoatedPrompterRequest
+from goated_prompter.features.dataset.service import default_dataset_draft
+from goated_prompter.features.dataset.checkpoints import generation_signature
+from goated_prompter.workflow_runners import execute_workflow
 from goated_prompter.workspace_store import WorkspaceConflict
 from goated_prompter.json_store import atomic_json
 
@@ -44,7 +44,7 @@ class DatasetCheckpointTests(unittest.TestCase):
             def run(self, request, data, progress, partial, **kwargs):
                 partial(result)
                 raise ValueError("writer unavailable")
-        with patch("goated_prompter.workflow_runners.DatasetService", Service):
+        with patch("goated_prompter.features.dataset.runner.DatasetService", Service):
             with self.assertRaisesRegex(ValueError, "writer unavailable"):
                 execute_workflow(self.state, job, GoatedPrompterRequest(idea="craft"), {"backend": "mock"},
                                  {"operation": "dataset", "input": self.data})
@@ -204,7 +204,7 @@ class DatasetCheckpointTests(unittest.TestCase):
         self.assertEqual(self.state.workflow_settings.snapshot("dataset")["draft"]["results"], job.result["prompts"])
 
     def test_checkpoint_store_rejects_corrupt_job_binding_before_projection(self):
-        from goated_prompter.dataset_checkpoints import validate_checkpoints
+        from goated_prompter.features.dataset.checkpoints import validate_checkpoints
         job = self.begin()
         store = self.state.dataset_checkpoints.snapshot()
         store["jobs"][0]["snapshot"]["id"] = "another-job"
@@ -216,7 +216,7 @@ class DatasetCheckpointTests(unittest.TestCase):
         old.result = self.result()
         old.status = "succeeded"
         self.state.workflow_settings.checkpoint_dataset(old)
-        with patch("goated_prompter.dataset_checkpoints.CHECKPOINT_BYTE_BUDGET", 1):
+        with patch("goated_prompter.features.dataset.checkpoints.CHECKPOINT_BYTE_BUDGET", 1):
             current = self.begin()
         records = self.state.dataset_checkpoints.snapshot()["jobs"]
         self.assertEqual([row["job_id"] for row in records], [current.id])

@@ -12,9 +12,9 @@ from unittest.mock import patch
 from aiohttp.test_utils import TestClient, TestServer
 
 import local_app as local
-from goated_prompter.dataset import validate_dataset_draft
-from goated_prompter.dataset_intent import DatasetIntentTickets
-from goated_prompter.dataset_understanding import validate_understanding
+from goated_prompter.features.dataset.service import validate_dataset_draft
+from goated_prompter.features.dataset.intent import DatasetIntentTickets
+from goated_prompter.features.dataset.understanding import validate_understanding
 from goated_prompter.json_store import atomic_json
 from tests.helpers import dataset_understanding_fixture, dataset_idea_fixture, enter_context
 from tests.support.dataset import CaptureBackend, saved_scene, valid_draft
@@ -55,8 +55,8 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.backend = UnderstandingBackend()
-        enter_context(self, patch("goated_prompter.dataset_understanding.create_backend", return_value=self.backend))
-        enter_context(self, patch("goated_prompter.dataset.create_backend", return_value=self.backend))
+        enter_context(self, patch("goated_prompter.features.dataset.understanding.create_backend", return_value=self.backend))
+        enter_context(self, patch("goated_prompter.features.dataset.service.create_backend", return_value=self.backend))
         enter_context(self, patch.dict("os.environ", {"GOATED_PROMPTER_USER_DIR": str(Path(self.temp.name) / "directors")}))
         enter_context(self, patch("local_app.get_process_manager"))
         self.app = local.create_app(config_loader=lambda: {"backend": "mock"},
@@ -152,8 +152,8 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.app[local.STATE].dataset_checkpoints.snapshot()["jobs"])
 
     async def test_multiple_character_source_is_reviewed_carried_through_planning_and_retained_after_restart(self):
-        from goated_prompter.prompting.dataset import dataset_instruction
-        from goated_prompter.core import GoatedPrompterRequest
+        from goated_prompter.features.dataset.prompting import dataset_instruction
+        from goated_prompter.contracts import GoatedPrompterRequest
         trigger = "2 girls, mira, blue hair, bat wings, bat wings, hana, blonde hair, crystal wings"
         data = valid_draft(amount=1, trigger_type="Multiple characters", trigger=trigger,
             target="Anima", trigger_at_start=True, trigger_connected=True, expand_trigger=False,
@@ -206,10 +206,10 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.app[local.STATE].dataset_checkpoints.snapshot()["jobs"][-1]["approved_intent"], legacy_brief)
 
     async def test_full_four_stage_flow_uses_existing_builder_with_accepted_scene_as_the_entire_input(self):
-        from goated_prompter.core import assemble_instruction
+        from goated_prompter.features.builder.service import assemble_instruction
         data = valid_draft(amount=1, target="Anima", length="Maximum Detail", creativity="Creative")
         accepted = await self.analyze(data)
-        with patch("goated_prompter.core.assemble_instruction", wraps=assemble_instruction) as builder:
+        with patch("goated_prompter.features.builder.service.assemble_instruction", wraps=assemble_instruction) as builder:
             response = await self.client.post("/api/workspace/dataset", json={"input": data,
                 "confirmation_token": accepted["confirmation_token"]})
             self.assertEqual(response.status, 202)
@@ -544,8 +544,8 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_still_unresolved_explicit_repair_does_not_loop_or_write_a_prompt(self):
         from tests.support.dataset import REPAIR, SCENE
-        from goated_prompter.scene_planner import scene_plan_signature
-        from goated_prompter.dataset_assignments import dataset_assignments
+        from goated_prompter.features.dataset.plan import scene_plan_signature
+        from goated_prompter.features.dataset.assignments import dataset_assignments
         row = {**dataset_idea_fixture(), "input": "", "scene": SCENE, "self_check": REPAIR,
             "scene_status": "repair_required", "prompt_status": "not_generated"}
         data = valid_draft(amount=1, scene_plan=[row])
@@ -670,8 +670,8 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([row["index"] for row in json.loads(idea_call.user_message)["assignments"]], [2])
 
     async def test_unconfirmed_and_forged_tokens_never_start_generation(self):
-        from goated_prompter.scene_planner import scene_plan_signature
-        from goated_prompter.dataset_assignments import dataset_assignments
+        from goated_prompter.features.dataset.plan import scene_plan_signature
+        from goated_prompter.features.dataset.assignments import dataset_assignments
         data = valid_draft(amount=1, scene_plan=[{"index": 1, "input": "", "idea": "Read", "scene": "Reading on a bench.", "self_check": "PASS"}])
         data["scene_plan_signature"] = scene_plan_signature(data, dataset_assignments(data))
         for path, options in (("dataset", {}), ("dataset/scenes", {}),

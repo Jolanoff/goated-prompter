@@ -20,6 +20,12 @@ from PIL import Image
 import local_app as local
 from tests.helpers import enter_context
 from goated_prompter import json_store, uploaded_images
+from goated_prompter.contracts import GoatedPrompterRequest
+from goated_prompter.presets import resolve_user_director_directory
+from goated_prompter.features.builder import routes as builder_routes
+from goated_prompter.features.presets import routes as presets_routes
+from goated_prompter.features.saved_prompts import store as saved_prompts_store
+from goated_prompter.features.settings import routes as settings_routes
 from tests.support.backends import CONFIGURED_BACKENDS, backend_config
 
 
@@ -100,7 +106,7 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(set(payload["presets"]["mode_directors"]), set(payload["inputs"]["mode"][0]))
         self.assertEqual(payload["presets"]["mode_directors"]["Photography"], "photography_director")
         self.assertEqual(set(payload["models"]), {"ok", "backend", "root", "profiles", "assignments", "warnings"})
-        with patch.object(local, "discover_director_profiles", wraps=local.discover_director_profiles) as discover:
+        with patch.object(settings_routes, "discover_director_profiles", wraps=settings_routes.discover_director_profiles) as discover:
             response = await self.client.get("/api/models?refresh=true")
             self.assertEqual(response.status, 200)
             self.assertTrue(discover.call_args.args[1])
@@ -120,8 +126,8 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_configured_aliases_do_not_require_profiles_at_workflow_admission(self):
         from tests.helpers import confirmed_dataset_payload
-        from goated_prompter.dataset import default_dataset_draft
-        from goated_prompter.minimax import default_minimax_draft
+        from goated_prompter.features.dataset.service import default_dataset_draft
+        from goated_prompter.features.minimax.contract import default_minimax_draft
 
         state = self.app[local.STATE]
         state.workspace.add_version("A cup on a table.", "Generic", "Starting prompt")
@@ -263,7 +269,7 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(state.migration_notices)
         again = local.LocalState(lambda: {}, None, self.settings_path)
         self.assertEqual(again.settings()["builder"], builder)
-        self.assertEqual(len(list(local.resolve_user_director_directory().glob("*.json"))), 1)
+        self.assertEqual(len(list(resolve_user_director_directory().glob("*.json"))), 1)
         with self.assertRaisesRegex(ValueError, "Invalid builder mode"):
             state.save_settings({"builder": {"director_preset": "Photography Director", "mode": "invalid stale", "system_prompt_override": "stale"}})
 
@@ -368,7 +374,7 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(bootstrap["settings"], expected)
         self.assertEqual(bootstrap["models"]["root"], str(root))
         self.assertEqual({p["id"] for p in bootstrap["models"]["profiles"]}, {".", "nested/engine"})
-        request = local.GoatedPrompterRequest.from_mapping({"prompt_model": "Custom", "director_profile": "nested/engine"})
+        request = GoatedPrompterRequest.from_mapping({"prompt_model": "Custom", "director_profile": "nested/engine"})
         effective, profile = local.resolve_director_config(app[local.STATE].config(), request)
         self.assertEqual(profile.profile_id, "nested/engine")
         self.assertEqual(effective["local_llama_cpp"]["model_path"], str(nested / "model.gguf"))
@@ -614,7 +620,7 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.settings_path.exists())
 
     async def test_text_only_skips_image_decoding(self):
-        with patch.object(local, "decode_image", side_effect=AssertionError("Must not decode images")):
+        with patch.object(builder_routes, "decode_image", side_effect=AssertionError("Must not decode images")):
             job = await self.start(images=["invalid image", "data:image/png;base64,!!!!", "bad", "bad"], text_only=True)
             await self.wait_status(job["id"], "succeeded")
         request, text_only = self.calls[0]
@@ -731,9 +737,9 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_local_prompt_regeneration_requires_a_checked_scene(self):
         from tests.helpers import confirmed_dataset_payload
-        from goated_prompter.dataset import default_dataset_draft
-        from goated_prompter.dataset_assignments import dataset_assignments
-        from goated_prompter.scene_planner import scene_plan_signature
+        from goated_prompter.features.dataset.service import default_dataset_draft
+        from goated_prompter.features.dataset.assignments import dataset_assignments
+        from goated_prompter.features.dataset.plan import scene_plan_signature
         data = {**default_dataset_draft(), "amount": 1, "subject": "A traveler", "trigger": "person_token"}
         data["scene_plan"] = [{"index": 1, "input": "", "idea": "Reading on a bench",
                                "scene": "She reads a book on a park bench.", "self_check": "PASS",
@@ -758,7 +764,7 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         director = SimpleNamespace(to_public_mapping=lambda: {"id": "user:test", "label": "Test"})
         for method, function, payload in (("post", "save_user_director", {"name": "Test", "instructions": "test"}),
                                           ("delete", "delete_user_director", {"id": "user:test"})):
-            with patch.object(local, function, return_value=(director, Path("test.json"))):
+            with patch.object(presets_routes, function, return_value=(director, Path("test.json"))):
                 response = await getattr(self.client, method)("/api/presets", json=payload)
                 self.assertEqual(await response.json(), {"ok": True, "director": director.to_public_mapping(), "file": "test.json"})
         response = await self.client.post("/api/unload")
@@ -816,9 +822,9 @@ class JsonStorageTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, "Restore or repair"):
                         local.create_app(settings_path=settings, prompts_path=path)
                 self.assertEqual(json.loads(path.read_text()), payload)
-            with patch.object(local, "MAX_PROMPTS", 1):
+            with patch.object(saved_prompts_store, "MAX_PROMPTS", 1):
                 with self.assertRaises(ValueError):
-                    local.validate_prompts({"prompts": [record, {**record, "id": "two"}]})
+                    saved_prompts_store.validate_prompts({"prompts": [record, {**record, "id": "two"}]})
             original = path.read_bytes()
             with patch.object(json_store, "MAX_STORE_BYTES", 2):
                 with self.assertRaises(ValueError):

@@ -7,7 +7,7 @@ from local_app import Job
 import local_app
 from pathlib import Path
 import tempfile
-from goated_prompter.core import GoatedPrompterRequest
+from goated_prompter.contracts import GoatedPrompterRequest
 from unittest.mock import Mock
 
 
@@ -106,8 +106,8 @@ class StreamCompletionTests(unittest.TestCase):
         self.assertIsNone(job.result)
 
     def test_dataset_transport_retry_exhaustion_keeps_original_completion_state(self):
-        from goated_prompter.dataset import DatasetService, default_dataset_draft
-        from goated_prompter.prompting.dataset import dataset_instruction
+        from goated_prompter.features.dataset.service import DatasetService, default_dataset_draft
+        from goated_prompter.features.dataset.prompting import dataset_instruction
         data = {**default_dataset_draft(), "subject": "a person", "trigger": "subject", "amount": 1}
         session = Mock()
         session.generate.side_effect = BackendGenerationError("EOF", completion_state="interrupted", partial_text="partial")

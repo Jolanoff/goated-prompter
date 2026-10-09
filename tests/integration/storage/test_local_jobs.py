@@ -5,9 +5,9 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from goated_prompter.core import GoatedPrompterRequest
+from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.local_jobs import Job, JobCancelled
-from goated_prompter.workspace_api import execute_workflow
+from goated_prompter.workflow_runners import execute_workflow
 
 
 class JobPersistenceTests(unittest.TestCase):
@@ -122,7 +122,7 @@ class JobPersistenceTests(unittest.TestCase):
         def generate(request, data, progress, partial, **options):
             partial(result)
             return result
-        with patch("goated_prompter.workflow_runners.DatasetService") as service:
+        with patch("goated_prompter.features.dataset.runner.DatasetService") as service:
             service.return_value.run.side_effect = generate
             execute_workflow(state, job, GoatedPrompterRequest(idea="synthetic cup"), {},
                              {"operation": "dataset", "input": {}})

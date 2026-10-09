@@ -23,6 +23,7 @@ backends.__path__ = [str(Path(package.__path__[0]) / "backends")]
 sys.modules[backends.__name__] = backends
 llama = importlib.import_module(f"{PACKAGE}.backends.llama_cpp_process")
 openai = importlib.import_module(f"{PACKAGE}.backends.openai_compatible")
+contracts = importlib.import_module(f"{PACKAGE}.contracts")
 
 
 class ProcessManagerTests(unittest.TestCase):
@@ -361,8 +362,8 @@ class OpenAITimeoutTests(unittest.TestCase):
 
 class FinalBudgetTests(unittest.TestCase):
     def instruction(self, max_tokens=None, hard_max_tokens=None):
-        core = importlib.import_module(f"{PACKAGE}.core")
-        return core.PromptInstruction(
+        core = importlib.import_module(f"{PACKAGE}.features.builder.service")
+        return contracts.PromptInstruction(
             "system", "user", max_tokens=max_tokens, hard_max_tokens=hard_max_tokens,
         )
 
@@ -409,9 +410,9 @@ class FinalBudgetTests(unittest.TestCase):
         self.assertEqual(self.outgoing(backend, self.instruction())["max_tokens"], 768)
 
     def test_qwen21_every_detail_level_sends_uncapped_requests(self):
-        core = importlib.import_module(f"{PACKAGE}.core")
+        core = importlib.import_module(f"{PACKAGE}.features.builder.service")
         for length in ("Short", "Medium", "Detailed", "Maximum Detail", "Maximum"):
-            instruction = core.assemble_instruction(core.GoatedPrompterRequest(
+            instruction = core.assemble_instruction(contracts.GoatedPrompterRequest(
                 idea="A red bicycle", target_model="Qwen2.1", prompt_length=length))
             with self.subTest(length=length):
                 self.assertIsNone(instruction.max_tokens)
@@ -420,9 +421,9 @@ class FinalBudgetTests(unittest.TestCase):
                 self.assertEqual(self.outgoing(self.backend(max_tokens=768, _is_llama_cpp=True), instruction)["max_tokens"], -1)
 
     def test_builder_and_analysis_are_uncapped_and_alias_guidance_equal(self):
-        core = importlib.import_module(f"{PACKAGE}.core")
+        core = importlib.import_module(f"{PACKAGE}.features.builder.service")
         backend = self.backend()
-        instructions = [core.assemble_instruction(core.GoatedPrompterRequest.from_mapping({
+        instructions = [core.assemble_instruction(contracts.GoatedPrompterRequest.from_mapping({
             "idea": "portrait", "prompt_length": length,
         })) for length in ("Maximum", "Maximum Detail")]
         self.assertEqual(instructions[0], instructions[1])
@@ -431,7 +432,7 @@ class FinalBudgetTests(unittest.TestCase):
         analysis = replace(self.instruction(), diagnostic_stage="evidence:image_4")
         self.assertEqual(self.outgoing(backend, analysis)["max_tokens"], 768)
         for length in ("Short", "Medium", "Detailed"):
-            instruction = core.assemble_instruction(core.GoatedPrompterRequest(idea="portrait", prompt_length=length))
+            instruction = core.assemble_instruction(contracts.GoatedPrompterRequest(idea="portrait", prompt_length=length))
             self.assertNotIn("max_tokens", self.outgoing(backend, instruction))
 
     def test_context_cap_reserve_and_actionable_failure(self):
@@ -468,10 +469,10 @@ class FinalBudgetTests(unittest.TestCase):
             self.assertEqual(self.outgoing(client, self.instruction(3072))["max_tokens"], 3072)
             unlimited = replace(self.instruction(4096), user_message="x" * 25000, unlimited_tokens=True)
             self.assertEqual(self.outgoing(client, unlimited)["max_tokens"], -1)
-            core = importlib.import_module(f"{PACKAGE}.core")
+            core = importlib.import_module(f"{PACKAGE}.features.builder.service")
             references = importlib.import_module(f"{PACKAGE}.reference_map")
-            evidence = importlib.import_module(f"{PACKAGE}.evidence")
-            request = core.GoatedPrompterRequest(
+            evidence = importlib.import_module(f"{PACKAGE}.features.builder.evidence")
+            request = contracts.GoatedPrompterRequest(
                 idea="cinematic portrait wearing a coat", linked_references=True,
                 prompt_length="Maximum Detail", image_4=object(),
                 reference_map={key: "Image 4" for key, _label in references.REFERENCE_ATTRIBUTES},

@@ -14,13 +14,13 @@ from goated_prompter.backends.base import BackendGenerationError
 from goated_prompter.backends.llama_cpp_process import LlamaCppLaunchConfig
 from goated_prompter.backends.local_llama_cpp import LocalLlamaCppBackend
 from goated_prompter.backends.openai_compatible import OpenAICompatibleBackend
-from goated_prompter.core import GoatedPrompterRequest
-from goated_prompter.dataset_assignments import dataset_assignments
-from goated_prompter.dataset_ideas import ideas_instruction
-from goated_prompter.dataset_intent import DatasetIntentTickets
-from goated_prompter.dataset_scene import scene_instruction
-from goated_prompter.dataset_understanding import DatasetUnderstandingService, understanding_instruction, validate_understanding
-from goated_prompter.prompting.dataset import dataset_instruction
+from goated_prompter.contracts import GoatedPrompterRequest
+from goated_prompter.features.dataset.assignments import dataset_assignments
+from goated_prompter.features.dataset.ideas import ideas_instruction
+from goated_prompter.features.dataset.intent import DatasetIntentTickets
+from goated_prompter.features.dataset.scene import scene_instruction
+from goated_prompter.features.dataset.understanding import DatasetUnderstandingService, understanding_instruction, validate_understanding
+from goated_prompter.features.dataset.prompting import dataset_instruction
 from tests.helpers import dataset_understanding_fixture
 from tests.support.dataset import saved_scene, valid_draft
 
@@ -474,7 +474,7 @@ class DatasetUnderstandingTests(unittest.TestCase):
         backend.generation_session.return_value = nullcontext(session)
         session.generate.return_value = raw
         service = DatasetUnderstandingService({"backend": "mock"}, lambda: None)
-        with patch("goated_prompter.dataset_understanding.create_backend", return_value=backend):
+        with patch("goated_prompter.features.dataset.understanding.create_backend", return_value=backend):
             try:
                 return service.run(GoatedPrompterRequest(idea="A synthetic cup"),
                                    valid_draft() if data is None else data, lambda _message: None)
@@ -615,7 +615,7 @@ class DatasetUnderstandingTests(unittest.TestCase):
             trigger_type="Multiple characters", trigger="duck, 2 men")
         request = GoatedPrompterRequest(idea=data["subject"])
         service = DatasetUnderstandingService({"backend": "mock"}, lambda: None)
-        with (patch("goated_prompter.dataset_understanding.create_backend", return_value=backend),
+        with (patch("goated_prompter.features.dataset.understanding.create_backend", return_value=backend),
               patch("goated_prompter.backends.openai_compatible.urlopen", return_value=response) as send,
               patch("goated_prompter.backends.openai_compatible.log_request"),
               patch("goated_prompter.backends.openai_compatible.log_response")):

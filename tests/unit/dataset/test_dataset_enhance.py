@@ -6,9 +6,10 @@ import json
 import unittest
 from unittest.mock import Mock, patch
 
-from goated_prompter.core import GoatedPrompterRequest, assemble_instruction
-from goated_prompter.dataset import DatasetService
-from goated_prompter.prompting.dataset import dataset_instruction
+from goated_prompter.contracts import GoatedPrompterRequest
+from goated_prompter.features.builder.service import assemble_instruction
+from goated_prompter.features.dataset.service import DatasetService
+from goated_prompter.features.dataset.prompting import dataset_instruction
 from goated_prompter.prompting.base import CORE_SYSTEM_PROMPT
 from goated_prompter.prompting.creativity import CREATIVITY_ADAPTERS
 from goated_prompter.prompting.details import DATASET_OUTPUT_TOKEN_LIMITS
@@ -30,7 +31,7 @@ class DatasetEnhanceTests(unittest.TestCase):
 
     def test_existing_builder_receives_only_the_complete_accepted_scene_and_staging_locks(self):
         before = deepcopy(self.scene)
-        with patch("goated_prompter.core.assemble_instruction", wraps=assemble_instruction) as builder:
+        with patch("goated_prompter.features.builder.service.assemble_instruction", wraps=assemble_instruction) as builder:
             instruction = self.assemble()
         builder.assert_called_once()
         request = builder.call_args.args[0]
@@ -66,7 +67,7 @@ class DatasetEnhanceTests(unittest.TestCase):
         self.assertIn("ENHANCE THE ACCEPTED SCENE", instruction.system_message)
 
     def test_repair_pending_failed_or_missing_scenes_never_reach_builder(self):
-        with patch("goated_prompter.core.assemble_instruction", wraps=assemble_instruction) as builder:
+        with patch("goated_prompter.features.builder.service.assemble_instruction", wraps=assemble_instruction) as builder:
             for changes in ({"self_check": REPAIR}, {"self_check": ""}, {"scene_status": "failed"}, {"scene": ""}):
                 with self.subTest(changes=changes), self.assertRaises(ValueError):
                     dataset_instruction(self.request, self.data, 1, plan_item={**self.scene, **changes})

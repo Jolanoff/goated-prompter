@@ -11,13 +11,14 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 import unittest
 
-from goated_prompter.core import GoatedPrompterRequest, GoatedPrompterService
-from goated_prompter.minimax import MiniMaxService
+from goated_prompter.contracts import GoatedPrompterRequest
+from goated_prompter.features.builder.service import GoatedPrompterService
+from goated_prompter.features.minimax.service import MiniMaxService
 from goated_prompter.planning.constraints import compile_request
 from goated_prompter.planning.semantic_validation import (
     SemanticValidationError, invariant_contract, review_candidate, repair_contract,
 )
-from goated_prompter.prompting.minimax import validate_output, validate_analysis, validate_minimax_draft
+from goated_prompter.features.minimax.contract import validate_output, validate_analysis, validate_minimax_draft
 from tests.eval.metrics import measure, useful_fact_coverage
 from tests.support.paths import TESTS
 
@@ -104,7 +105,7 @@ class SemanticInvariantTests(unittest.TestCase):
         good=bad.replace(" and a peaked cap","")
         issue=defect("constraint_validity","forbidden_content","hats","peaked cap")
         backend=SequenceBackend([bad,verdict(("constraint_validity",),issue),good,verdict(("constraint_validity",))])
-        with patch("goated_prompter.minimax.create_backend",return_value=backend):
+        with patch("goated_prompter.features.minimax.service.create_backend",return_value=backend):
             result=MiniMaxService({"backend":"mock","semantic_constraints":True},lambda:None).run(
                 GoatedPrompterRequest(idea=row["request"]),{"user_request":row["request"],"planning_mode":"Direct"},lambda _:None)
         self.assertNotIn("peaked cap",result["prompt"])
@@ -145,7 +146,7 @@ class SemanticInvariantTests(unittest.TestCase):
         good = bad.replace("fully extended and locked off", "bent at the elbow in a sustained lock-off")
         issue = defect("action_fidelity", "action_drift", "one arm locked off", "fully extended and locked off")
         backend = SequenceBackend([bad, verdict(issue=issue), good, verdict((*CHECKS,"repair_preservation"))])
-        with patch("goated_prompter.core.create_backend", return_value=backend):
+        with patch("goated_prompter.features.builder.service.create_backend", return_value=backend):
             result = GoatedPrompterService(config={"backend":"mock", "semantic_validation":True}).generate_text_only(
                 GoatedPrompterRequest(idea=row["request"], planning_mode="Direct"))
         self.assertEqual(result.prompt, good)
@@ -161,7 +162,7 @@ class SemanticInvariantTests(unittest.TestCase):
         checks = (*CHECKS,"temporal_fidelity")
         backend = SequenceBackend([bad, verdict(checks,issue), good, verdict((*checks,"repair_preservation"))])
         data = {"user_request":row["request"],"planning_mode":"Direct","director_preset":"general_director"}
-        with patch("goated_prompter.minimax.create_backend", return_value=backend):
+        with patch("goated_prompter.features.minimax.service.create_backend", return_value=backend):
             result = MiniMaxService({"backend":"mock","semantic_validation":True},lambda:None).run(
                 GoatedPrompterRequest(idea=row["request"]),data,lambda _:None)
         self.assertNotIn("peaked cap",result["prompt"])
@@ -250,7 +251,7 @@ class SemanticInvariantTests(unittest.TestCase):
             review_candidate(SequenceBackend([verdict(issue=issue),verdict(issue=issue)]),contract,"A chair.",stage="source")
 
     def test_temporal_endpoint_rule_is_not_specific_to_ten_seconds(self):
-        from goated_prompter.prompting.minimax import validate_temporal_endpoints
+        from goated_prompter.features.minimax.contract import validate_temporal_endpoints
         data = {"user_request":"The subject raises a box, then sets it down at 7.25 seconds.","duration_seconds":10}
         with self.assertRaisesRegex(ValueError,"7.25"):
             validate_temporal_endpoints("[Shot 1] The subject raises and lowers a box.",data)

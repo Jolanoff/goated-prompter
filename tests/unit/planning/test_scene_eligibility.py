@@ -1,6 +1,6 @@
 import unittest
-from goated_prompter.scene_eligibility import scene_eligibility
-from goated_prompter.scene_planner import scene_is_usable, scene_unusable_reason
+from goated_prompter.features.dataset.eligibility import scene_eligibility
+from goated_prompter.features.dataset.plan import scene_is_usable, scene_unusable_reason
 
 
 class SceneEligibilityTests(unittest.TestCase):

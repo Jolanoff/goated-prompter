@@ -11,10 +11,11 @@ import unittest
 from unittest.mock import patch
 
 from goated_prompter.backends.base import GoatedPrompterBackend, BackendGenerationError
-from goated_prompter.core import GoatedPrompterRequest, GoatedPrompterService, assemble_instruction
-from goated_prompter.evidence import clear_evidence_cache
+from goated_prompter.contracts import GoatedPrompterRequest
+from goated_prompter.features.builder.service import GoatedPrompterService, assemble_instruction
+from goated_prompter.features.builder.evidence import clear_evidence_cache
 from goated_prompter.image_utils import EncodedImage
-from goated_prompter.minimax import MiniMaxService
+from goated_prompter.features.minimax.service import MiniMaxService
 from goated_prompter.planning.complexity import needs_planning
 from goated_prompter.planning.constraints import compile_request
 from goated_prompter.planning.scene_plan import PromptScenePlan
@@ -23,8 +24,8 @@ from goated_prompter.planning.validation import validate_plan
 from goated_prompter.planning.video_plan import VideoScenePlan
 from goated_prompter.planning.video_planner import video_planning_instruction
 from goated_prompter.presets import DIRECTOR_PRESETS, get_director_preset
-from goated_prompter.prompting.minimax import (validate_minimax_draft, validate_analysis,
-    generation_instruction, parse_shot_outline, exact_dialogue)
+from goated_prompter.features.minimax.contract import validate_minimax_draft, validate_analysis, exact_dialogue
+from goated_prompter.features.minimax.prompting import generation_instruction, parse_shot_outline
 from goated_prompter.prompting.target_models import TARGET_MODEL_NAMES
 from tests.helpers import enter_context
 from tests.support.paths import ROOT
@@ -93,13 +94,13 @@ class SupportingPlanningTests(unittest.TestCase):
 
     def builder(self, request, *responses, checkpoint=None):
         backend = ScriptedBackend(*responses)
-        with patch("goated_prompter.core.create_backend", return_value=backend):
+        with patch("goated_prompter.features.builder.service.create_backend", return_value=backend):
             result = GoatedPrompterService(config={"backend": "mock"}, checkpoint=checkpoint).generate(request)
         return result, backend
 
     def minimax(self, data, *responses):
         backend = ScriptedBackend(*responses)
-        with patch("goated_prompter.minimax.create_backend", return_value=backend):
+        with patch("goated_prompter.features.minimax.service.create_backend", return_value=backend):
             result = MiniMaxService({"backend": "mock"}, lambda: None).run(
                 GoatedPrompterRequest(idea=data["user_request"]), data, lambda _: None)
         return result, backend
@@ -199,7 +200,7 @@ class SupportingPlanningTests(unittest.TestCase):
 
     def test_always_failure_does_not_write_final(self):
         backend = ScriptedBackend("bad JSON")
-        with patch("goated_prompter.core.create_backend", return_value=backend), self.assertRaisesRegex(BackendGenerationError, "Required scene planning failed"):
+        with patch("goated_prompter.features.builder.service.create_backend", return_value=backend), self.assertRaisesRegex(BackendGenerationError, "Required scene planning failed"):
             GoatedPrompterService(config={"backend": "mock"}).generate(GoatedPrompterRequest(idea="apple", planning_mode="Always"))
         self.assertEqual(len(backend.calls), 1)
 
@@ -210,7 +211,7 @@ class SupportingPlanningTests(unittest.TestCase):
         def checkpoint():
             if backend.calls:
                 raise Cancelled()
-        with patch("goated_prompter.core.create_backend", return_value=backend), self.assertRaises(Cancelled):
+        with patch("goated_prompter.features.builder.service.create_backend", return_value=backend), self.assertRaises(Cancelled):
             GoatedPrompterService(config={"backend": "mock"}, checkpoint=checkpoint).generate(GoatedPrompterRequest(idea=HOOP))
         self.assertEqual(len(backend.calls), 1)
 
@@ -393,7 +394,7 @@ class SupportingPlanningTests(unittest.TestCase):
     def test_minimax_always_failure_reports_without_final_call(self):
         data = validate_minimax_draft({"planning_mode": "Always", "user_request": "A leaf falls."})
         backend = ScriptedBackend("bad JSON")
-        with patch("goated_prompter.minimax.create_backend", return_value=backend), self.assertRaisesRegex(BackendGenerationError, "Required scene planning failed"):
+        with patch("goated_prompter.features.minimax.service.create_backend", return_value=backend), self.assertRaisesRegex(BackendGenerationError, "Required scene planning failed"):
             MiniMaxService({"backend": "mock"}, lambda: None).run(GoatedPrompterRequest(idea=data["user_request"]), data, lambda _: None)
         self.assertEqual(len(backend.calls), 1)
 
@@ -424,7 +425,7 @@ class SupportingPlanningTests(unittest.TestCase):
         backend = ScriptedBackend(json.dumps(HOOP_PLAN), HOOP)
         request = GoatedPrompterRequest(idea=HOOP, image=EncodedImage("aW1hZ2U=", "image/png", 32, 32),
             linked_references=True, reference_map={"subject": "Image 1"})
-        with patch("goated_prompter.core.create_backend", return_value=backend):
+        with patch("goated_prompter.features.builder.service.create_backend", return_value=backend):
             result = GoatedPrompterService(config={"backend": "mock"}).generate_text_only(request)
         self.assertEqual(len(backend.calls), 2)
         self.assertIsNone(result.instruction.resolved_scene)

@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from goated_prompter.backends.base import BackendConfigurationError
 from goated_prompter.backends.factory import canonical_backend_name, create_backend
-from goated_prompter.core import GoatedPrompterRequest
+from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.director_profiles import resolve_director_config
 from tests.support.backends import CONFIGURED_BACKENDS, backend_config
 

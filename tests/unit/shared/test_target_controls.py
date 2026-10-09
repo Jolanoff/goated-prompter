@@ -2,11 +2,12 @@
 
 import unittest
 
-from goated_prompter.core import GoatedPrompterRequest, assemble_instruction
-from goated_prompter.dataset import validate_dataset_draft
-from goated_prompter.dataset_visible_content import positive_prompt_error, sanitize_positive_prompt
+from goated_prompter.contracts import GoatedPrompterRequest
+from goated_prompter.features.builder.service import assemble_instruction
+from goated_prompter.features.dataset.service import validate_dataset_draft
+from goated_prompter.features.dataset.visible_content import positive_prompt_error, sanitize_positive_prompt
 from goated_prompter.presets import get_director_preset
-from goated_prompter.prompting.dataset import dataset_instruction
+from goated_prompter.features.dataset.prompting import dataset_instruction
 from goated_prompter.prompting.target_models import (
     TARGET_MODEL_NAMES, TARGET_CAPABILITIES, get_model_adapter, get_target_capabilities, resolve_target_length,
 )

@@ -10,8 +10,9 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from goated_prompter.core import GoatedPrompterRequest, GoatedPrompterService
-from goated_prompter.minimax import MiniMaxService
+from goated_prompter.contracts import GoatedPrompterRequest
+from goated_prompter.features.builder.service import GoatedPrompterService
+from goated_prompter.features.minimax.service import MiniMaxService
 from goated_prompter.backends.llama_cpp_process import get_process_manager
 from tests.eval.runner import capture, run_metadata
 from tests.support.artifacts import new_output, task_paths
