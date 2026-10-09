@@ -45,7 +45,7 @@ Open **http://127.0.0.1:5173**. Vite proxies `/api` to the backend on port 8190.
 ## Project conventions
 
 - Follow the surrounding Python and React code; keep changes focused and avoid unrelated formatting.
-- Prompt instructions and target adapters belong in `goated_prompter/prompting/`; React workflow views belong in `frontend/src/workflows/`. See [module boundaries](docs/refactoring.md#module-boundaries).
+- Prompt instructions and target adapters belong in `goated_prompter/prompting/`; each frontend workflow's components, hooks, utilities and tests belong in `frontend/src/features/<workflow>/`, with code shared by several workflows in `frontend/src/shared/`. See [module boundaries](docs/refactoring.md#module-boundaries).
 - Preserve stored option IDs, API contracts, reference numbering, cancellation, revision checks, and atomic persistence. Explain any compatibility or migration changes.
 - Add regression tests for fixes. For prompt changes, distinguish deterministic/mocked checks from evidence collected with a real model.
 - Keep model weights, llama.cpp binaries, local config, `.env` files, `data/`, logs, generated assets, and private evaluation reports out of Git. Sanitize reusable fixtures. See [repository hygiene](docs/refactoring.md#what-belongs-in-git).

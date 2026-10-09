@@ -6,6 +6,7 @@ from .backends.base import BackendGenerationError
 from .contracts import PromptInstruction
 from .dataset_ideas import IDEA_FIELDS
 from .dataset_understanding import understanding_instruction, validate_understanding, unwrap_json_fence
+from .strict_json import reject_duplicate_keys
 
 
 MAX_SCENE_CHARACTERS = 3000
@@ -143,13 +144,7 @@ def validate_self_check(value, *, allow_pending=False):
     return "REPAIR:\n" + "\n".join(" ".join(line.split()) for line in lines[1:])
 
 
-def _unique_object(pairs):
-    result = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError("Scene returned duplicate JSON keys.")
-        result[key] = value
-    return result
+_unique_object = reject_duplicate_keys("Scene returned duplicate JSON keys.")
 
 
 def validate_scene(raw):

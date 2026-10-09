@@ -6,6 +6,7 @@ import re
 from .prompting.target_models import canonical_target, get_target_capabilities
 from .minimax_format import normalize_h3_sections
 from .output_repetition import MAX_ANIMA_TAGS, anima_tag_count
+from .strict_json import reject_duplicate_keys
 
 
 class WorkflowFormatError(ValueError):
@@ -73,13 +74,7 @@ def _ideogram_caption(value):
     return True
 
 
-def _unique_object(pairs):
-    result = {}
-    for key, value in pairs:
-        if key in result:
-            raise WorkflowFormatError("Duplicate JSON keys are not allowed.")
-        result[key] = value
-    return result
+_unique_object = reject_duplicate_keys("Duplicate JSON keys are not allowed.", WorkflowFormatError)
 
 
 def requested_visible_text(text):
