@@ -9,6 +9,7 @@ from ...backends.base import BackendGenerationError
 from ...contracts import PromptInstruction
 from .quality import analyze_idea_diversity
 from .understanding import understanding_instruction, validate_understanding, unwrap_json_fence
+from ...prompt_library import library_file_name, pick_scenarios
 from ...strict_json import reject_duplicate_keys
 
 
@@ -94,6 +95,16 @@ HARD requirements, the guided input, expansion_freedom and batch-shared choices 
 win: drop only the conflicting part of a direction, never the requirement. A required
 action stays visibly in progress in every image whatever the direction says. A direction
 varies presentation; the core event must still differ between ideas.
+
+LIBRARY SCENARIOS
+An assignment may carry library_scenario, one of the user's own saved prompts, instead
+of a creative_direction. Recast that scenario rather than inventing a new one: keep its
+place, situation, activity, props, camera and mood, and cast the confirmed subjects into
+its roles, main role first. Adapt wording about gender, age or relationships to the new
+cast and never reuse the saved prompt's character names. Roles the cast does not fill:
+with library_extras "drop" remove them; with "keep" keep them as unnamed background
+characters. HARD requirements, supplied character facts and counts still win: drop any
+part of the scenario that conflicts with them.
 
 Prioritize semantic variation in the event itself before presentation changes.
 Meaningful variation should come from differences such as the moment in the event,
@@ -204,7 +215,7 @@ def _ideas_schema(indexes):
             for index in indexes]}
 
 
-def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existing=(), recent=()):
+def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existing=(), recent=(), rng=None):
     source_context = json.loads(understanding_instruction(data).user_message)
     brief = validate_understanding(data.get("_confirmed_intent"), tuple(source_context["scopes"]))
     if brief["clarifications"]:
@@ -217,17 +228,30 @@ def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existin
     by_index = {row["index"]: row for row in assignments}
     selected = []
     guided_count = len(source_context["guided_inputs"])
+    library = data.get("source_mode") == "library"
+    if library:
+        cast = brief.get("character_count") if type(brief.get("character_count")) is int else None
+        query = " ".join((data.get("subject", ""), data.get("constraints", "")))
+        scenarios = dict(zip(indexes, pick_scenarios(data["target"], query, len(indexes), cast=cast, rng=rng)))
+        if not scenarios:
+            raise ValueError(f"Scenes from your library need saved prompts in data/prompt_library/"
+                             f"{library_file_name(data['target'])} for {data['target']}.")
     directions = creative_directions(data, indexes)
     for index in indexes:
         row = by_index[index]
-        selected.append({"index": index, "input": row["input"],
-            "guided_scope": f"guided:{(index - 1) % guided_count + 1}" if guided_count else None,
-            "creative_direction": directions[index]})
+        entry = {"index": index, "input": row["input"],
+            "guided_scope": f"guided:{(index - 1) % guided_count + 1}" if guided_count else None}
+        if library:
+            entry["library_scenario"] = scenarios[index]
+        else:
+            entry["creative_direction"] = directions[index]
+        selected.append(entry)
     context = {"source": source_context["source"], "confirmed_intent": brief,
         "output_contract": {"record_count": len(indexes), "indexes": indexes},
         "assignments": selected,
         "existing_ideas": [{key: row[key] for key in ("index", *IDEA_FIELDS) if key in row} for row in existing],
-        "recently_used_ideas": list(recent)[:40]}
+        "recently_used_ideas": list(recent)[:40],
+        **({"library_extras": data.get("library_extras", "drop")} if library else {})}
     budget = 512 + len(indexes) * 512
     return PromptInstruction(system_message=IDEAS_SYSTEM, user_message=json.dumps(context,
         ensure_ascii=False, separators=(",", ":")),

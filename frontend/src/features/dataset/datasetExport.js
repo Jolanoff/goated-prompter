@@ -13,7 +13,7 @@ export function datasetJsonl(draft) {
 
 const settingFields = ["subject", "trigger_type", "custom_type", "constraints", "amount", "trigger",
   "trigger_at_start", "trigger_connected", "expand_trigger", "director_preset",
-  "target", "length", "creativity", "source_mode", "inputs"];
+  "target", "length", "creativity", "source_mode", "library_extras", "inputs"];
 const jobFields = ["id", "kind", "status", "completion_state", "revision", "created_at", "finished_at", "result",
   "error", "progress", "progress_at", "status_reason", "events", "llm_trace", "partial_responses",
   "workflow_revision", "input_signature"];

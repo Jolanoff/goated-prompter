@@ -90,6 +90,7 @@ export default function DatasetConfirmationModal({ review, busy, onRevise, onCon
       <p className="mt-3 whitespace-pre-wrap wrap-anywhere text-muted">{review.input.subject}</p>
       {review.input.constraints && <p className="mt-3 whitespace-pre-wrap wrap-anywhere text-muted">{review.input.constraints}</p>}
       {review.input.source_mode === "guided" && <p className="mt-3 whitespace-pre-wrap wrap-anywhere text-muted">{review.input.inputs}</p>}
+      {review.input.source_mode === "library" && <p className="mt-3 text-muted">Scenes come from your prompt library for {review.input.target}, recast with this cast ({review.input.library_extras === "keep" ? "extra roles kept as background" : "extra roles dropped"}).</p>}
       {brief && <>
         <div className="dataset-review-grid mt-4">
           <SummaryList label="Characters and identity" items={[`${brief.character_count ?? "Unspecified / not applicable"}. ${identityLabels[brief.identity_policy]}`]} />

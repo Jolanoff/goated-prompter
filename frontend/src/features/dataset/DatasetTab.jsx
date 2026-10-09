@@ -298,9 +298,10 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
 
             <fieldset className="mt-5 border-t border-line pt-4">
               <legend className="pr-2 text-xs font-semibold">Scene source</legend>
-              <div className="mt-2 grid grid-cols-2 gap-2 tiny:grid-cols-1">
+              <div className="mt-2 grid grid-cols-3 gap-2 tiny:grid-cols-1">
                 {[['random', 'Invent scenes', 'Let Scene Planner invent scenes', 'Distinct situations from your concept.'],
-                  ['guided', 'Use my scene ideas', 'Provide my own scene ideas', 'One idea per line; the action stays fixed.']].map(([value, label, accessibleLabel, help]) =>
+                  ['guided', 'Use my scene ideas', 'Provide my own scene ideas', 'One idea per line; the action stays fixed.'],
+                  ['library', 'From my library', 'Recast saved prompts from my prompt library', 'Your saved prompts for this target, recast with your characters.']].map(([value, label, accessibleLabel, help]) =>
                    <label key={value} className={`${ui.choiceCard} block`}>
                      <span className="flex items-center gap-2 text-xs font-semibold"><input type="radio" name="dataset-source" value={value} aria-label={`${label}: ${accessibleLabel}`}
                        checked={draft.source_mode === value} onChange={() => updateSceneSettings({ source_mode: value })} />{label}</span>
@@ -313,6 +314,17 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                   placeholder={"standing portrait in a city at night\nrunning through a sunlit field\nclose-up profile in a quiet studio"} />
                    <small className={ui.directorDescription}>Lines cycle to fill the batch; each action stays fixed.</small>
               </label>}
+              {draft.source_mode === "library" && <div className="mt-4">
+                <LibraryStatus target={draft.target} className="block" />
+                <label className={`${ui.field} mt-3`}><span>Roles your cast doesn't fill</span>
+                  <select className={ui.select} aria-label="Dataset library extra roles" value={draft.library_extras || "drop"}
+                    onChange={(event) => updateSceneSettings({ library_extras: event.target.value })}>
+                    <option value="drop">Drop them</option>
+                    <option value="keep">Keep as background characters</option>
+                  </select>
+                  <small className="text-xs leading-relaxed text-muted">Dropping keeps every requested character clearly in frame.</small>
+                </label>
+              </div>}
             </fieldset>
 
           </fieldset>

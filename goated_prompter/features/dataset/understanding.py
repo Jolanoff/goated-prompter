@@ -81,6 +81,8 @@ unless the user explicitly requests that lettering. Do not add it to visible_evi
 or turn it into a sign, caption or watermark. trigger_at_start=false does not forbid
 placing the trigger first; it prefers a natural introduction before a later trigger,
 not a hard exclusion rule.
+With source_mode "library", each image recasts one of the user's saved prompts, so the
+concept mainly defines the cast; do not require a place or action the user did not state.
 Unspecified values stay unspecified; do not invent
 identity, clothing, setting, props, anatomy or a mandatory camera to fill the brief.
 When the user leaves a creative choice unspecified but requires the chosen value
