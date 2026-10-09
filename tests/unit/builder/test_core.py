@@ -10,12 +10,13 @@ import sys
 from types import ModuleType
 import unittest
 from unittest.mock import Mock, call, patch
+from tests.support.paths import ROOT
 
 
 # Isolate core module state from the other test suites.
 PACKAGE = "_goated_core_tests"
 package = ModuleType(PACKAGE)
-package.__path__ = [str(Path(__file__).resolve().parents[1] / "goated_prompter")]
+package.__path__ = [str(ROOT / "goated_prompter")]
 sys.modules[PACKAGE] = package
 core = importlib.import_module(f"{PACKAGE}.core")
 image_utils = importlib.import_module(f"{PACKAGE}.image_utils")

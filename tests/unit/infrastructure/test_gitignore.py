@@ -6,7 +6,7 @@ import shutil
 import subprocess
 import unittest
 
-ROOT = Path(__file__).resolve().parents[1]
+from tests.support.paths import ROOT
 
 
 @unittest.skipUnless(shutil.which("git") and (ROOT / ".git").exists(), "Requires a Git checkout")

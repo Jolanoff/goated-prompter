@@ -11,9 +11,10 @@ from unittest.mock import patch
 from aiohttp.test_utils import TestClient, TestServer
 
 import local_app
+from tests.support.paths import ROOT
 
 
-DIST = Path(__file__).resolve().parents[1] / "frontend" / "dist"
+DIST = ROOT / "frontend" / "dist"
 
 
 @unittest.skipUnless((DIST / "index.html").is_file(), "Build frontend/dist before the release smoke check")

@@ -4,6 +4,7 @@ import unittest
 
 from tests.eval.metrics import annotation_template, measure, summarize
 from tests.eval.report import markdown, regressions
+from tests.support.paths import TESTS
 
 
 class EvaluationTests(unittest.TestCase):
@@ -100,13 +101,13 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(report["novelty"]["cross_run_exact_duplicate_rates"]["craft"], .75)
 
     def test_corpus_has_difficult_cases_and_all_workflows(self):
-        corpus = json.loads((Path(__file__).parent / "eval/cases/corpus.json").read_text())
+        corpus = json.loads((TESTS / "eval/cases/corpus.json").read_text())
         self.assertGreaterEqual(len(corpus["cases"]), 20)
         self.assertEqual({workflow for row in corpus["cases"] for workflow in row["workflows"]}, {"builder", "dataset", "minimax"})
         self.assertTrue(all(row["runs"] == 5 and row["amount"] == 10 for row in corpus["novelty"]))
 
     def test_frozen_real_responses_cover_all_workflows_and_do_not_invent_usage(self):
-        fixtures = Path(__file__).parent / "eval/fixtures/model_outputs"
+        fixtures = TESTS / "eval/fixtures/model_outputs"
         rows = [row for path in fixtures.glob("real_*.json") for row in json.loads(path.read_text(encoding="utf-8"))["records"]]
         report = summarize(rows)
         self.assertEqual(set(report["workflows"]), {"builder", "dataset", "minimax"})
@@ -115,7 +116,7 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(report["workflows"]["builder"]["negative_language_leakage"], 1)
 
     def test_current_real_failures_have_raw_calls_and_measured_latency(self):
-        fixture = Path(__file__).parent / "eval/fixtures/model_outputs/current_fixed_engine_failures.json"
+        fixture = TESTS / "eval/fixtures/model_outputs/current_fixed_engine_failures.json"
         run = json.loads(fixture.read_text(encoding="utf-8"))
         self.assertEqual(run["source_records"], 39)
         self.assertEqual(run["engine"]["context_size"], 16384)

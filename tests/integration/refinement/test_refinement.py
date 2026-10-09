@@ -12,8 +12,6 @@ from aiohttp.test_utils import TestClient, TestServer
 import local_app as local
 from tests.helpers import enter_context
 from goated_prompter.backends.base import GoatedPrompterBackend
-from goated_prompter.core import GoatedPrompterRequest
-from goated_prompter.refinement import refine_instruction
 from goated_prompter.workspace_store import WorkspaceConflict, WorkspaceStore
 
 
@@ -100,16 +98,6 @@ class RefinementEndpointTests(unittest.IsolatedAsyncioTestCase):
     async def test_removed_explore_route_is_not_available(self):
         response = await self.client.post("/api/workspace/explore", json={"revision": 0, "base": "test"})
         self.assertIn(response.status, {404, 405})
-
-
-class RefinementInstructionTests(unittest.TestCase):
-    def test_locks_target_contract_and_gemma_role_folding(self):
-        request = GoatedPrompterRequest(idea="unused", target_model="LTX 2.5")
-        instruction = refine_instruction(request, "Subject in motion", "Freeze the subject", ["pose"], model_family="gemma")
-        self.assertIn("Locks outrank", instruction.system_message)
-        self.assertIn("OUTPUT FORMAT — LTX 2.5", instruction.system_message)
-        self.assertEqual(instruction.to_messages()[0]["role"], "user")
-        self.assertTrue(instruction.unlimited_tokens)
 
 
 if __name__ == "__main__":

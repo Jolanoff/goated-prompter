@@ -19,8 +19,9 @@ from goated_prompter.planning.semantic_validation import (
 )
 from goated_prompter.prompting.minimax import validate_output, validate_analysis, validate_minimax_draft
 from tests.eval.metrics import measure, useful_fact_coverage
+from tests.support.paths import TESTS
 
-FIXTURE = Path(__file__).parent / "eval/fixtures/model_outputs/current_fixed_engine_failures.json"
+FIXTURE = TESTS / "eval/fixtures/model_outputs/current_fixed_engine_failures.json"
 RECORDS = {(r["case_id"], r["workflow"]):r for r in json.loads(FIXTURE.read_text(encoding="utf-8"))["records"]}
 CHECKS = ("action_fidelity", "scene_fidelity", "constraint_validity")
 

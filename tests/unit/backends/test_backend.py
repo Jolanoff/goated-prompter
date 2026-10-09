@@ -10,12 +10,13 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import MagicMock, Mock, patch
 from urllib.error import URLError
+from tests.support.paths import ROOT
 
 
 # Import backend modules with isolated test state.
 PACKAGE = "_goated_backend_tests"
 package = ModuleType(PACKAGE)
-package.__path__ = [str(Path(__file__).resolve().parents[1] / "goated_prompter")]
+package.__path__ = [str(ROOT / "goated_prompter")]
 sys.modules[PACKAGE] = package
 backends = ModuleType(f"{PACKAGE}.backends")
 backends.__path__ = [str(Path(package.__path__[0]) / "backends")]

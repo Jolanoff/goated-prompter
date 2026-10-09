@@ -27,6 +27,7 @@ from goated_prompter.prompting.minimax import (validate_minimax_draft, validate_
     generation_instruction, parse_shot_outline, exact_dialogue)
 from goated_prompter.prompting.target_models import TARGET_MODEL_NAMES
 from tests.helpers import enter_context
+from tests.support.paths import ROOT
 
 
 HOOP = ("a performer suspended sideways from a hoop, one knee hooked over the top, "
@@ -475,7 +476,7 @@ class SupportingPlanningTests(unittest.TestCase):
             validate_plan(json.dumps({"action_progression": ["Copy motion from <video9>"]}), compiled, video=True, reference_analysis=reference)
 
     def test_planning_package_has_no_dataset_batch_imports(self):
-        directory = Path(__file__).resolve().parents[1] / "goated_prompter" / "planning"
+        directory = ROOT / "goated_prompter" / "planning"
         for path in directory.glob("*.py"):
             self.assertNotRegex(path.read_text(encoding="utf-8"), r"(?:from|import)\s+[^\n]*dataset")
 

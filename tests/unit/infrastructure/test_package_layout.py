@@ -13,7 +13,7 @@ from goated_prompter.director_profiles import resolve_models_directory
 from goated_prompter.input_schema import builder_input_schema
 
 
-ROOT = Path(__file__).resolve().parents[1]
+from tests.support.paths import ROOT
 
 
 class PackageLayoutTests(unittest.TestCase):
