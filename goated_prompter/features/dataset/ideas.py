@@ -4,6 +4,7 @@ from dataclasses import replace
 import hashlib
 import json
 import random
+import secrets
 
 from ...backends.base import BackendGenerationError
 from ...contracts import PromptInstruction
@@ -171,28 +172,36 @@ DIRECTION_AXES = {
 # mood and setting directions (rest, water break, climbing a ladder) replacing it,
 # so those items only vary how the image is shot.
 ACTION_SAFE_AXES = ("framing", "light")
+# Close-ups and over-the-shoulder views crop or hide a participant, so datasets
+# with several characters draw framing from shots that keep everyone in frame.
+GROUP_FRAMING = ("medium shot with everyone in frame", "full-body shot", "wide shot where the place tells the story",
+                 "low-angle shot with everyone in frame", "high-angle view from above")
 _DIRECTION_SOURCE = ("subject", "trigger", "trigger_type", "custom_type", "constraints", "inputs", "source_mode")
 
 
-def creative_directions(data, indexes):
+def creative_directions(data, indexes, salt=0):
     """Return a reproducible, evenly spread creative direction for each requested index.
 
-    Each axis is shuffled once per draft and dealt round-robin over the whole
-    dataset, so every value is used before any repeats and replacements keep
-    their original direction. Guided inputs already fix the event, so they get
+    Each axis is shuffled once per draft and salt and dealt round-robin over the
+    whole dataset, so every value is used before any repeats. The same draft and
+    salt always give the same directions; each ideas run uses a new salt.
+    Guided inputs already fix the event, so they get
     no moment. When the approved brief requires an action for an image, that
     image only gets framing and light, because moment, mood and setting
     directions otherwise replace the required action.
     """
     source = json.dumps({key: data.get(key) for key in _DIRECTION_SOURCE}, sort_keys=True, ensure_ascii=False)
-    seed = int.from_bytes(hashlib.sha256(source.encode()).digest()[:8], "big")
+    seed = int.from_bytes(hashlib.sha256((source + f"|{salt}").encode()).digest()[:8], "big")
     lines = [line for line in str(data.get("inputs") or "").splitlines() if line.strip()]
     guided = data.get("source_mode") == "guided" and bool(lines)
     brief = data.get("_confirmed_intent") or {}
     action_scopes = {item.get("scope") for key in ("interactions", "action_options")
                      for item in brief.get(key) or () if isinstance(item, dict)}
+    brief_count = brief.get("character_count")
+    group = data.get("trigger_type") == "Multiple characters" or (type(brief_count) is int and brief_count > 1)
     orders = {}
     for position, (axis, values) in enumerate(DIRECTION_AXES.items()):
+        values = GROUP_FRAMING if group and axis == "framing" else values
         order = list(values)
         random.Random(seed + position).shuffle(order)
         orders[axis] = order
@@ -215,7 +224,8 @@ def _ideas_schema(indexes):
             for index in indexes]}
 
 
-def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existing=(), recent=(), rng=None):
+def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existing=(), recent=(), direction_salt=0,
+                      rng=None):
     source_context = json.loads(understanding_instruction(data).user_message)
     brief = validate_understanding(data.get("_confirmed_intent"), tuple(source_context["scopes"]))
     if brief["clarifications"]:
@@ -236,7 +246,7 @@ def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existin
         if not scenarios:
             raise ValueError(f"Scenes from your library need saved prompts in data/prompt_library/"
                              f"{library_file_name(data['target'])} for {data['target']}.")
-    directions = creative_directions(data, indexes)
+    directions = creative_directions(data, indexes, direction_salt)
     for index in indexes:
         row = by_index[index]
         entry = {"index": index, "input": row["input"],
@@ -327,7 +337,9 @@ class DatasetIdeasService:
     def run(self, *, session, data, assignments, family="qwen", progress, indexes=None, existing=(), allow_partial=False):
         self.checkpoint()
         recent = self.idea_history.recent(data) if self.idea_history is not None else []
-        instruction = ideas_instruction(data, assignments, family, indexes=indexes, existing=existing, recent=recent)
+        # A fresh salt per run so repeating the same draft explores new directions.
+        instruction = ideas_instruction(data, assignments, family, indexes=indexes, existing=existing, recent=recent,
+                                        direction_salt=secrets.randbits(32))
         selected = json.loads(instruction.user_message)["assignments"]
         indexes = [row["index"] for row in selected]
         progress("Creating ideas from your approved understanding…")

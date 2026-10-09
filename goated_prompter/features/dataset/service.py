@@ -11,13 +11,14 @@ from ...options.dataset import DATASET_SOURCES, DATASET_TYPES, LIBRARY_EXTRAS
 from ...prompt_library import library_file_name, load_library
 from ...options.lengths import PROMPT_LENGTH_NAMES
 from ...options.creativity import CREATIVITY_NAMES
+from ...options.styles import STYLE_NAMES
 from ...options.targets import TARGET_MODEL_NAMES, canonical_target
 from ...workflow_output import WorkflowFormatError, normalize_workflow_output, sanitize_prompt_text, requested_visible_text
 from .assignments import dataset_assignments
 from .quality import analyze_idea_diversity
 from .triggers import trigger_presence_error, trigger_terms, fixed_anima_prefix, restore_numeric_trigger_spelling
 from ...prompt_library import copied_reference
-from ...output_repetition import MAX_ANIMA_TAGS, anima_tag_count, anima_tags
+from ...output_repetition import MAX_ANIMA_TAGS, anima_tag_count, anima_tag_key, anima_tags, drop_supplied_tags
 from .visible_content import PositiveContentError, positive_prompt_error, sanitize_positive_prompt
 from .plan import (ScenePlanner, MAX_STORED_SCENE_CHARACTERS, MAX_STORED_IDEA_CHARACTERS,
                            reusable_scene_plan, scene_plan_signature, validate_saved_scene_plan,
@@ -34,7 +35,7 @@ def default_dataset_draft():
         "amount": 12,
         "source_mode": "random", "inputs": "", "target": "Generic", "length": "Medium",
         "director_preset": "general_director", "constraints": "",
-        "creativity": "Balanced", "library_extras": "drop", "results": [], "result_job_id": "",
+        "creativity": "Balanced", "style": "Auto", "library_extras": "drop", "results": [], "result_job_id": "",
         "scene_plan": [], "scene_plan_signature": "", "plan_scenes_first": False,
     }
 
@@ -57,7 +58,8 @@ def validate_dataset_draft(value, *, generation=False, planning=False):
                               ("result_job_id", "Result job id", 128), ("scene_plan_signature", "Scene plan signature", 128)):
         result[key] = _text(result[key], label, limit)
     for key, allowed in (("trigger_type", DATASET_TYPES), ("source_mode", DATASET_SOURCES),
-                         ("creativity", CREATIVITY_NAMES), ("library_extras", LIBRARY_EXTRAS), ("length", PROMPT_LENGTH_NAMES)):
+                         ("creativity", CREATIVITY_NAMES), ("style", STYLE_NAMES),
+                         ("library_extras", LIBRARY_EXTRAS), ("length", PROMPT_LENGTH_NAMES)):
         if not isinstance(result[key], str) or result[key] not in allowed:
             raise ValueError(f"Invalid Dataset {key}.")
     result["target"] = canonical_target(result["target"])
@@ -158,13 +160,20 @@ class DatasetService:
                     prompt = tail.lstrip(",;: \t\r\n")
                 if not prompt:
                     raise WorkflowFormatError("The locked trigger is inserted by the app; return the accepted scene description as well.")
-                supplied = {tag.casefold().replace("_", " ") for tag in anima_tags(prefix, tag_only=True)}
+                supplied = {anima_tag_key(tag) for tag in anima_tags(prefix, tag_only=True)}
                 generated = anima_tags(prompt)
-                if any(tag.casefold().replace("_", " ") in supplied for tag in generated):
-                    raise WorkflowFormatError("Generated scene tags repeat supplied tags. Return only useful new scene tags and scene prose; the app inserts the protected inventory once.")
+                if any(anima_tag_key(tag) in supplied for tag in generated):
+                    # The app inserts the inventory itself, so restated character tags
+                    # (often respelled, e.g. "2boys" or unescaped "(series)") are dropped, not fatal.
+                    cleaned = drop_supplied_tags(prompt, prefix)
+                    if cleaned is None:
+                        raise WorkflowFormatError("Generated scene tags repeat supplied tags. Return only useful new scene tags and scene prose; the app inserts the protected inventory once.")
+                    prompt = cleaned
+                    generated = anima_tags(prompt)
                 if anima_tag_count(prefix, tag_only=True) + len(generated) > MAX_ANIMA_TAGS:
                     raise WorkflowFormatError("Anima allows at most 100 tags, including supplied tags. Reduce added scene tags, preserving the scene prose.")
-                prompt = normalize_workflow_output(prefix + ", " + prompt, data["target"], mode="Enhance")
+                prompt = normalize_workflow_output(prefix + ("" if prompt[:1] in "\r\n" else ", ") + prompt,
+                                                   data["target"], mode="Enhance")
             if not data["expand_trigger"]:
                 corrected = restore_numeric_trigger_spelling(prompt, data["trigger"], data["target"])
                 if corrected != prompt:
