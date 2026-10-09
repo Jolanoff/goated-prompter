@@ -1,6 +1,7 @@
 """Temporal staging after the existing symbolic-reference analysis."""
 
 import json
+from ..contracts import PromptInstruction
 from .constraints import compile_request, COMPILED_CONTRACT
 from .scene_planner import AUTHORITY, supporting_pass
 from .validation import validate_plan
@@ -8,7 +9,6 @@ from .video_plan import VideoScenePlan
 
 
 def video_planning_instruction(data, reference_analysis, compiled, *, family="qwen"):
-    from ..core import PromptInstruction
     from ..prompting.minimax import parse_shot_outline, exact_dialogue
     shots = parse_shot_outline(data["user_request"], data["duration_seconds"])
     return PromptInstruction(system_message=AUTHORITY + "\n" + COMPILED_CONTRACT + """

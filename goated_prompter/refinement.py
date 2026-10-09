@@ -4,7 +4,7 @@ from dataclasses import replace
 
 from .backends.base import BackendGenerationError
 from .backends.factory import create_backend
-from .core import PromptInstruction, _effective_model_family
+from .contracts import PromptInstruction, effective_model_family
 from .director_profiles import resolve_director_config
 from .prompting.refine import build_refine_messages, refine_format_repair
 from .prompting.output import output_contract
@@ -77,7 +77,7 @@ class RefineService:
     def run(self, request, workflow, progress):
         effective, profile = resolve_director_config(self.config, request)
         backend = create_backend(effective)
-        family = _effective_model_family(request, profile, effective)
+        family = effective_model_family(request, profile, effective)
         instruction = refine_instruction(
             request,
             workflow["base"],

@@ -6,7 +6,7 @@ from importlib.resources import files
 import json
 import re
 
-from ..core import PromptInstruction
+from ..contracts import PromptInstruction
 from ..presets import get_director_preset
 from ..minimax_format import BASE_SECTIONS, REF_SECTIONS, normalize_h3_sections
 

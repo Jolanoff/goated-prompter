@@ -4,7 +4,7 @@ import asyncio
 from aiohttp import web
 
 from .backends.factory import canonical_backend_name
-from .core import GoatedPrompterRequest, _as_bool
+from .contracts import GoatedPrompterRequest, as_bool
 from .prompting.details import PROMPT_LENGTH_NAMES
 from .prompting.target_models import TARGET_MODEL_NAMES, canonical_target
 from .refinement import RefineService
@@ -88,7 +88,7 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
                 director_profile="" if configured else text(
                     settings.get("director_profile", state.saved_settings.get("selected_profile", "")),
                     "Prompt engine", 512, optional=True),
-                director_keep_model_loaded=_as_bool(
+                director_keep_model_loaded=as_bool(
                     config.get("local_llama_cpp", {}).get("keep_model_loaded", False)),
             )
             kind = "dataset_understanding" if understanding else "dataset_scenes" if scenes_only else "dataset"
@@ -115,7 +115,7 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
             director_request = GoatedPrompterRequest(
                 idea=data["user_request"], prompt_model="Custom",
                 director_profile="" if configured else text(settings.get("director_profile", state.saved_settings.get("selected_profile", "")), "Prompt engine", 512, optional=True),
-                director_keep_model_loaded=_as_bool(config.get("local_llama_cpp", {}).get("keep_model_loaded", False)),
+                director_keep_model_loaded=as_bool(config.get("local_llama_cpp", {}).get("keep_model_loaded", False)),
             )
             return web.json_response(state.start_job("minimax", director_request, config, True,
                 {"operation": "minimax", "input": data}, job_factory=job_factory), status=202)
@@ -169,7 +169,7 @@ def register_workspace_routes(app, state_key, job_factory, json_object):
                 director_request = GoatedPrompterRequest(
                     idea=workflow["base"], target_model=target, prompt_length=length, prompt_model="Custom",
                     director_profile="" if configured else text(settings.get("director_profile", state.saved_settings.get("selected_profile", "")), "Prompt engine", 512, optional=True),
-                    director_keep_model_loaded=_as_bool(config.get("local_llama_cpp", {}).get("keep_model_loaded", False)),
+                    director_keep_model_loaded=as_bool(config.get("local_llama_cpp", {}).get("keep_model_loaded", False)),
                 )
                 return web.json_response(state.start_job("refine", director_request, config, True,
                     workflow, job_factory=job_factory), status=202)
