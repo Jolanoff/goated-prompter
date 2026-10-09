@@ -15,8 +15,7 @@ from goated_prompter.prompting.details import DATASET_OUTPUT_TOKEN_LIMITS
 from goated_prompter.prompting.target_models import get_model_adapter, resolve_target_length
 from goated_prompter.presets import get_director_preset
 from tests.helpers import dataset_idea_fixture, dataset_understanding_fixture
-from tests.test_dataset import valid_draft
-from tests.test_dataset_scene import REPAIR, SCENE
+from tests.support.dataset import REPAIR, SCENE, valid_draft
 
 
 class DatasetEnhanceTests(unittest.TestCase):

@@ -11,6 +11,7 @@ from goated_prompter.dataset import DatasetService, default_dataset_draft, datas
 from goated_prompter.prompting.target_models import TARGET_MODEL_NAMES
 from goated_prompter.refinement import RefineService, refine_instruction
 from goated_prompter.workflow_output import WorkflowFormatError, normalize_workflow_output, requested_visible_text, sanitize_prompt_text
+from tests.support.backends import ScriptedBackend
 
 
 CAPTION = {
@@ -157,18 +158,6 @@ class OutputFormatTests(unittest.TestCase):
         for raw in invalid:
             with self.subTest(raw=raw), self.assertRaises(WorkflowFormatError):
                 normalize_workflow_output(raw, "Anima")
-
-
-class ScriptedBackend(GoatedPrompterBackend):
-    name = "scripted"
-
-    def __init__(self, outputs):
-        self.outputs = iter(outputs)
-        self.calls = []
-
-    def generate(self, instruction):
-        self.calls.append(instruction)
-        return next(self.outputs)
 
 
 class FormatRepairTests(unittest.TestCase):

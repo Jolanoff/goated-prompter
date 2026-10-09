@@ -20,7 +20,7 @@ from PIL import Image
 import local_app as local
 from tests.helpers import enter_context
 from goated_prompter import json_store, uploaded_images
-from tests.test_backend_identity import CONFIGURED_BACKENDS, backend_config
+from tests.support.backends import CONFIGURED_BACKENDS, backend_config
 
 
 class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):

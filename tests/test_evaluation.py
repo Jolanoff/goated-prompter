@@ -8,7 +8,7 @@ from tests.eval.report import markdown, regressions
 
 class EvaluationTests(unittest.TestCase):
     def test_current_compact_plan_is_valid_in_idea_evaluation(self):
-        from tests.test_dataset import saved_scene
+        from tests.support.dataset import saved_scene
         row = self.sample(workflow="dataset", output_kind="ideas", scene_plan=[saved_scene()], prompt="")
         measured = measure(row)
         self.assertTrue(measured["format_valid"])

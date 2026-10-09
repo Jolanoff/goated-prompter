@@ -12,11 +12,9 @@ from goated_prompter.dataset_assignments import dataset_assignments
 from goated_prompter.scene_eligibility import scene_eligibility
 from goated_prompter.scene_planner import ScenePlanner, validate_saved_scene_plan
 from tests.helpers import dataset_idea_fixture, dataset_understanding_fixture
-from tests.test_dataset import valid_draft
+from tests.support.dataset import REPAIR, SCENE, valid_draft
 
 
-REPAIR = "REPAIR:\nThe user requires both an extreme close-up of only his eyes and clearly visible shoes; the eyes-only crop excludes the shoes.\nShould the image show only eyes, or widen the crop to include the shoes?"
-SCENE = "A boxer extends one glove into a training bag, with planted feet and the opposite glove readable in a full-body three-quarter arena view."
 DUCK_REPAIR_PROSE = '''I must return REPAIR because the provided idea and placement conflict with the HARD requirement that the duck and dinosaur must be depicted in a fighting interaction.
 
 REPAIR:

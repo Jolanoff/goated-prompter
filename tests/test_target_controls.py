@@ -11,7 +11,7 @@ from goated_prompter.prompting.target_models import (
     TARGET_MODEL_NAMES, TARGET_CAPABILITIES, get_model_adapter, get_target_capabilities, resolve_target_length,
 )
 from goated_prompter.workflow_settings import validate_draft
-from tests.test_dataset import valid_draft, saved_scene
+from tests.support.dataset import valid_draft, saved_scene
 
 
 class TargetControlTests(unittest.TestCase):

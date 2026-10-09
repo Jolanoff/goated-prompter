@@ -9,13 +9,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-
-
-def private_storage_guard(event, args):
-    if event in {"open", "os.listdir", "os.scandir"} and args and isinstance(args[0], (str, bytes, os.PathLike)):
-        path = Path(os.fsdecode(args[0])).resolve()
-        if path.is_relative_to(ROOT / "data"):
-            raise PermissionError("UI replay tests cannot access private repository data.")
+from tests.support.safety import private_storage_guard
 
 
 if __name__ == "__main__":

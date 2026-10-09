@@ -1,6 +1,5 @@
 """Current Dataset contracts and final-output invariants; synthetic storage/models."""
 
-from contextlib import contextmanager
 from copy import deepcopy
 import json
 import unittest
@@ -13,39 +12,7 @@ from goated_prompter.dataset_assignments import dataset_assignments
 from goated_prompter.prompting.dataset import dataset_instruction
 from goated_prompter.scene_planner import scene_plan_signature
 from tests.helpers import dataset_idea_fixture, dataset_understanding_fixture
-
-
-def valid_draft(**changes):
-    return {**default_dataset_draft(), "trigger": "ohwx_person",
-            "subject": "A woman with short black hair and a red jacket.", **changes}
-
-
-def saved_scene(index=1, **changes):
-    return {**dataset_idea_fixture(index), "input": "", "scene": f"A boxer punches a training bag at station {index}.",
-            "self_check": "PASS", "idea_status": "valid", "scene_status": "valid", "prompt_status": "not_generated", **changes}
-
-
-class CaptureBackend(GoatedPrompterBackend):
-    name = "dataset-capture"
-
-    def __init__(self):
-        self.calls, self.sessions = [], 0
-
-    @contextmanager
-    def generation_session(self):
-        self.sessions += 1
-        yield self
-
-    def generate(self, instruction):
-        self.calls.append(instruction)
-        stage = instruction.diagnostic_stage
-        if stage == "dataset:ideas":
-            context = json.loads(instruction.user_message)
-            return json.dumps([dataset_idea_fixture(row["index"]) for row in context["assignments"]])
-        if stage == "dataset:build_scene":
-            context = json.loads(instruction.user_message)
-            return json.dumps({"scene": context.get("current_scene") or context["assignments"][0]["idea"], "self_check": "PASS"})
-        return "A distinct visual setup featuring ohwx_person in the requested concept."
+from tests.support.dataset import CaptureBackend, saved_scene, valid_draft
 
 
 class DatasetUnitTests(unittest.TestCase):

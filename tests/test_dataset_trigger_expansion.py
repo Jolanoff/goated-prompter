@@ -9,7 +9,7 @@ from goated_prompter.core import GoatedPrompterRequest
 from goated_prompter.dataset import DatasetService, validate_trigger_contract
 from goated_prompter.dataset_triggers import trigger_presence_error, trigger_contract_error, restore_numeric_trigger_spelling
 from goated_prompter.prompting.dataset import dataset_instruction
-from tests.test_dataset import valid_draft
+from tests.support.dataset import valid_draft
 
 
 class TriggerExpansionTests(unittest.TestCase):

@@ -22,7 +22,7 @@ from goated_prompter.dataset_scene import scene_instruction
 from goated_prompter.dataset_understanding import DatasetUnderstandingService, understanding_instruction, validate_understanding
 from goated_prompter.prompting.dataset import dataset_instruction
 from tests.helpers import dataset_understanding_fixture
-from tests.test_dataset import saved_scene, valid_draft
+from tests.support.dataset import saved_scene, valid_draft
 
 
 class DatasetUnderstandingTests(unittest.TestCase):

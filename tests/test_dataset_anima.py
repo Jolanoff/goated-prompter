@@ -13,8 +13,8 @@ from goated_prompter.dataset_visible_content import positive_prompt_error
 from goated_prompter.scene_planner import scene_plan_signature
 from goated_prompter.workflow_output import WorkflowFormatError, normalize_workflow_output
 from tests.helpers import dataset_understanding_fixture
-from tests.test_dataset import saved_scene, valid_draft
-from tests.test_workflow_output import ScriptedBackend
+from tests.support.dataset import saved_scene, valid_draft
+from tests.support.backends import ScriptedBackend
 
 
 SCENE = ("Mira stands on the left in a blue jacket, offering a red ceramic cup with her right hand to "

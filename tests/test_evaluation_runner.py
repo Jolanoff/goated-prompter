@@ -8,7 +8,7 @@ from unittest.mock import patch
 from goated_prompter.backends.mock import MockBackend
 from tests.eval.runner import live_case, load_replay, novelty_cases
 from tests.eval.metrics import measure
-from tests.test_minimax import BASE
+from tests.support.minimax import BASE
 from tests.helpers import dataset_understanding_fixture, dataset_idea_fixture
 
 

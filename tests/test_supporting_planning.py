@@ -408,7 +408,7 @@ class SupportingPlanningTests(unittest.TestCase):
 
     def test_minimax_real_reference_analysis_precedes_supporting_pass_in_one_session(self):
         # Reuse the existing verified H3/reference fixtures, not an alternate validator.
-        from tests.test_minimax import REF, DANCE_PLAN, REQUEST
+        from tests.support.minimax import REF, DANCE_PLAN, REQUEST
         data = validate_minimax_draft({"planning_mode": "Always", "user_request": REQUEST, "references": ["image1", "video1"], "duration_seconds": 15})
         payload = {"subjects": ["requested target person"], "action_progression": ["Identity from <image1> performs requested movement characteristics from <video1>."]}
         result, backend = self.minimax(data, DANCE_PLAN, json.dumps(payload), REF)

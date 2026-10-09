@@ -17,7 +17,7 @@ from goated_prompter.dataset_intent import DatasetIntentTickets
 from goated_prompter.dataset_understanding import validate_understanding
 from goated_prompter.json_store import atomic_json
 from tests.helpers import dataset_understanding_fixture, dataset_idea_fixture, enter_context
-from tests.test_dataset import CaptureBackend, saved_scene, valid_draft
+from tests.support.dataset import CaptureBackend, saved_scene, valid_draft
 
 
 class UnderstandingBackend(CaptureBackend):
@@ -632,7 +632,7 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(row.get("geometry"))
 
     async def test_repair_is_saved_displayable_and_blocks_writer_until_one_explicit_repair_passes(self):
-        from tests.test_dataset_scene import REPAIR, SCENE
+        from tests.support.dataset import REPAIR, SCENE
         data = valid_draft(amount=1)
         accepted = await self.analyze(data)
         self.backend.calls.clear()
@@ -666,7 +666,7 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(context["repair_request"], REPAIR)
 
     async def test_still_unresolved_explicit_repair_does_not_loop_or_write_a_prompt(self):
-        from tests.test_dataset_scene import REPAIR, SCENE
+        from tests.support.dataset import REPAIR, SCENE
         from goated_prompter.scene_planner import scene_plan_signature
         from goated_prompter.dataset_assignments import dataset_assignments
         row = {**dataset_idea_fixture(), "input": "", "scene": SCENE, "self_check": REPAIR,
@@ -686,7 +686,7 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:build_scene"])
 
     async def test_invalid_scene_output_has_no_retry_and_preserves_pending_fixed_ideas(self):
-        from tests.test_dataset_scene import SCENE
+        from tests.support.dataset import SCENE
         data = valid_draft(amount=2)
         accepted = await self.analyze(data)
         self.backend.calls.clear()

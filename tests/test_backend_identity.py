@@ -8,17 +8,7 @@ from goated_prompter.backends.base import BackendConfigurationError
 from goated_prompter.backends.factory import canonical_backend_name, create_backend
 from goated_prompter.core import GoatedPrompterRequest
 from goated_prompter.director_profiles import resolve_director_config
-
-
-CONFIGURED_BACKENDS = (
-    ("mock", "mock"), ("debug", "mock"), (" MOCK ", "mock"), (" Debug ", "mock"),
-    ("openai", "openai_compatible"), ("openai_compatible", "openai_compatible"),
-    ("OpenAI-Compatible", "openai_compatible"), (" OPENAI ", "openai_compatible"),
-)
-
-
-def backend_config(name):
-    return {"backend": name, "openai_compatible": {"base_url": "http://127.0.0.1:1/v1", "model": "test"}}
+from tests.support.backends import CONFIGURED_BACKENDS, backend_config
 
 
 class BackendIdentityTests(unittest.TestCase):

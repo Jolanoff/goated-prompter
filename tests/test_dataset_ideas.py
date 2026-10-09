@@ -13,7 +13,7 @@ from goated_prompter.dataset_assignments import dataset_assignments
 from goated_prompter.dataset_ideas import DatasetIdeasService, IDEA_FIELDS, ideas_instruction, validate_ideas
 from goated_prompter.scene_planner import validate_saved_scene_plan
 from tests.helpers import dataset_idea_fixture, dataset_understanding_fixture
-from tests.test_dataset import valid_draft
+from tests.support.dataset import valid_draft
 
 
 class DatasetIdeasTests(unittest.TestCase):

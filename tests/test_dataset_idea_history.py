@@ -8,7 +8,7 @@ from goated_prompter.dataset_idea_history import RecentIdeaHistory
 from goated_prompter.dataset_assignments import dataset_assignments
 from goated_prompter.scene_planner import ScenePlanner
 from tests.helpers import dataset_understanding_fixture
-from tests.test_dataset import CaptureBackend, valid_draft
+from tests.support.dataset import CaptureBackend, valid_draft
 
 
 class DatasetIdeaHistoryTests(unittest.TestCase):

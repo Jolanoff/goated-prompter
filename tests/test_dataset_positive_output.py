@@ -10,7 +10,7 @@ from goated_prompter.dataset_visible_content import (
 )
 from goated_prompter.core import GoatedPrompterRequest
 from goated_prompter.prompting.dataset import dataset_instruction
-from tests.test_dataset import valid_draft, saved_scene
+from tests.support.dataset import valid_draft, saved_scene
 
 
 class DatasetPositiveOutputTests(unittest.TestCase):

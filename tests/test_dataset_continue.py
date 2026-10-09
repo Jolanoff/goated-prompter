@@ -9,7 +9,7 @@ from goated_prompter.dataset import DatasetService
 from goated_prompter.dataset_assignments import dataset_assignments
 from goated_prompter.scene_planner import scene_plan_signature
 from tests.helpers import dataset_understanding_fixture
-from tests.test_dataset import CaptureBackend, saved_scene, valid_draft
+from tests.support.dataset import CaptureBackend, saved_scene, valid_draft
 
 
 class DatasetContinueTests(unittest.TestCase):
