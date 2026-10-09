@@ -75,7 +75,7 @@ def main():
     run = json.loads(args.artifacts.read_text(encoding="utf-8"))
     labels = json.loads(args.annotations.read_text(encoding="utf-8")) if args.annotations else []
     report = {"run_id": run["run_id"], **summarize(run["records"], labels)}
-    for key in ("revision", "code_digest", "corpus_digest", "dirty", "engine", "sources"):
+    for key in ("revision", "code_digest", "corpus_digest", "dirty", "engine", "sources", "scenario_seed", "selected_case_ids"):
         if key in run:
             report[key] = run[key]
     report["regression_failures"] = regressions(report, json.loads(args.baseline.read_text(encoding="utf-8"))) if args.baseline else []

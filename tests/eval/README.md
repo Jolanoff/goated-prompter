@@ -10,10 +10,10 @@ Run from the repository root:
 
 ```powershell
 python -m tests.eval.runner --dry-run
-New-Item -ItemType Directory -Force quality-artifacts | Out-Null
-python -m tests.eval.runner --replay tests/eval/fixtures/model_outputs/real_writer.json --output quality-artifacts/quality-run.json
-python -m tests.eval.runner --template quality-artifacts/quality-review.json --replay tests/eval/fixtures/model_outputs/real_writer.json
-python -m tests.eval.report quality-artifacts/quality-run.json --output quality-artifacts/quality-report.json
+New-Item -ItemType Directory -Force quality-artifacts/temp/<task-key>/evaluation | Out-Null
+python -m tests.eval.runner --replay tests/eval/fixtures/model_outputs/real_writer.json --output quality-artifacts/temp/<task-key>/evaluation/run.json
+python -m tests.eval.runner --template quality-artifacts/temp/<task-key>/evaluation/review.json --replay tests/eval/fixtures/model_outputs/real_writer.json
+python -m tests.eval.report quality-artifacts/temp/<task-key>/evaluation/run.json --output quality-artifacts/temp/<task-key>/evaluation/report.json
 ```
 
 `--replay tests/eval/fixtures/model_outputs` combines frozen evaluation runs across
@@ -31,6 +31,9 @@ length never compensates for a lost anchor. CI publishes frozen replay JSON/Mark
 it does not pretend those old known-failing samples establish current model quality.
 
 Live calls require both `--config` and `--allow-live`; notify the GPU owner first.
+Prefer the [task-scoped real-GPU command](../README.md#real-gpu-entry-point),
+`python -m tests.gpu.run`, for consistent selection, isolation and output safety.
+It delegates to this runner; `--seed` selects fixed scenarios, not model sampling.
 Use an explicitly configured existing OpenAI-compatible endpoint: the evaluator
 does not start, stop or reconfigure model processes or saved settings.
 Match target, length, Director, style and request for Builder/Dataset parity.
