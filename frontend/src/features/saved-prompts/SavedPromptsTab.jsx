@@ -1,5 +1,5 @@
 import { ArrowLeft, ArrowUpRight, Bookmark, Copy, Plus, Trash2 } from "lucide-react";
-import { ui } from "../ui.js";
+import { ui } from "../../ui.js";
 
 export default function SavedPromptsTab({ records, ready, busy, deletingDisabled,
   onBack, onCopy, onOpen, onDelete }) {

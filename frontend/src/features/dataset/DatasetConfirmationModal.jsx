@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Download, LoaderCircle, X } from "lucide-react";
-import { ui } from "../ui.js";
+import { ui } from "../../ui.js";
 import { canConfirmDatasetReview, datasetReviewQuestions, datasetUnderstandingSections, datasetUnderstandingSummary } from "./datasetState.js";
 
 const identityLabels = {

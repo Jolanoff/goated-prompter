@@ -1,8 +1,8 @@
 import { ArrowUpRight, Bookmark, ChevronDown, Copy, FileText, Layers3,
   LoaderCircle, LockKeyhole, SlidersHorizontal, Sparkles, Trash2, WandSparkles, X } from "lucide-react";
-import { Panel } from "../components/StudioPrimitives.jsx";
-import { orderDisplayPresets, presetDisplayLabel } from "../presetPresentation.js";
-import { ui } from "../ui.js";
+import { Panel } from "../../components/StudioPrimitives.jsx";
+import { orderDisplayPresets, presetDisplayLabel } from "../../presetPresentation.js";
+import { ui } from "../../ui.js";
 
 const taskLabels = {
   Enhance: "Improve a prompt",

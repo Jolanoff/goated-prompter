@@ -1,4 +1,4 @@
-import { ui } from "../ui.js";
+import { ui } from "../../ui.js";
 
 const lockOptions = [
   ["identity", "Identity / subject"], ["outfit", "Outfit"], ["pose", "Pose"],

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api } from "../api.js";
+import { api } from "../../api.js";
 import { canConfirmDatasetReview, datasetRequestSignature, reviseDatasetRequest } from "./datasetState.js";
 
 export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm, setError }) {

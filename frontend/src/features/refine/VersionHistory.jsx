@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { RotateCcw, RotateCw } from "lucide-react";
-import { ui } from "../ui.js";
+import { ui } from "../../ui.js";
 import { promptDiff } from "./promptDiff.js";
 
 export function VersionDiff({ before, after }) {

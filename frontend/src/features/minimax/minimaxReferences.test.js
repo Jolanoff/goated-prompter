@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { insertReference, insertShot, nextReference, nextShot, parseReferences, parseShots } from "./workflows/minimaxReferences.js";
+import { insertReference, insertShot, nextReference, nextShot, parseReferences, parseShots } from "./minimaxReferences.js";
 
 test("symbolic references normalize case, deduplicate and flag out-of-range numbers", () => {
   assert.deepEqual(parseReferences("<IMAGE1> <video3> <image1> <audio4> <image10> <image01>"),

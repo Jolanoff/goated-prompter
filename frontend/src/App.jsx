@@ -1,17 +1,21 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
-import { presetDisplayLabel } from "./presetPresentation.js";
 import { ui } from "./ui.js";
 import { api } from "./api.js";
+import { adoptActiveJob } from "./jobRecovery.js";
 import { activeJobStatuses as activeStatuses, useJobPolling } from "./useJobPolling.js";
 import { readTheme, saveTheme } from "./theme.js";
-import CreativeWorkspace from "./workflows/CreativeWorkspace.jsx";
-import MiniMaxTab from "./workflows/MiniMaxTab.jsx";
-import DatasetTab from "./workflows/DatasetTab.jsx";
-import SavedPromptsTab from "./workflows/SavedPromptsTab.jsx";
-import SettingsTab from "./workflows/SettingsTab.jsx";
-import DirectorsTab from "./workflows/DirectorsTab.jsx";
-import BuilderTab from "./workflows/BuilderTab.jsx";
-import ReferenceImages from "./workflows/ReferenceImages.jsx";
+import CreativeWorkspace from "./features/refine/CreativeWorkspace.jsx";
+import MiniMaxTab from "./features/minimax/MiniMaxTab.jsx";
+import DatasetTab from "./features/dataset/DatasetTab.jsx";
+import SavedPromptsTab from "./features/saved-prompts/SavedPromptsTab.jsx";
+import SettingsTab from "./features/settings/SettingsTab.jsx";
+import DirectorsTab from "./features/directors/DirectorsTab.jsx";
+import BuilderTab from "./features/builder/BuilderTab.jsx";
+import ReferenceImages from "./features/builder/ReferenceImages.jsx";
+import { useReferenceImages } from "./features/builder/useReferenceImages.js";
+import { useDirectorEditor } from "./features/directors/useDirectorEditor.js";
+import SavePromptDialog from "./features/saved-prompts/SavePromptDialog.jsx";
+import { useSavedPrompts } from "./features/saved-prompts/useSavedPrompts.js";
 import { GoatMark } from "./components/StudioPrimitives.jsx";
 import JobLogModal from "./JobLogModal.jsx";
 import {
@@ -21,7 +25,6 @@ import {
   FileText,
   Film,
   Moon,
-  Save,
   ScrollText,
   Settings2,
   SlidersHorizontal,
@@ -37,8 +40,6 @@ import {
   referenceAttributes,
   referenceSources,
   JOB_KEY,
-  loadSaved,
-  SAVED_KEY,
 } from "./storage.js";
 const titleCase = (text) =>
   text.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -79,7 +80,6 @@ function App() {
   const [settings, setSettings] = useState({});
   const [settingsDraft, setSettingsDraft] = useState({});
   const [settingsBusy, setSettingsBusy] = useState(false);
-  const [images, setImages] = useState([null, null, null, null]);
   const [builderStatus, setBuilderStatus] = useState("");
   const [builderError, setBuilderError] = useState("");
   const hydrated = useRef(false);
@@ -104,47 +104,27 @@ function App() {
       },
     );
   const [view, setView] = useState("builder");
-  const [directorId, setDirectorId] = useState("");
-  const [directorDraft, setDirectorDraft] = useState({
-    name: "",
-    instructions: "",
-  });
-  const [directorOriginal, setDirectorOriginal] = useState({
-    name: "",
-    instructions: "",
-  });
-  const directorDirty =
-    directorDraft.name !== directorOriginal.name ||
-    directorDraft.instructions !== directorOriginal.instructions;
-  const editorDirector = bootstrap?.presets.presets.find(
-    (item) => item.id === directorId,
-  );
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [saved, setSaved] = useState([]);
-  const [storageReady, setStorageReady] = useState(false);
-  const [storageWarning, setStorageWarning] = useState("");
-  const [storageError, setStorageError] = useState("");
-  const [storageReload, setStorageReload] = useState(0);
-  const [promptsBusy, setPromptsBusy] = useState(false);
-  const [dialogError, setDialogError] = useState("");
   const [job, setJob] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const [uploading, setUploading] = useState(0);
   const [actionBusy, setActionBusy] = useState(false);
-  const [saveKind, setSaveKind] = useState(null);
-  const [saveName, setSaveName] = useState("");
-  const [dialogBusy, setDialogBusy] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
-  const dialogRef = useRef(null);
-  const saveNameRef = useRef(null);
-  const pendingPromptRef = useRef(null);
-  const saveSourceRef = useRef(null);
   const submissionRef = useRef(false);
   const latestJobRef = useRef(null);
   const connectionRef = useRef(0);
   const active = !!job && activeStatuses.includes(job.status);
   const busy = active || submitting;
+  const { images, uploading, upload, remove: removeImage } = useReferenceImages({ busy, setError });
+  const {
+    saved, storageReady, storageWarning, storageError, promptsBusy, saveKind, dialogBusy,
+    reload: reloadSavedPrompts, deletePrompt, requestPromptSave, dialog: savePromptDialog,
+  } = useSavedPrompts({ setError, setNotice });
+  const {
+    directorId, directorDraft, setDirectorDraft, directorOriginal, directorDirty, editorDirector,
+    selectDirector, discardDirector, writeDirector,
+  } = useDirectorEditor({ presets: bootstrap?.presets.presets, setBootstrap, busy, actionBusy, setActionBusy,
+    setError, setNotice, receiveJob });
   const prompt = settings.generated_prompt || "";
   const configuredBackend = ["mock", "openai_compatible"].includes(
     bootstrap?.backend,
@@ -263,7 +243,7 @@ function App() {
         setSettings(initial);
       }
       if (data.active_job) receiveJob(data.active_job);
-      if (!storageReady) setStorageReload((value) => value + 1);
+      if (!storageReady) reloadSavedPrompts();
     } catch (err) {
       if (attempt !== connectionRef.current) return;
       setError(
@@ -324,66 +304,6 @@ function App() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!storageReload) return;
-    let disposed = false;
-    async function loadPrompts() {
-      setStorageReady(false);
-      setStorageError("");
-      setStorageWarning("");
-      try {
-        let data = await api("/prompts");
-        if (disposed) return;
-        if (!Array.isArray(data.prompts))
-          throw new Error("Invalid saved prompts response.");
-        try {
-          const storage = window.localStorage;
-          const legacy = loadSaved(storage);
-          if (legacy.length) {
-            const imported = await api("/prompts/import", { prompts: legacy });
-            if (disposed) return;
-            // Only remove the browser copy after every field is confirmed on disk.
-            if (
-              !Array.isArray(imported.prompts) ||
-              !legacy.every((record) =>
-                imported.prompts.some(
-                  (item) =>
-                    Object.keys(item).length === Object.keys(record).length &&
-                    Object.keys(record).every(
-                      (key) =>
-                        Object.hasOwn(item, key) && item[key] === record[key],
-                    ),
-                ),
-              )
-            )
-              throw new Error(
-                "The server did not confirm the exact imported records.",
-              );
-            data = imported;
-            storage.removeItem(SAVED_KEY);
-          }
-        } catch (err) {
-          if (disposed) return;
-          setStorageWarning(
-            `Browser migration could not finish. Browser data has been kept; server prompts remain available. ${err.message}`,
-          );
-        }
-        if (disposed) return;
-        setSaved(data.prompts);
-        setStorageReady(true);
-      } catch (err) {
-        if (!disposed)
-          setStorageError(
-            `Could not load saved prompts from the local JSON file. ${err.message}`,
-          );
-      }
-    }
-    loadPrompts();
-    return () => {
-      disposed = true;
-    };
-  }, [storageReload]);
-
   useJobPolling(job?.id, active, receiveJob, () => {
     setJob(null);
     latestJobRef.current = null;
@@ -406,14 +326,6 @@ function App() {
     return () => clearTimeout(timer);
   }, [notice]);
 
-  useEffect(() => {
-    if (saveKind) {
-      dialogRef.current?.showModal();
-      saveNameRef.current?.focus();
-    }
-    else dialogRef.current?.close();
-  }, [saveKind]);
-
   function update(key, value) {
     setSettings((previous) => ({
       ...previous,
@@ -422,23 +334,6 @@ function App() {
         director_preset: bootstrap.presets.mode_directors[value],
       }),
     }));
-  }
-
-  function selectDirector(item) {
-    const draft = {
-      name: item?.name || item?.label || "",
-      instructions: item?.instructions || "",
-    };
-    setDirectorId(item?.id || "");
-    setDirectorDraft(draft);
-    setDirectorOriginal(draft);
-  }
-
-  function discardDirector() {
-    return (
-      !directorDirty ||
-      window.confirm("Discard unsaved instruction preset changes?")
-    );
   }
 
   function navigate(next) {
@@ -451,102 +346,6 @@ function App() {
     if (next === "directors" && !directorId)
       selectDirector(preset || bootstrap?.presets.presets[0]);
     setView(next);
-  }
-
-  useEffect(() => {
-    if (!directorDirty) return;
-    const warn = (event) => {
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [directorDirty]);
-
-  async function writeDirector(operation) {
-    if (busy || actionBusy) return;
-    if (
-      operation !== "save" &&
-      !window.confirm(
-        `${operation === "delete" ? "Delete" : "Reset"} "${presetDisplayLabel(editorDirector)}"? Unsaved changes will be discarded.`,
-      )
-    )
-      return;
-    setActionBusy(true);
-    setError("");
-    setNotice("");
-    try {
-      let result;
-      if (operation === "save")
-        result = await api(
-          "/presets",
-          {
-            ...(directorId ? { id: directorId } : {}),
-            name: directorDraft.name.trim(),
-            instructions: directorDraft.instructions,
-          },
-          directorId ? "PUT" : "POST",
-        );
-      else
-        result = await api(
-          operation === "reset" ? "/presets/reset" : "/presets",
-          { id: directorId },
-          operation === "reset" ? "POST" : "DELETE",
-        );
-      const presets = await api("/presets");
-      setBootstrap((previous) => ({ ...previous, presets }));
-      const fallback =
-        presets.presets.find(
-          (item) =>
-            item.id === presets.default || item.label === presets.default,
-        ) || presets.presets[0];
-      selectDirector(
-        presets.presets.find(
-          (item) => item.id === (result.director?.id || directorId),
-        ) || fallback,
-      );
-      setNotice(
-        operation === "delete"
-          ? "Instruction preset deleted."
-          : "Instruction preset saved to the local JSON file.",
-      );
-    } catch (err) {
-      if (err.activeJob) receiveJob(err.activeJob);
-      setError(
-        `Could not ${operation} instruction preset. Draft kept. ${err.message}`,
-      );
-    } finally {
-      setActionBusy(false);
-    }
-  }
-
-  async function upload(file, slot) {
-    if (!file || busy) return;
-    if (
-      !["image/png", "image/jpeg", "image/webp"].includes(file.type) ||
-      file.size > 20 * 1024 * 1024
-    ) {
-      setError("Choose a PNG, JPG, or WEBP image no larger than 20 MiB.");
-      return;
-    }
-    setUploading((count) => count + 1);
-    try {
-      const data = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = () => reject(new Error("Could not read this image."));
-        reader.readAsDataURL(file);
-      });
-      setImages((previous) =>
-        previous.map((image, index) =>
-          index === slot ? { data, name: file.name } : image,
-        ),
-      );
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setUploading((count) => count - 1);
-    }
   }
 
   async function generate(textOnly = false) {
@@ -584,15 +383,7 @@ function App() {
       });
       receiveJob(next);
     } catch (err) {
-      if (err.activeJob) receiveJob(err.activeJob);
-      else {
-        try {
-          const data = await api("/bootstrap");
-          if (data.active_job) receiveJob(data.active_job);
-        } catch {
-          /* Keep the original generation error if recovery is unavailable. */
-        }
-      }
+      await adoptActiveJob(err, receiveJob);
       setError(err.message);
     } finally {
       setSubmitting(false);
@@ -631,13 +422,7 @@ function App() {
       receiveJob(next);
       return next;
     } catch (err) {
-      if (err.activeJob) receiveJob(err.activeJob);
-      else {
-        try {
-          const data = await api("/bootstrap");
-          if (data.active_job) receiveJob(data.active_job);
-        } catch { /* Keep the original request error. */ }
-      }
+      await adoptActiveJob(err, receiveJob);
       throw err;
     } finally {
       submissionRef.current = false;
@@ -656,70 +441,8 @@ function App() {
     }
   }
 
-  async function deletePrompt(record) {
-    if (!storageReady || promptsBusy || dialogBusy) return;
-    if (!window.confirm(`Delete "${record.title}"? This cannot be undone.`))
-      return;
-    setPromptsBusy(true);
-    setError("");
-    setNotice("");
-    try {
-      const data = await api(
-        `/prompts/${encodeURIComponent(record.id)}`,
-        {},
-        "DELETE",
-      );
-      setSaved(data.prompts);
-      setNotice("Prompt deleted from the local JSON file.");
-    } catch (err) {
-      setError(`Could not delete prompt. ${err.message}`);
-    } finally {
-      setPromptsBusy(false);
-    }
-  }
-
   function openSave() {
     requestPromptSave(prompt, settings.target_model, settings.idea.trim().split("\n")[0].slice(0, 70) || "Untitled prompt");
-  }
-
-  function requestPromptSave(text, target, title) {
-    if (!text.trim() || !storageReady || promptsBusy || dialogBusy) return;
-    saveSourceRef.current = { prompt: text, target };
-    pendingPromptRef.current = null;
-    setDialogError("");
-    setSaveKind("prompt");
-    setSaveName(title.slice(0, 70));
-  }
-
-  async function save(event) {
-    event.preventDefault();
-    if (!saveName.trim() || dialogBusy || !storageReady || promptsBusy) return;
-    setDialogBusy(true);
-    setDialogError("");
-    setError("");
-    setNotice("");
-    try {
-      const source = saveSourceRef.current;
-      if (
-        pendingPromptRef.current?.title !== saveName.trim() ||
-        pendingPromptRef.current?.prompt !== source.prompt ||
-        pendingPromptRef.current?.target !== source.target
-      )
-        pendingPromptRef.current = {
-          id: crypto.randomUUID(),
-          title: saveName.trim(),
-          ...source,
-          createdAt: new Date().toISOString(),
-        };
-      const data = await api("/prompts", pendingPromptRef.current);
-      setSaved(data.prompts);
-      setNotice("Prompt saved to the local JSON file.");
-      setSaveKind(null);
-    } catch (err) {
-      setDialogError(`Could not save. ${err.message}`);
-    } finally {
-      setDialogBusy(false);
-    }
   }
 
   async function modelAction(unload = false) {
@@ -905,7 +628,7 @@ function App() {
           {storageError && (
             <div className={ui.message} role="alert">
               <span>{storageError}</span>
-              <button className={ui.retryButton} onClick={() => setStorageReload((value) => value + 1)}>
+              <button className={ui.retryButton} onClick={reloadSavedPrompts}>
                 Retry saved prompts
               </button>
             </div>
@@ -1017,7 +740,7 @@ function App() {
               <ReferenceImages images={images} settings={settings} attributes={attributes} sources={sources}
                 missingReferences={missingReferences} sourceAvailable={sourceAvailable} onChange={update}
                 onUpload={upload} onError={setError}
-                onRemove={(index) => setImages((previous) => previous.map((item, slot) => slot === index ? null : item))} />
+                onRemove={removeImage} />
             </BuilderTab>
           )}
         </main>
@@ -1027,63 +750,7 @@ function App() {
         engineLabel={configuredBackend ? `Configured backend (${bootstrap?.backend})` : selectedProfile?.label}
         onClose={() => setLogOpen(false)} />
 
-      <dialog
-        className={ui.dialog}
-        aria-labelledby="save-prompt-title"
-        ref={dialogRef}
-        onCancel={(event) => {
-          if (dialogBusy) event.preventDefault();
-          else setSaveKind(null);
-        }}
-        onClose={() => setSaveKind(null)}
-      >
-        <form onSubmit={save}>
-          <div className="mb-[18px] flex items-center justify-between">
-            <div className={ui.panelIcon}>
-              <Bookmark size={22} />
-            </div>
-            <button
-              type="button"
-              className={ui.iconButton}
-              disabled={dialogBusy}
-              onClick={() => setSaveKind(null)}
-              aria-label="Close save dialog"
-            >
-              <X size={19} />
-            </button>
-          </div>
-          <h2 id="save-prompt-title">Save your prompt</h2>
-          <p>
-            Give your prompt a name. It will be saved in a local JSON file on
-            this server.
-          </p>
-          {dialogError && (
-            <div className={ui.message} role="alert">
-              {dialogError}
-            </div>
-          )}
-          <label className={ui.field}>
-            <span>Prompt name</span>
-            <input
-              className={ui.input}
-              ref={saveNameRef}
-              autoFocus
-              required
-              maxLength={80}
-              disabled={dialogBusy}
-              value={saveName}
-              onChange={(event) => setSaveName(event.target.value)}
-            />
-          </label>
-          <button
-            className={ui.primaryButton}
-            disabled={dialogBusy || !saveName.trim()}
-          >
-            <Save size={16} />
-            {dialogBusy ? "Saving..." : "Save"}
-          </button>
-        </form>
-      </dialog>
+      <SavePromptDialog {...savePromptDialog} />
     </div>
   );
 }

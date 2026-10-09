@@ -1,6 +1,6 @@
 import { ChevronDown, ImagePlus, Settings2, X } from "lucide-react";
-import { Panel } from "../components/StudioPrimitives.jsx";
-import { ui } from "../ui.js";
+import { Panel } from "../../components/StudioPrimitives.jsx";
+import { ui } from "../../ui.js";
 
 export default function ReferenceImages({ images, settings, attributes, sources,
   missingReferences, sourceAvailable, onChange, onUpload, onRemove, onError }) {

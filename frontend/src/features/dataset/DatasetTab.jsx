@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { AlignLeft, ArrowRight, ChevronDown, Circle, CircleAlert, CircleCheck, CircleHelp, Copy, Cpu, Database, Download, FileJson, Layers3, Lightbulb, LoaderCircle, RefreshCw, SlidersHorizontal, Sparkles, Tag, Trash2, WandSparkles, Wrench } from "lucide-react";
-import { ui } from "../ui.js";
-import { orderDisplayPresets, presetDisplayLabel } from "../presetPresentation.js";
-import { TargetSelect } from "./WorkflowControls.jsx";
-import { useWorkflowSettings } from "./useWorkflowSettings.js";
-import WorkflowSettingsStatus from "./WorkflowSettingsStatus.jsx";
+import { ui } from "../../ui.js";
+import { orderDisplayPresets, presetDisplayLabel } from "../../presetPresentation.js";
+import { TargetSelect } from "../../shared/workflow/WorkflowControls.jsx";
+import { useWorkflowSettings } from "../../shared/workflow/useWorkflowSettings.js";
+import WorkflowSettingsStatus from "../../shared/workflow/WorkflowSettingsStatus.jsx";
 import { datasetCopyText, datasetJsonl, datasetGenerationLog } from "./datasetExport.js";
 import { editDatasetPlan } from "./datasetState.js";
 import { useDatasetWorkflow } from "./useDatasetWorkflow.js";

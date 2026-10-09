@@ -1,4 +1,4 @@
-import { ui } from "../ui.js";
+import { ui } from "../../ui.js";
 
 export default function WorkflowSettingsStatus({ settings, label, className = "mb-4" }) {
   return <div className={`${className} text-xs text-muted`} role="group" aria-label={`${label} settings save status`}>

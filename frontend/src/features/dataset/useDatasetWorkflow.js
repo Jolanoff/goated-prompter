@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api } from "../api.js";
+import { api } from "../../api.js";
 import { datasetRetryStage, freshDatasetRequest, hasCompletedDatasetPrompt, invalidateDatasetPrompts, isDatasetSceneCurrent } from "./datasetState.js";
 import { useDatasetConfirmation } from "./useDatasetConfirmation.js";
 

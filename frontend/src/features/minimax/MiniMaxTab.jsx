@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Copy, Film, RefreshCw, SlidersHorizontal, Sparkles, Trash2 } from "lucide-react";
-import { ui } from "../ui.js";
-import { orderDisplayPresets, presetDisplayLabel } from "../presetPresentation.js";
-import { TargetSelect, PlanningSelect } from "./WorkflowControls.jsx";
-import { useWorkflowSettings } from "./useWorkflowSettings.js";
-import WorkflowSettingsStatus from "./WorkflowSettingsStatus.jsx";
+import { ui } from "../../ui.js";
+import { orderDisplayPresets, presetDisplayLabel } from "../../presetPresentation.js";
+import { TargetSelect, PlanningSelect } from "../../shared/workflow/WorkflowControls.jsx";
+import { useWorkflowSettings } from "../../shared/workflow/useWorkflowSettings.js";
+import WorkflowSettingsStatus from "../../shared/workflow/WorkflowSettingsStatus.jsx";
 import { insertReference, insertShot, nextReference, nextShot, parseReferences, parseShots, referenceLimits } from "./minimaxReferences.js";
 
 const modes = [["auto", "Auto"], ["T2VA", "Text to Video"], ["I2VA", "First Frame"],

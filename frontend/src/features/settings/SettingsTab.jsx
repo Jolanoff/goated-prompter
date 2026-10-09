@@ -1,6 +1,6 @@
 import { ArrowLeft, Layers3, RefreshCw, Save } from "lucide-react";
-import { Panel, Toggle } from "../components/StudioPrimitives.jsx";
-import { ui } from "../ui.js";
+import { Panel, Toggle } from "../../components/StudioPrimitives.jsx";
+import { ui } from "../../ui.js";
 
 export default function SettingsTab({ backend, models, draft, onChange, profiles,
   configuredBackend, busy, saving, actionBusy, onSave, onModelAction, onBack }) {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "../api.js";
+import { api } from "../../api.js";
 
 /** Server-backed workspace state; mutations use optimistic revision checks. */
 export function useWorkspace(job, onReceiveJob) {

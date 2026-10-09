@@ -5,10 +5,10 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { transformWithEsbuild } from "vite";
 import { canConfirmDatasetReview, datasetRequestSignature, datasetUnderstandingSections, datasetUnderstandingSummary,
-  reviseDatasetRequest } from "./workflows/datasetState.js";
+  reviseDatasetRequest } from "./datasetState.js";
 
 async function loadReviewModal() {
-  const sourceUrl = new URL("./workflows/DatasetConfirmationModal.jsx", import.meta.url);
+  const sourceUrl = new URL("./DatasetConfirmationModal.jsx", import.meta.url);
   const { code } = await transformWithEsbuild(await readFile(sourceUrl, "utf8"), sourceUrl.pathname,
     { loader: "jsx", jsx: "automatic", sourcemap: false });
   const linked = code.replace(/from (["'])([^"']+)\1/g, (_match, _quote, specifier) =>

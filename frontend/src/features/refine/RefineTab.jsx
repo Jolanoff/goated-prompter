@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { Copy, WandSparkles } from "lucide-react";
-import { ui } from "../ui.js";
-import { DetailLocks, PromptText, TargetSelect } from "./WorkflowControls.jsx";
+import { ui } from "../../ui.js";
+import { DetailLocks, PromptText, TargetSelect } from "../../shared/workflow/WorkflowControls.jsx";
 import VersionHistory, { VersionDiff } from "./VersionHistory.jsx";
 import AdvancedInstructions from "./AdvancedInstructions.jsx";
 

@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { datasetCopyText, datasetJsonl, datasetGenerationLog } from "./workflows/datasetExport.js";
+import { datasetCopyText, datasetJsonl, datasetGenerationLog } from "./datasetExport.js";
 
 test("Copy all places each prompt on one line without blank separators", () => {
   const draft = { results: [{ prompt: "prompt1" }, { prompt: "prompt2" }] };

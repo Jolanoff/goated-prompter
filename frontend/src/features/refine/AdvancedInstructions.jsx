@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ui } from "../ui.js";
+import { ui } from "../../ui.js";
 
 const labels = { system: "System prompt", faithful: "Faithful direction", creative: "Creative direction", experimental: "Experimental direction" };
 

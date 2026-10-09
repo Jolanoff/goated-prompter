@@ -1,10 +1,10 @@
 import { useState } from "react";
-import { ui } from "../ui.js";
+import { ui } from "../../ui.js";
 import { useWorkspace } from "./useWorkspace.js";
 import RefineTab from "./RefineTab.jsx";
-import { PromptText } from "./WorkflowControls.jsx";
-import { useWorkflowSettings } from "./useWorkflowSettings.js";
-import WorkflowSettingsStatus from "./WorkflowSettingsStatus.jsx";
+import { PromptText } from "../../shared/workflow/WorkflowControls.jsx";
+import { useWorkflowSettings } from "../../shared/workflow/useWorkflowSettings.js";
+import WorkflowSettingsStatus from "../../shared/workflow/WorkflowSettingsStatus.jsx";
 
 /** Hosts Refine while App continues to own the single global job. */
 export default function CreativeWorkspace(props) {

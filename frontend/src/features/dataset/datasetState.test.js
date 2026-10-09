@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { editDatasetPlan, invalidateDatasetPrompts, isDatasetSceneUsable, datasetRetryStage, datasetSceneSignature, isDatasetSceneCurrent,
-  freshDatasetRequest, hasCompletedDatasetPrompt } from "./workflows/datasetState.js";
+  freshDatasetRequest, hasCompletedDatasetPrompt } from "./datasetState.js";
 
 const draft = { scene_plan: [1, 2].map((index) => ({ index, idea: `idea ${index}`, scene: `scene ${index}`,
   self_check: "PASS", idea_status: "valid", scene_status: "valid", prompt_status: "valid" })),

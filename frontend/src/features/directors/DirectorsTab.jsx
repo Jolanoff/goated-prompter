@@ -1,7 +1,7 @@
 import { FileText, Plus, RotateCcw, Save, Trash2, WandSparkles } from "lucide-react";
-import { Panel } from "../components/StudioPrimitives.jsx";
-import { orderDisplayPresets, presetDisplayLabel } from "../presetPresentation.js";
-import { ui } from "../ui.js";
+import { Panel } from "../../components/StudioPrimitives.jsx";
+import { orderDisplayPresets, presetDisplayLabel } from "../../presetPresentation.js";
+import { ui } from "../../ui.js";
 
 export default function DirectorsTab({ library, directorId, draft, dirty, editorDirector,
   busy, actionBusy, onSelect, onChange, onWrite, onUse }) {

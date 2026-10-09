@@ -28,9 +28,9 @@ concept + rules + local guided input
 | Editable drafts and durable generated progress | `goated_prompter/workflow_settings.py`, `dataset_checkpoints.py` |
 | API admission | `goated_prompter/api/dataset_routes.py` |
 | Workflow execution | `goated_prompter/workflow_runners.py` |
-| Confirmation and job synchronization | `frontend/src/workflows/useDatasetConfirmation.js`, `useDatasetWorkflow.js` |
-| Autosave, revisions and refresh guards | `frontend/src/workflows/useWorkflowSettings.js` |
-| Cards, edits, self-check display and exports | `frontend/src/workflows/DatasetTab.jsx`, `DatasetIdeaDetails.jsx`, `datasetState.js` |
+| Confirmation and job synchronization | `frontend/src/features/dataset/useDatasetConfirmation.js`, `useDatasetWorkflow.js` |
+| Autosave, revisions and refresh guards | `frontend/src/shared/workflow/useWorkflowSettings.js` |
+| Cards, edits, self-check display and exports | `frontend/src/features/dataset/DatasetTab.jsx`, `DatasetIdeaDetails.jsx`, `datasetState.js` |
 
 ## Authority and stages
 

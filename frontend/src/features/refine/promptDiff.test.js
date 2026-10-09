@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { promptDiff } from "./workflows/promptDiff.js";
+import { promptDiff } from "./promptDiff.js";
 
 function verify(before, after) {
   const parts = promptDiff(before, after);

@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { transformWithEsbuild } from "vite";
-import { datasetIdeaDetails, datasetRequestSignature, datasetSceneSignature, editDatasetPlan } from "./workflows/datasetState.js";
+import { datasetIdeaDetails, datasetRequestSignature, datasetSceneSignature, editDatasetPlan } from "./datasetState.js";
 
 const item = { index: 1, idea: "A boxer slips a punch.", placement: "Boxer left, partner right.",
   visibility: "Contact overlap preserves the exposed head.", camera: "Three-quarter angle.", framing: "Full body.",
@@ -58,7 +58,7 @@ test("scene self-check changes invalidate both approval and current-scene signat
 });
 
 async function ideaComponents() {
-  const sourceUrl = new URL("./workflows/DatasetIdeaDetails.jsx", import.meta.url);
+  const sourceUrl = new URL("./DatasetIdeaDetails.jsx", import.meta.url);
   const { code } = await transformWithEsbuild(await readFile(sourceUrl, "utf8"), sourceUrl.pathname,
     { loader: "jsx", jsx: "automatic", sourcemap: false });
   const linked = code.replace(/from (["'])([^"']+)\1/g, (_match, _quote, specifier) =>
