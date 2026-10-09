@@ -17,7 +17,7 @@ def register(app, state_key, job_factory, json_object):
             return web.json_response(await asyncio.to_thread(store.snapshot))
         payload = await json_object(request)
         async with state.admission:
-            if conflict := active_job_conflict(state, "Wait for the active generation before changing the workspace."):
+            if (conflict := active_job_conflict(state, "Wait for the active generation before changing the workspace.")) is not None:
                 return conflict
             try:
                 current = await asyncio.to_thread(store.check, payload.get("revision"))
