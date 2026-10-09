@@ -4,10 +4,9 @@ import json
 import unittest
 from unittest.mock import patch
 from goated_prompter.backends.base import GoatedPrompterBackend, BackendGenerationError
-from goated_prompter.core import GoatedPrompterRequest
-from goated_prompter.minimax import (MiniMaxService, analysis_instruction, default_minimax_draft,
-    frame_instruction, generation_instruction, parse_reference_tokens, parse_shot_outline, reference_warnings, requested_spoken_lines,
-    validate_analysis, validate_minimax_draft, validate_output)
+from goated_prompter.contracts import GoatedPrompterRequest
+from goated_prompter.features.minimax.service import MiniMaxService, analysis_instruction, generation_instruction, parse_shot_outline, reference_warnings, validate_analysis, validate_minimax_draft, validate_output
+from goated_prompter.features.minimax.contract import default_minimax_draft, frame_instruction, parse_reference_tokens, requested_spoken_lines
 from goated_prompter.presets import get_director_preset
 from tests.support.minimax import BASE, DANCE_PLAN, REF, REQUEST, ScriptedBackend, dance_input, plan_json, role
 
@@ -102,7 +101,7 @@ class MiniMaxContractTests(unittest.TestCase):
         self.assertIn("[Shot 2] At 00:03.000, <Subject 1> looks sad", enhanced)
         self.assertIn("[Shot 3] At 00:06.500, <Subject 1> (S1) says", enhanced)
         backend = ScriptedBackend(roles, model)
-        with patch("goated_prompter.minimax.create_backend", return_value=backend):
+        with patch("goated_prompter.features.minimax.service.create_backend", return_value=backend):
             generated = MiniMaxService({"backend": "mock"}, lambda: None).run(
                 GoatedPrompterRequest(idea=APPLE_SHOTS), data, lambda _: None)
         self.assertEqual(len(backend.calls), 2)
@@ -248,7 +247,7 @@ class MiniMaxContractTests(unittest.TestCase):
         without_speech = APPLE_PROMPT.replace('<Subject 1> (S1) says: <d>[English] I stepped on poop</d>', '')
         self.assertIn('apple (S1) says: <d>[English] i stepped on a poop</d>', validate_output(without_speech, data, plan))
         backend = ScriptedBackend(roles, raw)
-        with patch("goated_prompter.minimax.create_backend", return_value=backend):
+        with patch("goated_prompter.features.minimax.service.create_backend", return_value=backend):
             result = MiniMaxService({"backend": "mock"}, lambda: None).run(
                 GoatedPrompterRequest(idea=APPLE_PLAIN_REQUEST), data, lambda _: None)
         self.assertEqual(len(backend.calls), 2)
@@ -298,7 +297,7 @@ class MiniMaxContractTests(unittest.TestCase):
                 if kind in ("timed", "short_time"):
                     self.assertIn("[Shot 2] At 00:04.000,", timeline)
         backend = ScriptedBackend(roles, variants["unnumbered"])
-        with patch("goated_prompter.minimax.create_backend", return_value=backend):
+        with patch("goated_prompter.features.minimax.service.create_backend", return_value=backend):
             result = MiniMaxService({"backend": "mock"}, lambda: None).run(
                 GoatedPrompterRequest(idea=APPLE_PLAIN_REQUEST), data, lambda _: None)
         self.assertEqual(len(backend.calls), 2)
@@ -362,7 +361,7 @@ class MiniMaxContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Video 1 was introduced"):
             validate_output(bad, data, plan)
         backend = ScriptedBackend(roles, bad, APPLE_PROMPT)
-        with patch("goated_prompter.minimax.create_backend", return_value=backend):
+        with patch("goated_prompter.features.minimax.service.create_backend", return_value=backend):
             result = MiniMaxService({"backend": "mock"}, lambda: None).run(
                 GoatedPrompterRequest(idea=APPLE_REQUEST), data, lambda _: None)
         self.assertEqual(result["prompt"], APPLE_PROMPT)
@@ -382,7 +381,7 @@ class MiniMaxContractTests(unittest.TestCase):
             bad.split("retention_analysis:\n", 1)[1].split("\n\ndetailed_description:", 1)[0],
             "Keep the three referenced subjects recognizable.")
         backend = ScriptedBackend(roles, bad)
-        with patch("goated_prompter.minimax.create_backend", return_value=backend):
+        with patch("goated_prompter.features.minimax.service.create_backend", return_value=backend):
             result = MiniMaxService({"backend": "mock"}, lambda: None).run(
                 GoatedPrompterRequest(idea=APPLE_REQUEST), data, lambda _: None)
         self.assertEqual(len(backend.calls), 2)
@@ -410,7 +409,7 @@ class MiniMaxContractTests(unittest.TestCase):
 
     def test_generation_acceptance_and_bounded_repair_keep_one_model_session(self):
         backend = ScriptedBackend(DANCE_PLAN, REF.replace("summary:", "overview:"), REF)
-        with patch("goated_prompter.minimax.create_backend", return_value=backend):
+        with patch("goated_prompter.features.minimax.service.create_backend", return_value=backend):
             result = MiniMaxService({"backend": "mock"}, lambda: None).run(GoatedPrompterRequest(idea=REQUEST), dance_input(), lambda _: None)
         self.assertEqual(result["mode"], "Ref2VA")
         self.assertEqual(result["prompt"], REF)
@@ -419,12 +418,12 @@ class MiniMaxContractTests(unittest.TestCase):
         self.assertTrue(all(call.image is None and call.image_2 is None for call in backend.calls))
         self.assertTrue(all(call.unlimited_tokens and call.max_tokens is None for call in backend.calls))
         backend = ScriptedBackend(*(["wrong"] * 3))
-        with patch("goated_prompter.minimax.create_backend", return_value=backend), self.assertRaisesRegex(BackendGenerationError, "after 2 repair attempts"):
+        with patch("goated_prompter.features.minimax.service.create_backend", return_value=backend), self.assertRaisesRegex(BackendGenerationError, "after 2 repair attempts"):
             MiniMaxService({"backend": "mock"}, lambda: None).run(GoatedPrompterRequest(idea="A leaf falls"), {"user_request": "A leaf falls"}, lambda _: None)
         self.assertEqual(len(backend.calls), 3)
         backend = ScriptedBackend("invalid plan", DANCE_PLAN, "bad prompt", "still bad")
         progress = []
-        with patch("goated_prompter.minimax.create_backend", return_value=backend), self.assertRaisesRegex(BackendGenerationError, "after 2 repair attempts"):
+        with patch("goated_prompter.features.minimax.service.create_backend", return_value=backend), self.assertRaisesRegex(BackendGenerationError, "after 2 repair attempts"):
             MiniMaxService({"backend": "mock"}, lambda: None).run(
                 GoatedPrompterRequest(idea=REQUEST), dance_input(), progress.append)
         self.assertEqual(len(backend.calls), 4)

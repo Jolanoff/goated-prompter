@@ -14,20 +14,20 @@ concept + rules + local guided input
 
 | Responsibility | Owner |
 | --- | --- |
-| Scoped understanding and richer brief validation | `goated_prompter/dataset_understanding.py` |
-| Source-bound, expiring approval tickets | `goated_prompter/dataset_intent.py` |
-| Guided assignment indexes and cycling | `goated_prompter/dataset_assignments.py` |
-| Six-field ideas and lexical duplicate hints | `goated_prompter/dataset_ideas.py`, `dataset_quality.py` |
-| Recent-event RAM history, read and written only by Ideas | `goated_prompter/dataset_ideas.py`, `dataset_idea_history.py` |
-| Frozen scene, same-call correction and self-check | `goated_prompter/dataset_scene.py` |
-| Compact orchestration and versioned saved-plan validation | `goated_prompter/scene_planner.py` |
-| PASS eligibility, shared by API and enhancement | `goated_prompter/scene_eligibility.py` |
-| Builder instruction handoff and trigger controls | `goated_prompter/prompting/dataset.py` |
-| Batch/actions and bounded final-output recovery | `goated_prompter/dataset.py` |
+| Scoped understanding and richer brief validation | `goated_prompter/features/dataset/understanding.py` |
+| Source-bound, expiring approval tickets | `goated_prompter/features/dataset/intent.py` |
+| Guided assignment indexes and cycling | `goated_prompter/features/dataset/assignments.py` |
+| Six-field ideas and lexical duplicate hints | `goated_prompter/features/dataset/ideas.py`, `quality.py` |
+| Recent-event RAM history, read and written only by Ideas | `goated_prompter/features/dataset/ideas.py`, `idea_history.py` |
+| Frozen scene, same-call correction and self-check | `goated_prompter/features/dataset/scene.py` |
+| Compact orchestration and versioned saved-plan validation | `goated_prompter/features/dataset/plan.py` |
+| PASS eligibility, shared by API and enhancement | `goated_prompter/features/dataset/eligibility.py` |
+| Builder instruction handoff and trigger controls | `goated_prompter/features/dataset/prompting.py` |
+| Batch/actions and bounded final-output recovery | `goated_prompter/features/dataset/service.py` |
 | Target syntax and output normalization | `goated_prompter/prompting/target_models.py`, `workflow_output.py` |
-| Editable drafts and durable generated progress | `goated_prompter/workflow_settings.py`, `dataset_checkpoints.py` |
-| API admission | `goated_prompter/api/dataset_routes.py` |
-| Workflow execution | `goated_prompter/workflow_runners.py` |
+| Editable drafts and durable generated progress | `goated_prompter/workflow_settings.py`, `goated_prompter/features/dataset/checkpoints.py` |
+| API admission | `goated_prompter/features/dataset/routes.py` |
+| Workflow execution | `goated_prompter/features/dataset/runner.py` (dispatched by `goated_prompter/workflow_runners.py`) |
 | Confirmation and job synchronization | `frontend/src/features/dataset/useDatasetConfirmation.js`, `useDatasetWorkflow.js` |
 | Autosave, revisions and refresh guards | `frontend/src/shared/workflow/useWorkflowSettings.js` |
 | Cards, edits, self-check display and exports | `frontend/src/features/dataset/DatasetTab.jsx`, `DatasetIdeaDetails.jsx`, `datasetState.js` |

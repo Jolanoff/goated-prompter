@@ -5,10 +5,10 @@ import unittest
 from unittest.mock import Mock
 
 from goated_prompter.backends.base import BackendGenerationError, BackendRunawayError
-from goated_prompter.core import GoatedPrompterRequest
-from goated_prompter.dataset import DatasetService, validate_trigger_contract
-from goated_prompter.dataset_triggers import trigger_presence_error, trigger_contract_error, restore_numeric_trigger_spelling
-from goated_prompter.prompting.dataset import dataset_instruction
+from goated_prompter.contracts import GoatedPrompterRequest
+from goated_prompter.features.dataset.service import DatasetService, validate_trigger_contract
+from goated_prompter.features.dataset.triggers import trigger_presence_error, trigger_contract_error, restore_numeric_trigger_spelling
+from goated_prompter.features.dataset.prompting import dataset_instruction
 from tests.support.dataset import valid_draft
 
 

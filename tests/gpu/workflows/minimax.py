@@ -6,7 +6,7 @@ SAMPLE_SUFFIX = ""
 
 
 def execute(row, context):
-    from goated_prompter.minimax import MiniMaxService
+    from goated_prompter.features.minimax.service import MiniMaxService
     case, args = context.case, context.args
     result = MiniMaxService(context.config, lambda: None).run(context.request,
         {"user_request": case["request"], "planning_mode": args.planning,

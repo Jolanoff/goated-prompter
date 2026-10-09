@@ -5,10 +5,10 @@ import unittest
 from unittest.mock import Mock, patch
 
 from goated_prompter.backends.base import BackendGenerationError
-from goated_prompter.dataset_idea_history import RecentIdeaHistory
-from goated_prompter.dataset_assignments import dataset_assignments
-from goated_prompter.dataset_ideas import DatasetIdeasService
-from goated_prompter.scene_planner import ScenePlanner
+from goated_prompter.features.dataset.idea_history import RecentIdeaHistory
+from goated_prompter.features.dataset.assignments import dataset_assignments
+from goated_prompter.features.dataset.ideas import DatasetIdeasService
+from goated_prompter.features.dataset.plan import ScenePlanner
 from tests.helpers import dataset_idea_fixture, dataset_understanding_fixture
 from tests.support.dataset import CaptureBackend, valid_draft
 
@@ -32,13 +32,13 @@ class DatasetIdeaHistoryTests(unittest.TestCase):
     def test_scope_expiry_and_concept_eviction(self):
         history = RecentIdeaHistory(concepts=2, ttl=10)
         a, b, c = [valid_draft(subject=subject) for subject in ("One", "Two", "Three")]
-        with patch("goated_prompter.dataset_idea_history.time.monotonic", return_value=0):
+        with patch("goated_prompter.features.dataset.idea_history.time.monotonic", return_value=0):
             for data in (a, b, c):
                 history.remember(data, [{"idea": data["subject"]}])
             self.assertEqual(history.recent(a), [])
             self.assertEqual(history.recent(b), ["Two"])
             self.assertEqual(history.recent(c), ["Three"])
-        with patch("goated_prompter.dataset_idea_history.time.monotonic", return_value=11):
+        with patch("goated_prompter.features.dataset.idea_history.time.monotonic", return_value=11):
             self.assertEqual(history.recent(c), [])
 
     def test_current_ideas_receive_history_and_remember_only_accepted_output(self):

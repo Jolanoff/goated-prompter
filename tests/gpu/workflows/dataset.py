@@ -9,8 +9,8 @@ SAMPLE_SUFFIX = "|pipeline"
 
 def approve_dataset(config, request, data):
     """Run UNDERSTAND and require a human to approve the interpretation before generation."""
-    from goated_prompter.dataset_intent import DatasetIntentTickets
-    from goated_prompter.dataset_understanding import DatasetUnderstandingService
+    from goated_prompter.features.dataset.intent import DatasetIntentTickets
+    from goated_prompter.features.dataset.understanding import DatasetUnderstandingService
     brief = DatasetUnderstandingService(config, lambda: None).run(request, data, print)
     print(json.dumps(brief, ensure_ascii=False, indent=2))
     tickets = DatasetIntentTickets()
@@ -21,7 +21,7 @@ def approve_dataset(config, request, data):
 
 
 def execute(row, context):
-    from goated_prompter.dataset import DatasetService, default_dataset_draft
+    from goated_prompter.features.dataset.service import DatasetService, default_dataset_draft
     case, args = context.case, context.args
     approve = context.approve or approve_dataset
     row["evaluation_scope"] = "pipeline"

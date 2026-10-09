@@ -6,11 +6,12 @@ import unittest
 from unittest.mock import patch
 
 from goated_prompter.backends import openai_compatible as openai
-from goated_prompter.core import GoatedPrompterRequest, PromptInstruction
-from goated_prompter.dataset import DatasetService, dataset_instruction, validate_dataset_draft
-from goated_prompter.dataset_assignments import dataset_assignments
-from goated_prompter.dataset_visible_content import positive_prompt_error
-from goated_prompter.scene_planner import scene_plan_signature
+from goated_prompter.contracts import GoatedPrompterRequest
+from goated_prompter.features.builder.service import PromptInstruction
+from goated_prompter.features.dataset.service import DatasetService, dataset_instruction, validate_dataset_draft
+from goated_prompter.features.dataset.assignments import dataset_assignments
+from goated_prompter.features.dataset.visible_content import positive_prompt_error
+from goated_prompter.features.dataset.plan import scene_plan_signature
 from goated_prompter.workflow_output import WorkflowFormatError, normalize_workflow_output
 from tests.helpers import dataset_understanding_fixture
 from tests.support.dataset import saved_scene, valid_draft
@@ -69,7 +70,7 @@ class DatasetAnimaTests(unittest.TestCase):
 
     def run_writer(self, outputs):
         backend = ScriptedBackend(outputs)
-        with patch("goated_prompter.dataset.create_backend", return_value=backend):
+        with patch("goated_prompter.features.dataset.service.create_backend", return_value=backend):
             result = DatasetService({"backend": "mock"}, lambda: None).run(
                 self.request, self.data, lambda _message: None, lambda _result: None)
         return result, backend

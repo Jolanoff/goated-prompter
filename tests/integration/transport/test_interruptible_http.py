@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from goated_prompter.backends.base import BackendGenerationError
 from goated_prompter.backends.openai_compatible import OpenAICompatibleBackend
-from goated_prompter.core import PromptInstruction
+from goated_prompter.features.builder.service import PromptInstruction
 
 
 class InterruptibleHTTPTests(unittest.TestCase):

@@ -6,11 +6,11 @@ import unittest
 from unittest.mock import Mock, patch
 
 from goated_prompter.backends.base import GoatedPrompterBackend, BackendRunawayError, BackendGenerationError
-from goated_prompter.core import GoatedPrompterRequest
-from goated_prompter.dataset import DatasetService, default_dataset_draft, validate_dataset_draft, saved_dataset_draft
-from goated_prompter.dataset_assignments import dataset_assignments
-from goated_prompter.prompting.dataset import dataset_instruction
-from goated_prompter.scene_planner import scene_plan_signature
+from goated_prompter.contracts import GoatedPrompterRequest
+from goated_prompter.features.dataset.service import DatasetService, default_dataset_draft, validate_dataset_draft, saved_dataset_draft
+from goated_prompter.features.dataset.assignments import dataset_assignments
+from goated_prompter.features.dataset.prompting import dataset_instruction
+from goated_prompter.features.dataset.plan import scene_plan_signature
 from tests.helpers import dataset_idea_fixture, dataset_understanding_fixture
 from tests.support.dataset import CaptureBackend, saved_scene, valid_draft
 
@@ -93,7 +93,7 @@ class DatasetUnitTests(unittest.TestCase):
     def test_one_session_and_only_current_stages(self):
         backend = CaptureBackend()
         snapshots = []
-        with patch("goated_prompter.dataset.create_backend", return_value=backend):
+        with patch("goated_prompter.features.dataset.service.create_backend", return_value=backend):
             result = DatasetService({"backend": "mock"}, lambda: None).run(GoatedPrompterRequest(idea=self.data["subject"], prompt_model="Custom"), self.data, lambda _: None, snapshots.append)
         self.assertEqual([call.diagnostic_stage for call in backend.calls], ["dataset:ideas", "dataset:build_scene", "dataset:1"])
         self.assertEqual(backend.sessions, 1)
@@ -108,9 +108,9 @@ class DatasetUnitTests(unittest.TestCase):
         self.assertNotEqual(signature, scene_plan_signature({**self.data, "subject": "Different"}, dataset_assignments(self.data)))
 
     def test_old_frozen_idea_pass_plans_need_replanning_under_the_new_contract(self):
-        from goated_prompter.scene_planner import reusable_scene_plan
+        from goated_prompter.features.dataset.plan import reusable_scene_plan
         assignments = dataset_assignments(self.data)
-        with patch("goated_prompter.scene_planner.SCENE_PLAN_VERSION", 6):
+        with patch("goated_prompter.features.dataset.plan.SCENE_PLAN_VERSION", 6):
             old_signature = scene_plan_signature(self.data, assignments)
         data = {**self.data, "scene_plan": [self.row], "scene_plan_signature": old_signature}
         self.assertIsNone(reusable_scene_plan(data, assignments))

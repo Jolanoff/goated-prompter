@@ -13,7 +13,7 @@ from tests.support.safety import private_storage_guard, synthetic_storage
 
 from aiohttp import web
 from local_app import create_app
-from goated_prompter.core import GoatedPrompterService
+from goated_prompter.features.builder.service import GoatedPrompterService
 from goated_prompter.backends.mock import MockBackend
 
 
@@ -86,9 +86,9 @@ if __name__ == "__main__":
     _, scratch = task_paths(os.environ.get("GOATED_TEST_TASK_KEY", "browser-tests"), "browser")
     with synthetic_storage(scratch) as data:
         port = int(os.environ.get("GOATED_UI_TEST_PORT", "8190"))
-        with patch("goated_prompter.dataset.create_backend", side_effect=dataset_ui_backend), \
-                patch("goated_prompter.dataset_understanding.create_backend", side_effect=dataset_ui_backend), \
-                patch("goated_prompter.core.create_backend", side_effect=dataset_ui_backend), \
+        with patch("goated_prompter.features.dataset.service.create_backend", side_effect=dataset_ui_backend), \
+                patch("goated_prompter.features.dataset.understanding.create_backend", side_effect=dataset_ui_backend), \
+                patch("goated_prompter.features.builder.service.create_backend", side_effect=dataset_ui_backend), \
                 patch("local_app.get_process_manager"):
             # Exercise accepted aliases through the real API, not only factory tests.
             web.run_app(create_app(port=port, config_loader=lambda: {"backend": " DeBuG "}, settings_path=Path(data) / "settings.json",

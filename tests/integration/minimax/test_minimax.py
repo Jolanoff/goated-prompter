@@ -10,7 +10,7 @@ from unittest.mock import patch
 from aiohttp.test_utils import TestClient, TestServer
 
 import local_app as local
-from goated_prompter.minimax import default_minimax_draft
+from goated_prompter.features.minimax.contract import default_minimax_draft
 from goated_prompter.workflow_settings import WorkflowSettingsStore, empty_settings
 from tests.helpers import enter_context
 from tests.support.minimax import DANCE_PLAN, REF, ScriptedBackend, dance_input
@@ -21,7 +21,7 @@ class MiniMaxEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.temp = enter_context(self, tempfile.TemporaryDirectory())
         enter_context(self, patch.dict(os.environ, {"GOATED_PROMPTER_USER_DIR": str(Path(self.temp) / "directors")}))
         self.backend = ScriptedBackend(DANCE_PLAN, REF)
-        enter_context(self, patch("goated_prompter.minimax.create_backend", return_value=self.backend))
+        enter_context(self, patch("goated_prompter.features.minimax.service.create_backend", return_value=self.backend))
         self.app = local.create_app(config_loader=lambda: {"backend": "mock"}, settings_path=Path(self.temp) / "settings.json")
         self.client = TestClient(TestServer(self.app), headers={"Host": "127.0.0.1:8190"})
         await self.client.start_server()

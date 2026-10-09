@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from goated_prompter.backends.openai_compatible import OpenAICompatibleBackend, _response_text
 from goated_prompter.backends.base import BackendGenerationError, BackendConfigurationError
-from goated_prompter.core import PromptInstruction
+from goated_prompter.features.builder.service import PromptInstruction
 
 
 class ReliabilityTests(unittest.TestCase):

@@ -4,7 +4,7 @@ from contextlib import contextmanager
 import json
 
 from goated_prompter.backends.base import GoatedPrompterBackend
-from goated_prompter.dataset import default_dataset_draft
+from goated_prompter.features.dataset.service import default_dataset_draft
 from tests.helpers import dataset_idea_fixture
 
 REPAIR = "REPAIR:\nThe user requires both an extreme close-up of only his eyes and clearly visible shoes; the eyes-only crop excludes the shoes.\nShould the image show only eyes, or widen the crop to include the shoes?"

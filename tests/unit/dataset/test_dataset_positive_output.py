@@ -4,12 +4,12 @@ import json
 import unittest
 from unittest.mock import Mock
 
-from goated_prompter.dataset import DatasetService, validate_positive_content
-from goated_prompter.dataset_visible_content import (
+from goated_prompter.features.dataset.service import DatasetService, validate_positive_content
+from goated_prompter.features.dataset.visible_content import (
     PositiveContentError, positive_prompt_error, sanitize_positive_prompt,
 )
-from goated_prompter.core import GoatedPrompterRequest
-from goated_prompter.prompting.dataset import dataset_instruction
+from goated_prompter.contracts import GoatedPrompterRequest
+from goated_prompter.features.dataset.prompting import dataset_instruction
 from tests.support.dataset import valid_draft, saved_scene
 
 

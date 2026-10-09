@@ -83,7 +83,7 @@ class EvaluationRunnerTests(unittest.TestCase):
             inputs.append(data)
             histories.append(service.idea_history)
             return {"scene_plan": [{"index": index, "idea": f"Action {index}", "scene": f"Scene {index}"} for index in range(1, 11)]}
-        with patch("goated_prompter.dataset.DatasetService.run", run), \
+        with patch("goated_prompter.features.dataset.service.DatasetService.run", run), \
                 patch("tests.eval.runner.approve_dataset", side_effect=lambda config, request, data: {**data, "_confirmed_intent": dataset_understanding_fixture()}):
             rows = novelty_cases({"id": "workshop", "concept": "Repair workshop", "runs": 5, "amount": 10}, {"backend": "mock"}, self.args())
         self.assertEqual(len(rows), 5)

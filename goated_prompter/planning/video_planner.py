@@ -2,7 +2,7 @@
 
 import json
 from ..contracts import PromptInstruction
-from ..minimax_contract import exact_dialogue, parse_shot_outline
+from ..features.minimax.contract import exact_dialogue, parse_shot_outline
 from .constraints import compile_request, COMPILED_CONTRACT
 from .scene_planner import AUTHORITY, supporting_pass
 from .validation import validate_plan

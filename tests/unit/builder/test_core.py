@@ -18,7 +18,8 @@ PACKAGE = "_goated_core_tests"
 package = ModuleType(PACKAGE)
 package.__path__ = [str(ROOT / "goated_prompter")]
 sys.modules[PACKAGE] = package
-core = importlib.import_module(f"{PACKAGE}.core")
+core = importlib.import_module(f"{PACKAGE}.features.builder.service")
+contracts = importlib.import_module(f"{PACKAGE}.contracts")
 image_utils = importlib.import_module(f"{PACKAGE}.image_utils")
 reference_map = importlib.import_module(f"{PACKAGE}.reference_map")
 
@@ -63,7 +64,7 @@ class CoreTests(unittest.TestCase):
         self.service = core.GoatedPrompterService(config={})
 
     def request(self, source="Image 1", **kwargs):
-        return core.GoatedPrompterRequest(
+        return contracts.GoatedPrompterRequest(
             idea="a portrait", image=self.first, image_2=self.second,
             reference_map={key: source for key, _ in reference_map.REFERENCE_ATTRIBUTES},
             **kwargs,
@@ -159,7 +160,7 @@ class CoreTests(unittest.TestCase):
         for text_only in (False, True):
             with self.subTest(text_only=text_only):
                 self.session.reset_mock()
-                request = self.request() if text_only else core.GoatedPrompterRequest(idea="a portrait")
+                request = self.request() if text_only else contracts.GoatedPrompterRequest(idea="a portrait")
                 generate = self.service.generate_text_only if text_only else self.service.generate
                 result = generate(request)
                 self.assertEqual(result.prompt, "final prompt")
@@ -218,7 +219,7 @@ class CoreTests(unittest.TestCase):
         self.session.generate.side_effect = None
         self.session.generate.return_value = "  "
         with self.assertRaisesRegex(RuntimeError, "empty prompt"):
-            self.service.generate(core.GoatedPrompterRequest(idea="portrait"))
+            self.service.generate(contracts.GoatedPrompterRequest(idea="portrait"))
 
     def test_qwen21_generation_returns_plain_text_from_legacy_json(self):
         self.session.generate.side_effect = None
@@ -226,11 +227,11 @@ class CoreTests(unittest.TestCase):
             '{"rewritten_prompt":"A warm photograph of a red bicycle.",'
             '"wh_ratio":"3:2"}'
         )
-        result = self.service.generate(core.GoatedPrompterRequest(idea="red bicycle", target_model="Qwen2.1"))
+        result = self.service.generate(contracts.GoatedPrompterRequest(idea="red bicycle", target_model="Qwen2.1"))
         self.assertEqual(result.prompt, "A warm photograph of a red bicycle.")
         self.session.generate.return_value = '{"rewritten_prompt":'
         with self.assertRaisesRegex(RuntimeError, "invalid prompt"):
-            self.service.generate(core.GoatedPrompterRequest(idea="red bicycle", target_model="Qwen2.1"))
+            self.service.generate(contracts.GoatedPrompterRequest(idea="red bicycle", target_model="Qwen2.1"))
 
     def test_qwen21_plain_text_works_at_every_detail_level(self):
         self.session.generate.side_effect = None
@@ -239,7 +240,7 @@ class CoreTests(unittest.TestCase):
             for generate in (self.service.generate, self.service.generate_text_only):
                 with self.subTest(length=length, path=generate.__name__):
                     self.session.reset_mock()
-                    result = generate(core.GoatedPrompterRequest(idea="red bicycle", target_model="Qwen2.1", prompt_length=length))
+                    result = generate(contracts.GoatedPrompterRequest(idea="red bicycle", target_model="Qwen2.1", prompt_length=length))
                     self.assertEqual(result.prompt, self.session.generate.return_value)
                     self.assertIsNone(result.instruction.max_tokens)
                     self.assertTrue(result.instruction.unlimited_tokens)
@@ -247,7 +248,7 @@ class CoreTests(unittest.TestCase):
                     self.session.generate.assert_called_once()
 
     def test_qwen21_text_and_edit_keep_task_guidance_but_request_plain_output(self):
-        text = self.service.assemble(core.GoatedPrompterRequest(idea="a poster", target_model="Qwen2.1"))
+        text = self.service.assemble(contracts.GoatedPrompterRequest(idea="a poster", target_model="Qwen2.1"))
         self.assertIn('Return only the complete plain prompt text', text.system_message)
         self.assertNotIn('Qwen Image 2.1 image-editing rewrite', text.system_message)
         self.assertIsNone(text.max_tokens)
@@ -284,7 +285,7 @@ class CoreTests(unittest.TestCase):
     def test_qwen21_format_repair_uses_same_session_and_original_request(self):
         expected = 'A red bicycle.'
         self.session.generate.side_effect = ['{"rewritten_prompt":', expected]
-        result = self.service.generate(core.GoatedPrompterRequest(idea="red bicycle", target_model="Qwen2.1"))
+        result = self.service.generate(contracts.GoatedPrompterRequest(idea="red bicycle", target_model="Qwen2.1"))
         self.assertEqual(result.prompt, expected)
         first, retry = [entry.args[0] for entry in self.session.generate.call_args_list]
         self.assertTrue(retry.user_message.startswith(first.user_message))
@@ -316,7 +317,7 @@ class CoreTests(unittest.TestCase):
         self.session.generate.return_value = '{"rewritten_prompt":"Incomplete'
         with self.assertRaises(Cancelled):
             core.GoatedPrompterService(config={}, checkpoint=checkpoint).generate(
-                core.GoatedPrompterRequest(idea="red bicycle", target_model="Qwen2.1"))
+                contracts.GoatedPrompterRequest(idea="red bicycle", target_model="Qwen2.1"))
         self.session.generate.assert_called_once()
 
     def test_image_order_does_not_hash_when_debug_disabled(self):
@@ -430,14 +431,14 @@ class LinkedCoreTests(unittest.TestCase):
 
     def test_mapping_alias_and_maximum_are_uncapped(self):
         for value in ("Maximum", "Maximum Detail"):
-            request = core.GoatedPrompterRequest.from_mapping({"idea": "portrait", "linked_references": "true", "prompt_length": value})
+            request = contracts.GoatedPrompterRequest.from_mapping({"idea": "portrait", "linked_references": "true", "prompt_length": value})
             self.assertTrue(request.linked_references)
             self.assertEqual(request.prompt_length, "Maximum Detail")
             instruction = core.assemble_instruction(request)
             self.assertIsNone(instruction.max_tokens)
             self.assertTrue(instruction.unlimited_tokens)
-        self.assertFalse(core.GoatedPrompterRequest.from_mapping({"linked_references": "false"}).linked_references)
-        self.assertFalse(core.GoatedPrompterRequest.from_mapping({}).linked_references)
+        self.assertFalse(contracts.GoatedPrompterRequest.from_mapping({"linked_references": "false"}).linked_references)
+        self.assertFalse(contracts.GoatedPrompterRequest.from_mapping({}).linked_references)
         result = self.service.generate(replace(self.request(), prompt_length="Maximum"))
         analysis, final = [entry.args[0] for entry in self.session.generate.call_args_list]
         self.assertIsNone(analysis.max_tokens)
@@ -452,7 +453,7 @@ class LinkedCoreTests(unittest.TestCase):
         images = {field: core.EncodedImage(str(index), "image/png", 16, 16)
                   for index, (field, _label) in enumerate(reference_map.REFERENCE_IMAGE_SLOTS)}
         for family in ("qwen", "gemma"):
-            instruction = core.PromptInstruction("system", "user", model_family=family, **images)
+            instruction = contracts.PromptInstruction("system", "user", model_family=family, **images)
             parts = instruction.to_messages()[-1]["content"]
             self.assertEqual([part["image_url"]["url"] for part in parts if part["type"] == "image_url"],
                              [image.data_url for image in images.values()])

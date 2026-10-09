@@ -80,7 +80,7 @@ Auto distinguishes identity/motion/style references from explicit first/last-fra
 - Images: up to 9; videos: up to 3; audio: up to 3; 12 combined assets, per the official H3 limits. Audio-only references show a non-blocking compatibility warning.
 - **Generate** and **Regenerate** use the existing prompt engine. **Copy** includes the complete editable output. **Clear** resets the request, result, and reference set while keeping scene settings.
 - Settings, references, request, and edited output autosave independently in `workflow_settings.json`. Shared job controls support cancellation.
-- Local prompting knowledge and source links live in [`goated_prompter/minimax_knowledge`](goated_prompter/minimax_knowledge/SOURCES.md). No documentation fetch is needed during generation.
+- Local prompting knowledge and source links live in [`goated_prompter/features/minimax/knowledge`](goated_prompter/features/minimax/knowledge/SOURCES.md). No documentation fetch is needed during generation.
 - Output validation checks H3 section order, exact frame alignment, shot timing, reference IDs, retention markers and dialogue syntax before delivery. Invalid output gets one repair attempt; a failed attempt leaves your previous output intact.
 - MiniMax reference analysis, prompt writing, and repair requests have no application output-token cap. Optional supporting video planning has a small bounded response budget. Engine context capacity and provider-side limits still apply.
 
@@ -360,33 +360,24 @@ goated-prompter/
 │   ├── config.example.json     # Portable configuration template
 │   └── config.json             # Backend / llama-server configuration
 ├── goated_prompter/
+│   ├── features/               # Backend code per app tab, mirroring frontend/src/features/
+│   │   ├── builder/            # Prompt assembly, reference evidence, generation, /api/generate
+│   │   ├── refine/             # Refine service, prompt text and version-history routes
+│   │   ├── minimax/            # MiniMax H3 contract, prompt text, knowledge files and routes
+│   │   ├── dataset/            # Understanding, ideas, scenes, plans, checkpoints and routes
+│   │   ├── saved_prompts/      # Saved prompt collection store and routes
+│   │   ├── presets/            # Instruction preset library routes
+│   │   └── settings/           # Settings validation, model discovery and unload routes
+│   ├── api/                    # Request plumbing shared by routes, and workflow-settings routes
+│   ├── prompting/              # Prompt content shared by several tabs (base, output, targets, modes, directors)
 │   ├── planning/               # Shared constraints and optional single-pass scene/video staging
-│   ├── prompting/              # Prompt content split by concern
-│   │   ├── modes.py            # Prompt task modes
-│   │   ├── directors.py        # Built-in Directors
-│   │   ├── target_models.py    # Target-model adapters
-│   │   ├── base.py             # Base and priority contracts
-│   │   ├── output.py           # Final output contract
-│   │   ├── creativity.py       # Creativity controls
-│   │   ├── details.py          # Detail, preservation and reference controls
-│   │   ├── refine.py           # Refine prompt construction
-│   │   ├── minimax.py          # MiniMax prompt text and instruction builders
-│   │   ├── dataset.py          # Dataset prompt construction
-│   │   └── scene_planner.py    # Dataset-only scene ideation instructions
-│   ├── presets.py              # Instruction-preset storage and library management
-│   ├── core.py                 # Prompt assembly and generation orchestration
-│   ├── scene_planner.py        # Batch scene planning, validation and fallback
-│   ├── refinement.py           # Refine inference runtime
+│   ├── backends/               # llama.cpp and OpenAI-compatible clients
+│   ├── contracts.py            # Engine request, prompt instruction and generation result
+│   ├── workflow_runners.py     # Dispatches each job to its tab's runner
 │   ├── workflow_settings.py    # Per-workflow drafts and instruction overrides
-│   ├── api/                    # Workflow HTTP routes (Dataset, MiniMax, Refine/history, workflow settings)
-│   ├── workflow_runners.py     # One execution entry point per workflow
-│   ├── minimax_contract.py     # MiniMax draft, reference/shot parsing and output validation
-│   ├── workspace_api.py        # Registers the workflow routes
 │   ├── workspace_store.py      # Atomic versions and branching undo/redo
-│   ├── reference_map.py        # Attribute-to-image source mapping
-│   ├── evidence.py             # Image analysis and resolved scene evidence
-│   ├── input_schema.py         # Website input options and bootstrap defaults
-│   └── backends/               # llama.cpp and OpenAI-compatible clients
+│   ├── presets.py              # Instruction-preset storage and library management
+│   └── reference_map.py        # Attribute-to-image source mapping
 ├── frontend/
 │   ├── src/                    # React UI, Tailwind utilities and presentation labels
 │   │   ├── features/           # One folder per workflow: components, hooks, utilities and tests

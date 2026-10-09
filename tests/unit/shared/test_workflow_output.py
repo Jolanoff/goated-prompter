@@ -6,10 +6,11 @@ import unittest
 from unittest.mock import patch
 
 from goated_prompter.backends.base import BackendGenerationError, GoatedPrompterBackend
-from goated_prompter.core import GoatedPrompterRequest, GoatedPrompterService
-from goated_prompter.dataset import DatasetService, default_dataset_draft, dataset_instruction
+from goated_prompter.contracts import GoatedPrompterRequest
+from goated_prompter.features.builder.service import GoatedPrompterService
+from goated_prompter.features.dataset.service import DatasetService, default_dataset_draft, dataset_instruction
 from goated_prompter.prompting.target_models import TARGET_MODEL_NAMES
-from goated_prompter.refinement import RefineService, refine_instruction
+from goated_prompter.features.refine.service import RefineService, refine_instruction
 from goated_prompter.workflow_output import WorkflowFormatError, normalize_workflow_output, requested_visible_text, sanitize_prompt_text
 from tests.support.backends import ScriptedBackend
 
@@ -165,7 +166,7 @@ class FormatRepairTests(unittest.TestCase):
         text = 'mira(token); a blackboard reads "f(x) = (x + 1)^2;  x > 0".'
         request = GoatedPrompterRequest(idea=text, target_model="Generic", planning_mode="Direct")
         backend = ScriptedBackend([text])
-        with patch("goated_prompter.core.create_backend", return_value=backend):
+        with patch("goated_prompter.features.builder.service.create_backend", return_value=backend):
             self.assertEqual(GoatedPrompterService(config={"backend": "mock"}).generate(request).prompt, text)
         data = {**default_dataset_draft(), "subject": text, "trigger": "mira(token)", "amount": 1}
         backend = ScriptedBackend([text])
@@ -195,7 +196,7 @@ class FormatRepairTests(unittest.TestCase):
         progress = progress if progress is not None else []
         workflow = {"operation": "refine", "base": "Mira waits in a sunlit urban plaza. Anime illustration.",
                     "changes": "Use stronger framing", "locks": ["identity"]}
-        with patch("goated_prompter.refinement.create_backend", return_value=backend):
+        with patch("goated_prompter.features.refine.service.create_backend", return_value=backend):
             return RefineService({"backend": "mock"}, checkpoint).run(
                 GoatedPrompterRequest(idea=workflow["base"], target_model=target), workflow, progress.append)
 

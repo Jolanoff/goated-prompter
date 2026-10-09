@@ -24,9 +24,9 @@ def live_case(case, workflow, config, args, run=1):
 
 
 def novelty_cases(spec, config, args):
-    from goated_prompter.core import GoatedPrompterRequest
-    from goated_prompter.dataset import DatasetService, default_dataset_draft
-    from goated_prompter.dataset_idea_history import RecentIdeaHistory
+    from goated_prompter.contracts import GoatedPrompterRequest
+    from goated_prompter.features.dataset.service import DatasetService, default_dataset_draft
+    from goated_prompter.features.dataset.idea_history import RecentIdeaHistory
     history = RecentIdeaHistory() if args.history == "on" else None
     rows = []
     for run in range(1, spec["runs"] + 1):

@@ -2,8 +2,8 @@
 
 import unittest
 
-from goated_prompter.core import GoatedPrompterRequest
-from goated_prompter.refinement import refine_instruction
+from goated_prompter.contracts import GoatedPrompterRequest
+from goated_prompter.features.refine.service import refine_instruction
 
 
 class RefinementInstructionTests(unittest.TestCase):

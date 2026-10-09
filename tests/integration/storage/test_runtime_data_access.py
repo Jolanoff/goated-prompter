@@ -8,10 +8,12 @@ import unittest
 from unittest.mock import Mock, patch
 
 import local_app as local
-from goated_prompter import core, presets
-from goated_prompter.dataset import DatasetService, default_dataset_draft
+from goated_prompter import presets
+from goated_prompter.contracts import GoatedPrompterRequest
+from goated_prompter.features.builder.service import GoatedPrompterService
+from goated_prompter.features.dataset.service import DatasetService, default_dataset_draft
 from goated_prompter.json_store import atomic_json
-from goated_prompter.prompting.dataset import dataset_instruction
+from goated_prompter.features.dataset.prompting import dataset_instruction
 from tests.helpers import dataset_idea_fixture, enter_context
 
 
@@ -36,13 +38,13 @@ class RuntimeDataAccessTests(unittest.TestCase):
             "idea": idea, "director_preset": director.id, "planning_mode": "Direct"}})
         state = self.app_state()
         self.assertEqual(state.settings_path, self.root / "data" / "settings.json")
-        request = core.GoatedPrompterRequest.from_mapping(state.saved_settings["builder"])
+        request = GoatedPrompterRequest.from_mapping(state.saved_settings["builder"])
         backend, session = Mock(), Mock()
         backend.name = "mock"
         backend.generation_session.return_value = nullcontext(session)
         session.generate.return_value = "A red ceramic cup on a wooden table in warm amber light."
-        with patch.object(core, "create_backend", return_value=backend):
-            result = core.GoatedPrompterService(config={"backend": "mock"}).generate(request)
+        with patch("goated_prompter.features.builder.service.create_backend", return_value=backend):
+            result = GoatedPrompterService(config={"backend": "mock"}).generate(request)
         session.generate.assert_called_once()
         instruction = session.generate.call_args.args[0]
         self.assertEqual(instruction.user_message, idea)
@@ -65,7 +67,7 @@ class RuntimeDataAccessTests(unittest.TestCase):
         self.assertEqual(restarted.dataset_checkpoints.path, self.root / "data" / "dataset_checkpoints.json")
         draft = restarted.workflow_settings.snapshot("dataset")["draft"]
         self.assertEqual(draft["scene_plan"][0]["scene"], scene["scene"])
-        instruction = dataset_instruction(core.GoatedPrompterRequest(idea=data["subject"]), draft, 1,
+        instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), draft, 1,
             plan_item=draft["scene_plan"][0])
         session = Mock()
         session.generate.return_value = "craft_token centers clay with both palms on a spinning wheel."

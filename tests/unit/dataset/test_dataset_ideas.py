@@ -9,9 +9,9 @@ from urllib.error import HTTPError
 
 from goated_prompter.backends.base import BackendGenerationError
 from goated_prompter.backends.openai_compatible import OpenAICompatibleBackend
-from goated_prompter.dataset_assignments import dataset_assignments
-from goated_prompter.dataset_ideas import DatasetIdeasService, IDEA_FIELDS, ideas_instruction, validate_ideas
-from goated_prompter.scene_planner import validate_saved_scene_plan
+from goated_prompter.features.dataset.assignments import dataset_assignments
+from goated_prompter.features.dataset.ideas import DatasetIdeasService, IDEA_FIELDS, ideas_instruction, validate_ideas
+from goated_prompter.features.dataset.plan import validate_saved_scene_plan
 from tests.helpers import dataset_idea_fixture, dataset_understanding_fixture
 from tests.support.dataset import valid_draft
 

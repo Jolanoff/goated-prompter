@@ -7,10 +7,10 @@ from unittest.mock import Mock, patch
 
 from goated_prompter.backends.base import BackendGenerationError
 from goated_prompter.backends.openai_compatible import OpenAICompatibleBackend
-from goated_prompter.dataset_scene import DatasetSceneService, scene_instruction, validate_scene, validate_self_check
-from goated_prompter.dataset_assignments import dataset_assignments
-from goated_prompter.scene_eligibility import scene_eligibility
-from goated_prompter.scene_planner import ScenePlanner, validate_saved_scene_plan
+from goated_prompter.features.dataset.scene import DatasetSceneService, scene_instruction, validate_scene, validate_self_check
+from goated_prompter.features.dataset.assignments import dataset_assignments
+from goated_prompter.features.dataset.eligibility import scene_eligibility
+from goated_prompter.features.dataset.plan import ScenePlanner, validate_saved_scene_plan
 from tests.helpers import dataset_idea_fixture, dataset_understanding_fixture
 from tests.support.dataset import REPAIR, SCENE, valid_draft
 

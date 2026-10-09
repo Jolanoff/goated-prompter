@@ -6,10 +6,10 @@ import unittest
 from unittest.mock import patch
 
 from goated_prompter.backends.base import BackendGenerationError
-from goated_prompter.core import GoatedPrompterRequest
-from goated_prompter.dataset import DatasetService
-from goated_prompter.dataset_assignments import dataset_assignments
-from goated_prompter.scene_planner import scene_plan_signature
+from goated_prompter.contracts import GoatedPrompterRequest
+from goated_prompter.features.dataset.service import DatasetService
+from goated_prompter.features.dataset.assignments import dataset_assignments
+from goated_prompter.features.dataset.plan import scene_plan_signature
 from tests.helpers import dataset_understanding_fixture
 from tests.helpers import dataset_idea_fixture
 from tests.support.dataset import CaptureBackend, saved_scene, valid_draft
@@ -24,7 +24,7 @@ class RecoveryTests(unittest.TestCase):
         self.snapshots = []
 
     def run_service(self, **options):
-        with patch("goated_prompter.dataset.create_backend", return_value=self.backend):
+        with patch("goated_prompter.features.dataset.service.create_backend", return_value=self.backend):
             return DatasetService({"backend": "mock"}, lambda: None).run(GoatedPrompterRequest(idea=self.data["subject"], prompt_model="Custom"), self.data,
                 lambda _: None, lambda row: self.snapshots.append(deepcopy(row)), **options)
 

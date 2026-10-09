@@ -3,16 +3,16 @@
 from copy import deepcopy
 import threading
 
-from .prompting.refine import builtin_refine_instructions
+from .features.refine.prompting import builtin_refine_instructions
 from .prompting.target_models import TARGET_MODEL_NAMES, canonical_target
 from .workspace_store import WorkspaceConflict, locks, text
-from .minimax_contract import default_minimax_draft, validate_minimax_draft
-from .dataset import default_dataset_draft, validate_dataset_draft, saved_dataset_draft
-from .dataset_assignments import dataset_assignments
-from .scene_planner import reusable_scene_plan, FAILURE_METADATA, IDEA_DETAIL_FIELDS
-from .scene_eligibility import scene_eligibility
-from .dataset_scene import MAX_SCENE_CHARACTERS
-from .dataset_ideas import MAX_FIELD_CHARACTERS
+from .features.minimax.contract import default_minimax_draft, validate_minimax_draft
+from .features.dataset.service import default_dataset_draft, validate_dataset_draft, saved_dataset_draft
+from .features.dataset.assignments import dataset_assignments
+from .features.dataset.plan import reusable_scene_plan, FAILURE_METADATA, IDEA_DETAIL_FIELDS
+from .features.dataset.eligibility import scene_eligibility
+from .features.dataset.scene import MAX_SCENE_CHARACTERS
+from .features.dataset.ideas import MAX_FIELD_CHARACTERS
 
 
 def default_draft(operation):

@@ -5,7 +5,7 @@ import json
 import threading
 
 from goated_prompter.backends.base import GoatedPrompterBackend
-from goated_prompter.minimax import validate_minimax_draft
+from goated_prompter.features.minimax.service import validate_minimax_draft
 
 REQUEST = ("I want the person in <image1> to do the same dancing style and movements as the dancer in <video1>. "
            "Put the person on a rooftop at night with neon city lights behind them. I want energetic electronic music. "

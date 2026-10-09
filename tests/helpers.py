@@ -18,7 +18,7 @@ def enter_context(test_case, context):
 
 def confirmed_dataset_payload(state, data, **options):
     """Seed only the approval boundary in tests focused on downstream behavior."""
-    from goated_prompter.dataset import validate_dataset_draft
+    from goated_prompter.features.dataset.service import validate_dataset_draft
     ticket = state.dataset_intents.register(validate_dataset_draft(data), dataset_understanding_fixture())
     return {"input": data, "confirmation_token": ticket["confirmation_token"], **options}
 

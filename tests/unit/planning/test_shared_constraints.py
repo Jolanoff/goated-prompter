@@ -1,6 +1,7 @@
 import unittest
 
-from goated_prompter.core import GoatedPrompterRequest, assemble_instruction
+from goated_prompter.contracts import GoatedPrompterRequest
+from goated_prompter.features.builder.service import assemble_instruction
 from goated_prompter.planning.rule_compiler import compile_rules
 from goated_prompter.planning.constraints import compile_request
 from goated_prompter.planning.constraint_validation import constraint_issues

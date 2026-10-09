@@ -1,10 +1,23 @@
-"""Request plumbing shared by workflow routes."""
+"""Request plumbing shared by every route module."""
 
 from aiohttp import web
 
 from ..backends.factory import canonical_backend_name
 from ..contracts import GoatedPrompterRequest, as_bool
 from ..workspace_store import text
+
+
+STATE = web.AppKey("local_state", object)
+
+
+async def json_object(request):
+    try:
+        payload = await request.json()
+    except (ValueError, UnicodeError) as exc:
+        raise ValueError("Request body must be valid JSON.") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("Request body must be a JSON object.")
+    return payload
 
 
 def engine_request(state, config, settings, **fields):
