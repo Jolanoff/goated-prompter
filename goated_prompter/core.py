@@ -1,14 +1,14 @@
 """Prompt assembly and backend orchestration for the standalone website."""
 
 import base64
-from dataclasses import dataclass, replace
+from dataclasses import replace
 import json
 import hashlib
 
 from .backends.factory import create_backend
 from .backends.base import BackendGenerationError
 from .config import load_config
-from .director_profiles import canonical_prompt_model, infer_prompt_model_family, resolve_director_config
+from .director_profiles import infer_prompt_model_family, resolve_director_config
 from .diagnostics import debug_prompts_enabled, log_evidence_result, resolved_scene_sha256
 from .evidence import (
     build_resolved_scene,
@@ -39,11 +39,19 @@ from .prompting.details import (
 from .prompting.evidence import EVIDENCE_ANALYSIS_SYSTEM_PROMPT, evidence_analysis_user_message
 from .prompting.modes import get_mode_adapter, get_vision_mode_adapter
 from .prompting.output import OUTPUT_CONTRACT, output_contract, qwen_format_repair, minimax_format_repair
-from .prompting.target_models import QWEN21_EDIT_ADAPTER, get_model_adapter, canonical_target, resolve_target_length, get_target_capabilities
-from .presets import DEFAULT_DIRECTOR_PRESET, get_director_preset, legacy_preset_for_mode
-from .reference_map import REFERENCE_IMAGE_SLOTS, reference_images, reference_map_from_mapping, resolve_reference_map
+from .prompting.target_models import QWEN21_EDIT_ADAPTER, get_model_adapter, resolve_target_length, get_target_capabilities
+from .presets import DEFAULT_DIRECTOR_PRESET, get_director_preset
+from .reference_map import REFERENCE_IMAGE_SLOTS, reference_images, resolve_reference_map
 from .workflow_output import WorkflowFormatError, normalize_workflow_output, sanitize_prompt_text, requested_visible_text
-from .planning import planning_mode
+# Shared contracts remain importable from core for existing callers.
+from .contracts import (  # noqa: F401
+    GenerationResult,
+    GoatedPrompterRequest,
+    PromptInstruction,
+    _reference_role,
+    as_bool as _as_bool,
+    effective_model_family as _effective_model_family,
+)
 
 
 def _qwen21_source_tokens(request, reference_map=None, text_only=False):
@@ -101,180 +109,6 @@ def _preservation_section(request, resolved_reference_map, has_image):
         if enabled
         else PRESERVATION_NONE
     )
-
-def _as_bool(value):
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-    return bool(value)
-
-
-def _reference_role(value):
-    candidate = str(value or "Auto").strip().casefold()
-    return next((role for role in REFERENCE_ROLE_NAMES if role.casefold() == candidate), "Auto")
-
-
-@dataclass(frozen=True)
-class GoatedPrompterRequest:
-    idea: str
-    mode: str = "Enhance"
-    target_model: str = "Generic"
-    creativity: str = "Balanced"
-    prompt_model: str = "Qwen 3.5 9B"
-    director_preset: str = DEFAULT_DIRECTOR_PRESET
-    director_ai: str = ""
-    director_profile: str = ""
-    director_model_path: str = ""
-    director_mmproj_path: str = ""
-    director_llama_server: str = ""
-    director_context_size: int = 32768
-    director_image_min_tokens: int = 1024
-    director_max_tokens: int = 4096
-    director_gpu_layers: str = "auto"
-    director_keep_model_loaded: bool = False
-    preserve_subject: bool = True
-    preserve_composition: bool = False
-    preserve_camera: bool = False
-    preserve_materials: bool = False
-    preserve_lighting: bool = False
-    preserve_colors: bool = False
-    prompt_length: str = "Medium"
-    custom_instructions: str = ""
-    system_prompt_override: str = ""
-    reference_map: object = None
-    image: object = None
-    image_2: object = None
-    image_1_role: str = "Auto"
-    image_2_role: str = "Auto"
-
-    image_3: object = None
-    image_4: object = None
-    linked_references: bool = False
-    planning_mode: str = "Auto"
-
-    def __post_init__(self):
-        object.__setattr__(self, "target_model", canonical_target(self.target_model))
-        planning_mode(self.planning_mode)
-
-    @property
-    def selected_prompt_model(self):
-        return canonical_prompt_model(self.director_ai or self.prompt_model)
-
-    @classmethod
-    def from_mapping(cls, values):
-        values = values or {}
-        legacy_payload = "prompt_model" not in values and "director_ai" in values
-        preset_value = values.get("director_preset") or (
-            legacy_preset_for_mode(values.get("mode")) if legacy_payload else DEFAULT_DIRECTOR_PRESET
-        )
-        return cls(
-            idea=str(values.get("idea") or ""),
-            mode=str(values.get("mode") or "Enhance"),
-            target_model=str(values.get("target_model") or "Generic"),
-            creativity=str(values.get("creativity") or "Balanced"),
-            prompt_model=str(values.get("prompt_model") or values.get("director_ai") or "Qwen 3.5 9B"),
-            director_preset=str(preset_value),
-            director_profile=str(values.get("director_profile") or ""),
-            director_model_path=str(values.get("director_model_path") or ""),
-            director_mmproj_path=str(values.get("director_mmproj_path") or ""),
-            director_llama_server=str(values.get("director_llama_server") or ""),
-            director_context_size=int(values.get("director_context_size", 32768)),
-            director_image_min_tokens=int(values.get("director_image_min_tokens", 1024)),
-            director_max_tokens=int(values.get("director_max_tokens", 4096)),
-            director_gpu_layers=str(values.get("director_gpu_layers") or "auto"),
-            director_keep_model_loaded=_as_bool(values.get("director_keep_model_loaded", False)),
-            preserve_subject=_as_bool(values.get("preserve_subject", True)),
-            preserve_composition=_as_bool(values.get("preserve_composition", False)),
-            preserve_camera=_as_bool(values.get("preserve_camera", False)),
-            preserve_materials=_as_bool(values.get("preserve_materials", False)),
-            preserve_lighting=_as_bool(values.get("preserve_lighting", False)),
-            preserve_colors=_as_bool(values.get("preserve_colors", False)),
-            prompt_length="Maximum Detail" if values.get("prompt_length") == "Maximum" else str(values.get("prompt_length") or "Medium"),
-            custom_instructions=str(values.get("custom_instructions") or ""),
-            system_prompt_override=str(values.get("system_prompt_override") or ""),
-            reference_map=reference_map_from_mapping(values),
-            image_1_role=_reference_role(values.get("image_1_role")),
-            image_2_role=_reference_role(values.get("image_2_role")),
-            linked_references=_as_bool(values.get("linked_references", False)),
-            planning_mode=str(values.get("planning_mode", "Auto")),
-        )
-
-
-@dataclass(frozen=True)
-class PromptInstruction:
-    system_message: str
-    user_message: str
-    image: EncodedImage = None
-    image_2: EncodedImage = None
-    image_1_role: str = "Auto"
-    image_2_role: str = "Auto"
-    reference_map: object = None
-    resolved_scene: object = None
-    model_family: str = "qwen"
-    director_preset: str = DEFAULT_DIRECTOR_PRESET
-    image_label: str = "Image 1"
-    diagnostic_stage: str = "final"
-    diagnostic_context: object = None
-    image_3: EncodedImage = None
-    image_4: EncodedImage = None
-    max_tokens: int = None
-    # Opt out of application output budgets; the engine's context still applies.
-    unlimited_tokens: bool = False
-    # A workflow safety ceiling. Unlike max_tokens, this may lower the backend's
-    # configured allowance and protects bounded outputs from runaway generation.
-    hard_max_tokens: int = None
-    # Optional bounded stream ceiling for structured batch planning. Individual
-    # prompt workflows retain the transport's default runaway-output ceiling.
-    stream_character_limit: int = None
-    # Exact user wording is not evidence of a generated tag loop.
-    repetition_protected_terms: tuple = ()
-    # Tag syntax is a writer contract, not a rule for structured planning text.
-    tag_repetition_checks: bool = False
-    # Request-local sampling; supporting planners use conservative values.
-    temperature: float = None
-    top_p: float = None
-    # Structured stages can request llama.cpp JSON decoding without changing writers.
-    json_output: bool = False
-    json_schema: dict = None
-
-    def _user_content(self, text):
-        if not reference_images(self):
-            return text
-        content = [{"type": "text", "text": text}]
-        for label, image in reference_images(self).items():
-            label = self.image_label if label == "Image 1" else label
-            description = f"{label.upper()} - REFERENCE\nThe next image content part is {label}."
-            if len(content) == 1:
-                content[0]["text"] += "\n\n" + description
-            else:
-                content.append({"type": "text", "text": description})
-            content.append({"type": "image_url", "image_url": {"url": image.data_url}})
-        return content
-
-    def to_messages(self):
-        if self.model_family == "gemma":
-            folded = (
-                "SYSTEM-STYLE INSTRUCTIONS:\n"
-                f"{self.system_message}\n\n"
-                "USER REQUEST:\n"
-                f"{self.user_message}"
-            )
-            return [{"role": "user", "content": self._user_content(folded)}]
-        return [
-            {"role": "system", "content": self.system_message},
-            {"role": "user", "content": self._user_content(self.user_message)},
-        ]
-
-
-@dataclass(frozen=True)
-class GenerationResult:
-    prompt: str
-    backend_name: str
-    instruction: PromptInstruction
-    director_profile: str = ""
-    prompt_model: str = ""
-    director_preset: str = ""
-    planning_status: str = "direct"
-
 
 def assemble_instruction(
     request,
@@ -414,21 +248,6 @@ def assemble_instruction(
         max_tokens=None,
         unlimited_tokens=True,
     )
-
-
-def _effective_model_family(request, profile, effective_config):
-    if profile is not None:
-        return profile.model_family
-    local_settings = effective_config.get("local_llama_cpp", {}) if isinstance(effective_config, dict) else {}
-    identity = " ".join(
-        str(local_settings.get(field) or "").casefold()
-        for field in ("model_path", "mmproj_path")
-    )
-    if "gemma" in identity:
-        return "gemma"
-    if "qwen" in identity:
-        return "qwen"
-    return infer_prompt_model_family(request.selected_prompt_model)
 
 
 def _analysis_model_identity(request, profile, effective_config):

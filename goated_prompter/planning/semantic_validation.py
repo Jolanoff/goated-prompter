@@ -7,6 +7,7 @@ The selected engine's judgment remains fallible and is explicitly observable.
 from dataclasses import replace
 import json
 import re
+from ..contracts import PromptInstruction
 
 
 AUDIT_CONTRACT = """SEMANTIC INVARIANT AUDIT
@@ -149,7 +150,6 @@ def _parse_review(raw, candidate, contract, checks):
 
 def _review_candidate(session, contract, candidate, *, stage, family="qwen", checkpoint=None,
                      checks=("action_fidelity", "scene_fidelity", "constraint_validity")):
-    from ..core import PromptInstruction
     if checks == ("constraint_validity",):
         # Constraint-only review needs source restrictions/literals, not the
         # repair's previous clothing/camera prose, which biases acceptance of

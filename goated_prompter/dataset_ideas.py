@@ -3,7 +3,7 @@
 import json
 
 from .backends.base import BackendGenerationError
-from .core import PromptInstruction
+from .contracts import PromptInstruction
 from .dataset_quality import analyze_idea_diversity
 from .dataset_understanding import understanding_instruction, validate_understanding, unwrap_json_fence
 

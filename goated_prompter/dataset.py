@@ -4,7 +4,7 @@ from dataclasses import replace
 
 from .backends.factory import create_backend
 from .backends.base import BackendGenerationError, BackendRunawayError
-from .core import _effective_model_family
+from .contracts import effective_model_family
 from .director_profiles import resolve_director_config
 from .prompting.dataset import DATASET_SOURCES, DATASET_TYPES, dataset_instruction
 from .prompting.details import PROMPT_LENGTH_NAMES
@@ -216,7 +216,7 @@ class DatasetService:
             raise ValueError("Continue is only available for batch prompt generation.")
         effective, profile = resolve_director_config(self.config, request)
         backend = create_backend(effective)
-        family = _effective_model_family(request, profile, effective)
+        family = effective_model_family(request, profile, effective)
         assignments = dataset_assignments(data)
         results = list(data["results"]) if scene_action else []
         signature = scene_plan_signature(data, assignments)

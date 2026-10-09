@@ -3,7 +3,7 @@
 from dataclasses import replace
 from .backends.base import BackendGenerationError
 from .backends.factory import create_backend
-from .core import _effective_model_family
+from .contracts import effective_model_family
 from .director_profiles import resolve_director_config
 from .presets import get_director_preset
 from .prompting.minimax import *
@@ -50,7 +50,7 @@ class MiniMaxService:
         director = get_director_preset(data["director_preset"], strict=True)
         effective, profile = resolve_director_config(self.config, request)
         backend = create_backend(effective)
-        family = _effective_model_family(request, profile, effective)
+        family = effective_model_family(request, profile, effective)
         retry_budget = [REPAIR_ATTEMPTS]
         progress("Starting the prompt engine for MiniMax…")
         with backend.generation_session() as session:

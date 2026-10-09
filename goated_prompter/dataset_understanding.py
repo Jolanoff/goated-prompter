@@ -6,7 +6,7 @@ from typing import Callable
 
 from .backends.base import BackendGenerationError
 from .backends.factory import create_backend
-from .core import GoatedPrompterRequest, PromptInstruction, _effective_model_family
+from .contracts import GoatedPrompterRequest, PromptInstruction, effective_model_family
 from .director_profiles import resolve_director_config
 
 
@@ -426,7 +426,7 @@ class DatasetUnderstandingService:
         self.checkpoint()
         instruction = understanding_instruction(data)
         effective, profile = resolve_director_config(self.config, request)
-        instruction = replace(instruction, model_family=_effective_model_family(request, profile, effective))
+        instruction = replace(instruction, model_family=effective_model_family(request, profile, effective))
         scopes = tuple(json.loads(instruction.user_message)["scopes"])
         backend = create_backend(effective)
         progress("Understanding your Dataset request...")

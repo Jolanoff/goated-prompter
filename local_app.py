@@ -24,7 +24,8 @@ from goated_prompter.dataset_intent import DatasetIntentTickets
 from goated_prompter.dataset_checkpoints import DatasetCheckpointStore
 from goated_prompter.backends.llama_cpp_process import get_process_manager, _resolve_server_executable
 from goated_prompter.config import load_config
-from goated_prompter.core import GoatedPrompterRequest, GoatedPrompterService, _as_bool
+from goated_prompter.contracts import GoatedPrompterRequest, as_bool
+from goated_prompter.core import GoatedPrompterService
 from goated_prompter.director_profiles import discover_director_profiles, resolve_director_config
 from goated_prompter.input_schema import builder_input_schema
 from goated_prompter.reference_map import REFERENCE_ATTRIBUTES
@@ -226,7 +227,7 @@ class LocalState:
     def settings(self):
         local = self.config().get("local_llama_cpp", {})
         return {"models_directory": str(discover_director_profiles(local).llm_root),
-                "keep_model_loaded": _as_bool(local.get("keep_model_loaded", False)),
+                "keep_model_loaded": as_bool(local.get("keep_model_loaded", False)),
                 "selected_profile": self.saved_settings.get("selected_profile", ""),
                 "builder": self.saved_settings.get("builder", {"director_preset": "general_director"})}
 
@@ -420,7 +421,7 @@ async def generate(request):
         validate_local_paths(settings)
         config = state.config()
         director_request = replace(GoatedPrompterRequest.from_mapping(settings),
-                                   linked_references=_as_bool(settings.get("linked_references", False)))
+                                   linked_references=as_bool(settings.get("linked_references", False)))
         if "keep_model_loaded" in state.saved_settings:
             director_request = replace(director_request,
                                        director_keep_model_loaded=state.saved_settings["keep_model_loaded"])
