@@ -281,9 +281,7 @@ def execute_workflow(state, job, request, config, workflow):
                          if any(row.get("scene_status") == "not_generated" for row in result["scene_plan"])
                          else "Dataset scene plan is ready and available before prompt writing."),
                         "result",
-                        revise=False,
                     )
-                    job.revision += 1
             job.commit(publish)
         result = DatasetService(config, job.checkpoint, idea_history=state.idea_history).run(
             request, {**workflow["input"], "_confirmed_intent": workflow.get("intent")}, progress, partial,

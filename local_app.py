@@ -9,13 +9,12 @@ import logging
 import json
 import hashlib
 from pathlib import Path
-import time
 
 from aiohttp import web
 
 from goated_prompter.backends.base import GoatedPrompterError
 from goated_prompter.backends.factory import canonical_backend_name
-from goated_prompter.job_lifecycle import release_completed_checkpoints, daemon_work
+from goated_prompter.job_lifecycle import DATASET_CHECKPOINT_KINDS, release_completed_checkpoints, daemon_work
 from goated_prompter.local_jobs import Job, JobCancelled, TERMINAL
 from goated_prompter.json_store import atomic_json, read_store
 from goated_prompter.uploaded_images import decode_image
@@ -261,7 +260,7 @@ class LocalState:
         """Called under admission; all routes share task registration/lifecycle."""
         job = job_factory()
         job.kind = kind
-        if kind in {"dataset", "dataset_scenes", "dataset_review"}:
+        if kind in DATASET_CHECKPOINT_KINDS:
             self.workflow_settings.begin_dataset(job, workflow["input"], workflow.get("workflow_revision"))
         self.jobs[job.id] = job
         task = asyncio.create_task(self.run(job, request, config, text_only, workflow))
@@ -308,41 +307,24 @@ class LocalState:
             with job.lock:
                 if job.released:
                     return
-                job.status = "cancelled"
-                job.completion_state = "cancelled"
-                job.status_reason = "Generation stopped because cancellation was requested."
-                job._append_event(job.status_reason, "cancel")
-                job.finished_at = time.time()
-                job.revision += 1
+                job.mark_cancelled()
         except Exception as exc:
             with job.lock:
                 if job.released:
                     return
                 cancelled = job.cancel_requested
                 if cancelled:
-                    job.status = "cancelled"
-                    job.completion_state = "cancelled"
-                    job.status_reason = "Generation stopped because cancellation was requested."
-                    job._append_event(job.status_reason, "cancel")
+                    job.mark_cancelled()
                 elif job.stopping:
-                    job.status = "interrupted"
-                    job.completion_state = "interrupted"
-                    job.error = "Server stopped. Completed Dataset checkpoints remain recoverable."
-                    job.status_reason = job.error
-                    job._append_event(job.error, "error")
+                    job.mark_failed("Server stopped. Completed Dataset checkpoints remain recoverable.", "interrupted")
                 else:
-                    job.error = str(exc) if isinstance(exc, (ValueError, GoatedPrompterError)) else (
-                        "Generation failed unexpectedly. Check the server console and model configuration, then retry.")
-                    job.completion_state = getattr(exc, "completion_state", "provider_error")
-                    job.status = "interrupted" if job.completion_state == "interrupted" else "failed"
-                    job.status_reason = job.error
-                    job._append_event(job.error, "error")
-                job.finished_at = time.time()
-                job.revision += 1
+                    job.mark_failed(str(exc) if isinstance(exc, (ValueError, GoatedPrompterError)) else (
+                        "Generation failed unexpectedly. Check the server console and model configuration, then retry."),
+                        getattr(exc, "completion_state", "provider_error"))
             if not cancelled:
                 logging.exception("Local generation failed")
         finally:
-            if not job.released and job.kind in {"dataset", "dataset_scenes", "dataset_review"}:
+            if not job.released and job.kind in DATASET_CHECKPOINT_KINDS:
                 try:
                     self.workflow_settings.checkpoint_dataset(job)
                 except (ValueError, OSError):
@@ -459,20 +441,9 @@ async def job_endpoint(request):
             if job.status in TERMINAL:
                 raise web.HTTPConflict(reason="This job has already finished.")
             if request.match_info["action"] == "pause":
-                job.gate.clear()
-                if job.status != "paused":
-                    job.status = "pause_requested"
-                    job.status_reason = (
-                        "Pause requested. Live response text may continue to appear, but the active model call must "
-                        "end before the job can pause at its next safe checkpoint."
-                    )
-                    job._append_event(job.status_reason, "pause")
+                job.request_pause()
             else:
-                job.status = "running"
-                job.gate.set()
-                job.status_reason = "Generation resumed and is continuing from the last safe checkpoint."
-                job._append_event(job.status_reason, "status")
-            job.revision += 1
+                job.resume()
         return web.json_response(job.snapshot())
 
 
@@ -645,13 +616,8 @@ def create_app(*, port=8190, dist=None, config_loader=load_config, service_facto
                 if not task.cancelled() and task.exception():
                     logging.error("Shutdown cancellation failed: %s", task.exception())
             for job in state.jobs.values():
-                with job.lock:
-                    if job.status not in TERMINAL:
-                        job.status = "interrupted"
-                        job.completion_state = "interrupted"
-                        job.error = "Shutdown timeout. Completed checkpoints remain recoverable."
-                        job.finished_at = time.time()
-                if job.kind in {"dataset", "dataset_scenes", "dataset_review"}:
+                job.mark_abandoned("Shutdown timeout. Completed checkpoints remain recoverable.")
+                if job.kind in DATASET_CHECKPOINT_KINDS:
                     await asyncio.to_thread(state.workflow_settings.checkpoint_dataset, job)
         unload_task = asyncio.create_task(daemon_work(get_process_manager().request_unload))
         _done, pending = await asyncio.wait({unload_task}, timeout=1)
