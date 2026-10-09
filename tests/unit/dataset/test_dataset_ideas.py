@@ -382,8 +382,8 @@ class DatasetIdeasTests(unittest.TestCase):
                         rf"Ideas returned {count} records; expected exactly 2 for requested indexes \[1, 2\]") as caught:
                     self.run_ideas(rows)
                 self.assertNotIn("Synthetic content", str(caught.exception))
-                self.assertIn("No automatic retry", str(caught.exception))
-                self.session.generate.assert_called_once()
+                self.assertIn("One format correction was tried", str(caught.exception))
+                self.assertEqual(self.session.generate.call_count, 2)
 
     def test_ideas_wrong_container_is_distinct_from_a_count_mismatch(self):
         rows = [dataset_idea_fixture(1), dataset_idea_fixture(2)]
@@ -393,7 +393,7 @@ class DatasetIdeasTests(unittest.TestCase):
                 with self.assertRaisesRegex(BackendGenerationError, "Ideas must return a JSON array of 2 records") as caught:
                     self.run_ideas(payload)
                 self.assertNotIn("Synthetic content", str(caught.exception))
-                self.session.generate.assert_called_once()
+                self.assertEqual(self.session.generate.call_count, 2)
 
     def test_camera_and_context_changes_do_not_make_identical_events_distinct(self):
         first = dataset_idea_fixture(1)
@@ -414,12 +414,28 @@ class DatasetIdeasTests(unittest.TestCase):
         second = {**first, "index": 2}
         self.assertEqual(self.run_ideas([first, second]), [first, second])
 
-    def test_invalid_model_output_stops_without_retries_or_fallback(self):
+    def test_invalid_model_output_gets_one_format_correction_then_stops(self):
         self.session.generate.return_value = "not JSON"
-        with self.assertRaisesRegex(BackendGenerationError, "No automatic retry"):
+        with self.assertRaisesRegex(BackendGenerationError, "malformed at character 0 .*One format correction was tried"):
             self.service.run(session=self.session, data=self.data, assignments=dataset_assignments(self.data),
                 progress=lambda _message: None)
-        self.session.generate.assert_called_once()
+        self.assertEqual(self.session.generate.call_count, 2)
+
+    def test_malformed_json_recovers_with_one_low_temperature_correction(self):
+        # Reported failure: the engine intermittently returned a broken array ("Expecting ':' delimiter").
+        expected = [dataset_idea_fixture(1), dataset_idea_fixture(2)]
+        broken = json.dumps(expected)[:120] + '"framing" "Full body."}]'
+        self.session.generate.side_effect = [broken, json.dumps(expected)]
+        messages = []
+        result = self.service.run(session=self.session, data=self.data, assignments=dataset_assignments(self.data),
+            progress=messages.append)
+        self.assertEqual(result, expected)
+        first, retry = [call.args[0] for call in self.session.generate.call_args_list]
+        self.assertEqual((retry.temperature, retry.top_p, retry.diagnostic_stage), (.25, .85, "dataset:ideas:format_retry"))
+        self.assertEqual(retry.user_message, first.user_message)
+        self.assertIn("FORMAT CORRECTION", retry.system_message)
+        self.assertIn("malformed at character", retry.system_message)
+        self.assertTrue(any("corrected response" in message for message in messages))
 
     def test_complete_json_fence_is_accepted_in_one_idea_call(self):
         expected = [dataset_idea_fixture(1), dataset_idea_fixture(2)]

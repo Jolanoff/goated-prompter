@@ -1,5 +1,6 @@
 """Create compact Dataset ideas from approved understanding; no scene writing."""
 
+from dataclasses import replace
 import hashlib
 import json
 import random
@@ -245,16 +246,34 @@ def _failed_idea(row, index, reason):
         "failure_stage": "idea", "failure_reason": reason[:2000]}
 
 
+class IdeasFormatError(ValueError):
+    """The ideas response is not the requested JSON array; eligible for one format correction."""
+
+
+IDEAS_FORMAT_CORRECTION = """FORMAT CORRECTION
+The previous response was not usable: {error}
+Return the complete minified JSON array again for exactly the requested assignments,
+following every rule above. Output only the array."""
+
+
 def validate_ideas(raw, indexes, *, allow_partial=False):
     """Validate compact shape only, not a claim that a pose has been physically verified."""
     if not isinstance(raw, str) or len(raw) > 1024 + len(indexes) * (len(IDEA_FIELDS) * MAX_FIELD_CHARACTERS + 200):
         raise ValueError("Ideas response exceeds its text limit.")
-    rows = json.loads(unwrap_json_fence(raw), object_pairs_hook=_unique_object)
+    try:
+        text = unwrap_json_fence(raw)
+    except ValueError as error:
+        raise IdeasFormatError(str(error)) from error
+    try:
+        rows = json.loads(text, object_pairs_hook=_unique_object)
+    except json.JSONDecodeError as error:
+        # Show where it broke (not the content) so malformed engine output can be diagnosed.
+        raise IdeasFormatError(f"Ideas JSON is malformed at character {error.pos} of {len(text)}: {error.msg}.") from error
     if not isinstance(rows, list):
         received = "a JSON object" if isinstance(rows, dict) else "a JSON scalar"
-        raise ValueError(f"Ideas must return a JSON array of {len(indexes)} records for requested indexes {indexes}; received {received}.")
+        raise IdeasFormatError(f"Ideas must return a JSON array of {len(indexes)} records for requested indexes {indexes}; received {received}.")
     if len(rows) != len(indexes):
-        raise ValueError(f"Ideas returned {len(rows)} records; expected exactly {len(indexes)} for requested indexes {indexes}.")
+        raise IdeasFormatError(f"Ideas returned {len(rows)} records; expected exactly {len(indexes)} for requested indexes {indexes}.")
     result = []
     for row, index in zip(rows, indexes):
         try:
@@ -291,8 +310,22 @@ class DatasetIdeasService:
         session.validate_instruction(instruction)
         raw = session.generate(instruction)
         self.checkpoint()
+        corrected = False
         try:
-            rows = validate_ideas(raw, indexes, allow_partial=allow_partial)
+            try:
+                rows = validate_ideas(raw, indexes, allow_partial=allow_partial)
+            except IdeasFormatError as error:
+                # Broken JSON or the wrong container/count gets one format-only correction.
+                # Duplicate, repeat and history problems below stay hard errors.
+                progress("Ideas came back malformed; requesting one corrected response…")
+                corrected = True
+                retry = replace(instruction, system_message=instruction.system_message + "\n\n"
+                    + IDEAS_FORMAT_CORRECTION.format(error=error), temperature=.25, top_p=.85,
+                    diagnostic_stage="dataset:ideas:format_retry")
+                session.validate_instruction(retry)
+                raw = session.generate(retry)
+                self.checkpoint()
+                rows = validate_ideas(raw, indexes, allow_partial=allow_partial)
             previous = {row["index"]: row for row in existing if row["index"] in indexes}
             inputs = {row["index"]: row["input"] for row in assignments}
             recent_events = {" ".join(idea.casefold().split()) for idea in recent}
@@ -345,4 +378,5 @@ class DatasetIdeasService:
             return rows
         except (ValueError, TypeError, RecursionError) as error:
             raise BackendGenerationError("Dataset ideas returned invalid output: " + str(error)
-                + " No automatic retry or substitute idea was generated.") from error
+                + (" One format correction was tried; no substitute idea was generated." if corrected
+                   else " No automatic retry or substitute idea was generated.")) from error
