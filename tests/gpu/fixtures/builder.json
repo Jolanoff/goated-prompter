@@ -1,0 +1,89 @@
+{
+  "description": "Synthetic builder random-case pools. Actions are keyed by subject kind; a recorded seed selects the combination.",
+  "random_pools": {
+    "subjects": [
+      {
+        "text": "A ceramic potter",
+        "kind": "person",
+        "dataset_type": "Character"
+      },
+      {
+        "text": "A street violinist",
+        "kind": "person",
+        "dataset_type": "Character"
+      },
+      {
+        "text": "An elderly gardener",
+        "kind": "person",
+        "dataset_type": "Character"
+      },
+      {
+        "text": "Two cyclists",
+        "kind": "people",
+        "dataset_type": "Multiple characters"
+      },
+      {
+        "text": "A pair of rock climbers",
+        "kind": "people",
+        "dataset_type": "Multiple characters"
+      },
+      {
+        "text": "A grey heron",
+        "kind": "animal",
+        "dataset_type": "Animal"
+      },
+      {
+        "text": "A red tabby cat",
+        "kind": "animal",
+        "dataset_type": "Animal"
+      },
+      {
+        "text": "A brass desk lamp",
+        "kind": "object",
+        "dataset_type": "Object / product"
+      },
+      {
+        "text": "A canvas backpack",
+        "kind": "object",
+        "dataset_type": "Object / product"
+      }
+    ],
+    "actions": {
+      "person": [
+        "kneels to tie a bootlace, one hand braced on the ground",
+        "holds a cup in both hands and looks to the left",
+        "reaches up to a high shelf on tiptoe",
+        "turns to look back over the left shoulder"
+      ],
+      "people": [
+        "share a map held between them, each gripping one edge",
+        "walk side by side, one pointing ahead",
+        "sit back to back, both looking in opposite directions"
+      ],
+      "animal": [
+        "turns its head toward the viewer",
+        "crouches low, watching something off to the side",
+        "pauses mid-step, looking toward the viewer"
+      ],
+      "object": [
+        "rests at an angle on a worn wooden surface",
+        "stands upright, partly in shadow",
+        "lies on its side with a strap trailing"
+      ]
+    },
+    "settings": [
+      "in a sunlit workshop",
+      "on a rain-wet city street at dusk",
+      "beside a shallow river at dawn",
+      "in a cluttered attic lit by one window",
+      "on a windy hilltop under heavy clouds",
+      "in a quiet library aisle"
+    ],
+    "constraints": [
+      "No text or logos.",
+      "Keep the background uncluttered.",
+      "No other people or animals.",
+      ""
+    ]
+  }
+}

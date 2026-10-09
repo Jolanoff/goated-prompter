@@ -11,7 +11,7 @@ Run commands from the repository root with the project's Python environment
 | `integration/` | HTTP, jobs, persistence, loopback transport and evaluation-to-production wiring using synthetic storage and responses. |
 | `eval/` | Maintained corpus, frozen real responses, annotation rubric, metrics, workflow execution and JSON/Markdown reports. |
 | `evaluation/` | Specialized Direct/Auto supporting-planning probe; shares capture and run metadata with `eval/runner.py`. |
-| `gpu/run.py` | Explicit real-engine dispatch to the existing evaluators. Not discovered as a unit or integration test. |
+| `gpu/` | Explicit real-engine entry point (`run.py`), one production-path module per workflow (`workflows/`), shared capture/metadata (`common.py`), seeded random cases (`cases.py`, `fixtures/`) and baseline/candidate comparison (`compare.py`). Not discovered as unit or integration tests. |
 | `support/`, `helpers.py` | Reused domain fixtures, controlled backends, lifecycle helpers, paths, seeded selection and test-only isolation. |
 | `fixtures/` | Existing fixed scene-planner and Understanding replay fixtures. |
 
@@ -79,6 +79,7 @@ python -m tests.gpu.run --dry-run --workflow dataset --case object
 python -m tests.gpu.run --dry-run --workflow builder --case object
 python -m tests.gpu.run --dry-run --workflow minimax --case motion
 python -m tests.gpu.run --dry-run --workflow dataset --seed 73 --limit 1
+python -m tests.gpu.run --dry-run --workflow builder --random 3 --seed 41
 python -m tests.gpu.run --probe supporting-planning --dry-run --workflow builder --case hoop
 ```
 
@@ -86,6 +87,13 @@ python -m tests.gpu.run --probe supporting-planning --dry-run --workflow builder
 The selected fixed inputs and corpus digest identify the scenario. It is **not a
 model seed**: the current production backend has no seed option, and identical
 GPU output is not guaranteed.
+
+Fixed cases stay in the shared `eval/cases/corpus.json`, tagged by workflow, so a
+case used by several workflows has one definition. `--random N --seed S` instead
+composes N cases from `gpu/fixtures/<workflow>.json`; results record the seed,
+fixture digest and generated inputs. Each workflow module in `gpu/workflows/`
+calls the production service (`GoatedPrompterService`, `DatasetService`,
+`MiniMaxService`); `tests.eval.runner` uses the same modules.
 
 Live execution requires explicit owner approval and an owner-managed existing
 OpenAI-compatible endpoint. Confirm it is the intended GPU-backed engine; the
@@ -128,3 +136,23 @@ is isolated under `quality-artifacts/temp/<task-key>/gpu/` and removed on exit.
 Reuse the existing reporter for retained results; choose a fresh report path.
 Approved baselines remain under `quality-artifacts/baselines/` and are never
 automatically replaced or deleted.
+
+## Baseline versus candidate
+
+Run the same command (workflow, cases or `--random`/`--seed`, settings, engine)
+on the baseline revision and on the candidate, each with its own result path,
+then compare:
+
+```powershell
+python -m tests.gpu.compare <baseline-results.json> <candidate-results.json> --task-key <task-key> --output quality-artifacts/tasks/<task-key>/gpu/comparison.json
+```
+
+The comparison refuses different engines, samples, inputs or seeds. Per sample it
+reports deterministic checks (acceptance, target format, trigger fidelity,
+forbidden content, negative-language leakage, repairs, transport retries) as
+improved, regressed or unchanged, plus latency, model calls, prompt length and
+token usage when the endpoint reports it (the current backend does not request
+usage, so it is usually absent). Length is descriptive, never a quality result.
+Semantic quality is `not_evaluated` unless `--baseline-review` and
+`--candidate-review` supply complete independent reviews. The command exits 1
+when any deterministic check regresses.
