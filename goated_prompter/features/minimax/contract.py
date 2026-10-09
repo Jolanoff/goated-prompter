@@ -10,11 +10,8 @@ import re
 
 from ...minimax_format import BASE_SECTIONS, REF_SECTIONS, normalize_h3_sections
 from ...presets import get_director_preset
+from ...options.minimax import MODELS, MODES, RATIOS, LIMITS
 
-MODELS = ("MiniMax H3",)
-MODES = ("auto", "T2VA", "I2VA", "FL2VA", "L2VA", "Ref2VA")
-RATIOS = ("Auto", "16:9", "9:16", "1:1", "4:3", "3:4", "21:9")
-LIMITS = {"image": 9, "video": 3, "audio": 3}
 TOKEN = re.compile(r"<(image|video|audio)(\d+)>", re.I)
 SHOT_TAG = re.compile(r"\[Shot\s*(\d+)\]", re.I)
 SHOT_INPUT = re.compile(r"<shot(\d+)>", re.I)
@@ -94,7 +91,7 @@ def validate_minimax_draft(value, *, generation=False):
     if not isinstance(value, dict) or value.keys() - defaults.keys():
         raise ValueError("Invalid MiniMax settings fields.")
     result = {**defaults, **value}
-    from ...planning import PLANNING_MODES
+    from ...options.planning import PLANNING_MODES
     for key, choices in (("model", MODELS), ("mode", MODES), ("aspect_ratio", RATIOS), ("planning_mode", PLANNING_MODES)):
         if result[key] not in choices:
             raise ValueError(f"Invalid MiniMax {key}.")

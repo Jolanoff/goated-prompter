@@ -10,11 +10,6 @@ from .eligibility import scene_eligibility
 from ...prompting.details import DATASET_OUTPUT_TOKEN_LIMITS
 
 
-DATASET_TYPES = (
-    "Character", "Multiple characters", "Animal", "Object / product", "Visual style",
-    "Location / environment", "Brand / logo", "Typography / text", "Concept", "Custom",
-)
-DATASET_SOURCES = ("random", "guided")
 ENHANCE_SCENE_CONTRACT = """ENHANCE THE ACCEPTED SCENE
 Enhance the accepted scene. Do not reinterpret its geometry, visibility, action,
 camera, framing or relationships. This is one final frozen image, not a rough idea

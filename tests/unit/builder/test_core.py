@@ -459,7 +459,7 @@ class LinkedCoreTests(unittest.TestCase):
                              [image.data_url for image in images.values()])
             for index, (_field, label) in enumerate(reference_map.REFERENCE_IMAGE_SLOTS):
                 self.assertIn(label.upper(), parts[index * 2]["text"])
-        self.assertEqual(reference_map.REFERENCE_SOURCE_NAMES[:4], ("Auto", "Image 1", "Image 2", "Blend"))
+        self.assertEqual(importlib.import_module(f"{PACKAGE}.options.references").REFERENCE_SOURCE_NAMES[:4], ("Auto", "Image 1", "Image 2", "Blend"))
 
     def test_selected_reference_must_be_a_decoded_upload(self):
         request = replace(self.request(), image=object())

@@ -10,9 +10,8 @@ import { editDatasetPlan } from "./datasetState.js";
 import { useDatasetWorkflow } from "./useDatasetWorkflow.js";
 import DatasetConfirmationModal from "./DatasetConfirmationModal.jsx";
 import DatasetIdeaDetails, { DatasetSceneCheck } from "./DatasetIdeaDetails.jsx";
+import { triggerTypes } from "./options.js";
 
-const triggerTypes = ["Character", "Multiple characters", "Animal", "Object / product", "Visual style",
-  "Location / environment", "Brand / logo", "Typography / text", "Concept", "Custom"];
 const datasetPages = [["configure", "Configure"], ["scenes", "Scenes"], ["dataset", "Dataset"]];
 
 function StatusChip({ label, status }) {

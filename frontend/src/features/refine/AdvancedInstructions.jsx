@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { ui } from "../../ui.js";
-
-const labels = { system: "System prompt", faithful: "Faithful direction", creative: "Creative direction", experimental: "Experimental direction" };
+import { instructionLabels } from "./options.js";
 
 export default function AdvancedInstructions({ settings, label, disabled }) {
   const saved = settings.record.instructions;
@@ -20,10 +19,10 @@ export default function AdvancedInstructions({ settings, label, disabled }) {
     <fieldset disabled={disabled || settings.working}>
       {Object.keys(saved).length > 1 && <label className={`${ui.field} mb-3`}><span>Instruction section</span>
         <select className={ui.select} aria-label={`${label} instruction section`} value={section} onChange={(event) => setSection(event.target.value)}>
-          {Object.keys(saved).map((key) => <option key={key} value={key}>{labels[key]}</option>)}
+          {Object.keys(saved).map((key) => <option key={key} value={key}>{instructionLabels[key]}</option>)}
         </select>
       </label>}
-      <label className={ui.field}><span>{labels[section]}</span>
+      <label className={ui.field}><span>{instructionLabels[section]}</span>
         <textarea className={ui.directorInput} aria-label={`${label} system prompt`} value={draft[section]} maxLength={20000}
           onChange={(event) => { setDraft({ ...draft, [section]: event.target.value }); setNotice(""); }} />
       </label>

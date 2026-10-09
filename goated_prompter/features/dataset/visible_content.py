@@ -3,7 +3,7 @@
 import json
 import re
 
-from ...prompting.target_models import canonical_target
+from ...options.targets import canonical_target
 from ...planning.rule_compiler import QUOTED as _QUOTED
 from ...output_repetition import repeated_tag, anima_tags
 

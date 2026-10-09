@@ -3,14 +3,7 @@
 from dataclasses import dataclass
 
 from .details import LENGTH_ADAPTERS
-
-TARGET_MODEL_NAMES = ("Generic", "Anima", "Krea 2", "FLUX.2 Klein", "Z-Image Base", "Z-Image Turbo", "Qwen Image (original)", "Qwen Image 2.1", "MiniMax H3", "LTX 2.5", "Ideogram4")
-TARGET_ALIASES = {"Z-Image": "Z-Image Base", "Qwen Image": "Qwen Image (original)",
-                  "Qwen2.1": "Qwen Image 2.1", "MiniMax": "MiniMax H3"}
-
-
-def canonical_target(name):
-    return TARGET_ALIASES.get(name, name) if isinstance(name, str) else name
+from ..options.targets import canonical_target
 
 
 @dataclass(frozen=True)
@@ -107,7 +100,6 @@ Every desc is a detailed visual string: describe supported appearance, pose or a
 Optional bbox is [y_min, x_min, y_max, x_max], four integers from 0 to 1000 with origin at top-left and minimums less than maximums. Include it when explicit layout or grounded reference placement matters; otherwise omit it to allow free placement. Optional per-element color_palette contains up to 5 uppercase #RRGGBB hex strings.
 Use all three top-level fields. Write rich, concrete descriptions within the fields while respecting the user's concept, evidence, creativity, and preservation constraints. Length settings control descriptive density, never removal of the JSON structure. Any instructions to write fluent prose or natural language apply inside JSON string values only. Finish the complete JSON object within the available output budget.""",
 }
-
 
 
 def get_model_adapter(name):

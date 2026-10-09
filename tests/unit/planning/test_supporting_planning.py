@@ -26,7 +26,7 @@ from goated_prompter.planning.video_planner import video_planning_instruction
 from goated_prompter.presets import DIRECTOR_PRESETS, get_director_preset
 from goated_prompter.features.minimax.contract import validate_minimax_draft, validate_analysis, exact_dialogue
 from goated_prompter.features.minimax.prompting import generation_instruction, parse_shot_outline
-from goated_prompter.prompting.target_models import TARGET_MODEL_NAMES
+from goated_prompter.options.targets import TARGET_MODEL_NAMES
 from tests.helpers import enter_context
 from tests.support.paths import ROOT
 

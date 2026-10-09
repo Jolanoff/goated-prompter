@@ -1,10 +1,6 @@
 """Prompt task modes and image-grounding adapters."""
 
 # Prompt task (Mode)
-MODE_NAMES = (
-    "Enhance", "Archviz", "Photography", "Character", "Product", "Image Edit",
-    "Style Transfer", "Dataset Caption", "Video", "Custom",
-)
 MODE_ADAPTERS = {
     "Enhance": """Enhance mode: improve clarity, visual specificity, and coherence while preserving the original meaning. Under Strict creativity, make only minimal necessary changes.""",
     "Archviz": """Archviz mode: act as an architectural visual director and architectural photographer. Describe spatial relationships, furniture, believable scale, camera height, useful focal-length implications, controlled verticals, composition, window and practical lighting, and physically plausible materials including surface response, roughness, texture, and natural imperfections. Treat wood, stone, plaster, concrete, glass, metal, and textiles precisely when present. Do not arbitrarily redesign architecture, geometry, layout, furniture, or specified finishes.""",
@@ -25,7 +21,6 @@ VISION_MODE_ADAPTERS = {
     "Dataset Caption": """Dataset Caption image grounding: caption visible content factually. Do not infer unsupported identity, context, events, materials, or artistic intent, and avoid decorative prose.""",
 }
 DEFAULT_VISION_ADAPTER = """Image grounding: distinguish OBSERVED IMAGE CONTENT from USER REQUESTED CHANGES. Treat visible subject, environment, geometry, layout, composition, framing, camera, perspective, materials, objects, people, clothing, lighting, colors, surfaces, and style cues as ground truth. Do not hallucinate changes to visible content unless the user requests them or the selected mode requires them."""
-
 
 
 def get_mode_adapter(name):

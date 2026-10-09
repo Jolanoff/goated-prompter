@@ -1,10 +1,5 @@
 import { ui } from "../../ui.js";
-
-const lockOptions = [
-  ["identity", "Identity / subject"], ["outfit", "Outfit"], ["pose", "Pose"],
-  ["scene", "Setting"], ["composition", "Composition"], ["camera", "Camera"],
-  ["lighting", "Lighting"], ["colors", "Colors"], ["materials", "Materials"], ["style", "Style"],
-];
+import { lockOptions } from "./options.js";
 
 export function DetailLocks({ value, onChange, disabled, prefix }) {
   return <fieldset disabled={disabled} className="mt-5">

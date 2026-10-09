@@ -4,6 +4,7 @@ import unittest
 
 from goated_prompter import director_profiles, reference_map
 from goated_prompter.features.builder import service as builder
+from goated_prompter.options import prompt_models, references
 from goated_prompter.prompting import base, creativity, details, directors, modes, output, target_models
 
 
@@ -14,9 +15,8 @@ class PromptingPackageTests(unittest.TestCase):
         self.assertIs(builder._PRESERVATION_ADAPTERS, details.PRESERVATION_ADAPTERS)
         self.assertIs(builder.CORE_SYSTEM_PROMPT, base.CORE_SYSTEM_PROMPT)
         self.assertIs(builder.OUTPUT_CONTRACT, output.OUTPUT_CONTRACT)
-        self.assertIs(director_profiles.PROMPT_MODEL_NAMES, directors.PROMPT_MODEL_NAMES)
-        self.assertIs(reference_map.REFERENCE_ATTRIBUTES, details.REFERENCE_ATTRIBUTES)
-        self.assertIs(reference_map.REFERENCE_SOURCE_NAMES, details.REFERENCE_SOURCE_NAMES)
+        self.assertIs(director_profiles.PROMPT_MODEL_NAMES, prompt_models.PROMPT_MODEL_NAMES)
+        self.assertIs(reference_map.REFERENCE_ATTRIBUTES, references.REFERENCE_ATTRIBUTES)
         self.assertIs(reference_map._MANUAL_CONSTRAINTS, details.REFERENCE_MANUAL_CONSTRAINTS)
 
     def test_adapters_keep_existing_fallbacks(self):

@@ -3,8 +3,8 @@
 import asyncio
 from aiohttp import web
 
-from ...prompting.details import PROMPT_LENGTH_NAMES
-from ...prompting.target_models import TARGET_MODEL_NAMES, canonical_target
+from ...options.lengths import PROMPT_LENGTH_NAMES
+from ...options.targets import TARGET_MODEL_NAMES, canonical_target
 from ...workspace_store import WorkspaceConflict, locks, text
 from ...api.common import STATE, active_job_conflict, engine_request, json_object
 

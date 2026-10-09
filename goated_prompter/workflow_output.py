@@ -3,7 +3,8 @@
 import json
 import re
 
-from .prompting.target_models import canonical_target, get_target_capabilities
+from .prompting.target_models import get_target_capabilities
+from .options.targets import canonical_target
 from .minimax_format import normalize_h3_sections
 from .output_repetition import MAX_ANIMA_TAGS, anima_tag_count
 from .strict_json import reject_duplicate_keys

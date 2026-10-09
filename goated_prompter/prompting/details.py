@@ -2,7 +2,6 @@
 
 # Prompt length and preservation/reference detail controls.
 
-PROMPT_LENGTH_NAMES = ("Short", "Medium", "Detailed", "Maximum Detail")
 DATASET_OUTPUT_TOKEN_LIMITS = {
     "Short": 384,
     "Medium": 768,
@@ -21,7 +20,6 @@ LENGTH_ADAPTERS = {
 }
 
 # Preserve (legacy booleans and linked reference-map output)
-REFERENCE_ROLE_NAMES = ("Auto", "Subject", "Scene", "Style", "Pose", "Composition", "Lighting")
 PRESERVATION_ADAPTERS = {
     "subject": "Preserve subject: do not change subject identity, type, count, key attributes, clothing, or defining features unless explicitly requested.",
     "composition": "Preserve composition: do not rearrange the scene, layout, spatial relationships, crop, or framing unless explicitly requested.",
@@ -37,24 +35,6 @@ PRESERVATION_NONE = "PRESERVATION CONSTRAINTS\nNone beyond the selected mode and
 # Reference-map Preserve controls used by the website and node. These labels,
 # sources, and emitted instructions are static prompt content; reference_map.py
 # owns only the deterministic source-resolution behavior.
-REFERENCE_ATTRIBUTES = (
-    ("subject", "Subject"),
-    ("face", "Face / Identity"),
-    ("outfit", "Outfit"),
-    ("pose", "Pose"),
-    ("composition", "Composition"),
-    ("camera", "Camera"),
-    ("scene", "Scene / Environment"),
-    ("lighting", "Lighting"),
-    ("colors", "Colors"),
-    ("mood", "Mood / Style"),
-    ("materials", "Materials"),
-)
-REFERENCE_SOURCE_NAMES = ("Auto", "Image 1", "Image 2", "Blend", "Off", "Image 3", "Image 4")
-REFERENCE_IMAGE_SLOTS = (
-    ("image", "Image 1"), ("image_2", "Image 2"),
-    ("image_3", "Image 3"), ("image_4", "Image 4"),
-)
 REFERENCE_MANUAL_CONSTRAINTS = {
     "subject": "Use the subject from {source}. Do not use a conflicting subject from {other}.",
     "face": "Use face and identity from {source}. Do not use conflicting identity features from {other}.",

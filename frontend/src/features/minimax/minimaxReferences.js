@@ -1,4 +1,4 @@
-export const referenceLimits = { image: 9, video: 3, audio: 3 };
+import { referenceLimits } from "./options.js";
 
 export function parseReferences(text) {
   const references = [], invalid = [];

@@ -2,13 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Download, LoaderCircle, X } from "lucide-react";
 import { ui } from "../../ui.js";
 import { canConfirmDatasetReview, datasetReviewQuestions, datasetUnderstandingSections, datasetUnderstandingSummary } from "./datasetState.js";
-
-const identityLabels = {
-  fixed: "Fixed; preserve the specified identities",
-  random_per_prompt: "Randomized per independent prompt; consistent within its idea and scene",
-  not_applicable: "No character identity applies",
-  mixed: "Mixed identity policies; follow the requirements for each subject and guided input",
-};
+import { identityLabels } from "./options.js";
 
 function SummaryList({ label, items, annotations }) {
   if (!items?.length) return null;
