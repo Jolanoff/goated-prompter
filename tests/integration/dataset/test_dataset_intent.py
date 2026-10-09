@@ -40,7 +40,7 @@ class UnderstandingBackend(CaptureBackend):
             return self.raw_scene_outputs.pop(0) if self.raw_scene_outputs else json.dumps({
                 "scene": "A boxer plants both feet at a training bag, extending one glove into the bag while keeping the opposite glove readable, centered in an arena training area from a three-quarter front-side angle with full-body framing.",
                 "self_check": "PASS"})
-        if instruction.diagnostic_stage == "dataset:ideas":
+        if instruction.diagnostic_stage in {"dataset:ideas", "dataset:ideas:format_retry"}:
             self.calls.append(instruction)
             return self.raw_idea_outputs.pop(0) if self.raw_idea_outputs else json.dumps([
                 dataset_idea_fixture(row["index"]) for row in json.loads(instruction.user_message)["assignments"]])
@@ -609,14 +609,14 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
         before = await (await self.client.get("/api/workspace/settings/dataset")).json()
         accepted = await self.analyze(data)
         self.backend.calls.clear()
-        self.backend.raw_idea_outputs = ["not JSON"]
+        self.backend.raw_idea_outputs = ["not JSON", "still not JSON"]
         response = await self.client.post("/api/workspace/dataset/scenes", json={"input": data,
             "confirmation_token": accepted["confirmation_token"]})
         self.assertEqual(response.status, 202)
         job = await self.terminal(await response.json())
         self.assertEqual(job["status"], "failed")
-        self.assertIn("No automatic retry", job["error"])
-        self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:ideas"])
+        self.assertIn("One format correction was tried", job["error"])
+        self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:ideas", "dataset:ideas:format_retry"])
         after = await (await self.client.get("/api/workspace/settings/dataset")).json()
         self.assertEqual(after["draft"], before["draft"])
         self.assertEqual(after["revision"], before["revision"])
