@@ -26,6 +26,7 @@ const builderKeys = [
   "mode",
   "target_model",
   "creativity",
+  "style",
   "planning_mode",
   "prompt_length",
   "director_preset",

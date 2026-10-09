@@ -11,6 +11,7 @@ import { useDatasetWorkflow } from "./useDatasetWorkflow.js";
 import DatasetConfirmationModal from "./DatasetConfirmationModal.jsx";
 import DatasetIdeaDetails, { DatasetSceneCheck } from "./DatasetIdeaDetails.jsx";
 import { triggerTypes } from "./options.js";
+import { styles } from "../../shared/workflow/options.js";
 
 const datasetPages = [["configure", "Configure"], ["scenes", "Scenes"], ["dataset", "Dataset"]];
 
@@ -294,6 +295,13 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                 {["Strict", "Balanced", "Creative", "Dice"].map((item) => <option key={item}>{item}</option>)}
               </select>
               <small className="text-xs leading-relaxed text-muted">Changes visual treatment, not the planned action.</small>
+            </label>
+
+            <label className={`${ui.field} mt-4`}><span><WandSparkles size={14} aria-hidden="true" />Style</span>
+              <select className={ui.select} aria-label="Dataset visual style" value={draft.style || "Auto"} onChange={(event) => updateWriterSettings({ style: event.target.value })}>
+                {styles.map((item) => <option key={item}>{item}</option>)}
+              </select>
+              <small className="text-xs leading-relaxed text-muted">Auto follows your concept; with Anima it means anime.</small>
             </label>
 
             <fieldset className="mt-5 border-t border-line pt-4">

@@ -76,6 +76,7 @@ export default function DatasetConfirmationModal({ review, busy, onRevise, onCon
           <div><dt>Target model</dt><dd>{review.input.target || "Not specified"}</dd></div>
           <div><dt>Prompt length</dt><dd>{review.input.length || "Not specified"}</dd></div>
           <div><dt>Creativity</dt><dd>{review.input.creativity || "Balanced"}</dd></div>
+          <div><dt>Style</dt><dd>{review.input.style || "Auto"}</dd></div>
           <div><dt>Trigger text</dt><dd className="whitespace-pre-wrap">{review.input.trigger || "None; planning only"}</dd></div>
         </dl>
       </section>

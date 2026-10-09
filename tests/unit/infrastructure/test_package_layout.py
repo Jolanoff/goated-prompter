@@ -58,7 +58,7 @@ class PackageLayoutTests(unittest.TestCase):
 
     def test_website_schema_keeps_defaults_and_fresh_metadata(self):
         schema = builder_input_schema()
-        self.assertEqual(len(schema), 38)
+        self.assertEqual(len(schema), 39)
         for key, default in (("mode", "Enhance"), ("target_model", "Generic"),
                              ("creativity", "Balanced"), ("prompt_length", "Medium"),
                              ("prompt_model", "Qwen 3.5 9B"), ("director_context_size", 32768)):

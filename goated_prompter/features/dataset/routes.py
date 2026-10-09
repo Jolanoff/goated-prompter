@@ -71,7 +71,7 @@ async def dataset_endpoint(request):
         director_request = engine_request(
             state, config, settings,
             idea=data["subject"], mode="Custom", target_model=data["target"],
-            creativity=data["creativity"], prompt_length=data["length"],
+            creativity=data["creativity"], style=data["style"], prompt_length=data["length"],
             director_preset=director.id if director else "general_director",
         )
         kind = "dataset_understanding" if understanding else "dataset_scenes" if scenes_only else "dataset"

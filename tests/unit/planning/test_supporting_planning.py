@@ -121,7 +121,7 @@ class SupportingPlanningTests(unittest.TestCase):
         # Regenerated for the slimmed Builder prompt and per-target style examples.
         golden = {
             "Generic": "f927ca5697c6313f2e86c1e82770f11e8777ba9625717a93c60b80cabb82fd81",
-            "Anima": "75020facf7fb198a9b40fcc5ed7b45ae36e2d191a4b38cd0c504700cc50c63c7",
+            "Anima": "1c2d8ec4824a2479d4e6492697dcce19056ef25d072ab535515c557a793c9d93",
             "Krea 2": "7fa1d8c8f2ef9960a527031e3eff9f1d0b57080b6b4f9cb832cd1aff18ccfede",
             "FLUX.2 Klein": "abb7327ea664ef6a98f996b4b6b3f52db1c224be21703452ff8ba7d6057754aa",
             "Z-Image Base": "44e31092353301335c931d86fe1547d35eb1af32066901bf6ba189b790105664",

@@ -4,7 +4,7 @@ import json
 import re
 import unittest
 
-from goated_prompter.options import dataset, detail_locks, minimax
+from goated_prompter.options import dataset, detail_locks, minimax, styles
 from tests.support.paths import ROOT
 
 FRONTEND = ROOT / "frontend" / "src"
@@ -30,6 +30,9 @@ class OptionParityTests(unittest.TestCase):
 
     def test_dataset_types_match_backend(self):
         self.assertEqual(tuple(exported("features/dataset/options.js", "triggerTypes")), dataset.DATASET_TYPES)
+
+    def test_styles_match_backend(self):
+        self.assertEqual(tuple(exported("shared/workflow/options.js", "styles")), styles.STYLE_NAMES)
 
     def test_detail_locks_match_backend(self):
         self.assertEqual(tuple(value for value, _label in exported("shared/workflow/options.js", "lockOptions")),
