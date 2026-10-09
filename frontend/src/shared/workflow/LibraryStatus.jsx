@@ -13,7 +13,7 @@ export default function LibraryStatus({ target, className = "" }) {
     return () => { active = false; };
   }, [target]);
   if (!status) return null;
-  return <small className={`text-xs leading-relaxed text-muted ${className}`} aria-label="Prompt library status" title={status.path}>
+  return <small className={`text-xs leading-relaxed text-muted ${className}`} title={status.path}>
     {status.count
       ? `Prompt library: ${status.count} prompt${status.count === 1 ? "" : "s"} for ${status.target} (data/prompt_library/${status.file})`
       : `Prompt library: empty. Add prompts you like to data/prompt_library/${status.file}`}
