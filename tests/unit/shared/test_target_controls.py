@@ -102,7 +102,7 @@ class TargetControlTests(unittest.TestCase):
         message = self.instruction("LTX 2.5", mode="Video", director_preset="video_director", prompt_length="Maximum Detail")
         self.assertIn("one focused flowing paragraph", message)
         self.assertIn("Do not automatically invent dialogue, camera movement or cuts", message)
-        self.assertIn("take priority over Length and conflicting Director preferences", message)
+        self.assertIn("never change the task, the format or the user's facts", message)
 
     def test_all_lengths_and_creativity_preserve_target_hard_structure(self):
         for length in ("Short", "Medium", "Detailed", "Maximum Detail"):
@@ -110,8 +110,7 @@ class TargetControlTests(unittest.TestCase):
                 with self.subTest(length=length, creativity=creativity):
                     message = self.instruction("Ideogram4", prompt_length=length, creativity=creativity)
                     self.assertIn("All required JSON keys and their order remain intact", message)
-                    self.assertIn("Semantic invention never changes required target syntax or output format", message)
-                    self.assertIn("Mode defines the task. Director behavior must not replace that task", message)
+                    self.assertIn("never change the task, the format or the user's facts", message)
                     self.assertIn("OUTPUT FORMAT — Ideogram4", message)
 
     def test_control_sections_stay_in_order_and_output_contract_is_last(self):
@@ -139,7 +138,7 @@ class TargetControlTests(unittest.TestCase):
                 message = self.instruction("Generic", director_preset=director, system_prompt_override="Unrelated Krea-only instruction")
                 self.assertNotIn(preset.instructions, message)
                 self.assertNotIn("Unrelated Krea-only instruction", message)
-                self.assertIn("Director is inactive", message)
+                self.assertNotIn("DIRECTOR BEHAVIOR", message)
 
 
 if __name__ == "__main__":

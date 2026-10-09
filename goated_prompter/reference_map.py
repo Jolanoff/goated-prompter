@@ -264,8 +264,8 @@ class ResolvedReferenceMap:
 
         lines.append(
             "REFERENCE CONFLICT RULES\n"
-            "- The explicit current transformation is authoritative only for the attributes it changes.\n"
-            "- Manual Reference Map assignments are already resolved here and override automatic source selection.\n"
+            "- The user's current request is authoritative only for the attributes it changes.\n"
+            "- Manual reference assignments are already resolved here and override automatic source selection.\n"
             "- When references conflict, use the assigned source for that attribute and do not borrow the conflicting version from another image.\n"
             "- Blend is intentional: combine compatible evidence from all present images only for that named attribute; do not blend unrelated attributes or whole scenes.\n"
             "- Attributes assigned to User Prompt follow the requested transformation while unrelated reference-controlled attributes remain unchanged.\n"

@@ -19,7 +19,6 @@ from .evidence import (
 )
 from ...image_utils import EncodedImage
 from ...prompting.base import (
-    CONTROL_CONTRACT,
     CORE_SYSTEM_PROMPT,
     LINKED_PRIORITY_CONTRACT,
     PRIORITY_CONTRACT,
@@ -30,7 +29,7 @@ from ...prompting.details import LENGTH_ADAPTERS as _LENGTH_ADAPTERS, MAXIMUM_DE
 from .prompting import EVIDENCE_ANALYSIS_SYSTEM_PROMPT, evidence_analysis_user_message
 from ...prompting.modes import get_mode_adapter, get_vision_mode_adapter
 from ...prompting.output import OUTPUT_CONTRACT, output_contract, qwen_format_repair, minimax_format_repair
-from ...prompting.target_models import QWEN21_EDIT_ADAPTER, get_model_adapter, resolve_target_length, get_target_capabilities
+from ...prompting.target_models import QWEN21_EDIT_ADAPTER, get_model_adapter, get_target_example, resolve_target_length, get_target_capabilities
 from ...presets import DEFAULT_DIRECTOR_PRESET, get_director_preset
 from ...options.references import REFERENCE_IMAGE_SLOTS
 from ...reference_map import reference_images, resolve_reference_map
@@ -102,6 +101,7 @@ def assemble_instruction(
     text_only=False,
     prompt_scene_plan=None,
     compile_user_constraints=True,
+    include_target_example=True,
 ):
     if text_only:
         resolved_scene = None
@@ -136,18 +136,22 @@ def assemble_instruction(
         _log_image_order(request)
     active_director_instructions = request.system_prompt_override.strip() or preset.instructions
     if preset.supported_targets and request.target_model not in preset.supported_targets:
-        active_director_instructions = "This target-specific Director is inactive for the selected target. Follow Mode and the target adapter without its specialist instructions."
+        # A target-specific Director that does not apply contributes nothing.
+        active_director_instructions = ""
     qwen_images = _qwen21_source_tokens(request, resolved_reference_map, text_only) if request.target_model == "Qwen Image 2.1" else ()
+    # Reference priorities only apply when reference images or evidence are present.
     sections = [
         CORE_SYSTEM_PROMPT,
-        TEXT_ONLY_PRIORITY_CONTRACT if text_only else LINKED_PRIORITY_CONTRACT if request.linked_references else PRIORITY_CONTRACT,
-        CONTROL_CONTRACT,
+        TEXT_ONLY_PRIORITY_CONTRACT if text_only or not has_visual_context
+        else LINKED_PRIORITY_CONTRACT if request.linked_references else PRIORITY_CONTRACT,
     ]
+    target_example = get_target_example(request.target_model, qwen_task="edit" if qwen_images else "t2i") if include_target_example else ""
     if has_visual_context:
         sections.append(f"VISUAL GROUNDING\n{get_vision_mode_adapter(request.mode)}")
     sections.extend([
         f"MODE ADAPTER\n{get_mode_adapter(request.mode)}",
-        "TARGET MODEL ADAPTER\n" + (QWEN21_EDIT_ADAPTER if qwen_images else get_model_adapter(request.target_model)),
+        "TARGET MODEL ADAPTER\n" + (QWEN21_EDIT_ADAPTER if qwen_images else get_model_adapter(request.target_model))
+        + ("\n\n" + target_example if target_example else ""),
         "USER SETTINGS",
         _CREATIVITY_ADAPTERS.get(request.creativity, _CREATIVITY_ADAPTERS["Balanced"]),
         resolve_target_length(request.target_model, request.prompt_length),
@@ -158,7 +162,8 @@ def assemble_instruction(
         resolved_reference_map, has_visual_context,
     ))
 
-    sections.append(f"DIRECTOR BEHAVIOR — {preset.label}\n{active_director_instructions}")
+    if active_director_instructions:
+        sections.append(f"DIRECTOR BEHAVIOR — {preset.label}\n{active_director_instructions}")
     if prompt_scene_plan is not None:
         sections.append(prompt_scene_plan.supporting_input())
     workflow_rules = request.custom_instructions
@@ -199,7 +204,7 @@ def assemble_instruction(
 
     if request.target_model == "Qwen Image 2.1":
         if qwen_images:
-            sections.append("QWEN INPUT SOURCES\nSelected source tags, preserving the Reference Map's numbering: "
+            sections.append("QWEN INPUT SOURCES\nSelected source tags, keeping the reference image numbering: "
                             + ", ".join(qwen_images) + ". Image N evidence refers to <imageN>. "
                             "These sources are available through the selected evidence even if raw pixels are not attached to this final compiler call. "
                             "Do not reference unused or missing sources. Use natural language for a single image, "

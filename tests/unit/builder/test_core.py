@@ -22,6 +22,7 @@ core = importlib.import_module(f"{PACKAGE}.features.builder.service")
 contracts = importlib.import_module(f"{PACKAGE}.contracts")
 image_utils = importlib.import_module(f"{PACKAGE}.image_utils")
 reference_map = importlib.import_module(f"{PACKAGE}.reference_map")
+prompting_base = importlib.import_module(f"{PACKAGE}.prompting.base")
 
 
 class CoreTests(unittest.TestCase):
@@ -190,16 +191,15 @@ class CoreTests(unittest.TestCase):
                         else:
                             instruction = core.assemble_instruction(request, text_only=path == "text_only")
                         message = instruction.system_message
-                        self.assertEqual(message.count(core.CONTROL_CONTRACT), 1)
-                        self.assertIn("Mode defines the task. Director behavior must not replace that task", message)
-                        self.assertIn("Prompt length controls useful descriptive density WITHIN", message)
-                        self.assertIn("Creativity controls SEMANTIC invention only", message)
+                        self.assertEqual(message.count(prompting_base.SETTINGS_PRECEDENCE), 1)
+                        self.assertNotIn("MODE, DETAIL, AND DIRECTOR RESPONSIBILITIES", message)
                         self.assertIn(core.get_mode_adapter(mode), message)
                         self.assertIn(core.get_director_preset(director).instructions, message)
                         self.assertIn(core._LENGTH_ADAPTERS[length], message)
                         self.assertIsNone(instruction.max_tokens)
                         self.assertTrue(instruction.unlimited_tokens)
-                        contract = (core.TEXT_ONLY_PRIORITY_CONTRACT if path == "text_only" else
+                        # Without reference images or evidence, reference priorities do not apply.
+                        contract = (core.TEXT_ONLY_PRIORITY_CONTRACT if path in {"text_only", "no_image"} else
                                     core.LINKED_PRIORITY_CONTRACT if path == "linked_reference" else
                                     core.PRIORITY_CONTRACT)
                         self.assertIn(contract, message)
@@ -212,8 +212,9 @@ class CoreTests(unittest.TestCase):
                           system_prompt_override="Always write a long temporal video prompt.")
         instruction = core.assemble_instruction(request, text_only=True)
         self.assertIn(request.system_prompt_override, instruction.system_message)
-        self.assertIn(core.CONTROL_CONTRACT, instruction.system_message)
-        self.assertIn("edited Director working copies", instruction.system_message)
+        self.assertIn(prompting_base.SETTINGS_PRECEDENCE, instruction.system_message)
+        self.assertLess(instruction.system_message.index(prompting_base.SETTINGS_PRECEDENCE),
+                        instruction.system_message.index(request.system_prompt_override))
 
     def test_empty_backend_output_still_fails(self):
         self.session.generate.side_effect = None
