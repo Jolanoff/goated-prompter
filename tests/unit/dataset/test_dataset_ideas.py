@@ -10,7 +10,7 @@ from urllib.error import HTTPError
 from goated_prompter.backends.base import BackendGenerationError
 from goated_prompter.backends.openai_compatible import OpenAICompatibleBackend
 from goated_prompter.features.dataset.assignments import dataset_assignments
-from goated_prompter.features.dataset.ideas import (DIRECTION_AXES, DatasetIdeasService, IDEA_FIELDS, IDEAS_SYSTEM,
+from goated_prompter.features.dataset.ideas import (ACTIVE_MOODS, DIRECTION_AXES, DatasetIdeasService, IDEA_FIELDS, IDEAS_SYSTEM,
     creative_directions, ideas_instruction, validate_ideas)
 from goated_prompter.features.dataset.plan import validate_saved_scene_plan
 from tests.helpers import dataset_idea_fixture, dataset_understanding_fixture
@@ -35,6 +35,27 @@ class DatasetIdeasTests(unittest.TestCase):
         self.assertGreater(len({tuple(item.values()) for item in directions.values()}), 15)
         other = creative_directions({**data, "subject": "A chef plating dessert."}, range(1, 17))
         self.assertNotEqual(directions, other)
+
+    def test_required_actions_get_no_moment_and_only_active_moods(self):
+        # Reported regression: aftermath/quiet/calm directions replaced "both kids visibly working".
+        action = {"scope": "all_outputs", "text": "both kids are visibly working on the treehouse"}
+        data = valid_draft(amount=10, subject="Two kids building a treehouse together",
+            _confirmed_intent=dataset_understanding_fixture(hard=[action], interactions=[action], action_options=[action]))
+        for direction in creative_directions(data, range(1, 11)).values():
+            self.assertNotIn("moment", direction)
+            self.assertIn(direction["mood"], ACTIVE_MOODS)
+        local = {"scope": "guided:2", "text": "punches the bag"}
+        guided = valid_draft(amount=4, source_mode="guided", inputs="rests between rounds\npunches the bag",
+            _confirmed_intent=dataset_understanding_fixture(interactions=[local]))
+        moods = {index: item["mood"] for index, item in creative_directions(guided, range(1, 5)).items()}
+        self.assertTrue(all(moods[index] in ACTIVE_MOODS for index in (2, 4)))
+        open_brief = creative_directions(self.data, [1, 2])
+        self.assertTrue(all("moment" in item for item in open_brief.values()))
+
+    def test_directions_stay_inside_the_subjects_world(self):
+        values = " ".join(value for axis in DIRECTION_AXES.values() for value in axis).casefold()
+        for genre_shift in ("fantastical", "neon", "city street"):
+            self.assertNotIn(genre_shift, values)
 
     def test_guided_items_get_no_moment_and_the_prompt_ranks_directions_last(self):
         data = valid_draft(amount=2, source_mode="guided", inputs="punches a bag\nskips rope",

@@ -90,7 +90,8 @@ CREATIVE DIRECTION
 Each assignment carries a creative_direction chosen by the app to spread the batch
 across moments, moods, framing, settings and light. Start that image's idea from it.
 HARD requirements, the guided input, expansion_freedom and batch-shared choices always
-win: drop only the conflicting part of a direction, never the requirement. A direction
+win: drop only the conflicting part of a direction, never the requirement. A required
+action stays visibly in progress in every image whatever the direction says. A direction
 varies presentation; the core event must still differ between ideas.
 
 Prioritize semantic variation in the event itself before presentation changes.
@@ -147,13 +148,16 @@ DIRECTION_AXES = {
     "mood": ("joyful", "tense", "calm", "mischievous", "determined", "wistful", "awestruck", "chaotic"),
     "framing": ("close-up", "medium shot", "full-body shot", "wide shot where the place tells the story",
                 "low-angle shot", "high-angle view from above", "over-the-shoulder view"),
-    "setting": ("an everyday indoor place", "a city street or urban spot", "nature or the outdoors",
-                "an unusual or fantastical location", "a place from the subject's own world",
-                "an outdoor scene shaped by weather"),
+    "setting": ("the most familiar spot in the subject's world", "a less obvious corner of the subject's world",
+                "somewhere with a wide view", "a cramped, cluttered space", "a doorway, path, stairs or ladder",
+                "an outdoor spot shaped by the weather"),
     "light": ("soft morning light", "harsh midday sun", "golden hour", "dusk or blue hour",
               "night lit by practical lights", "dramatic single-source light", "overcast diffuse light",
-              "colorful neon or artificial light"),
+              "warm lamplight from windows or lanterns"),
 }
+# A required action must be visible in every image, so these items get no
+# moment and only moods that fit someone actively doing it.
+ACTIVE_MOODS = ("joyful", "tense", "determined", "mischievous", "chaotic", "playful")
 _DIRECTION_SOURCE = ("subject", "trigger", "trigger_type", "custom_type", "constraints", "inputs", "source_mode")
 
 
@@ -163,19 +167,34 @@ def creative_directions(data, indexes):
     Each axis is shuffled once per draft and dealt round-robin over the whole
     dataset, so every value is used before any repeats and replacements keep
     their original direction. Guided inputs already fix the event, so they get
-    no moment.
+    no moment. When the approved brief requires an action for an image, that
+    image gets no moment and only active moods, because quiet or aftermath
+    directions otherwise replace the required action.
     """
     source = json.dumps({key: data.get(key) for key in _DIRECTION_SOURCE}, sort_keys=True, ensure_ascii=False)
     seed = int.from_bytes(hashlib.sha256(source.encode()).digest()[:8], "big")
-    guided = data.get("source_mode") == "guided" and bool(str(data.get("inputs") or "").strip())
+    lines = [line for line in str(data.get("inputs") or "").splitlines() if line.strip()]
+    guided = data.get("source_mode") == "guided" and bool(lines)
+    brief = data.get("_confirmed_intent") or {}
+    action_scopes = {item.get("scope") for key in ("interactions", "action_options")
+                     for item in brief.get(key) or () if isinstance(item, dict)}
     orders = {}
-    for position, (axis, values) in enumerate(DIRECTION_AXES.items()):
+    for position, (axis, values) in enumerate((*DIRECTION_AXES.items(), ("active_mood", ACTIVE_MOODS))):
         order = list(values)
         random.Random(seed + position).shuffle(order)
         orders[axis] = order
-    return {index: {axis: order[(index - 1) % len(order)] for axis, order in orders.items()
-                    if not (guided and axis == "moment")}
-            for index in indexes}
+    directions = {}
+    for index in indexes:
+        scopes = {"all_outputs", *([f"guided:{(index - 1) % len(lines) + 1}"] if guided else [])}
+        required_action = bool(action_scopes & scopes)
+        pick = lambda axis: orders[axis][(index - 1) % len(orders[axis])]
+        direction = {}
+        for axis in DIRECTION_AXES:
+            if axis == "moment" and (guided or required_action):
+                continue
+            direction[axis] = pick("active_mood") if axis == "mood" and required_action else pick(axis)
+        directions[index] = direction
+    return directions
 
 
 def _ideas_schema(indexes):
