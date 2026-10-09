@@ -10,7 +10,8 @@ from urllib.error import HTTPError
 from goated_prompter.backends.base import BackendGenerationError
 from goated_prompter.backends.openai_compatible import OpenAICompatibleBackend
 from goated_prompter.features.dataset.assignments import dataset_assignments
-from goated_prompter.features.dataset.ideas import DatasetIdeasService, IDEA_FIELDS, ideas_instruction, validate_ideas
+from goated_prompter.features.dataset.ideas import (ACTION_SAFE_AXES, DIRECTION_AXES, DatasetIdeasService, IDEA_FIELDS, IDEAS_SYSTEM,
+    creative_directions, ideas_instruction, validate_ideas)
 from goated_prompter.features.dataset.plan import validate_saved_scene_plan
 from tests.helpers import dataset_idea_fixture, dataset_understanding_fixture
 from tests.support.dataset import valid_draft
@@ -22,6 +23,50 @@ class DatasetIdeasTests(unittest.TestCase):
             _confirmed_intent=dataset_understanding_fixture())
         self.session = Mock()
         self.service = DatasetIdeasService(lambda: None)
+
+    def test_creative_directions_spread_the_batch_and_are_reproducible(self):
+        data = valid_draft(amount=16, subject="A boxer training.", _confirmed_intent=dataset_understanding_fixture())
+        directions = creative_directions(data, range(1, 17))
+        self.assertEqual(directions, creative_directions(deepcopy(data), range(1, 17)))
+        self.assertEqual(creative_directions(data, [5]), {5: directions[5]}, "A replacement keeps its direction.")
+        for axis, values in DIRECTION_AXES.items():
+            used = [directions[index][axis] for index in range(1, 17)]
+            self.assertEqual(set(used[:len(values)]), set(values), f"Every {axis} is used before any repeats.")
+        self.assertGreater(len({tuple(item.values()) for item in directions.values()}), 15)
+        other = creative_directions({**data, "subject": "A chef plating dessert."}, range(1, 17))
+        self.assertNotEqual(directions, other)
+
+    def test_required_actions_only_vary_framing_and_light(self):
+        # Reported regressions: rest, water-break and ladder-climbing directions replaced "both kids visibly working".
+        action = {"scope": "all_outputs", "text": "both kids are visibly working on the treehouse"}
+        data = valid_draft(amount=10, subject="Two kids building a treehouse together",
+            _confirmed_intent=dataset_understanding_fixture(hard=[action], interactions=[action], action_options=[action]))
+        directions = creative_directions(data, range(1, 11))
+        self.assertTrue(all(set(direction) == set(ACTION_SAFE_AXES) for direction in directions.values()))
+        self.assertGreater(len({tuple(direction.values()) for direction in directions.values()}), 6)
+        local = {"scope": "guided:2", "text": "punches the bag"}
+        guided = valid_draft(amount=4, source_mode="guided", inputs="rests between rounds\npunches the bag",
+            _confirmed_intent=dataset_understanding_fixture(interactions=[local]))
+        local_directions = creative_directions(guided, range(1, 5))
+        self.assertTrue(all(set(local_directions[index]) == set(ACTION_SAFE_AXES) for index in (2, 4)))
+        self.assertTrue(all("mood" in local_directions[index] for index in (1, 3)))
+        open_brief = creative_directions(self.data, [1, 2])
+        self.assertTrue(all("moment" in item for item in open_brief.values()))
+
+    def test_directions_stay_inside_the_subjects_world(self):
+        values = " ".join(value for axis in DIRECTION_AXES.values() for value in axis).casefold()
+        for genre_shift in ("fantastical", "neon", "city street"):
+            self.assertNotIn(genre_shift, values)
+
+    def test_guided_items_get_no_moment_and_the_prompt_ranks_directions_last(self):
+        data = valid_draft(amount=2, source_mode="guided", inputs="punches a bag\nskips rope",
+            _confirmed_intent=dataset_understanding_fixture())
+        self.assertTrue(all("moment" not in item for item in creative_directions(data, [1, 2]).values()))
+        context = json.loads(ideas_instruction(self.data, dataset_assignments(self.data)).user_message)
+        self.assertEqual([row["creative_direction"] for row in context["assignments"]],
+                         list(creative_directions(self.data, [1, 2]).values()))
+        self.assertIn("WHAT MAKES A STRONG IDEA", IDEAS_SYSTEM)
+        self.assertIn("drop only the conflicting part of a direction, never the requirement", IDEAS_SYSTEM)
 
     def run_ideas(self, rows, **options):
         self.session.generate.return_value = json.dumps(rows)
