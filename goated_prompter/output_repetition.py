@@ -67,3 +67,28 @@ def repeated_tag(text, protected_terms=()):
                     if count >= MIN_TAG_REPETITIONS:
                         return tag
     return None
+
+
+_PLURAL_COUNT = re.compile(r"\(?(?:([2-9]|\d{2,})\+?(?:boys|girls|others)|multiple (?:boys|girls|others))(?::\d+(?:\.\d+)?)?\)?", re.I)
+_SINGLE_COUNT = re.compile(r"\(?1(?:boy|girl|other)(?::\d+(?:\.\d+)?)?\)?", re.I)
+_SOLO_FIELD = r"\(?solo(?::\d+(?:\.\d+)?)?\)?"
+
+
+def remove_contradictory_solo(text):
+    """Drop the solo tag when the count tags describe several characters.
+
+    Danbooru-style solo means exactly one character, so it cannot coexist with
+    3boys, multiple girls or two or more single-character count tags. Only the
+    leading tag inventory is edited; scene prose and solo focus are kept.
+    """
+    value = str(text or "")
+    tags = [tag.strip() for tag in anima_tags(value)]
+    singles = sum(bool(_SINGLE_COUNT.fullmatch(tag)) for tag in tags)
+    if not any(re.fullmatch(_SOLO_FIELD, tag, re.I) for tag in tags):
+        return value
+    if not (singles >= 2 or any(_PLURAL_COUNT.fullmatch(tag) for tag in tags)):
+        return value
+    head, separator, rest = (re.split(r"(\r?\n[ \t]*\r?\n)", value, maxsplit=1) + ["", ""])[:3]
+    head = re.sub(r",[ \t]*" + _SOLO_FIELD + r"[ \t]*(?=,|\r?\n|$)", "", head, flags=re.I | re.M)
+    head = re.sub(r"^[ \t]*" + _SOLO_FIELD + r"[ \t]*,[ \t]*", "", head, flags=re.I | re.M)
+    return head + separator + rest

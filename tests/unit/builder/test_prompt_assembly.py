@@ -8,6 +8,7 @@ from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.builder.service import assemble_instruction
 from goated_prompter.image_utils import EncodedImage
 from goated_prompter.options.targets import TARGET_MODEL_NAMES
+from goated_prompter.output_repetition import remove_contradictory_solo
 from goated_prompter.prompting.base import PRIORITY_CONTRACT, SETTINGS_PRECEDENCE, TEXT_ONLY_PRIORITY_CONTRACT
 from goated_prompter.prompting.target_models import QWEN21_EDIT_EXAMPLE, TARGET_EXAMPLES
 from goated_prompter.workflow_output import normalize_workflow_output, requested_visible_text
@@ -81,6 +82,36 @@ class BuilderPromptAssemblyTests(unittest.TestCase):
         self.assertNotIn("solo", tags)
         message = system_message(target_model="Anima", idea="three boys jumping on top of a train")
         self.assertIn("use solo only when exactly one character appears", message)
+
+    def test_solo_is_removed_only_when_count_tags_describe_several_characters(self):
+        group = ("3boys , caesar anthonio zeppeli, jojo no kimyou na bouken, 1boy, green eyes, solo, blonde hair, "
+                 "ash ketchum, pokemon, 1boy, black hair,midoriya izuku, 1boy, freckles\n\n"
+                 "Three boys leap across a moving train, one of them riding solo ahead.")
+        self.assertEqual(remove_contradictory_solo(group), group.replace(", solo,", ",", 1))
+        for text, expected in (
+            ("solo, 2girls, beach", "2girls, beach"),
+            ("1boy, 1girl, (solo:1.2), rain", "1boy, 1girl, rain"),
+            ("multiple girls, solo, park", "multiple girls, park"),
+            ("1boy, solo, 1boy, train", "1boy, 1boy, train"),
+            ("1girl, solo, rain\n\nShe walks solo.", "1girl, solo, rain\n\nShe walks solo."),
+            ("3boys, solo focus, train", "3boys, solo focus, train"),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(remove_contradictory_solo(text), expected)
+
+    def test_builder_applies_the_solo_guard_to_anima_only(self):
+        from unittest.mock import patch
+        from goated_prompter.features.builder.service import GoatedPrompterService
+        from tests.unit.planning.test_supporting_planning import ScriptedBackend
+        output = "3boys, solo, train\n\nThree boys jump on a train."
+        for target, expected in (("Anima", "3boys, train\n\nThree boys jump on a train."), ("Generic", output)):
+            with self.subTest(target=target):
+                backend = ScriptedBackend(output)
+                with patch("goated_prompter.features.builder.service.create_backend", return_value=backend):
+                    result = GoatedPrompterService(config={"backend": "mock"}).generate(
+                        GoatedPrompterRequest(idea="three boys jumping on top of a train", target_model=target,
+                                              planning_mode="Direct"))
+                self.assertEqual(result.prompt, expected)
 
     def test_qwen21_edit_uses_the_edit_example(self):
         message = system_message(target_model="Qwen Image 2.1", image=IMAGE)
