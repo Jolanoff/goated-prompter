@@ -10,6 +10,7 @@ from .prompting import dataset_instruction
 from ...options.dataset import DATASET_SOURCES, DATASET_TYPES
 from ...options.lengths import PROMPT_LENGTH_NAMES
 from ...options.creativity import CREATIVITY_NAMES
+from ...options.styles import STYLE_NAMES
 from ...options.targets import TARGET_MODEL_NAMES, canonical_target
 from ...workflow_output import WorkflowFormatError, normalize_workflow_output, sanitize_prompt_text, requested_visible_text
 from .assignments import dataset_assignments
@@ -32,7 +33,7 @@ def default_dataset_draft():
         "amount": 12,
         "source_mode": "random", "inputs": "", "target": "Generic", "length": "Medium",
         "director_preset": "general_director", "constraints": "",
-        "creativity": "Balanced", "results": [], "result_job_id": "",
+        "creativity": "Balanced", "style": "Auto", "results": [], "result_job_id": "",
         "scene_plan": [], "scene_plan_signature": "", "plan_scenes_first": False,
     }
 
@@ -55,7 +56,7 @@ def validate_dataset_draft(value, *, generation=False, planning=False):
                               ("result_job_id", "Result job id", 128), ("scene_plan_signature", "Scene plan signature", 128)):
         result[key] = _text(result[key], label, limit)
     for key, allowed in (("trigger_type", DATASET_TYPES), ("source_mode", DATASET_SOURCES),
-                         ("creativity", CREATIVITY_NAMES), ("length", PROMPT_LENGTH_NAMES)):
+                         ("creativity", CREATIVITY_NAMES), ("style", STYLE_NAMES), ("length", PROMPT_LENGTH_NAMES)):
         if not isinstance(result[key], str) or result[key] not in allowed:
             raise ValueError(f"Invalid Dataset {key}.")
     result["target"] = canonical_target(result["target"])

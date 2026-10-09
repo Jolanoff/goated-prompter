@@ -14,7 +14,7 @@ from ...strict_json import reject_duplicate_keys
 SOURCE_FIELDS = (
     "subject", "trigger_type", "custom_type", "constraints", "amount",
     "source_mode", "inputs", "trigger", "trigger_connected", "trigger_at_start",
-    "expand_trigger", "creativity",
+    "expand_trigger", "creativity", "style",
     "target", "length", "director_preset",
 )
 REQUIREMENT_FIELDS = (

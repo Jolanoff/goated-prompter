@@ -32,6 +32,7 @@ class GoatedPrompterRequest:
     mode: str = "Enhance"
     target_model: str = "Generic"
     creativity: str = "Balanced"
+    style: str = "Auto"
     prompt_model: str = "Qwen 3.5 9B"
     director_preset: str = DEFAULT_DIRECTOR_PRESET
     director_ai: str = ""
@@ -84,6 +85,7 @@ class GoatedPrompterRequest:
             mode=str(values.get("mode") or "Enhance"),
             target_model=str(values.get("target_model") or "Generic"),
             creativity=str(values.get("creativity") or "Balanced"),
+            style=str(values.get("style") or "Auto"),
             prompt_model=str(values.get("prompt_model") or values.get("director_ai") or "Qwen 3.5 9B"),
             director_preset=str(preset_value),
             director_profile=str(values.get("director_profile") or ""),
