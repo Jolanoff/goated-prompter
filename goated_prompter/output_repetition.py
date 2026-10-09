@@ -92,3 +92,26 @@ def remove_contradictory_solo(text):
     head = re.sub(r",[ \t]*" + _SOLO_FIELD + r"[ \t]*(?=,|\r?\n|$)", "", head, flags=re.I | re.M)
     head = re.sub(r"^[ \t]*" + _SOLO_FIELD + r"[ \t]*,[ \t]*", "", head, flags=re.I | re.M)
     return head + separator + rest
+
+
+def anima_tag_key(tag):
+    """Compare tags ignoring case, spacing, underscores, escapes and weights."""
+    value = re.sub(r":\d+(?:\.\d+)?\)?$", "", tag.strip()).replace("\\", "")
+    if value.startswith("(") and not value.endswith(")"):
+        value = value[1:]
+    return re.sub(r"[\s_]+", "", value.casefold())
+
+
+def drop_supplied_tags(text, supplied):
+    """Remove tags already present in the app-inserted inventory from generated scene tags.
+
+    Only a leading tag block separated from the prose by a blank line is edited;
+    returns None when the output has no such block so callers keep their checks.
+    """
+    parts = re.split(r"(\r?\n[ \t]*\r?\n)", str(text or ""), maxsplit=1)
+    if len(parts) != 3:
+        return None
+    head, separator, rest = parts
+    keys = {anima_tag_key(tag) for tag in anima_tags(supplied, tag_only=True)}
+    kept = [field.strip() for field in re.split(r"[,;\r\n]", head) if field.strip() and anima_tag_key(field) not in keys]
+    return ", ".join(kept) + separator + rest
