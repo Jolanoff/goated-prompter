@@ -15,7 +15,7 @@ from ...workflow_output import WorkflowFormatError, normalize_workflow_output, s
 from .assignments import dataset_assignments
 from .quality import analyze_idea_diversity
 from .triggers import trigger_presence_error, trigger_terms, fixed_anima_prefix, restore_numeric_trigger_spelling
-from ...output_repetition import MAX_ANIMA_TAGS, anima_tag_count, anima_tags
+from ...output_repetition import MAX_ANIMA_TAGS, anima_tag_count, anima_tag_key, anima_tags, drop_supplied_tags
 from .visible_content import PositiveContentError, positive_prompt_error, sanitize_positive_prompt
 from .plan import (ScenePlanner, MAX_STORED_SCENE_CHARACTERS, MAX_STORED_IDEA_CHARACTERS,
                            reusable_scene_plan, scene_plan_signature, validate_saved_scene_plan,
@@ -153,13 +153,20 @@ class DatasetService:
                     prompt = tail.lstrip(",;: \t\r\n")
                 if not prompt:
                     raise WorkflowFormatError("The locked trigger is inserted by the app; return the accepted scene description as well.")
-                supplied = {tag.casefold().replace("_", " ") for tag in anima_tags(prefix, tag_only=True)}
+                supplied = {anima_tag_key(tag) for tag in anima_tags(prefix, tag_only=True)}
                 generated = anima_tags(prompt)
-                if any(tag.casefold().replace("_", " ") in supplied for tag in generated):
-                    raise WorkflowFormatError("Generated scene tags repeat supplied tags. Return only useful new scene tags and scene prose; the app inserts the protected inventory once.")
+                if any(anima_tag_key(tag) in supplied for tag in generated):
+                    # The app inserts the inventory itself, so restated character tags
+                    # (often respelled, e.g. "2boys" or unescaped "(series)") are dropped, not fatal.
+                    cleaned = drop_supplied_tags(prompt, prefix)
+                    if cleaned is None:
+                        raise WorkflowFormatError("Generated scene tags repeat supplied tags. Return only useful new scene tags and scene prose; the app inserts the protected inventory once.")
+                    prompt = cleaned
+                    generated = anima_tags(prompt)
                 if anima_tag_count(prefix, tag_only=True) + len(generated) > MAX_ANIMA_TAGS:
                     raise WorkflowFormatError("Anima allows at most 100 tags, including supplied tags. Reduce added scene tags, preserving the scene prose.")
-                prompt = normalize_workflow_output(prefix + ", " + prompt, data["target"], mode="Enhance")
+                prompt = normalize_workflow_output(prefix + ("" if prompt[:1] in "\r\n" else ", ") + prompt,
+                                                   data["target"], mode="Enhance")
             if not data["expand_trigger"]:
                 corrected = restore_numeric_trigger_spelling(prompt, data["trigger"], data["target"])
                 if corrected != prompt:

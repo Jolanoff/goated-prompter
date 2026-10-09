@@ -322,16 +322,17 @@ class DatasetAnimaTests(unittest.TestCase):
                 self.assertEqual(result["prompts"][0]["prompt"], PROMPT)
                 self.assertNotIn("The application inserts the locked trigger", backend.calls[0].system_message)
 
-    def test_locked_inventory_echo_after_scene_tags_is_rejected_not_published(self):
+    def test_locked_inventory_echo_after_scene_tags_is_dropped_without_a_retry(self):
+        # Reported run: 9/10 Anima prompts failed because restated character tags
+        # (respelled "2boys", unescaped "(series)") were treated as fatal repeats.
         self.data.update(trigger=CHARACTER_TRIGGER, trigger_at_start=True)
         self.data["scene_plan_signature"] = scene_plan_signature(self.data, dataset_assignments(self.data))
-        for echo in (CHARACTER_TRIGGER, ", ".join(CHARACTER_TRIGGER.split(", ")[1:])):
+        respelled = CHARACTER_TRIGGER.replace("2 girls", "2girls").replace("remilia scarlet", "remilia_scarlet")
+        for echo in (CHARACTER_TRIGGER, ", ".join(CHARACTER_TRIGGER.split(", ")[1:]), respelled):
             with self.subTest(echo=echo):
-                body = "ceramic cup\n\n" + SCENE
-                result, backend = self.run_writer(["bedroom, " + echo + "\n\n" + SCENE, body])
-                self.assertEqual(len(backend.calls), 2)
-                self.assertEqual(result["prompts"][0]["prompt"], CHARACTER_TRIGGER + ", " + body)
-                self.assertIn("supplied tags", backend.calls[-1].system_message)
+                result, backend = self.run_writer(["bedroom, " + echo + "\n\n" + SCENE])
+                self.assertEqual(len(backend.calls), 1)
+                self.assertEqual(result["prompts"][0]["prompt"], CHARACTER_TRIGGER + ", bedroom\n\n" + SCENE)
 
     def test_live_negative_constraint_tags_require_correction_even_without_a_loop(self):
         for tag in ("no cropping", "no camera movement", "no action beyond reading", "no changed wings"):
