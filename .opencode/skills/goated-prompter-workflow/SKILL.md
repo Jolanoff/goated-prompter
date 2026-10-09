@@ -1,6 +1,6 @@
 ---
 name: goated-prompter-workflow
-description: Mandatory for every Goated Prompter task. Enforces minimal scope, one issue/branch lifecycle, root-cause fixes, task-scoped resource approval, verified process cleanup and owner-gated delivery to test.
+description: Mandatory for every Goated Prompter task. Enforces minimal scope, code placement by owner without duplication, one issue/branch lifecycle, root-cause fixes, task-scoped resource approval, verified process cleanup and owner-gated delivery to test.
 ---
 
 # Goated Prompter workflow
@@ -21,6 +21,12 @@ Load only skills needed for the approved work; generic skills do not expand it.
   outcome. Otherwise report them without implementing or opening follow-ups.
 - A genuinely required scope change needs owner approval before implementation;
   a related finding is not permission to expand the task.
+- Before editing, locate the owning module with the `AGENTS.md` code-structure
+  map and search for an existing function, option, validator or helper that
+  already does the job. Extend the owner; never add a second copy.
+- New code goes in its tab (`features/<tab>/`, frontend `features/<tab>/`) and
+  options in `options/` or the tab's `options.js`. Move code to a shared module
+  only when a second tab needs the same behaviour.
 
 ## 2. Authorization
 
@@ -47,6 +53,9 @@ Load only skills needed for the approved work; generic skills do not expand it.
   themselves. Explicitly local-only work does not require a GitHub issue.
 - Follow the root branch rule before repository edits. Confirm the branch belongs
   to this task and its approved `test` baseline; preserve unrelated work.
+- Check `git status`, the current branch and recent local branches first. If
+  another session left uncommitted or unpushed work, stop and ask the owner
+  before continuing it; never reset, overwrite or discard it.
 - Link each working issue and PR separately with OpenChamber `session.link` as
   soon as its URL is known, whether provided, opened or resolved by this work.
   Include URL, title, kind and identifier; do not link passing references.
@@ -150,6 +159,12 @@ report the limitation before running instead of inventing persistent paths.
   one PR with `test` as base, issue updates and a review-ready report. It does not
   authorize resource workloads, merge, issue closure as delivered or deletion of
   the unmerged source branch. Local-only approval implies no publication.
+- When a task depends on an unmerged one, its PR may target that task's branch
+  for review. Before merging, retarget it to `test` (after the PR below it has
+  merged) and confirm the merge landed in `test`; merging into another task
+  branch is not delivery.
+- Before committing a structural change, confirm the moved code is unchanged
+  apart from imports and that no old path is still imported or re-exported.
 - Delivery approval, green CI, "looks good" and "proceed" are not merge permission.
   Wait for owner manual testing/review and an explicit instruction to merge the
   specific task/PR. Material changes after review need renewed confirmation.
