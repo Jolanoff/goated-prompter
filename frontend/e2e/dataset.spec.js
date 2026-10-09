@@ -260,7 +260,9 @@ test("guided Dataset persists and exports on mobile without retired controls", a
   page.on("pageerror", (error) => errors.push(error.message));
   await page.setViewportSize({ width: 390, height: 844 });
   await openDataset(page, "3");
-  await page.getByLabel("Visual style").selectOption("Anime / manga");
+  await expect(page.getByLabel("Visual style", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Variety", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Reset recent ideas", exact: true })).toHaveCount(0);
   await page.getByLabel(/Provide my own scene ideas/).check();
   await page.getByLabel("Guided dataset inputs").fill("standing portrait in a city at night\nrunning through a sunlit field");
   await generateDataset(page, "3");
