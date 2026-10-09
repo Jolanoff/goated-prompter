@@ -299,6 +299,7 @@ MODE_DIRECTOR_RECOMMENDATIONS = {
     "Style Transfer": "Style Transfer Director",
     "Dataset Caption": "Dataset Caption Director",
     "Custom": "General Director",
+    "Remix": "General Director",
 }
 _LEGACY_DIRECTOR_ALIASES = {
     "minimax_h3_director": "MiniMax H3 Director",
