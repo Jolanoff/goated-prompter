@@ -8,8 +8,9 @@ export default function ReferenceImages({ images, settings, attributes, sources,
   return (
     <>
       <Panel icon={ImagePlus} title="Reference images" subtitle="Add up to four images to guide your prompt."
+        className={ui.referencePanel}
         action={<span className={ui.countChip}>{images.filter(Boolean).length} / 4</span>}>
-        <div className="grid grid-cols-2 gap-[11px]">
+        <div className={ui.filmstrip}>
           {images.map((image, index) => (
             <div className={ui.imageSlot} data-image={!!image} key={index}
               onDragOver={(event) => event.preventDefault()}
@@ -25,7 +26,7 @@ export default function ReferenceImages({ images, settings, attributes, sources,
                   <button className={ui.imageRemove} aria-label={`Remove image ${index + 1}`}
                     onClick={() => onRemove(index)}><X size={15} /></button>
                   <div className={ui.imageCaption}>
-                    <span>IMAGE {index + 1}</span><span title={image.name}>{image.name}</span>
+                    <span>Image {index + 1}</span><span title={image.name}>{image.name}</span>
                   </div>
                 </>
               ) : (
@@ -36,11 +37,11 @@ export default function ReferenceImages({ images, settings, attributes, sources,
                       onUpload(event.target.files[0], index);
                       event.target.value = "";
                     }} />
-                  <span className="mb-[3px] text-accent [&>svg]:inline [&>svg]:align-baseline">
-                    <ImagePlus size={24} />
+                  <span className="text-accent [&>svg]:inline [&>svg]:align-baseline">
+                    <ImagePlus size={20} />
                   </span>
                   <strong>Add image {index + 1}</strong>
-                  <span>Drop here or click to browse</span><small>PNG, JPG, WEBP</small>
+                  <small>Drop or browse</small>
                 </label>
               )}
             </div>

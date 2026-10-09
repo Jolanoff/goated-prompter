@@ -121,7 +121,7 @@ export default function MiniMaxTab({ visible, job, busy, active, noEngine, engin
           <div className={ui.panelIcon}><SlidersHorizontal size={21} /></div>
           <div className={ui.panelHeading}><h2>Scene settings</h2><p>A few choices to shape your prompt.</p></div>
         </header>
-        <div className={ui.fields}>
+        <div className={`${ui.fields} grid-cols-3 tablet:grid-cols-2 mobile:grid-cols-1`}>
           <TargetSelect label="Model" value={draft.model} targets={models} disabled={disabled} onChange={(model) => update({ model })} />
           <PlanningSelect video value={draft.planning_mode} disabled={disabled} onChange={(planning_mode) => update({ planning_mode })} />
           <label className={ui.field}><span>Clip Length</span>

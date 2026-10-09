@@ -94,7 +94,7 @@ test("dark mode is the default and explicit theme choices survive reload", async
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 });
 
-test("Builder keeps the idea beside the result, and the dock clear of the navigation rail", async ({ page }) => {
+test("Builder keeps the idea beside the result, and the action bar clear of the navigation rail", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
   const idea = await page.getByLabel("Describe your idea", { exact: true }).boundingBox();
@@ -104,9 +104,18 @@ test("Builder keeps the idea beside the result, and the dock clear of the naviga
   for (const width of [1440, 1100, 960, 390]) {
     await page.setViewportSize({ width, height: 900 });
     const rail = await page.locator("aside").boundingBox();
-    const dock = await page.locator(".generation-bar").boundingBox();
-    expect(dock.x).toBe(width <= 720 ? 0 : rail.width);
-    expect(Math.round(dock.x + dock.width)).toBe(width);
+    const actions = await page.locator(".composer-actions").boundingBox();
+    if (width <= 720) {
+      // Mobile pins the Builder actions to a full-width bar at the bottom of the viewport.
+      expect(actions.x).toBe(0);
+      expect(Math.round(actions.width)).toBe(width);
+      expect(Math.round(actions.y + actions.height)).toBe(900);
+    } else {
+      // Desktop keeps Generate inside the idea composer, clear of the rail.
+      expect(actions.x).toBeGreaterThan(rail.width);
+      expect(actions.x + actions.width).toBeLessThanOrEqual(width);
+    }
+    await expect(page.getByRole("button", { name: /^Generate prompt/ })).toBeInViewport();
   }
 });
 
