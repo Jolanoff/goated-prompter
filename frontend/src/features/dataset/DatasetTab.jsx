@@ -290,19 +290,20 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
               </label>
             </div>
 
-            <label className={`${ui.field} mt-4`}><span><Sparkles size={14} aria-hidden="true" />Creativity</span>
-              <select className={ui.select} aria-label="Dataset descriptive creativity" value={draft.creativity || "Balanced"} onChange={(event) => updateWriterSettings({ creativity: event.target.value })}>
-                {["Strict", "Balanced", "Creative", "Dice"].map((item) => <option key={item}>{item}</option>)}
-              </select>
-              <small className="text-xs leading-relaxed text-muted">Changes visual treatment, not the planned action.</small>
-            </label>
-
-            <label className={`${ui.field} mt-4`}><span><WandSparkles size={14} aria-hidden="true" />Style</span>
-              <select className={ui.select} aria-label="Dataset visual style" value={draft.style || "Auto"} onChange={(event) => updateWriterSettings({ style: event.target.value })}>
-                {styles.map((item) => <option key={item}>{item}</option>)}
-              </select>
-              <small className="text-xs leading-relaxed text-muted">Auto follows your concept; with Anima it means anime.</small>
-            </label>
+            <div className="mt-4 grid grid-cols-2 gap-4 tiny:grid-cols-1">
+              <label className={ui.field}><span><Sparkles size={14} aria-hidden="true" />Creativity</span>
+                <select className={ui.select} aria-label="Dataset descriptive creativity" value={draft.creativity || "Balanced"} onChange={(event) => updateWriterSettings({ creativity: event.target.value })}>
+                  {["Strict", "Balanced", "Creative", "Dice"].map((item) => <option key={item}>{item}</option>)}
+                </select>
+                <small className="text-xs leading-relaxed text-muted">Changes visual treatment, not the planned action.</small>
+              </label>
+              <label className={ui.field}><span><WandSparkles size={14} aria-hidden="true" />Style</span>
+                <select className={ui.select} aria-label="Dataset visual style" value={draft.style || "Auto"} onChange={(event) => updateWriterSettings({ style: event.target.value })}>
+                  {styles.map((item) => <option key={item}>{item}</option>)}
+                </select>
+                <small className="text-xs leading-relaxed text-muted">Auto follows your concept; with Anima it means anime.</small>
+              </label>
+            </div>
 
             <fieldset className="mt-5 border-t border-line pt-4">
               <legend className="pr-2 text-xs font-semibold">Scene source</legend>

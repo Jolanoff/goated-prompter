@@ -17,6 +17,9 @@ for (const width of [1920, 1440, 1100, 768, 390, 360]) {
     await page.getByLabel("Dataset idea", { exact: true }).fill("A traveler exploring exhibits.");
     await page.getByLabel("Trigger text or terms").fill("traveler_token");
     await page.getByLabel("Number of prompts").selectOption("2");
+    const style = page.getByLabel("Dataset visual style", { exact: true });
+    await expect(style).toHaveValue("Auto");
+    await style.selectOption("Illustration");
     await generateDataset(page);
     await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/traveler_token/);
     await page.evaluate(() => document.fonts.ready);
@@ -39,6 +42,9 @@ for (const width of [1920, 1440, 1100, 768, 390, 360]) {
     }
     await openDatasetPage(page, "Configure");
     await expect(page.getByRole("region", { name: "Configure dataset", exact: true })).toBeVisible();
+    await expect(style).toBeVisible();
+    await expect(style).toHaveValue("Illustration");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     const config = page.locator(".dataset-config-grid");
     expect(await config.evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(" ").length)).toBe(width > 768 ? 2 : 1);
     await expect(page.locator(".dataset-advanced details").filter({ has: page.getByText("Training trigger & controls", { exact: true }) })).not.toHaveAttribute("open");
