@@ -24,7 +24,11 @@ def engine_request(state, config, settings, **fields):
 
 
 def active_job_conflict(state, message):
-    """Return the 409 response for an occupied engine, or None. Call under admission."""
+    """Return the 409 response for an occupied engine, or None. Call under admission.
+
+    Compare the result with ``is not None``: aiohttp before 3.13 treats an empty
+    response mapping as falsy.
+    """
     active = state.active_job()
     if active:
         return web.json_response({"error": message, "active_job": active}, status=409)
