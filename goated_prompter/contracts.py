@@ -150,6 +150,8 @@ class PromptInstruction:
     # Structured stages can request llama.cpp JSON decoding without changing writers.
     json_output: bool = False
     json_schema: dict = None
+    # Prompts from the user's library shown as references; outputs must not copy them.
+    reference_prompts: tuple = ()
 
     def _user_content(self, text):
         if not reference_images(self):

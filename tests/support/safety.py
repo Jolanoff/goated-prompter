@@ -19,6 +19,7 @@ def private_storage_guard(event, args):
 def synthetic_storage(scratch):
     scratch.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="storage-", dir=scratch) as temporary:
-        with patch.dict(os.environ, {"GOATED_PROMPTER_USER_DIR": str(Path(temporary) / "directors")}), \
+        with patch.dict(os.environ, {"GOATED_PROMPTER_USER_DIR": str(Path(temporary) / "directors"),
+                                     "GOATED_PROMPTER_LIBRARY_DIR": str(Path(temporary) / "prompt_library")}), \
                 patch.object(tempfile, "tempdir", temporary):
             yield Path(temporary)

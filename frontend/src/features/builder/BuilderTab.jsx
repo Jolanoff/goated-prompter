@@ -3,6 +3,7 @@ import { ArrowUpRight, Bookmark, ChevronDown, Copy,
 import { orderDisplayPresets, presetDisplayLabel } from "../../presetPresentation.js";
 import { ui } from "../../ui.js";
 import { taskLabels } from "./options.js";
+import LibraryStatus from "../../shared/workflow/LibraryStatus.jsx";
 
 function BuilderField({ name, label, short, schema, value, choices: override, onChange }) {
   const [type, options = {}] = schema;
@@ -86,6 +87,7 @@ export default function BuilderTab({ settings, inputs, presets, preset, engine, 
                   {preset?.description === "User Director" ? "User instruction preset." : preset?.description}
                   <button type="button" className={ui.textButton} onClick={onManagePresets}>Manage instruction presets</button>
                 </p>
+                <p className={ui.composerNote}><LibraryStatus target={settings.target_model} /></p>
                 {settings.prompt_length === "Maximum Detail" && <p className={ui.composerNote}>
                   Maximum Detail uses the largest output budget, not a guaranteed word count.
                 </p>}

@@ -202,6 +202,17 @@ QWEN21_EDIT_EXAMPLE = (
 )
 
 
+def library_reference_section(references, *, continuation=False):
+    """Present user library prompts as quality references, replacing the built-in example."""
+    if not references:
+        return ""
+    numbered = "\n\n".join(f"Reference {index}:\n{prompt}" for index, prompt in enumerate(references, 1))
+    return ("REFERENCE PROMPTS (from the user's prompt library; match their tag style, wording, density and quality; "
+            "never copy their subjects, names, scene or sentences)\n" + numbered
+            + ("\nYour output is only the continuation after the app-inserted character tags; do not repeat character tags."
+               if continuation else ""))
+
+
 def get_target_example(name, *, qwen_task="t2i"):
     """Return the worked example section for a target, or an empty string."""
     target = canonical_target(name)

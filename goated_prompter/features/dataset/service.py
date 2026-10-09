@@ -16,6 +16,7 @@ from ...workflow_output import WorkflowFormatError, normalize_workflow_output, s
 from .assignments import dataset_assignments
 from .quality import analyze_idea_diversity
 from .triggers import trigger_presence_error, trigger_terms, fixed_anima_prefix, restore_numeric_trigger_spelling
+from ...prompt_library import copied_reference
 from ...output_repetition import MAX_ANIMA_TAGS, anima_tag_count, anima_tag_key, anima_tags, drop_supplied_tags
 from .visible_content import PositiveContentError, positive_prompt_error, sanitize_positive_prompt
 from .plan import (ScenePlanner, MAX_STORED_SCENE_CHARACTERS, MAX_STORED_IDEA_CHARACTERS,
@@ -174,6 +175,9 @@ class DatasetService:
                     session.emit_activity("normalization", workflow="dataset", index=index, operation="numeric_trigger_spelling")
                     progress(f"Dataset prompt {index}: restored the supplied numeric trigger spelling.")
                     prompt = corrected
+            if original.reference_prompts and copied_reference(prompt, original.reference_prompts):
+                raise WorkflowFormatError("The prompt copied wording from a library reference prompt. Write new wording "
+                                          "for this scene; use the references only for style and quality.")
             return validate_positive_content(validate_trigger_contract(prompt, data, progress), data)
         for attempt in range(retries + 1):
             self.checkpoint()
