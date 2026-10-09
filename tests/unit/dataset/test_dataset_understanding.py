@@ -166,6 +166,15 @@ class DatasetUnderstandingTests(unittest.TestCase):
                 validate_understanding(dataset_understanding_fixture(clarifications=clarifications),
                     ("all_outputs", "dataset"))
 
+    def test_prompt_treats_vague_wording_as_open_choices_not_questions(self):
+        # Reported: "funny acts" produced a question asking which acts.
+        self.assertIn('"funny acts"', UNDERSTANDING_SYSTEM)
+        self.assertIn("never ask the user to narrow it", UNDERSTANDING_SYSTEM)
+        self.assertIn("Never ask about\ndetails the user left open", UNDERSTANDING_SYSTEM)
+        self.assertIn("sexual content with characters who may be minors", UNDERSTANDING_SYSTEM)
+        for removed in ("identify it and ask rather than silently choosing", "may need clarification"):
+            self.assertNotIn(removed, UNDERSTANDING_SYSTEM)
+
     def test_prompt_defaults_free_choices_to_per_image_and_adds_no_unstated_preferences(self):
         # Reported briefs: an unrequested "dramatic lighting and cinematic composition" SOFT
         # preference, and every free choice scoped to "dataset" despite open variation.

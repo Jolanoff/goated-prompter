@@ -78,8 +78,10 @@ requirements or additional locks. Do not reveal hidden reasoning.
 Keep each independent requirement and its qualifiers; do not collapse distinct
 identity, action, environment, visibility and exclusion rules into a vague sentence.
 When terminology has a clear contextual meaning, explain its defining interaction
-and visual evidence without inventing a particular pose or camera. If an ambiguity
-would change the event's meaning, identify it and ask rather than silently choosing.
+and visual evidence without inventing a particular pose or camera. Broad or vague
+wording such as "funny acts", "random poses" or "playing sports" is an open choice,
+not an ambiguity: record it as FREE so each image can pick a different concrete version,
+and never ask the user to narrow it.
 
 Preserve explicit counts, identities, attributes, actions, contact relationships,
 literal text, exclusions, and local versus global rule scope. Trigger labels alone
@@ -118,9 +120,9 @@ identity_policy summary. If identities or counts differ by guided input, use mix
 or null as appropriate and explain each local requirement in its scoped entries.
 Preserve quantities and ownership precisely: one person with a trait does not mean
 both people, at least one does not mean exactly one, and both is not merely some.
-An unspecified object of an action such as breaking may need clarification; do
-not manufacture the missing object. Unspecified clothing, lighting or scenery
-normally remain permitted freedoms, not reasons to block the request.
+An unspecified detail, including the object of an action, is a FREE choice for later
+stages: do not ask about it and do not lock one value. Unspecified clothing, lighting
+or scenery remain permitted freedoms, not reasons to block the request.
 
 For visibility, distinguish semantic facts from demanded visual evidence.
 visible_evidence contains only features the user actually requires to be visibly
@@ -157,8 +159,9 @@ unusual poses. A compatible_resolution is only a
 brief feasibility approach preserving all requirements, not a generated scene or
 proof of physical correctness. If both cannot be satisfied without changing an
 explicit requirement, use null and ask for clarification. Never secretly relax it.
-Ask clarifications only for consequential contradictions or missing information
-essential to the requested meaning, not ordinary creative choices.
+Ask a clarification only when the request contradicts itself, cannot be depicted as
+written, or combines sexual content with characters who may be minors. Never ask about
+details the user left open; the Dataset exists to invent them. Most requests need none.
 
 Shared concept and global rules apply to every output. Each guided input remains
 local to that line, including when lines later repeat across assignments. Never
