@@ -229,6 +229,60 @@ class Job:
         self.interrupt_requests()
         return snapshot
 
+    def request_pause(self):
+        with self.lock:
+            self.gate.clear()
+            if self.status != "paused":
+                self.status = "pause_requested"
+                self.status_reason = (
+                    "Pause requested. Live response text may continue to appear, but the active model call must "
+                    "end before the job can pause at its next safe checkpoint."
+                )
+                self._append_event(self.status_reason, "pause")
+            self.revision += 1
+
+    def resume(self):
+        with self.lock:
+            self.status = "running"
+            self.gate.set()
+            self.status_reason = "Generation resumed and is continuing from the last safe checkpoint."
+            self._append_event(self.status_reason, "status")
+            self.revision += 1
+
+    def mark_cancelled(self):
+        """Record that the worker stopped because the user ended the job."""
+        with self.lock:
+            self.status = "cancelled"
+            self.completion_state = "cancelled"
+            self.status_reason = "Generation stopped because cancellation was requested."
+            self._append_event(self.status_reason, "cancel")
+            self.finished_at = time.time()
+            self.revision += 1
+
+    def mark_failed(self, error, completion_state="provider_error"):
+        """Record a user-presentable failure; an interrupted completion keeps that status."""
+        with self.lock:
+            self.error = error
+            self.completion_state = completion_state
+            self.status = "interrupted" if completion_state == "interrupted" else "failed"
+            self.status_reason = error
+            self._append_event(error, "error")
+            self.finished_at = time.time()
+            self.revision += 1
+
+    def mark_abandoned(self, error):
+        """Final state for a worker that did not stop before server shutdown.
+
+        The server is exiting, so no event or revision is published to pollers.
+        """
+        with self.lock:
+            if self.status in TERMINAL:
+                return
+            self.status = "interrupted"
+            self.completion_state = "interrupted"
+            self.error = error
+            self.finished_at = time.time()
+
     def deliver(self, result):
         """Deliver a result (or a durable-result factory) at a cancellable checkpoint."""
         with self._commit_lock:

@@ -3,7 +3,11 @@
 import asyncio
 import threading
 
-TERMINAL_JOB_STATUSES = frozenset({"succeeded", "failed", "cancelled", "interrupted"})
+from .local_jobs import TERMINAL
+
+TERMINAL_JOB_STATUSES = frozenset(TERMINAL)
+# Dataset jobs whose progress is persisted to recoverable checkpoints.
+DATASET_CHECKPOINT_KINDS = frozenset({"dataset", "dataset_scenes"})
 JOB_FAMILIES = {
     "builder": {"builder"}, "refine": {"refine"}, "minimax": {"minimax"},
     "dataset": {"dataset", "dataset_scenes", "dataset_understanding"},

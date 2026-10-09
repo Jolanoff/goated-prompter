@@ -6,6 +6,7 @@ from .backends.base import BackendGenerationError
 from .contracts import PromptInstruction
 from .dataset_quality import analyze_idea_diversity
 from .dataset_understanding import understanding_instruction, validate_understanding, unwrap_json_fence
+from .strict_json import reject_duplicate_keys
 
 
 IDEA_FIELDS = ("idea", "placement", "visibility", "camera", "framing", "context")
@@ -163,13 +164,7 @@ def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existin
         stream_character_limit=1024 + len(indexes) * (len(IDEA_FIELDS) * MAX_FIELD_CHARACTERS + 200))
 
 
-def _unique_object(pairs):
-    result = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError("Ideas returned duplicate JSON keys.")
-        result[key] = value
-    return result
+_unique_object = reject_duplicate_keys("Ideas returned duplicate JSON keys.")
 
 
 def _failed_idea(row, index, reason):

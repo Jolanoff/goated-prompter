@@ -44,7 +44,7 @@ class DatasetCheckpointTests(unittest.TestCase):
             def run(self, request, data, progress, partial, **kwargs):
                 partial(result)
                 raise ValueError("writer unavailable")
-        with patch("goated_prompter.workspace_api.DatasetService", Service):
+        with patch("goated_prompter.workflow_runners.DatasetService", Service):
             with self.assertRaisesRegex(ValueError, "writer unavailable"):
                 execute_workflow(self.state, job, GoatedPrompterRequest(idea="craft"), {"backend": "mock"},
                                  {"operation": "dataset", "input": self.data})

@@ -8,6 +8,7 @@ from .backends.base import BackendGenerationError
 from .backends.factory import create_backend
 from .contracts import GoatedPrompterRequest, PromptInstruction, effective_model_family
 from .director_profiles import resolve_director_config
+from .strict_json import reject_duplicate_keys
 
 
 SOURCE_FIELDS = (
@@ -230,13 +231,7 @@ def _scope(value, scopes):
     return value
 
 
-def _unique_object(pairs):
-    result = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError("Understanding returned duplicate JSON keys.")
-        result[key] = value
-    return result
+_unique_object = reject_duplicate_keys("Understanding returned duplicate JSON keys.")
 
 
 def unwrap_json_fence(raw):
