@@ -2,14 +2,14 @@ import { ui } from "../ui.js";
 
 export function GoatMark({ small = false }) {
   return (
-    <svg className={`goat-mark ${small ? "size-10" : "size-[43px]"}`}
+    <svg className={`goat-mark ${small ? "size-9" : "size-[34px]"}`}
       viewBox="0 0 64 64" fill="none" aria-hidden="true">
-      <circle cx="32" cy="32" r="31" fill="currentColor" opacity=".16" />
+      <circle cx="32" cy="32" r="31" fill="currentColor" opacity=".1" />
       <path d="M29 20C14 3 5 17 20 28M37 20C51 2 60 17 45 29"
         stroke="currentColor" strokeWidth="5" strokeLinecap="round" />
       <path d="m22 22 10-6 11 7-2 16-9 15-9-15-1-17Z" fill="currentColor" />
       <path d="m21 24-10-2 7 11 7-1m18-8 10-2-7 11-6-1" fill="currentColor" />
-      <path d="m26 30 4 2m8-2-4 2m-4 8h5" stroke="#192d40"
+      <path d="m26 30 4 2m8-2-4 2m-4 8h5" style={{ stroke: "var(--rail)" }}
         strokeWidth="2.5" strokeLinecap="round" />
     </svg>
   );

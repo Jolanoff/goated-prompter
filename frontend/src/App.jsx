@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { ui } from "./ui.js";
 import { api } from "./api.js";
 import { adoptActiveJob } from "./jobRecovery.js";
@@ -31,7 +31,6 @@ import {
   Sun,
   WandSparkles,
   X,
-  Zap,
 } from "lucide-react";
 import {
   builderSnapshot,
@@ -538,10 +537,10 @@ function App() {
             Goated<span className={ui.brandSub}>Prompter</span>
           </span>
         </a>
-        <div className={ui.navCaption}>Workspace</div>
         <nav aria-label="Workspace">
-          {workspaceViews.map(({ id, label, icon: Icon }) => (
-            <button key={id} className={ui.navItem} data-active={view === id}
+          {workspaceViews.map(({ id, label, icon: Icon }) => (<Fragment key={id}>
+            {id === "saved" && <div className={ui.navDivider} role="presentation" />}
+            <button className={ui.navItem} data-active={view === id}
               aria-label={label} aria-current={view === id ? "page" : undefined}
               onClick={() => navigate(id)}
               disabled={!bootstrap && !["builder", "saved", "settings"].includes(id)}>
@@ -549,16 +548,13 @@ function App() {
               <span className="nav-text">{label}</span>
               {id === "saved" && <span className={ui.navCount} aria-hidden="true">{saved.length}</span>}
             </button>
-          ))}
+          </Fragment>))}
         </nav>
         <div className={ui.sidebarBottom}>
           <div className={ui.localLabel}>
             <span className={ui.statusDot} />
-            Your local studio
+            Private, local studio
           </div>
-          <p>
-            Ideas, prompts, and creative direction. All in one place.
-          </p>
         </div>
         <button className={`${ui.navItem} sidebar-log mobile:hidden`} onClick={() => setLogOpen(true)}
           aria-label="View LLM activity log" title="View LLM activity log">
@@ -586,10 +582,6 @@ function App() {
             <span className={ui.connectionPill} data-offline={!bootstrap}>
               <span className={ui.statusDot} />
               {bootstrap ? "Local backend connected" : "Backend offline"}
-            </span>
-            <span className={ui.localOnly}>
-              <Zap size={14} />
-              Local workspace
             </span>
           </div>
         </header>
