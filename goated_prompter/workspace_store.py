@@ -4,9 +4,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 import threading
 import uuid
-
-
-LOCKS = ("identity", "outfit", "pose", "scene", "composition", "camera", "lighting", "colors", "materials", "style")
+from .options.detail_locks import LOCKS
 
 
 def text(value, name, limit=100000, optional=False):

@@ -2,19 +2,7 @@ import { ArrowUpRight, Bookmark, ChevronDown, Copy,
   LoaderCircle, LockKeyhole, Sparkles, Trash2, WandSparkles, X } from "lucide-react";
 import { orderDisplayPresets, presetDisplayLabel } from "../../presetPresentation.js";
 import { ui } from "../../ui.js";
-
-const taskLabels = {
-  Enhance: "Improve a prompt",
-  Archviz: "Architecture & interiors",
-  Photography: "Photography",
-  Character: "Character",
-  Product: "Product",
-  "Image Edit": "Edit an image",
-  "Style Transfer": "Transfer a style",
-  "Dataset Caption": "Caption for a dataset",
-  Video: "Video shot",
-  Custom: "Custom instructions",
-};
+import { taskLabels } from "./options.js";
 
 function BuilderField({ name, label, short, schema, value, choices: override, onChange }) {
   const [type, options = {}] = schema;

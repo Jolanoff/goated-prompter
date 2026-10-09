@@ -6,10 +6,11 @@ from ...backends.factory import create_backend
 from ...backends.base import BackendGenerationError, BackendRunawayError
 from ...contracts import effective_model_family
 from ...director_profiles import resolve_director_config
-from .prompting import DATASET_SOURCES, DATASET_TYPES, dataset_instruction
-from ...prompting.details import PROMPT_LENGTH_NAMES
-from ...prompting.creativity import CREATIVITY_NAMES
-from ...prompting.target_models import TARGET_MODEL_NAMES, canonical_target
+from .prompting import dataset_instruction
+from ...options.dataset import DATASET_SOURCES, DATASET_TYPES
+from ...options.lengths import PROMPT_LENGTH_NAMES
+from ...options.creativity import CREATIVITY_NAMES
+from ...options.targets import TARGET_MODEL_NAMES, canonical_target
 from ...workflow_output import WorkflowFormatError, normalize_workflow_output, sanitize_prompt_text, requested_visible_text
 from .assignments import dataset_assignments
 from .quality import analyze_idea_diversity

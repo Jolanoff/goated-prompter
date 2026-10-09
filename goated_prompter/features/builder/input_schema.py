@@ -1,13 +1,12 @@
 """Standalone website input options and defaults for the bootstrap API."""
 
-from .service import CREATIVITY_NAMES, PROMPT_LENGTH_NAMES, REFERENCE_ROLE_NAMES
-from ...director_profiles import PROMPT_MODEL_NAMES
-from ...prompting.modes import MODE_NAMES
-from ...prompting.target_models import TARGET_MODEL_NAMES
+from ...options.creativity import CREATIVITY_NAMES
+from ...options.lengths import PROMPT_LENGTH_NAMES
+from ...options.modes import MODE_NAMES
+from ...options.prompt_models import PROMPT_MODEL_NAMES
+from ...options.references import REFERENCE_ATTRIBUTES, REFERENCE_ROLE_NAMES, REFERENCE_SOURCE_NAMES
+from ...options.targets import TARGET_MODEL_NAMES
 from ...presets import DEFAULT_DIRECTOR_PRESET
-from ...reference_map import REFERENCE_ATTRIBUTES, REFERENCE_SOURCE_NAMES
-
-REFERENCE_SOURCES = ("Off", "Image 1", "Image 2", "Image 3", "Image 4", "Blend")
 
 
 def builder_input_schema():

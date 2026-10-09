@@ -25,23 +25,15 @@ from ...prompting.base import (
     PRIORITY_CONTRACT,
     TEXT_ONLY_PRIORITY_CONTRACT,
 )
-from ...prompting.creativity import CREATIVITY_ADAPTERS as _CREATIVITY_ADAPTERS, CREATIVITY_NAMES
-from ...prompting.details import (
-    LENGTH_ADAPTERS as _LENGTH_ADAPTERS,
-    MAXIMUM_DETAIL_GUIDANCE as _MAXIMUM_DETAIL_GUIDANCE,
-    PRESERVATION_ADAPTERS as _PRESERVATION_ADAPTERS,
-    PRESERVATION_LINKED_LOCK,
-    PRESERVATION_NO_LINKED_LOCKS,
-    PRESERVATION_NONE,
-    PROMPT_LENGTH_NAMES,
-    REFERENCE_ROLE_NAMES,
-)
+from ...prompting.creativity import CREATIVITY_ADAPTERS as _CREATIVITY_ADAPTERS
+from ...prompting.details import LENGTH_ADAPTERS as _LENGTH_ADAPTERS, MAXIMUM_DETAIL_GUIDANCE as _MAXIMUM_DETAIL_GUIDANCE, PRESERVATION_ADAPTERS as _PRESERVATION_ADAPTERS, PRESERVATION_LINKED_LOCK, PRESERVATION_NO_LINKED_LOCKS, PRESERVATION_NONE
 from .prompting import EVIDENCE_ANALYSIS_SYSTEM_PROMPT, evidence_analysis_user_message
 from ...prompting.modes import get_mode_adapter, get_vision_mode_adapter
 from ...prompting.output import OUTPUT_CONTRACT, output_contract, qwen_format_repair, minimax_format_repair
 from ...prompting.target_models import QWEN21_EDIT_ADAPTER, get_model_adapter, resolve_target_length, get_target_capabilities
 from ...presets import DEFAULT_DIRECTOR_PRESET, get_director_preset
-from ...reference_map import REFERENCE_IMAGE_SLOTS, reference_images, resolve_reference_map
+from ...options.references import REFERENCE_IMAGE_SLOTS
+from ...reference_map import reference_images, resolve_reference_map
 from ...workflow_output import WorkflowFormatError, normalize_workflow_output, sanitize_prompt_text, requested_visible_text
 from ...contracts import GenerationResult, PromptInstruction, _reference_role, effective_model_family
 

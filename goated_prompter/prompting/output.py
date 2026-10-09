@@ -1,6 +1,7 @@
 """Final output/end-of-prompt contract."""
 
-from .target_models import canonical_target, get_target_capabilities
+from .target_models import get_target_capabilities
+from ..options.targets import canonical_target
 
 OUTPUT_CONTRACT = """Output contract: return exactly one final prompt and nothing else, in the target adapter's required output format.
 If the target requires JSON, return only that complete JSON object;

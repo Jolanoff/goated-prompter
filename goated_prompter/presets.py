@@ -27,7 +27,7 @@ from .prompting.directors import (
     DEFAULT_DIRECTOR_PRESET, DIRECTOR_PRESETS, DIRECTOR_PRESET_NAMES,
     MODE_DIRECTOR_RECOMMENDATIONS, DirectorPreset, _LEGACY_DIRECTOR_ALIASES,
 )
-from .prompting.modes import MODE_NAMES
+from .options.modes import MODE_NAMES
 
 _VALID_MODES = set(MODE_NAMES)
 _BUILTINS_BY_LABEL = {preset.label.casefold(): preset for preset in DIRECTOR_PRESETS}

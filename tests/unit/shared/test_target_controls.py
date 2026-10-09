@@ -8,9 +8,8 @@ from goated_prompter.features.dataset.service import validate_dataset_draft
 from goated_prompter.features.dataset.visible_content import positive_prompt_error, sanitize_positive_prompt
 from goated_prompter.presets import get_director_preset
 from goated_prompter.features.dataset.prompting import dataset_instruction
-from goated_prompter.prompting.target_models import (
-    TARGET_MODEL_NAMES, TARGET_CAPABILITIES, get_model_adapter, get_target_capabilities, resolve_target_length,
-)
+from goated_prompter.prompting.target_models import TARGET_CAPABILITIES, get_model_adapter, get_target_capabilities, resolve_target_length
+from goated_prompter.options.targets import TARGET_MODEL_NAMES
 from goated_prompter.workflow_settings import validate_draft
 from tests.support.dataset import valid_draft, saved_scene
 

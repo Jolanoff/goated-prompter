@@ -9,7 +9,7 @@ import re
 from threading import RLock
 
 from ...image_utils import EncodedImage
-from ...reference_map import REFERENCE_ATTRIBUTES, REFERENCE_IMAGE_SLOTS
+from ...options.references import REFERENCE_ATTRIBUTES, REFERENCE_IMAGE_SLOTS
 
 
 EVIDENCE_SCHEMA_VERSION = "1"

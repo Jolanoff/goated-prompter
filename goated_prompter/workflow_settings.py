@@ -4,7 +4,7 @@ from copy import deepcopy
 import threading
 
 from .features.refine.prompting import builtin_refine_instructions
-from .prompting.target_models import TARGET_MODEL_NAMES, canonical_target
+from .options.targets import TARGET_MODEL_NAMES, canonical_target
 from .workspace_store import WorkspaceConflict, locks, text
 from .features.minimax.contract import default_minimax_draft, validate_minimax_draft
 from .features.dataset.service import default_dataset_draft, validate_dataset_draft, saved_dataset_draft

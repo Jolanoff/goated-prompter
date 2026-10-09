@@ -368,6 +368,7 @@ goated-prompter/
 │   │   ├── saved_prompts/      # Saved prompt collection store and routes
 │   │   ├── presets/            # Instruction preset library routes
 │   │   └── settings/           # Settings validation, model discovery and unload routes
+│   ├── options/                # Option catalogs: targets, modes, lengths, references, MiniMax, Dataset, locks
 │   ├── api/                    # Request plumbing shared by routes, and workflow-settings routes
 │   ├── prompting/              # Prompt content shared by several tabs (base, output, targets, modes, directors)
 │   ├── planning/               # Shared constraints and optional single-pass scene/video staging

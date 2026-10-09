@@ -10,8 +10,8 @@ from .director_profiles import canonical_prompt_model, infer_prompt_model_family
 from .image_utils import EncodedImage
 from .planning import planning_mode
 from .presets import DEFAULT_DIRECTOR_PRESET, legacy_preset_for_mode
-from .prompting.details import REFERENCE_ROLE_NAMES
-from .prompting.target_models import canonical_target
+from .options.references import REFERENCE_ROLE_NAMES
+from .options.targets import canonical_target
 from .reference_map import reference_images, reference_map_from_mapping
 
 

@@ -19,7 +19,8 @@ from goated_prompter.config import load_config
 from goated_prompter.contracts import as_bool
 from goated_prompter.director_profiles import discover_director_profiles, resolve_director_config
 from goated_prompter.features.builder import routes as builder_routes
-from goated_prompter.features.builder.input_schema import REFERENCE_SOURCES, builder_input_schema
+from goated_prompter.features.builder.input_schema import builder_input_schema
+from goated_prompter.options.references import REFERENCE_SOURCES
 from goated_prompter.features.builder.service import GoatedPrompterService
 from goated_prompter.features.dataset import routes as dataset_routes
 from goated_prompter.features.dataset.checkpoints import DatasetCheckpointStore
@@ -41,7 +42,7 @@ from goated_prompter.presets import (
     DEFAULT_DIRECTOR_PRESET, DirectorLibraryError, get_director_preset, recommended_director_for_mode,
     save_user_director,
 )
-from goated_prompter.reference_map import REFERENCE_ATTRIBUTES
+from goated_prompter.options.references import REFERENCE_ATTRIBUTES
 from goated_prompter.workflow_runners import execute_workflow
 from goated_prompter.workflow_settings import WorkflowSettingsStore
 from goated_prompter.workspace_store import WorkspaceStore, WorkspaceConflict

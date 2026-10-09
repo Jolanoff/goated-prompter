@@ -9,7 +9,7 @@ from goated_prompter.backends.base import BackendGenerationError, GoatedPrompter
 from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.builder.service import GoatedPrompterService
 from goated_prompter.features.dataset.service import DatasetService, default_dataset_draft, dataset_instruction
-from goated_prompter.prompting.target_models import TARGET_MODEL_NAMES
+from goated_prompter.options.targets import TARGET_MODEL_NAMES
 from goated_prompter.features.refine.service import RefineService, refine_instruction
 from goated_prompter.workflow_output import WorkflowFormatError, normalize_workflow_output, requested_visible_text, sanitize_prompt_text
 from tests.support.backends import ScriptedBackend

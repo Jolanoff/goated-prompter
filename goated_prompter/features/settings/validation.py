@@ -2,8 +2,9 @@
 
 from pathlib import Path
 
-from ..builder.input_schema import REFERENCE_SOURCES, builder_input_schema
-from ...reference_map import REFERENCE_ATTRIBUTES
+from ..builder.input_schema import builder_input_schema
+from ...options.references import REFERENCE_SOURCES
+from ...options.references import REFERENCE_ATTRIBUTES
 
 
 def validate_settings(payload):

@@ -40,21 +40,9 @@ import {
   referenceSources,
   JOB_KEY,
 } from "./storage.js";
+import { referenceOrder } from "./features/builder/options.js";
 const titleCase = (text) =>
   text.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
-const referenceOrder = [
-  "subject",
-  "face",
-  "outfit",
-  "pose",
-  "scene",
-  "composition",
-  "camera",
-  "lighting",
-  "colors",
-  "materials",
-  "mood",
-];
 const workspaceViews = [
   { id: "builder", label: "Prompt Builder", icon: SlidersHorizontal },
   { id: "refine", label: "Refine", icon: WandSparkles },

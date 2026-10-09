@@ -3,12 +3,8 @@
 from dataclasses import dataclass
 import re
 
-from .prompting.details import (
-    REFERENCE_ATTRIBUTES,
-    REFERENCE_IMAGE_SLOTS,
-    REFERENCE_MANUAL_CONSTRAINTS as _MANUAL_CONSTRAINTS,
-    REFERENCE_SOURCE_NAMES,
-)
+from .prompting.details import REFERENCE_MANUAL_CONSTRAINTS as _MANUAL_CONSTRAINTS
+from .options.references import REFERENCE_ATTRIBUTES, REFERENCE_IMAGE_SLOTS
 
 
 def reference_images(value):
