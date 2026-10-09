@@ -3,13 +3,13 @@
 from pathlib import Path
 import os
 import sys
-import tempfile
 import time
 import json
 import re
 from unittest.mock import patch
 
-from tests.support.paths import ROOT
+from tests.support.artifacts import task_paths
+from tests.support.safety import private_storage_guard, synthetic_storage
 
 from aiohttp import web
 from local_app import create_app
@@ -74,10 +74,9 @@ class DelayedMockService(GoatedPrompterService):
 
 
 if __name__ == "__main__":
-    from tests.support.safety import private_storage_guard
     sys.addaudithook(private_storage_guard)
-    with tempfile.TemporaryDirectory() as data:
-        os.environ["GOATED_PROMPTER_USER_DIR"] = str(Path(data) / "directors")
+    _, scratch = task_paths(os.environ.get("GOATED_TEST_TASK_KEY", "browser-tests"), "browser")
+    with synthetic_storage(scratch) as data:
         port = int(os.environ.get("GOATED_UI_TEST_PORT", "8190"))
         with patch("goated_prompter.dataset.create_backend", side_effect=dataset_ui_backend), \
                 patch("goated_prompter.dataset_understanding.create_backend", side_effect=dataset_ui_backend), \

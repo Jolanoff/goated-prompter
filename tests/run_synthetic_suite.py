@@ -2,16 +2,14 @@
 
 import argparse
 import logging
-import os
 from pathlib import Path
 import sys
-import tempfile
 import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from tests.support.safety import private_storage_guard
+from tests.support.safety import private_storage_guard, synthetic_storage
 
 
 def main(argv=None):
@@ -37,11 +35,8 @@ def main(argv=None):
         if not starts:
             parser.error("The selected suite has no tests for this workflow/domain.")
     logging.basicConfig(level=logging.CRITICAL)
-    scratch.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="suite-", dir=scratch) as temporary:
-        with patch.dict(os.environ, {"GOATED_PROMPTER_USER_DIR": str(Path(temporary) / "directors")}), \
-                patch.object(tempfile, "tempdir", temporary), \
-                patch("goated_prompter.backends.llama_cpp_process.LlamaCppProcessManager.acquire", side_effect=AssertionError("Real model loading is not allowed")):
+    with synthetic_storage(scratch):
+        with patch("goated_prompter.backends.llama_cpp_process.LlamaCppProcessManager.acquire", side_effect=AssertionError("Real model loading is not allowed")):
             loader = unittest.TestLoader()
             suite = loader.loadTestsFromNames(args.tests) if args.tests else unittest.TestSuite(
                 loader.discover(str(start), top_level_dir=str(ROOT)) for start in starts)

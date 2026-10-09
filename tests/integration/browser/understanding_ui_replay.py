@@ -4,11 +4,11 @@ import json
 import os
 from pathlib import Path
 import sys
-import tempfile
 from unittest.mock import patch
 
 from tests.support.paths import ROOT
-from tests.support.safety import private_storage_guard
+from tests.support.artifacts import task_paths
+from tests.support.safety import private_storage_guard, synthetic_storage
 
 
 if __name__ == "__main__":
@@ -18,7 +18,10 @@ if __name__ == "__main__":
     from goated_prompter.backends.mock import MockBackend
 
     fixture = Path(os.environ.get("GOATED_UNDERSTANDING_REPLAY", ROOT / "tests/fixtures/understanding_review.json")).resolve()
-    if not any(fixture.is_relative_to(root) for root in (ROOT / "tests/fixtures", ROOT / "quality-artifacts/test")):
+    quality = ROOT / "quality-artifacts"
+    parts = fixture.relative_to(quality).parts if fixture.is_relative_to(quality) else ()
+    scoped = len(parts) >= 4 and parts[0] in {"tasks", "temp"} and parts[2] == "browser"
+    if not scoped and not any(fixture.is_relative_to(root) for root in (ROOT / "tests/fixtures", quality / "test")):
         raise ValueError("Replay input must be a synthetic fixture or evaluation artifact.")
     captured = json.loads(fixture.read_text(encoding="utf-8"))
 
@@ -40,8 +43,8 @@ if __name__ == "__main__":
         result.activity_callback = config.get("_activity_callback")
         return result
 
-    with tempfile.TemporaryDirectory(prefix="understanding-ui-") as storage:
-        os.environ["GOATED_PROMPTER_USER_DIR"] = str(Path(storage) / "directors")
+    _, scratch = task_paths(os.environ.get("GOATED_TEST_TASK_KEY", "browser-tests"), "browser")
+    with synthetic_storage(scratch) as storage:
         with patch("goated_prompter.dataset_understanding.create_backend", side_effect=backend), \
                 patch("goated_prompter.dataset.create_backend", side_effect=backend), \
                 patch("goated_prompter.core.create_backend", side_effect=backend), \

@@ -7,8 +7,13 @@ import hashlib
 from pathlib import Path
 import subprocess
 import time
+from contextlib import nullcontext
 
 from .metrics import annotation_template
+from tests.support.artifacts import new_output, task_paths
+from tests.support.paths import ROOT
+from tests.support.safety import synthetic_storage
+from tests.support.scenarios import select_cases
 
 CORPUS = Path(__file__).parent / "cases" / "corpus.json"
 
@@ -183,7 +188,20 @@ def load_replay(path):
             "records": [row for run in runs for row in run["records"]]}
 
 
-def main():
+def run_metadata(config, corpus_digest):
+    code = hashlib.sha256()
+    source_root = ROOT / "goated_prompter"
+    for path in sorted(source_root.rglob("*.py")):
+        code.update(str(path.relative_to(source_root)).replace("\\", "/").encode())
+        code.update(path.read_bytes())
+    return {"run_id": datetime.now(timezone.utc).isoformat(),
+            "revision": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
+            "code_digest": code.hexdigest(), "corpus_digest": corpus_digest,
+            "dirty": bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT, text=True)),
+            "engine": {key: config.get("openai_compatible", {}).get(key) for key in ("model", "context_size")}}
+
+
+def main(argv=None, gpu=False):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--corpus", type=Path, default=CORPUS)
     parser.add_argument("--replay", type=Path)
@@ -204,12 +222,39 @@ def main():
     parser.add_argument("--novelty", action="store_true")
     parser.add_argument("--history", choices=["on", "off"], default="on")
     parser.add_argument("--repeats", type=int, choices=range(1, 6), default=1)
-    args = parser.parse_args()
+    parser.add_argument("--seed", type=int, help="Seed fixed-case selection/order, not model output")
+    parser.add_argument("--limit", type=int, default=1 if gpu else None, help="Maximum selected cases")
+    parser.add_argument("--task-key", help="Task key for isolated real-engine execution")
+    parser.add_argument("--max-runs", type=int, help="Approved maximum workflow runs, not model calls")
+    args = parser.parse_args(argv)
+    if gpu and (args.replay or args.novelty):
+        parser.error("Use tests.eval.runner for replay or novelty evaluation.")
+    if gpu and not args.workflow:
+        parser.error("Real-engine execution requires one explicit --workflow.")
     corpus = json.loads(args.corpus.read_text(encoding="utf-8"))
-    cases = [case for case in corpus["cases"] if not args.case or case["id"] in args.case]
+    try:
+        cases = select_cases(corpus["cases"], args.case, args.workflow, args.seed, args.limit)
+    except ValueError as exc:
+        parser.error(str(exc))
     if args.dry_run:
-        print(json.dumps({"cases": cases, "novelty": corpus["novelty"], "inference": False}, indent=2))
+        print(json.dumps({"cases": cases, "novelty": [] if gpu else corpus["novelty"],
+                          "scenario_seed": args.seed, "inference": False}, indent=2))
         return
+    scratch = None
+    if gpu:
+        if not args.allow_live or not args.config or not args.task_key or args.max_runs is None:
+            parser.error("Real-engine execution requires --allow-live, --config, --task-key and --max-runs after owner approval.")
+        if args.max_runs < 1 or len(cases) * args.repeats > args.max_runs:
+            parser.error("Selected workflow runs exceed --max-runs; narrow --case/--limit/--repeats.")
+        try:
+            results, scratch = task_paths(args.task_key, "gpu")
+            args.output = new_output(args.output or results / "results.json", args.task_key, "gpu")
+            if args.template:
+                args.template = new_output(args.template, args.task_key, "gpu")
+                if args.template == args.output:
+                    raise ValueError("Result and annotation outputs must be different paths.")
+        except ValueError as exc:
+            parser.error(str(exc))
     if args.replay:
         try:
             result = load_replay(args.replay)
@@ -222,35 +267,42 @@ def main():
         if config.get("backend") != "openai_compatible":
             parser.error("Use an explicitly configured existing OpenAI-compatible endpoint; no process ownership changes.")
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        revision = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-        source_root = Path(__file__).resolve().parents[2] / "goated_prompter"
-        code = hashlib.sha256()
-        for path in sorted(source_root.rglob("*.py")):
-            code.update(str(path.relative_to(source_root)).replace("\\", "/").encode())
-            code.update(path.read_bytes())
-        result = {"run_id": datetime.now(timezone.utc).isoformat(), "revision": revision,
-                  "code_digest": code.hexdigest(), "corpus_digest": hashlib.sha256(args.corpus.read_bytes()).hexdigest(),
-                  "dirty": bool(subprocess.check_output(["git", "status", "--porcelain"], text=True)),
-                  "engine": {key: config.get("openai_compatible", {}).get(key) for key in ("model", "context_size")}, "records": []}
-        for trial in range(1, args.repeats + 1):
-            for case in cases:
-                for workflow in (case["workflows"] if trial % 2 else list(reversed(case["workflows"]))):
-                    if args.workflow and args.workflow != workflow:
-                        continue
-                    row = live_case(case, workflow, config, args, run=trial)
-                    result["records"].append(row)
-                    args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
-                    if row.get("error") and "Could not reach" in row["error"]:
-                        return
-        if args.novelty:
-            for spec in corpus["novelty"]:
-                result["records"].extend(novelty_cases(spec, config, args))
+        result = {**run_metadata(config, hashlib.sha256(args.corpus.read_bytes()).hexdigest()),
+                   "scenario_seed": args.seed, "selected_case_ids": [case["id"] for case in cases], "records": []}
+        if gpu:
+            try:
+                with args.output.open("x", encoding="utf-8") as output:
+                    output.write(json.dumps(result, ensure_ascii=False, indent=2))
+            except FileExistsError:
+                parser.error("Output appeared during setup; retained evidence was not overwritten.")
+        with synthetic_storage(scratch) if gpu else nullcontext():
+            for trial in range(1, args.repeats + 1):
+                for case in cases:
+                    workflows = [args.workflow] if args.workflow else case["workflows"]
+                    for workflow in (workflows if trial % 2 else list(reversed(workflows))):
+                        row = live_case(case, workflow, config, args, run=trial)
+                        result["records"].append(row)
+                        args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+                        if gpu:
+                            print(json.dumps(row, ensure_ascii=False, indent=2))
+                            if row.get("error"):
+                                return 1
+                            if len(result["records"]) < len(cases) * args.repeats:
+                                if input("Inspect this result before continuing. Type yes: ").strip() != "yes":
+                                    return
+                        elif row.get("error") and "Could not reach" in row["error"]:
+                            return
+            if args.novelty:
+                for spec in corpus["novelty"]:
+                    result["records"].extend(novelty_cases(spec, config, args))
     if args.template:
-        args.template.write_text(json.dumps(annotation_template(result["records"]), indent=2), encoding="utf-8")
+        args.template.parent.mkdir(parents=True, exist_ok=True)
+        with args.template.open("x" if gpu else "w", encoding="utf-8") as template:
+            template.write(json.dumps(annotation_template(result["records"]), indent=2))
     if args.output:
         args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"{result['run_id']}: {len(result['records'])} samples")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

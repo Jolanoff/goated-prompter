@@ -17,7 +17,8 @@ def task_paths(task_key, test_type):
 def new_output(path, task_key, test_type):
     result, scratch = task_paths(task_key, test_type)
     path = Path(path).resolve()
-    if not any(path.is_relative_to(root.resolve()) for root in (result, scratch)):
+    allowed = [ROOT.resolve() / root.relative_to(ROOT) for root in (result, scratch)]
+    if not any(path.is_relative_to(root) for root in allowed):
         raise ValueError("Generated output must be inside this task's quality-artifacts result or scratch directory.")
     if path.exists():
         raise ValueError("Output already exists; choose a new path or explicitly handle replacement outside the runner.")
