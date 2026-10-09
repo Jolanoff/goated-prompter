@@ -8,42 +8,37 @@ Transform the user's rough visual idea into one polished, directly usable genera
 Write precise visual descriptions. Do not pad the result with generic quality slogans such as "masterpiece", "best quality", "8k", or "ultra detailed" unless the target adapter explicitly establishes a concrete reason. Do not invent important subjects, objects, architecture, clothing, actions, or camera changes when the active creativity and preservation instructions prohibit it.
 
 FRAME COMPLETENESS DEFAULT
-Unless intentional cropping is requested, choose framing and camera distance that keep all requested subjects and important objects meaningfully inside the image. Preserve explicit counts and required extremities. Increase distance or field of view when necessary rather than silently cropping requested content.
-
-Return only the final usable prompt. Do not provide analysis, reasoning, headings, alternatives, commentary, or quotation marks around the prompt."""
+Unless intentional cropping is requested, choose framing and camera distance that keep all requested subjects and important objects meaningfully inside the image. Preserve explicit counts and required extremities. Increase distance or field of view when necessary rather than silently cropping requested content."""
+# One shared precedence rule replaces the former Mode/Detail/Director meta block.
+SETTINGS_PRECEDENCE = """The selected Mode sets the task and the target model sets the output format. Creativity, prompt length and Director style adapt to both and never change the task, the format or the user's facts."""
 PRIORITY_CONTRACT = """PRIORITY AND CONFLICT RESOLUTION
 Build one internally coherent prompt. When instructions compete, resolve them in this order:
-1. The explicit current WHAT DO YOU WANT? transformation, only for the attributes it changes.
-2. Explicit manual Reference Map assignments.
+1. The user's current request, only for the attributes it changes.
+2. Manual reference assignments.
 3. Enabled Preserve locks, except for the exact attribute the current request explicitly changes.
-4. Deterministic automatic Director/reference resolution.
+4. Automatic reference assignments.
 5. Primary-reference evidence.
 6. Secondary-reference evidence.
-7. Final LLM inference, optional enrichment, and defaults.
+7. Your own inference, optional enrichment, and defaults.
 
-After the Reference Map is resolved, Director behavior, Mode behavior, and target-model compilation may shape wording but must not reassign attribute sources. Workflow Rules are extra constraints for this workflow; apply them without contradicting the current request, enabled preservation, or source-map-authoritative evidence. Lower-priority details must adapt or disappear when they conflict with higher-priority facts. Never combine incompatible subjects, identities, outfits, poses, settings, camera descriptions, lighting conditions, materials, or edit outcomes into the final prompt."""
+Director, Mode and target wording may shape the prompt but must not change which reference supplies an attribute. Workflow Rules are extra constraints; apply them without contradicting the current request, enabled preservation, or assigned reference evidence. Lower-priority details must adapt or disappear when they conflict with higher-priority facts. Never combine incompatible subjects, identities, outfits, poses, settings, camera descriptions, lighting conditions, materials, or edit outcomes into the final prompt.
+""" + SETTINGS_PRECEDENCE
 LINKED_PRIORITY_CONTRACT = """PRIORITY AND CONFLICT RESOLUTION - LINKED REFERENCES
-1. Each selected Reference Map source is an independent strict preservation lock for that attribute.
+1. Each selected reference source is an independent strict preservation lock for that attribute.
 2. User direction controls Off attributes freely, without reference evidence or preservation locks.
 3. Director, Mode, Workflow Rules, target-model wording, and creative enrichment must respect these decisions.
 If user wording contradicts a selected source or its evidence, the strict source lock wins: retain that
 attribute and omit the contradictory change. Do not reinterpret descriptive words as permission to unlock it.
 Off rows remain independent, including face and outfit when Subject is locked. Do not borrow their evidence
-from locked rows or other images. Produce one coherent prompt without exposing internal conflict reasoning."""
+from locked rows or other images. Produce one coherent prompt without exposing internal conflict reasoning.
+""" + SETTINGS_PRECEDENCE
 TEXT_ONLY_PRIORITY_CONTRACT = """PRIORITY AND CONFLICT RESOLUTION
 Build one internally coherent prompt from the user's text. When instructions compete, resolve them in this order:
-1. The explicit current WHAT DO YOU WANT? request.
+1. The user's current request.
 2. Workflow Rules supplied for this request.
 3. The selected Mode and target-model output requirements.
 4. Creativity and prompt-length settings.
 5. Compatible Director behavior and optional enrichment.
 
-Use only textual information supplied in the current request and its active textual configuration. Resolve ambiguity conservatively, keep lower-priority additions compatible with the central request, and never invent a second conflicting scene or subject."""
-CONTROL_CONTRACT = """MODE, DETAIL, AND DIRECTOR RESPONSIBILITIES
-Apply these controls within the request, Workflow Rules, and reference/preservation priorities above:
-- Mode defines the task. Director behavior must not replace that task with a different one; for example, a Video Director cannot turn Dataset Caption mode into a temporal generation prompt.
-- Target defines how that model receives the task: required structure, syntax and practical prompt-density envelope take priority over Length and conflicting Director preferences.
-- Prompt length controls useful descriptive density WITHIN the target model's useful prompt envelope. Maximum Detail does not mean unlimited prose; Short must retain required structure. Length does not change the task or invent evidence.
-- Creativity controls SEMANTIC invention only, never target syntax or output format. Director behavior must respect it and all active preservation constraints.
-- Director supplies specialist technique, emphasis, and style only where compatible with Mode, target output requirements, prompt length, and creativity. Adapt or omit conflicting Director instructions rather than combining incompatible tasks. A Director name does not change any selected setting.
-These responsibilities apply equally to saved Director instructions and edited Director working copies."""
+Resolve ambiguity conservatively, keep lower-priority additions compatible with the central request, and never invent a second conflicting scene or subject.
+""" + SETTINGS_PRECEDENCE

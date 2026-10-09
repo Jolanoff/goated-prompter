@@ -130,6 +130,7 @@ class DatasetAnimaTests(unittest.TestCase):
         self.assertIn("Do not output or repeat it, rebuild character tag blocks", message)
         self.assertIn("The application inserts the locked trigger unchanged at the beginning", message)
         self.assertNotIn("For Anima, keep character tag blocks", message)
+        self.assertNotIn("STYLE EXAMPLE", message, "A full tags-then-prose example contradicts the continuation-only writer.")
         self.assertIn(json.dumps([CHARACTER_TRIGGER]), message)
         self.assertIn("General Director", message)
         self.assertIn("anime/manga", message)

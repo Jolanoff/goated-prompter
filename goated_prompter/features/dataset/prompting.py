@@ -75,8 +75,10 @@ def dataset_instruction(request, data, index, model_family="qwen", plan_item=Non
         image=None, image_2=None, image_3=None, image_4=None, linked_references=False, reference_map=None,
         custom_instructions="\n\n".join((ENHANCE_SCENE_CONTRACT, grouping + " " + placement,
             requirements_message)))
+    # With a locked Anima prefix the writer returns only a continuation, which a
+    # full tags-then-prose example would contradict.
     instruction = assemble_instruction(builder_request, model_family=model_family,
-        text_only=True, compile_user_constraints=False)
+        text_only=True, compile_user_constraints=False, include_target_example=not fixed_anima_prefix(data))
     if data["target"] == "Anima":
         instruction = replace(instruction, system_message=instruction.system_message +
             "\n\nFINAL ANIMA WRITER CONTRACT\n"
