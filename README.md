@@ -378,7 +378,9 @@ goated-prompter/
 │   ├── scene_planner.py        # Batch scene planning, validation and fallback
 │   ├── refinement.py           # Refine inference runtime
 │   ├── workflow_settings.py    # Per-workflow drafts and instruction overrides
-│   ├── workspace_api.py        # Creative-workspace endpoints and shared-job integration
+│   ├── api/                    # Workflow HTTP routes (Dataset, MiniMax, Refine/history, workflow settings)
+│   ├── workflow_runners.py     # One execution entry point per workflow
+│   ├── workspace_api.py        # Registers the workflow routes
 │   ├── workspace_store.py      # Atomic versions and branching undo/redo
 │   ├── reference_map.py        # Attribute-to-image source mapping
 │   ├── evidence.py             # Image analysis and resolved scene evidence

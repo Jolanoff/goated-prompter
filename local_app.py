@@ -29,7 +29,8 @@ from goated_prompter.director_profiles import discover_director_profiles, resolv
 from goated_prompter.input_schema import builder_input_schema
 from goated_prompter.reference_map import REFERENCE_ATTRIBUTES
 from goated_prompter.workspace_store import WorkspaceStore, WorkspaceConflict
-from goated_prompter.workspace_api import register_workspace_routes, execute_workflow
+from goated_prompter.workflow_runners import execute_workflow
+from goated_prompter.workspace_api import register_workspace_routes
 from goated_prompter.workflow_settings import WorkflowSettingsStore
 from goated_prompter.presets import (
     DEFAULT_DIRECTOR_PRESET, MODE_DIRECTOR_RECOMMENDATIONS, DirectorLibraryError, delete_user_director,
@@ -283,26 +284,8 @@ class LocalState:
                 # This app owns the active llama.cpp process, so ending its
                 # job can interrupt the blocking inference request.
                 job.set_interrupt(get_process_manager().interrupt_active)
-            if workflow is not None:
-                execute_workflow(self, job, director_request, config, workflow)
-                return
-            job.set_progress(
-                "Running the Builder model workflow. The engine may be loading, analyzing references, or writing the final prompt."
-            )
-            service = self.service_factory(config=config, checkpoint=job.checkpoint)
-            generated = (service.generate_text_only if text_only else service.generate)(director_request)
-            result = {"ok": True, "prompt": generated.prompt, "backend": generated.backend_name,
-                      "director_profile": generated.director_profile,
-                      "prompt_model": generated.prompt_model, "director_preset": generated.director_preset}
-            result["planning_status"] = getattr(generated, "planning_status", "direct")
-            def save_result():
-                try:
-                    snapshot = self.workspace.add_version(generated.prompt, director_request.target_model, "Builder generation")
-                    result["version_id"] = snapshot["current_id"]
-                except (ValueError, OSError) as exc:
-                    result["history_error"] = f"Prompt generated, but version history could not be saved: {exc}"
-                return result
-            job.commit(save_result, finish=True)
+            execute_workflow(self, job, director_request, config,
+                             workflow if workflow is not None else {"operation": "builder", "text_only": text_only})
         except JobCancelled:
             with job.lock:
                 if job.released:

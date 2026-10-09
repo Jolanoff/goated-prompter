@@ -122,7 +122,7 @@ class JobPersistenceTests(unittest.TestCase):
         def generate(request, data, progress, partial, **options):
             partial(result)
             return result
-        with patch("goated_prompter.workspace_api.DatasetService") as service:
+        with patch("goated_prompter.workflow_runners.DatasetService") as service:
             service.return_value.run.side_effect = generate
             execute_workflow(state, job, GoatedPrompterRequest(idea="synthetic cup"), {},
                              {"operation": "dataset", "input": {}})
