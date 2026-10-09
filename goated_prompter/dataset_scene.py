@@ -38,8 +38,6 @@ action, interaction/contact points, relative depth, foreground/background, natur
 overlaps/occlusions, required visible evidence, one camera and framing, and context.
 Do not add a giant geometry schema or anatomical inventory. Include useful spatial
 facts, not filler. Preserve HARD and use SOFT/FREE only where compatible.
-Apply the selected visual medium silently; include concrete rendering features only
-when useful. Do not add commentary about rendering style or why it is evident.
 all_outputs applies to this image, dataset to the set, and guided:N only to this
 assignment's guided_scope.
 Dataset-wide diversity is not a demand to show every variant in this image.

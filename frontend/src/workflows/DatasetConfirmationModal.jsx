@@ -81,7 +81,6 @@ export default function DatasetConfirmationModal({ review, busy, onRevise, onCon
           <div><dt>Amount</dt><dd>{review.input.amount ? `${review.input.amount} prompts` : "Not specified"}</dd></div>
           <div><dt>Target model</dt><dd>{review.input.target || "Not specified"}</dd></div>
           <div><dt>Prompt length</dt><dd>{review.input.length || "Not specified"}</dd></div>
-          <div><dt>Visual style</dt><dd>{review.input.visual_style === "Custom" ? review.input.custom_style : review.input.visual_style || "Not specified"}</dd></div>
           <div><dt>Creativity</dt><dd>{review.input.creativity || "Balanced"}</dd></div>
           <div><dt>Trigger text</dt><dd className="whitespace-pre-wrap">{review.input.trigger || "None; planning only"}</dd></div>
         </dl>

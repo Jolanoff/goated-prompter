@@ -171,12 +171,13 @@ class DatasetSceneTests(unittest.TestCase):
             self.assertIn(obligation, instruction.system_message)
         self.assertIn("one compact self-check", instruction.system_message)
 
-    def test_scene_applies_medium_without_explaining_style_in_its_paragraph(self):
-        self.data["visual_style"] = "Anime / manga"
+    def test_scene_receives_user_written_medium_as_an_approved_requirement(self):
+        self.data["_confirmed_intent"]["hard"] = [{"scope": "all_outputs", "text": "Ink wash portrait."}]
         instruction = scene_instruction(self.data, self.assignment, self.idea)
         rules = " ".join(instruction.system_message.split())
-        self.assertIn("Apply the selected visual medium silently", rules)
-        self.assertIn("Do not add commentary about rendering style", rules)
+        self.assertNotIn("Apply the selected visual medium", rules)
+        self.assertEqual(json.loads(instruction.user_message)["confirmed_intent"]["hard"],
+            [{"scope": "all_outputs", "text": "Ink wash portrait."}])
         self.assertEqual(instruction.diagnostic_stage, "dataset:build_scene")
 
     def test_scene_check_requires_subject_by_subject_role_satisfaction_not_labels(self):

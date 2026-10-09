@@ -11,8 +11,8 @@ export function datasetJsonl(draft) {
   })).join("\n");
 }
 
-const settingFields = ["subject", "trigger_type", "custom_type", "constraints", "amount", "variety", "trigger",
-  "trigger_at_start", "trigger_connected", "expand_trigger", "visual_style", "custom_style", "director_preset",
+const settingFields = ["subject", "trigger_type", "custom_type", "constraints", "amount", "trigger",
+  "trigger_at_start", "trigger_connected", "expand_trigger", "director_preset",
   "target", "length", "creativity", "source_mode", "inputs"];
 const jobFields = ["id", "kind", "status", "completion_state", "revision", "created_at", "finished_at", "result",
   "error", "progress", "progress_at", "status_reason", "events", "llm_trace", "partial_responses",

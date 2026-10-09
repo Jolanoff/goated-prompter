@@ -6,7 +6,7 @@ from .backends.factory import create_backend
 from .backends.base import BackendGenerationError, BackendRunawayError
 from .core import _effective_model_family
 from .director_profiles import resolve_director_config
-from .prompting.dataset import DATASET_SOURCES, DATASET_STYLES, DATASET_TYPES, DATASET_VARIETY, dataset_instruction
+from .prompting.dataset import DATASET_SOURCES, DATASET_TYPES, dataset_instruction
 from .prompting.details import PROMPT_LENGTH_NAMES
 from .prompting.creativity import CREATIVITY_NAMES
 from .prompting.target_models import TARGET_MODEL_NAMES, canonical_target
@@ -28,9 +28,9 @@ def default_dataset_draft():
     return {
         "trigger": "", "trigger_type": "Character", "custom_type": "", "subject": "",
         "trigger_at_start": False, "trigger_connected": True, "expand_trigger": False,
-        "amount": 12, "visual_style": "Photorealistic", "custom_style": "",
+        "amount": 12,
         "source_mode": "random", "inputs": "", "target": "Generic", "length": "Medium",
-        "director_preset": "general_director", "variety": "Balanced", "constraints": "",
+        "director_preset": "general_director", "constraints": "",
         "creativity": "Balanced", "results": [], "result_job_id": "",
         "scene_plan": [], "scene_plan_signature": "", "plan_scenes_first": False,
     }
@@ -49,12 +49,11 @@ def validate_dataset_draft(value, *, generation=False, planning=False):
     result = {**defaults, **{key: item for key, item in value.items() if key in defaults}}
     result["trigger"] = _text(result["trigger"], "Trigger / prepend", 1000, required=generation and not planning).strip()
     result["subject"] = _text(result["subject"], "Dataset concept", 10000, required=generation).strip()
-    for key, label, limit in (("custom_type", "Custom subject kind", 120), ("custom_style", "Custom visual style", 500),
+    for key, label, limit in (("custom_type", "Custom subject kind", 120),
                               ("inputs", "Guided inputs", 50000), ("constraints", "Dataset constraints", 10000),
                               ("result_job_id", "Result job id", 128), ("scene_plan_signature", "Scene plan signature", 128)):
         result[key] = _text(result[key], label, limit)
-    for key, allowed in (("trigger_type", DATASET_TYPES), ("visual_style", DATASET_STYLES),
-                         ("source_mode", DATASET_SOURCES), ("variety", DATASET_VARIETY),
+    for key, allowed in (("trigger_type", DATASET_TYPES), ("source_mode", DATASET_SOURCES),
                          ("creativity", CREATIVITY_NAMES), ("length", PROMPT_LENGTH_NAMES)):
         if not isinstance(result[key], str) or result[key] not in allowed:
             raise ValueError(f"Invalid Dataset {key}.")
@@ -71,8 +70,6 @@ def validate_dataset_draft(value, *, generation=False, planning=False):
             raise ValueError(f"{key} must be enabled or disabled.")
     if result["trigger_type"] == "Custom" and generation and not result["custom_type"].strip():
         raise ValueError("Describe the custom subject kind before generating.")
-    if result["visual_style"] == "Custom" and generation and not result["custom_style"].strip():
-        raise ValueError("Describe the custom visual style before generating.")
     if result["source_mode"] == "guided" and generation and not any(line.strip() for line in result["inputs"].splitlines()):
         raise ValueError("Add at least one guided input, one per line.")
     result["scene_plan"] = validate_saved_scene_plan(result["scene_plan"])

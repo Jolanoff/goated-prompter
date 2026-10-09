@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AlignLeft, ArrowRight, ChevronDown, Circle, CircleAlert, CircleCheck, CircleHelp, Copy, Cpu, Database, Download, FileJson, Layers3, Lightbulb, LoaderCircle, Palette, RefreshCw, SlidersHorizontal, Sparkles, Tag, Trash2, WandSparkles, Wrench } from "lucide-react";
+import { AlignLeft, ArrowRight, ChevronDown, Circle, CircleAlert, CircleCheck, CircleHelp, Copy, Cpu, Database, Download, FileJson, Layers3, Lightbulb, LoaderCircle, RefreshCw, SlidersHorizontal, Sparkles, Tag, Trash2, WandSparkles, Wrench } from "lucide-react";
 import { ui } from "../ui.js";
 import { orderDisplayPresets, presetDisplayLabel } from "../presetPresentation.js";
 import { TargetSelect } from "./WorkflowControls.jsx";
@@ -13,8 +13,6 @@ import DatasetIdeaDetails, { DatasetSceneCheck } from "./DatasetIdeaDetails.jsx"
 
 const triggerTypes = ["Character", "Multiple characters", "Animal", "Object / product", "Visual style",
   "Location / environment", "Brand / logo", "Typography / text", "Concept", "Custom"];
-const visualStyles = ["Photorealistic", "Cinematic photography", "Anime / manga", "Illustration", "3D render", "Graphic design", "Keep described style", "Mixed styles", "Custom"];
-const varieties = ["Focused", "Balanced", "Wide"];
 const datasetPages = [["configure", "Configure"], ["scenes", "Scenes"], ["dataset", "Dataset"]];
 
 function StatusChip({ label, status }) {
@@ -65,11 +63,11 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
   const navigatedJob = useRef("");
   const availablePresets = orderDisplayPresets(presets || []);
   const director = availablePresets.find((item) => item.id === draft?.director_preset);
-  const { starting, error, resettingIdeas, noveltyNotice, workflowActive, disabled,
+  const { starting, error, workflowActive, disabled,
     guidedLines, canPlanScenes, staleScenePlan, sceneUsable, validSceneCount, retryStage,
     canWrite, canContinue, remainingPromptCount, updateSceneSettings, updateWriterSettings,
     sceneAction, generateDataset, generateScenes, continueDataset, editResult, releaseCheckpoints, clearResults,
-    resetRecentIdeas, confirmation, understanding, reviseConfirmation, cancelConfirmation, confirmRequest } = useDatasetWorkflow({ preferences, job, busy, active, noEngine,
+    confirmation, understanding, reviseConfirmation, cancelConfirmation, confirmRequest } = useDatasetWorkflow({ preferences, job, busy, active, noEngine,
       director, onGenerate: startGeneration, onReleaseJobs });
   const [clock, setClock] = useState(Date.now());
 
@@ -125,8 +123,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
   function exportGenerationLog() {
     download("dataset-generation-log.json", datasetGenerationLog({ draft, review: understanding, job, record: preferences.record,
       state: { active: workflowActive, starting, error, settings_status: preferences.status, settings_error: preferences.error,
-        settings_conflict: preferences.conflict, stale_scene_plan: staleScenePlan, valid_scene_count: validSceneCount,
-        novelty_notice: noveltyNotice } }), "application/json;charset=utf-8");
+        settings_conflict: preferences.conflict, stale_scene_plan: staleScenePlan, valid_scene_count: validSceneCount } }), "application/json;charset=utf-8");
   }
 
   function goToStep(step) {
@@ -219,12 +216,6 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                     <option key={amount} value={amount}>{amount}</option>)}
                 </select>
               </label>
-              <label className={ui.field}><span>Variety</span>
-                <select className={ui.select} aria-label="Dataset variety" value={draft.variety}
-                  onChange={(event) => updateSceneSettings({ variety: event.target.value })}>
-                  {varieties.map((item) => <option key={item}>{item}</option>)}
-                </select>
-              </label>
             </div>
             {draft.trigger_type === "Custom" && <label className={ui.field}><span>Custom subject kind</span>
               <input className={ui.input} aria-label="Custom subject kind" maxLength={120} value={draft.custom_type}
@@ -273,14 +264,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
             </div>
               </div>
              </details>
-                 <div className="flex flex-wrap items-center gap-2">
-                   <button className={ui.button} disabled={disabled || resettingIdeas || !draft.subject.trim()} onClick={resetRecentIdeas}>
-                     <RefreshCw size={14} />{resettingIdeas ? "Resetting…" : "Reset recent ideas"}
-                   </button>
-                   <small className="text-xs text-muted">Resets temporary novelty hints, not your current scenes.</small>
-                 </div>
-                 {noveltyNotice && <p className={ui.subtleNote} role="status">{noveltyNotice}</p>}
-                   <HelpDetails>Generate prompts starts fresh: confirm the request once, then ideas, scenes and prompts run automatically in order. Generate scenes only pauses for manual review; Continue keeps your approved plan and completed prompts, and generates only missing prompts. Repeated or invalid ideas are repaired once after valid work finishes, without discarding good results. Changed settings or expired approval need a new review. Scene edits need a new check before enhancement; Repair scene checks one scene without changing its siblings. Recent-idea hints stay in RAM and expire automatically.</HelpDetails>
+                    <HelpDetails>Generate prompts starts fresh: confirm the request once, then ideas, scenes and prompts run automatically in order. Generate scenes only pauses for manual review; Continue keeps your approved plan and completed prompts, and generates only missing prompts. Repeated or invalid ideas are repaired once after valid work finishes, without discarding good results. Changed settings or expired approval need a new review. Scene edits need a new check before enhancement; Repair scene checks one scene without changing its siblings. Ideas uses temporary recent-event history to avoid repeats; scenes and prompts follow the accepted idea.</HelpDetails>
                </div>
              </details>
           </fieldset>
@@ -288,26 +272,15 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
 
         <section className="dataset-config-column" aria-label="Dataset generation settings">
           <header className="dataset-config-heading">
-            <h3>Model &amp; output settings</h3><p>Choose the visual treatment and prompt format.</p>
+            <h3>Model &amp; output settings</h3><p>Choose instructions and prompt format.</p>
           </header>
           <fieldset disabled={disabled}>
-            <div className="grid grid-cols-2 gap-4 tiny:grid-cols-1">
-              <label className={ui.field}><span><Palette size={14} aria-hidden="true" />Visual style</span>
-                <select className={ui.select} aria-label="Visual style" value={draft.visual_style} onChange={(event) => updateSceneSettings({ visual_style: event.target.value })}>
-                  {visualStyles.map((item) => <option key={item}>{item}</option>)}
-                </select>
-              </label>
-              <label className={ui.field}><span><SlidersHorizontal size={14} aria-hidden="true" />Director preset</span>
-                <select className={ui.select} aria-label="Dataset director preset" value={draft.director_preset} onChange={(event) => updateWriterSettings({ director_preset: event.target.value })}>
-                  {!director && <option value={draft.director_preset}>Unavailable — choose a preset</option>}
-                  {availablePresets.map((item) => <option key={item.id} value={item.id}>{presetDisplayLabel(item)}</option>)}
-                </select>
-              </label>
-            </div>
-            {draft.visual_style === "Custom" && <label className={`${ui.field} mt-4`}><span>Custom visual style</span>
-              <input className={ui.input} aria-label="Custom visual style" maxLength={500} value={draft.custom_style}
-                onChange={(event) => updateSceneSettings({ custom_style: event.target.value })} placeholder="Describe medium, realism, rendering, texture and finish…" />
-            </label>}
+            <label className={ui.field}><span><SlidersHorizontal size={14} aria-hidden="true" />Director preset</span>
+              <select className={ui.select} aria-label="Dataset director preset" value={draft.director_preset} onChange={(event) => updateWriterSettings({ director_preset: event.target.value })}>
+                {!director && <option value={draft.director_preset}>Unavailable — choose a preset</option>}
+                {availablePresets.map((item) => <option key={item.id} value={item.id}>{presetDisplayLabel(item)}</option>)}
+              </select>
+            </label>
             <div className="mt-4 grid grid-cols-2 gap-4 tiny:grid-cols-1">
               <TargetSelect label="Target model" ariaLabel="Dataset target model" icon={<Cpu size={14} aria-hidden="true" />} value={draft.target} targets={targets} disabled={disabled} onChange={(target) => updateWriterSettings({ target })} />
               <label className={ui.field}><span><AlignLeft size={14} aria-hidden="true" />Prompt length</span>

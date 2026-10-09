@@ -69,18 +69,18 @@ class TargetControlTests(unittest.TestCase):
         self.assertIsNone(positive_prompt_error(prompt, "Anima"))
         self.assertIsNotNone(positive_prompt_error(prompt, "Generic"))
         self.assertIsNotNone(positive_prompt_error(prompt + "\nnegative prompt: bad anatomy", "Anima"))
-        self.assertRegex(get_model_adapter("Anima"), r"(?i)negative (?:conditioning|prompt)[^\n]*(?:positive prose|positive prompt)")
+        self.assertIn("Avoid redundant tags, excessive tag counts, negative prompt terms", get_model_adapter("Anima"))
 
     def test_anima_adapter_uses_the_owner_supplied_plain_text_contract_once(self):
         adapter = get_model_adapter("Anima")
         self.assertEqual(adapter.count("Anima target:"), 1)
-        self.assertTrue(adapter.startswith("Anima target: Generate a clean hybrid prompt combining "))
-        for heading in ("Output structure", "Character handling", "Tag selection", "Scene prose", "Strict preservation"):
-            self.assertIn("\n\n" + heading + "\n\n", adapter)
-        self.assertIn("\n\nFinal validation\nBefore returning the prompt, ensure that:\n\n", adapter)
-        self.assertIn("Use lowercase tags with spaces instead of underscores, except for supported score tags.", adapter)
-        self.assertIn("When a locked prefix is supplied, generate only the continuation.", adapter)
-        self.assertTrue(adapter.endswith("All protected inputs remain unchanged."))
+        for requirement in ("hybrid of Danbooru/Gelbooru-style tags and concise natural-language scene prose",
+                "one comma-separated sequence of relevant lowercase tags", "correct subject-count tag",
+                "keeping them correctly assigned in multi-character scenes",
+                "Avoid redundant tags, excessive tag counts, negative prompt terms",
+                "Preserve supplied tag wording, order, weights, repetitions and locked trigger prefixes"):
+            self.assertIn(requirement, adapter)
+        self.assertEqual(adapter.count("\n"), 0)
 
     def test_observer_adapter_retains_rich_frame_walk_and_lighting(self):
         message = self.instruction("Qwen Image 2.1", prompt_length="Maximum Detail")

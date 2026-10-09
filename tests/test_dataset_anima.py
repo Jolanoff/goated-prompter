@@ -61,7 +61,7 @@ class DatasetAnimaTests(unittest.TestCase):
     def setUp(self):
         self.scene = saved_scene(idea="Two adult women pass a cup beside a cafe table.", scene=SCENE)
         self.data = valid_draft(subject=self.scene["idea"], trigger="Mira, Hana", trigger_type="Multiple characters",
-            target="Anima", visual_style="Anime / manga", director_preset="general_director", amount=1,
+            target="Anima", director_preset="general_director", amount=1,
             scene_plan=[self.scene], _confirmed_intent=dataset_understanding_fixture(
                 hard=[{"scope": "all_outputs", "text": "Two adult women in anime/manga style."}]))
         self.data["scene_plan_signature"] = scene_plan_signature(self.data, dataset_assignments(self.data))
@@ -105,7 +105,7 @@ class DatasetAnimaTests(unittest.TestCase):
         result, backend = self.run_writer([PROMPT + "\nThe style is anime/manga.", PROMPT])
         self.assertEqual(len(backend.calls), 2, "Style-setting commentary was accepted as Anima scene content.")
         self.assertEqual(result["prompts"][0]["prompt"], PROMPT)
-        self.assertIn("Anime / manga", self.data["visual_style"])
+        self.assertIn("anime/manga", self.data["_confirmed_intent"]["hard"][0]["text"])
         self.assertTrue(all(call.user_message == SCENE for call in backend.calls))
         self.assertIn("anime/manga", backend.calls[-1].system_message)
 
@@ -126,7 +126,7 @@ class DatasetAnimaTests(unittest.TestCase):
         instruction = dataset_instruction(self.request, self.data, 1, plan_item=self.scene)
         message = instruction.system_message
         self.assertNotIn("ANIMA DATASET OUTPUT", message, "A second Anima layout overrides the target adapter.")
-        self.assertRegex(message, r"Do not (?:split a flat tag list into named character blocks|invent named blocks for flat tag inputs)")
+        self.assertIn("Do not output or repeat it, rebuild character tag blocks", message)
         self.assertIn("The application inserts the locked trigger unchanged at the beginning", message)
         self.assertNotIn("For Anima, keep character tag blocks", message)
         self.assertIn(json.dumps([CHARACTER_TRIGGER]), message)
@@ -284,14 +284,12 @@ class DatasetAnimaTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "100 tags"):
             validate_dataset_draft(saved, generation=True)
 
-    def test_anime_style_rule_is_not_injected_for_anima_but_is_kept_for_krea(self):
+    def test_user_medium_survives_without_a_style_control_for_anima_and_krea(self):
         for target in ("Anima", "Krea 2"):
             instruction = dataset_instruction(self.request, {**self.data, "target": target}, 1, plan_item=self.scene)
             directive = "Render the scene as anime/manga rather than realistic photography."
-            if target == "Anima":
-                self.assertNotIn(directive, instruction.system_message)
-            else:
-                self.assertIn(directive, instruction.system_message)
+            self.assertNotIn(directive, instruction.system_message)
+            self.assertIn("Two adult women in anime/manga style.", instruction.system_message)
         leaked = PROMPT + " The scene is rendered in a detailed anime style."
         result, backend = self.run_writer([leaked, PROMPT])
         self.assertEqual(len(backend.calls), 2)
