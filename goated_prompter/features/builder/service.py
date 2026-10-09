@@ -29,7 +29,8 @@ from ...prompting.details import LENGTH_ADAPTERS as _LENGTH_ADAPTERS, MAXIMUM_DE
 from .prompting import EVIDENCE_ANALYSIS_SYSTEM_PROMPT, evidence_analysis_user_message
 from ...prompting.modes import get_mode_adapter, get_vision_mode_adapter
 from ...prompting.output import OUTPUT_CONTRACT, output_contract, qwen_format_repair, minimax_format_repair
-from ...prompting.target_models import QWEN21_EDIT_ADAPTER, get_model_adapter, get_target_example, resolve_target_length, get_target_capabilities
+from ...prompting.target_models import QWEN21_EDIT_ADAPTER, get_model_adapter, get_target_example, library_reference_section, resolve_target_length, get_target_capabilities
+from ...prompt_library import copied_reference, pick_references
 from ...presets import DEFAULT_DIRECTOR_PRESET, get_director_preset
 from ...options.references import REFERENCE_IMAGE_SLOTS
 from ...reference_map import reference_images, resolve_reference_map
@@ -146,7 +147,11 @@ def assemble_instruction(
         TEXT_ONLY_PRIORITY_CONTRACT if text_only or not has_visual_context
         else LINKED_PRIORITY_CONTRACT if request.linked_references else PRIORITY_CONTRACT,
     ]
-    target_example = get_target_example(request.target_model, qwen_task="edit" if qwen_images else "t2i") if include_target_example else ""
+    # The user's own library wins over the built-in example when it has matching prompts.
+    references = () if qwen_images else pick_references(request.target_model, idea)
+    target_example = (library_reference_section(references, continuation=not include_target_example) if references
+                      else get_target_example(request.target_model, qwen_task="edit" if qwen_images else "t2i")
+                      if include_target_example else "")
     if has_visual_context:
         sections.append(f"VISUAL GROUNDING\n{get_vision_mode_adapter(request.mode)}")
     sections.extend([
@@ -237,6 +242,7 @@ def assemble_instruction(
         director_preset=preset.label,
         max_tokens=None,
         unlimited_tokens=True,
+        reference_prompts=references,
     )
 
 
@@ -445,7 +451,8 @@ class GoatedPrompterService:
             if resolved_scene is not None:
                 semantic_contract["preserved_reference_facts"] = [{"attribute":item.key,"source":item.source,"evidence":item.evidence}
                     for item in resolved_scene.attributes if item.preserve and item.source not in {"Off","User Prompt"}]
-            for attempt in range(2 if validate_format or validate_constraints or validate_semantics or audit_constraints else 1):
+            validate_copy = bool(instruction.reference_prompts)
+            for attempt in range(2 if validate_format or validate_constraints or validate_semantics or audit_constraints or validate_copy else 1):
                 format_valid = None
                 session_backend.validate_instruction(instruction)
                 if self._checkpoint is not None:
@@ -454,7 +461,7 @@ class GoatedPrompterService:
                 if self._checkpoint is not None:
                     self._checkpoint()
                 raw_candidate = prompt
-                if not validate_format and not validate_constraints and not validate_semantics and not audit_constraints:
+                if not validate_format and not validate_constraints and not validate_semantics and not audit_constraints and not validate_copy:
                     break
                 problems = []
                 try:
@@ -462,6 +469,9 @@ class GoatedPrompterService:
                         prompt = normalize_workflow_output(prompt, request.target_model,
                                                             expected_visible_text=requested_visible_text(request.idea), mode=request.mode)
                         format_valid = True
+                    if validate_copy and copied_reference(prompt, instruction.reference_prompts):
+                        raise WorkflowFormatError("The prompt copied wording from a library reference prompt. Write new wording "
+                                                  "for this request; use the references only for style and quality.")
                     problems = [issue for issue in output_constraint_issues(prompt, request.target_model,
                         compiled_constraints.workflow_data()) if issue["severity"] == "error"] if validate_constraints else []
                     if problems:

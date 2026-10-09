@@ -8,6 +8,7 @@ from ...api.common import STATE, json_object
 from ...backends.factory import canonical_backend_name
 from ...backends.llama_cpp_process import get_process_manager
 from ...director_profiles import discover_director_profiles
+from ...prompt_library import library_status
 
 
 async def models_payload(state, refresh=False):
@@ -45,6 +46,11 @@ async def unload(request):
 
 
 
+async def library(request):
+    target = request.query.get("target", "Generic")
+    return web.json_response({"ok": True, **await asyncio.to_thread(library_status, target)})
+
+
 def register(app):
-    app.add_routes([web.get("/api/models", models), web.get("/api/settings", settings_endpoint),
+    app.add_routes([web.get("/api/library", library), web.get("/api/models", models), web.get("/api/settings", settings_endpoint),
                     web.put("/api/settings", settings_endpoint), web.post("/api/unload", unload)])

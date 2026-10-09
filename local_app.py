@@ -11,6 +11,7 @@ from pathlib import Path
 
 from aiohttp import web
 
+from goated_prompter.prompt_library import ensure_library_files
 from goated_prompter.api import workflow_settings_routes
 from goated_prompter.api.common import STATE
 from goated_prompter.backends.base import GoatedPrompterError
@@ -410,4 +411,5 @@ if __name__ == "__main__":
     parser.add_argument("--host", choices=("127.0.0.1", "localhost"), default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8190)
     args = parser.parse_args()
+    ensure_library_files()  # First launch creates one empty, untracked prompt library per target.
     web.run_app(create_app(port=args.port), host=args.host, port=args.port)
