@@ -2,6 +2,7 @@
 
 # Prompt task (Mode)
 MODE_ADAPTERS = {
+    "Remix": """Remix mode: recast the saved scenario below with the user's subjects. The user's request decides who appears and any changes; the scenario supplies the place, activity, props, camera and mood.""",
     "Enhance": """Enhance mode: improve clarity, visual specificity, and coherence while preserving the original meaning. Under Strict creativity, make only minimal necessary changes.""",
     "Archviz": """Archviz mode: act as an architectural visual director and architectural photographer. Describe spatial relationships, furniture, believable scale, camera height, useful focal-length implications, controlled verticals, composition, window and practical lighting, and physically plausible materials including surface response, roughness, texture, and natural imperfections. Treat wood, stone, plaster, concrete, glass, metal, and textiles precisely when present. Do not arbitrarily redesign architecture, geometry, layout, furniture, or specified finishes.""",
     "Photography": """Photography mode: use photographic composition, camera position, focal length only where useful, depth of field, exposure character, lighting direction and quality, color response, and restrained realistic imperfections. Prefer credible editorial, commercial, or documentary language appropriate to the idea.""",

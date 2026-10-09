@@ -17,6 +17,7 @@ import threading
 
 from .config import PROJECT_ROOT
 from .options.targets import TARGET_MODEL_NAMES, canonical_target
+from .output_repetition import anima_tags
 
 LIBRARY_DIR_ENV = "GOATED_PROMPTER_LIBRARY_DIR"
 SEPARATOR = "---"
@@ -76,8 +77,15 @@ def parse_library(text):
 
 
 def tokenize(text):
+    """Words for search: count tags split ("1girl" -> "girl"), simple plurals folded, stopwords dropped."""
     value = str(text or "").casefold().replace("\\", "").replace("_", " ")
-    return [token for token in re.findall(r"[a-z0-9]+", value) if token not in _STOPWORDS]
+    tokens = []
+    for token in re.findall(r"[a-z]+", value):
+        if len(token) > 3 and token.endswith("s") and not token.endswith("ss"):
+            token = token[:-1]
+        if token not in _STOPWORDS:
+            tokens.append(token)
+    return tokens
 
 
 class LibraryIndex:
@@ -146,12 +154,61 @@ def library_status(target, directory=None):
             "exists": path.exists(), "count": len(load_library(target, directory).prompts)}
 
 
+_COUNT_TAG = re.compile(r"\(?(\d+)\s*(?:girl|boy|other)s?(?::\d+(?:\.\d+)?)?\)?")
+
+
+def cast_size(prompt):
+    """Count characters from Danbooru count tags (1girl, 2boys, ...); None when the prompt has none."""
+    tags = [tag.strip().casefold().replace("_", " ") for tag in anima_tags(prompt)]
+    counts = [int(match[1]) for tag in tags if (match := _COUNT_TAG.fullmatch(tag))]
+    if counts:
+        return sum(counts)
+    return 1 if "solo" in tags else None
+
+
+def pick_scenarios(target, query, count, cast=None, rng=None, directory=None):
+    """Choose ``count`` saved prompts to recast: best matches first (shuffled), then the rest.
+
+    Prompts with fewer counted roles than the cast are used only when nothing else fits.
+    Prompts repeat only when the library holds fewer than ``count`` prompts.
+    """
+    rng = rng or random.Random()
+    index = load_library(target, directory)
+    if not index.prompts or count < 1:
+        return ()
+    matches = index.search(query, max(3 * count, 10))
+    best = matches[0][0] if matches else 0
+    # Shuffle within strong matches (at least half the best score) so runs vary without
+    # trading a clear match for a weak one; weaker matches come next, then the rest.
+    strong = [prompt for score, prompt in matches if score >= best / 2]
+    weak = [prompt for score, prompt in matches if score < best / 2]
+    rng.shuffle(strong)
+    rng.shuffle(weak)
+    ranked = strong + weak
+    rest = [prompt for prompt in index.prompts if prompt not in set(ranked)]
+    rng.shuffle(rest)
+    fits = lambda prompt: cast is None or (size := cast_size(prompt)) is None or size >= cast
+    ordered = [prompt for prompt in ranked + rest if fits(prompt)] + [prompt for prompt in ranked + rest if not fits(prompt)]
+    return tuple(ordered[position % len(ordered)] for position in range(count))
+
+
+def _prose(text):
+    """Drop the leading tag inventory so shared tags are not treated as copied prose."""
+    value, position = str(text or ""), 0
+    for tag in anima_tags(value):
+        found = value.find(tag, position)
+        if found < 0:
+            break
+        position = found + len(tag)
+    return value[position:]
+
+
 def copied_reference(text, references, words=10):
-    """Return True when ``text`` repeats a run of ``words`` consecutive words from a reference."""
-    tokens = re.findall(r"[a-z0-9]+", str(text or "").casefold())
+    """Return True when the prose of ``text`` repeats ``words`` consecutive words from a reference's prose."""
+    tokens = re.findall(r"[a-z0-9]+", _prose(text).casefold())
     runs = {tuple(tokens[index:index + words]) for index in range(len(tokens) - words + 1)}
     for reference in references:
-        source = re.findall(r"[a-z0-9]+", str(reference).casefold())
+        source = re.findall(r"[a-z0-9]+", _prose(reference).casefold())
         if any(tuple(source[index:index + words]) in runs for index in range(len(source) - words + 1)):
             return True
     return False

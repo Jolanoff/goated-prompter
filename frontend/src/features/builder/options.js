@@ -11,6 +11,7 @@ export const taskLabels = {
   "Dataset Caption": "Caption for a dataset",
   Video: "Video shot",
   Custom: "Custom instructions",
+  Remix: "Remix a saved prompt",
 };
 
 export const referenceOrder = [
