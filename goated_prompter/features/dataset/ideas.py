@@ -287,11 +287,12 @@ def _ideas_schema(indexes):
             for index in indexes]}
 
 
-DIRECTOR_STAGING = """The selected Director decides how every scene is shot: framing, camera position and height,
-lens feel, light and photographic character. Stage each scene its way, keeping the event and
-the cast. When it fixes a kind of shot (a selfie, a mirror shot, first person, a fashion
-editorial), use that shot for every image; creative_direction framing and light only fill what
-the Director leaves open."""
+DIRECTOR_STAGING = """This Director is the user's own direction for the whole batch; follow it in every idea and
+scene, keeping the approved requirements and the cast. Use any words, vocabulary, tone or
+style it asks for. It decides how every scene is shot: framing, camera position and height,
+lens feel, light and photographic character. When it fixes a kind of shot (a selfie, a mirror
+shot, first person, a fashion editorial), use that shot for every image; creative_direction
+framing and light only fill what the Director leaves open."""
 
 
 def director_section(data):

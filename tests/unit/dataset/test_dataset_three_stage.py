@@ -111,6 +111,20 @@ class IdeaSceneTests(unittest.TestCase):
         krea_only = {**self.data, "director_preset": "Krea 2 Pose Lock", "target": "Anima"}
         self.assertNotIn("DIRECTOR —", ideas_instruction(krea_only, dataset_assignments(krea_only)).system_message)
 
+    def test_a_saved_director_is_mandatory_in_ideas_and_final_prompts(self):
+        from goated_prompter.features.dataset.prompting import dataset_instruction
+        from goated_prompter.presets import USER_DIRECTOR_DIR_ENV, save_user_director
+        with patch.dict(os.environ, {USER_DIRECTOR_DIR_ENV: tempfile.mkdtemp()}):
+            director = save_user_director("Word Director", "Always use the words velvet, ember and hush.")[0]
+            data = {**self.data, "director_preset": director.id, "target": "Krea 2"}
+            ideas = " ".join(ideas_instruction(data, dataset_assignments(data)).system_message.split())
+            final = " ".join(dataset_instruction(GoatedPrompterRequest(idea=data["subject"], prompt_model="Custom"),
+                                                 data, 1, plan_item=saved_scene(1)).system_message.split())
+        for message in (ideas, final):
+            self.assertIn("velvet, ember and hush", message)
+        self.assertIn("Use any words, vocabulary, tone or style it asks for", ideas)
+        self.assertIn("mandatory here, not optional enrichment", final)
+
 
 class CastWriterTests(unittest.TestCase):
     def writer(self, characters, **changes):
