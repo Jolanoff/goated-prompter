@@ -31,6 +31,11 @@ class OptionParityTests(unittest.TestCase):
     def test_dataset_types_match_backend(self):
         self.assertEqual(tuple(exported("features/dataset/options.js", "triggerTypes")), dataset.DATASET_TYPES)
 
+    def test_dataset_seed_options_match_backend(self):
+        self.assertEqual(tuple(value for value, _label in exported("features/dataset/options.js", "seedModes")),
+                         dataset.SEED_MODES)
+        self.assertEqual(exported("features/dataset/options.js", "maxSeed"), dataset.MAX_SEED)
+
     def test_styles_match_backend(self):
         self.assertEqual(tuple(exported("shared/workflow/options.js", "styles")), styles.STYLE_NAMES)
 

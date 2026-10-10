@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../api.js";
-import { datasetRetryStage, freshDatasetRequest, hasCompletedDatasetPrompt, invalidateDatasetPrompts, isDatasetSceneCurrent } from "./datasetState.js";
+import { datasetRetryStage, freshDatasetRequest, hasCompletedDatasetPrompt, invalidateDatasetPrompts, isDatasetSceneCurrent,
+  nextDatasetSeed } from "./datasetState.js";
 import { useDatasetConfirmation } from "./useDatasetConfirmation.js";
 
 /** Dataset requests and job projections; editable-draft revisions stay in useWorkflowSettings. */
@@ -77,8 +78,16 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, d
         }
         token = saved.continuation_token;
       }
-      return await onGenerate(review.operation, { input: { ...review.input, results: draft.results,
-        result_job_id: draft.result_job_id }, ...review.options,
+      // A new batch takes its seed now, so the seed field always shows the seed of the last batch.
+      // Continuing a batch or regenerating one image keeps the current seed.
+      const seed = ["dataset", "dataset/scenes"].includes(review.operation) && !review.options?.resume
+        ? nextDatasetSeed(draft) : draft.seed;
+      if (seed !== draft.seed) {
+        update({ seed });
+        await preferences.flush();
+      }
+      return await onGenerate(review.operation, { input: { ...review.input, seed, seed_mode: draft.seed_mode,
+        results: draft.results, result_job_id: draft.result_job_id }, ...review.options,
         confirmation_token: token, workflow_revision: preferences.revision() });
     }
     finally { submission.current = false; setStarting(false); }

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { editDatasetPlan, invalidateDatasetPrompts, isDatasetSceneUsable, datasetRetryStage, datasetSceneSignature, isDatasetSceneCurrent,
-  freshDatasetRequest, hasCompletedDatasetPrompt } from "./datasetState.js";
+  freshDatasetRequest, hasCompletedDatasetPrompt, nextDatasetSeed } from "./datasetState.js";
 
 const draft = { scene_plan: [1, 2].map((index) => ({ index, idea: `idea ${index}`, scene: `scene ${index}`,
   self_check: "PASS", idea_status: "valid", scene_status: "valid", prompt_status: "valid" })),
@@ -118,4 +118,11 @@ test("writer settings preserve scene failures but clear prompt-only errors", () 
   assert.equal(changed.scene_plan[0], failed.scene_plan[0]);
   assert.equal(changed.scene_plan[1].failure_reason, undefined);
   assert.equal(changed.scene_plan[1].prompt_status, "not_generated");
+});
+
+test("the next batch seed is kept, increased by one or redrawn", () => {
+  assert.equal(nextDatasetSeed({ seed: 41, seed_mode: "fixed" }), 41);
+  assert.equal(nextDatasetSeed({ seed: 41, seed_mode: "increment" }), 42);
+  assert.equal(nextDatasetSeed({ seed: 4294967295, seed_mode: "increment" }), 0);
+  assert.equal(nextDatasetSeed({ seed: 41, seed_mode: "randomize" }, () => 0.5), 2147483648);
 });

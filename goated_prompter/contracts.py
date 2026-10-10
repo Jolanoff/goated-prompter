@@ -152,6 +152,8 @@ class PromptInstruction:
     json_schema: dict = None
     # Prompts from the user's library shown as references; outputs must not copy them.
     reference_prompts: tuple = ()
+    # Request-local sampling seed, so a seeded batch can be repeated.
+    seed: int = None
 
     def _user_content(self, text):
         if not reference_images(self):
