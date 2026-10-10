@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
-import { confirmDatasetReview, openDatasetPage } from "./datasetHelpers.js";
+import { confirmDatasetReview } from "./datasetHelpers.js";
 
 test.use({ hasTouch: true });
 
