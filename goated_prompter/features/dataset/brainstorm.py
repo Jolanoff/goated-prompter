@@ -10,7 +10,7 @@ import json
 
 from ...contracts import PromptInstruction
 from ...strict_json import reject_duplicate_keys
-from .quality import idea_concepts
+from .quality import idea_concepts, passive_idea, passive_request
 from .understanding import understanding_instruction, unwrap_json_fence, validate_understanding
 
 
@@ -101,8 +101,12 @@ def _similar(left, right):
     return len(a & b) / len(a | b) >= SIMILAR_EVENT
 
 
-def pick_events(candidates, count, rng, *, avoid=()):
-    """Sample up to ``count`` distinct events, skipping near-repeats and favouring unusual ones."""
+def pick_events(candidates, count, rng, *, avoid=(), limit_passive=True):
+    """Sample up to ``count`` distinct events, skipping near-repeats and favouring unusual ones.
+
+    At most one passive event (watching, admiring, strolling through) is picked, matching the
+    idea stage's batch rule, because small models fill their candidate lists with them.
+    """
     pool = [(event, typicality) for event, typicality in candidates
             if not any(_similar(event, used) for used in avoid)]
     chosen = []
@@ -110,7 +114,8 @@ def pick_events(candidates, count, rng, *, avoid=()):
         weights = [1.4 - typicality for _event, typicality in pool]
         event, _typicality = rng.choices(pool, weights=weights)[0]
         chosen.append(event)
-        pool = [item for item in pool if item[0] != event and not _similar(item[0], event)]
+        pool = [item for item in pool if item[0] != event and not _similar(item[0], event)
+                and not (limit_passive and passive_idea(event) and passive_idea(item[0]))]
     return chosen
 
 
@@ -127,7 +132,7 @@ def brainstorm_events(session, data, count, rng, *, avoid=(), family="qwen", pro
     except (ValueError, TypeError, RecursionError):
         progress("The brainstorm came back unusable; writing ideas without event seeds.")
         return []
-    return pick_events(candidates, count, rng, avoid=avoid)
+    return pick_events(candidates, count, rng, avoid=avoid, limit_passive=not passive_request(data))
 
 
 def uses_event_seeds(data):

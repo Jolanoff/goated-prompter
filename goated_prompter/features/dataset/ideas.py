@@ -10,7 +10,7 @@ import secrets
 from ...backends.base import BackendGenerationError
 from ...contracts import PromptInstruction
 from .brainstorm import PLAUSIBLE_BODIES
-from .quality import analyze_idea_diversity, passive_idea, repeated_motif
+from .quality import analyze_idea_diversity, passive_idea, passive_request, repeated_motif
 from .understanding import (label_replacements, numbered_labels, replace_labels, understanding_instruction,
                             unwrap_json_fence, validate_understanding)
 from ...strict_json import reject_duplicate_keys
@@ -308,6 +308,10 @@ def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existin
         entry["creative_direction"] = directions[index]
         if (event_seeds or {}).get(index):
             entry["event_seed"] = event_seeds[index]
+            # The seed already decides what happens; a moment or interaction label on top of it
+            # gets copied into the idea as vague words ("a shared mishap occurs") by small models.
+            entry["creative_direction"] = {axis: value for axis, value in directions[index].items()
+                                           if axis not in ("moment", "interaction")}
         selected.append(entry)
     context = {"source": source_context["source"], "confirmed_intent": brief,
         "output_contract": {"record_count": len(indexes), "indexes": indexes},
@@ -500,6 +504,7 @@ class DatasetIdeasService:
                 motif_ignore = {word for key in ("subject", "constraints", "trigger") for word in
                                 re.findall(r"[a-z]+", str(data.get(key) or "").casefold())}
                 motif_ignore |= {word for item in cast or () for word in re.findall(r"[a-z]+", item.get("name", "").casefold())}
+                limit_passive = not passive_request(data)
                 accepted = [{**row, "input": inputs[row["index"]]} for row in existing
                     if row["index"] not in indexes and row.get("idea_status") != "failed"]
                 retained = []
@@ -518,7 +523,7 @@ class DatasetIdeasService:
                             row = _failed_idea(row, row["index"], "The idea repeats a recently generated event. Choose a different permitted action or interaction.")
                         elif unchanged or duplicate:
                             row = _failed_idea(row, row["index"], "The idea repeats an existing event or unchanged planning choices.")
-                        elif passive_idea(row["idea"]) and any(passive_idea(other) for other in others):
+                        elif limit_passive and passive_idea(row["idea"]) and any(passive_idea(other) for other in others):
                             row = _failed_idea(row, row["index"], PASSIVE_REPEAT)
                         elif motif:
                             row = _failed_idea(row, row["index"], f'Two other ideas already use "{motif}"; choose a different place, prop or activity.')

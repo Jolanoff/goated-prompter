@@ -190,7 +190,11 @@ class ChunkedIdeasTests(unittest.TestCase):
         # One salt for the whole batch keeps the creative directions spread across every chunk.
         directions = creative_directions(data, list(range(1, 8)), 11)
         sent = [row["creative_direction"] for context in (first, second) for row in context["assignments"]]
-        self.assertEqual(sent, [directions[index] for index in range(1, 8)])
+        seeded = {row["index"] for context in (first, second) for row in context["assignments"] if row.get("event_seed")}
+        expected = [{axis: value for axis, value in directions[index].items()
+                     if index not in seeded or axis not in ("moment", "interaction")} for index in range(1, 8)]
+        self.assertEqual(sent, expected, "A seeded image keeps framing, light, mood and setting, not a moment label.")
+        self.assertTrue(seeded)
 
 
 class BrainstormTests(unittest.TestCase):
@@ -598,3 +602,23 @@ class ClarificationTests(unittest.TestCase):
         asked = dataset_understanding_fixture(clarifications=["Should the stunts be dangerous?"])
         self.assertEqual(validate_understanding(asked, ("all_outputs", "dataset"))["clarifications"],
                          ["Should the stunts be dangerous?"])
+
+
+class GemmaRobustnessTests(unittest.TestCase):
+    def test_strolling_counts_as_passive_unless_the_user_asked_for_it(self):
+        from goated_prompter.features.dataset.quality import passive_idea, passive_request
+        self.assertTrue(passive_idea("The couple walks through a field of blooming cherry blossoms."))
+        self.assertFalse(passive_idea("The wife guides the man through a crowded marketplace."))
+        self.assertTrue(passive_request({"subject": "a couple watching fireworks", "constraints": ""}))
+        self.assertFalse(passive_request({"subject": "a man and his wife exploring japan", "constraints": ""}))
+
+    def test_brainstorm_picks_at_most_one_passive_event(self):
+        candidates = [("The couple marvels at a neon sign.", .2), ("They stand in awe before a temple gate.", .2),
+                      ("They walk through red torii gates.", .2), ("He drops his ice cream on her shoe.", .9),
+                      ("She haggles with a fish vendor.", .9)]
+        for seed in range(20):
+            chosen = pick_events(candidates, 4, random.Random(seed))
+            from goated_prompter.features.dataset.quality import passive_idea
+            self.assertLessEqual(sum(passive_idea(event) for event in chosen), 1, chosen)
+        everything = pick_events(candidates, 5, random.Random(1), limit_passive=False)
+        self.assertEqual(len(everything), 5, "A request for watching keeps every candidate.")
