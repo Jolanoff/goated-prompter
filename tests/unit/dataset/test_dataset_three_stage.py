@@ -428,8 +428,8 @@ class RenderabilityGateTests(unittest.TestCase):
                        "A woman kneels on the sidewalk. Maximum detail, randomized identity."):
             with self.subTest(prompt=prompt):
                 self.assertIn("lists instructions or settings", instruction_leak_error(prompt, scene))
-        looping = "woman, torn bag, " + "wet pavement, primary focus, " * 3
-        self.assertIn('repeats "wet pavement" 3 times', instruction_leak_error(looping, scene))
+        looping = "woman, torn bag, " + "wet pavement, primary focus, " * 4
+        self.assertIn('repeats "wet pavement" 4 times', instruction_leak_error(looping, scene))
         self.assertIsNone(instruction_leak_error("A film director reads the instructions on a dataset poster.",
                                                  "A film director reads the instructions on a dataset poster."))
         self.assertIsNone(instruction_leak_error("1girl, 1boy, 1boy, 1boy, kitchen\n\nThey cook.", scene))
@@ -486,3 +486,30 @@ class LabelAndTriggerTidyTests(unittest.TestCase):
         self.assertEqual(tidy_expanded_trigger("Five friends laugh, five friends", "five friends", "Krea 2"),
                          "Five friends laugh, five friends", "A short prompt keeps its only copy.")
         self.assertEqual(tidy_expanded_trigger(body + ", five friends", "five friends", "Anima"), body + ", five friends")
+
+
+class AnimaGroupTagTests(unittest.TestCase):
+    TEAM = [NARUTO, character(name="Hinata Hyuga", sex="female"), character(name="Sakura Haruno", sex="female")]
+
+    def data(self):
+        return valid_draft(target="Anima", trigger="naruto, hinata, sakura", expand_trigger=True,
+                           _confirmed_intent=dataset_understanding_fixture(characters=self.TEAM))
+
+    def test_count_tags_the_cast_does_not_have_are_dropped_not_sent_back(self):
+        from goated_prompter.features.dataset.prompting import drop_wrong_count_tags
+        tags = "2girls, 1boy, uzumaki naruto, hyuga hinata, haruno sakura, naruto (series)"
+        for prose in ("\n\nThey cook dinner together.", "", "\nThey cook dinner together."):
+            with self.subTest(prose=prose):
+                fixed = drop_wrong_count_tags(f"{tags}, 3boys, 3girls, kitchen{prose}", self.data())
+                self.assertEqual(fixed, f"{tags}, kitchen{prose}")
+                self.assertIsNone(cast_error(fixed, self.data()))
+        prose_only = "Naruto counts 3boys and 3girls in a sign."
+        self.assertEqual(drop_wrong_count_tags(prose_only, self.data()), prose_only)
+
+    def test_a_series_tag_per_character_is_not_a_loop(self):
+        from goated_prompter.features.dataset.prompting import instruction_leak_error
+        prompt = ("2girls, 1boy, uzumaki naruto, naruto (series), hyuga hinata, naruto (series), haruno sakura, "
+                  "naruto (series), kitchen\n\nNaruto, Hinata and Sakura cook dinner in warm light.")
+        self.assertIsNone(instruction_leak_error(prompt, "They cook dinner."))
+        self.assertIsNone(instruction_leak_error("high contrast, kitchen, high contrast, high contrast", "x"),
+                          "Three mentions are emphasis, not a loop.")

@@ -6,7 +6,7 @@ from ...backends.factory import create_backend
 from ...backends.base import BackendGenerationError, BackendRunawayError
 from ...contracts import effective_model_family
 from ...director_profiles import resolve_director_config
-from .prompting import cast_error, dataset_instruction, geometry_error, instruction_leak_error
+from .prompting import cast_error, dataset_instruction, drop_wrong_count_tags, geometry_error, instruction_leak_error
 from ...options.dataset import DATASET_SOURCES, DATASET_TYPES
 from ...prompt_library import library_file_name, load_library
 from ...options.lengths import PROMPT_LENGTH_NAMES
@@ -157,7 +157,7 @@ class DatasetService:
         def validate(raw):
             prompt = normalize_workflow_output(raw, data["target"], mode="Enhance", expected_visible_text=expected_text)
             if data["target"] == "Anima":
-                prompt = drop_repeated_tags(remove_contradictory_solo(prompt))
+                prompt = drop_wrong_count_tags(drop_repeated_tags(remove_contradictory_solo(prompt)), data)
             if data["expand_trigger"]:
                 prompt = tidy_expanded_trigger(prompt, data["trigger"], data["target"], plan_item["scene"])
             if prefix := fixed_anima_prefix(data):

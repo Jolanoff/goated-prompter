@@ -91,6 +91,9 @@ _INSTRUCTION_TERMS = re.compile(
     r"connected|expanded|tokens?)|physically plausible|no (?:supernatural|fantasy) elements?)\b", re.I)
 
 
+LOOPED_PHRASE = 4
+
+
 def instruction_leak_error(prompt, scene):
     """Reject a prompt that lists rules or settings, or repeats one phrase over and over."""
     allowed = str(scene or "").casefold()
@@ -99,11 +102,12 @@ def instruction_leak_error(prompt, scene):
     if leaked:
         return ("The prompt lists instructions or settings (" + ", ".join(f'"{term}"' for term in leaked[:4])
                 + ") instead of describing the image. Describe only what is visible in the scene.")
-    # Quoted lettering is literal text the scene asked for, not a repeated description.
+    # Quoted lettering is literal text the scene asked for, not a repeated description, and a
+    # qualified tag such as "naruto (series)" is repeated once per character by convention.
     unquoted = re.sub(r'"[^"]*"|“[^”]*”', " ", prompt)
     phrases = Counter(" ".join(field.casefold().split()) for field in re.split(r"[,\n]", unquoted)
-                      if len(field.split()) >= 2)
-    looped = [phrase for phrase, count in phrases.items() if count >= 3]
+                      if len(field.split()) >= 2 and "(" not in field)
+    looped = [phrase for phrase, count in phrases.items() if count >= LOOPED_PHRASE]
     if looped:
         return f'The prompt repeats "{looped[0]}" {phrases[looped[0]]} times. Write each detail once.'
     return None
@@ -143,6 +147,26 @@ def cast_error(prompt, data):
         return ("Keep the whole approved cast in the prompt. Missing: " + ", ".join(missing)
                 + ". Add them without changing the scene.")
     return None
+
+
+def drop_wrong_count_tags(prompt, data):
+    """Remove count tags the approved cast does not have from a leading Anima tag block.
+
+    The cast fixes the counts (Naruto, Hinata and Sakura are 1boy, 2girls), so a stray
+    3boys or 3girls is dropped rather than sent back for a rewrite.
+    """
+    characters = (data.get("_confirmed_intent") or {}).get("characters") or []
+    if data["target"] != "Anima" or fixed_anima_prefix(data) or not (tags := anima_count_tags(characters)):
+        return prompt
+    parts = re.split(r"(\r?\n[ \t]*\r?\n|\r?\n|$)", str(prompt), maxsplit=1)
+    head, separator, rest = (parts + ["", ""])[:3]
+    if len(anima_tags(head, tag_only=True)) < 2:
+        return prompt
+    expected = {anima_tag_key(tag) for tag in tags}
+    fields = [field.strip() for field in head.split(",") if field.strip()]
+    kept = [field for field in fields
+            if not (_COUNT_TAG.fullmatch(anima_tag_key(field)) and anima_tag_key(field) not in expected)]
+    return prompt if len(kept) == len(fields) else ", ".join(kept) + separator + rest
 
 
 def anima_cast_section(characters):
