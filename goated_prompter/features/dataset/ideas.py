@@ -53,7 +53,11 @@ Write the scene as the finished image in present tense, three to five sentences 
 visual prose. Cover: who is where in the frame (left, right, foreground, background) and
 what each character is doing, with hands, gaze and expression; the physical interaction and
 points of contact; the setting with its distinctive detail; the time of day and the light;
-one camera angle and shot size that shows everything required. With two or more characters
+exactly one camera angle and one shot size, each stated once. Prefer eye level or a gentle
+angle; never a top-down, bird's-eye or worm's-eye view of a full body unless the user asked.
+Give each character one simple, readable pose, described once from head to feet: how they
+stand, sit or move, what the torso does, what the hands hold. Never stack opposing twists
+(head one way, torso another, legs a third) or describe the same limb twice. With two or more characters
 choose a medium, full-body or wide shot that keeps every character clearly in frame; never
 reduce one to a cropped fragment, a silhouette or a hand entering the frame. Use credible
 balance, reach and contact: no intersecting bodies, extra limbs, mirrors, collages or
@@ -147,7 +151,7 @@ DIRECTION_AXES = {
                "a playful or unexpected twist on the subject"),
     "mood": ("joyful", "tense", "calm", "mischievous", "determined", "wistful", "awestruck", "chaotic"),
     "framing": ("close-up", "medium shot", "full-body shot", "wide shot where the place tells the story",
-                "low-angle shot", "high-angle view from above", "over-the-shoulder view"),
+                "three-quarter view at eye level", "slightly raised eye-level view", "over-the-shoulder view"),
     "setting": ("the most familiar spot in the subject's world", "a less obvious corner of the subject's world",
                 "somewhere with a wide view", "a cramped, cluttered space", "a doorway, path, stairs or ladder",
                 "an outdoor spot shaped by the weather"),
@@ -159,10 +163,12 @@ DIRECTION_AXES = {
 # mood and setting directions (rest, water break, climbing a ladder) replacing it,
 # so those items only vary how the image is shot.
 ACTION_SAFE_AXES = ("framing", "light")
+# Steep top-down and worm's-eye angles foreshorten full bodies into broken anatomy,
+# so no direction asks for them; the user can still request one explicitly.
 # Close-ups and over-the-shoulder views crop or hide a participant, so datasets
 # with several characters draw framing from shots that keep everyone in frame.
 GROUP_FRAMING = ("medium shot with everyone in frame", "full-body shot", "wide shot where the place tells the story",
-                 "low-angle shot with everyone in frame", "high-angle view from above")
+                 "three-quarter view at eye level with everyone in frame", "slightly raised eye-level view with everyone in frame")
 # Random characters otherwise collapse to the model's default person, so the app draws
 # each image's look for them (AttrPrompt: random attribute combinations beat fixed ones).
 LOOK_AXES = {

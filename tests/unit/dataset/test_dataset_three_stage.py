@@ -13,7 +13,7 @@ from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.dataset.assignments import dataset_assignments
 from goated_prompter.features.dataset.ideas import COPIED_SCENE, DatasetIdeasService, creative_directions, ideas_instruction
 from goated_prompter.features.dataset.plan import ScenePlanner
-from goated_prompter.features.dataset.prompting import anima_count_tags, cast_error, dataset_instruction
+from goated_prompter.features.dataset.prompting import anima_count_tags, cast_error, dataset_instruction, geometry_error
 from goated_prompter.features.dataset.understanding import (_expand_understanding, understanding_instruction,
     validate_understanding)
 from goated_prompter.prompt_library import LIBRARY_DIR_ENV, library_path
@@ -302,3 +302,33 @@ class RandomLookTests(unittest.TestCase):
             data = valid_draft(amount=2, _confirmed_intent=dataset_understanding_fixture(characters=characters))
             self.assertTrue(all("random_character_looks" not in item
                                 for item in creative_directions(data, [1, 2]).values()))
+
+
+class GeometryTests(unittest.TestCase):
+    def test_contradictory_camera_angles_are_rejected(self):
+        for prompt in ("A high-angle shot of a dancer, low-angle hero framing.", "Seen from below in a top-down composition.",
+                       "bird's-eye view with a worm's-eye perspective", "camera looks down at her; shot from below"):
+            with self.subTest(prompt=prompt):
+                self.assertIn("from above and from below", geometry_error(prompt))
+
+    def test_light_and_gaze_directions_are_not_mistaken_for_the_camera(self):
+        for prompt in ("Soft light from above while she looks down at her phone; low-angle shot.",
+                       "Sunlight from below the clouds, eye-level medium shot.", "A high-angle view of a quiet street."):
+            with self.subTest(prompt=prompt):
+                self.assertIsNone(geometry_error(prompt))
+
+    def test_creative_directions_never_ask_for_steep_angles(self):
+        from goated_prompter.features.dataset.ideas import DIRECTION_AXES, GROUP_FRAMING
+        steep = ("high-angle", "low-angle", "from above", "top-down", "bird", "worm")
+        for framing in (*DIRECTION_AXES["framing"], *GROUP_FRAMING):
+            self.assertFalse(any(word in framing for word in steep), framing)
+
+    def test_ideas_and_writer_keep_one_camera_and_one_coherent_pose(self):
+        data = valid_draft(amount=1, _confirmed_intent=dataset_understanding_fixture())
+        ideas = " ".join(ideas_instruction(data, dataset_assignments(data)).system_message.split())
+        self.assertIn("exactly one camera angle and one shot size", ideas)
+        self.assertIn("one simple, readable pose, described once from head to feet", ideas)
+        writer = " ".join(dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1,
+                                              plan_item=saved_scene()).system_message.split())
+        self.assertIn("never add a second angle, viewpoint or lens perspective", writer)
+        self.assertIn("add no pose details beyond the scene's", writer)

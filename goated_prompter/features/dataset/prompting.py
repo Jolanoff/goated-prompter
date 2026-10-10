@@ -4,12 +4,15 @@ import json
 from dataclasses import replace
 
 from .triggers import trigger_terms, fixed_anima_prefix
+import hashlib
+import random
 import re
 
 from ...output_repetition import MAX_ANIMA_TAGS, anima_tag_count, anima_tag_key, anima_tags
 from .understanding import CONTRACT_FIELDS
 from .eligibility import scene_eligibility
 from ...prompting.details import DATASET_OUTPUT_TOKEN_LIMITS
+from ...prompt_library import pick_references
 
 
 ENHANCE_SCENE_CONTRACT = """WRITE THE FINAL PROMPT FROM THE SCENE
@@ -18,6 +21,9 @@ Turn it into the best prompt you can write for the target model. Keep everything
 states: every character and their count, who does what, positions, contact, expressions,
 the camera angle and shot size, the setting and the light. Never drop, add or merge
 characters, crop anyone out or move a trait to another character.
+Use the scene's camera angle and shot size exactly: never add a second angle, viewpoint or
+lens perspective. Describe each body once, head to feet, with every limb kept with its owner,
+and add no pose details beyond the scene's.
 Make it vivid where the scene leaves room: concrete appearance, clothing, materials,
 texture, color, atmosphere and fine detail, shaped by the selected Director, creativity,
 style and length. Prefer specific visual facts over adjectives and skip quality slogans.
@@ -63,6 +69,24 @@ def anima_count_tags(characters):
     return tags if tags else ["no humans"]
 
 
+# Camera words only: "light from above" or a character "looking down" are not viewpoints.
+_HIGH_VIEW = re.compile(r"\bhigh[- ]angle\b|\btop[- ]down\b|\bbird'?s[- ]eye\b|\boverhead (?:view|shot|angle)\b"
+                        r"|\b(?:shot|seen|viewed|filmed|photographed|camera(?: looking)?) (?:from )?(?:directly )?above\b"
+                        r"|\bcamera looks? down\b")
+_LOW_VIEW = re.compile(r"\blow[- ]angle\b|\bworm'?s[- ]eye\b|\bfrom ground level\b"
+                       r"|\b(?:shot|seen|viewed|filmed|photographed|camera(?: looking)?) (?:from )?(?:directly )?below\b"
+                       r"|\bcamera looks? up\b")
+
+
+def geometry_error(prompt):
+    """Contradictory viewpoints make image models fold bodies (heads near feet); None when consistent."""
+    text = str(prompt).casefold()
+    if _HIGH_VIEW.search(text) and _LOW_VIEW.search(text):
+        return ("The prompt describes the camera from above and from below at once. Keep the scene's single camera "
+                "angle and remove the other, without changing anything else.")
+    return None
+
+
 def cast_error(prompt, data):
     """A cheap check that the final prompt kept the approved cast; None when it did.
 
@@ -104,6 +128,14 @@ def anima_cast_section(characters):
     if any(item["kind"] == "anthro" for item in characters):
         lines.append("Tag anthro characters furry with furry female or furry male.")
     return "ANIMA CAST TAGS\n" + " ".join(lines)
+
+
+def batch_references(data, count=2):
+    """The same library prompts for every image of a batch, so the dataset keeps one consistent style."""
+    seed = hashlib.sha256("\0".join((data.get("subject", ""), data["target"], data.get("scene_plan_signature", "")))
+                          .encode()).digest()
+    return pick_references(data["target"], data.get("subject", ""), count=count,
+                           rng=random.Random(int.from_bytes(seed[:8], "big")))
 
 
 def dataset_instruction(request, data, index, model_family="qwen", plan_item=None):
@@ -155,7 +187,8 @@ def dataset_instruction(request, data, index, model_family="qwen", plan_item=Non
     # With a locked Anima prefix the writer returns only a continuation, which a
     # full tags-then-prose example would contradict.
     instruction = assemble_instruction(builder_request, model_family=model_family,
-        text_only=True, compile_user_constraints=False, include_target_example=not fixed_anima_prefix(data))
+        text_only=True, compile_user_constraints=False, include_target_example=not fixed_anima_prefix(data),
+        references=batch_references(data))
     if data["target"] == "Anima":
         instruction = replace(instruction, system_message=instruction.system_message +
             "\n\nFINAL ANIMA WRITER CONTRACT\n"

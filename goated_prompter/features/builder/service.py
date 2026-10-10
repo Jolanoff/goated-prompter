@@ -30,8 +30,8 @@ from ...prompting.details import LENGTH_ADAPTERS as _LENGTH_ADAPTERS, MAXIMUM_DE
 from .prompting import EVIDENCE_ANALYSIS_SYSTEM_PROMPT, evidence_analysis_user_message
 from ...prompting.modes import get_mode_adapter, get_vision_mode_adapter
 from ...prompting.output import OUTPUT_CONTRACT, output_contract, qwen_format_repair, minimax_format_repair
-from ...prompting.target_models import QWEN21_EDIT_ADAPTER, get_model_adapter, get_target_example, library_reference_section, resolve_target_length, get_target_capabilities
-from ...prompt_library import copied_reference, library_file_name, pick_references, pick_scenarios
+from ...prompting.target_models import QWEN21_EDIT_ADAPTER, get_model_adapter, get_target_example, library_format_adapter, library_reference_section, resolve_target_length, get_target_capabilities
+from ...prompt_library import copied_reference, library_file_name, library_profile, pick_references, pick_scenarios, style_profile_text
 from ...presets import DEFAULT_DIRECTOR_PRESET, get_director_preset
 from ...options.references import REFERENCE_IMAGE_SLOTS
 from ...reference_map import reference_images, resolve_reference_map
@@ -105,6 +105,7 @@ def assemble_instruction(
     prompt_scene_plan=None,
     compile_user_constraints=True,
     include_target_example=True,
+    references=None,
 ):
     if text_only:
         resolved_scene = None
@@ -149,7 +150,8 @@ def assemble_instruction(
         else LINKED_PRIORITY_CONTRACT if request.linked_references else PRIORITY_CONTRACT,
     ]
     # Any saved library prompt replaces the built-in example; matching ones are picked first.
-    references = () if qwen_images else pick_references(request.target_model, idea)
+    if references is None:
+        references = () if qwen_images else pick_references(request.target_model, idea)
     scenario = ""
     if request.mode == "Remix":
         picks = pick_scenarios(request.target_model, idea, 1)
@@ -172,11 +174,15 @@ def assemble_instruction(
            + "\nKeep its place, situation, activity, props, camera and mood. Cast the subjects from the user's request "
            "into its roles, main role first; adapt gender, age and relationship wording; drop roles the request does not "
            "fill; never reuse its character names." if scenario else ""),
-        "TARGET MODEL ADAPTER\n" + (QWEN21_EDIT_ADAPTER if qwen_images else get_model_adapter(request.target_model))
+        "TARGET MODEL ADAPTER\n" + (QWEN21_EDIT_ADAPTER if qwen_images
+                                      else library_format_adapter(request.target_model) if references
+                                      else get_model_adapter(request.target_model))
         + ("\n\n" + target_example if target_example else ""),
         "USER SETTINGS",
         _CREATIVITY_ADAPTERS.get(request.creativity, _CREATIVITY_ADAPTERS["Balanced"]),
-        resolve_target_length(request.target_model, request.prompt_length),
+        # With a library, length is measured against the user's own prompts instead of generic prose.
+        style_profile_text(profile, request.prompt_length) if references and (profile := library_profile(request.target_model))
+        else resolve_target_length(request.target_model, request.prompt_length),
     ])
     if style := style_section(request.style, request.target_model):
         sections.append(style)
@@ -186,7 +192,9 @@ def assemble_instruction(
         resolved_reference_map, has_visual_context,
     ))
 
-    if active_director_instructions:
+    # The default Director only adds generic style advice, which would compete with the library.
+    if active_director_instructions and not (references and preset.label == DEFAULT_DIRECTOR_PRESET
+                                             and not request.system_prompt_override.strip()):
         sections.append(f"DIRECTOR BEHAVIOR — {preset.label}\n{active_director_instructions}")
     if prompt_scene_plan is not None:
         sections.append(prompt_scene_plan.supporting_input())

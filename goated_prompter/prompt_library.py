@@ -89,10 +89,11 @@ def tokenize(text):
 
 
 class LibraryIndex:
-    """BM25 index over one target's prompts."""
+    """BM25 index and style profile for one target's prompts."""
 
     def __init__(self, prompts):
         self.prompts = tuple(prompts)
+        self.profile = style_profile(self.prompts)
         self.terms = [Counter(tokenize(prompt)) for prompt in self.prompts]
         self.lengths = [sum(terms.values()) for terms in self.terms]
         self.average = (sum(self.lengths) / len(self.lengths)) if self.lengths else 0
@@ -116,6 +117,49 @@ class LibraryIndex:
                 scored.append((score, index))
         scored.sort(key=lambda item: (-item[0], item[1]))
         return [(score, self.prompts[index]) for score, index in scored[:limit]]
+
+
+_SECTION_LINE = re.compile(r"^\s*([A-Z][A-Za-z &/-]{2,40}):\s*(?:\S.*)?$")
+LENGTH_SCALE = {"Short": .5, "Medium": .75, "Detailed": 1.0, "Maximum Detail": 1.3, "Maximum": 1.3}
+
+
+def _leading_tags(prompt):
+    first = prompt.strip().splitlines()[0] if prompt.strip() else ""
+    parts = [part.strip() for part in first.split(",") if part.strip()]
+    return len(parts) >= 5 and sum(len(part.split()) for part in parts) / len(parts) <= 3
+
+
+def style_profile(prompts):
+    """Measure how the user's prompts are written: length, structure, section labels and a shared lead token."""
+    if not prompts:
+        return None
+    lengths = sorted(len(prompt.split()) for prompt in prompts)
+    sections = [[match[1] for line in prompt.splitlines() if (match := _SECTION_LINE.match(line))] for prompt in prompts]
+    sectioned = [labels for labels in sections if len(labels) >= 2]
+    tagged = sum(_leading_tags(prompt) for prompt in prompts)
+    half = len(prompts) / 2
+    structure = ("labeled sections" if len(sectioned) >= half else "a leading tag list, then prose" if tagged >= half
+                 else "flowing prose paragraphs" if not sectioned and not tagged else "mixed: some sectioned, some prose")
+    labels = Counter(label for found in sectioned for label in dict.fromkeys(found))
+    order = list(dict.fromkeys(label for found in sectioned for label in found if labels[label] > len(sectioned) / 2))
+    leads = Counter(prompt.strip().split(",")[0].strip() for prompt in prompts if "," in prompt.strip().splitlines()[0])
+    lead, uses = leads.most_common(1)[0] if leads else ("", 0)
+    return {"count": len(prompts), "median_words": lengths[len(lengths) // 2], "structure": structure,
+            "sections": order if len(sectioned) >= half else [],
+            "lead": lead if uses >= 2 and uses >= half and len(lead.split()) <= 3 else ""}
+
+
+def style_profile_text(profile, length):
+    """Describe the library's style and the word target for the selected length."""
+    words = max(25, round(profile["median_words"] * LENGTH_SCALE.get(length, 1.0) / 5) * 5)
+    parts = [f"typically about {profile['median_words']} words", f"written as {profile['structure']}"]
+    if profile["sections"]:
+        parts.append("with the sections " + ", ".join(f'"{label}:"' for label in profile["sections"]))
+    if profile["lead"]:
+        parts.append(f'starting with "{profile["lead"]}"')
+    saved = f"{profile['count']} saved prompt" + ("" if profile["count"] == 1 else "s")
+    return (f"YOUR LIBRARY'S STYLE ({saved}): " + "; ".join(parts) + ". "
+            f"Write this prompt in that style at about {words} words for the selected {length} length.")
 
 
 def load_library(target, directory=None):
@@ -153,6 +197,11 @@ def pick_references(target, query, count=2, pool=10, rng=None, directory=None):
     others = [prompt for prompt in index.prompts if prompt not in matches]
     picks += rng.sample(others, min(count - len(picks), len(others)))
     return tuple(picks)
+
+
+def library_profile(target, directory=None):
+    """The style profile of a target's library, or None when it is empty."""
+    return load_library(target, directory).profile
 
 
 def library_status(target, directory=None):

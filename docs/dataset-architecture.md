@@ -116,6 +116,14 @@ There is no separate scene-building call. Each idea's scene, or the user's edit 
 is accepted for the writer as written. A `REPAIR:` note saved by the former scene check
 still blocks its writer until the idea is regenerated.
 
+Scenes state exactly one camera angle and shot size and one head-to-feet pose per character;
+the app's creative directions never ask for top-down or worm's-eye views, and the writer may not
+add a second viewpoint or extra pose detail. A deterministic check rejects final prompts that
+describe the camera from above and from below at once, because contradictory viewpoints are a
+common cause of folded anatomy. When the target's library has prompts, the writer gets a
+measured style profile (typical length, structure, section labels, shared trigger) and the same
+two library prompts for the whole batch; the target adapter shrinks to its required format and
+the default Director's style text is left out.
 Scene prose is Builder's entire creative input. `dataset_instruction` calls the
 existing `assemble_instruction` with **Enhance / Direct**, adds the approved cast and
 the applicable hard/soft/free contract. Director, creativity, style, length and target

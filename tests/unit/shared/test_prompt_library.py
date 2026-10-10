@@ -11,7 +11,7 @@ from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.builder.service import GoatedPrompterService, assemble_instruction
 from goated_prompter.options.targets import TARGET_MODEL_NAMES
 from goated_prompter.prompt_library import (LIBRARY_DIR_ENV, copied_reference, ensure_library_files, library_path,
-    library_status, load_library, parse_library, pick_references)
+    library_status, load_library, parse_library, pick_references, style_profile, style_profile_text)
 from goated_prompter.features.dataset.prompting import dataset_instruction
 from tests.support.dataset import saved_scene, valid_draft
 from tests.unit.planning.test_supporting_planning import ScriptedBackend
@@ -95,23 +95,46 @@ class PromptLibraryTests(unittest.TestCase):
         sectioned = "Subject and action:\nA courier sprints.\n\nComposition and camera:\nLow angle."
         self.write("Krea 2", sectioned)
         system = assemble_instruction(GoatedPrompterRequest(idea="a chef plating dessert", target_model="Krea 2")).system_message
-        style, director, contract = (system.index("STYLE FROM THE USER'S PROMPT LIBRARY"),
-                                     system.index("DIRECTOR BEHAVIOR"), system.index("Output contract:"))
-        self.assertLess(director, style)
+        style, settings, contract = (system.index("STYLE FROM THE USER'S PROMPT LIBRARY"),
+                                     system.index("USER SETTINGS"), system.index("Output contract:"))
+        self.assertLess(settings, style)
         self.assertLess(style, contract)
+        self.assertNotIn("DIRECTOR BEHAVIOR", system, "The default Director's style advice would compete with the library.")
+        self.assertIn("Krea 2 target: write the prompt as natural-language text for Krea 2", system)
+        self.assertNotIn("exhaustive", system[:style], "Built-in style advice gives way to the library.")
+        self.assertIn('YOUR LIBRARY\'S STYLE (1 saved prompt): typically about 11 words; written as labeled sections; '
+                      'with the sections "Subject and action:", "Composition and camera:"', system)
+        chosen = assemble_instruction(GoatedPrompterRequest(idea="a chef plating dessert", target_model="Krea 2",
+                                                            director_preset="photography_director")).system_message
+        self.assertIn("DIRECTOR BEHAVIOR", chosen, "A Director the user picked still applies.")
         self.assertIn("written like the user's library prompts above, including labeled sections", system)
         self.assertIn("wins over the style advice of the target adapter and the Director", " ".join(system.split()))
         self.assertNotIn("headings", system[contract:])
         empty = assemble_instruction(GoatedPrompterRequest(idea="a chef plating dessert", target_model="Generic")).system_message
         self.assertIn("in the target adapter's writing style", empty)
 
-    def test_dataset_writer_picks_references_by_the_planned_scene(self):
+    def test_style_profile_measures_structure_sections_and_a_shared_trigger(self):
+        sectioned = ["Subject and action:\nA courier sprints.\n\nLighting:\nNoon sun.",
+                     "Subject and action:\nA cook laughs.\n\nLighting:\nWindow light.\n\nMood:\nWarm."]
+        profile = style_profile(sectioned + ["A plain paragraph about a dog in the rain."])
+        self.assertEqual((profile["structure"], profile["sections"]), ("labeled sections", ["Subject and action", "Lighting"]))
+        trigger = [f"zidiusArt, snapshot of a woman {word}, windy, shy smile" for word in ("reading", "cooking", "running")]
+        profile = style_profile(trigger)
+        self.assertEqual((profile["structure"], profile["lead"], profile["median_words"]), ("flowing prose paragraphs", "zidiusArt", 9))
+        tags = ["1girl, solo, rain, umbrella, street, night\n\nA girl waits.", "1boy, running, park, dog, sunny\n\nA boy runs."]
+        self.assertEqual(style_profile(tags)["structure"], "a leading tag list, then prose")
+        self.assertIsNone(style_profile(()))
+        self.assertIn("at about 60 words for the selected Maximum Detail length",
+                      style_profile_text({**profile, "median_words": 46}, "Maximum Detail"))
+
+    def test_dataset_writer_uses_the_same_references_for_every_image_of_a_batch(self):
         boxing = "1boy, boxing, punching bag, gym, sweat\n\nA boxer slams a heavy bag under harsh gym lights."
         self.write("Krea 2", boxing, KITCHEN)
         data = valid_draft(target="Krea 2")
-        writer = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=saved_scene())
-        self.assertEqual(writer.reference_prompts, (boxing, KITCHEN))
-        self.assertIn(boxing, writer.system_message)
+        writers = [dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, index,
+                                       plan_item=saved_scene(index)) for index in (1, 2)]
+        self.assertEqual(writers[0].reference_prompts, writers[1].reference_prompts)
+        self.assertEqual(set(writers[0].reference_prompts), {boxing, KITCHEN})
 
     def test_builder_retries_once_when_the_output_copies_a_reference(self):
         self.write("Generic", "A mother is concentrating on driving while her daughter sleeps beside her in the car.")
