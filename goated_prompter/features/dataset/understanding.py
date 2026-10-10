@@ -10,6 +10,7 @@ from ...backends.factory import create_backend
 from ...contracts import GoatedPrompterRequest, PromptInstruction, effective_model_family
 from ...director_profiles import resolve_director_config
 from ...strict_json import reject_duplicate_keys
+from .quality import adults_only_error
 
 
 SOURCE_FIELDS = (
@@ -528,6 +529,8 @@ class DatasetUnderstandingService:
 
     def run(self, request: GoatedPrompterRequest, data: dict, progress: Callable[[str], None]) -> dict:
         self.checkpoint()
+        if blocked := adults_only_error(data):
+            raise ValueError(blocked)
         instruction = understanding_instruction(data)
         effective, profile = resolve_director_config(self.config, request)
         instruction = replace(instruction, model_family=effective_model_family(request, profile, effective))

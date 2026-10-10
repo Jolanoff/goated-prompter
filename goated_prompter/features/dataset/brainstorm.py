@@ -10,7 +10,7 @@ import json
 
 from ...contracts import PromptInstruction
 from ...strict_json import reject_duplicate_keys
-from .quality import idea_concepts, passive_idea, passive_request
+from .quality import idea_concepts, minor_reference, passive_idea, passive_request, sexual_request
 from .understanding import understanding_instruction, unwrap_json_fence, validate_understanding
 
 
@@ -37,7 +37,10 @@ Use concrete sexual language when the request is explicit (fucking, sucking, coc
 Vary only the exact acts, positions, who is active/receptive, expressions, arousal cues and immediate physical contact.
 Never replace the sex with “intimate moment”, “kissing”, “cuddling”, “looking at each other”, or any non-sexual activity.
 Clothing state follows the Director and the request: never force full nudity unless the user or Director asks for it; partial clothing, open clothes, pulled-down garments are fine and often preferred.
-Supported poses only (lying, kneeling, sitting, standing with weight on feet/seat/knees/back)."""
+Supported poses only (lying, kneeling, sitting, standing with weight on feet/seat/knees/back).
+Everyone in a sexual or suggestive image is an adult, clearly grown-up in face and body; write
+them as women and men. Never make anyone in it a child or teen, never mention school, a
+young age or a childlike body, even for anime characters."""
 
 BRAINSTORM_SYSTEM = """You are the Dataset BRAINSTORM stage, after the user approved the understanding.
 List candidate core events: what happens in one image, in one short line each. The app
@@ -141,6 +144,8 @@ def brainstorm_events(session, data, count, rng, *, avoid=(), family="qwen", pro
     except (ValueError, TypeError, RecursionError):
         progress("The brainstorm came back unusable; writing ideas without event seeds.")
         return []
+    if sexual_request(data):
+        candidates = [candidate for candidate in candidates if not minor_reference(candidate[0])]
     return pick_events(candidates, count, rng, avoid=avoid, limit_passive=not passive_request(data))
 
 

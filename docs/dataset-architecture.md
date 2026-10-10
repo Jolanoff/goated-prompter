@@ -89,7 +89,11 @@ IDEAS writes five images per call: each record is a one-line idea (the core even
 its scene, a complete three-to-five-sentence picture with the whole cast in frame,
 placement, action, setting, light and camera. The selected Director's instructions (when it
 applies to the target) go to IDEAS too, so it decides each scene's framing, camera and light;
-the writer then keeps them. Later calls receive the earlier ideas as
+the writer then keeps them. A sexual request (`quality.sexual_request`, which also reads
+the cast, the brief and the Director) swaps mood and interaction for `SEXUAL_DIRECTIONS`, drops
+the moment axis, and draws an adult age for random characters; `adults_only_error` refuses a
+sexual or suggestive batch that names someone under 18 before any model call, and brainstorm
+events, ideas and final prompts that do so are dropped, repaired or retried. Later calls receive the earlier ideas as
 existing ideas and share one creative-direction salt, so the
 batch stays spread without one long list. Ideas never see the prompt library's prompts;
 they get craft notes (`craft_notes.py`) distilled from it once per library version, and any

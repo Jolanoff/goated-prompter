@@ -14,7 +14,7 @@ from ...options.styles import STYLE_NAMES
 from ...options.targets import TARGET_MODEL_NAMES, canonical_target
 from ...workflow_output import WorkflowFormatError, normalize_workflow_output, sanitize_prompt_text, requested_visible_text
 from .assignments import dataset_assignments
-from .quality import analyze_idea_diversity
+from .quality import ADULTS_ONLY, adults_only_error, analyze_idea_diversity, minor_reference, sexual_request
 from .triggers import (trigger_presence_error, trigger_terms, fixed_anima_prefix, restore_numeric_trigger_spelling,
                        tidy_expanded_trigger)
 from .understanding import label_replacements, replace_labels
@@ -210,6 +210,8 @@ class DatasetService:
                 raise WorkflowFormatError(conflicting_view)
             if leak := instruction_leak_error(prompt, plan_item["scene"]):
                 raise WorkflowFormatError(leak)
+            if sexual_request(data) and (word := minor_reference(prompt)):
+                raise WorkflowFormatError(f'{ADULTS_ONLY} ("{word}")')
 
             if original.reference_prompts and copied_reference(prompt, original.reference_prompts):
                 raise WorkflowFormatError("The prompt copied wording from a library reference prompt. Write new wording "
@@ -263,6 +265,8 @@ class DatasetService:
     def run(self, request, data, progress, partial, *, scenes_only=False, scene_action=None, valid_only=False, resume=False):
         if resume and (scenes_only or scene_action):
             raise ValueError("Continue is only available for batch prompt generation.")
+        if blocked := adults_only_error(data):
+            raise ValueError(blocked)
         effective, profile = resolve_director_config(self.config, request)
         backend = create_backend(effective)
         family = effective_model_family(request, profile, effective)

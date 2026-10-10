@@ -105,9 +105,9 @@ class IdeaSceneTests(unittest.TestCase):
     def test_the_director_stages_every_scene(self):
         selfie = {**self.data, "director_preset": "Arm's-Length Selfie"}
         rules = ideas_instruction(selfie, dataset_assignments(selfie)).system_message
-        self.assertIn("DIRECTOR — Arm's-Length Selfie", rules)
+        self.assertIn("DIRECTOR (MANDATORY) — Arm's-Length Selfie", rules)
         self.assertIn("arm's-length front-camera selfie", rules)
-        self.assertIn("use that shot for every image", rules)
+        self.assertIn("It decides framing, camera, light", rules)
         krea_only = {**self.data, "director_preset": "Krea 2 Pose Lock", "target": "Anima"}
         self.assertNotIn("DIRECTOR —", ideas_instruction(krea_only, dataset_assignments(krea_only)).system_message)
 
@@ -701,3 +701,60 @@ class SeedTests(unittest.TestCase):
                         lambda _: None, lambda _: None, scenes_only=True)
                 self.assertTrue(all(call.seed == 42 for call in backend.calls))
                 self.assertEqual(bool(history.recent(data)), remembered)
+
+
+class SexualContentTests(unittest.TestCase):
+    def setUp(self):
+        patcher = patch.dict(os.environ, {LIBRARY_DIR_ENV: tempfile.mkdtemp()})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        couple = [{**COMPANION, "name": "man", "sex": "male"}, {**COMPANION, "name": "woman", "sex": "female"}]
+        self.brief = dataset_understanding_fixture(characters=couple)
+
+    def draft(self, subject, **changes):
+        return valid_draft(**{"amount": 8, "subject": subject, "trigger_type": "Multiple characters",
+                              "_confirmed_intent": self.brief, **changes})
+
+    def test_only_sexual_batches_get_sexual_moods_and_dynamics(self):
+        from goated_prompter.features.dataset.ideas import DIRECTION_AXES, SEXUAL_DIRECTIONS
+        normal = creative_directions(self.draft("a couple exploring japan"), range(1, 9))
+        sexual = creative_directions(self.draft("a couple having sex"), range(1, 9))
+        self.assertTrue(all(row["interaction"] in DIRECTION_AXES["interaction"] for row in normal.values()))
+        self.assertTrue(all(row["mood"] in DIRECTION_AXES["mood"] for row in normal.values()))
+        self.assertTrue(all("setting" in row and "moment" in row for row in normal.values()),
+                        "Normal batches keep place and moment variety whatever the Director.")
+        self.assertTrue(all(row["interaction"] in SEXUAL_DIRECTIONS["interaction"] for row in sexual.values()))
+        self.assertTrue(all("moment" not in row and "setting" in row for row in sexual.values()))
+
+    def test_sexual_batches_must_show_adults(self):
+        from goated_prompter.features.dataset.quality import adults_only_error, minor_reference, sexual_request
+        self.assertTrue(sexual_request(self.draft("an explicit nsfw scene")))
+        self.assertFalse(sexual_request(self.draft("a couple exploring japan")))
+        self.assertIsNotNone(adults_only_error(self.draft("a couple having sex", constraints="she is a teen")))
+        self.assertIsNotNone(adults_only_error(self.draft("boudoir photos of a 16 yo")))
+        self.assertIsNone(adults_only_error(self.draft("a couple having sex", constraints="both are 30 yo")))
+        self.assertIsNone(adults_only_error(self.draft("a kid flying a kite")), "Non-sexual batches may show children.")
+        self.assertIsNone(minor_reference("1girl, 1boy, a woman and a man in their thirties"))
+
+    def test_a_sexual_idea_that_shows_a_minor_is_queued_for_repair(self):
+        from goated_prompter.features.dataset.ideas import DatasetIdeasService
+        data = self.draft("a couple having sex", amount=2)
+        session = Mock()
+        session.generate.return_value = json.dumps([
+            {"index": 1, "idea": "A schoolgirl and a man in a classroom.", "scene": "Scene 1."},
+            {"index": 2, "idea": "A woman in her thirties pulls the man onto the bed.", "scene": "Scene 2."}])
+        rows = DatasetIdeasService(lambda: None).run(session=session, data=data, assignments=dataset_assignments(data),
+                                                     progress=lambda _message: None, allow_partial=True)
+        self.assertIn("only show adults", rows[0]["failure_reason"])
+        self.assertNotEqual(rows[1].get("idea_status"), "failed")
+
+    def test_a_sexual_request_with_a_minor_never_reaches_the_model(self):
+        from goated_prompter.features.dataset.service import DatasetService
+        data = self.draft("a couple having sex", constraints="she is 15 years old")
+        backend = CaptureBackend()
+        with patch("goated_prompter.features.dataset.service.create_backend", return_value=backend), \
+             self.assertRaisesRegex(ValueError, "only show adults"):
+            DatasetService({"backend": "mock"}, lambda: None).run(
+                GoatedPrompterRequest(idea=data["subject"], prompt_model="Custom"), data,
+                lambda _: None, lambda _: None, scenes_only=True)
+        self.assertEqual(backend.calls, [])

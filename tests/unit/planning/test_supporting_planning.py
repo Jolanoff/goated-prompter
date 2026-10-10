@@ -120,17 +120,17 @@ class SupportingPlanningTests(unittest.TestCase):
         # Anima alone uses the updated compact hybrid adapter and flat-prefix format.
         # Regenerated for the slimmed Builder prompt, per-target guidance, library templates and no built-in examples.
         golden = {
-            "Generic": "3d9f33a33b3eb8c91a63fadff24037ea7828b14db22ee15c8c8a06cafbcd0602",
-            "Anima": "e51b561b06cc2015cf2b29a62773b17740e17e5b2e6d87eedc42873fa515009f",
-            "Krea 2": "88117b396a00db3e3530c1138cc1c9a0b538d172bbffefaded3cf5384d0ac1ef",
-            "FLUX.2 Klein": "d86f138bfde5fb37e1124154d069ac9d695d55c807ccfc2a771a338ca85c4b5e",
-            "Z-Image Base": "f2c8335a4909792900c96732281e4089e9d140d3de58d4fd97ee997a20f7d55b",
-            "Z-Image Turbo": "a43e0a6f0780866fe2cf59573b1fc0dbc8976972c56069b32bcbbded9094f230",
-            "Qwen Image (original)": "27de04edf0abb6a076d67329e147c449effa81cbae9040450def79986f4a0070",
-            "Qwen Image 2.1": "8d0154c031b99aa231de76bd180a36ac9fc285ba8846435cb36ac451907be38c",
-            "MiniMax H3": "a04b31ec6240126aa893402cd0607e3792333c27769ada0961c5ae5bc94b45ed",
-            "LTX 2.5": "3900eb2a0b91e97bb50aa7d4d89cc5ec001afe0dcace55701c8c26cd3e9373ab",
-            "Ideogram4": "b04bbef4e3de47d1a8a587bfeb8dbaf1ac23e2617db4c85805154e9bd7635680"}
+            "Generic": "ca973563591fd39b2f5af4ca0bb3b60455c2b082222ebc1adb5d659c5f349e49",
+            "Anima": "2007fb6dc752d4d848fb067bdf5fccd885be11b414e288c3b874d49e89e6a1bd",
+            "Krea 2": "5b714ca610bcba54a62229eea57816f3d85fa223bef9a3ac4bea34035a1c7a25",
+            "FLUX.2 Klein": "c2c8efeecba5f6709093fb51472e76fdb9531be07fc29520d6d3a6c149bddbe6",
+            "Z-Image Base": "a9ee8986ccc24004c8cc604b9940aa181e007fba5ce11d998a0d17c8ccae2881",
+            "Z-Image Turbo": "5fdd9a9111494735231b3e613ded70d20639f71a6fcb08e98a15c8e48185cece",
+            "Qwen Image (original)": "fba6490f03cf79ff667201bff6f10ad81a48a4670d7b5f5fd45077f439089872",
+            "Qwen Image 2.1": "5640e5267445c981da3136e72814c9ff493dd5109a5509e55a5f656e11c4f717",
+            "MiniMax H3": "fe9f699275051a1d04dd0d485d18f1c4d2c2b99b67c4d3bdd8c37609bde05931",
+            "LTX 2.5": "3bef3b1045ba979bc42f6ff6f287672761391952a52d6ebb8c8ef1a496a1b26d",
+            "Ideogram4": "f77126fe2ccd7358dc91d3c5626fb20dc09978b8827b368807d290a4541c24ed"}
         self.assertEqual(set(golden), set(TARGET_MODEL_NAMES))
         for target, digest in golden.items():
             with self.subTest(target=target):

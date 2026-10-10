@@ -11,7 +11,7 @@ from ...backends.base import BackendGenerationError
 from ...contracts import PromptInstruction
 from ...presets import get_director_preset
 from .brainstorm import PLAUSIBLE_BODIES
-from .quality import analyze_idea_diversity, passive_idea, passive_request
+from .quality import ADULTS_ONLY, analyze_idea_diversity, minor_reference, passive_idea, passive_request, sexual_request
 from .understanding import (label_replacements, numbered_labels, replace_labels, understanding_instruction,
                             unwrap_json_fence, validate_understanding)
 from ...strict_json import reject_duplicate_keys
@@ -106,12 +106,19 @@ wide brainstorm, so batches do not repeat the same favourite ideas. Build the id
 that event and stage it fully. Change only a part that conflicts with HARD.
 
 CREATIVE DIRECTION
-Each assignment may carry a creative_direction. These are optional fills for framing and light only.
-When a DIRECTOR block is present, the Director has absolute priority over creative_direction.
-Never let moment, mood, setting or interaction labels dilute, replace or soften a required sexual act or the Director’s tone.
-With an event_seed, the seed decides what happens; the direction only suggests how it is framed and lit.
-random_character_looks, when present, gives age/hair/build for random characters; use it.
-HARD requirements, the guided input, the Director and batch-shared choices always win.
+Each assignment carries a creative_direction chosen by the app to spread the batch
+across moments, moods, framing, settings and light, and for several characters how they
+interact. Start that image's idea from it; with an event_seed, the seed decides what
+happens and the direction how it is shown. When a DIRECTOR block is present it has
+priority: the direction only fills what the Director leaves open. Never let a moment, mood,
+setting or interaction label dilute, replace or soften a required act (a sexual act
+included) or the Director's tone.
+random_character_looks, when present, gives this image's sex (when the cast leaves it
+open), age, hair and build for each randomly invented character; use it so random
+characters differ between images. It never overrides what the character's name, the
+concept or the setting implies; choose clothing that fits the scene and its medium.
+HARD requirements, the guided input, the Director and batch-shared choices always win:
+drop only the conflicting part of a direction, never the requirement.
 
 CRAFT NOTES
 craft_notes, when present, are rules distilled from prompts the user saved because they
@@ -155,7 +162,7 @@ DIRECTION_AXES = {
     "moment": ("the build-up just before the main action", "the peak of the action",
                "the aftermath or reaction", "a small mishap in the middle of it", "an unguarded candid moment",
                "a playful or unexpected twist on the subject"),
-    "mood": ("joyful", "tense", "calm", "mischievous", "determined", "flustered", "tender", "chaotic", "aroused", "hungry", "desperate", "dominant", "submissive", "overwhelmed"),
+    "mood": ("joyful", "tense", "calm", "mischievous", "determined", "flustered", "tender", "chaotic"),
     "framing": ("close-up", "medium shot", "full-body shot", "wide shot where the place tells the story",
                 "three-quarter view at eye level", "slightly raised eye-level view", "over-the-shoulder view"),
     "setting": ("the most familiar spot in the subject's world", "a less obvious corner of the subject's world",
@@ -166,19 +173,25 @@ DIRECTION_AXES = {
               "night lit by practical lights", "dramatic single-source light", "overcast diffuse light",
               "warm lamplight from windows or lanterns"),
     # Only images with several characters get one; it decides how they relate in this moment.
-    "interaction": ("one is clearly in control of the other",
-    "mutual and equal physical engagement",
-    "one gives while the other receives",
-    "a teasing or playful power dynamic",
-    "intense focused contact between them",
-    "one reacts strongly to what the other is doing",
-    "they move together in sync",
-    "one holds or guides the other’s body"),
+    "interaction": ("one teaches or shows the other something", "a playful disagreement", "a shared mishap",
+                    "one surprises the other", "working together on a fiddly task", "one helps the other out of a problem",
+                    "a small competition between them", "one teases the other"),
+}
+# Sexual batches vary the mood and dynamic of the act instead; their moment axis (build-up,
+# aftermath, mishap) would move the image away from the act, so they get none.
+SEXUAL_DIRECTIONS = {
+    "mood": ("aroused", "hungry", "desperate", "dominant", "submissive", "overwhelmed", "tender", "playful"),
+    "interaction": ("one is clearly in control of the other", "mutual and equal physical engagement",
+                    "one gives while the other receives", "a teasing or playful power dynamic",
+                    "intense focused contact between them", "one reacts strongly to what the other is doing",
+                    "they move together in sync", "one holds or guides the other's body"),
 }
 # A required action must be visible in every image. Manual runs showed moment,
 # mood and setting directions (rest, water break, climbing a ladder) replacing it,
 # so those items only vary how the image is shot.
 ACTION_SAFE_AXES = ("framing", "light")
+# In a sexual batch the act is the required action; its mood and dynamic support it.
+SEXUAL_ACTION_SAFE_AXES = ("framing", "light", "mood", "interaction")
 # Steep top-down and worm's-eye angles foreshorten full bodies into broken anatomy,
 # so no direction asks for them; the user can still request one explicitly.
 # Close-ups and over-the-shoulder views crop or hide a participant, so datasets
@@ -209,8 +222,10 @@ LOOKS_BY_SEX = {
 _SEX_WORDS = {"female": "woman", "male": "man"}
 # A role or trait that already gives an age ("girl", "old man", "20 yo man", "in her 30s") keeps it; the
 # scene picks outfits to fit the setting.
-_AGED_ROLE = re.compile(r"\b(?:girl|boy|kid|child|teen\w*|old|elderly|grand\w*|senior|young|baby|toddler)s?\b"
-                        r"|\b\d{1,3}\s*(?:yo|y/o|yrs?|years?)\b|\b\d{1,3}-year\b|\b\d0'?s\b", re.I)
+_NUMERIC_AGE = r"\b\d{1,3}\s*(?:yo|y/o|yrs?|years?)\b|\b\d{1,3}-year\b|\b\d0'?s\b"
+_AGED_ROLE = re.compile(r"\b(?:girl|boy|kid|child|teen\w*|old|elderly|grand\w*|senior|young|baby|toddler)s?\b|" + _NUMERIC_AGE, re.I)
+# In a sexual batch "girl" or "young" is not an age: only a stated number keeps the drawn adult age away.
+_STATED_NUMERIC_AGE = re.compile(_NUMERIC_AGE, re.I)
 LOOK_KINDS = {"human", "humanoid"}
 SEX_LOOKS = ("woman", "man")
 _DIRECTION_SOURCE = ("subject", "trigger", "trigger_type", "custom_type", "constraints", "inputs", "source_mode")
@@ -219,15 +234,16 @@ _DIRECTION_SOURCE = ("subject", "trigger", "trigger_type", "custom_type", "const
 def creative_directions(data, indexes, salt=0):
     """Return a reproducible, evenly spread creative direction for each requested index.
 
-Each axis is shuffled once per draft and salt and dealt round-robin over the
-whole dataset, so every value is used before any repeats. The same draft and
-salt always give the same directions; each ideas run uses a new salt.
-Guided inputs already fix the event, so they get no moment.
-When the approved brief requires an action, moment / mood / setting are kept
-mild or dropped only when they would replace the required action. Framing and
-light are always safe. Interaction is still applied for multi-character scenes
-so the characters keep a clear relationship around the required act.
-"""
+    Each axis is shuffled once per draft and salt and dealt round-robin over the
+    whole dataset, so every value is used before any repeats. The same draft and
+    salt always give the same directions; each ideas run uses a new salt.
+    Guided inputs already fix the event, so they get no moment. When the approved
+    brief requires an action for an image, that image only gets framing and light,
+    because moment, mood and setting directions otherwise replace the required action.
+    Sexual batches draw mood and interaction from SEXUAL_DIRECTIONS, get no moment, and
+    keep mood and interaction alongside a required act. Every random character in them
+    gets a drawn adult age unless a numeric adult age is stated.
+    """
     source = json.dumps({key: data.get(key) for key in _DIRECTION_SOURCE}, sort_keys=True, ensure_ascii=False)
     seed = int.from_bytes(hashlib.sha256((source + f"|{salt}").encode()).digest()[:8], "big")
     lines = [line for line in str(data.get("inputs") or "").splitlines() if line.strip()]
@@ -237,19 +253,22 @@ so the characters keep a clear relationship around the required act.
                      for item in brief.get(key) or () if isinstance(item, dict)}
     brief_count = brief.get("character_count")
     group = data.get("trigger_type") == "Multiple characters" or (type(brief_count) is int and brief_count > 1)
+    sexual = sexual_request(data)
+    safe_axes = SEXUAL_ACTION_SAFE_AXES if sexual else ACTION_SAFE_AXES
     orders = {}
     for position, (axis, values) in enumerate(DIRECTION_AXES.items()):
-        values = GROUP_FRAMING if group and axis == "framing" else values
+        values = GROUP_FRAMING if group and axis == "framing" else SEXUAL_DIRECTIONS.get(axis, values) if sexual else values
         order = list(values)
         random.Random(seed + position).shuffle(order)
         orders[axis] = order
     # A single random person whose sex the user left open gets one drawn here, so prompts never
     # fall back to "a person" or a bare role label. An age the user already gave anywhere (a role,
     # a trait, the concept or the trigger: "40 yo man", "his teenage son") is never replaced.
-    stated_age = bool(_AGED_ROLE.search(" ".join(str(data.get(key) or "") for key in ("subject", "constraints", "trigger"))))
+    aged_role = _STATED_NUMERIC_AGE if sexual else _AGED_ROLE
+    stated_age = bool(aged_role.search(" ".join(str(data.get(key) or "") for key in ("subject", "constraints", "trigger"))))
     random_cast = [(item["name"], _SEX_WORDS.get(item.get("sex")),
                     item.get("sex") == "unspecified" and item.get("count") == 1,
-                    stated_age or bool(_AGED_ROLE.search(f"{item['name']} {item.get('traits', '')}")))
+                    stated_age or bool(aged_role.search(f"{item['name']} {item.get('traits', '')}")))
                    for item in brief.get("characters") or ()
                    if item.get("origin") == "random" and item.get("kind") in LOOK_KINDS]
 
@@ -266,7 +285,7 @@ so the characters keep a clear relationship around the required act.
         scopes = {"all_outputs", *([f"guided:{(index - 1) % len(lines) + 1}"] if guided else [])}
         required_action = bool(action_scopes & scopes)
         directions[index] = {axis: order[(index - 1) % len(order)] for axis, order in orders.items()
-                             if (axis in ACTION_SAFE_AXES if required_action else not (guided and axis == "moment"))
+                             if (axis in safe_axes if required_action else not ((guided or sexual) and axis == "moment"))
                              and (group or axis != "interaction")}
         if random_cast:
             looks = {}
@@ -324,7 +343,6 @@ def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existin
     selected = []
     guided_count = len(source_context["guided_inputs"])
     directions = creative_directions(data, indexes, direction_salt)
-    director_active = bool(director_section(data))
     for index in indexes:
         row = by_index[index]
         entry = {"index": index, "input": row["input"],
@@ -332,14 +350,10 @@ def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existin
         direction = directions[index]
         if (event_seeds or {}).get(index):
             entry["event_seed"] = event_seeds[index]
-            # Seed already decides what happens; drop moment/interaction labels.
+            # The seed already decides what happens; a moment or interaction label on top of it
+            # gets copied into the idea as vague words ("a shared mishap occurs") by small models.
             direction = {axis: value for axis, value in direction.items()
                          if axis not in ("moment", "interaction")}
-        if director_active:
-            # Director owns tone, clothing, pose, sexual content, camera character.
-            # Only keep framing + light (and random looks) as safe fills.
-            keep = {"framing", "light", "random_character_looks"}
-            direction = {k: v for k, v in direction.items() if k in keep}
         entry["creative_direction"] = direction
         selected.append(entry)
     context = {"source": source_context["source"], "confirmed_intent": brief,
@@ -424,6 +438,18 @@ def _reject_unrenderable_pose(row, data, allow_partial):
     if not (phrase := unrenderable_pose(f"{row['idea']} {row['scene']}", request)):
         return row
     reason = f"{UNRENDERABLE_POSE} (\"{phrase}\")"
+    if not allow_partial:
+        raise ValueError(f"Idea {row['index']}: {reason}")
+    return _failed_idea(row, row["index"], reason)
+
+
+def _reject_minor(row, data, allow_partial):
+    """In a sexual batch, an idea or scene that makes anyone a child or teen fails."""
+    if row.get("idea_status") == "failed" or not sexual_request(data):
+        return row
+    if not (word := minor_reference(f"{row['idea']} {row['scene']}")):
+        return row
+    reason = f'{ADULTS_ONLY} ("{word}")'
     if not allow_partial:
         raise ValueError(f"Idea {row['index']}: {reason}")
     return _failed_idea(row, row["index"], reason)
@@ -518,7 +544,7 @@ class DatasetIdeasService:
                 raw = session.generate(retry)
                 self.checkpoint()
                 rows = validate_ideas(raw, indexes, allow_partial=allow_partial)
-            rows = [_reject_unrenderable_pose(row, data, allow_partial) for row in rows]
+            rows = [_reject_minor(_reject_unrenderable_pose(row, data, allow_partial), data, allow_partial) for row in rows]
             looks = {entry["index"]: (entry.get("creative_direction") or {}).get("random_character_looks")
                      for entry in selected}
             cast = (data.get("_confirmed_intent") or {}).get("characters")
