@@ -9,7 +9,7 @@ import { datasetCopyText, datasetJsonl, datasetGenerationLog } from "./datasetEx
 import { editDatasetPlan } from "./datasetState.js";
 import { useDatasetWorkflow } from "./useDatasetWorkflow.js";
 import DatasetConfirmationModal from "./DatasetConfirmationModal.jsx";
-import { triggerTypes } from "./options.js";
+import { maxSeed, seedModes, triggerTypes } from "./options.js";
 import { styles } from "../../shared/workflow/options.js";
 
 const datasetPages = [["configure", "Configure"], ["scenes", "Scenes"], ["dataset", "Dataset"]];
@@ -238,6 +238,22 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                      value={draft.constraints} onChange={(event) => updateSceneSettings({ constraints: event.target.value })}
                      placeholder="Same hairstyle and outfit. No outdoor scenes. Each image shows a different mishap…" />
                  </label>
+                 <div className="dataset-subject-fields">
+                   <label className={ui.field}><span>Seed</span>
+                     <input className={ui.input} aria-label="Seed" type="number" min={0} max={maxSeed} step={1} value={draft.seed}
+                       onChange={(event) => {
+                         const seed = Math.trunc(Number(event.target.value));
+                         if (Number.isFinite(seed)) update({ seed: Math.min(maxSeed, Math.max(0, seed)) });
+                       }} />
+                   </label>
+                   <label className={ui.field}><span>Seed control</span>
+                     <select className={ui.select} aria-label="Seed control" value={draft.seed_mode}
+                       onChange={(event) => update({ seed_mode: event.target.value })}>
+                       {seedModes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                     </select>
+                   </label>
+                 </div>
+                 <small className={ui.directorDescription}>Shows the seed of the last batch. Each new batch keeps it (Fixed), adds one (Increment) or picks a new one (Randomize). Regenerating one image stays random.</small>
              <details className="dataset-details rounded-lg border border-line p-3">
                <summary><Tag size={14} aria-hidden="true" /><span>Training trigger & controls</span><ChevronDown size={14} aria-hidden="true" /></summary>
                <div className="mt-4 grid gap-4">
