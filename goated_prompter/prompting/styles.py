@@ -5,11 +5,11 @@ from ..options.targets import canonical_target
 STYLE_ADAPTERS = {
     "Anime": "Anime / manga art: clean line art, cel or soft shading, anime character proportions and expressive faces, "
              "a vivid designed palette. Do not use photographic camera, lens, skin-pore or film-grain language.",
-    "Realistic": "Photorealistic photograph: name a real capture (a specific camera and lens, a film stock or a phone "
-                 "snapshot), a named light source with its direction, real materials, and unretouched skin, hair and "
-                 "fabric with small imperfections such as flyaway hair, pores or creased clothing. Prefer candid moments "
-                 "in lived-in places over posed perfection. Skip words like stunning, perfect or flawless and quality "
-                 "slogans. Do not use anime, cartoon or illustration language.",
+    "Realistic": "Photorealistic photograph of a real moment: say how it was captured and name the light source and "
+                 "its direction. Describe people, fabric and surfaces as a camera records them, with the small "
+                 "imperfections that belong to this scene rather than a stock list. Prefer candid moments in lived-in "
+                 "places over posed perfection, and avoid praise words such as stunning or flawless. Keep every word "
+                 "photographic.",
     "Illustration": "Stylized 2D illustration: deliberate linework or shapes, a designed color palette and "
                     "non-photographic rendering suited to the subject.",
     "3D render": "3D rendered image: modeled forms, physically based materials, render-style lighting and a clean "

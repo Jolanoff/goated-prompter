@@ -235,8 +235,8 @@ class BrainstormTests(unittest.TestCase):
     def test_unusual_events_are_favoured_but_obvious_ones_stay_possible(self):
         candidates = [("obvious event", 1.0), ("rare event", 0.0)]
         firsts = [pick_events(candidates, 1, random.Random(seed))[0] for seed in range(400)]
-        self.assertGreater(firsts.count("rare event"), firsts.count("obvious event") * 4)
-        self.assertIn("obvious event", firsts)
+        self.assertGreater(firsts.count("rare event"), firsts.count("obvious event") * 2)
+        self.assertGreater(firsts.count("obvious event"), 400 // 8, "A gentle pull, not a hunt for the strangest stunt.")
 
     def test_different_runs_pick_different_events_from_the_same_pool(self):
         pool = [(row["event"], row["typicality"]) for row in brainstorm_fixture(15)]
@@ -341,8 +341,33 @@ class PlausibilityTests(unittest.TestCase):
         ideas = " ".join(ideas_instruction(data, dataset_assignments(data)).system_message.split())
         for rules in (" ".join(BRAINSTORM_SYSTEM.split()), ideas):
             self.assertIn("physically possible for real bodies", rules)
-            self.assertIn("no one stuck head-first or upside down", rules)
+            self.assertIn("No one is airborne, mid-fall or mid-jump", rules)
+            self.assertIn("show the moment just before or just after it", rules)
+            self.assertIn("No weight on hands or fingertips, no flips, cartwheels", rules)
             self.assertIn("not from twisted anatomy", rules)
+
+    def test_random_people_with_an_open_sex_get_one_drawn_and_are_never_named_by_their_label(self):
+        pair = [{**COMPANION, "name": "friend 1"}, {**COMPANION, "name": "friend 2"}]
+        data = valid_draft(amount=6, _confirmed_intent=dataset_understanding_fixture(characters=pair))
+        looks = [item["random_character_looks"] for item in creative_directions(data, range(1, 7), salt=3).values()]
+        drawn = [look[name].split(", ")[0] for look in looks for name in ("friend 1", "friend 2")]
+        self.assertTrue(set(drawn) <= {"woman", "man"})
+        self.assertGreater(len(set(drawn)), 1)
+        self.assertGreater(len({(look["friend 1"].split(", ")[0], look["friend 2"].split(", ")[0]) for look in looks}), 1,
+                           "Pairs are not always one woman and one man.")
+        self.assertEqual(looks, [item["random_character_looks"]
+                                 for item in creative_directions(data, range(1, 7), salt=3).values()])
+        group = {**COMPANION, "name": "dancers", "count": 3}
+        decided = [character(name="random girl", sex="female", origin="random", series=""), group]
+        looks = creative_directions(valid_draft(amount=2, _confirmed_intent=dataset_understanding_fixture(
+            characters=decided)), [1, 2])
+        self.assertFalse(any(look.split(", ")[0] in ("woman", "man")
+                             for item in looks.values() for look in item["random_character_looks"].values()))
+        ideas = " ".join(ideas_instruction(data, dataset_assignments(data)).system_message.split())
+        self.assertIn("A random character's name is only a role label (friend 1, the woman): never write it", ideas)
+        from goated_prompter.features.dataset.prompting import cast_section
+        self.assertIn("friend 1: sex open human, invented for this image; the name is only a label, so never write it",
+                      cast_section(pair))
 
     def test_drawn_looks_keep_an_age_the_role_implies_and_leave_clothing_to_the_scene(self):
         girl = character(name="random girl", sex="female", origin="random", series="")

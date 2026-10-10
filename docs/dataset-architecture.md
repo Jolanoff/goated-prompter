@@ -81,7 +81,7 @@ automatically require exposure. Unresolved user conflicts block approval.
 
 For random batches, a brainstorm call (`brainstorm.py`) first lists about three candidate
 events per image with a typicality score. The app drops events similar to recent runs or
-current siblings and samples the batch weighted toward unusual events, then passes each
+current siblings and samples the batch gently weighted toward unusual events, then passes each
 image its `event_seed`. Randomly invented human characters also get a code-drawn age, hair,
 build and outfit per image in their creative direction. An unusable brainstorm is reported
 and ideas continue without seeds; guided and library batches skip it.
@@ -121,7 +121,7 @@ the app's creative directions never ask for top-down or worm's-eye views, and th
 add a second viewpoint or extra pose detail. A deterministic check rejects final prompts that
 describe the camera from above and from below at once, because contradictory viewpoints are a
 common cause of folded anatomy. When the target's library has prompts, the writer gets a
-measured style profile (typical length, structure, section labels, shared trigger) and the same
+measured style profile (range of lengths, structure, section labels, shared trigger; the selected length picks a point in that range) and the same
 two library prompts for the whole batch; the target adapter shrinks to its required format and
 the default Director's style text is left out.
 Scene prose is Builder's entire creative input. `dataset_instruction` calls the

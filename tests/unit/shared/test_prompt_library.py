@@ -102,7 +102,7 @@ class PromptLibraryTests(unittest.TestCase):
         self.assertNotIn("DIRECTOR BEHAVIOR", system, "The default Director's style advice would compete with the library.")
         self.assertIn("Krea 2 target: write the prompt as natural-language text for Krea 2", system)
         self.assertNotIn("exhaustive", system[:style], "Built-in style advice gives way to the library.")
-        self.assertIn('YOUR LIBRARY\'S STYLE (1 saved prompt): typically about 11 words; written as labeled sections; '
+        self.assertIn('YOUR LIBRARY\'S STYLE (1 saved prompt): about 11 words; written as labeled sections; '
                       'with the sections "Subject and action:", "Composition and camera:"', system)
         chosen = assemble_instruction(GoatedPrompterRequest(idea="a chef plating dessert", target_model="Krea 2",
                                                             director_preset="photography_director")).system_message
@@ -124,8 +124,18 @@ class PromptLibraryTests(unittest.TestCase):
         tags = ["1girl, solo, rain, umbrella, street, night\n\nA girl waits.", "1boy, running, park, dog, sunny\n\nA boy runs."]
         self.assertEqual(style_profile(tags)["structure"], "a leading tag list, then prose")
         self.assertIsNone(style_profile(()))
-        self.assertIn("at about 60 words for the selected Maximum Detail length",
-                      style_profile_text({**profile, "median_words": 46}, "Maximum Detail"))
+        self.assertIn("at about 25 words for the selected Maximum Detail length",
+                      style_profile_text(profile, "Maximum Detail"))
+
+    def test_length_follows_the_spread_of_the_library_not_a_scaled_median(self):
+        mixed = style_profile([" ".join(["word"] * count) for count in (40, 45, 65, 70, 80, 95, 95, 250, 390, 545)])
+        targets = {length: int(style_profile_text(mixed, length).rsplit("at about ", 1)[1].split()[0])
+                   for length in ("Short", "Medium", "Detailed", "Maximum Detail")}
+        self.assertEqual(targets, {"Short": 65, "Medium": 90, "Detailed": 210, "Maximum Detail": 405})
+        self.assertIn("from about 40 to 545 words, typically 95", style_profile_text(mixed, "Medium"))
+        even = style_profile([" ".join(["word"] * 120)] * 3)
+        self.assertIn("about 120 words;", style_profile_text(even, "Short"))
+        self.assertIn("at about 120 words for the selected Short length", style_profile_text(even, "Short"))
 
     def test_dataset_writer_uses_the_same_references_for_every_image_of_a_batch(self):
         boxing = "1boy, boxing, punching bag, gym, sweat\n\nA boxer slams a heavy bag under harsh gym lights."

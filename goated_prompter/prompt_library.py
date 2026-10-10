@@ -120,7 +120,9 @@ class LibraryIndex:
 
 
 _SECTION_LINE = re.compile(r"^\s*([A-Z][A-Za-z &/-]{2,40}):\s*(?:\S.*)?$")
-LENGTH_SCALE = {"Short": .5, "Medium": .75, "Detailed": 1.0, "Maximum Detail": 1.3, "Maximum": 1.3}
+# Each length picks a point in the library's own spread of prompt lengths, so Maximum Detail
+# writes like the user's longest prompts and Short like their shortest, not a scaled median.
+LENGTH_QUANTILE = {"Short": .25, "Medium": .5, "Detailed": .75, "Maximum Detail": .9, "Maximum": .9}
 
 
 def _leading_tags(prompt):
@@ -144,15 +146,25 @@ def style_profile(prompts):
     order = list(dict.fromkeys(label for found in sectioned for label in found if labels[label] > len(sectioned) / 2))
     leads = Counter(prompt.strip().split(",")[0].strip() for prompt in prompts if "," in prompt.strip().splitlines()[0])
     lead, uses = leads.most_common(1)[0] if leads else ("", 0)
-    return {"count": len(prompts), "median_words": lengths[len(lengths) // 2], "structure": structure,
+    return {"count": len(prompts), "median_words": lengths[len(lengths) // 2], "lengths": lengths, "structure": structure,
             "sections": order if len(sectioned) >= half else [],
             "lead": lead if uses >= 2 and uses >= half and len(lead.split()) <= 3 else ""}
 
 
+def _quantile(values, fraction):
+    position = (len(values) - 1) * fraction
+    low = int(position)
+    high = min(low + 1, len(values) - 1)
+    return values[low] + (values[high] - values[low]) * (position - low)
+
+
 def style_profile_text(profile, length):
     """Describe the library's style and the word target for the selected length."""
-    words = max(25, round(profile["median_words"] * LENGTH_SCALE.get(length, 1.0) / 5) * 5)
-    parts = [f"typically about {profile['median_words']} words", f"written as {profile['structure']}"]
+    lengths = profile.get("lengths") or [profile["median_words"]]
+    words = max(25, round(_quantile(lengths, LENGTH_QUANTILE.get(length, .75)) / 5) * 5)
+    spread = (f"from about {lengths[0]} to {lengths[-1]} words, typically {profile['median_words']}"
+              if lengths[0] != lengths[-1] else f"about {lengths[0]} words")
+    parts = [spread, f"written as {profile['structure']}"]
     if profile["sections"]:
         parts.append("with the sections " + ", ".join(f'"{label}:"' for label in profile["sections"]))
     if profile["lead"]:
