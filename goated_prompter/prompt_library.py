@@ -234,10 +234,23 @@ def cast_size(prompt):
     return 1 if "solo" in tags else None
 
 
-def pick_scenarios(target, query, count, cast=None, rng=None, directory=None):
+def _recast_recently(prompt, ideas, query):
+    """True when a recent idea reads as a recast of this prompt: most of its own words
+    (beyond the concept's) appear in the prompt."""
+    words, shared = set(tokenize(prompt)), set(tokenize(query))
+    for idea in ideas:
+        own = set(tokenize(idea)) - shared
+        if len(own) >= 3 and len(own & words) / len(own) >= .6:
+            return True
+    return False
+
+
+def pick_scenarios(target, query, count, cast=None, rng=None, directory=None, recent=()):
     """Choose ``count`` saved prompts to recast: best matches first (shuffled), then the rest.
 
-    Prompts with fewer counted roles than the cast are used only when nothing else fits.
+    Prompts with fewer counted roles than the cast are used only when nothing else fits, and
+    prompts that ``recent`` ideas already recast come after fresh ones, so generating again
+    or regenerating one idea moves to other saved prompts while any are left.
     Prompts repeat only when the library holds fewer than ``count`` prompts.
     """
     rng = rng or random.Random()
@@ -256,7 +269,10 @@ def pick_scenarios(target, query, count, cast=None, rng=None, directory=None):
     rest = [prompt for prompt in index.prompts if prompt not in set(ranked)]
     rng.shuffle(rest)
     fits = lambda prompt: cast is None or (size := cast_size(prompt)) is None or size >= cast
-    ordered = [prompt for prompt in ranked + rest if fits(prompt)] + [prompt for prompt in ranked + rest if not fits(prompt)]
+    stale = {prompt for prompt in index.prompts if _recast_recently(prompt, recent, query)}
+    pool = ranked + rest
+    ordered = [prompt for group in ((True, False), (True, True), (False, False), (False, True))
+               for prompt in pool if fits(prompt) is group[0] and (prompt in stale) is group[1]]
     return tuple(ordered[position % len(ordered)] for position in range(count))
 
 

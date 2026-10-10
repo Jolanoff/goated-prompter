@@ -6,7 +6,7 @@ from ...backends.factory import create_backend
 from ...backends.base import BackendGenerationError, BackendRunawayError
 from ...contracts import effective_model_family
 from ...director_profiles import resolve_director_config
-from .prompting import cast_error, dataset_instruction, geometry_error
+from .prompting import cast_error, dataset_instruction, geometry_error, instruction_leak_error
 from ...options.dataset import DATASET_SOURCES, DATASET_TYPES
 from ...prompt_library import library_file_name, load_library
 from ...options.lengths import PROMPT_LENGTH_NAMES
@@ -186,6 +186,8 @@ class DatasetService:
                 raise WorkflowFormatError(missing_cast)
             if conflicting_view := geometry_error(prompt):
                 raise WorkflowFormatError(conflicting_view)
+            if leak := instruction_leak_error(prompt, plan_item["scene"]):
+                raise WorkflowFormatError(leak)
             if original.reference_prompts and copied_reference(prompt, original.reference_prompts):
                 raise WorkflowFormatError("The prompt copied wording from a library reference prompt. Write new wording "
                                           "for this scene; use the references only for style and quality.")

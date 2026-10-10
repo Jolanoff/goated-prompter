@@ -254,7 +254,7 @@ def _ideas_schema(indexes):
 
 
 def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existing=(), recent=(), direction_salt=0,
-                      rng=None, event_seeds=None):
+                      rng=None, event_seeds=None, scenario_avoid=()):
     source_context = json.loads(understanding_instruction(data).user_message)
     brief = validate_understanding(data.get("_confirmed_intent"), tuple(source_context["scopes"]))
     if brief["clarifications"]:
@@ -274,7 +274,10 @@ def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existin
     if library:
         cast = brief.get("character_count") if type(brief.get("character_count")) is int else None
         # Order the whole batch once so chunks sharing one seed never reuse a scenario.
-        ordered = pick_scenarios(data["target"], query, data["amount"], cast=cast, rng=rng)
+        # Scenarios already recast by recent runs or the current plan go last, so a new run or
+        # a regenerated idea moves on to saved prompts not used yet. The list is fixed per
+        # batch so chunks sharing one seed still never reuse a scenario.
+        ordered = pick_scenarios(data["target"], query, data["amount"], cast=cast, rng=rng, recent=scenario_avoid)
         scenarios = {index: ordered[index - 1] for index in indexes} if ordered else {}
         if not scenarios:
             raise ValueError(f"Scenes from your library need saved prompts in data/prompt_library/"
@@ -325,6 +328,45 @@ def _reject_copied_scene(row, references, allow_partial):
     if not allow_partial:
         raise ValueError(f"Idea {row['index']}: {COPIED_SCENE}")
     return _failed_idea(row, row["index"], COPIED_SCENE)
+
+
+UNRENDERABLE_POSE = "The idea shows a body in the air, upside down or in an acrobatic move; show an ordinary supported pose instead."
+# Bodies off the ground, inverted or in acrobatics render as broken anatomy. Only body moves are
+# listed (objects may fly); a move the user's own request names is allowed, and so is the
+# moment just before or after one.
+_AIRBORNE = re.compile(
+    r"\b(?:leap(?:s|ing)?|jump(?:s|ing)?|(?:back)?flip(?:s|ping)?|cartwheels?|somersaults?|handstands?|"
+    r"upside[- ]down|(?:breakdanc\w*|dance|synchroni[sz]ed|low|hip-hop) freeze|freeze pose|"
+    r"mid-(?:fall|jump|leap|flip|spin|trip|stumble)|balanc\w* on (?:one |his |her |their )?(?:hands?|elbows?|fingertips?))\b",
+    re.I)
+_BEFORE_OR_AFTER = re.compile(r"\b(?:about to|ready to|preparing to|before|after|instead of|refuses? to)\W+(?:\w+\W+){0,2}$", re.I)
+
+
+def unrenderable_pose(text, request):
+    """Return the first airborne or acrobatic phrase the user did not ask for, or None."""
+    asked = " ".join(str(request or "").casefold().split())
+    for match in _AIRBORNE.finditer(text):
+        word = match.group().casefold()
+        stem = re.sub(r"(?:ping|ing|s)$", "", word.split()[0]) if " " not in word else word
+        if stem and stem in asked:
+            continue
+        if _BEFORE_OR_AFTER.search(text[max(0, match.start() - 40):match.start()]):
+            continue
+        return match.group()
+    return None
+
+
+def _reject_unrenderable_pose(row, data, allow_partial):
+    # Recasts keep the pose of the user's own saved prompt.
+    if row.get("idea_status") == "failed" or data.get("source_mode") == "library":
+        return row
+    request = " ".join(str(data.get(key) or "") for key in ("subject", "constraints", "inputs", "trigger"))
+    if not (phrase := unrenderable_pose(f"{row['idea']} {row['scene']}", request)):
+        return row
+    reason = f"{UNRENDERABLE_POSE} (\"{phrase}\")"
+    if not allow_partial:
+        raise ValueError(f"Idea {row['index']}: {reason}")
+    return _failed_idea(row, row["index"], reason)
 
 
 class IdeasFormatError(ValueError):
@@ -382,14 +424,15 @@ class DatasetIdeasService:
         self.checkpoint, self.idea_history = checkpoint, idea_history
 
     def run(self, *, session, data, assignments, family="qwen", progress, indexes=None, existing=(), allow_partial=False,
-            direction_salt=None, scenario_seed=None, event_seeds=None):
+            direction_salt=None, scenario_seed=None, event_seeds=None, scenario_avoid=()):
         self.checkpoint()
         recent = self.idea_history.recent(data) if self.idea_history is not None else []
         # A fresh salt per run so repeating the same draft explores new directions;
         # chunks of one batch share theirs so directions and scenarios stay spread.
         instruction = ideas_instruction(data, assignments, family, indexes=indexes, existing=existing, recent=recent,
             direction_salt=secrets.randbits(32) if direction_salt is None else direction_salt,
-            rng=None if scenario_seed is None else random.Random(scenario_seed), event_seeds=event_seeds)
+            rng=None if scenario_seed is None else random.Random(scenario_seed), event_seeds=event_seeds,
+            scenario_avoid=scenario_avoid)
         selected = json.loads(instruction.user_message)["assignments"]
         indexes = [row["index"] for row in selected]
         progress("Creating ideas from your approved understanding…")
@@ -414,6 +457,7 @@ class DatasetIdeasService:
                 rows = validate_ideas(raw, indexes, allow_partial=allow_partial)
             if instruction.reference_prompts:
                 rows = [_reject_copied_scene(row, instruction.reference_prompts, allow_partial) for row in rows]
+            rows = [_reject_unrenderable_pose(row, data, allow_partial) for row in rows]
             previous = {row["index"]: row for row in existing if row["index"] in indexes}
             inputs = {row["index"]: row["input"] for row in assignments}
             recent_events = {" ".join(idea.casefold().split()) for idea in recent}

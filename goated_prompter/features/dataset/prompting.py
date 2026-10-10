@@ -1,5 +1,6 @@
 """Dataset delegates accepted-scene enhancement to Builder."""
 
+from collections import Counter
 import json
 from dataclasses import replace
 
@@ -79,6 +80,32 @@ _HIGH_VIEW = re.compile(r"\bhigh[- ]angle\b|\btop[- ]down\b|\bbird'?s[- ]eye\b|\
 _LOW_VIEW = re.compile(r"\blow[- ]angle\b|\bworm'?s[- ]eye\b|\bfrom ground level\b"
                        r"|\b(?:shot|seen|viewed|filmed|photographed|camera(?: looking)?) (?:from )?(?:directly )?below\b"
                        r"|\bcamera looks? up\b")
+
+
+# Words about the task, settings or rules, never about what is in the picture. A term the
+# scene itself uses (someone reading instructions, a film director) is allowed.
+_INSTRUCTION_TERMS = re.compile(
+    r"\b(?:data ?sets?|randomi[sz]ed|creativity|director|maximum detail|target (?:prompt|model)|negative lists?|"
+    r"instructions?|variations?|output contract|hard requirements?|soft preferences?|trigger (?:words?|subjects?|"
+    r"connected|expanded|tokens?)|physically plausible|no (?:supernatural|fantasy) elements?)\b", re.I)
+
+
+def instruction_leak_error(prompt, scene):
+    """Reject a prompt that lists rules or settings, or repeats one phrase over and over."""
+    allowed = str(scene or "").casefold()
+    leaked = sorted({match.group().casefold() for match in _INSTRUCTION_TERMS.finditer(prompt)
+                     if match.group().casefold() not in allowed})
+    if leaked:
+        return ("The prompt lists instructions or settings (" + ", ".join(f'"{term}"' for term in leaked[:4])
+                + ") instead of describing the image. Describe only what is visible in the scene.")
+    # Quoted lettering is literal text the scene asked for, not a repeated description.
+    unquoted = re.sub(r'"[^"]*"|“[^”]*”', " ", prompt)
+    phrases = Counter(" ".join(field.casefold().split()) for field in re.split(r"[,\n]", unquoted)
+                      if len(field.split()) >= 2)
+    looped = [phrase for phrase, count in phrases.items() if count >= 3]
+    if looped:
+        return f'The prompt repeats "{looped[0]}" {phrases[looped[0]]} times. Write each detail once.'
+    return None
 
 
 def geometry_error(prompt):

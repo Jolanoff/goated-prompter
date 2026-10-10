@@ -396,3 +396,45 @@ class RepeatedInventoryTests(unittest.TestCase):
         session.generate.return_value = f"{tags}, {tags}\n\nUzumaki Naruto packs snow onto a snowman in a quiet courtyard."
         result = DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None, row)
         self.assertEqual(result.split("\n\n")[0], tags)
+
+
+class RenderabilityGateTests(unittest.TestCase):
+    def test_prompts_that_list_rules_or_settings_or_loop_are_rejected(self):
+        from goated_prompter.features.dataset.prompting import instruction_leak_error
+        scene = "A woman kneels on a wet sidewalk beside a torn grocery bag."
+        for prompt in ("woman kneeling, wet sidewalk, no supernatural elements, physically plausible stunt",
+                       "photograph of a woman, balanced creativity, general director, dataset of 4 images",
+                       "A woman kneels on the sidewalk. Maximum detail, randomized identity."):
+            with self.subTest(prompt=prompt):
+                self.assertIn("lists instructions or settings", instruction_leak_error(prompt, scene))
+        looping = "woman, torn bag, " + "wet pavement, primary focus, " * 3
+        self.assertIn('repeats "wet pavement" 3 times', instruction_leak_error(looping, scene))
+        self.assertIsNone(instruction_leak_error("A film director reads the instructions on a dataset poster.",
+                                                 "A film director reads the instructions on a dataset poster."))
+        self.assertIsNone(instruction_leak_error("1girl, 1boy, 1boy, 1boy, kitchen\n\nThey cook.", scene))
+
+    def test_ideas_with_bodies_in_the_air_or_acrobatics_are_rejected_unless_asked(self):
+        from goated_prompter.features.dataset.ideas import unrenderable_pose
+        for text in ("Two friends perform synchronized cartwheels on cobblestones.",
+                     "She leaps over a puddle, both feet off the ground.",
+                     "A man and woman hold a synchronized freeze on their knees and elbows.",
+                     "He hangs upside down from a lamp post.", "She is mid-stumble over the curb."):
+            with self.subTest(text=text):
+                self.assertIsNotNone(unrenderable_pose(text, "two friends dancing at a festival"))
+        for text in ("She is about to jump over the puddle, knees bent.", "Her slipper flies through the air.",
+                     "Dust motes drift in the air above the desk.", "He sits on the curb after the jump."):
+            with self.subTest(text=text):
+                self.assertIsNone(unrenderable_pose(text, "a woman doing stunts"))
+        self.assertIsNone(unrenderable_pose("She lands a backflip on the beach.", "a gymnast doing backflips"))
+
+    def test_an_acrobatic_idea_is_queued_for_repair_and_library_recasts_keep_their_pose(self):
+        from goated_prompter.features.dataset.ideas import _reject_unrenderable_pose
+        row = {"index": 1, "idea": "Two friends cartwheel down the street.", "scene": "They cartwheel side by side.",
+               "idea_status": "valid"}
+        data = valid_draft(amount=1, subject="Two friends dancing")
+        failed = _reject_unrenderable_pose(row, data, allow_partial=True)
+        self.assertEqual((failed["idea_status"], failed["failure_stage"]), ("failed", "idea"))
+        self.assertIn('"cartwheel"', failed["failure_reason"])
+        with self.assertRaises(ValueError):
+            _reject_unrenderable_pose(row, data, allow_partial=False)
+        self.assertIs(_reject_unrenderable_pose(row, {**data, "source_mode": "library"}, allow_partial=True), row)

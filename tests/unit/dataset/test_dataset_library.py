@@ -51,6 +51,25 @@ class LibraryRecastTests(unittest.TestCase):
         orders = {pick_scenarios("Anima", "", 3, rng=random.Random(seed)) for seed in range(20)}
         self.assertGreater(len(orders), 1)
 
+    def test_scenarios_recently_recast_come_after_fresh_ones(self):
+        self.library("Anima", CAR, PICNIC, SOLO)
+        recast = [SOLO.split("\n\n")[-1]]
+        for seed in range(10):
+            picked = pick_scenarios("Anima", "", 2, rng=random.Random(seed), recent=recast)
+            self.assertNotIn(SOLO, picked)
+        self.assertEqual(len(pick_scenarios("Anima", "", 3, rng=random.Random(1), recent=recast)), 3,
+                         "A recast prompt is still used once the fresh ones run out.")
+        subject_only = ["Naruto doing anything"]
+        orders = {pick_scenarios("Anima", "naruto", 3, rng=random.Random(seed), recent=subject_only)[0]
+                  for seed in range(20)}
+        self.assertGreater(len(orders), 1, "Words shared with the concept do not mark every prompt as used.")
+        data = valid_draft(amount=1, target="Anima", source_mode="library", subject="A girl doing anything",
+                           _confirmed_intent=dataset_understanding_fixture(character_count=1))
+        for seed in range(5):
+            context = json.loads(ideas_instruction(data, dataset_assignments(data), rng=random.Random(seed),
+                                                   scenario_avoid=recast).user_message)
+            self.assertNotEqual(context["assignments"][0]["library_scenario"], SOLO)
+
     def test_library_mode_gives_each_idea_a_saved_scenario_instead_of_a_direction(self):
         self.library("Anima", CAR, PICNIC)
         data = valid_draft(amount=2, target="Anima", source_mode="library",
