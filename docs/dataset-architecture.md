@@ -17,7 +17,7 @@ concept + rules + local guided input
 | Scoped understanding, character list and richer brief validation | `goated_prompter/features/dataset/understanding.py` |
 | Source-bound, expiring approval tickets | `goated_prompter/features/dataset/intent.py` |
 | Guided assignment indexes and cycling | `goated_prompter/features/dataset/assignments.py` |
-| Ideas with finished scenes, library examples and lexical duplicate hints | `goated_prompter/features/dataset/ideas.py`, `quality.py` |
+| Ideas with finished scenes, library scenarios and lexical duplicate hints | `goated_prompter/features/dataset/ideas.py`, `quality.py` |
 | Recent-event RAM history, read and written only by Ideas | `goated_prompter/features/dataset/ideas.py`, `idea_history.py` |
 | Chunked idea orchestration and versioned saved-plan validation | `goated_prompter/features/dataset/plan.py` |
 | Writer eligibility, shared by API and enhancement | `goated_prompter/features/dataset/eligibility.py` |
@@ -89,8 +89,8 @@ IDEAS writes five images per call: each record is a one-line idea (the core even
 its scene, a complete three-to-five-sentence picture with the whole cast in frame,
 placement, action, setting, light and camera. Later calls receive the earlier ideas as
 existing ideas, share one creative-direction salt and one library scenario order, so the
-batch stays spread without one long list. Library prompts matching the concept are sent
-as quality examples; a scene that copies one is treated like a repeated idea. An
+batch stays spread without one long list. Ideas never see the prompt library, except
+that From my library hands each image one saved prompt as the scenario to recast. An
 explicit replacement requests only its index. History and diversity hints never
 override a guided action or approved hard requirement. There is no Fast/Quality
 dispatch, automatic substitute idea or fallback plan.
@@ -122,8 +122,9 @@ add a second viewpoint or extra pose detail. A deterministic check rejects final
 describe the camera from above and from below at once, because contradictory viewpoints are a
 common cause of folded anatomy. When the target's library has prompts, the writer gets a
 measured prompt format (range of lengths, structure, section labels, shared trigger; the selected
-length picks a point in that range) and the same two library prompts for the whole batch as
-templates for how the prompt is built. The target adapter and the Director stay in full: the
+length picks a point in that range) and two library prompts as templates for how the
+prompt is built, drawn at random from the whole library for each image (fixed per scene, so
+rewriting one prompt keeps its templates). The target adapter and the Director stay in full: the
 look (medium, style, palette, mood) comes from the request, the Style setting and the Director,
 never from the templates.
 Scene prose is Builder's entire creative input. `dataset_instruction` calls the

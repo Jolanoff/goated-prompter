@@ -190,12 +190,16 @@ def anima_cast_section(characters):
     return "ANIMA CAST TAGS\n" + " ".join(lines)
 
 
-def batch_references(data, count=2):
-    """The same library prompts for every image of a batch, so the dataset keeps one consistent style."""
-    seed = hashlib.sha256("\0".join((data.get("subject", ""), data["target"], data.get("scene_plan_signature", "")))
+def image_templates(data, plan_item, count=2):
+    """Library prompts the writer uses as templates for this image.
+
+    Templates teach how a prompt is written, not what is in it, so they are drawn at random
+    from the whole library instead of matched to the subject. The draw follows the scene, so
+    each image and each new run get their own while rewriting one prompt keeps its templates.
+    """
+    seed = hashlib.sha256("\0".join((data["target"], str(plan_item.get("index", "")), plan_item.get("scene", "")))
                           .encode()).digest()
-    return pick_references(data["target"], data.get("subject", ""), count=count,
-                           rng=random.Random(int.from_bytes(seed[:8], "big")))
+    return pick_references(data["target"], "", count=count, rng=random.Random(int.from_bytes(seed[:8], "big")))
 
 
 def dataset_instruction(request, data, index, model_family="qwen", plan_item=None):
@@ -250,7 +254,7 @@ def dataset_instruction(request, data, index, model_family="qwen", plan_item=Non
     # full tags-then-prose example would contradict.
     instruction = assemble_instruction(builder_request, model_family=model_family,
         text_only=True, compile_user_constraints=False, include_target_example=not fixed_anima_prefix(data),
-        references=batch_references(data))
+        references=image_templates(data, plan_item))
     if data["target"] == "Anima":
         instruction = replace(instruction, system_message=instruction.system_message +
             "\n\nFINAL ANIMA WRITER CONTRACT\n"

@@ -8,10 +8,9 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
-from goated_prompter.backends.base import BackendGenerationError
 from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.dataset.assignments import dataset_assignments
-from goated_prompter.features.dataset.ideas import COPIED_SCENE, DatasetIdeasService, creative_directions, ideas_instruction
+from goated_prompter.features.dataset.ideas import creative_directions, ideas_instruction
 from goated_prompter.features.dataset.plan import ScenePlanner
 from goated_prompter.features.dataset.prompting import anima_count_tags, cast_error, dataset_instruction, geometry_error
 from goated_prompter.features.dataset.understanding import (_expand_understanding, understanding_instruction,
@@ -83,38 +82,15 @@ class IdeaSceneTests(unittest.TestCase):
         self.data = valid_draft(amount=1, subject="A chef and her sous-chef cooking",
                                 _confirmed_intent=dataset_understanding_fixture())
 
-    def test_matching_library_prompts_reach_ideas_as_quality_examples(self):
+    def test_ideas_are_invented_without_the_library(self):
         library_path("Generic").write_text(LIKED, encoding="utf-8")
-        instruction = ideas_instruction(self.data, dataset_assignments(self.data), rng=random.Random(1))
-        self.assertEqual(json.loads(instruction.user_message)["library_examples"], [LIKED])
-        self.assertEqual(instruction.reference_prompts, (LIKED,))
-        self.assertIn("LIBRARY EXAMPLES", instruction.system_message)
-
-    def test_without_a_matching_library_no_examples_are_sent(self):
-        instruction = ideas_instruction(self.data, dataset_assignments(self.data))
-        self.assertNotIn("library_examples", json.loads(instruction.user_message))
-        self.assertEqual(instruction.reference_prompts, ())
-
-    def test_a_scene_that_copies_a_library_example_is_rejected(self):
-        library_path("Generic").write_text(LIKED, encoding="utf-8")
-        copied = dataset_idea_fixture(idea="Flour mishap", scene=LIKED.split("\n\n", 1)[1])
-        session = Mock()
-        session.generate.return_value = json.dumps([copied])
-        service = DatasetIdeasService(lambda: None)
-        with self.assertRaisesRegex(BackendGenerationError, "copied wording from a saved library prompt"):
-            service.run(session=session, data=self.data, assignments=dataset_assignments(self.data),
-                        progress=lambda _message: None)
-        rows = service.run(session=session, data=self.data, assignments=dataset_assignments(self.data),
-                           progress=lambda _message: None, allow_partial=True)
-        self.assertEqual((rows[0]["idea_status"], rows[0]["failure_reason"]), ("failed", COPIED_SCENE))
-
-    def test_an_original_scene_passes_alongside_library_examples(self):
-        library_path("Generic").write_text(LIKED, encoding="utf-8")
-        session = Mock()
-        session.generate.return_value = json.dumps([dataset_idea_fixture()])
-        rows = DatasetIdeasService(lambda: None).run(session=session, data=self.data,
-            assignments=dataset_assignments(self.data), progress=lambda _message: None)
-        self.assertEqual(rows[0]["scene"], dataset_idea_fixture()["scene"])
+        for mode, extra in (("random", {}), ("guided", {"inputs": "She juggles oranges"})):
+            data = {**self.data, "source_mode": mode, **extra}
+            instruction = ideas_instruction(data, dataset_assignments(data), rng=random.Random(1))
+            with self.subTest(mode=mode):
+                self.assertNotIn("flour", instruction.user_message.casefold())
+                self.assertNotIn("library_examples", json.loads(instruction.user_message))
+                self.assertEqual(instruction.reference_prompts, ())
 
     def test_ideas_prompt_asks_for_finished_scenes_with_the_whole_cast_in_frame(self):
         rules = " ".join(ideas_instruction(self.data, dataset_assignments(self.data)).system_message.split())

@@ -13,7 +13,7 @@ from .brainstorm import PLAUSIBLE_BODIES
 from .quality import analyze_idea_diversity
 from .understanding import (label_replacements, numbered_labels, replace_labels, understanding_instruction,
                             unwrap_json_fence, validate_understanding)
-from ...prompt_library import copied_reference, library_file_name, pick_references, pick_scenarios
+from ...prompt_library import library_file_name, pick_scenarios
 from ...strict_json import reject_duplicate_keys
 
 
@@ -106,12 +106,6 @@ that fits the scene and its medium.
 HARD requirements, the guided input, expansion_freedom and batch-shared choices always
 win: drop only the conflicting part of a direction, never the requirement. A required
 action stays visibly in progress in every image whatever the direction says.
-
-LIBRARY EXAMPLES
-library_examples, when present, are prompts the user saved because they like them. Study
-what makes them work: how specific the action is, the staging and camera, the density of
-detail. Aim for that quality in your scenes. Never reuse their characters, names, setting,
-situation or sentences.
 
 LIBRARY SCENARIOS
 An assignment may carry library_scenario, one of the user's own saved prompts, instead
@@ -274,8 +268,8 @@ def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existin
     guided_count = len(source_context["guided_inputs"])
     library = data.get("source_mode") == "library"
     query = " ".join((data.get("subject", ""), data.get("constraints", "")))
-    # Saved prompts show the quality the user likes (matching ones first); recasts use them as scenarios instead.
-    examples = () if library else pick_references(data["target"], query, count=2, rng=rng)
+    # Ideas are invented from the request alone; only "From my library" hands the model saved prompts,
+    # as scenarios to recast. The library's other job, showing how a prompt is written, is the writer's.
     if library:
         cast = brief.get("character_count") if type(brief.get("character_count")) is int else None
         # Order the whole batch once so chunks sharing one seed never reuse a scenario.
@@ -303,14 +297,13 @@ def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existin
         "output_contract": {"record_count": len(indexes), "indexes": indexes},
         "assignments": selected,
         "existing_ideas": [{key: row[key] for key in ("index", *IDEA_FIELDS) if key in row} for row in existing],
-        "recently_used_ideas": list(recent)[:40],
-        **({"library_examples": list(examples)} if examples else {})}
+        "recently_used_ideas": list(recent)[:40]}
     budget = 512 + len(indexes) * 512
     return PromptInstruction(system_message=IDEAS_SYSTEM, user_message=json.dumps(context,
         ensure_ascii=False, separators=(",", ":")),
         model_family=family, diagnostic_stage="dataset:ideas", max_tokens=budget,
         hard_max_tokens=budget, unlimited_tokens=False, temperature=.7, top_p=.92,
-        json_output=True, json_schema=_ideas_schema(indexes), reference_prompts=tuple(examples),
+        json_output=True, json_schema=_ideas_schema(indexes),
         stream_character_limit=1024 + len(indexes) * _RESPONSE_LIMIT_PER_IDEA)
 
 
@@ -321,18 +314,6 @@ def _failed_idea(row, index, reason):
     return {**row, "index": index, "idea": row.get("idea", ""), "scene": "", "self_check": "",
         "idea_status": "failed", "scene_status": "failed", "prompt_status": "failed",
         "failure_stage": "idea", "failure_reason": reason[:2000]}
-
-
-COPIED_SCENE = "The scene copied wording from a saved library prompt instead of writing a new image."
-
-
-def _reject_copied_scene(row, references, allow_partial):
-    """Library examples set the quality bar; a scene that copies one is a repeat of it."""
-    if row.get("idea_status") == "failed" or not copied_reference(row["scene"], references):
-        return row
-    if not allow_partial:
-        raise ValueError(f"Idea {row['index']}: {COPIED_SCENE}")
-    return _failed_idea(row, row["index"], COPIED_SCENE)
 
 
 UNRENDERABLE_POSE = "The idea shows a body in the air, upside down or in an acrobatic move; show an ordinary supported pose instead."
@@ -481,8 +462,6 @@ class DatasetIdeasService:
                 raw = session.generate(retry)
                 self.checkpoint()
                 rows = validate_ideas(raw, indexes, allow_partial=allow_partial)
-            if instruction.reference_prompts:
-                rows = [_reject_copied_scene(row, instruction.reference_prompts, allow_partial) for row in rows]
             rows = [_reject_unrenderable_pose(row, data, allow_partial) for row in rows]
             looks = {entry["index"]: (entry.get("creative_direction") or {}).get("random_character_looks")
                      for entry in selected}

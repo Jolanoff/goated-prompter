@@ -136,14 +136,20 @@ class PromptLibraryTests(unittest.TestCase):
         self.assertIn("about 120 words;", style_profile_text(even, "Short"))
         self.assertIn("at about 120 words for the selected Short length", style_profile_text(even, "Short"))
 
-    def test_dataset_writer_uses_the_same_references_for_every_image_of_a_batch(self):
-        boxing = "1boy, boxing, punching bag, gym, sweat\n\nA boxer slams a heavy bag under harsh gym lights."
-        self.write("Krea 2", boxing, KITCHEN)
-        data = valid_draft(target="Krea 2")
-        writers = [dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, index,
-                                       plan_item=saved_scene(index)) for index in (1, 2)]
-        self.assertEqual(writers[0].reference_prompts, writers[1].reference_prompts)
-        self.assertEqual(set(writers[0].reference_prompts), {boxing, KITCHEN})
+    def test_dataset_writer_draws_templates_per_image_from_the_whole_library(self):
+        prompts = [f"Template prompt number {word} about something else entirely." for word in
+                   ("one", "two", "three", "four", "five", "six", "seven", "eight")]
+        self.write("Krea 2", *prompts)
+        data = valid_draft(target="Krea 2", subject="a dorm room party")
+        def templates(index, scene):
+            row = {**saved_scene(index), "scene": scene}
+            return dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, index, plan_item=row).reference_prompts
+        first = templates(1, "A woman laughs at a dorm desk.")
+        self.assertEqual(len(first), 2)
+        self.assertTrue(set(first) <= set(prompts))
+        self.assertEqual(first, templates(1, "A woman laughs at a dorm desk."), "Rewriting one prompt keeps its templates.")
+        draws = {templates(index, f"Scene {index} of a new run.") for index in range(1, 9)}
+        self.assertGreater(len(draws), 3, "Images and runs get different templates.")
 
     def test_builder_retries_once_when_the_output_copies_a_reference(self):
         self.write("Generic", "A mother is concentrating on driving while her daughter sleeps beside her in the car.")
