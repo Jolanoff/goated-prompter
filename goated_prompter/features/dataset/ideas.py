@@ -32,12 +32,17 @@ or output format.
 
 WHAT MAKES A STRONG IDEA
 """ + PLAUSIBLE_BODIES + """
-Each idea should be an image worth looking at: a specific moment with a clear story
-beat, readable emotion and one memorable detail (a prop, a feature of the place, the
-weather or the light) that belongs to this image only. Prefer a surprising but
-plausible situation over the first obvious one. Avoid stock defaults such as standing
-and smiling, posing for the camera, a generic park, street or studio, or flat daytime
-light, unless the user asked for them.
+Each idea is a moment where something is happening: someone is in the middle of a specific
+activity with a goal, a problem or a reaction (trying, fixing, bargaining, spilling, teaching,
+getting lost, failing, surprising someone). With two or more characters they act on each
+other, not just stand side by side. Give each idea one concrete detail that belongs to this
+place and this image only (a particular dish, object, tool, local custom or feature of the
+setting) and a readable emotion. Never fall back on sightseeing or stock poses: standing,
+walking or sitting while looking at a view, admiring scenery, posing or smiling at the
+camera, holding hands on a path, unless the user asked for that. Weak: "two chefs cook
+dinner". Strong: "the older chef tastes the sauce and winces while the younger one hides the
+empty salt jar behind her back". Prefer a surprising but plausible situation over the first
+obvious one.
 
 THE CAST
 confirmed_intent.characters, when present, lists who appears in every image with their
@@ -96,7 +101,8 @@ that event and stage it fully. Change only a part that conflicts with HARD.
 
 CREATIVE DIRECTION
 Each assignment carries a creative_direction chosen by the app to spread the batch
-across moments, moods, framing, settings and light. Start that image's idea from it;
+across moments, moods, framing, settings and light, and for several characters how they
+interact. Start that image's idea from it;
 with an event_seed, the seed decides what happens and the direction how it is shown.
 random_character_looks, when present, gives this image's sex (when the cast leaves it
 open), age, hair and build for each randomly invented character; use it so random characters differ between images. It never
@@ -140,17 +146,22 @@ never return a bare object or an object containing an ideas array.
 # expansion limits and batch-shared choices override any part of a direction.
 DIRECTION_AXES = {
     "moment": ("the build-up just before the main action", "the peak of the action",
-               "the aftermath or reaction", "a quiet in-between beat", "an unguarded candid moment",
+               "the aftermath or reaction", "a small mishap in the middle of it", "an unguarded candid moment",
                "a playful or unexpected twist on the subject"),
-    "mood": ("joyful", "tense", "calm", "mischievous", "determined", "wistful", "awestruck", "chaotic"),
+    "mood": ("joyful", "tense", "calm", "mischievous", "determined", "flustered", "tender", "chaotic"),
     "framing": ("close-up", "medium shot", "full-body shot", "wide shot where the place tells the story",
                 "three-quarter view at eye level", "slightly raised eye-level view", "over-the-shoulder view"),
     "setting": ("the most familiar spot in the subject's world", "a less obvious corner of the subject's world",
-                "somewhere with a wide view", "a cramped, cluttered space", "a doorway, path, stairs or ladder",
+                "a busy place full of other people", "a small shop, stall, workshop or kitchen",
+                "a home, room or other private space", "a vehicle, station or other place in transit",
                 "an outdoor spot shaped by the weather"),
     "light": ("soft morning light", "harsh midday sun", "golden hour", "dusk or blue hour",
               "night lit by practical lights", "dramatic single-source light", "overcast diffuse light",
               "warm lamplight from windows or lanterns"),
+    # Only images with several characters get one; it decides how they relate in this moment.
+    "interaction": ("one teaches or shows the other something", "a playful disagreement", "a shared mishap",
+                    "one surprises the other", "working together on a fiddly task", "one helps the other out of a problem",
+                    "a small competition between them", "one teases the other"),
 }
 # A required action must be visible in every image. Manual runs showed moment,
 # mood and setting directions (rest, water break, climbing a ladder) replacing it,
@@ -171,6 +182,19 @@ LOOK_AXES = {
              "thick dark waves", "a grey crew cut", "red pixie-cut hair"),
     "build": ("slim", "athletic", "stocky", "tall and lanky", "curvy", "broad-shouldered", "petite", "heavyset"),
 }
+# Hair and build drawn per sex, so a man does not get a pixie cut and a petite frame by chance
+# while a woman gets a grey crew cut. LOOK_AXES stays the pool for people whose sex is open.
+LOOKS_BY_SEX = {
+    "woman": {"hair": ("long straight auburn hair", "wavy shoulder-length blonde hair", "a messy brown ponytail",
+                       "a sleek black bob", "long braids", "thick dark waves", "a high bun", "red pixie-cut hair",
+                       "short curly black hair", "a silver bob"),
+              "build": ("slim", "athletic", "curvy", "petite", "tall and lanky", "heavyset")},
+    "man": {"hair": ("short curly black hair", "a buzz cut", "a grey crew cut", "short spiky dyed hair",
+                     "slicked-back dark hair", "a messy brown undercut", "shoulder-length wavy hair", "a shaved head",
+                     "a tousled sandy mop", "a neat side part"),
+            "build": ("slim", "athletic", "stocky", "broad-shouldered", "tall and lanky", "heavyset")},
+}
+_SEX_WORDS = {"female": "woman", "male": "man"}
 # A role or trait that already gives an age ("girl", "old man", "20 yo man", "in her 30s") keeps it; the
 # scene picks outfits to fit the setting.
 _AGED_ROLE = re.compile(r"\b(?:girl|boy|kid|child|teen\w*|old|elderly|grand\w*|senior|young|baby|toddler)s?\b"
@@ -207,28 +231,39 @@ def creative_directions(data, indexes, salt=0):
         random.Random(seed + position).shuffle(order)
         orders[axis] = order
     # A single random person whose sex the user left open gets one drawn here, so prompts never
-    # fall back to "a person" or a bare role label.
-    random_cast = [(item["name"], item.get("sex") == "unspecified" and item.get("count") == 1,
-                    bool(_AGED_ROLE.search(f"{item['name']} {item.get('traits', '')}")))
+    # fall back to "a person" or a bare role label. An age the user already gave anywhere (a role,
+    # a trait, the concept or the trigger: "40 yo man", "his teenage son") is never replaced.
+    stated_age = bool(_AGED_ROLE.search(" ".join(str(data.get(key) or "") for key in ("subject", "constraints", "trigger"))))
+    random_cast = [(item["name"], _SEX_WORDS.get(item.get("sex")),
+                    item.get("sex") == "unspecified" and item.get("count") == 1,
+                    stated_age or bool(_AGED_ROLE.search(f"{item['name']} {item.get('traits', '')}")))
                    for item in brief.get("characters") or ()
                    if item.get("origin") == "random" and item.get("kind") in LOOK_KINDS]
-    looks = {}
-    for position, axis in enumerate(LOOK_AXES, len(DIRECTION_AXES)):
-        order = list(LOOK_AXES[axis])
+
+    def shuffled(values, position):
+        order = list(values)
         random.Random(seed + position).shuffle(order)
-        looks[axis] = order
+        return order
+
+    pools = {sex: {axis: shuffled((LOOKS_BY_SEX.get(sex) or {}).get(axis, values), position)
+                   for position, (axis, values) in enumerate(LOOK_AXES.items(), len(DIRECTION_AXES))}
+             for sex in (None, *SEX_LOOKS)}
     directions = {}
     for index in indexes:
         scopes = {"all_outputs", *([f"guided:{(index - 1) % len(lines) + 1}"] if guided else [])}
         required_action = bool(action_scopes & scopes)
         directions[index] = {axis: order[(index - 1) % len(order)] for axis, order in orders.items()
-                             if (axis in ACTION_SAFE_AXES if required_action else not (guided and axis == "moment"))}
+                             if (axis in ACTION_SAFE_AXES if required_action else not (guided and axis == "moment"))
+                             and (group or axis != "interaction")}
         if random_cast:
-            directions[index]["random_character_looks"] = {
-                name: ", ".join(([random.Random(f"{seed}|{index}|{slot}").choice(SEX_LOOKS)] if open_sex else [])
-                                + [looks[axis][(index - 1 + 3 * slot) % len(looks[axis])] for axis in LOOK_AXES
-                                   if not (axis == "age" and aged)])
-                for slot, (name, open_sex, aged) in enumerate(random_cast)}
+            looks = {}
+            for slot, (name, sex, open_sex, aged) in enumerate(random_cast):
+                sex = random.Random(f"{seed}|{index}|{slot}").choice(SEX_LOOKS) if open_sex else sex
+                pool = pools[sex]
+                looks[name] = ", ".join(([sex] if open_sex else [])
+                                        + [pool[axis][(index - 1 + 3 * slot) % len(pool[axis])] for axis in LOOK_AXES
+                                           if not (axis == "age" and aged)])
+            directions[index]["random_character_looks"] = looks
     return directions
 
 

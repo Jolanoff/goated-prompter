@@ -507,3 +507,37 @@ class AnimaGroupTagTests(unittest.TestCase):
         self.assertIsNone(instruction_leak_error(prompt, "They cook dinner."))
         self.assertIsNone(instruction_leak_error("high contrast, kitchen, high contrast, high contrast", "x"),
                           "Three mentions are emphasis, not a loop.")
+
+
+class IdeaQualityTests(unittest.TestCase):
+    def test_ideas_and_brainstorm_ask_for_something_happening_not_sightseeing(self):
+        from goated_prompter.features.dataset.brainstorm import BRAINSTORM_SYSTEM
+        data = valid_draft(amount=1, _confirmed_intent=dataset_understanding_fixture())
+        ideas = " ".join(ideas_instruction(data, dataset_assignments(data)).system_message.split())
+        self.assertIn("Each idea is a moment where something is happening", ideas)
+        self.assertIn("Never fall back on sightseeing or stock poses", ideas)
+        self.assertIn("At most one event may be people simply watching, admiring or walking past something",
+                      " ".join(BRAINSTORM_SYSTEM.split()))
+
+    def test_several_characters_get_an_interaction_and_settings_skip_scenic_views(self):
+        from goated_prompter.features.dataset.ideas import DIRECTION_AXES
+        couple = [{**COMPANION, "name": "man", "sex": "male"}, {**COMPANION, "name": "wife", "sex": "female"}]
+        data = valid_draft(amount=8, trigger_type="Multiple characters",
+                           _confirmed_intent=dataset_understanding_fixture(characters=couple))
+        directions = creative_directions(data, range(1, 9))
+        self.assertEqual({item["interaction"] for item in directions.values()}, set(DIRECTION_AXES["interaction"]))
+        self.assertFalse(any("view" in setting for setting in DIRECTION_AXES["setting"]))
+
+    def test_drawn_hair_and_build_fit_each_persons_sex_and_a_stated_age_is_kept(self):
+        from goated_prompter.features.dataset.ideas import LOOKS_BY_SEX, LOOK_AXES
+        couple = [{**COMPANION, "name": "man", "sex": "male"}, {**COMPANION, "name": "wife", "sex": "female"}]
+        data = valid_draft(amount=10, trigger_type="Multiple characters", subject="a man and his wife exploring japan",
+                           trigger="40 yo man", _confirmed_intent=dataset_understanding_fixture(characters=couple))
+        for item in creative_directions(data, range(1, 11)).values():
+            man, wife = item["random_character_looks"]["man"], item["random_character_looks"]["wife"]
+            self.assertTrue(any(hair in man for hair in LOOKS_BY_SEX["man"]["hair"]), man)
+            self.assertFalse(any(hair in man for hair in ("pixie", "bob", "braids", "bun", "ponytail")), man)
+            self.assertTrue(any(hair in wife for hair in LOOKS_BY_SEX["woman"]["hair"]), wife)
+            self.assertFalse(any(hair in wife for hair in ("crew cut", "buzz cut", "shaved", "undercut")), wife)
+            self.assertFalse(any(age in look for look in (man, wife) for age in LOOK_AXES["age"]),
+                             "The user gave an age, so the app draws none.")

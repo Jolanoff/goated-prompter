@@ -29,7 +29,10 @@ class DatasetIdeasTests(unittest.TestCase):
         directions = creative_directions(data, range(1, 17))
         self.assertEqual(directions, creative_directions(deepcopy(data), range(1, 17)))
         self.assertEqual(creative_directions(data, [5]), {5: directions[5]}, "A replacement keeps its direction.")
+        self.assertTrue(all("interaction" not in item for item in directions.values()), "A single subject has no one to interact with.")
         for axis, values in DIRECTION_AXES.items():
+            if axis == "interaction":
+                continue
             used = [directions[index][axis] for index in range(1, 17)]
             self.assertEqual(set(used[:len(values)]), set(values), f"Every {axis} is used before any repeats.")
         self.assertGreater(len({tuple(item.values()) for item in directions.values()}), 15)

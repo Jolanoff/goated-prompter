@@ -37,7 +37,9 @@ common, unusual and rare events, different actions, roles, reactions and outcome
 Every event must satisfy the hard list in confirmed_intent and keep the confirmed cast;
 a required action stays in every event and you vary what happens around it.
 Name the action, not the camera, light, outfit or location: a new place alone is not a new
-event.
+event. Every event has something happening: an activity with a goal, a problem, a mishap or
+a reaction, and with several characters, something they do to or with each other. At most
+one event may be people simply watching, admiring or walking past something.
 """ + PLAUSIBLE_BODIES + """
 Do not list recently_used_ideas events or close variations of them.
 For each event give typicality from 0 to 1: how likely a typical writer would think of it
