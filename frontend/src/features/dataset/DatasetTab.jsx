@@ -5,7 +5,6 @@ import { orderDisplayPresets, presetDisplayLabel } from "../../presetPresentatio
 import { TargetSelect } from "../../shared/workflow/WorkflowControls.jsx";
 import { useWorkflowSettings } from "../../shared/workflow/useWorkflowSettings.js";
 import WorkflowSettingsStatus from "../../shared/workflow/WorkflowSettingsStatus.jsx";
-import LibraryStatus from "../../shared/workflow/LibraryStatus.jsx";
 import { datasetCopyText, datasetJsonl, datasetGenerationLog } from "./datasetExport.js";
 import { editDatasetPlan } from "./datasetState.js";
 import { useDatasetWorkflow } from "./useDatasetWorkflow.js";
@@ -17,7 +16,6 @@ const datasetPages = [["configure", "Configure"], ["scenes", "Scenes"], ["datase
 const sceneSources = [
   ["random", "Invent scenes", "Let Scene Planner invent scenes", "Distinct situations from your concept."],
   ["guided", "Use my scene ideas", "Provide my own scene ideas", "One idea per line; the action stays fixed."],
-  ["library", "From my library", "Recast saved prompts from my prompt library", "Your saved prompts for this target, recast with your characters."],
 ];
 
 function StatusChip({ label, status }) {
@@ -326,7 +324,6 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                   placeholder={"standing portrait in a city at night\nrunning through a sunlit field\nclose-up profile in a quiet studio"} />
                    <small className={ui.directorDescription}>Lines cycle to fill the batch; each action stays fixed.</small>
               </label>}
-              {draft.source_mode === "library" && <LibraryStatus target={draft.target} className="mt-4 block" />}
             </fieldset>
 
           </fieldset>

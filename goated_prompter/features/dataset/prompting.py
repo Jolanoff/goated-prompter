@@ -267,9 +267,6 @@ def dataset_instruction(request, data, index, model_family="qwen", plan_item=Non
                "and positions, not a second appearance inventory. Describe the interaction, setting and light while keeping those facts bound via the prefix."
                if fixed_anima_prefix(data) else "Keep the target adapter's supplied tag grouping.")
             + ("" if fixed_anima_prefix(data) or not characters else "\n\n" + anima_cast_section(characters)))
-    if data.get("source_mode") == "library":
-        # Recasts intentionally reuse their saved scene, so references stay but are not copy-checked.
-        instruction = replace(instruction, reference_prompts=())
     budget = DATASET_OUTPUT_TOKEN_LIMITS[data["length"]]
     return replace(instruction, diagnostic_stage=f"dataset:{index}",
         max_tokens=budget, hard_max_tokens=budget, unlimited_tokens=False,

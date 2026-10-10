@@ -222,37 +222,9 @@ def library_status(target, directory=None):
             "exists": path.exists(), "count": len(load_library(target, directory).prompts)}
 
 
-_COUNT_TAG = re.compile(r"\(?(\d+)\s*(?:girl|boy|other)s?(?::\d+(?:\.\d+)?)?\)?")
+def pick_scenarios(target, query, count, rng=None, directory=None):
+    """Choose ``count`` saved prompts to recast (Builder Remix): best matches first, shuffled, then the rest.
 
-
-def cast_size(prompt):
-    """Count characters from Danbooru count tags (1girl, 2boys, ...); None when the prompt has none."""
-    tags = [tag.strip().casefold().replace("_", " ") for tag in anima_tags(prompt)]
-    counts = [int(match[1]) for tag in tags if (match := _COUNT_TAG.fullmatch(tag))]
-    if counts:
-        return sum(counts)
-    return 1 if "solo" in tags else None
-
-
-def _recast_recently(prompt, ideas, query):
-    """True when a recent idea reads as a recast of this prompt: at least four of its own words
-    (beyond the concept's) and over a third of them appear in the prompt; the rest are
-    usually what the recast cast does."""
-    words, shared = set(tokenize(prompt)), set(tokenize(query))
-    for idea in ideas:
-        own = set(tokenize(idea)) - shared
-        shared_words = len(own & words)
-        if shared_words >= 4 and shared_words / len(own) >= .35:
-            return True
-    return False
-
-
-def pick_scenarios(target, query, count, cast=None, rng=None, directory=None, recent=()):
-    """Choose ``count`` saved prompts to recast: best matches first (shuffled), then the rest.
-
-    Prompts with fewer counted roles than the cast are used only when nothing else fits, and
-    prompts that ``recent`` ideas already recast come after fresh ones, so generating again
-    or regenerating one idea moves to other saved prompts while any are left.
     Prompts repeat only when the library holds fewer than ``count`` prompts.
     """
     rng = rng or random.Random()
@@ -270,11 +242,7 @@ def pick_scenarios(target, query, count, cast=None, rng=None, directory=None, re
     ranked = strong + weak
     rest = [prompt for prompt in index.prompts if prompt not in set(ranked)]
     rng.shuffle(rest)
-    fits = lambda prompt: cast is None or (size := cast_size(prompt)) is None or size >= cast
-    stale = {prompt for prompt in index.prompts if _recast_recently(prompt, recent, query)}
-    pool = ranked + rest
-    ordered = [prompt for group in ((True, False), (True, True), (False, False), (False, True))
-               for prompt in pool if fits(prompt) is group[0] and (prompt in stale) is group[1]]
+    ordered = ranked + rest
     return tuple(ordered[position % len(ordered)] for position in range(count))
 
 

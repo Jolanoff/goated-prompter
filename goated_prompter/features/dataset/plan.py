@@ -124,13 +124,11 @@ class ScenePlanner:
         salt, seed = secrets.randbits(32), secrets.randbits(32)
         known = [row for row in existing if row["index"] not in indexes]
         seeds = {}
-        # Recent and current ideas (including any being replaced) are avoided by event seeds
-        # and, in library mode, by the choice of saved prompts to recast.
-        avoid = [*(self.idea_history.recent(data) if self.idea_history is not None else []),
-                 *(row["idea"] for row in existing if row.get("idea"))]
         if uses_event_seeds(data):
             # Seed each image's event from a wider pool so repeated runs do not converge
-            # on the model's favourite ideas.
+            # on the model's favourite ideas; recent and current ideas are avoided.
+            avoid = [*(self.idea_history.recent(data) if self.idea_history is not None else []),
+                     *(row["idea"] for row in existing if row.get("idea"))]
             events = brainstorm_events(session, data, len(indexes), random.Random(seed), avoid=avoid,
                                        family=family, progress=progress, checkpoint=self.checkpoint)
             seeds = dict(zip(indexes, events))
@@ -141,8 +139,7 @@ class ScenePlanner:
                 progress(f"Creating ideas {start + 1}-{start + len(chunk)} of {len(indexes)}…")
             created = service.run(session=session, data=data, assignments=assignments, family=family, progress=progress,
                 indexes=chunk, existing=[*known, *[row for row in existing if row["index"] in chunk]],
-                allow_partial=allow_partial, direction_salt=salt, scenario_seed=seed, event_seeds=seeds,
-                scenario_avoid=avoid)
+                allow_partial=allow_partial, direction_salt=salt, event_seeds=seeds)
             rows.extend(created)
             known.extend(row for row in created if row.get("idea_status") != "failed")
         return rows

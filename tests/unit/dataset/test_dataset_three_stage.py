@@ -82,11 +82,15 @@ class IdeaSceneTests(unittest.TestCase):
         self.data = valid_draft(amount=1, subject="A chef and her sous-chef cooking",
                                 _confirmed_intent=dataset_understanding_fixture())
 
+    def test_a_draft_saved_with_the_removed_library_source_plans_invented_scenes(self):
+        from goated_prompter.features.dataset.service import validate_dataset_draft
+        self.assertEqual(validate_dataset_draft({**self.data, "source_mode": "library"})["source_mode"], "random")
+
     def test_ideas_are_invented_without_the_library(self):
         library_path("Generic").write_text(LIKED, encoding="utf-8")
         for mode, extra in (("random", {}), ("guided", {"inputs": "She juggles oranges"})):
             data = {**self.data, "source_mode": mode, **extra}
-            instruction = ideas_instruction(data, dataset_assignments(data), rng=random.Random(1))
+            instruction = ideas_instruction(data, dataset_assignments(data))
             with self.subTest(mode=mode):
                 self.assertNotIn("flour", instruction.user_message.casefold())
                 self.assertNotIn("library_examples", json.loads(instruction.user_message))
@@ -187,22 +191,6 @@ class ChunkedIdeasTests(unittest.TestCase):
         directions = creative_directions(data, list(range(1, 8)), 11)
         sent = [row["creative_direction"] for context in (first, second) for row in context["assignments"]]
         self.assertEqual(sent, [directions[index] for index in range(1, 8)])
-
-    def test_library_chunks_share_one_scenario_order_without_repeats(self):
-        directory = Path(tempfile.mkdtemp())
-        with patch.dict(os.environ, {LIBRARY_DIR_ENV: str(directory)}):
-            prompts = [f"1girl, 1boy, place {name}\n\nA couple visits the {name}." for name in
-                       ("harbor", "museum", "arcade", "bakery", "observatory", "greenhouse", "ferry")]
-            library_path("Anima").write_text("\n---\n".join(prompts), encoding="utf-8")
-            data = valid_draft(amount=7, target="Anima", source_mode="library",
-                               _confirmed_intent=dataset_understanding_fixture(character_count=2))
-            backend = CaptureBackend()
-            ScenePlanner(lambda: None).plan_ideas(session=backend, data=data, assignments=dataset_assignments(data),
-                                                  progress=lambda _message: None, allow_partial=True)
-        scenarios = [row["library_scenario"] for call in backend.calls
-                     for row in json.loads(call.user_message)["assignments"]]
-        self.assertEqual(len(backend.calls), 2)
-        self.assertEqual(sorted(scenarios), sorted(prompts))
 
 
 class BrainstormTests(unittest.TestCase):
@@ -440,7 +428,6 @@ class RenderabilityGateTests(unittest.TestCase):
         self.assertIn('"cartwheel"', failed["failure_reason"])
         with self.assertRaises(ValueError):
             _reject_unrenderable_pose(row, data, allow_partial=False)
-        self.assertIs(_reject_unrenderable_pose(row, {**data, "source_mode": "library"}, allow_partial=True), row)
 
 
 class LabelAndTriggerTidyTests(unittest.TestCase):

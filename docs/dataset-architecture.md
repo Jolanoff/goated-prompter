@@ -17,7 +17,7 @@ concept + rules + local guided input
 | Scoped understanding, character list and richer brief validation | `goated_prompter/features/dataset/understanding.py` |
 | Source-bound, expiring approval tickets | `goated_prompter/features/dataset/intent.py` |
 | Guided assignment indexes and cycling | `goated_prompter/features/dataset/assignments.py` |
-| Ideas with finished scenes, library scenarios and lexical duplicate hints | `goated_prompter/features/dataset/ideas.py`, `quality.py` |
+| Ideas with finished scenes and lexical duplicate hints | `goated_prompter/features/dataset/ideas.py`, `quality.py` |
 | Recent-event RAM history, read and written only by Ideas | `goated_prompter/features/dataset/ideas.py`, `idea_history.py` |
 | Chunked idea orchestration and versioned saved-plan validation | `goated_prompter/features/dataset/plan.py` |
 | Writer eligibility, shared by API and enhancement | `goated_prompter/features/dataset/eligibility.py` |
@@ -84,13 +84,12 @@ events per image with a typicality score. The app drops events similar to recent
 current siblings and samples the batch gently weighted toward unusual events, then passes each
 image its `event_seed`. Randomly invented human characters also get a code-drawn age, hair,
 build and outfit per image in their creative direction. An unusable brainstorm is reported
-and ideas continue without seeds; guided and library batches skip it.
+and ideas continue without seeds; guided batches skip it.
 IDEAS writes five images per call: each record is a one-line idea (the core event) and
 its scene, a complete three-to-five-sentence picture with the whole cast in frame,
 placement, action, setting, light and camera. Later calls receive the earlier ideas as
-existing ideas, share one creative-direction salt and one library scenario order, so the
-batch stays spread without one long list. Ideas never see the prompt library, except
-that From my library hands each image one saved prompt as the scenario to recast. An
+existing ideas and share one creative-direction salt, so the
+batch stays spread without one long list. Ideas never see the prompt library. An
 explicit replacement requests only its index. History and diversity hints never
 override a guided action or approved hard requirement. There is no Fast/Quality
 dispatch, automatic substitute idea or fallback plan.

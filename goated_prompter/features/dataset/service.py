@@ -8,7 +8,6 @@ from ...contracts import effective_model_family
 from ...director_profiles import resolve_director_config
 from .prompting import cast_error, dataset_instruction, drop_wrong_count_tags, geometry_error, instruction_leak_error
 from ...options.dataset import DATASET_SOURCES, DATASET_TYPES
-from ...prompt_library import library_file_name, load_library
 from ...options.lengths import PROMPT_LENGTH_NAMES
 from ...options.creativity import CREATIVITY_NAMES
 from ...options.styles import STYLE_NAMES
@@ -54,6 +53,8 @@ def validate_dataset_draft(value, *, generation=False, planning=False):
     if not isinstance(value, dict):
         raise ValueError("Invalid Dataset settings fields.")
     result = {**defaults, **{key: item for key, item in value.items() if key in defaults}}
+    if result["source_mode"] == "library":
+        result["source_mode"] = "random"  # "From my library" was removed; ideas never come from the library.
     result["trigger"] = _text(result["trigger"], "Trigger / prepend", 1000, required=generation and not planning).strip()
     result["subject"] = _text(result["subject"], "Dataset concept", 10000, required=generation).strip()
     for key, label, limit in (("custom_type", "Custom subject kind", 120),
@@ -79,9 +80,6 @@ def validate_dataset_draft(value, *, generation=False, planning=False):
         raise ValueError("Describe the custom subject kind before generating.")
     if result["source_mode"] == "guided" and generation and not any(line.strip() for line in result["inputs"].splitlines()):
         raise ValueError("Add at least one guided input, one per line.")
-    if result["source_mode"] == "library" and generation and not load_library(result["target"]).prompts:
-        raise ValueError(f"Add prompts to data/prompt_library/{library_file_name(result['target'])} "
-                         f"to plan scenes from your library for {result['target']}.")
     result["scene_plan"] = validate_saved_scene_plan(result["scene_plan"])
     if not isinstance(result["results"], list) or len(result["results"]) > 25:
         raise ValueError("Dataset results must be an array of at most 25 prompts.")

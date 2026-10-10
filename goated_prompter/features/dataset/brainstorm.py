@@ -127,6 +127,6 @@ def brainstorm_events(session, data, count, rng, *, avoid=(), family="qwen", pro
 
 
 def uses_event_seeds(data):
-    """Guided inputs and library scenarios already fix each image's event."""
+    """Guided inputs already fix each image's event."""
     return data.get("source_mode") == "random"
 
