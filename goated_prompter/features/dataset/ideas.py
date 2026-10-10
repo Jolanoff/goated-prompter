@@ -9,6 +9,7 @@ import secrets
 
 from ...backends.base import BackendGenerationError
 from ...contracts import PromptInstruction
+from ...presets import get_director_preset
 from .brainstorm import PLAUSIBLE_BODIES
 from .quality import analyze_idea_diversity, passive_idea, passive_request
 from .understanding import (label_replacements, numbered_labels, replace_labels, understanding_instruction,
@@ -286,6 +287,21 @@ def _ideas_schema(indexes):
             for index in indexes]}
 
 
+DIRECTOR_STAGING = """The selected Director decides how every scene is shot: framing, camera position and height,
+lens feel, light and photographic character. Stage each scene its way, keeping the event and
+the cast. When it fixes a kind of shot (a selfie, a mirror shot, first person, a fashion
+editorial), use that shot for every image; creative_direction framing and light only fill what
+the Director leaves open."""
+
+
+def director_section(data):
+    """The Director's instructions for staging scenes, or "" when it does not apply to the target."""
+    preset = get_director_preset(data.get("director_preset"))
+    if not preset.instructions.strip() or (preset.supported_targets and data.get("target") not in preset.supported_targets):
+        return ""
+    return f"\n\nDIRECTOR — {preset.label}\n{preset.instructions.strip()}\n{DIRECTOR_STAGING}"
+
+
 def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existing=(), recent=(), direction_salt=0,
                       event_seeds=None, craft_notes=()):
     source_context = json.loads(understanding_instruction(data).user_message)
@@ -320,7 +336,7 @@ def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existin
         "recently_used_ideas": list(recent)[:40],
         **({"craft_notes": list(craft_notes)} if craft_notes else {})}
     budget = 512 + len(indexes) * 512
-    return PromptInstruction(system_message=IDEAS_SYSTEM, user_message=json.dumps(context,
+    return PromptInstruction(system_message=IDEAS_SYSTEM + director_section(data), user_message=json.dumps(context,
         ensure_ascii=False, separators=(",", ":")),
         model_family=family, diagnostic_stage="dataset:ideas", max_tokens=budget,
         hard_max_tokens=budget, unlimited_tokens=False, temperature=.7, top_p=.92,

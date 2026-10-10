@@ -102,6 +102,15 @@ class IdeaSceneTests(unittest.TestCase):
         self.assertIn("Put exactly that cast in every scene", rules)
         self.assertIn("keeps every character clearly in frame", rules)
 
+    def test_the_director_stages_every_scene(self):
+        selfie = {**self.data, "director_preset": "Arm's-Length Selfie"}
+        rules = ideas_instruction(selfie, dataset_assignments(selfie)).system_message
+        self.assertIn("DIRECTOR — Arm's-Length Selfie", rules)
+        self.assertIn("arm's-length front-camera selfie", rules)
+        self.assertIn("use that shot for every image", rules)
+        krea_only = {**self.data, "director_preset": "Krea 2 Pose Lock", "target": "Anima"}
+        self.assertNotIn("DIRECTOR —", ideas_instruction(krea_only, dataset_assignments(krea_only)).system_message)
+
 
 class CastWriterTests(unittest.TestCase):
     def writer(self, characters, **changes):
