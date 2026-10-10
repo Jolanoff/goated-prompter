@@ -36,14 +36,12 @@ async def dataset_endpoint(request):
     scene_action = None
     if local_scene:
         action, index = payload.get("action"), payload.get("index")
-        if (not isinstance(action, str) or action not in {"regenerate_idea", "repair_scene", "regenerate_prompt"}
+        if (not isinstance(action, str) or action not in {"regenerate_idea", "regenerate_prompt"}
                 or type(index) is not int or not 1 <= index <= data["amount"]):
-            raise ValueError("Choose a valid scene index and regenerate_idea, repair_scene or regenerate_prompt.")
+            raise ValueError("Choose a valid scene index and regenerate_idea or regenerate_prompt.")
         rows = reusable_scene_plan(data, dataset_assignments(data), require_scenes=False, allow_pending=True)
         if rows is None:
             raise ValueError("Per-scene actions require a current saved idea plan.")
-        if action == "repair_scene" and not rows[index - 1].get("idea", "").strip():
-            raise ValueError("Generate an idea for this item before repairing its scene.")
         if action == "regenerate_prompt" and (reason := scene_unusable_reason(rows[index - 1], data)):
             raise ValueError(reason)
         scene_action = (action, index)

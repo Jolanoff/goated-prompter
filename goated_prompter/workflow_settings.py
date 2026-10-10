@@ -9,10 +9,9 @@ from .workspace_store import WorkspaceConflict, locks, text
 from .features.minimax.contract import default_minimax_draft, validate_minimax_draft
 from .features.dataset.service import default_dataset_draft, validate_dataset_draft, saved_dataset_draft
 from .features.dataset.assignments import dataset_assignments
-from .features.dataset.plan import reusable_scene_plan, FAILURE_METADATA, IDEA_DETAIL_FIELDS
+from .features.dataset.plan import reusable_scene_plan, FAILURE_METADATA
 from .features.dataset.eligibility import scene_eligibility
-from .features.dataset.scene import MAX_SCENE_CHARACTERS
-from .features.dataset.ideas import MAX_FIELD_CHARACTERS
+from .features.dataset.ideas import MAX_IDEA_CHARACTERS, MAX_SCENE_CHARACTERS
 
 
 def default_draft(operation):
@@ -96,7 +95,7 @@ class WorkflowSettingsStore:
                          "idea_plan_current": reusable_scene_plan(draft, dataset_assignments(draft), require_scenes=False) is not None,
                          "scene_plan_matches_settings": reusable_scene_plan(draft, dataset_assignments(draft), require_scenes=False, allow_pending=True) is not None,
                          "scene_limits": {"characters": MAX_SCENE_CHARACTERS},
-                         "idea_limits": {"characters": MAX_FIELD_CHARACTERS},
+                         "idea_limits": {"characters": MAX_IDEA_CHARACTERS},
                          "scene_eligibility": {str(row["index"]): scene_eligibility(row, draft).to_dict() for row in draft["scene_plan"]}}
                        if operation == "dataset" else {})
         return {**record, "draft": draft, "defaults": defaults, **scene_state,
@@ -144,7 +143,7 @@ class WorkflowSettingsStore:
                                 if self.dataset_checkpoints is not None else record["draft"])
                     by_index = {row["index"]: row for row in previous["scene_plan"]}
                     invalidated = set()
-                    dependencies = ("input", "idea", "scene", *IDEA_DETAIL_FIELDS)
+                    dependencies = ("input", "idea", "scene")
                     for row in updated["scene_plan"]:
                         old = by_index.get(row["index"])
                         if old and (any(row.get(field) != old.get(field) for field in dependencies)

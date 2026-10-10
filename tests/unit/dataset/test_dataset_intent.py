@@ -55,19 +55,17 @@ class DatasetIntentTicketTests(unittest.TestCase):
             clarifications=["May the cheek be partly occluded?"]))
         self.assertEqual(result["confirmation_token"], "")
 
-    def test_developed_ideas_and_longer_scenes_fit_the_new_limits_without_minimum_padding(self):
-        from goated_prompter.features.dataset.ideas import validate_ideas
-        from goated_prompter.features.dataset.scene import validate_scene
-        idea = "A meaningful action " + "descriptive " * 47
-        self.assertEqual(len(idea.split()), 50)
+    def test_ideas_accept_short_or_developed_text_within_their_limits(self):
+        from goated_prompter.features.dataset.ideas import MAX_IDEA_CHARACTERS, MAX_SCENE_CHARACTERS, validate_ideas
+        idea = "A meaningful action " + "descriptive " * 15
         self.assertEqual(validate_ideas(json.dumps([dataset_idea_fixture(idea=idea)]), [1])[0]["idea"], idea.strip())
         self.assertEqual(validate_ideas(json.dumps([dataset_idea_fixture(idea="Reading")]), [1])[0]["idea"], "Reading")
-        scene = "spatialdescriptionword " * 110
-        self.assertGreater(len(scene), 2000)
-        row = {"scene": scene, "self_check": "PASS"}
-        self.assertEqual(validate_scene(json.dumps(row))["scene"], scene.strip())
-        with self.assertRaises(ValueError):
-            validate_ideas(json.dumps([dataset_idea_fixture(idea="x" * 1001)]), [1])
+        scene = ("spatial " * 180).strip()
+        self.assertLessEqual(len(scene), MAX_SCENE_CHARACTERS)
+        self.assertEqual(validate_ideas(json.dumps([dataset_idea_fixture(scene=scene)]), [1])[0]["scene"], scene)
+        for field, limit in (("idea", MAX_IDEA_CHARACTERS), ("scene", MAX_SCENE_CHARACTERS)):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                validate_ideas(json.dumps([dataset_idea_fixture(**{field: "x" * (limit + 1)})]), [1])
 
     def test_approval_is_bound_to_source_and_scene_edits_not_result_bookkeeping(self):
         data = validate_dataset_draft(valid_draft(amount=1))

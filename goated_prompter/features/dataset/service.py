@@ -280,19 +280,11 @@ class DatasetService:
                     return []
                 for row in repaired:
                     scenes[row["index"] - 1] = {**row, "input": assignments[row["index"] - 1]["input"],
-                        "scene": "", "self_check": "", "scene_status": row.get("scene_status", "not_generated"),
+                        "scene": row.get("scene", ""), "self_check": "", "scene_status": row.get("scene_status", "not_generated"),
                         "prompt_status": row.get("prompt_status", "not_generated"), "idea_status": row.get("idea_status", "valid")}
-                publish()
                 valid = [row for row in repaired if row.get("idea_status") != "failed"]
-                for row in valid:
-                    try:
-                        planner.compose(session=session, data=data, assignments=assignments, ideas=[row],
-                            family=family, progress=progress, plan_update=save_composed)
-                    except BackendGenerationError as error:
-                        self.checkpoint()
-                        index = row["index"]
-                        scenes[index - 1] = failed_scene(scenes[index - 1], failure_reason(error), stage="scene")
-                        publish()
+                planner.compose(valid, plan_update=save_composed)
+                publish()
                 return [row["index"] for row in valid if scene_is_usable(scenes[row["index"] - 1], data)]
             if scenes is None:
                 planned = planner.plan_batch(session=session, data=data, assignments=assignments, family=family,
@@ -329,25 +321,16 @@ class DatasetService:
                         self.checkpoint()
                         scenes[index - 1] = failed_scene(original, "Requested new idea failed: " + failure_reason(exc), stage="idea")
                     else:
-                        scenes[index - 1] = {**idea, "input": original["input"], "scene": "", "self_check": "",
+                        scenes[index - 1] = {**idea, "input": original["input"], "self_check": "",
                             "idea_status": "valid", "scene_status": "not_generated", "prompt_status": "not_generated"}
                     publish()
-                elif action == "repair_scene":
-                    scenes[index - 1] = {**original, "self_check": "", "scene_status": "not_generated", "prompt_status": "not_generated"}
-                    publish()
-                    repaired = planner.repair_scene(session=session, data=data, assignments=assignments,
-                        row=original, family=family, progress=progress)
-                    scenes[index - 1] = {**repaired, "input": original["input"]}
                 elif action != "regenerate_prompt":
                     raise ValueError("Unknown per-scene action.")
+            # New ideas and edited scenes are accepted as written; nothing else runs here.
             pending = [scenes[index - 1] for index in selected if scenes[index - 1].get("scene_status") != "failed"
-                       and (not scenes[index - 1]["scene"].strip() or not scenes[index - 1].get("self_check"))]
+                       and scenes[index - 1]["scene"].strip() and not scenes[index - 1].get("self_check")]
             if pending:
-                if scene_action and scene_action[0] == "regenerate_prompt":
-                    raise ValueError("Compose or repair this scene before regenerating its prompt.")
-                composed = planner.compose(session=session, data=data, assignments=assignments, ideas=pending,
-                    family=family, progress=progress, plan_update=save_composed)
-                save_composed(composed)
+                planner.compose(pending, plan_update=save_composed)
             duplicates = {row["index"] for row in analyze_idea_diversity(data, scenes)["ideas"] if row["issues"]}
             for index in selected:
                 if scenes[index - 1].get("scene_status") != "failed":

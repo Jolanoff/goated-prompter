@@ -1,4 +1,4 @@
-/** Dataset's explicit dependency boundary: idea -> checked scene -> prompt. */
+/** Dataset's explicit dependency boundary: idea with its scene -> prompt. */
 export function invalidateDatasetPrompts(draft, patch = {}) {
   return { ...patch, results: [],
     scene_plan: (draft.scene_plan || []).map((row) => {
@@ -134,11 +134,17 @@ export function datasetUnderstandingSections(brief) {
   }));
 }
 
-const ideaDetailLabels = { placement: "Placement", visibility: "Visibility", camera: "Camera", framing: "Framing", context: "Context" };
+const characterSex = { female: "female", male: "male", mixed: "mixed group", unspecified: "sex open", none: "no sex" };
+const characterOrigin = { named: "existing character", described: "as described", random: "invented for each image" };
 
-export function datasetIdeaDetails(row) {
-  return Object.entries(ideaDetailLabels).filter(([field]) => row?.[field]?.trim())
-    .map(([field, label]) => ({ field, label, text: row[field] }));
+/** One readable line per approved character, e.g. "Naruto Uzumaki · male human · from Naruto". */
+export function datasetCharacterLines(brief) {
+  return (brief?.characters || []).map((item) => [
+    `${item.count > 1 ? `${item.count} × ` : ""}${item.name}`,
+    `${characterSex[item.sex] || item.sex} ${item.kind}`,
+    item.series ? `from ${item.series}` : characterOrigin[item.origin] || item.origin,
+    item.traits,
+  ].filter(Boolean).join(" · "));
 }
 
 export function datasetSceneSignature(row) {
@@ -146,8 +152,7 @@ export function datasetSceneSignature(row) {
   // Only the scene dependency boundary, not writer status or failure bookkeeping.
   return JSON.stringify(canonicalValue({ index: row.index, input: row.input || "",
     idea: row.idea, scene: row.scene || "",
-    scene_status: row.scene_status || "valid", self_check: row.self_check,
-    ...Object.fromEntries(datasetIdeaDetails(row).map(({ field, text }) => [field, text])) }));
+    scene_status: row.scene_status || "valid", self_check: row.self_check }));
 }
 
 export function isDatasetSceneCurrent(row, record) {
@@ -158,8 +163,7 @@ export function isDatasetSceneCurrent(row, record) {
 
 export function datasetRetryStage(row, eligibility) {
   if (row.failure_stage === "idea" || row.idea_status === "failed") return "idea";
-  if (isDatasetSceneUsable(eligibility)) return "prompt";
-  return row.idea?.trim() ? "scene" : "idea";
+  return isDatasetSceneUsable(eligibility) ? "prompt" : "idea";
 }
 
 export function editDatasetPlan(draft, index, stage, text) {
@@ -167,12 +171,9 @@ export function editDatasetPlan(draft, index, stage, text) {
     scene_plan: draft.scene_plan.map((row) => {
       if (row.index !== index) return row;
       const { failure_reason, failure_stage, ...scene } = row;
-      scene.self_check = "";
-      if (stage === "idea") for (const field of Object.keys(ideaDetailLabels)) delete scene[field];
-      return stage === "idea"
-      ? { ...scene, idea: text, scene: "",
-        idea_status: "valid", scene_status: "not_generated", prompt_status: "not_generated" }
-      : { ...scene, scene: text,
+      // The idea is a label for its scene, so editing either keeps the other.
+      return { ...scene, [stage]: text, self_check: "",
+        ...(stage === "idea" ? { idea_status: "valid" } : {}),
         scene_status: "not_generated", prompt_status: "not_generated" };
     }) };
 }

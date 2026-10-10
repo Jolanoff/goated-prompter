@@ -90,9 +90,9 @@ test("manual edits clear stale failure metadata only for the edited item", () =>
   }
 });
 
-test("retry stages keep good ideas and eligible scenes", () => {
-  assert.equal(datasetRetryStage({ ...draft.scene_plan[0], scene_status: "failed" }), "scene");
-  assert.equal(datasetRetryStage({ ...draft.scene_plan[0], scene: "", scene_status: "not_generated" }), "scene");
+test("retry stages regenerate the idea unless its scene is usable", () => {
+  assert.equal(datasetRetryStage({ ...draft.scene_plan[0], scene_status: "failed" }), "idea");
+  assert.equal(datasetRetryStage({ ...draft.scene_plan[0], scene: "", scene_status: "not_generated" }), "idea");
   assert.equal(datasetRetryStage({ ...draft.scene_plan[0], prompt_status: "failed" }, { usable: true }), "prompt");
   assert.equal(datasetRetryStage({ idea: "", scene: "", scene_status: "failed" }), "idea");
 });

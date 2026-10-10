@@ -5,7 +5,7 @@ import hashlib
 import threading
 import time
 
-from .ideas import MAX_FIELD_CHARACTERS
+from .ideas import MAX_IDEA_CHARACTERS
 
 
 class RecentIdeaHistory:
@@ -38,7 +38,7 @@ class RecentIdeaHistory:
             ideas = self.recent(data)
             seen = {idea.casefold() for idea in ideas}
             for row in rows:
-                idea = " ".join(row.get("idea", "").split())[:MAX_FIELD_CHARACTERS]
+                idea = " ".join(row.get("idea", "").split())[:MAX_IDEA_CHARACTERS]
                 if idea and row.get("idea_status") != "failed" and idea.casefold() not in seen:
                     ideas.append(idea)
                     seen.add(idea.casefold())

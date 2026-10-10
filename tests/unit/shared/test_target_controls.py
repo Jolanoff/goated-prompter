@@ -61,7 +61,7 @@ class TargetControlTests(unittest.TestCase):
         request = GoatedPrompterRequest(idea=data["subject"], target_model=data["target"])
         writer = dataset_instruction(request, data, 1, plan_item=saved_scene())
         self.assertIn(resolve_target_length(data["target"], data["length"]), writer.system_message)
-        self.assertIn("ENHANCE THE ACCEPTED SCENE", writer.system_message)
+        self.assertIn("WRITE THE FINAL PROMPT FROM THE SCENE", writer.system_message)
 
     def test_anima_positive_quality_tags_are_allowed_but_negatives_stay_separate(self):
         prompt = 'masterpiece, best quality, score_9, 1girl\nShe reads a book beside a window.'

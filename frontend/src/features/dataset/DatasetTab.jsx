@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AlignLeft, ArrowRight, ChevronDown, Circle, CircleAlert, CircleCheck, CircleHelp, Copy, Cpu, Database, Download, FileJson, Layers3, Lightbulb, LoaderCircle, RefreshCw, SlidersHorizontal, Sparkles, Tag, Trash2, WandSparkles, Wrench } from "lucide-react";
+import { AlignLeft, ArrowRight, ChevronDown, Circle, CircleAlert, CircleCheck, CircleHelp, Copy, Cpu, Database, Download, FileJson, Layers3, Lightbulb, LoaderCircle, RefreshCw, SlidersHorizontal, Sparkles, Tag, Trash2, WandSparkles } from "lucide-react";
 import { ui } from "../../ui.js";
 import { orderDisplayPresets, presetDisplayLabel } from "../../presetPresentation.js";
 import { TargetSelect } from "../../shared/workflow/WorkflowControls.jsx";
@@ -10,7 +10,6 @@ import { datasetCopyText, datasetJsonl, datasetGenerationLog } from "./datasetEx
 import { editDatasetPlan } from "./datasetState.js";
 import { useDatasetWorkflow } from "./useDatasetWorkflow.js";
 import DatasetConfirmationModal from "./DatasetConfirmationModal.jsx";
-import DatasetIdeaDetails, { DatasetSceneCheck } from "./DatasetIdeaDetails.jsx";
 import { triggerTypes } from "./options.js";
 import { styles } from "../../shared/workflow/options.js";
 
@@ -270,7 +269,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
             </div>
               </div>
              </details>
-                    <HelpDetails>Generate prompts starts fresh: confirm the request once, then ideas, scenes and prompts run automatically in order. Generate scenes only pauses for manual review; Continue keeps your approved plan and completed prompts, and generates only missing prompts. Repeated or invalid ideas are repaired once after valid work finishes, without discarding good results. Changed settings or expired approval need a new review. Scene edits need a new check before enhancement; Repair scene checks one scene without changing its siblings. Ideas uses temporary recent-event history to avoid repeats; scenes and prompts follow the accepted idea.</HelpDetails>
+                    <HelpDetails>Generate prompts starts fresh: confirm the request once, then ideas, scenes and prompts run automatically in order. Generate scenes only pauses for manual review; Continue keeps your approved plan and completed prompts, and generates only missing prompts. Repeated or invalid ideas are repaired once after valid work finishes, without discarding good results. Changed settings or expired approval need a new review. Scene edits are used as written. Ideas uses temporary recent-event history to avoid repeats; prompts follow the accepted scene.</HelpDetails>
                </div>
              </details>
           </fieldset>
@@ -370,7 +369,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
            <p>{scenePlannerBusy || isGenerating ? "Scenes will appear here as planning progresses." : "Set up your idea on Configure, then choose Generate."}</p>
           <button className={ui.button} onClick={() => goToStep("configure")}>Back to Configure</button>
         </div> : <>
-        <HelpDetails>Idea edits discard stale descriptions and invalidate that scene, check and prompt. Scene edits invalidate that check and prompt. Output settings reuse checked scenes and invalidate prompts.</HelpDetails>
+        <HelpDetails>Each idea comes with its finished scene, and the final prompt is written from the scene. Edit the scene to change the image; edits invalidate only that prompt. Output settings reuse scenes and invalidate prompts.</HelpDetails>
         {staleScenePlan && <p className={ui.warningNote}>This plan no longer matches the Dataset settings. Generate fresh scenes before continuing.</p>}
         <div className="dataset-card-grid mt-4">
           {draft.scene_plan.map((item) => <article key={item.index} className="dataset-card dataset-scene-card" aria-label={`Scene ${item.index} card`}>
@@ -394,19 +393,15 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
             <div className="dataset-scene-editor dataset-scene-description">
               <div className="dataset-scene-editor-heading">
                 <label htmlFor={`dataset-scene-${item.index}`}><AlignLeft size={15} aria-hidden="true" />Scene {item.index}</label>
-                <DatasetIdeaDetails item={item} />
               </div>
               <textarea className={ui.notesInput} aria-label={`Planned scene ${item.index}`} value={item.scene}
                 id={`dataset-scene-${item.index}`} maxLength={preferences.record?.scene_limits?.characters} disabled={disabled}
                 onChange={(event) => update(editDatasetPlan(draft, item.index, "scene", event.target.value))} />
             </div>
-            <DatasetSceneCheck item={item} />
             </div>
             <footer className="dataset-scene-actions">
               <button className={ui.button} title="Regenerate idea" aria-label="Regenerate idea" disabled={!canWrite || staleScenePlan}
                 onClick={() => sceneAction(item.index, "regenerate_idea")}><RefreshCw size={14} aria-hidden="true" />Regenerate idea</button>
-              <button className={ui.button} title="Repair scene" aria-label="Repair scene" disabled={!canWrite || staleScenePlan || !item.idea?.trim()}
-                onClick={() => sceneAction(item.index, "repair_scene")}><Wrench size={14} aria-hidden="true" />Repair scene</button>
               <button className={`${ui.button} dataset-scene-write`} title="Regenerate prompt" aria-label="Regenerate prompt" disabled={!canWrite || staleScenePlan || !sceneUsable(item)}
                 onClick={() => sceneAction(item.index, "regenerate_prompt")}><WandSparkles size={14} aria-hidden="true" />Regenerate prompt</button>
             </footer>
@@ -457,7 +452,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
               </details> : <p className={`${ui.subtleNote} mb-3`}>Legacy result: no originating scene was saved.</p>}
               <FailureReason item={item} />
               {item.failed ? <button className={`${ui.button} mt-3`} disabled={!canWrite || staleScenePlan}
-                onClick={() => sceneAction(item.index, retryStage(item) === "scene" ? "repair_scene" : `regenerate_${retryStage(item)}`)}><RefreshCw size={14} aria-hidden="true" />Retry failed {retryStage(item)}</button> : <>
+                onClick={() => sceneAction(item.index, `regenerate_${retryStage(item)}`)}><RefreshCw size={14} aria-hidden="true" />Retry failed {retryStage(item)}</button> : <>
               <label htmlFor={`dataset-prompt-${item.index}`} className="dataset-final-label">Final prompt</label>
               <textarea className={ui.outputInput} style={{ minHeight: 220 }} aria-label={`Dataset prompt ${item.index}`}
                id={`dataset-prompt-${item.index}`}

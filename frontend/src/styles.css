@@ -250,19 +250,6 @@
   .dataset-scene-editor-heading > label svg { color: var(--color-muted); }
   .dataset-scene-editor .notes-input { flex: 1; height: 120px; min-height: 120px; padding: 14px; border-radius: 12px; font-size: 14px; line-height: 1.75; }
   .dataset-scene-description .notes-input { height: 190px; min-height: 190px; }
-  .dataset-direction-tools { position: relative; display: flex; flex-wrap: wrap; gap: 4px; max-width: 100%; margin-left: auto; }
-  .dataset-direction-button { display: grid; place-items: center; width: 36px; height: 36px; flex-shrink: 0; border: 1px solid transparent; border-radius: 10px; color: var(--color-muted); background: var(--raised); cursor: help; }
-  .dataset-direction-button:hover, .dataset-direction-button:focus-visible, .dataset-direction-button[aria-describedby] { border-color: var(--color-line); color: var(--color-accent); background: var(--color-selected); }
-  .dataset-direction-popover { position: absolute; z-index: 20; bottom: 100%; right: 0; width: min(380px, calc(100vw - 64px)); padding-bottom: 8px; }
-  .dataset-direction-tooltip { max-height: 320px; overflow-y: auto; overscroll-behavior: contain; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--raised); color: var(--color-ink); box-shadow: 0 12px 32px var(--shadow); font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
-  .dataset-direction-tooltip strong { font-size: 14px; font-weight: 650; }
-  .dataset-direction-description { margin-top: 4px; color: var(--color-muted); font-size: 12px; }
-  .dataset-direction-value { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--color-line); white-space: pre-wrap; }
-  .dataset-direction-tooltip small { display: block; margin-top: 12px; color: var(--color-muted); font-size: 11px; }
-  .dataset-scene-warning { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: 12px; background: var(--warning-bg); color: var(--color-warning); font-size: 13px; line-height: 1.65; }
-  .dataset-scene-warning > svg { flex-shrink: 0; margin-top: 2px; }
-  .dataset-scene-warning h3 { font-size: 13px; font-weight: 650; }
-  .dataset-scene-warning p { margin-top: 4px; }
   .dataset-scene-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding: 14px 22px; border-top: 1px solid var(--color-line); }
   .dataset-scene-actions .button { min-height: 38px; }
   .dataset-scene-actions .dataset-scene-write { border-color: var(--select-border); color: var(--color-accent); background: var(--color-selected); }
@@ -593,7 +580,6 @@
     .dataset-scene-body { padding: 16px; }
     .dataset-scene-actions { padding: 12px 16px; }
     .dataset-scene-actions .button { flex: 1 1 140px; justify-content: center; min-height: 44px; }
-    .dataset-direction-button { width: 44px; height: 44px; }
     .dataset-scene-editor .notes-input { font-size: 16px; }
     .dataset-view .button, .dataset-view .choice-card, .dataset-details > summary { min-height: 44px; }
     .dataset-view .button-primary { width: 100%; justify-content: center; }

@@ -38,7 +38,4 @@ class CaptureBackend(GoatedPrompterBackend):
         if stage == "dataset:ideas":
             context = json.loads(instruction.user_message)
             return json.dumps([dataset_idea_fixture(row["index"]) for row in context["assignments"]])
-        if stage == "dataset:build_scene":
-            context = json.loads(instruction.user_message)
-            return json.dumps({"scene": context.get("current_scene") or context["assignments"][0]["idea"], "self_check": "PASS"})
         return "A distinct visual setup featuring ohwx_person in the requested concept."

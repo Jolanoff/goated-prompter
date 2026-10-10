@@ -23,8 +23,6 @@ class EvaluationRunnerTests(unittest.TestCase):
                 text = json.dumps(dataset_understanding_fixture())
             elif instruction.diagnostic_stage == "dataset:ideas":
                 text = json.dumps([dataset_idea_fixture()])
-            elif instruction.diagnostic_stage == "dataset:build_scene":
-                text = json.dumps({"scene": "A chipped blue cup on a table.", "self_check": "PASS"})
             else:
                 text = BASE if instruction.diagnostic_stage.startswith("minimax") else "eval_subject is a chipped blue ceramic cup on a table."
             backend.emit_activity("request", stage=instruction.diagnostic_stage, parameters={"temperature": instruction.temperature}, messages=instruction.to_messages())
@@ -34,7 +32,7 @@ class EvaluationRunnerTests(unittest.TestCase):
         case = {"id": "cup", "request": "A chipped blue ceramic cup on a table.", "dataset_type": "Object / product", "anchors": {}}
         with patch.object(MockBackend, "generate", generate), patch("builtins.input", return_value="yes"):
             rows = [live_case(case, workflow, {"backend": "mock"}, self.args()) for workflow in ("builder", "dataset", "minimax")]
-        self.assertEqual(len(calls), 6)
+        self.assertEqual(len(calls), 5)
         for row in rows:
             self.assertNotIn("error", row)
             self.assertEqual(row["completion_state"], "completed")

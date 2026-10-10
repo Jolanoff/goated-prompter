@@ -18,7 +18,6 @@ from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.dataset.assignments import dataset_assignments
 from goated_prompter.features.dataset.ideas import ideas_instruction
 from goated_prompter.features.dataset.intent import DatasetIntentTickets
-from goated_prompter.features.dataset.scene import scene_instruction
 from goated_prompter.features.dataset.understanding import (UNDERSTANDING_SYSTEM, DatasetUnderstandingService,
     understanding_instruction, validate_understanding)
 from goated_prompter.features.dataset.prompting import dataset_instruction
@@ -441,7 +440,6 @@ class DatasetUnderstandingTests(unittest.TestCase):
         request = GoatedPrompterRequest(idea=data["subject"])
         self.assertEqual(ideas_instruction(approved, dataset_assignments(approved)),
             ideas_instruction(equivalent, dataset_assignments(equivalent)))
-        self.assertEqual(scene_instruction(approved, assignment, row), scene_instruction(equivalent, assignment, row))
         self.assertEqual(dataset_instruction(request, approved, 1, plan_item=row),
             dataset_instruction(request, equivalent, 1, plan_item=row))
         result["hard"][0]["text"] = "changed"
@@ -521,9 +519,8 @@ class DatasetUnderstandingTests(unittest.TestCase):
                 approved = {**data, "_confirmed_intent": tickets.approve(token, data)}
                 assignment = dataset_assignments(approved)[0]
                 row = saved_scene(input=assignment["input"])
-                for instruction in (ideas_instruction(approved, dataset_assignments(approved)),
-                        scene_instruction(approved, assignment, row)):
-                    self.assertIn(visibility, json.loads(instruction.user_message)["confirmed_intent"]["hard"])
+                instruction = ideas_instruction(approved, dataset_assignments(approved))
+                self.assertIn(visibility, json.loads(instruction.user_message)["confirmed_intent"]["hard"])
                 for target in ("Generic", "Anima", "Ideogram4"):
                     with self.subTest(target=target):
                         instruction = dataset_instruction(GoatedPrompterRequest(idea=subject),
@@ -864,7 +861,7 @@ class DatasetUnderstandingTests(unittest.TestCase):
                 self.assertIsNotNone(schema)
                 self.assertEqual(schema["type"], "object")
                 self.assertIs(schema["additionalProperties"], False)
-                fields = set(self.compact_brief())
+                fields = set(self.compact_brief()) | {"characters"}
                 self.assertEqual(set(schema["required"]), fields)
                 self.assertEqual(set(schema["properties"]), fields)
                 props = schema["properties"]

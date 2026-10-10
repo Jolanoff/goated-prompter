@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 from goated_prompter.backends.base import BackendGenerationError
 from goated_prompter.features.dataset.idea_history import RecentIdeaHistory
 from goated_prompter.features.dataset.assignments import dataset_assignments
-from goated_prompter.features.dataset.ideas import DatasetIdeasService
+from goated_prompter.features.dataset.ideas import MAX_IDEA_CHARACTERS, DatasetIdeasService
 from goated_prompter.features.dataset.plan import ScenePlanner
 from tests.helpers import dataset_idea_fixture, dataset_understanding_fixture
 from tests.support.dataset import CaptureBackend, valid_draft
@@ -23,9 +23,10 @@ class DatasetIdeaHistoryTests(unittest.TestCase):
         copy.clear()
         self.assertEqual(history.recent(data), ["Second event", "Third event"])
 
-    def test_current_600_character_ideas_are_not_truncated_to_legacy_limit(self):
+    def test_full_length_ideas_are_remembered_without_truncation(self):
         history, data = RecentIdeaHistory(), valid_draft()
-        idea = "A specific action " + "detail " * 70
+        idea = "A specific action " + "detail " * 30
+        self.assertLessEqual(len(idea.strip()), MAX_IDEA_CHARACTERS)
         history.remember(data, [{"idea": idea}])
         self.assertEqual(history.recent(data), [idea.strip()])
 
@@ -58,7 +59,7 @@ class DatasetIdeaHistoryTests(unittest.TestCase):
         history.remember(data, [previous])
         session = Mock()
         session.generate.return_value = json.dumps([{**previous, "idea": previous["idea"].upper(),
-            "camera": "A new camera angle.", "context": "A different location."}])
+            "scene": "The same punch from a new camera angle in a different location."}])
         with self.assertRaisesRegex(BackendGenerationError, "recently generated event") as caught:
             ScenePlanner(lambda: None, history).plan_ideas(session=session, data=data,
                 assignments=dataset_assignments(data), progress=lambda _: None)
@@ -93,16 +94,12 @@ class DatasetIdeaHistoryTests(unittest.TestCase):
         self.assertEqual(rows, [previous])
         self.assertEqual(history.recent(data), [previous["idea"]])
 
-    def test_scene_composition_follows_accepted_idea_without_consulting_history(self):
+    def test_accepting_scenes_neither_reads_history_nor_calls_the_model(self):
         data = valid_draft(amount=1, _confirmed_intent=dataset_understanding_fixture())
-        history, session = RecentIdeaHistory(), CaptureBackend()
+        history = RecentIdeaHistory()
         idea = dataset_idea_fixture()
         history.remember(data, [idea])
         with patch.object(history, "recent", side_effect=AssertionError("Only Ideas reads recent history")), \
                 patch.object(history, "remember", side_effect=AssertionError("Only Ideas writes recent history")):
-            rows = ScenePlanner(lambda: None, history).compose(session=session, data=data,
-                assignments=dataset_assignments(data), ideas=[idea], progress=lambda _: None)
-        self.assertEqual(rows[0]["scene"], idea["idea"])
-        context = json.loads(session.calls[0].user_message)
-        self.assertNotIn("recently_used_ideas", context)
-        self.assertEqual(len(session.calls), 1)
+            rows = ScenePlanner(lambda: None, history).compose([idea])
+        self.assertEqual((rows[0]["scene"], rows[0]["self_check"], rows[0]["scene_status"]), (idea["scene"], "PASS", "valid"))

@@ -54,14 +54,10 @@ for (const width of [1920, 1440, 1100, 768, 390, 360]) {
     await expect(actions.getByRole("button", { name: "Generate 2 prompts", exact: true })).toBeVisible();
     if (width > 768) expect((await page.locator(".dataset-configuration").boundingBox()).height).toBeLessThan(650);
     await openDatasetPage(page, "Scenes");
-    await expect(page.getByRole("button", { name: "Repair scene", exact: true }).first()).toHaveAttribute("title", "Repair scene");
-    await expect(page.getByLabel("Scene 1 self-check", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Regenerate idea", exact: true }).first()).toHaveAttribute("title", "Regenerate idea");
+    await expect(page.getByRole("button", { name: "Repair scene", exact: true })).toHaveCount(0);
     await expect(page.getByRole("article", { name: "Scene 1 card", exact: true }).getByLabel("Scene: success", { exact: true })).toBeVisible();
-    const details = page.getByLabel("Idea 1 planning details", { exact: true });
-    for (const field of ["Placement", "Visibility", "Camera", "Framing", "Context"]) {
-      await expect(details.getByRole("button", { name: field, exact: true })).toBeVisible();
-    }
-    expect(await details.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.evaluate(() => Promise.all(document.getAnimations()
       .filter((animation) => animation.effect.target.checkVisibility() && Number.isFinite(animation.effect.getTiming().iterations))
       .map((animation) => animation.finished.catch(() => {}))));
@@ -83,7 +79,7 @@ test("Dataset respects reduced-motion for cards, loading and disclosures", async
   await expect(page.getByLabel("Planned scene 2")).toHaveValue(/mock scene/);
   await expect(page.locator(".dataset-card").first()).toHaveCSS("animation-name", "none");
   await expect(page.locator(".dataset-details summary").first()).toHaveCSS("transition-duration", "0s");
-  await expect(page.getByRole("button", { name: "Repair scene", exact: true }).first()).toHaveCSS("transition-duration", "0s");
+  await expect(page.getByRole("button", { name: "Regenerate idea", exact: true }).first()).toHaveCSS("transition-duration", "0s");
   const loaderAnimation = await page.evaluate(() => {
     const loader = document.createElement("span");
     loader.className = "dataset-loader";

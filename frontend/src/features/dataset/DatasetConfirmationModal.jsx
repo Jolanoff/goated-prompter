@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Download, LoaderCircle, X } from "lucide-react";
 import { ui } from "../../ui.js";
-import { canConfirmDatasetReview, datasetReviewQuestions, datasetUnderstandingSections, datasetUnderstandingSummary } from "./datasetState.js";
+import { canConfirmDatasetReview, datasetCharacterLines, datasetReviewQuestions, datasetUnderstandingSections, datasetUnderstandingSummary } from "./datasetState.js";
 import { identityLabels } from "./options.js";
 
 function SummaryList({ label, items, annotations }) {
@@ -48,6 +48,7 @@ export default function DatasetConfirmationModal({ review, busy, onRevise, onCon
         <h3>Concept</h3>
         <p className="whitespace-pre-wrap wrap-anywhere">{brief.requested_generation}</p>
         <p className="dataset-review-identity">{brief.character_count != null && `${brief.character_count} characters per image. `}{identityLabels[brief.identity_policy]}</p>
+        <SummaryList label="Characters" items={datasetCharacterLines(brief)} />
       </section>
       <div className="dataset-review-grid">
         <section aria-label="What stays consistent">
