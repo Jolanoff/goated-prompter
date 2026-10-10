@@ -222,23 +222,22 @@ test("accepted replacement survives a lost admission response", async ({ page, r
   await expect(page.getByLabel("Planned scene 1")).toHaveValue(recovered.scene_plan[0].scene);
 });
 
-test("one idea call precedes ten independent scene/self-check calls", async ({ page, request }) => {
+test("ten finished scenes come from a brainstorm and two idea calls without per-scene calls", async ({ page, request }) => {
   await openDataset(page, "10");
   const response = await submit(page, "Generate 10 scenes only", "/api/workspace/dataset/scenes");
   const finished = await finish(request, (await response.json()).id);
-  expect(finished.llm_trace.request_number).toBe(11);
+  expect(finished.llm_trace.request_number).toBe(3);
   expect(finished.result.scene_plan.map((row) => row.index)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-  expect(finished.result.scene_plan.every((row) => row.self_check === "PASS" && !("geometry" in row))).toBe(true);
+  expect(finished.result.scene_plan.every((row) => row.self_check === "PASS" && row.scene && !("geometry" in row))).toBe(true);
   await expect(page.getByLabel("Dataset planning mode")).toHaveCount(0);
 });
 
-test("REPAIR blocks only its scene and explicit repair preserves the fixed idea", async ({ page, request }) => {
+test("a saved REPAIR note blocks only its scene until a new idea replaces it", async ({ page, request }) => {
   await openDataset(page);
   await submit(page, "Generate 2 scenes only", "/api/workspace/dataset/scenes");
   await expect(page.getByLabel("Planned scene 2")).toHaveValue(/mock scene 2/);
   await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
   const saved = await settings(request);
-  const fixedIdea = saved.draft.scene_plan[0].idea;
   saved.draft.scene_plan[0].self_check = "REPAIR:\nThe required glove is hidden.\nMove the glove outward without changing the action.";
   expect((await request.put("/api/workspace/settings/dataset", { data: { revision: saved.revision, draft: saved.draft } })).ok()).toBe(true);
   await page.reload();
@@ -248,11 +247,10 @@ test("REPAIR blocks only its scene and explicit repair preserves the fixed idea"
   const generated = await finish(request, (await (await submit(page, "Continue")).json()).id);
   expect(generated.llm_trace.request_number).toBe(1);
   expect(generated.result.prompts.map((row) => row.index)).toEqual([2]);
-  const repaired = await finish(request, (await (await submit(page, "Repair scene", "/api/workspace/dataset/scene")).json()).id);
-  expect(repaired.llm_trace.request_number).toBe(2);
-  expect(repaired.result.scene_plan[0].idea).toBe(fixedIdea);
-  expect(repaired.result.scene_plan[0].self_check).toBe("PASS");
-  expect(repaired.result.prompts[1]).toEqual(generated.result.prompts[0]);
+  const replaced = await finish(request, (await (await submit(page, "Regenerate idea", "/api/workspace/dataset/scene")).json()).id);
+  expect(replaced.llm_trace.request_number).toBe(3);
+  expect(replaced.result.scene_plan[0].self_check).toBe("PASS");
+  expect(replaced.result.prompts[1]).toEqual(generated.result.prompts[0]);
 });
 
 test("guided Dataset persists and exports on mobile without retired controls", async ({ page, request }) => {
@@ -291,19 +289,20 @@ test("guided Dataset persists and exports on mobile without retired controls", a
   expect(errors).toEqual([]);
 });
 
-test("manual scene edits require rechecking and Clear releases jobs, not scenes", async ({ page, request }) => {
+test("manual scene edits are written as edited and Clear releases jobs, not scenes", async ({ page, request }) => {
   await openDataset(page);
   await generateDataset(page);
   await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/saved_person/);
   const manual = "She reads a book on a park bench.";
   await openDatasetPage(page, "Scenes");
   await page.getByLabel("Planned scene 1").fill(manual);
-  await expect(page.getByRole("button", { name: "Regenerate prompt", exact: true }).first()).toBeDisabled();
+  await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
   await openDatasetPage(page, "Dataset");
   await expect(page.getByLabel("Dataset prompt 1")).toHaveCount(0);
-  const checked = await finish(request, (await (await submit(page, "Repair scene", "/api/workspace/dataset/scene")).json()).id);
-  expect(checked.llm_trace.request_number).toBe(2);
-  expect(checked.result.scene_plan[0].scene).toBe(manual);
+  await openDatasetPage(page, "Scenes");
+  const written = await finish(request, (await (await submit(page, "Regenerate prompt", "/api/workspace/dataset/scene")).json()).id);
+  expect(written.llm_trace.request_number).toBe(1);
+  expect(written.result.scene_plan[0].scene).toBe(manual);
   await openDatasetPage(page, "Dataset");
   await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(/park bench/);
   const cleanup = page.waitForResponse((response) => response.url().endsWith("/api/jobs?kind=dataset") && response.request().method() === "DELETE");
@@ -319,13 +318,13 @@ test("manual scene edits require rechecking and Clear releases jobs, not scenes"
   await expect(page.getByLabel("Dataset prompt 1")).toHaveCount(0);
 });
 
-test("per-scene actions preserve siblings; idea edits invalidate stale details", async ({ page, request }) => {
+test("per-scene actions preserve siblings; idea edits keep the scene", async ({ page, request }) => {
   await openDataset(page);
   await generateDataset(page);
   await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/saved_person/);
   await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
   const before = (await settings(request)).draft;
-  for (const [label, calls] of [["Regenerate prompt", 1], ["Repair scene", 2], ["Regenerate idea", 3]]) {
+  for (const [label, calls] of [["Regenerate prompt", 1], ["Regenerate idea", 3]]) {
     const done = await finish(request, (await (await submit(page, label, "/api/workspace/dataset/scene")).json()).id);
     expect(done.llm_trace.request_number).toBe(calls);
     await expect.poll(async () => (await settings(request)).draft.scene_plan).toEqual(done.result.scene_plan);
@@ -335,15 +334,14 @@ test("per-scene actions preserve siblings; idea edits invalidate stale details",
     else expect(done.result.scene_plan[0].idea).toBe(before.scene_plan[0].idea);
   }
   await openDatasetPage(page, "Scenes");
+  const scene = (await settings(request)).draft.scene_plan[0].scene;
+  await expect(page.getByLabel("Planned scene 1")).toHaveValue(scene);
   await page.getByLabel("Planned idea 1").fill("Edited activity");
-  await expect(page.getByLabel("Planned scene 1")).toHaveValue("");
+  await expect(page.getByLabel("Planned scene 1")).toHaveValue(scene);
   await expect.poll(async () => (await settings(request)).draft.scene_plan[0].idea).toBe("Edited activity");
-  const edited = (await settings(request)).draft.scene_plan[0];
-  expect(edited.self_check).toBe("");
-  expect(edited).not.toHaveProperty("placement");
-  const repaired = await finish(request, (await (await submit(page, "Repair scene", "/api/workspace/dataset/scene")).json()).id);
-  expect(repaired.result.prompts[0].prompt).toContain("Edited activity");
-  expect(repaired.result.prompts[1]).toEqual(before.results[1]);
+  const written = await finish(request, (await (await submit(page, "Regenerate prompt", "/api/workspace/dataset/scene")).json()).id);
+  expect(written.result.prompts[0].prompt).toContain(scene);
+  expect(written.result.prompts[1]).toEqual(before.results[1]);
   await openDatasetPage(page, "Configure");
   await page.getByLabel("Dataset idea", { exact: true }).fill("A dog on small adventures.");
   await openDatasetPage(page, "Scenes");

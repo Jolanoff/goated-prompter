@@ -20,7 +20,7 @@ export default function CreativeWorkspace(props) {
     workspace.setError("");
     try {
       await refineSettings.flush();
-      return await props.onGenerate(operation, { ...payload, revision: workspace.snapshot.revision });
+      return await props.onGenerate(operation, { ...payload, revision: payload.revision ?? workspace.snapshot.revision });
     } catch (err) {
       if (err.status === 409) await workspace.refresh();
       workspace.setError(err.message);
@@ -32,7 +32,7 @@ export default function CreativeWorkspace(props) {
   return <div hidden={!visible}>
     <div className={ui.pageHeading}><div>
       <h2>Refine your prompt</h2>
-      <p>Request a precise change, lock important details, and step back whenever you need.</p>
+      <p>Paste a prompt or send one from Builder, then describe what to refine.</p>
     </div></div>
     {workspace.error && <div className={ui.message} role="alert"><span>{workspace.error}</span>
       <button className={ui.retryButton} onClick={async () => { if (await workspace.refresh()) workspace.setError(""); }}>Refresh workspace</button>
@@ -44,10 +44,10 @@ export default function CreativeWorkspace(props) {
     </section>}
     <div className={ui.workflowStatus}>
       <span>{props.noEngine ? "Choose a prompt engine in Builder or Settings to generate." : `Engine: ${props.engineLabel}`}</span>
-      <span role="status">{props.active ? props.job.status === "cancelling" ? "Ending generation…" : props.job.progress || "Generating prompt…" : workspace.pending ? "Saving…" : "Versions saved locally"}</span>
+      <span role="status">{props.active ? props.job.status === "cancelling" ? "Ending generation…" : props.job.progress || "Generating prompt…" : workspace.pending ? "Saving…" : "Ready"}</span>
       {props.active && <button className={ui.button} onClick={props.onCancel} disabled={props.job.status === "cancelling"}>End generation</button>}
     </div>
-    {!workspace.snapshot ? <div className={ui.emptyState}><h2>Loading your creative workspace</h2><p>Saved versions will appear here.</p></div> : <>
+    {!workspace.snapshot ? <div className={ui.emptyState}><h2>Loading Refine</h2><p>Your prompt will appear here.</p></div> : <>
       <div hidden={props.view !== "refine"}>
         <WorkflowSettingsStatus settings={refineSettings} label="Refine" />
         {refineSettings.draft && <RefineTab {...shared} preferences={refineSettings} disabled={disabled || refineSettings.working} />}

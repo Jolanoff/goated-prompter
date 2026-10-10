@@ -6,19 +6,21 @@ from ...backends.factory import create_backend
 from ...backends.base import BackendGenerationError, BackendRunawayError
 from ...contracts import effective_model_family
 from ...director_profiles import resolve_director_config
-from .prompting import dataset_instruction
-from ...options.dataset import DATASET_SOURCES, DATASET_TYPES, LIBRARY_EXTRAS
-from ...prompt_library import library_file_name, load_library
+from .prompting import cast_error, dataset_instruction, drop_wrong_count_tags, geometry_error, instruction_leak_error
+from ...options.dataset import DATASET_SOURCES, DATASET_TYPES, MAX_SEED, SEED_MODES
 from ...options.lengths import PROMPT_LENGTH_NAMES
 from ...options.creativity import CREATIVITY_NAMES
 from ...options.styles import STYLE_NAMES
 from ...options.targets import TARGET_MODEL_NAMES, canonical_target
 from ...workflow_output import WorkflowFormatError, normalize_workflow_output, sanitize_prompt_text, requested_visible_text
 from .assignments import dataset_assignments
-from .quality import analyze_idea_diversity
-from .triggers import trigger_presence_error, trigger_terms, fixed_anima_prefix, restore_numeric_trigger_spelling
+from .quality import ADULTS_ONLY, adults_only_error, analyze_idea_diversity, minor_reference, sexual_request
+from .triggers import (trigger_presence_error, trigger_terms, fixed_anima_prefix, restore_numeric_trigger_spelling,
+                       tidy_expanded_trigger)
+from .understanding import label_replacements, replace_labels
 from ...prompt_library import copied_reference
-from ...output_repetition import MAX_ANIMA_TAGS, anima_tag_count, anima_tag_key, anima_tags, drop_supplied_tags
+from ...output_repetition import (MAX_ANIMA_TAGS, anima_tag_count, anima_tag_key, anima_tags, drop_repeated_tags,
+                                 drop_supplied_tags, remove_contradictory_solo)
 from .visible_content import PositiveContentError, positive_prompt_error, sanitize_positive_prompt
 from .plan import (ScenePlanner, MAX_STORED_SCENE_CHARACTERS, MAX_STORED_IDEA_CHARACTERS,
                            reusable_scene_plan, scene_plan_signature, validate_saved_scene_plan,
@@ -28,6 +30,19 @@ from .plan import (ScenePlanner, MAX_STORED_SCENE_CHARACTERS, MAX_STORED_IDEA_CH
 DATASET_MAX_RETRIES = 3
 
 
+class SeededSession:
+    """A generation session that sends the batch seed with every request that has none."""
+
+    def __init__(self, session, seed):
+        self._session, self._seed = session, seed
+
+    def generate(self, instruction):
+        return self._session.generate(instruction if instruction.seed is not None else replace(instruction, seed=self._seed))
+
+    def __getattr__(self, name):
+        return getattr(self._session, name)
+
+
 def default_dataset_draft():
     return {
         "trigger": "", "trigger_type": "Character", "custom_type": "", "subject": "",
@@ -35,8 +50,9 @@ def default_dataset_draft():
         "amount": 12,
         "source_mode": "random", "inputs": "", "target": "Generic", "length": "Medium",
         "director_preset": "general_director", "constraints": "",
-        "creativity": "Balanced", "style": "Auto", "library_extras": "drop", "results": [], "result_job_id": "",
+        "creativity": "Balanced", "style": "Auto", "results": [], "result_job_id": "",
         "scene_plan": [], "scene_plan_signature": "", "plan_scenes_first": False,
+        "seed": 0, "seed_mode": "randomize",
     }
 
 
@@ -51,6 +67,8 @@ def validate_dataset_draft(value, *, generation=False, planning=False):
     if not isinstance(value, dict):
         raise ValueError("Invalid Dataset settings fields.")
     result = {**defaults, **{key: item for key, item in value.items() if key in defaults}}
+    if result["source_mode"] == "library":
+        result["source_mode"] = "random"  # "From my library" was removed; ideas never come from the library.
     result["trigger"] = _text(result["trigger"], "Trigger / prepend", 1000, required=generation and not planning).strip()
     result["subject"] = _text(result["subject"], "Dataset concept", 10000, required=generation).strip()
     for key, label, limit in (("custom_type", "Custom subject kind", 120),
@@ -58,8 +76,7 @@ def validate_dataset_draft(value, *, generation=False, planning=False):
                               ("result_job_id", "Result job id", 128), ("scene_plan_signature", "Scene plan signature", 128)):
         result[key] = _text(result[key], label, limit)
     for key, allowed in (("trigger_type", DATASET_TYPES), ("source_mode", DATASET_SOURCES),
-                         ("creativity", CREATIVITY_NAMES), ("style", STYLE_NAMES),
-                         ("library_extras", LIBRARY_EXTRAS), ("length", PROMPT_LENGTH_NAMES)):
+                         ("creativity", CREATIVITY_NAMES), ("style", STYLE_NAMES), ("length", PROMPT_LENGTH_NAMES)):
         if not isinstance(result[key], str) or result[key] not in allowed:
             raise ValueError(f"Invalid Dataset {key}.")
     result["target"] = canonical_target(result["target"])
@@ -68,6 +85,10 @@ def validate_dataset_draft(value, *, generation=False, planning=False):
     if generation and result["target"] == "Anima" and anima_tag_count(result["trigger"], tag_only=True) > MAX_ANIMA_TAGS:
         raise ValueError("Anima allows at most 100 tags. Your supplied trigger already exceeds this limit; edit it before generating.")
     _text(result["director_preset"], "Director preset", 256)
+    if type(result["seed"]) is not int or not 0 <= result["seed"] <= MAX_SEED:
+        raise ValueError(f"Seed must be a whole number from 0 to {MAX_SEED}.")
+    if result["seed_mode"] not in SEED_MODES:
+        raise ValueError("Invalid seed mode.")
     if type(result["amount"]) is not int or not 1 <= result["amount"] <= 25:
         raise ValueError("Dataset prompt amount must be between 1 and 25.")
     for key in ("trigger_at_start", "trigger_connected", "expand_trigger", "plan_scenes_first"):
@@ -77,9 +98,6 @@ def validate_dataset_draft(value, *, generation=False, planning=False):
         raise ValueError("Describe the custom subject kind before generating.")
     if result["source_mode"] == "guided" and generation and not any(line.strip() for line in result["inputs"].splitlines()):
         raise ValueError("Add at least one guided input, one per line.")
-    if result["source_mode"] == "library" and generation and not load_library(result["target"]).prompts:
-        raise ValueError(f"Add prompts to data/prompt_library/{library_file_name(result['target'])} "
-                         f"to plan scenes from your library for {result['target']}.")
     result["scene_plan"] = validate_saved_scene_plan(result["scene_plan"])
     if not isinstance(result["results"], list) or len(result["results"]) > 25:
         raise ValueError("Dataset results must be an array of at most 25 prompts.")
@@ -154,6 +172,12 @@ class DatasetService:
         original = instruction
         def validate(raw):
             prompt = normalize_workflow_output(raw, data["target"], mode="Enhance", expected_visible_text=expected_text)
+            if data["target"] == "Anima":
+                prompt = drop_wrong_count_tags(drop_repeated_tags(remove_contradictory_solo(prompt)), data)
+            if data["expand_trigger"]:
+                prompt = tidy_expanded_trigger(prompt, data["trigger"], data["target"], plan_item["scene"])
+            if labels := label_replacements((data.get("_confirmed_intent") or {}).get("characters")):
+                prompt = replace_labels(prompt, labels)
             if prefix := fixed_anima_prefix(data):
                 tail = prompt[len(prefix):] if prompt.startswith(prefix) else None
                 if tail is not None and (not tail or tail.lstrip(" \t")[:1] in ",;:\r\n"):
@@ -180,6 +204,15 @@ class DatasetService:
                     session.emit_activity("normalization", workflow="dataset", index=index, operation="numeric_trigger_spelling")
                     progress(f"Dataset prompt {index}: restored the supplied numeric trigger spelling.")
                     prompt = corrected
+            if missing_cast := cast_error(prompt, data):
+                raise WorkflowFormatError(missing_cast)
+            if conflicting_view := geometry_error(prompt):
+                raise WorkflowFormatError(conflicting_view)
+            if leak := instruction_leak_error(prompt, plan_item["scene"]):
+                raise WorkflowFormatError(leak)
+            if sexual_request(data) and (word := minor_reference(prompt)):
+                raise WorkflowFormatError(f'{ADULTS_ONLY} ("{word}")')
+
             if original.reference_prompts and copied_reference(prompt, original.reference_prompts):
                 raise WorkflowFormatError("The prompt copied wording from a library reference prompt. Write new wording "
                                           "for this scene; use the references only for style and quality.")
@@ -232,6 +265,8 @@ class DatasetService:
     def run(self, request, data, progress, partial, *, scenes_only=False, scene_action=None, valid_only=False, resume=False):
         if resume and (scenes_only or scene_action):
             raise ValueError("Continue is only available for batch prompt generation.")
+        if blocked := adults_only_error(data):
+            raise ValueError(blocked)
         effective, profile = resolve_director_config(self.config, request)
         backend = create_backend(effective)
         family = effective_model_family(request, profile, effective)
@@ -239,8 +274,13 @@ class DatasetService:
         results = list(data["results"]) if scene_action else []
         signature = scene_plan_signature(data, assignments)
         progress("Starting the prompt engine for the dataset…")
-        with backend.generation_session() as session:
-            planner = ScenePlanner(self.checkpoint, idea_history=self.idea_history)
+        # Batch runs use the draft's seed for the app's picks and the model's sampling; regenerating
+        # one idea or prompt stays random. A fixed seed repeats a batch, so history must not reject it.
+        seed = None if scene_action else data["seed"]
+        history = None if seed is not None and data["seed_mode"] == "fixed" else self.idea_history
+        with backend.generation_session() as engine:
+            session = SeededSession(engine, seed) if seed is not None else engine
+            planner = ScenePlanner(self.checkpoint, idea_history=history)
             scenes = reusable_scene_plan(data, assignments, require_scenes=False, allow_pending=valid_only or scene_action is not None)
             if valid_only and (scenes is None or not any(scene_is_usable(row, data) for row in scenes)):
                 raise ValueError("No valid scenes are available in the current saved plan.")
@@ -271,7 +311,7 @@ class DatasetService:
                 progress(f"Repairing {len(indexes)} failed/repeated ideas after the valid batch work…")
                 try:
                     repaired = planner.plan_ideas(session=session, data=data, assignments=assignments, family=family,
-                        progress=progress, indexes=indexes, existing=scenes, allow_partial=True)
+                        progress=progress, indexes=indexes, existing=scenes, allow_partial=True, seed=seed)
                 except BackendGenerationError as error:
                     self.checkpoint()
                     for index in indexes:
@@ -280,23 +320,15 @@ class DatasetService:
                     return []
                 for row in repaired:
                     scenes[row["index"] - 1] = {**row, "input": assignments[row["index"] - 1]["input"],
-                        "scene": "", "self_check": "", "scene_status": row.get("scene_status", "not_generated"),
+                        "scene": row.get("scene", ""), "self_check": "", "scene_status": row.get("scene_status", "not_generated"),
                         "prompt_status": row.get("prompt_status", "not_generated"), "idea_status": row.get("idea_status", "valid")}
-                publish()
                 valid = [row for row in repaired if row.get("idea_status") != "failed"]
-                for row in valid:
-                    try:
-                        planner.compose(session=session, data=data, assignments=assignments, ideas=[row],
-                            family=family, progress=progress, plan_update=save_composed)
-                    except BackendGenerationError as error:
-                        self.checkpoint()
-                        index = row["index"]
-                        scenes[index - 1] = failed_scene(scenes[index - 1], failure_reason(error), stage="scene")
-                        publish()
+                planner.compose(valid, plan_update=save_composed)
+                publish()
                 return [row["index"] for row in valid if scene_is_usable(scenes[row["index"] - 1], data)]
             if scenes is None:
                 planned = planner.plan_batch(session=session, data=data, assignments=assignments, family=family,
-                    progress=progress, plan_update=save_planning_stage)
+                    progress=progress, plan_update=save_planning_stage, seed=seed)
                 save_planning_stage(planned)
             else:
                 scenes = [dict(row) for row in scenes]
@@ -329,25 +361,16 @@ class DatasetService:
                         self.checkpoint()
                         scenes[index - 1] = failed_scene(original, "Requested new idea failed: " + failure_reason(exc), stage="idea")
                     else:
-                        scenes[index - 1] = {**idea, "input": original["input"], "scene": "", "self_check": "",
+                        scenes[index - 1] = {**idea, "input": original["input"], "self_check": "",
                             "idea_status": "valid", "scene_status": "not_generated", "prompt_status": "not_generated"}
                     publish()
-                elif action == "repair_scene":
-                    scenes[index - 1] = {**original, "self_check": "", "scene_status": "not_generated", "prompt_status": "not_generated"}
-                    publish()
-                    repaired = planner.repair_scene(session=session, data=data, assignments=assignments,
-                        row=original, family=family, progress=progress)
-                    scenes[index - 1] = {**repaired, "input": original["input"]}
                 elif action != "regenerate_prompt":
                     raise ValueError("Unknown per-scene action.")
+            # New ideas and edited scenes are accepted as written; nothing else runs here.
             pending = [scenes[index - 1] for index in selected if scenes[index - 1].get("scene_status") != "failed"
-                       and (not scenes[index - 1]["scene"].strip() or not scenes[index - 1].get("self_check"))]
+                       and scenes[index - 1]["scene"].strip() and not scenes[index - 1].get("self_check")]
             if pending:
-                if scene_action and scene_action[0] == "regenerate_prompt":
-                    raise ValueError("Compose or repair this scene before regenerating its prompt.")
-                composed = planner.compose(session=session, data=data, assignments=assignments, ideas=pending,
-                    family=family, progress=progress, plan_update=save_composed)
-                save_composed(composed)
+                planner.compose(pending, plan_update=save_composed)
             duplicates = {row["index"] for row in analyze_idea_diversity(data, scenes)["ideas"] if row["issues"]}
             for index in selected:
                 if scenes[index - 1].get("scene_status") != "failed":

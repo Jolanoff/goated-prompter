@@ -1,14 +1,20 @@
-"""Dataset compact idea/scene orchestration and saved-plan boundaries."""
+"""Dataset idea orchestration and saved-plan boundaries; ideas arrive as finished scenes."""
 
 import hashlib
 import json
+import secrets
 
-from .ideas import DatasetIdeasService, IDEA_DETAIL_FIELDS, MAX_FIELD_CHARACTERS
-from .scene import DatasetSceneService, validate_self_check
-from .eligibility import scene_eligibility
+import random
+
+from .brainstorm import brainstorm_events, uses_event_seeds
+from .craft_notes import library_craft_notes
+from .ideas import DatasetIdeasService
+from .eligibility import scene_eligibility, validate_self_check
 
 
-SCENE_PLAN_VERSION = 7
+SCENE_PLAN_VERSION = 8
+# Small local models write better ideas a few at a time than as one long list.
+IDEAS_PER_CALL = 5
 MAX_STORED_SCENE_CHARACTERS = 10000
 MAX_STORED_IDEA_CHARACTERS = 10000
 FAILURE_METADATA = {"failure_reason", "failure_stage"}
@@ -17,8 +23,7 @@ PLAN_STATUS_VALUES = {
     "scene_status": {"valid", "not_generated", "repair_required", "failed"},
     "prompt_status": {"valid", "not_generated", "failed"},
 }
-PLAN_FIELDS = {"index", "input", "idea", "scene", "self_check",
-               *IDEA_DETAIL_FIELDS, *PLAN_STATUS_VALUES, *FAILURE_METADATA}
+PLAN_FIELDS = {"index", "input", "idea", "scene", "self_check", *PLAN_STATUS_VALUES, *FAILURE_METADATA}
 
 
 def scene_plan_signature(data, assignments):
@@ -51,11 +56,6 @@ def validate_saved_scene_plan(rows):
                 or not isinstance(row["idea"], str) or len(row["idea"]) > MAX_STORED_IDEA_CHARACTERS
                 or not isinstance(row["scene"], str) or len(row["scene"]) > MAX_STORED_SCENE_CHARACTERS):
             raise ValueError("Saved scenes require sequential indexes, input, idea, scene and self-check.")
-        details = set(row) & set(IDEA_DETAIL_FIELDS)
-        if details and (details != set(IDEA_DETAIL_FIELDS) or not row["idea"].strip()
-                or any(not isinstance(row[field], str) or not row[field].strip()
-                       or len(row[field]) > MAX_FIELD_CHARACTERS for field in IDEA_DETAIL_FIELDS)):
-            raise ValueError("Saved compact ideas require all five concise description fields alongside the idea.")
         validate_plan_metadata(row)
         row = {**row, "scene": " ".join(row["scene"].split()),
                "self_check": validate_self_check(row["self_check"], allow_pending=True)}
@@ -104,10 +104,10 @@ class ScenePlanner:
     def __init__(self, checkpoint, idea_history=None):
         self.checkpoint, self.idea_history = checkpoint, idea_history
 
-    def plan_batch(self, *, session, data, assignments, family="qwen", progress, plan_update=None):
+    def plan_batch(self, *, session, data, assignments, family="qwen", progress, plan_update=None, seed=None):
         ideas = self.plan_ideas(session=session, data=data, assignments=assignments, family=family,
-            progress=progress, allow_partial=True)
-        rows = [{**row, "scene": "", "self_check": "", "scene_status": row.get("scene_status", "not_generated"),
+            progress=progress, allow_partial=True, seed=seed)
+        rows = [{**row, "scene": row.get("scene", ""), "self_check": "", "scene_status": row.get("scene_status", "not_generated"),
             "prompt_status": row.get("prompt_status", "not_generated")} for row in ideas]
         def update(composed):
             for row in composed:
@@ -115,25 +115,49 @@ class ScenePlanner:
             if plan_update:
                 plan_update([dict(row) for row in rows])
         update([])
-        self.compose(session=session, data=data, assignments=assignments,
-            ideas=[row for row in ideas if row.get("idea_status") != "failed"],
-            family=family, progress=progress, plan_update=update)
+        self.compose([row for row in ideas if row.get("idea_status") != "failed"], plan_update=update)
         return rows
 
-    def plan_ideas(self, *, session, data, assignments, family="qwen", progress, indexes=None, existing=(), allow_partial=False):
-        return DatasetIdeasService(self.checkpoint, self.idea_history).run(session=session, data=data,
-            assignments=assignments, family=family, progress=progress, indexes=indexes, existing=existing, allow_partial=allow_partial)
+    def plan_ideas(self, *, session, data, assignments, family="qwen", progress, indexes=None, existing=(), allow_partial=False,
+                   seed=None):
+        """Create ideas in chunks; each chunk sees the earlier ones so the batch keeps varying.
 
-    def compose(self, *, session, data, assignments, ideas, family="qwen", progress, plan_update=None):
-        rows = [{**idea, "self_check": "", "scene": idea.get("scene", ""),
-                 "scene_status": "not_generated", "prompt_status": "not_generated"} for idea in ideas]
-        for position, idea in enumerate(ideas):
-            rows[position] = DatasetSceneService(self.checkpoint).run(session=session, data=data,
-                assignment=assignments[idea["index"] - 1], idea=idea, family=family, progress=progress)
-            if plan_update:
-                plan_update([dict(item) for item in rows])
+        A seed makes the app's random picks (directions, looks, brainstorm sampling) repeatable;
+        without one every run draws fresh ones.
+        """
+        indexes = list(range(1, data["amount"] + 1)) if indexes is None else list(indexes)
+        service = DatasetIdeasService(self.checkpoint, self.idea_history)
+        picks = random.Random(f"{seed}|{','.join(map(str, indexes))}") if seed is not None else None
+        salt, seed = (picks.getrandbits(32), picks.getrandbits(32)) if picks else (secrets.randbits(32), secrets.randbits(32))
+        known = [row for row in existing if row["index"] not in indexes]
+        seeds = {}
+        notes = library_craft_notes(session, data["target"], family=family, progress=progress,
+                                    checkpoint=self.checkpoint)
+        if uses_event_seeds(data):
+            # Seed each image's event from a wider pool so repeated runs do not converge
+            # on the model's favourite ideas; recent and current ideas are avoided.
+            avoid = [*(self.idea_history.recent(data) if self.idea_history is not None else []),
+                     *(row["idea"] for row in existing if row.get("idea"))]
+            events = brainstorm_events(session, data, len(indexes), random.Random(seed), avoid=avoid,
+                                       family=family, progress=progress, checkpoint=self.checkpoint)
+            seeds = dict(zip(indexes, events))
+        rows = []
+        for start in range(0, len(indexes), IDEAS_PER_CALL):
+            chunk = indexes[start:start + IDEAS_PER_CALL]
+            if len(indexes) > IDEAS_PER_CALL:
+                progress(f"Creating ideas {start + 1}-{start + len(chunk)} of {len(indexes)}…")
+            created = service.run(session=session, data=data, assignments=assignments, family=family, progress=progress,
+                indexes=chunk, existing=[*known, *[row for row in existing if row["index"] in chunk]],
+                allow_partial=allow_partial, direction_salt=salt, event_seeds=seeds, craft_notes=notes)
+            rows.extend(created)
+            known.extend(row for row in created if row.get("idea_status") != "failed")
         return rows
 
-    def repair_scene(self, *, session, data, assignments, row, family="qwen", progress):
-        return DatasetSceneService(self.checkpoint).run(session=session, data=data,
-            assignment=assignments[row["index"] - 1], idea=row, family=family, progress=progress, repair=True)
+    @staticmethod
+    def compose(ideas, plan_update=None):
+        """Accept each idea's own scene, or the user's edit of it, for the writer; no model call."""
+        rows = [{**idea, "scene": " ".join(idea.get("scene", "").split()), "self_check": "PASS",
+                 "scene_status": "valid", "prompt_status": "not_generated"} for idea in ideas]
+        if plan_update and rows:
+            plan_update([dict(row) for row in rows])
+        return rows

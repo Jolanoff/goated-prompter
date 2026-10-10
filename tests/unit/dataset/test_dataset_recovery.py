@@ -1,4 +1,4 @@
-"""Current stage recovery retains siblings and never automatically repairs a scene."""
+"""Current stage recovery retains siblings; scenes arrive with their ideas."""
 
 from copy import deepcopy
 import json
@@ -28,11 +28,19 @@ class RecoveryTests(unittest.TestCase):
             return DatasetService({"backend": "mock"}, lambda: None).run(GoatedPrompterRequest(idea=self.data["subject"], prompt_model="Custom"), self.data,
                 lambda _: None, lambda row: self.snapshots.append(deepcopy(row)), **options)
 
-    def test_repair_is_one_targeted_call_and_retains_sibling_result(self):
-        result = self.run_service(scene_action=("repair_scene", 1))
-        self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:build_scene", "dataset:1"])
+    def test_new_idea_is_one_targeted_call_whose_scene_is_written_directly(self):
+        result = self.run_service(scene_action=("regenerate_idea", 1))
+        self.assertEqual([call.diagnostic_stage for call in self.backend.calls],
+            ["dataset:ideas:brainstorm", "dataset:ideas", "dataset:1"])
+        self.assertEqual(result["scene_plan"][0]["scene"], dataset_idea_fixture(1)["scene"])
+        self.assertEqual(self.backend.calls[2].user_message, dataset_idea_fixture(1)["scene"])
         self.assertEqual(result["scene_plan"][1], self.data["scene_plan"][1])
         self.assertEqual(result["prompts"][1], self.data["results"][0])
+
+    def test_scene_repair_is_no_longer_a_per_scene_action(self):
+        with self.assertRaisesRegex(ValueError, "Unknown per-scene action"):
+            self.run_service(scene_action=("repair_scene", 1))
+        self.assertEqual(self.backend.calls, [])
 
     def test_repair_verdict_never_triggers_an_automatic_repair(self):
         self.data["scene_plan"][0].update(self_check="REPAIR:\nRequired glove hidden.\nMove the glove outward.", scene_status="repair_required")
@@ -59,26 +67,28 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:1"])
         self.assertEqual(result["completed"], 2)
 
-    def test_valid_only_skips_pending_scene_without_ideation(self):
-        self.data["scene_plan"][0].update(self_check="", scene_status="not_generated")
+    def test_valid_only_writes_an_edited_scene_as_written_without_ideation(self):
+        self.data["scene_plan"][0].update(scene="An edited scene.", self_check="", scene_status="not_generated")
         result = self.run_service(valid_only=True)
-        self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:2"])
-        self.assertEqual(result["completed"], 1)
+        self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:1", "dataset:2"])
+        self.assertEqual(self.backend.calls[0].user_message, "An edited scene.")
+        self.assertEqual(result["scene_plan"][0]["self_check"], "PASS")
+        self.assertEqual(result["completed"], 2)
 
-    def test_interruption_leaves_fixed_ideas_and_completed_scene_durable(self):
-        self.data.update(scene_plan=[], scene_plan_signature="")
+    def test_interrupted_writer_leaves_every_idea_and_scene_durable(self):
+        self.data.update(scene_plan=[], scene_plan_signature="", results=[])
         original = self.backend.generate
         def generate(instruction):
-            if instruction.diagnostic_stage == "dataset:build_scene" and json.loads(instruction.user_message)["assignments"][0]["index"] == 2:
-                raise BackendGenerationError("interrupted second scene")
+            if instruction.diagnostic_stage == "dataset:2":
+                raise RuntimeError("interrupted second prompt")
             return original(instruction)
         self.backend.generate = generate
-        with self.assertRaisesRegex(BackendGenerationError, "interrupted second scene"):
+        with self.assertRaisesRegex(RuntimeError, "interrupted second prompt"):
             self.run_service()
         rows = self.snapshots[-1]["scene_plan"]
-        self.assertEqual(rows[0]["self_check"], "PASS")
-        self.assertTrue(rows[1]["idea"])
-        self.assertEqual(rows[1]["self_check"], "")
+        self.assertEqual([row["self_check"] for row in rows], ["PASS", "PASS"])
+        self.assertEqual([row["scene"] for row in rows], [dataset_idea_fixture(1)["scene"], dataset_idea_fixture(2)["scene"]])
+        self.assertEqual([row["index"] for row in self.snapshots[-1]["prompts"]], [1])
 
     def duplicate_batch(self, *, bad_repair=False, malformed=False):
         self.data.update(amount=3, scene_plan=[], scene_plan_signature="", results=[],
@@ -92,7 +102,7 @@ class RecoveryTests(unittest.TestCase):
                     self.backend.calls.append(instruction)
                     rows = [dataset_idea_fixture(index) for index in indexes]
                     if malformed:
-                        rows[1]["visibility"] = ""
+                        rows[1]["scene"] = ""
                     else:
                         rows[1]["idea"] = rows[0]["idea"]
                     return json.dumps(rows)
@@ -107,9 +117,8 @@ class RecoveryTests(unittest.TestCase):
         result = self.run_service()
         self.assertEqual(result["completed"], 3)
         self.assertEqual([row["index"] for row in result["prompts"]], [1, 2, 3])
-        self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:ideas",
-            "dataset:build_scene", "dataset:build_scene", "dataset:1", "dataset:3", "dataset:ideas",
-            "dataset:build_scene", "dataset:2"])
+        self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:ideas:brainstorm",
+            "dataset:ideas", "dataset:1", "dataset:3", "dataset:ideas:brainstorm", "dataset:ideas", "dataset:2"])
         repairs = json.loads(self.backend.calls[5].user_message)
         self.assertEqual(repairs["output_contract"]["indexes"], [2])
         self.assertTrue(any([row["index"] for row in snapshot["prompts"]] == [1, 3] for snapshot in self.snapshots))
@@ -146,22 +155,25 @@ class RecoveryTests(unittest.TestCase):
             if instruction.diagnostic_stage == "dataset:ideas":
                 context = json.loads(instruction.user_message)
                 indexes = context["output_contract"]["indexes"]
-                if len(indexes) == 20:
+                chunks.append(indexes)
+                if len(chunks) <= 4:
                     self.backend.calls.append(instruction)
                     rows = [dataset_idea_fixture(index) for index in indexes]
-                    rows[6]["idea"] = rows[0]["idea"]
-                    rows[18]["idea"] = rows[0]["idea"]
+                    for row in rows:
+                        if row["index"] in (7, 19):
+                            row["idea"] = dataset_idea_fixture(1)["idea"]
                     return json.dumps(rows)
                 self.assertEqual(indexes, [7, 19])
                 self.assertEqual(sum(call.diagnostic_stage.split(":")[-1].isdigit()
                     for call in self.backend.calls), 18)
             return original(instruction)
+        chunks = []
         self.backend.generate = generate
         result = self.run_service()
         self.assertEqual(result["completed"], 20)
         self.assertEqual(result["failed"], 0)
         self.assertEqual([row["index"] for row in result["prompts"]], list(range(1, 21)))
-        self.assertEqual(sum(call.diagnostic_stage == "dataset:ideas" for call in self.backend.calls), 2)
+        self.assertEqual(chunks, [[1, 2, 3, 4, 5], [6, 7, 8, 9, 10], [11, 12, 13, 14, 15], [16, 17, 18, 19, 20], [7, 19]])
 
     def test_transport_failure_in_idea_repair_keeps_good_prompts_and_reports_failed_slot(self):
         self.duplicate_batch()
@@ -175,49 +187,3 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual([row["index"] for row in result["prompts"]], [1, 3])
         self.assertEqual(result["failed"], 1)
         self.assertIn("Idea repair failed", result["scene_plan"][1]["failure_reason"])
-
-    def test_replacement_scene_failure_retains_siblings_and_writes_other_replacements(self):
-        for failed_index in (2, 3):
-            for invalid_json in (False, True):
-                for scenes_only in (False, True):
-                    with self.subTest(failed_index=failed_index, invalid_json=invalid_json, scenes_only=scenes_only):
-                        self.setUp()
-                        self.data.update(amount=4, scene_plan=[], scene_plan_signature="", results=[])
-                        original = self.backend.generate
-                        def generate(instruction):
-                            if instruction.diagnostic_stage == "dataset:ideas":
-                                context = json.loads(instruction.user_message)
-                                indexes = context["output_contract"]["indexes"]
-                                if len(indexes) == 4:
-                                    self.backend.calls.append(instruction)
-                                    rows = [dataset_idea_fixture(index) for index in indexes]
-                                    rows[1]["idea"] = rows[2]["idea"] = rows[0]["idea"]
-                                    return json.dumps(rows)
-                                self.assertEqual(indexes, [2, 3])
-                                if not scenes_only:
-                                    self.assertEqual([row["index"] for row in self.snapshots[-1]["prompts"]], [1, 4])
-                            if instruction.diagnostic_stage == "dataset:build_scene":
-                                index = json.loads(instruction.user_message)["assignments"][0]["index"]
-                                if index == failed_index:
-                                    self.backend.calls.append(instruction)
-                                    if invalid_json:
-                                        return "not valid scene JSON"
-                                    raise BackendGenerationError("Synthetic replacement scene disconnect.")
-                            return original(instruction)
-                        self.backend.generate = generate
-                        result = self.run_service(scenes_only=scenes_only)
-                        expected = [index for index in range(1, 5) if index != failed_index]
-                        self.assertEqual([row["index"] for row in result["prompts"]], [] if scenes_only else expected)
-                        row = result["scene_plan"][failed_index - 1]
-                        self.assertEqual(row["failure_stage"], "scene")
-                        self.assertEqual((row["idea_status"], row["scene_status"], row["prompt_status"]),
-                            ("valid", "failed", "failed"))
-                        self.assertTrue(row["failure_reason"])
-                        self.assertEqual(row["self_check"], "")
-                        self.assertTrue(all(result["scene_plan"][index - 1]["self_check"] == "PASS" for index in expected))
-                        self.assertEqual(sum(call.diagnostic_stage == "dataset:build_scene" for call in self.backend.calls), 4)
-                        self.assertEqual(sum(call.diagnostic_stage == "dataset:ideas" for call in self.backend.calls), 2)
-                        if not scenes_only:
-                            self.assertEqual((result["completed"], result["failed"]), (3, 1))
-                            self.assertEqual(self.snapshots[-1]["prompts"], result["prompts"])
-                        self.assertEqual(len(self.snapshots[-1]["scene_plan"]), 4)

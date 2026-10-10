@@ -9,6 +9,100 @@ const record = (id) => ({
   target: "Flux",
 });
 
+for (const width of [1440, 390]) {
+  test(`Saved Prompts adds exact pasted text directly at ${width}px`, async ({ page, request }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/");
+    await page.getByRole("button", { name: /Saved Prompts/ }).click();
+    await page.getByRole("button", { name: "Add prompt", exact: true }).click();
+    const dialog = page.getByRole("dialog");
+    const save = dialog.getByRole("button", { name: "Save", exact: true });
+    await expect(page.getByLabel("Prompt name", { exact: true })).toBeFocused();
+    await expect(save).toBeDisabled();
+    const title = `Direct saved prompt ${width}`;
+    const text = "  A blue ceramic vase.\n\nKeep the exact spacing.  \n";
+    await page.getByLabel("Prompt name", { exact: true }).fill(title);
+    await expect(save).toBeDisabled();
+    await page.getByRole("textbox", { name: "Prompt text", exact: true }).fill(text);
+    await page.getByLabel("Saved prompt target", { exact: true }).selectOption("LTX 2.5");
+    await expect(save).toBeEnabled();
+    await page.evaluate(() => document.fonts.ready);
+    await page.screenshot({ path: testInfo.outputPath(`add-prompt-${width}.png`), animations: "disabled" });
+    await save.click();
+    await expect(dialog).not.toBeVisible();
+    const stored = await (await request.get("/api/prompts")).json();
+    const added = stored.prompts.find((item) => item.title === title);
+    try {
+      expect(added).toMatchObject({ title, prompt: text, target: "LTX 2.5" });
+      await expect(page.getByRole("heading", { name: "Saved prompts", exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: title, exact: true })).toBeVisible();
+      await page.reload();
+      await page.getByRole("button", { name: /Saved Prompts/ }).click();
+      const card = page.getByRole("article").filter({ has: page.getByRole("heading", { name: title, exact: true }) });
+      await expect(card.locator("pre")).toHaveText(text);
+      await card.getByRole("button", { name: "Open", exact: true }).click();
+      await expect(page.getByLabel("Generated prompt", { exact: true })).toHaveValue(text);
+      await expect(page.getByLabel("Target model", { exact: true })).toHaveValue("LTX 2.5");
+      expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    } finally {
+      if (added) await request.delete(`/api/prompts/${added.id}`, { data: {} });
+    }
+  });
+}
+
+for (const failure of ["rejected write", "lost response"]) {
+test(`direct prompt creation retains all fields after a ${failure} and retries without duplicates`, async ({ page, request }) => {
+  const attempts = [];
+  await page.route("**/api/prompts", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    attempts.push(route.request().postDataJSON());
+    if (attempts.length === 1) {
+      if (failure === "rejected write") return route.fulfill({ status: 503, json: { error: "Disk unavailable" } });
+      const response = await route.fetch();
+      expect(response.ok()).toBe(true);
+      await route.abort();
+    } else await route.continue();
+  });
+  try {
+    await page.goto("/");
+    await page.getByRole("button", { name: /Saved Prompts/ }).click();
+    await page.getByRole("button", { name: "Add prompt", exact: true }).click();
+    await page.getByLabel("Prompt name", { exact: true }).fill("Direct retry");
+    await page.getByRole("textbox", { name: "Prompt text", exact: true }).fill("Handwritten prompt.\nSecond paragraph.");
+    await page.getByLabel("Saved prompt target", { exact: true }).selectOption("Anima");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByRole("dialog").getByRole("alert")).toContainText("Could not save");
+    await expect(page.getByLabel("Prompt name", { exact: true })).toHaveValue("Direct retry");
+    await expect(page.getByRole("textbox", { name: "Prompt text", exact: true })).toHaveValue("Handwritten prompt.\nSecond paragraph.");
+    await expect(page.getByLabel("Saved prompt target", { exact: true })).toHaveValue("Anima");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByRole("dialog")).not.toBeVisible();
+    expect(attempts).toHaveLength(2);
+    expect(attempts[1]).toEqual(attempts[0]);
+    const stored = await (await request.get("/api/prompts")).json();
+    expect(stored.prompts.filter((item) => item.id === attempts[0].id)).toEqual([attempts[0]]);
+  } finally {
+    for (const { id } of attempts) await request.delete(`/api/prompts/${id}`, { data: {} });
+  }
+});
+}
+
+test("cancelling direct creation leaves Builder output and saved records untouched", async ({ page, request }) => {
+  await page.goto("/");
+  const output = page.getByLabel("Generated prompt", { exact: true });
+  await output.fill("Builder draft that must stay unchanged.");
+  const before = await (await request.get("/api/prompts")).json();
+  await page.getByRole("button", { name: /Saved Prompts/ }).click();
+  await page.getByRole("button", { name: "Add prompt", exact: true }).click();
+  await page.getByLabel("Prompt name", { exact: true }).fill("Cancelled prompt");
+  await page.getByRole("textbox", { name: "Prompt text", exact: true }).fill("Unsubmitted text.");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).not.toBeVisible();
+  expect(await (await request.get("/api/prompts")).json()).toEqual(before);
+  await page.getByRole("button", { name: "Back to builder", exact: true }).click();
+  await expect(output).toHaveValue("Builder draft that must stay unchanged.");
+});
+
 test("retry after a committed POST with a lost response saves exactly one record", async ({
   page,
   request,
@@ -255,6 +349,9 @@ test("initial prompt load gates saving and can be retried independently", async 
   await expect(
     page.getByRole("button", { name: "Save Prompt", exact: true }),
   ).toBeDisabled();
+  await page.getByRole("button", { name: /Saved Prompts/ }).click();
+  await expect(page.getByRole("button", { name: "Add prompt", exact: true })).toBeDisabled();
+  await page.getByRole("button", { name: "Back to builder", exact: true }).click();
   release();
   await expect(page.getByRole("alert")).toContainText(
     "Could not load saved prompts",
@@ -265,4 +362,6 @@ test("initial prompt load gates saving and can be retried independently", async 
     page.getByRole("button", { name: "Save Prompt", exact: true }),
   ).toBeEnabled();
   await expect(page.getByRole("alert")).toHaveCount(0);
+  await page.getByRole("button", { name: /Saved Prompts/ }).click();
+  await expect(page.getByRole("button", { name: "Add prompt", exact: true })).toBeEnabled();
 });

@@ -240,6 +240,20 @@ class OpenAITimeoutTests(unittest.TestCase):
                     self.assertEqual(backend.generate(instruction), "result")
                 self.assertEqual(request.call_args.kwargs["timeout"], expected)
 
+    def test_a_request_seed_is_sent_to_the_engine(self):
+        backend = openai.OpenAICompatibleBackend({"base_url": "http://127.0.0.1:8189/v1", "model": "test"})
+        for seed, expected in ((1234, 1234), (None, None)):
+            with self.subTest(seed=seed):
+                instruction = Mock(image=None, image_2=None, temperature=None, top_p=None, seed=seed)
+                instruction.to_messages.return_value = [{"role": "user", "content": "test"}]
+                response = MagicMock()
+                response.__enter__.return_value.read.return_value = b'{"choices":[{"message":{"content":"result"},"finish_reason":"stop"}]}'
+                with patch.object(openai, "urlopen", return_value=response) as request, \
+                     patch.object(openai, "log_request"), patch.object(openai, "log_response"), \
+                     patch.object(openai, "_log_multimodal_messages"):
+                    backend.generate(instruction)
+                self.assertEqual(json.loads(request.call_args.args[0].data).get("seed"), expected)
+
     def test_wrapped_socket_timeout_has_actionable_error(self):
         backend = openai.OpenAICompatibleBackend({
             "base_url": "http://127.0.0.1:8189/v1", "model": "test", "timeout": 37,

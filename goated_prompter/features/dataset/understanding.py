@@ -1,5 +1,6 @@
 """Dataset request understanding only; no ideas, scenes, writing or persistence."""
 
+import re
 import json
 from dataclasses import replace
 from typing import Callable
@@ -9,6 +10,7 @@ from ...backends.factory import create_backend
 from ...contracts import GoatedPrompterRequest, PromptInstruction, effective_model_family
 from ...director_profiles import resolve_director_config
 from ...strict_json import reject_duplicate_keys
+from .quality import adults_only_error
 
 
 SOURCE_FIELDS = (
@@ -28,6 +30,13 @@ SECTION_FIELDS = (*REQUIREMENT_FIELDS, "action_options")
 COMPACT_KINDS = (*CONTRACT_FIELDS, "context")
 COMPACT_FIELDS = ("requested_generation", "character_count", "identity_policy",
     "requirements", "expansion_freedom", "physical_conflicts", "clarifications")
+# Who appears in each image. Older saved briefs predate this list, so it stays optional.
+CHARACTER_FIELDS = ("name", "count", "sex", "kind", "origin", "series", "traits")
+CHARACTER_SEXES = ("female", "male", "mixed", "unspecified", "none")
+CHARACTER_KINDS = ("human", "humanoid", "anthro", "animal", "monster", "alien", "robot", "creature", "other")
+CHARACTER_ORIGINS = ("named", "described", "random")
+MAX_CHARACTERS = 12
+MAX_CHARACTER_TEXT = 300
 MAX_ITEMS = 24
 MAX_COMPACT_ITEMS = MAX_ITEMS * len(COMPACT_KINDS)
 MAX_TEXT_CHARACTERS = 2000
@@ -90,8 +99,6 @@ unless the user explicitly requests that lettering. Do not add it to visible_evi
 or turn it into a sign, caption or watermark. trigger_at_start=false does not forbid
 placing the trigger first; it prefers a natural introduction before a later trigger,
 not a hard exclusion rule.
-With source_mode "library", each image recasts one of the user's saved prompts, so the
-concept mainly defines the cast; do not require a place or action the user did not state.
 Unspecified values stay unspecified; do not invent
 identity, clothing, setting, props, anatomy or a mandatory camera to fill the brief.
 By default an unspecified choice may differ in every image: give that free fact the
@@ -177,6 +184,22 @@ Formatting compaction must not omit facts or change qualifiers.
 
 requested_generation: one short interpretation of the premise and its defining
 meaning. Put detailed obligations in requirements, not repeated in this summary;
+characters: who appears in each image, one entry per distinct character or group of
+identical extras, in the user's order. Later stages cast and tag images from this list.
+  name: the character's name when the user gave one or named an existing character
+  ("Naruto Uzumaki"), otherwise a short role label ("random companion", "the mother");
+  count: how many of this character appear in each image (1 unless the user said more);
+  sex: female, male, mixed (a group with both), unspecified (left open: each image may
+  choose) or none (no sex applies, such as a robot or object);
+  kind: human, humanoid (elf, demon, vampire and other human-shaped fantasy beings),
+  anthro (furry or anthropomorphic animal), animal, monster, alien, robot, creature or other;
+  origin: named (an existing character from a franchise or work), described (the user
+  defined them) or random (invented freely for each image);
+  series: the franchise or work of a named character ("Naruto"), otherwise "";
+  traits: appearance traits the user supplied for this character, verbatim, otherwise "".
+  For a named character, use what is canonical about them: Naruto Uzumaki is a male human
+  from Naruto. Never invent traits for a random character; leave sex unspecified when the
+  user did not imply one. Use an empty array only when no character appears.
 character_count: integer 1-100 for an explicit shared per-image count of people or
 animal characters, or null if unknown, not applicable, or differing by local input.
 Never use 0: for an object-only scene with no people or animal characters, use
@@ -277,7 +300,7 @@ def _brief_json(raw):
 def validate_understanding(value: dict, scopes: tuple[str, ...]) -> dict:
     """Validate the brief's shape and scopes, not the model's semantic judgment."""
     fields = {*SUMMARY_FIELDS, *REQUIREMENT_FIELDS, *CONTRACT_FIELDS, *DETAIL_FIELDS, "physical_conflicts", "clarifications"}
-    if not isinstance(value, dict) or set(value) != fields:
+    if not isinstance(value, dict) or set(value) - {"characters"} != fields:
         raise ValueError("Understanding must contain exactly the required brief fields.")
     result = {field: _text(value[field], field) for field in SUMMARY_FIELDS}
     count = value["character_count"]
@@ -306,17 +329,54 @@ def validate_understanding(value: dict, scopes: tuple[str, ...]) -> dict:
             entry = {"scope": _scope(item["scope"], scopes)}
             for key in expected - {"scope"}:
                 entry[key] = None if key == "compatible_resolution" and item[key] is None else _text(item[key], field)
+            # Small models fill the array with a "None" placeholder instead of leaving it empty.
+            if field == "physical_conflicts" and _NO_CONFLICT.fullmatch(entry["conflict"].casefold()):
+                continue
             result[field].append(entry)
-    if any(item["compatible_resolution"] is None for item in result["physical_conflicts"]) and not result["clarifications"]:
+    unresolved = any(item["compatible_resolution"] is None for item in result["physical_conflicts"])
+    if not unresolved:
+        # A remark ("be aware that stunts is a broad category") is not a question and must not
+        # block approval; only real questions stop the run.
+        result["clarifications"] = [question for question in result["clarifications"] if "?" in question]
+    if unresolved and not result["clarifications"]:
         raise ValueError("Unresolved physical conflicts require clarification.")
+    if "characters" in value:
+        result["characters"] = validate_characters(value["characters"])
     return result
+
+
+_NO_CONFLICT = re.compile(r"\W*(?:none|n/?a|nil|null|no(?:ne found| (?:physical )?conflicts?(?: found| detected)?)?)\W*")
+
+
+def validate_characters(items):
+    """Validate the character list; absent in briefs saved before it existed."""
+    if not isinstance(items, list) or len(items) > MAX_CHARACTERS:
+        raise ValueError(f"characters must be an array of at most {MAX_CHARACTERS} entries.")
+    characters = []
+    for item in items:
+        if not isinstance(item, dict) or set(item) != set(CHARACTER_FIELDS):
+            raise ValueError("Each character needs exactly name, count, sex, kind, origin, series and traits.")
+        name = item["name"]
+        if not isinstance(name, str) or not name.strip() or len(name) > MAX_CHARACTER_TEXT:
+            raise ValueError("Each character needs a short name or role.")
+        if type(item["count"]) is not int or not 1 <= item["count"] <= 20:
+            raise ValueError("Character count must be an integer from 1 to 20.")
+        for key, allowed in (("sex", CHARACTER_SEXES), ("kind", CHARACTER_KINDS), ("origin", CHARACTER_ORIGINS)):
+            if not isinstance(item[key], str) or item[key] not in allowed:
+                raise ValueError(f"Unknown character {key}.")
+        for key in ("series", "traits"):
+            if not isinstance(item[key], str) or len(item[key]) > MAX_CHARACTER_TEXT:
+                raise ValueError(f"Character {key} must be short text.")
+        characters.append({**item, "name": " ".join(name.split()),
+                           "series": " ".join(item["series"].split()), "traits": " ".join(item["traits"].split())})
+    return characters
 
 
 def _expand_understanding(value, data, scopes):
     """Project compact model facts into the unchanged public review contract."""
     if not isinstance(value, dict) or "requirements" not in value:
         return value
-    if set(value) != set(COMPACT_FIELDS):
+    if set(value) - {"characters"} != set(COMPACT_FIELDS):
         raise ValueError("Compact understanding must contain exactly its required fields.")
     facts = value["requirements"]
     if isinstance(facts, dict):
@@ -335,6 +395,8 @@ def _expand_understanding(value, data, scopes):
     if not isinstance(facts, list) or len(facts) > MAX_COMPACT_ITEMS:
         raise ValueError("Compact requirements must be an array within the understanding limit.")
     result = {key: value[key] for key in COMPACT_FIELDS if key != "requirements"}
+    if "characters" in value:
+        result["characters"] = value["characters"]
     result["dataset_contents"] = (f"{data['amount']} image prompts; target: {data['target']}; "
         f"detail: {data['length']}.")
     result.update({field: [] for field in (*CONTRACT_FIELDS, *SECTION_FIELDS)})
@@ -394,6 +456,14 @@ def _understanding_schema(scopes, *, hard_limit):
     properties = {field: text for field in ("requested_generation", "expansion_freedom")}
     properties.update(character_count={"type": ["integer", "null"], "minimum": 1, "maximum": 100},
         identity_policy={"type": "string", "enum": ["fixed", "random_per_prompt", "not_applicable", "mixed"]})
+    short = {"type": "string", "maxLength": MAX_CHARACTER_TEXT}
+    properties["characters"] = {"type": "array", "maxItems": MAX_CHARACTERS, "items": {
+        "type": "object", "additionalProperties": False, "required": list(CHARACTER_FIELDS),
+        "properties": {"name": {**short, "minLength": 1}, "count": {"type": "integer", "minimum": 1, "maximum": 20},
+            "sex": {"type": "string", "enum": list(CHARACTER_SEXES)},
+            "kind": {"type": "string", "enum": list(CHARACTER_KINDS)},
+            "origin": {"type": "string", "enum": list(CHARACTER_ORIGINS)},
+            "series": short, "traits": short}}}
     properties["requirements"] = {"type": "object", "additionalProperties": False,
         "required": list(COMPACT_KINDS), "properties": buckets}
     for field in ("physical_conflicts", "clarifications"):
@@ -459,6 +529,8 @@ class DatasetUnderstandingService:
 
     def run(self, request: GoatedPrompterRequest, data: dict, progress: Callable[[str], None]) -> dict:
         self.checkpoint()
+        if blocked := adults_only_error(data):
+            raise ValueError(blocked)
         instruction = understanding_instruction(data)
         effective, profile = resolve_director_config(self.config, request)
         instruction = replace(instruction, model_family=effective_model_family(request, profile, effective))
@@ -498,3 +570,59 @@ class DatasetUnderstandingService:
         except (ValueError, TypeError, RecursionError) as error:
             raise BackendGenerationError("Dataset understanding returned an invalid brief: " + str(error)
                                          + " No generation started.") from error
+
+
+
+_ORDINALS = ("first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth",
+             "eleventh", "twelfth")
+
+
+_POSITION_LABEL = re.compile(r"^\s*([^\W\d_][^\d]*?)\s*#?(\d{1,2})\s*$")
+
+
+def numbered_labels(characters):
+    """Names of random characters that are only numbered role labels ("friend 1", "coworker #3").
+
+    The number must end the name and count a position in this cast, so a name that carries a
+    real fact ("20 yo man", "agent 47") is a description, not a label.
+    """
+    characters = list(characters or ())
+    labels = []
+    for item in characters:
+        match = _POSITION_LABEL.match(item.get("name", ""))
+        if item.get("origin") == "random" and match and 1 <= int(match.group(2)) <= max(len(characters), 1):
+            labels.append(item["name"])
+    return labels
+
+
+def label_replacements(characters, described=None):
+    """Map each numbered label to words an image can show.
+
+    ``described`` gives a visible description per label (from the drawn looks); otherwise the
+    label becomes an ordinal ("friend 2" -> "the second friend").
+    """
+    replacements = {}
+    for name in numbered_labels(characters):
+        if (described or {}).get(name):
+            replacements[name] = described[name]
+            continue
+        number = re.search(r"\d+", name)
+        noun = " ".join(re.sub(r"[#\d]+", " ", name).split()).casefold() or "person"
+        position = int(number.group()) - 1 if number else -1
+        replacements[name] = (f"the {_ORDINALS[position]} {noun}" if 0 <= position < len(_ORDINALS)
+                              else f"another {noun}")
+    return replacements
+
+
+def replace_labels(text, replacements):
+    """Swap numbered labels for their replacements, capitalising at the start of a sentence."""
+    value = str(text or "")
+    for name in sorted(replacements, key=len, reverse=True):
+        source, phrase = value, replacements[name]
+
+        def swap(match, source=source, phrase=phrase):
+            before = source[:match.start()].rstrip()
+            return phrase[:1].upper() + phrase[1:] if not before or before[-1] in ".!?\n" else phrase
+
+        value = re.sub(rf"(?<![\w-]){re.escape(name)}(?![\w-])", swap, source, flags=re.I)
+    return value

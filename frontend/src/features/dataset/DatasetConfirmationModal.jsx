@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Download, LoaderCircle, X } from "lucide-react";
 import { ui } from "../../ui.js";
-import { canConfirmDatasetReview, datasetReviewQuestions, datasetUnderstandingSections, datasetUnderstandingSummary } from "./datasetState.js";
+import { canConfirmDatasetReview, datasetCharacterLines, datasetReviewQuestions, datasetUnderstandingSections, datasetUnderstandingSummary } from "./datasetState.js";
 import { identityLabels } from "./options.js";
 
 function SummaryList({ label, items, annotations }) {
@@ -48,6 +48,7 @@ export default function DatasetConfirmationModal({ review, busy, onRevise, onCon
         <h3>Concept</h3>
         <p className="whitespace-pre-wrap wrap-anywhere">{brief.requested_generation}</p>
         <p className="dataset-review-identity">{brief.character_count != null && `${brief.character_count} characters per image. `}{identityLabels[brief.identity_policy]}</p>
+        <SummaryList label="Characters" items={datasetCharacterLines(brief)} />
       </section>
       <div className="dataset-review-grid">
         <section aria-label="What stays consistent">
@@ -91,7 +92,6 @@ export default function DatasetConfirmationModal({ review, busy, onRevise, onCon
       <p className="mt-3 whitespace-pre-wrap wrap-anywhere text-muted">{review.input.subject}</p>
       {review.input.constraints && <p className="mt-3 whitespace-pre-wrap wrap-anywhere text-muted">{review.input.constraints}</p>}
       {review.input.source_mode === "guided" && <p className="mt-3 whitespace-pre-wrap wrap-anywhere text-muted">{review.input.inputs}</p>}
-      {review.input.source_mode === "library" && <p className="mt-3 text-muted">Scenes come from your prompt library for {review.input.target}, recast with this cast ({review.input.library_extras === "keep" ? "extra roles kept as background" : "extra roles dropped"}).</p>}
       {brief && <>
         <div className="dataset-review-grid mt-4">
           <SummaryList label="Characters and identity" items={[`${brief.character_count ?? "Unspecified / not applicable"}. ${identityLabels[brief.identity_policy]}`]} />

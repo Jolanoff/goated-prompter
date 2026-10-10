@@ -29,7 +29,10 @@ class DatasetIdeasTests(unittest.TestCase):
         directions = creative_directions(data, range(1, 17))
         self.assertEqual(directions, creative_directions(deepcopy(data), range(1, 17)))
         self.assertEqual(creative_directions(data, [5]), {5: directions[5]}, "A replacement keeps its direction.")
+        self.assertTrue(all("interaction" not in item for item in directions.values()), "A single subject has no one to interact with.")
         for axis, values in DIRECTION_AXES.items():
+            if axis == "interaction":
+                continue
             used = [directions[index][axis] for index in range(1, 17)]
             self.assertEqual(set(used[:len(values)]), set(values), f"Every {axis} is used before any repeats.")
         self.assertGreater(len({tuple(item.values()) for item in directions.values()}), 15)
@@ -110,8 +113,7 @@ class DatasetIdeasTests(unittest.TestCase):
             "weighs produce at a stall", "secures a balloon string", "sweeps the entrance",
             "rolls up a finished display"]
         return [dataset_idea_fixture(index, idea=f"A festival volunteer {action}.",
-            placement="Volunteer beside the relevant festival station.", visibility="Hands and task remain readable.",
-            camera="Eye-level three-quarter view.", framing="Medium-full view.", context="Community festival grounds.")
+            scene=f"At the community festival grounds a volunteer {action}, hands and task readable in a medium-full eye-level view.")
             for index, action in enumerate(actions[:amount], 1)]
 
     def test_ideas_request_minified_generation_and_compact_input_without_changing_contract(self):
@@ -165,6 +167,27 @@ class DatasetIdeasTests(unittest.TestCase):
         self.assertNotIn("indexes: 1,", str(caught.exception))
         self.session.generate.assert_called_once()
 
+    def test_a_second_watching_replacement_gets_one_retry_and_keeps_a_valid_answer(self):
+        self.data.update(amount=4, subject="A festival volunteer at work.")
+        existing = self.festival_ideas(4)
+        existing[0]["idea"] = "A festival volunteer watches a juggler."
+        repeat = {**existing[3], "idea": "A festival volunteer stands watching the fireworks."}
+        fixed = {**existing[3], "idea": "A festival volunteer chases a runaway hat across the lawn."}
+        self.session.generate.side_effect = [json.dumps([repeat]), json.dumps([fixed])]
+        rows = self.run_ideas([repeat], indexes=[4], existing=existing)
+        self.assertEqual(rows[0]["idea"], fixed["idea"])
+        retry = self.session.generate.call_args_list[1].args[0]
+        self.assertIn("watching", retry.system_message)
+
+    def test_shared_props_and_words_do_not_fail_a_replacement(self):
+        self.data.update(amount=4, subject="A festival volunteer at work.")
+        existing = self.festival_ideas(4)
+        existing[0]["idea"], existing[1]["idea"] = ("A festival volunteer eats noodles at a food stall.",
+                                                    "A festival volunteer eats dumplings at a food stall.")
+        replacement = {**existing[3], "idea": "A festival volunteer eats skewers at a food stall."}
+        self.assertEqual(self.run_ideas([replacement], indexes=[4], existing=existing)[0]["idea"], replacement["idea"])
+        self.session.generate.assert_called_once()
+
     def test_large_guided_repeats_remain_valid_when_the_user_requires_the_same_event(self):
         self.data.update(amount=25, source_mode="guided", inputs="A volunteer hands a ticket to a visitor.")
         first = self.festival_ideas(1)[0]
@@ -190,7 +213,7 @@ class DatasetIdeasTests(unittest.TestCase):
         self.assertEqual(self.run_ideas(rows), rows)
         self.session.generate.assert_called_once()
 
-    def test_one_call_returns_only_six_short_descriptions_per_requested_index(self):
+    def test_one_call_returns_only_an_idea_and_scene_per_requested_index(self):
         expected = [dataset_idea_fixture(1), dataset_idea_fixture(2)]
         before = deepcopy(self.data)
         self.assertEqual(self.run_ideas(expected), expected)
@@ -206,9 +229,10 @@ class DatasetIdeasTests(unittest.TestCase):
             soft=[{"scope": "all_outputs", "text": "Close camera."}],
             free=[{"scope": "all_outputs", "text": "Exact angle."}])
         instruction = ideas_instruction(self.data, dataset_assignments(self.data))
-        self.assertIn("creative suggestions, not immutable requirements", instruction.system_message)
-        self.assertIn("SCENE may", instruction.system_message)
-        self.assertIn("adjust any generated choice that conflicts with HARD", instruction.system_message)
+        rules = " ".join(instruction.system_message.split())
+        self.assertIn("creative suggestions, not immutable requirements", rules)
+        self.assertIn("never promote your own choices into user requirements", rules)
+        self.assertIn("Only the hard list in confirmed_intent is mandatory", rules)
         self.assertEqual(json.loads(instruction.user_message)["confirmed_intent"], self.data["_confirmed_intent"])
 
     def test_fight_variations_must_keep_visible_combat_not_hiding_alone(self):
@@ -216,9 +240,10 @@ class DatasetIdeasTests(unittest.TestCase):
             _confirmed_intent=dataset_understanding_fixture(hard=[
                 {"scope": "all_outputs", "text": "The duck and dinosaur must be depicted in a fighting interaction with visible combat cues."}]))
         instruction = ideas_instruction(self.data, dataset_assignments(self.data))
-        self.assertIn("Every proposed moment must visibly show the required interaction", instruction.system_message)
-        self.assertIn("hiding or peeking alone does not satisfy fighting", instruction.system_message)
-        self.assertIn("retreating while the dinosaur attacks", instruction.system_message)
+        rules = " ".join(instruction.system_message.split())
+        self.assertIn("Every proposed moment must visibly show the required interaction", rules)
+        self.assertIn("hiding or peeking alone does not satisfy fighting", rules)
+        self.assertIn("retreating while the dinosaur attacks", rules)
         self.assertNotIn("both subjects facing off before the next attack", instruction.system_message)
         self.assertEqual(json.loads(instruction.user_message)["confirmed_intent"]["hard"],
             self.data["_confirmed_intent"]["hard"])
@@ -247,7 +272,7 @@ class DatasetIdeasTests(unittest.TestCase):
         self.data["_confirmed_intent"] = dataset_understanding_fixture(
             hard=[{"scope": "dataset", "text": "Use one shared stunt setup throughout the batch."}],
             free=[{"scope": "dataset", "text": "Choose the shared setup once."}])
-        existing = [dataset_idea_fixture(1, context="A cable-assisted leap onto a single crash mat.")]
+        existing = [dataset_idea_fixture(1, scene="A stunt performer makes a cable-assisted leap onto a single crash mat.")]
         before = deepcopy(existing)
         instruction = ideas_instruction(self.data, dataset_assignments(self.data), indexes=[2], existing=existing)
         rules = " ".join(instruction.system_message.split())
@@ -317,7 +342,7 @@ class DatasetIdeasTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_ideas(json.dumps(dataset_idea_fixture()), [1])
 
-    def test_ideas_schema_binds_exact_count_order_indexes_and_six_bounded_fields(self):
+    def test_ideas_schema_binds_exact_count_order_indexes_and_bounded_idea_and_scene(self):
         for amount, indexes in ((1, None), (2, None), (25, None), (3, [3, 1]), (3, [2])):
             with self.subTest(amount=amount, indexes=indexes):
                 data = {**self.data, "amount": amount}
@@ -336,9 +361,8 @@ class DatasetIdeasTests(unittest.TestCase):
                     self.assertEqual(set(record["required"]), {"index", *IDEA_FIELDS})
                     self.assertEqual(set(record["properties"]), {"index", *IDEA_FIELDS})
                     self.assertEqual(record["properties"]["index"], {"type": "integer", "const": index})
-                    for field in IDEA_FIELDS:
-                        self.assertEqual(record["properties"][field],
-                            {"type": "string", "minLength": 1, "maxLength": 600})
+                    self.assertEqual(record["properties"]["idea"], {"type": "string", "minLength": 1, "maxLength": 240})
+                    self.assertEqual(record["properties"]["scene"], {"type": "string", "minLength": 1, "maxLength": 1500})
                 context = json.loads(instruction.user_message)
                 self.assertEqual(context["output_contract"], {"record_count": len(expected), "indexes": expected})
                 self.assertEqual([row["index"] for row in context["assignments"]], expected)
@@ -421,9 +445,9 @@ class DatasetIdeasTests(unittest.TestCase):
                 self.assertNotIn("Synthetic content", str(caught.exception))
                 self.assertEqual(self.session.generate.call_count, 2)
 
-    def test_camera_and_context_changes_do_not_make_identical_events_distinct(self):
+    def test_a_restaged_scene_does_not_make_an_identical_event_distinct(self):
         first = dataset_idea_fixture(1)
-        second = dataset_idea_fixture(2, idea=first["idea"], camera="Side view", context="Different arena")
+        second = dataset_idea_fixture(2, idea=first["idea"], scene="The same punch seen from the side in a different arena.")
         with self.assertRaisesRegex(BackendGenerationError, "same core event"):
             self.run_ideas([first, second])
         self.session.generate.assert_called_once()
@@ -476,7 +500,7 @@ class DatasetIdeasTests(unittest.TestCase):
 
     def test_json_fences_do_not_hide_prose_multiple_values_or_invalid_ideas(self):
         good = json.dumps([dataset_idea_fixture()])
-        duplicate = good.replace('"camera":', '"camera":"Front", "camera":')
+        duplicate = good.replace('"scene":', '"scene":"Front", "scene":')
         invalid = [f"```json\n{good}", f"```text\n{good}\n```",
             f"Explanation\n```json\n{good}\n```", f"```json\n{good}\n```\nExplanation",
             f"```json\n{good}\n{good}\n```", f"```json\n{duplicate}\n```",
@@ -495,11 +519,12 @@ class DatasetIdeasTests(unittest.TestCase):
         good = dataset_idea_fixture()
         invalid = ["not JSON", '{}', '[]', json.dumps([good, good]),
             json.dumps([{**good, "index": True}]), json.dumps([{**good, "index": 2}]),
-            json.dumps([{**good, "geometry": {}}]), json.dumps([{key: value for key, value in good.items() if key != "camera"}]),
+            json.dumps([{**good, "geometry": {}}]), json.dumps([{**good, "camera": "Side view"}]),
+            json.dumps([{key: value for key, value in good.items() if key != "scene"}]),
             '{"index":1,"index":1}', json.dumps([{**good, "idea": "```"}])]
-        for field in IDEA_FIELDS:
-            invalid.extend(json.dumps([{**good, field: value}]) for value in (None, [], {}, " ", "x" * 601))
-        invalid.append(json.dumps([good]).replace('"camera":', '"camera":"Front", "camera":'))
+        for field, limit in (("idea", 240), ("scene", 1500)):
+            invalid.extend(json.dumps([{**good, field: value}]) for value in (None, [], {}, " ", "x" * (limit + 1)))
+        invalid.append(json.dumps([good]).replace('"scene":', '"scene":"Front", "scene":'))
         for raw in invalid:
             with self.subTest(raw=raw[:80]), self.assertRaises(ValueError):
                 validate_ideas(raw, [1])
@@ -510,14 +535,14 @@ class DatasetIdeasTests(unittest.TestCase):
         self.assertEqual(result["idea"], "Boxer punches.")
         self.assertEqual(set(result), {"index", *IDEA_FIELDS})
 
-    def test_saved_plan_roundtrip_keeps_compact_details_but_rejects_partial_or_invalid_details(self):
+    def test_saved_plan_roundtrip_keeps_idea_and_scene_but_rejects_retired_detail_fields(self):
         row = {**dataset_idea_fixture(), "input": "", "scene": "A boxer at the bag.", "self_check": "PASS"}
         self.assertEqual(validate_saved_scene_plan([row]), [row])
-        for changes in ({"visibility": None}, {"camera": "x" * 601}, {"context": ""}):
+        for changes in ({"camera": "Side view"}, {"placement": "Left"}, {"scene": None}):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 validate_saved_scene_plan([{**row, **changes}])
         with self.assertRaises(ValueError):
-            validate_saved_scene_plan([{key: value for key, value in row.items() if key != "camera"}])
+            validate_saved_scene_plan([{key: value for key, value in row.items() if key != "scene"}])
 
     def test_cancelled_generation_cannot_publish_a_late_idea_response(self):
         checkpoint = Mock(side_effect=[None, RuntimeError("Cancelled")])

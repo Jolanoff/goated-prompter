@@ -13,7 +13,7 @@ from .understanding import understanding_instruction, validate_understanding
 
 def intent_signature(data):
     source = {key: value for key, value in data.items()
-               if key not in {"results", "result_job_id", "plan_scenes_first"} and not key.startswith("_")}
+               if key not in {"results", "result_job_id", "plan_scenes_first", "seed", "seed_mode"} and not key.startswith("_")}
     if "scene_plan" in source:
         source["scene_plan"] = [{key: value for key, value in row.items()
             if key != "prompt_status" and not (row.get("failure_stage") == "prompt"

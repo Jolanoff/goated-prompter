@@ -46,7 +46,9 @@ class TargetControlTests(unittest.TestCase):
         adapter = get_model_adapter("Krea 2")
         for medium in ("anime", "illustration", "graphic design", "3D"):
             self.assertIn(medium, adapter)
-        self.assertIn("For photographic requests, use appropriate photographic language", adapter)
+        self.assertIn("Always name a medium, era or process", adapter)
+        self.assertIn("long, exhaustive natural-language description", adapter)
+        self.assertIn('"Composition and camera:"', adapter)
         self.assertNotIn("photographic realism", adapter)
         self.assertIn("do not force photographic rendering", adapter)
         message = self.instruction("Krea 2", creativity="Dice")
@@ -54,14 +56,15 @@ class TargetControlTests(unittest.TestCase):
 
     def test_flux_maximum_detail_stays_moderate_and_dataset_scene_dense(self):
         message = self.instruction("FLUX.2 Klein", prompt_length="Maximum Detail")
-        self.assertIn("moderately detailed natural-language prose", message)
+        self.assertIn("Aim for roughly 40 to 100 words", message)
+        self.assertIn("The model has no negative prompt", message)
         self.assertIn("Moderately detailed, focused", message)
         self.assertNotIn("Exhaustively cover", message)
         data = valid_draft(target="FLUX.2 Klein", length="Maximum Detail")
         request = GoatedPrompterRequest(idea=data["subject"], target_model=data["target"])
         writer = dataset_instruction(request, data, 1, plan_item=saved_scene())
         self.assertIn(resolve_target_length(data["target"], data["length"]), writer.system_message)
-        self.assertIn("ENHANCE THE ACCEPTED SCENE", writer.system_message)
+        self.assertIn("WRITE THE FINAL PROMPT FROM THE SCENE", writer.system_message)
 
     def test_anima_positive_quality_tags_are_allowed_but_negatives_stay_separate(self):
         prompt = 'masterpiece, best quality, score_9, 1girl\nShe reads a book beside a window.'
@@ -100,8 +103,8 @@ class TargetControlTests(unittest.TestCase):
 
     def test_ltx_target_overrides_video_director_motion_invention(self):
         message = self.instruction("LTX 2.5", mode="Video", director_preset="video_director", prompt_length="Maximum Detail")
-        self.assertIn("one focused flowing paragraph", message)
-        self.assertIn("Do not automatically invent dialogue, camera movement or cuts", message)
+        self.assertIn("one flowing present-tense paragraph of four to eight sentences", message)
+        self.assertIn("Do not invent dialogue, camera movement or cuts unless requested", message)
         self.assertIn("never change the task, the format or the user's facts", message)
 
     def test_all_lengths_and_creativity_preserve_target_hard_structure(self):

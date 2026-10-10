@@ -1,6 +1,8 @@
-"""Nonblocking lexical idea-diversity hints; no scene or final-prompt evaluator."""
+"""Lexical idea checks: diversity hints, passive ideas, and sexual or adults-only requests."""
 
 import re
+
+from ...presets import get_director_preset
 
 
 _CONCEPT_FAMILIES = {
@@ -56,3 +58,74 @@ def analyze_idea_diversity(data, rows):
                     records[current["index"]]["issues"].append({"code": code, "severity": "warning", "related": other["index"],
                         "message": f"Idea may repeat the concept of idea {other['index']}. Check distinct activities, not just presentation differences."})
     return {"ideas": list(records.values()), "method": "concept-aware lexical hints; not semantic verification"}
+
+
+# An idea where the cast only watches, looks at or admires something is passive: one per batch
+# at most. The main clause decides; standing, sitting or holding hands while watching counts too.
+_PASSIVE = re.compile(r"\b(?:watch\w*|look(?:s|ing)? (?:at|out|on|over)|gaz\w*|admir\w*|observ\w*|star(?:e|es|ing)|"
+                      r"marvel\w*|overlook\w*|sightsee\w*|views?|vista|scenery|in awe|taking in|"
+                      r"(?:shar|enjoy|spend)\w* a (?:quiet|peaceful|calm|still|tender|silent) moment|"
+                      r"(?:walk|stroll|wander)\w* (?:together )?(?:through|along|past|across|down|around|among))\b")
+_STANCE = re.compile(r"\b(?:stand\w*|sit|sits|sitting|seated|lean\w*|rest\w*|kneel\w*|wait\w*|hold(?:s|ing)? hands|"
+                     r"paus\w*|linger\w*|react\w*)\b")
+# After a stance, seeing something or a show put on by others is still only watching.
+_SEEN = re.compile(r"\b(?:see|sees|seeing|spot\w*|performance|parade|fireworks|show)\b")
+
+
+def passive_request(data):
+    """True when the user asked for watching or strolling themselves, so it is not limited."""
+    return passive_idea(" ".join(str(data.get(key) or "") for key in ("subject", "constraints")))
+
+
+def passive_idea(text):
+    text = " ".join(str(text or "").casefold().split())
+    parts = re.split(r"\bwhile\b|\bas\b|,|;", text, maxsplit=1)
+    main, rest = parts[0], parts[1] if len(parts) > 1 else ""
+    if _PASSIVE.search(main):
+        return True
+    return bool(_STANCE.search(main) and (_PASSIVE.search(rest) or _SEEN.search(main + " " + rest)))
+
+
+# Sexual requests get act-focused directions, and everyone in them must be an adult. The request,
+# rules, guided inputs, cast and selected Director all count, since any of them can make a batch sexual.
+_SEXUAL = re.compile(r"\b(?:sex|sexual\w*|nsfw|porn\w*|explicit|erotic\w*|nude|nudity|naked|fuck\w*|blowjob\w*|"
+                     r"handjob\w*|oral(?! (?:presentations?|exams?|examinations?|hygiene|history|health|surgery|traditions?|reports?|arguments?))|anal|penetrat\w*|masturbat\w*|cum|cums|cumming|cumshot\w*|orgasm\w*|cocks?|"
+                     r"dicks?|pussy|pussies|boobs?|tits|nipples?|genitals?|horny|aroused)\b")
+_SUGGESTIVE = re.compile(r"\b(?:lingerie|boudoir|seductive\w*|sensual\w*|undress\w*|striptease|strippers?|"
+                         r"strip(?:s|ped|ping)? (?:off|down|naked|nude)|topless|bottomless)\b")
+_MINOR = re.compile(r"\b(?:child|children|childlike|kids?|minors?|underage\w*|teens?|teenage\w*|preteens?|"
+                    r"tweens?|loli\w*|shota\w*|schoolgirls?|schoolboys?|toddlers?|infants?|bab(?:y|ies)|"
+                    r"(?:elementary|primary|middle|high|junior high) school\w*|little (?:girl|boy)s?|young (?:girl|boy)s?|"
+                    r"(?:[1-9]|1[0-7])\s*(?:yo|y/o|-?years?[- ]old|-year-old))\b")
+ADULTS_ONLY = ("Sexual content can only show adults. Remove anything that makes a character a child or teen "
+               "(age under 18, school, childlike body); describe every character as an adult.")
+
+
+def _request_text(data):
+    brief = data.get("_confirmed_intent") or {}
+    parts = [str(data.get(key) or "") for key in ("subject", "constraints", "inputs", "trigger", "custom_type")]
+    parts += [str(item.get(key) or "") for item in brief.get("characters") or () if isinstance(item, dict)
+              for key in ("name", "traits")]
+    parts += [str(brief.get(field) or "") for field in ("requested_generation", "dataset_contents")]
+    parts += [str(item.get("text") or "") for field in ("hard", "soft", "action_options", "interactions")
+              for item in brief.get(field) or () if isinstance(item, dict)]
+    parts.append(get_director_preset(data.get("director_preset")).instructions)
+    return " ".join(parts).casefold()
+
+
+def sexual_request(data):
+    return bool(_SEXUAL.search(_request_text(data)))
+
+
+def minor_reference(text):
+    """The first wording that makes someone a child or teen, or None."""
+    match = _MINOR.search(str(text or "").casefold())
+    return match.group() if match else None
+
+
+def adults_only_error(data):
+    """For a sexual or suggestive batch, the reason it cannot run when anyone in it is under 18."""
+    text = _request_text(data)
+    if (_SEXUAL.search(text) or _SUGGESTIVE.search(text)) and (word := minor_reference(text)):
+        return f'{ADULTS_ONLY} ("{word}")'
+    return None

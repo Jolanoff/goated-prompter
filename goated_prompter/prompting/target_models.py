@@ -31,7 +31,7 @@ TARGET_CAPABILITIES = {
     "Anima": TargetCapabilities(prompt_style="tags_and_scene", supports_negative_prompt=True,
         detail_envelope="Keep useful lowercase-style tags, subject counts and scene prose. Density changes prose, never tag/block structure."),
     "Krea 2": TargetCapabilities(supports_image_edit=True,
-        detail_envelope="Use coherent natural-language visual direction in the requested medium. Under Creative/Dice leave useful aesthetic freedom rather than specifying every visual decision."),
+        detail_envelope="Long, exhaustive natural-language description in the requested medium; more length adds concrete visible detail (pose, fabric, light falloff, background positions, camera), never filler."),
     "FLUX.2 Klein": TargetCapabilities(supports_image_edit=True, positive_description_only=True,
         detail_envelope="Moderately detailed, focused natural-language prose at every length; avoid extreme verbosity and keyword piles."),
     "Z-Image Base": TargetCapabilities(supports_negative_prompt=True, supports_cfg=True),
@@ -73,11 +73,11 @@ Descriptive prose is Chinese for a Chinese instruction, otherwise English. Visib
 MODEL_ADAPTERS = {
     "Generic": """Generic target: write clean, coherent natural-language visual description without model-specific syntax or tag chains.""",
     "Anima": """Anima target: use a hybrid of Danbooru/Gelbooru-style tags and concise natural-language scene prose. Start with one comma-separated sequence of relevant lowercase tags, including the correct subject-count tags (for example 3boys, or 1boy, 1girl); use solo only when exactly one character appears, never with several. Follow the tags with fluent prose describing the composition, actions, expressions, spatial relationships and interactions. Use recognizable tags for character appearance, clothing, poses, objects, environment and visual style. Quality and score tags such as masterpiece, best quality and score_7 are allowed where appropriate. Preserve each character's supplied identity and attributes, keeping them correctly assigned in multi-character scenes. Avoid redundant tags, excessive tag counts, negative prompt terms and repeating the tag inventory in prose. Preserve supplied tag wording, order, weights, repetitions and locked trigger prefixes when required. Keep the result visually specific, coherent and focused on the requested image.""",
-    "Krea 2": """Krea 2 target: use coherent natural-language visual direction. Make subject, action/state, composition, spatial relationships, environment, materials where useful, lighting and the requested visual medium clear. For photographic requests, use appropriate photographic language. For anime, illustration, painting, graphic design, 3D or other non-photographic requests, preserve that medium and do not force photographic rendering. Under Creative/Dice leave useful aesthetic freedom rather than describing every visual decision. Avoid disconnected keyword piles and unnecessary stylistic defaults.""",
-    "FLUX.2 Klein": """FLUX.2 Klein target: use moderately detailed natural-language prose, subject/action first, then setting, important appearance/material details, spatial relationships and lighting. Use positive visible description, not negative prompt syntax or keyword piles. For editing distinguish requested changes from protected content.""",
-    "Z-Image Base": """Z-Image Base target: the non-distilled Base variant. Use straightforward descriptive prose with clear subjects, action and visual relationships. Keep generator settings and separate negative conditioning out of positive prose.""",
-    "Z-Image Turbo": """Z-Image Turbo target: the distilled Turbo variant. Use straightforward descriptive positive prose with clear subjects, action and visual relationships. Keep generator settings out of positive prose.""",
-    "Qwen Image (original)": """Qwen Image (original) target: the original Qwen/Qwen-Image checkpoint, not Qwen Image 2.1. Use natural descriptive language emphasizing subject attributes, relationships, composition, pose/action, anatomical plausibility, lighting and literal visible text when requested. Preserve text exactly.""",
+    "Krea 2": """Krea 2 target: its large language-model text encoder rewards long, exhaustive natural-language description, so describe everything visible rather than summarizing. Cover the subject's apparent age, look, hair styling, makeup and exact expression; clothing with fabric, fit and how it falls or moves; the pose as one coherent body, described once from head to feet; background elements with their positions; light with its source, direction and what it falls on (face, shoulders, fabric) and where shadows land; composition with aspect, one shot size, where the subject sits in the frame, one camera angle, focus and depth of field. Always name a medium, era or process without one the result drifts to a generic house style. For photographs keep materials, skin and fabric texture natural and unretouched. For anime, illustration, painting, graphic design or 3D, keep that medium and do not force photographic rendering. Under Creative/Dice leave useful aesthetic freedom in the choices you make, but still write them out in full. Keep any supplied trigger or LoRA token first. Put words to render in the image in double quotes. Avoid keyword piles and empty quality slogans.""",
+    "FLUX.2 Klein": """FLUX.2 Klein target: write focused natural-language prose in the order subject, action, style, context; the model weighs what comes first most, so lead with the main subject and action. Aim for roughly 40 to 100 words. Lighting is the most influential detail: name its source, direction and quality. For photographs a specific camera, lens, aperture or film stock (for example 35mm f/1.4, Portra 400) works better than "professional photo". The model has no negative prompt: describe what should be visible ("sharp focus throughout"), never what to avoid. Put words to render in double quotes with their placement and style. For editing distinguish requested changes from protected content.""",
+    "Z-Image Base": """Z-Image Base target: the non-distilled Base variant. Write concrete, objective descriptive prose of roughly 30 to 120 words: a description, not a keyword list. Keep every subject, count, action, color and text exactly, then add composition, light and atmosphere, material texture, color scheme and depth layers. Spell out specific attributes such as age, hair, clothing and the exact place; vague wording collapses to the same image every time. Use one dominant style. No metaphors, emotional adjectives or quality tags such as 8K or masterpiece. Put text to render in double quotes with its font, layout and material. Keep generator settings and separate negative conditioning out of positive prose.""",
+    "Z-Image Turbo": """Z-Image Turbo target: the distilled Turbo variant, which has no negative prompt. Write concrete, objective descriptive prose of roughly 30 to 120 words: a description, not a keyword list. Keep every subject, count, action, color and text exactly, then add composition, light and atmosphere, material texture, color scheme and depth layers. Spell out specific attributes such as age, hair, clothing and the exact place; vague wording collapses to the same image every time. Use one dominant style and state anything to exclude as a positive fact. No metaphors, emotional adjectives or quality tags such as 8K or masterpiece. Put text to render in double quotes with its font, layout and material. Keep generator settings out of the prompt.""",
+    "Qwen Image (original)": """Qwen Image (original) target: the original Qwen/Qwen-Image checkpoint, not Qwen Image 2.1. Write one natural descriptive paragraph under about 200 words covering subject attributes, relationships, spatial layout, shot composition, pose/action, anatomical plausibility and lighting. Choose a precise style rather than a vague one; for realism name the capture style (for example a casual phone snapshot or a 50mm editorial portrait) and natural detail such as skin texture and age lines, avoiding a waxy, over-smoothed or oversaturated look. Put requested visible text in double quotes, unaltered and untranslated.""",
     "Qwen Image 2.1": """Qwen Image 2.1 text-to-image rewrite: return only the complete plain prompt text. No JSON object, metadata fields, commentary or Markdown fences.
 
 Write an English observer's description of the finished image, present tense and third person, never addressing the user or renderer. Preserve every fixed subject, count, color, position, named object and literal visible-text string. Preserve text character-for-character in its original script, punctuation and spacing; only visible text is enclosed in straight double quotes. Do not invent signage where none was requested. Obey job instructions silently instead of echoing them as picture content.
@@ -88,7 +88,7 @@ Open by naming medium, style, subject and background/palette, usually with orien
 
 Normally use one paragraph; genuinely stacked panels/cards/sections may use one paragraph per region. Keep literal image text in its original language while all descriptive prose is English. Avoid instructions, quality slogans, filler and a second closing summary.""",
     "MiniMax H3": """MiniMax H3 target: in Video mode return H3 named fields, not JSON or a generic prose wrapper: integrated_multimodal_description, overall_soundscape, non_diegetic_music. Put concrete chronological action and synchronized requested sound in the integrated description; use [Shot N] and contiguous time ranges only for requested multishot/timeline staging. Preserve literal dialogue; never invent dialogue or reference contents. With full references use subject_definitions, summary, retention_analysis, detailed_description, overall_soundscape, non_diegetic_music, with registered <Picture N>, <Video N>, <Audio N> labels and only requested transfer/retention roles. Explicit first/last-frame anchors require their corresponding alignment instruction; identity-only references are not first frames. Do not fabricate durations, assets, audio reuse or cuts. In non-video tasks keep the selected Mode's task without inventing a video timeline.""",
-    "LTX 2.5": """LTX 2.5 target: in Video mode write one focused flowing paragraph. Put the main action early; describe literal concrete chronological motion with active/present-progressive language, coherent environment and lighting, and audio when applicable. Do not automatically invent dialogue, camera movement or cuts unless requested or required. In other modes preserve the selected task.""",
+    "LTX 2.5": """LTX 2.5 target: in Video mode write one flowing present-tense paragraph of four to eight sentences, at most about 200 words, in this order: shot type; the scene with its light, palette and texture; the action from start to finish; the characters' age, hair and clothing; any requested camera movement and how subjects look after it; audio with a visible source. Show emotion through physical cues rather than labels. Put any requested dialogue in quotes with its language. Avoid readable text, logos, crowded scenes and chaotic physics. Do not invent dialogue, camera movement or cuts unless requested. In other modes preserve the selected task.""",
 
     "Ideogram4": """Ideogram4 target: output a detailed, valid Ideogram 4.0 JSON caption, not a prose prompt. Return exactly one JSON object with double-quoted keys and strings, no Markdown fences, comments, trailing commas, or surrounding commentary. Preserve the following key order and use only this schema:
 1. "high_level_description": a string summarizing the complete image in one or two sentences.
@@ -101,99 +101,24 @@ Optional bbox is [y_min, x_min, y_max, x_max], four integers from 0 to 1000 with
 Use all three top-level fields. Write rich, concrete descriptions within the fields while respecting the user's concept, evidence, creativity, and preservation constraints. Length settings control descriptive density, never removal of the JSON structure. Any instructions to write fluent prose or natural language apply inside JSON string values only. Finish the complete JSON object within the available output budget.""",
 }
 
-
-def get_model_adapter(name):
-    """Return the selected adapter, falling back to Generic."""
-    return MODEL_ADAPTERS.get(canonical_target(name), MODEL_ADAPTERS["Generic"])
-
-
-# One worked example per target: the request it came from and the expected
-# output. Subjects deliberately differ from common requests so the writer
-# copies the form, not the content. MiniMax H3 keeps its own contract.
-TARGET_EXAMPLES = {
-    "Generic": (
-        "a fishing boat on a beach, cloudy",
-        "A weathered wooden fishing boat rests on a pebble beach at low tide, blue paint peeling from its hull "
-        "to reveal bare grey wood. Coiled ropes and a rusted anchor lie on the wet stones beside it, which reflect "
-        "a pale overcast sky. Soft, diffuse daylight keeps the shadows faint. Seen from a low angle near the bow, "
-        "the boat fills the left two-thirds of the frame while the calm grey sea fades into mist on the right.",
-    ),
-    "Anima": (
-        "a boy and a girl sharing an umbrella at a rainy bus stop at night",
-        "1boy, 1girl, sharing umbrella, transparent umbrella, bus stop, rain, night, city lights, puddle, "
-        "reflection, standing, side-by-side, school uniform, yellow raincoat, full body\n\n"
-        "A boy in a dark school uniform and a girl in a bright yellow raincoat stand side by side under one clear "
-        "umbrella at a rain-soaked bus stop, the boy on the left holding the handle. She glances up at him with a "
-        "shy smile while streetlights and passing headlights shimmer in the puddles at their feet.",
-    ),
-    "Krea 2": (
-        "watercolor fox sleeping in the snow",
-        "A watercolor illustration of a fox curled asleep in a hollow log on a snowy forest floor. Loose washes "
-        "of cool blue and violet shape the snow, while the fox's rust-orange fur is painted in warm, bleeding "
-        "strokes with bare white paper left for highlights. Pale birch trunks rise behind it in soft vertical "
-        "bands, and a few flakes drift across the upper corner. Quiet, even winter light.",
-    ),
-    "FLUX.2 Klein": (
-        "old clockmaker repairing a pocket watch",
-        "An elderly clockmaker leans over his workbench, fitting a tiny brass gear into an open pocket watch with "
-        "steel tweezers. He wears round wire spectacles and a dark green apron over a rolled-sleeve linen shirt. "
-        "Jeweler's screwdrivers, a magnifying lamp and loose watch faces are scattered across the worn oak bench. "
-        "Warm lamplight falls on his hands and the watch while shelves of ticking clocks behind him sink into "
-        "soft shadow.",
-    ),
-    "Z-Image Base": (
-        "red bicycle in a sunny mediterranean alley",
-        "A red vintage bicycle leans against a whitewashed stone wall in a narrow Mediterranean alley. A wicker "
-        "basket on the handlebars holds a loaf of bread and a bunch of lavender. Bright midday sun casts a crisp "
-        "diagonal shadow of the bicycle across the worn cobblestones, and a blue wooden door stands half open "
-        "beside it.",
-    ),
-    "Z-Image Turbo": (
-        "barista making latte art",
-        "A barista pours steamed milk from a steel pitcher into a white ceramic cup, drawing a leaf pattern in "
-        "the coffee's golden crema. Her tattooed forearm and black apron are visible at the edge of the frame. "
-        "Behind the counter, an espresso machine and stacked cups blur into warm café light from a window on "
-        "the left.",
-    ),
-    "Qwen Image (original)": (
-        'bakery storefront with a sign saying "MILL & CRUMB", baker in the doorway',
-        "A small bakery storefront with a dark green wooden facade and a wide front window displaying round "
-        "loaves and croissants on wire racks. Above the door, a hand-painted cream sign reads \"MILL & CRUMB\" "
-        "in gold serif letters. A baker in a white apron stands in the doorway holding a tray of bread at waist "
-        "height and smiling toward the street. Morning sunlight from the right warms the facade and casts the "
-        "awning's shadow across the window.",
-    ),
-    "Qwen Image 2.1": (
-        "greenhouse with herbs and tomato plants",
-        "A horizontal photograph of a quiet greenhouse interior in soft greens and whites. In the center, a long "
-        "wooden potting table holds two rows of terracotta pots planted with basil, rosemary and young tomato "
-        "seedlings. On the left, a galvanized watering can rests on the gravel floor beside a coiled green hose. "
-        "On the right, tall tomato vines climb bamboo canes toward the glass roof, their leaves overlapping the "
-        "upper right corner. In the background, whitewashed glass panes turn the sky into a pale, even glow. "
-        "Soft overcast daylight enters through the roof from above, leaving faint shadows beneath the pots and "
-        "gentle highlights on the leaves. The whole frame is a balanced eye-level view with the table leading "
-        "the eye toward the far end of the greenhouse.",
-    ),
-    "LTX 2.5": (
-        "golden retriever running through a meadow with a ball",
-        "A golden retriever is sprinting across a sunlit meadow toward the camera, ears flapping and a red ball "
-        "in its mouth as tall grass parts around its chest. It slows in the foreground, drops the ball and sits, "
-        "tail sweeping the grass, while wind rolls through the meadow in slow waves under a hazy late-afternoon "
-        "sun. The dog's panting and distant birdsong fill the quiet air.",
-    ),
-    "Ideogram4": (
-        "minimal travel poster of a lighthouse at dusk titled NORTH CAPE",
-        '{"high_level_description":"A minimalist travel poster of a lighthouse on a rocky cliff at dusk, with the '
-        'title across the top.","style_description":{"aesthetics":"clean flat poster design with bold shapes and '
-        'generous negative space","lighting":"soft dusk glow with a bright lighthouse beam","medium":"digital '
-        'illustration","art_style":"mid-century travel poster, flat color fields, subtle paper grain",'
-        '"color_palette":["#1B2A41","#F2A65A","#F6E7CB","#C8553D"]},"compositional_deconstruction":{"background":'
-        '"A deep navy dusk sky fading to warm orange at the horizon above a calm sea.","elements":[{"type":"obj",'
-        '"desc":"A white lighthouse with a red cap on a dark rocky cliff in the lower right, its beam sweeping '
-        'left across the sky."},{"type":"text","text":"NORTH CAPE","desc":"Large cream sans-serif capitals '
-        'centered across the top, evenly spaced."}]}}',
-    ),
+# A suggested layout is only a default: when the user's library supplies templates, their
+# structure decides the layout instead.
+ADAPTER_LAYOUTS = {
+    "Krea 2": 'Long prompts may be organized into labeled sections such as "Subject and action:", "Clothing and '
+              'pose:", "Background and lighting:", "Composition and camera:" and "Aesthetic and style:".',
 }
+
+
+def get_model_adapter(name, *, templates=False):
+    """Return the selected adapter, falling back to Generic; without templates it adds the default layout."""
+    target = canonical_target(name)
+    adapter = MODEL_ADAPTERS.get(target, MODEL_ADAPTERS["Generic"])
+    layout = ADAPTER_LAYOUTS.get(target)
+    return adapter if templates or not layout else f"{adapter} {layout}"
+
+
+# Edit instructions are not covered by the prompt library (it holds generation prompts), so
+# Qwen Image 2.1 editing keeps one worked example.
 QWEN21_EDIT_EXAMPLE = (
     "make the sky a sunset",
     "Replace the overcast sky in the image with a clear sunset sky in warm orange and pink gradients, and "
@@ -203,22 +128,30 @@ QWEN21_EDIT_EXAMPLE = (
 
 
 def library_reference_section(references, *, continuation=False):
-    """Present user library prompts as quality references, replacing the built-in example."""
+    """Present user library prompts as templates for how a good prompt is built, not for its look."""
     if not references:
         return ""
-    numbered = "\n\n".join(f"Reference {index}:\n{prompt}" for index, prompt in enumerate(references, 1))
-    return ("REFERENCE PROMPTS (from the user's prompt library; match their tag style, wording, density and quality; "
-            "never copy their subjects, names, scene or sentences)\n" + numbered
-            + ("\nYour output is only the continuation after the app-inserted character tags; do not repeat character tags."
+    numbered = "\n\n".join(f"Template {index}:\n{prompt}" for index, prompt in enumerate(references, 1))
+    return ("TEMPLATES FROM THE USER'S PROMPT LIBRARY\n"
+            "The user saved these prompts as examples of how a good prompt for this model is written. Use them as "
+            "templates for the craft: the structure (one paragraph, labeled sections, a tag list, a trigger word "
+            "first), the order of information, how concretely each subject, pose, outfit, camera and light is "
+            "described, and how dense the detail is. Do not take the look of the image from them: the medium, visual "
+            "style, aesthetic, palette, mood, subjects, names, setting and sentences come from this request, the "
+            "selected Style and the Director. Where the templates differ in structure, follow whichever suits this "
+            "image. The selected length still sets roughly how long, and the target's required format still applies."
+            "\n\n" + numbered
+            + ("\n\nYour output is only the continuation after the app-inserted character tags; do not repeat character tags."
                if continuation else ""))
 
 
 def get_target_example(name, *, qwen_task="t2i"):
-    """Return the worked example section for a target, or an empty string."""
-    target = canonical_target(name)
-    example = QWEN21_EDIT_EXAMPLE if target == "Qwen Image 2.1" and qwen_task == "edit" else TARGET_EXAMPLES.get(target)
-    if example is None:
+    """Return the worked example for Qwen Image 2.1 editing, or an empty string.
+
+    Generation prompts learn their form from the user's library templates instead.
+    """
+    if canonical_target(name) != "Qwen Image 2.1" or qwen_task != "edit":
         return ""
-    request, output = example
+    request, output = QWEN21_EDIT_EXAMPLE
     return ("STYLE EXAMPLE (a different subject: copy its form, never its content; follow the selected length, "
             "not this example's)\nRequest: " + request + "\nOutput:\n" + output)

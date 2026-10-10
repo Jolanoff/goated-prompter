@@ -8,16 +8,19 @@ very large libraries cost milliseconds per request and no model call.
 """
 
 from collections import Counter
+import hashlib
 import math
 import os
 from pathlib import Path
 import random
 import re
+import tempfile
 import threading
 
 from .config import PROJECT_ROOT
 from .options.targets import TARGET_MODEL_NAMES, canonical_target
 from .output_repetition import anima_tags
+from .workspace_store import text
 
 LIBRARY_DIR_ENV = "GOATED_PROMPTER_LIBRARY_DIR"
 SEPARATOR = "---"
@@ -31,7 +34,8 @@ HEADER = """# Goated Prompter prompt library for {target}
 # Lines starting with # are ignored. Blank lines inside a prompt are kept, so
 # Anima "tags, blank line, prose" prompts work as they are.
 # When your idea or scene matches a prompt here, the app uses it as a reference
-# for the final prompt. This file is yours: it is never tracked or overwritten.
+# for the final prompt. This file is yours and is never tracked. Use the Prompt
+# Library tab to add, edit or delete prompts, or edit this file directly.
 """
 _STOPWORDS = frozenset("a an the and or of in on at to with for from by is are was were be her his their its "
                        "she he they it this that as into over under while".split())
@@ -76,6 +80,106 @@ def parse_library(text):
     return tuple(prompt for prompt in prompts if prompt)
 
 
+class LibraryConflict(ValueError):
+    """The text file changed since the editor loaded it."""
+
+
+def _library_bytes(path):
+    try:
+        return path.read_bytes()
+    except FileNotFoundError:
+        return b""
+
+
+def _library_snapshot(target, path, data):
+    return {"target": target, "file": path.name, "path": str(path),
+            "revision": hashlib.sha256(data).hexdigest(),
+            "prompts": parse_library(data.decode("utf-8-sig"))}
+
+
+def _editable_target(target):
+    target = canonical_target(target)
+    if target not in TARGET_MODEL_NAMES:
+        raise ValueError("Choose a supported target model.")
+    return target
+
+
+def library_snapshot(target, directory=None):
+    """Read the editable prompts and a revision of the complete text file."""
+    target = _editable_target(target)
+    path = library_path(target, directory)
+    with _lock:
+        try:
+            return _library_snapshot(target, path, _library_bytes(path))
+        except (OSError, UnicodeError) as exc:
+            raise ValueError(f"Cannot read {path.name}. Check its permissions and UTF-8 encoding, then reload.") from exc
+
+
+def update_library(target, revision, action, *, prompt=None, index=None, directory=None):
+    """Change one prompt atomically, retaining comments and all untouched blocks."""
+    target = _editable_target(target)
+    if action not in {"add", "edit", "delete"}:
+        raise ValueError("Unknown library action.")
+    if action != "delete":
+        prompt = text(prompt, "Prompt").strip().replace("\r\n", "\n").replace("\r", "\n")
+        if any(line.strip() == SEPARATOR or line.lstrip().startswith("#") for line in prompt.splitlines()):
+            raise ValueError("Lines starting with # and lines containing only --- are reserved by the text library.")
+    path = library_path(target, directory)
+    temporary = None
+    with _lock:
+        try:
+            original = _library_bytes(path)
+            current = _library_snapshot(target, path, original)
+            if revision != current["revision"]:
+                raise LibraryConflict("Library changed elsewhere. Reload the library before saving; your draft is kept.")
+            raw = original.decode("utf-8-sig")
+            newline = "\r\n" if "\r\n" in raw else "\n"
+            if action == "add":
+                if not raw:
+                    raw = HEADER.format(target=target)
+                raw += (newline if not raw.endswith(("\n", "\r")) else "")
+                if current["prompts"]:
+                    raw += newline + SEPARATOR + newline
+                raw += prompt.replace("\n", newline) + newline
+            else:
+                if type(index) is not int or not 0 <= index < len(current["prompts"]):
+                    raise ValueError("Choose an existing library prompt.")
+                lines, blocks, content = raw.splitlines(keepends=True), [], []
+                for position, line in enumerate(lines):
+                    if line.strip() == SEPARATOR:
+                        if content:
+                            blocks.append(content)
+                        content = []
+                    elif line.strip() and not line.lstrip().startswith("#"):
+                        content.append(position)
+                if content:
+                    blocks.append(content)
+                first, last = blocks[index][0], blocks[index][-1]
+                replacement = prompt.replace("\n", newline) + newline if action == "edit" else ""
+                raw = "".join(
+                    (replacement if position == first else "")
+                    if first <= position <= last and not line.lstrip().startswith("#") else line
+                    for position, line in enumerate(lines)
+                )
+            updated = (b"\xef\xbb\xbf" if original.startswith(b"\xef\xbb\xbf") else b"") + raw.encode("utf-8")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(dir=path.parent, prefix=path.name + ".", suffix=".tmp", delete=False) as file:
+                temporary = Path(file.name)
+                file.write(updated)
+                file.flush()
+                os.fsync(file.fileno())
+            if _library_bytes(path) != original:
+                raise LibraryConflict("Library changed elsewhere. Reload the library before saving; your draft is kept.")
+            os.replace(temporary, path)
+            _cache.pop(path, None)
+            return _library_snapshot(target, path, updated)
+        except (OSError, UnicodeError) as exc:
+            raise ValueError(f"Cannot update {path.name}. Check its permissions and UTF-8 encoding, then retry.") from exc
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+
+
 def tokenize(text):
     """Words for search: count tags split ("1girl" -> "girl"), simple plurals folded, stopwords dropped."""
     value = str(text or "").casefold().replace("\\", "").replace("_", " ")
@@ -89,10 +193,11 @@ def tokenize(text):
 
 
 class LibraryIndex:
-    """BM25 index over one target's prompts."""
+    """BM25 index and style profile for one target's prompts."""
 
     def __init__(self, prompts):
         self.prompts = tuple(prompts)
+        self.profile = style_profile(self.prompts)
         self.terms = [Counter(tokenize(prompt)) for prompt in self.prompts]
         self.lengths = [sum(terms.values()) for terms in self.terms]
         self.average = (sum(self.lengths) / len(self.lengths)) if self.lengths else 0
@@ -118,6 +223,61 @@ class LibraryIndex:
         return [(score, self.prompts[index]) for score, index in scored[:limit]]
 
 
+_SECTION_LINE = re.compile(r"^\s*([A-Z][A-Za-z &/-]{2,40}):\s*(?:\S.*)?$")
+# Each length picks a point in the library's own spread of prompt lengths, so Maximum Detail
+# writes like the user's longest prompts and Short like their shortest, not a scaled median.
+LENGTH_QUANTILE = {"Short": .25, "Medium": .5, "Detailed": .75, "Maximum Detail": .9, "Maximum": .9}
+
+
+def _leading_tags(prompt):
+    first = prompt.strip().splitlines()[0] if prompt.strip() else ""
+    parts = [part.strip() for part in first.split(",") if part.strip()]
+    return len(parts) >= 5 and sum(len(part.split()) for part in parts) / len(parts) <= 3
+
+
+def style_profile(prompts):
+    """Measure how the user's prompts are written: length, structure, section labels and a shared lead token."""
+    if not prompts:
+        return None
+    lengths = sorted(len(prompt.split()) for prompt in prompts)
+    sections = [[match[1] for line in prompt.splitlines() if (match := _SECTION_LINE.match(line))] for prompt in prompts]
+    sectioned = [labels for labels in sections if len(labels) >= 2]
+    tagged = sum(_leading_tags(prompt) for prompt in prompts)
+    half = len(prompts) / 2
+    structure = ("labeled sections" if len(sectioned) >= half else "a leading tag list, then prose" if tagged >= half
+                 else "flowing prose paragraphs" if not sectioned and not tagged else "mixed: some sectioned, some prose")
+    labels = Counter(label for found in sectioned for label in dict.fromkeys(found))
+    order = list(dict.fromkeys(label for found in sectioned for label in found if labels[label] > len(sectioned) / 2))
+    leads = Counter(prompt.strip().split(",")[0].strip() for prompt in prompts if "," in prompt.strip().splitlines()[0])
+    lead, uses = leads.most_common(1)[0] if leads else ("", 0)
+    return {"count": len(prompts), "median_words": lengths[len(lengths) // 2], "lengths": lengths, "structure": structure,
+            "sections": order if len(sectioned) >= half else [],
+            "lead": lead if uses >= 2 and uses >= half and len(lead.split()) <= 3 else ""}
+
+
+def _quantile(values, fraction):
+    position = (len(values) - 1) * fraction
+    low = int(position)
+    high = min(low + 1, len(values) - 1)
+    return values[low] + (values[high] - values[low]) * (position - low)
+
+
+def style_profile_text(profile, length):
+    """Describe the library's prompt format (structure and length) and the word target for the selected length."""
+    lengths = profile.get("lengths") or [profile["median_words"]]
+    words = max(25, round(_quantile(lengths, LENGTH_QUANTILE.get(length, .75)) / 5) * 5)
+    spread = (f"from about {lengths[0]} to {lengths[-1]} words, typically {profile['median_words']}"
+              if lengths[0] != lengths[-1] else f"about {lengths[0]} words")
+    parts = [spread, f"written as {profile['structure']}"]
+    if profile["sections"]:
+        parts.append("with the sections " + ", ".join(f'"{label}:"' for label in profile["sections"]))
+    if profile["lead"]:
+        parts.append(f'starting with "{profile["lead"]}"')
+    saved = f"{profile['count']} saved prompt" + ("" if profile["count"] == 1 else "s")
+    return (f"YOUR LIBRARY'S PROMPT FORMAT ({saved}): " + "; ".join(parts) + ". "
+            f"Build this prompt in that format at about {words} words for the selected {length} length.")
+
+
 def load_library(target, directory=None):
     """Return the cached index for a target, re-reading the file only when it changes."""
     path = library_path(target, directory)
@@ -141,11 +301,23 @@ def load_library(target, directory=None):
 
 
 def pick_references(target, query, count=2, pool=10, rng=None, directory=None):
-    """Pick up to ``count`` matching prompts at random from the best ``pool`` matches."""
-    matches = [prompt for _score, prompt in load_library(target, directory).search(query, pool)]
-    if len(matches) <= count:
-        return tuple(matches)
-    return tuple((rng or random).sample(matches, count))
+    """Pick ``count`` library prompts: random picks among the best matches, topped up with other saved prompts.
+
+    References teach the user's style, so any saved prompt beats the built-in example;
+    matching ones come first because they also fit the subject.
+    """
+    rng = rng or random
+    index = load_library(target, directory)
+    matches = [prompt for _score, prompt in index.search(query, pool)]
+    picks = rng.sample(matches, count) if len(matches) > count else matches
+    others = [prompt for prompt in index.prompts if prompt not in matches]
+    picks += rng.sample(others, min(count - len(picks), len(others)))
+    return tuple(picks)
+
+
+def library_profile(target, directory=None):
+    """The style profile of a target's library, or None when it is empty."""
+    return load_library(target, directory).profile
 
 
 def library_status(target, directory=None):
@@ -154,22 +326,9 @@ def library_status(target, directory=None):
             "exists": path.exists(), "count": len(load_library(target, directory).prompts)}
 
 
-_COUNT_TAG = re.compile(r"\(?(\d+)\s*(?:girl|boy|other)s?(?::\d+(?:\.\d+)?)?\)?")
+def pick_scenarios(target, query, count, rng=None, directory=None):
+    """Choose ``count`` saved prompts to recast (Builder Remix): best matches first, shuffled, then the rest.
 
-
-def cast_size(prompt):
-    """Count characters from Danbooru count tags (1girl, 2boys, ...); None when the prompt has none."""
-    tags = [tag.strip().casefold().replace("_", " ") for tag in anima_tags(prompt)]
-    counts = [int(match[1]) for tag in tags if (match := _COUNT_TAG.fullmatch(tag))]
-    if counts:
-        return sum(counts)
-    return 1 if "solo" in tags else None
-
-
-def pick_scenarios(target, query, count, cast=None, rng=None, directory=None):
-    """Choose ``count`` saved prompts to recast: best matches first (shuffled), then the rest.
-
-    Prompts with fewer counted roles than the cast are used only when nothing else fits.
     Prompts repeat only when the library holds fewer than ``count`` prompts.
     """
     rng = rng or random.Random()
@@ -187,8 +346,7 @@ def pick_scenarios(target, query, count, cast=None, rng=None, directory=None):
     ranked = strong + weak
     rest = [prompt for prompt in index.prompts if prompt not in set(ranked)]
     rng.shuffle(rest)
-    fits = lambda prompt: cast is None or (size := cast_size(prompt)) is None or size >= cast
-    ordered = [prompt for prompt in ranked + rest if fits(prompt)] + [prompt for prompt in ranked + rest if not fits(prompt)]
+    ordered = ranked + rest
     return tuple(ordered[position % len(ordered)] for position in range(count))
 
 

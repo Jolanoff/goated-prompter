@@ -176,7 +176,7 @@ for (const theme of ["dark", "light"]) {
   });
 }
 
-test("populated Refine history, instruction editor and activity log remain accessible", async ({ page, request }, testInfo) => {
+test("Refine prompt, undo, instruction editor and activity log remain accessible", async ({ page, request }, testInfo) => {
   let workspace = await (await request.get("/api/workspace")).json();
   await request.post("/api/workspace", { data: { revision: workspace.revision, action: "add", prompt: "A traveler in a blue coat.", target: "Generic" } });
   workspace = await (await request.get("/api/workspace")).json();
@@ -186,7 +186,8 @@ test("populated Refine history, instruction editor and activity log remain acces
   await page.getByRole("button", { name: "Refine", exact: true }).click();
   await page.getByText("What changed", { exact: true }).click();
   await page.getByText("Refine advanced settings", { exact: true }).click();
-  await page.getByRole("button", { name: "Edit text", exact: true }).click();
+  await expect(page.getByLabel("Refinement prompt", { exact: true })).toBeEditable();
+  await expect(page.getByRole("button", { name: "Undo", exact: true })).toBeEnabled();
   expect((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze()).violations).toEqual([]);
   await page.getByRole("button", { name: "Prompt Builder", exact: true }).click();
   await page.getByLabel("Describe your idea", { exact: true }).fill("A ceramic vase on a sunlit workbench.");

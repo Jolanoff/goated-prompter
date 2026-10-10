@@ -21,12 +21,9 @@ class DatasetUIMock(MockBackend):
     """Schema-aware Dataset fixture; automatic planning cannot rely on fallback."""
     def generate(self, instruction):
         stage = instruction.diagnostic_stage
-        if stage == "dataset:build_scene":
-            context = json.loads(instruction.user_message)
-            row = context["assignments"][0]
-            result = json.dumps({"scene": context.get("current_scene") or
-                f"mock scene {row['index']}: " + " ".join(row.get(field, "") for field in ("idea", "placement", "visibility", "camera", "framing", "context")),
-                "self_check": "PASS"})
+        if stage == "dataset:ideas:brainstorm":
+            from tests.support.dataset import brainstorm_fixture
+            result = json.dumps(brainstorm_fixture(json.loads(instruction.user_message)["requested_events"]))
         elif stage == "dataset:ideas":
             from tests.helpers import dataset_idea_fixture
             context = json.loads(instruction.user_message)
@@ -39,7 +36,7 @@ class DatasetUIMock(MockBackend):
                     while " ".join(idea.casefold().split()) in used:
                         idea += " revised"
                 used.add(" ".join(idea.casefold().split()))
-                rows.append(dataset_idea_fixture(row["index"], idea=idea))
+                rows.append(dataset_idea_fixture(row["index"], idea=idea, scene=f"mock scene {row['index']}: {idea}"))
             result = json.dumps(rows)
         elif stage == "builder:scene_planning":
             context = json.loads(instruction.user_message)

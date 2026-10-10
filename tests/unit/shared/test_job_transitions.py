@@ -4,7 +4,6 @@ import json
 import unittest
 
 from goated_prompter.features.dataset.ideas import validate_ideas
-from goated_prompter.features.dataset.scene import validate_scene
 from goated_prompter.job_lifecycle import DATASET_CHECKPOINT_KINDS, JOB_FAMILIES, TERMINAL_JOB_STATUSES
 from goated_prompter.local_jobs import TERMINAL, Job
 from goated_prompter.strict_json import reject_duplicate_keys
@@ -81,8 +80,6 @@ class StrictJsonTests(unittest.TestCase):
             json.loads('{"a": 1, "a": 2}', object_pairs_hook=hook)
 
     def test_workflow_parsers_still_reject_duplicate_keys(self):
-        with self.assertRaisesRegex(ValueError, "Scene returned duplicate JSON keys."):
-            validate_scene('{"scene": "a", "scene": "b"}')
         with self.assertRaisesRegex(ValueError, "Ideas returned duplicate JSON keys."):
             validate_ideas('{"ideas": [], "ideas": []}', [1])
         with self.assertRaisesRegex(WorkflowFormatError, "Duplicate JSON keys are not allowed."):

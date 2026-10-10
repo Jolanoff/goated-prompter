@@ -1,104 +1,64 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
-import { transformWithEsbuild } from "vite";
-import { datasetIdeaDetails, datasetRequestSignature, datasetSceneSignature, editDatasetPlan } from "./datasetState.js";
+import { datasetRequestSignature, datasetRetryStage, datasetSceneSignature, editDatasetPlan } from "./datasetState.js";
 
-const item = { index: 1, idea: "A boxer slips a punch.", placement: "Boxer left, partner right.",
-  visibility: "Contact overlap preserves the exposed head.", camera: "Three-quarter angle.", framing: "Full body.",
-  context: "Arena center.", input: "", scene: "Composed scene", scene_status: "valid", self_check: "" };
+const item = { index: 1, idea: "A boxer slips a punch.", input: "",
+  scene: "A boxer on the left ducks under her partner's jab in a sweaty arena, full-body three-quarter view.",
+  scene_status: "valid", self_check: "PASS" };
 
-test("compact idea display contains exactly the five descriptions alongside the existing idea", () => {
-  assert.deepEqual(datasetIdeaDetails(item).map(({ label }) => label), ["Placement", "Visibility", "Camera", "Framing", "Context"]);
-  assert.deepEqual(datasetIdeaDetails({ index: 1, idea: "Legacy plan" }), []);
-});
-
-test("all compact descriptions participate in current-plan and approval signatures", () => {
+test("idea and scene participate in current-plan and approval signatures", () => {
   const draft = { scene_plan: [item], results: [] };
-  for (const field of ["placement", "visibility", "camera", "framing", "context"]) {
-    const revised = { ...item, [field]: "Changed description" };
+  for (const field of ["idea", "scene"]) {
+    const revised = { ...item, [field]: "Changed text" };
     assert.notEqual(datasetSceneSignature(revised), datasetSceneSignature(item), field);
     assert.notEqual(datasetRequestSignature({ ...draft, scene_plan: [revised] }), datasetRequestSignature(draft), field);
   }
 });
 
-test("manual idea edits remove stale descriptions; scene edits retain the fixed idea and siblings", () => {
+test("editing an idea keeps its scene, editing a scene keeps its idea, and siblings stay untouched", () => {
   const sibling = { ...item, index: 2 };
   const draft = { scene_plan: [item, sibling], results: [{ index: 1, prompt: "Old prompt" }, { index: 2, prompt: "Sibling prompt" }] };
+  const idea = editDatasetPlan(draft, 1, "idea", "A boxer counters a hook.").scene_plan[0];
+  assert.equal(idea.idea, "A boxer counters a hook.");
+  assert.equal(idea.scene, item.scene);
+  const scene = editDatasetPlan(draft, 1, "scene", "Edited scene").scene_plan[0];
+  assert.equal(scene.scene, "Edited scene");
+  assert.equal(scene.idea, item.idea);
   for (const stage of ["idea", "scene"]) {
-    const updated = editDatasetPlan(draft, 1, stage, "Manually revised content");
-    assert.equal(datasetIdeaDetails(updated.scene_plan[0]).length, stage === "idea" ? 0 : 5);
+    const updated = editDatasetPlan(draft, 1, stage, "Edited");
     assert.equal(updated.scene_plan[1], sibling);
     assert.deepEqual(updated.results, [draft.results[1]]);
-    assert.equal(datasetIdeaDetails(item).length, 5);
   }
 });
 
-test("manual idea and scene edits invalidate PASS or REPAIR before another prompt can be written", () => {
-  const checked = { ...item, self_check: "PASS", prompt_status: "valid" };
+test("edits reset only that prompt so it is written again from the edited scene", () => {
+  const written = { ...item, prompt_status: "valid" };
   for (const stage of ["idea", "scene"]) {
-    const updated = editDatasetPlan({ scene_plan: [checked], results: [{ index: 1, prompt: "Old prompt" }] }, 1, stage, "Edited content");
-    assert.equal(updated.scene_plan[0].self_check, "");
-    assert.equal(updated.scene_plan[0].scene_status, "not_generated");
+    const updated = editDatasetPlan({ scene_plan: [written], results: [{ index: 1, prompt: "Old prompt" }] }, 1, stage, "Edited");
     assert.equal(updated.scene_plan[0].prompt_status, "not_generated");
-    assert.equal(checked.self_check, "PASS");
+    assert.equal(updated.scene_plan[0].self_check, "");
     assert.deepEqual(updated.results, []);
+    assert.equal(written.self_check, "PASS");
   }
 });
 
-test("scene self-check changes invalidate both approval and current-scene signatures", () => {
-  const checked = { ...item, self_check: "PASS" };
-  for (const self_check of ["", "REPAIR:\nFoot hidden.\nMove the leg outward."]) {
-    const revised = { ...checked, self_check };
-    assert.notEqual(datasetSceneSignature(checked), datasetSceneSignature(revised));
-    assert.notEqual(datasetRequestSignature({ scene_plan: [checked] }), datasetRequestSignature({ scene_plan: [revised] }));
-  }
+test("a failed row retries its idea; a usable scene retries only its prompt", () => {
+  assert.equal(datasetRetryStage({ ...item, scene_status: "failed", failure_stage: "idea" }, { usable: false }), "idea");
+  assert.equal(datasetRetryStage({ ...item, prompt_status: "failed", failure_stage: "prompt" }, { usable: true }), "prompt");
+  assert.equal(datasetRetryStage({ index: 1, idea: "", scene: "", scene_status: "failed" }, { usable: false }), "idea");
 });
 
-async function ideaComponents() {
-  const sourceUrl = new URL("./DatasetIdeaDetails.jsx", import.meta.url);
-  const { code } = await transformWithEsbuild(await readFile(sourceUrl, "utf8"), sourceUrl.pathname,
-    { loader: "jsx", jsx: "automatic", sourcemap: false });
-  const linked = code.replace(/from (["'])([^"']+)\1/g, (_match, _quote, specifier) =>
-    `from ${JSON.stringify(specifier.startsWith(".") ? new URL(specifier, sourceUrl).href : import.meta.resolve(specifier))}`);
-  return import(`data:text/javascript;base64,${Buffer.from(linked).toString("base64")}`);
-}
-
-test("planning hints render as five accessible icons with escaped descriptions, not paragraphs", async () => {
-  const { default: Details } = await ideaComponents();
-  const markup = renderToStaticMarkup(createElement(Details, { item: { ...item, context: "<script>untrusted</script>" } }));
-  for (const label of ["Placement", "Visibility", "Camera", "Framing", "Context"]) {
-    assert.ok(markup.includes(`aria-label="${label}"`), `missing ${label} icon`);
-  }
-  assert.equal((markup.match(/<button\b/g) || []).length, 5);
-  assert.match(markup, /Contact overlap preserves the exposed head/);
-  assert.match(markup, /Idea suggestions, not requirements/);
-  assert.match(markup, /required rules/);
-  assert.match(markup, /&lt;script&gt;/);
-  assert.doesNotMatch(markup, /<(?:script|dl|dt|dd|p)\b|geometry|pose_type/);
-  assert.equal(renderToStaticMarkup(createElement(Details, { item: { index: 1, idea: "Legacy" } })), "");
-});
-
-test("successful and pending scene checks stay in the status chips instead of repeating below the editor", async () => {
-  const { DatasetSceneCheck: Check } = await ideaComponents();
-  for (const self_check of ["PASS", " PASS ", "pass", ""]) {
-    assert.equal(renderToStaticMarkup(createElement(Check, { item: { ...item, self_check } })), "");
-  }
-  assert.equal(renderToStaticMarkup(createElement(Check, { item: { index: 1 } })), "");
-});
-
-test("scene checks still expose repair instructions as escaped warnings", async () => {
-  const { DatasetSceneCheck: Check } = await ideaComponents();
-  const repair = "REPAIR:\nRequired left foot hidden.\nMove the left leg outward, keeping the <script>pose</script>.";
-  const checked = renderToStaticMarkup(createElement(Check, { item: { ...item, self_check: repair } }));
-  assert.match(checked, /Scene needs attention/);
-  assert.match(checked, /role="note"/);
-  assert.match(checked, /REPAIR:/);
-  assert.match(checked, /Required left foot hidden/);
-  assert.match(checked, /Move the left leg outward/);
-  assert.match(checked, /&lt;script&gt;/);
-  assert.doesNotMatch(checked, /<script>/);
-  assert.match(renderToStaticMarkup(createElement(Check, { item: { ...item, self_check: "Unknown check response" } })), /Unknown check response/);
+test("approved characters read as one line each with sex, kind and origin", async () => {
+  const { datasetCharacterLines } = await import("./datasetState.js");
+  assert.deepEqual(datasetCharacterLines({ characters: [
+    { name: "Naruto Uzumaki", count: 1, sex: "male", kind: "human", origin: "named", series: "Naruto", traits: "" },
+    { name: "random companion", count: 1, sex: "unspecified", kind: "anthro", origin: "random", series: "", traits: "" },
+    { name: "guard", count: 2, sex: "female", kind: "robot", origin: "described", series: "", traits: "chrome armor" },
+  ] }), [
+    "Naruto Uzumaki · male human · from Naruto",
+    "random companion · sex open anthro · invented for each image",
+    "2 × guard · female robot · as described · chrome armor",
+  ]);
+  assert.deepEqual(datasetCharacterLines({}), []);
+  assert.deepEqual(datasetCharacterLines(null), []);
 });

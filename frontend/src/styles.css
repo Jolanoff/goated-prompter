@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./features/prompt-library/prompt-library.css";
 
 /* Signal: warm graphite studio with one electric-lime signal colour.
    Lime means "go", "live" and "selected"; everything else stays quiet. */
@@ -250,19 +251,6 @@
   .dataset-scene-editor-heading > label svg { color: var(--color-muted); }
   .dataset-scene-editor .notes-input { flex: 1; height: 120px; min-height: 120px; padding: 14px; border-radius: 12px; font-size: 14px; line-height: 1.75; }
   .dataset-scene-description .notes-input { height: 190px; min-height: 190px; }
-  .dataset-direction-tools { position: relative; display: flex; flex-wrap: wrap; gap: 4px; max-width: 100%; margin-left: auto; }
-  .dataset-direction-button { display: grid; place-items: center; width: 36px; height: 36px; flex-shrink: 0; border: 1px solid transparent; border-radius: 10px; color: var(--color-muted); background: var(--raised); cursor: help; }
-  .dataset-direction-button:hover, .dataset-direction-button:focus-visible, .dataset-direction-button[aria-describedby] { border-color: var(--color-line); color: var(--color-accent); background: var(--color-selected); }
-  .dataset-direction-popover { position: absolute; z-index: 20; bottom: 100%; right: 0; width: min(380px, calc(100vw - 64px)); padding-bottom: 8px; }
-  .dataset-direction-tooltip { max-height: 320px; overflow-y: auto; overscroll-behavior: contain; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--raised); color: var(--color-ink); box-shadow: 0 12px 32px var(--shadow); font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
-  .dataset-direction-tooltip strong { font-size: 14px; font-weight: 650; }
-  .dataset-direction-description { margin-top: 4px; color: var(--color-muted); font-size: 12px; }
-  .dataset-direction-value { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--color-line); white-space: pre-wrap; }
-  .dataset-direction-tooltip small { display: block; margin-top: 12px; color: var(--color-muted); font-size: 11px; }
-  .dataset-scene-warning { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border-radius: 12px; background: var(--warning-bg); color: var(--color-warning); font-size: 13px; line-height: 1.65; }
-  .dataset-scene-warning > svg { flex-shrink: 0; margin-top: 2px; }
-  .dataset-scene-warning h3 { font-size: 13px; font-weight: 650; }
-  .dataset-scene-warning p { margin-top: 4px; }
   .dataset-scene-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding: 14px 22px; border-top: 1px solid var(--color-line); }
   .dataset-scene-actions .button { min-height: 38px; }
   .dataset-scene-actions .dataset-scene-write { border-color: var(--select-border); color: var(--color-accent); background: var(--color-selected); }
@@ -404,6 +392,27 @@
   .select option { color: var(--color-ink); background: var(--color-surface); }
   .select-wrap { display: block; position: relative; min-width: 0; }
   .select-wrap > svg { display: none; }
+  @supports (appearance: base-select) {
+    select, .select, .pill-field select, select::picker(select) { appearance: base-select; }
+    select { align-items: center; white-space: nowrap; overflow: hidden; }
+    select::picker-icon { display: none; }
+    select::picker(select) {
+      margin-top: 6px; padding: 5px; border: 1px solid var(--control-border); border-radius: 12px;
+      background: var(--surface); color: var(--ink); box-shadow: 0 12px 32px var(--shadow);
+      font-family: var(--font-sans); font-size: 14px; font-weight: 500; line-height: 1.4;
+      min-width: anchor-size(width); max-width: calc(100vw - 24px); max-height: min(360px, 60dvh);
+      overflow-y: auto; overscroll-behavior: contain;
+    }
+    select option, .select option, .pill-field select option {
+      min-height: 40px; padding: 10px 12px; gap: 12px; border-radius: 7px;
+      background: transparent; color: var(--ink); font-family: var(--font-sans); font-size: 14px;
+      font-weight: 500; line-height: 1.4; white-space: normal; overflow-wrap: anywhere;
+    }
+    select option:hover:not(:disabled), select option:focus-visible { background: var(--hover); outline: none; }
+    select option:checked { background: var(--selected); color: var(--accent); font-weight: 600; }
+    select option::checkmark { margin-left: auto; order: 1; color: var(--accent); }
+    select option:disabled { color: var(--muted); opacity: .5; cursor: not-allowed; }
+  }
   .textarea { display: block; padding: 14px 16px; resize: vertical; line-height: 1.7; }
   .idea-input { height: 190px; padding-bottom: 36px; font-size: 15px; }
   .notes-input { height: 120px; font-size: 14px; }
@@ -517,6 +526,8 @@
   .app-dialog { margin: auto; max-width: calc(100vw - 32px); max-height: calc(100dvh - 32px); overflow-y: auto; border: 1px solid var(--line); border-radius: 20px; background: var(--color-surface); color: var(--color-ink); box-shadow: 0 30px 100px var(--shadow); }
   .app-dialog::backdrop { background: #0c0c0bb3; backdrop-filter: blur(4px); }
   .save-dialog { width: 440px; padding: 28px; }
+  .new-prompt-dialog { width: 640px; }
+  .new-prompt-dialog .output-input { height: 220px; min-height: 160px; padding-bottom: 14px; }
   .save-dialog h2 { font-family: var(--font-display); font-size: 26px; font-weight: 800; letter-spacing: -.7px; }
   .save-dialog p { margin: 8px 0 22px; font-size: 14px; line-height: 1.65; color: var(--color-muted); }
   .save-dialog form > button:last-child { width: 100%; margin-top: 20px; }
@@ -593,7 +604,6 @@
     .dataset-scene-body { padding: 16px; }
     .dataset-scene-actions { padding: 12px 16px; }
     .dataset-scene-actions .button { flex: 1 1 140px; justify-content: center; min-height: 44px; }
-    .dataset-direction-button { width: 44px; height: 44px; }
     .dataset-scene-editor .notes-input { font-size: 16px; }
     .dataset-view .button, .dataset-view .choice-card, .dataset-details > summary { min-height: 44px; }
     .dataset-view .button-primary { width: 100%; justify-content: center; }

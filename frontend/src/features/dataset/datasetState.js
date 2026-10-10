@@ -1,4 +1,6 @@
-/** Dataset's explicit dependency boundary: idea -> checked scene -> prompt. */
+import { maxSeed } from "./options.js";
+
+/** Dataset's explicit dependency boundary: idea with its scene -> prompt. */
 export function invalidateDatasetPrompts(draft, patch = {}) {
   return { ...patch, results: [],
     scene_plan: (draft.scene_plan || []).map((row) => {
@@ -43,6 +45,14 @@ export function datasetReviewQuestions(brief) {
 export function canConfirmDatasetReview(review, busy, additions = "") {
   return review?.status === "ready" && !!review.confirmation_token && !busy &&
     !additions.trim() && !datasetReviewQuestions(review.brief).length;
+}
+
+/** The seed for the next batch run, like ComfyUI's control: same, last plus one, or new. */
+export function nextDatasetSeed(draft, random = Math.random) {
+  const seed = Number.isInteger(draft.seed) ? draft.seed : 0;
+  if (draft.seed_mode === "fixed") return seed;
+  if (draft.seed_mode === "increment") return seed >= maxSeed ? 0 : seed + 1;
+  return Math.floor(random() * (maxSeed + 1));
 }
 
 export function freshDatasetRequest(draft) {
@@ -134,20 +144,26 @@ export function datasetUnderstandingSections(brief) {
   }));
 }
 
-const ideaDetailLabels = { placement: "Placement", visibility: "Visibility", camera: "Camera", framing: "Framing", context: "Context" };
+const characterSex = { female: "female", male: "male", mixed: "mixed group", unspecified: "sex open", none: "no sex" };
+const characterOrigin = { named: "existing character", described: "as described", random: "invented for each image" };
 
-export function datasetIdeaDetails(row) {
-  return Object.entries(ideaDetailLabels).filter(([field]) => row?.[field]?.trim())
-    .map(([field, label]) => ({ field, label, text: row[field] }));
+/** One readable line per approved character, e.g. "Naruto Uzumaki · male human · from Naruto". */
+export function datasetCharacterLines(brief) {
+  return (brief?.characters || []).map((item) => [
+    `${item.count > 1 ? `${item.count} × ` : ""}${item.name}`,
+    `${characterSex[item.sex] || item.sex} ${item.kind}`,
+    item.series ? `from ${item.series}` : characterOrigin[item.origin] || item.origin,
+    item.traits,
+  ].filter(Boolean).join(" · "));
 }
 
 export function datasetSceneSignature(row) {
   if (!row) return null;
   // Only the scene dependency boundary, not writer status or failure bookkeeping.
+  // The server saves scenes with whitespace collapsed, so compare them the same way.
   return JSON.stringify(canonicalValue({ index: row.index, input: row.input || "",
-    idea: row.idea, scene: row.scene || "",
-    scene_status: row.scene_status || "valid", self_check: row.self_check,
-    ...Object.fromEntries(datasetIdeaDetails(row).map(({ field, text }) => [field, text])) }));
+    idea: row.idea, scene: (row.scene || "").trim().split(/\s+/).join(" "),
+    scene_status: row.scene_status || "valid", self_check: row.self_check }));
 }
 
 export function isDatasetSceneCurrent(row, record) {
@@ -158,8 +174,7 @@ export function isDatasetSceneCurrent(row, record) {
 
 export function datasetRetryStage(row, eligibility) {
   if (row.failure_stage === "idea" || row.idea_status === "failed") return "idea";
-  if (isDatasetSceneUsable(eligibility)) return "prompt";
-  return row.idea?.trim() ? "scene" : "idea";
+  return isDatasetSceneUsable(eligibility) ? "prompt" : "idea";
 }
 
 export function editDatasetPlan(draft, index, stage, text) {
@@ -167,12 +182,9 @@ export function editDatasetPlan(draft, index, stage, text) {
     scene_plan: draft.scene_plan.map((row) => {
       if (row.index !== index) return row;
       const { failure_reason, failure_stage, ...scene } = row;
-      scene.self_check = "";
-      if (stage === "idea") for (const field of Object.keys(ideaDetailLabels)) delete scene[field];
-      return stage === "idea"
-      ? { ...scene, idea: text, scene: "",
-        idea_status: "valid", scene_status: "not_generated", prompt_status: "not_generated" }
-      : { ...scene, scene: text,
+      // The idea is a label for its scene, so editing either keeps the other.
+      return { ...scene, [stage]: text, self_check: "",
+        ...(stage === "idea" ? { idea_status: "valid" } : {}),
         scene_status: "not_generated", prompt_status: "not_generated" };
     }) };
 }

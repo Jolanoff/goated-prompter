@@ -95,7 +95,7 @@ class DatasetUnitTests(unittest.TestCase):
         snapshots = []
         with patch("goated_prompter.features.dataset.service.create_backend", return_value=backend):
             result = DatasetService({"backend": "mock"}, lambda: None).run(GoatedPrompterRequest(idea=self.data["subject"], prompt_model="Custom"), self.data, lambda _: None, snapshots.append)
-        self.assertEqual([call.diagnostic_stage for call in backend.calls], ["dataset:ideas", "dataset:build_scene", "dataset:1"])
+        self.assertEqual([call.diagnostic_stage for call in backend.calls], ["dataset:ideas:brainstorm", "dataset:ideas", "dataset:1"])
         self.assertEqual(backend.sessions, 1)
         self.assertEqual(result["completed"], 1)
         self.assertNotIn("quality_report", result)
@@ -110,7 +110,7 @@ class DatasetUnitTests(unittest.TestCase):
     def test_old_frozen_idea_pass_plans_need_replanning_under_the_new_contract(self):
         from goated_prompter.features.dataset.plan import reusable_scene_plan
         assignments = dataset_assignments(self.data)
-        with patch("goated_prompter.features.dataset.plan.SCENE_PLAN_VERSION", 6):
+        with patch("goated_prompter.features.dataset.plan.SCENE_PLAN_VERSION", 7):
             old_signature = scene_plan_signature(self.data, assignments)
         data = {**self.data, "scene_plan": [self.row], "scene_plan_signature": old_signature}
         self.assertIsNone(reusable_scene_plan(data, assignments))

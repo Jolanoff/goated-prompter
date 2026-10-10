@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { editDatasetPlan, invalidateDatasetPrompts, isDatasetSceneUsable, datasetRetryStage, datasetSceneSignature, isDatasetSceneCurrent,
-  freshDatasetRequest, hasCompletedDatasetPrompt } from "./datasetState.js";
+  freshDatasetRequest, hasCompletedDatasetPrompt, nextDatasetSeed } from "./datasetState.js";
 
 const draft = { scene_plan: [1, 2].map((index) => ({ index, idea: `idea ${index}`, scene: `scene ${index}`,
   self_check: "PASS", idea_status: "valid", scene_status: "valid", prompt_status: "valid" })),
@@ -36,6 +36,11 @@ test("scene signatures ignore key order and downstream prompt bookkeeping", () =
   const record = { draft: { scene_plan: [saved] }, scene_eligibility: { 1: { usable: true } } };
   assert.equal(isDatasetSceneCurrent(reordered, record), true);
   assert.equal(isDatasetSceneCurrent(reordered, { ...record, scene_eligibility: { 1: { usable: false } } }), false);
+});
+
+test("scene signatures ignore the whitespace the server collapses when saving", () => {
+  const saved = { ...draft.scene_plan[0], scene: "A duck reads a map on a bench." };
+  assert.equal(datasetSceneSignature({ ...saved, scene: "  A duck\nreads a map   on a bench.  " }), datasetSceneSignature(saved));
 });
 
 test("scene signatures invalidate source, idea, prose, self-check and scene-state changes", () => {
@@ -90,9 +95,9 @@ test("manual edits clear stale failure metadata only for the edited item", () =>
   }
 });
 
-test("retry stages keep good ideas and eligible scenes", () => {
-  assert.equal(datasetRetryStage({ ...draft.scene_plan[0], scene_status: "failed" }), "scene");
-  assert.equal(datasetRetryStage({ ...draft.scene_plan[0], scene: "", scene_status: "not_generated" }), "scene");
+test("retry stages regenerate the idea unless its scene is usable", () => {
+  assert.equal(datasetRetryStage({ ...draft.scene_plan[0], scene_status: "failed" }), "idea");
+  assert.equal(datasetRetryStage({ ...draft.scene_plan[0], scene: "", scene_status: "not_generated" }), "idea");
   assert.equal(datasetRetryStage({ ...draft.scene_plan[0], prompt_status: "failed" }, { usable: true }), "prompt");
   assert.equal(datasetRetryStage({ idea: "", scene: "", scene_status: "failed" }), "idea");
 });
@@ -113,4 +118,11 @@ test("writer settings preserve scene failures but clear prompt-only errors", () 
   assert.equal(changed.scene_plan[0], failed.scene_plan[0]);
   assert.equal(changed.scene_plan[1].failure_reason, undefined);
   assert.equal(changed.scene_plan[1].prompt_status, "not_generated");
+});
+
+test("the next batch seed is kept, increased by one or redrawn", () => {
+  assert.equal(nextDatasetSeed({ seed: 41, seed_mode: "fixed" }), 41);
+  assert.equal(nextDatasetSeed({ seed: 41, seed_mode: "increment" }), 42);
+  assert.equal(nextDatasetSeed({ seed: 4294967295, seed_mode: "increment" }), 0);
+  assert.equal(nextDatasetSeed({ seed: 41, seed_mode: "randomize" }, () => 0.5), 2147483648);
 });

@@ -40,8 +40,8 @@ Match target, length, Director, style and request for Builder/Dataset parity.
 Both receive the explicit `eval_subject` identifier and equivalent protected-
 identity rules. Sampling follows each production workflow's responsibility; record
 actual parameters when comparing. Repeated trials alternate workflow order.
-Dataset runs UNDERSTAND and asks for human approval before compact IDEAS →
-SCENE/self-check → Builder enhancement. Declining or unanswered clarifications
+Dataset runs UNDERSTAND and asks for human approval before IDEAS (each with its
+scene) → Builder enhancement. Declining or unanswered clarifications
 stop downstream calls. There is no separate Dataset writer mode.
 Novelty runs use approved compact ideation and shared recent history.
 Artifacts include raw calls, parameters, completion reasons, repairs and latency.

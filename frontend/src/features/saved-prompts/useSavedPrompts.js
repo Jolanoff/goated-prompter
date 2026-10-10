@@ -13,6 +13,8 @@ export function useSavedPrompts({ setError, setNotice }) {
   const [dialogError, setDialogError] = useState("");
   const [saveKind, setSaveKind] = useState(null);
   const [saveName, setSaveName] = useState("");
+  const [saveText, setSaveText] = useState("");
+  const [saveTarget, setSaveTarget] = useState("Generic");
   const [dialogBusy, setDialogBusy] = useState(false);
   const dialogRef = useRef(null);
   const saveNameRef = useRef(null);
@@ -122,15 +124,26 @@ export function useSavedPrompts({ setError, setNotice }) {
     setSaveName(title.slice(0, 70));
   }
 
+  function requestNewPrompt(target) {
+    if (!storageReady || promptsBusy || dialogBusy || saveKind) return;
+    saveSourceRef.current = null;
+    pendingPromptRef.current = null;
+    setDialogError("");
+    setSaveName("");
+    setSaveText("");
+    setSaveTarget(target);
+    setSaveKind("new");
+  }
+
   async function save(event) {
     event.preventDefault();
-    if (!saveName.trim() || dialogBusy || !storageReady || promptsBusy) return;
+    if (!saveName.trim() || (saveKind === "new" && !saveText.trim()) || dialogBusy || !storageReady || promptsBusy) return;
     setDialogBusy(true);
     setDialogError("");
     setError("");
     setNotice("");
     try {
-      const source = saveSourceRef.current;
+      const source = saveKind === "new" ? { prompt: saveText, target: saveTarget } : saveSourceRef.current;
       if (
         pendingPromptRef.current?.title !== saveName.trim() ||
         pendingPromptRef.current?.prompt !== source.prompt ||
@@ -155,8 +168,9 @@ export function useSavedPrompts({ setError, setNotice }) {
 
   return {
     saved, storageReady, storageWarning, storageError, promptsBusy, saveKind, dialogBusy,
-    reload, deletePrompt, requestPromptSave,
+    reload, deletePrompt, requestPromptSave, requestNewPrompt,
     dialog: { dialogRef, saveNameRef, dialogBusy, dialogError, saveName, setSaveName,
+      creating: saveKind === "new", saveText, setSaveText, saveTarget, setSaveTarget,
       onSubmit: save, onClose: () => setSaveKind(null) },
   };
 }

@@ -4,10 +4,11 @@ from goated_prompter.features.dataset.plan import scene_is_usable, scene_unusabl
 
 
 class SceneEligibilityTests(unittest.TestCase):
-    def test_pass_is_the_single_writer_gate(self):
+    def test_a_written_scene_that_has_not_failed_is_the_writer_gate(self):
         row = {"scene": "A person reads on a bench.", "self_check": "PASS", "scene_status": "valid"}
-        for patch, usable in (({}, True), ({"self_check": ""}, False), ({"scene": ""}, False),
-                              ({"scene_status": "not_generated"}, False), ({"scene_status": "failed"}, False),
+        # Ideas arrive as finished scenes and user edits are used as written.
+        for patch, usable in (({}, True), ({"self_check": ""}, True), ({"scene_status": "not_generated"}, True),
+                              ({"scene": ""}, False), ({"scene": "   "}, False), ({"scene_status": "failed"}, False),
                               ({"self_check": "REPAIR:\nRequired hands hidden.\nMove them outward."}, False)):
             candidate = {**row, **patch}
             eligibility = scene_eligibility(candidate, {})

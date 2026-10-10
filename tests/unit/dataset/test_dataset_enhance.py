@@ -41,8 +41,9 @@ class DatasetEnhanceTests(unittest.TestCase):
         self.assertTrue(request.preserve_subject and request.preserve_composition and request.preserve_camera)
         self.assertEqual(instruction.user_message, SCENE)
         self.assertIn(CORE_SYSTEM_PROMPT, instruction.system_message)
-        self.assertIn("Do not reinterpret its geometry, visibility, action,", instruction.system_message)
-        self.assertIn("camera, framing or relationships", instruction.system_message)
+        rules = " ".join(instruction.system_message.split())
+        self.assertIn("Keep everything the scene states", rules)
+        self.assertIn("Never drop, add or merge characters", rules)
         self.assertNotIn(self.request.idea, instruction.user_message)
         self.assertEqual(self.scene, before)
         self.assertFalse(builder.call_args.kwargs["compile_user_constraints"])
@@ -64,15 +65,13 @@ class DatasetEnhanceTests(unittest.TestCase):
         self.request = replace(self.request, system_prompt_override="Use restrained complementary colors and soft rim lighting.")
         instruction = self.assemble()
         self.assertIn(self.request.system_prompt_override, instruction.system_message)
-        self.assertIn("ENHANCE THE ACCEPTED SCENE", instruction.system_message)
+        self.assertIn("WRITE THE FINAL PROMPT FROM THE SCENE", instruction.system_message)
 
-    def test_repair_pending_failed_or_missing_scenes_never_reach_builder(self):
+    def test_repair_failed_or_missing_scenes_never_reach_builder(self):
         with patch("goated_prompter.features.builder.service.assemble_instruction", wraps=assemble_instruction) as builder:
-            for changes in ({"self_check": REPAIR}, {"self_check": ""}, {"scene_status": "failed"}, {"scene": ""}):
+            for changes in ({"self_check": REPAIR}, {"scene_status": "failed"}, {"scene": ""}):
                 with self.subTest(changes=changes), self.assertRaises(ValueError):
                     dataset_instruction(self.request, self.data, 1, plan_item={**self.scene, **changes})
-            with self.assertRaises(ValueError):
-                dataset_instruction(self.request, self.data, 1, plan_item={key: value for key, value in self.scene.items() if key != "self_check"})
             with self.assertRaises(ValueError):
                 dataset_instruction(self.request, self.data, 1)
         builder.assert_not_called()
@@ -119,8 +118,9 @@ class DatasetEnhanceTests(unittest.TestCase):
                 before = deepcopy((data, self.scene))
                 instruction = dataset_instruction(self.request, data, 1, plan_item=self.scene)
                 self.assertEqual(instruction.user_message, self.scene["scene"])
-                self.assertIn("camera, framing or relationships", instruction.system_message)
-                self.assertIn("lighting, materials", instruction.system_message)
+                rules = " ".join(instruction.system_message.split())
+                self.assertIn("the camera angle and shot size, the setting and the light", rules)
+                self.assertIn("materials, texture, color", rules)
                 requirements, _ = json.JSONDecoder().raw_decode(
                     instruction.system_message.split("SCOPED APPROVED REQUIREMENTS\n", 1)[1])
                 self.assertEqual(requirements["hard"], brief["hard"] if approved else [])

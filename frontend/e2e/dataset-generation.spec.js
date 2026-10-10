@@ -170,7 +170,7 @@ test("explicit scenes-only generation pauses and Continue reuses the initial Und
   expect(posts).toEqual(["/api/workspace/dataset/understand", "/api/workspace/dataset/scenes", "/api/workspace/dataset"]);
 });
 
-test("editing and repairing a scene keeps the initial Understanding approval", async ({ page }) => {
+test("an edited scene is written as edited under the initial Understanding approval", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Dataset", exact: true }).click();
   await page.getByLabel("Dataset idea", { exact: true }).fill("A duck exploring a garden.");
@@ -182,12 +182,12 @@ test("editing and repairing a scene keeps the initial Understanding approval", a
   await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/duck_token/);
   await openDatasetPage(page, "Scenes");
   await page.getByLabel("Planned scene 1").fill("  A duck\nreads a map on a bench.  ");
-  await expect(page.getByRole("button", { name: "Regenerate prompt", exact: true }).first()).toBeDisabled();
+  await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Repair scene", exact: true })).toHaveCount(0);
   const submission = page.waitForRequest((event) => event.method() === "POST" &&
     new URL(event.url()).pathname.startsWith("/api/workspace/dataset"));
-  await page.getByRole("button", { name: "Repair scene", exact: true }).first().click();
+  await page.getByRole("button", { name: "Regenerate prompt", exact: true }).first().click();
   expect(new URL((await submission).url()).pathname).toBe("/api/workspace/dataset/scene");
-  await expect(page.getByRole("button", { name: "Regenerate prompt", exact: true }).first()).toBeEnabled();
   await openDatasetPage(page, "Dataset");
   await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(/duck_token:.*reads a map/);
   expect(posts).toEqual(["/api/workspace/dataset/understand", "/api/workspace/dataset", "/api/workspace/dataset/scene"]);
@@ -205,7 +205,7 @@ test("revised source rules preserve automatic generation instead of introducing 
   await openDatasetPage(page, "Configure");
   await page.getByLabel("Dataset prompt length").selectOption("Detailed");
   await openDatasetPage(page, "Scenes");
-  await page.getByRole("button", { name: "Repair scene", exact: true }).first().click();
+  await page.getByRole("button", { name: "Regenerate prompt", exact: true }).first().click();
   const dialog = page.getByRole("dialog", { name: "Review your Dataset request", exact: true });
   await expect(dialog.getByRole("button", { name: "Update summary", exact: true })).toBeEnabled();
   await dialog.getByLabel("Extra instructions or answers").fill("Keep the duck's feet visible.");
@@ -279,7 +279,7 @@ test("Anima inserts locked multiple-character tags unchanged before a scene-only
   const finished = await (await request.get(`/api/jobs/${id}`)).json();
   expect(finished.llm_trace.messages[0].content).toContain("The application inserts the locked trigger");
   expect(finished.llm_trace.messages[0].content).not.toContain("Render the scene as anime/manga rather than realistic photography.");
-  expect(finished.llm_trace.request_number).toBe(3); // IDEAS, SCENE, one body-only writer call.
+  expect(finished.llm_trace.request_number).toBe(3); // Brainstorm, IDEAS and one body-only writer call.
   const saved = await (await request.get("/api/workspace/settings/dataset")).json();
   expect(saved.draft.trigger).toBe(trigger);
   expect(saved.draft.results[0].prompt).toBe(expected);

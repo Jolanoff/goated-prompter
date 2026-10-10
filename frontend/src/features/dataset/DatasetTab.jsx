@@ -1,24 +1,21 @@
 import { useEffect, useRef, useState } from "react";
-import { AlignLeft, ArrowRight, ChevronDown, Circle, CircleAlert, CircleCheck, CircleHelp, Copy, Cpu, Database, Download, FileJson, Layers3, Lightbulb, LoaderCircle, RefreshCw, SlidersHorizontal, Sparkles, Tag, Trash2, WandSparkles, Wrench } from "lucide-react";
+import { AlignLeft, ArrowRight, ChevronDown, Circle, CircleAlert, CircleCheck, CircleHelp, Copy, Cpu, Database, Download, FileJson, Layers3, Lightbulb, LoaderCircle, RefreshCw, SlidersHorizontal, Sparkles, Tag, Trash2, WandSparkles } from "lucide-react";
 import { ui } from "../../ui.js";
 import { orderDisplayPresets, presetDisplayLabel } from "../../presetPresentation.js";
 import { TargetSelect } from "../../shared/workflow/WorkflowControls.jsx";
 import { useWorkflowSettings } from "../../shared/workflow/useWorkflowSettings.js";
 import WorkflowSettingsStatus from "../../shared/workflow/WorkflowSettingsStatus.jsx";
-import LibraryStatus from "../../shared/workflow/LibraryStatus.jsx";
 import { datasetCopyText, datasetJsonl, datasetGenerationLog } from "./datasetExport.js";
 import { editDatasetPlan } from "./datasetState.js";
 import { useDatasetWorkflow } from "./useDatasetWorkflow.js";
 import DatasetConfirmationModal from "./DatasetConfirmationModal.jsx";
-import DatasetIdeaDetails, { DatasetSceneCheck } from "./DatasetIdeaDetails.jsx";
-import { triggerTypes } from "./options.js";
+import { maxSeed, seedModes, triggerTypes } from "./options.js";
 import { styles } from "../../shared/workflow/options.js";
 
 const datasetPages = [["configure", "Configure"], ["scenes", "Scenes"], ["dataset", "Dataset"]];
 const sceneSources = [
   ["random", "Invent scenes", "Let Scene Planner invent scenes", "Distinct situations from your concept."],
   ["guided", "Use my scene ideas", "Provide my own scene ideas", "One idea per line; the action stays fixed."],
-  ["library", "From my library", "Recast saved prompts from my prompt library", "Your saved prompts for this target, recast with your characters."],
 ];
 
 function StatusChip({ label, status }) {
@@ -241,6 +238,22 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                      value={draft.constraints} onChange={(event) => updateSceneSettings({ constraints: event.target.value })}
                      placeholder="Same hairstyle and outfit. No outdoor scenes. Each image shows a different mishap…" />
                  </label>
+                 <div className="dataset-subject-fields">
+                   <label className={ui.field}><span>Seed</span>
+                     <input className={ui.input} aria-label="Seed" type="number" min={0} max={maxSeed} step={1} value={draft.seed}
+                       onChange={(event) => {
+                         const seed = Math.trunc(Number(event.target.value));
+                         if (Number.isFinite(seed)) update({ seed: Math.min(maxSeed, Math.max(0, seed)) });
+                       }} />
+                   </label>
+                   <label className={ui.field}><span>Seed control</span>
+                     <select className={ui.select} aria-label="Seed control" value={draft.seed_mode}
+                       onChange={(event) => update({ seed_mode: event.target.value })}>
+                       {seedModes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                     </select>
+                   </label>
+                 </div>
+                 <small className={ui.directorDescription}>Shows the seed of the last batch. Each new batch keeps it (Fixed), adds one (Increment) or picks a new one (Randomize). Regenerating one image stays random.</small>
              <details className="dataset-details rounded-lg border border-line p-3">
                <summary><Tag size={14} aria-hidden="true" /><span>Training trigger & controls</span><ChevronDown size={14} aria-hidden="true" /></summary>
                <div className="mt-4 grid gap-4">
@@ -270,7 +283,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
             </div>
               </div>
              </details>
-                    <HelpDetails>Generate prompts starts fresh: confirm the request once, then ideas, scenes and prompts run automatically in order. Generate scenes only pauses for manual review; Continue keeps your approved plan and completed prompts, and generates only missing prompts. Repeated or invalid ideas are repaired once after valid work finishes, without discarding good results. Changed settings or expired approval need a new review. Scene edits need a new check before enhancement; Repair scene checks one scene without changing its siblings. Ideas uses temporary recent-event history to avoid repeats; scenes and prompts follow the accepted idea.</HelpDetails>
+                    <HelpDetails>Generate prompts starts fresh: confirm the request once, then ideas, scenes and prompts run automatically in order. Generate scenes only pauses for manual review; Continue keeps your approved plan and completed prompts, and generates only missing prompts. Repeated or invalid ideas are repaired once after valid work finishes, without discarding good results. Changed settings or expired approval need a new review. Scene edits are used as written. Ideas uses temporary recent-event history to avoid repeats; prompts follow the accepted scene.</HelpDetails>
                </div>
              </details>
           </fieldset>
@@ -327,17 +340,6 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                   placeholder={"standing portrait in a city at night\nrunning through a sunlit field\nclose-up profile in a quiet studio"} />
                    <small className={ui.directorDescription}>Lines cycle to fill the batch; each action stays fixed.</small>
               </label>}
-              {draft.source_mode === "library" && <div className="mt-4">
-                <LibraryStatus target={draft.target} className="block" />
-                <label className={`${ui.field} mt-3`}><span>Roles your cast doesn't fill</span>
-                  <select className={ui.select} aria-label="Dataset library extra roles" value={draft.library_extras || "drop"}
-                    onChange={(event) => updateSceneSettings({ library_extras: event.target.value })}>
-                    <option value="drop">Drop them</option>
-                    <option value="keep">Keep as background characters</option>
-                  </select>
-                  <small className="text-xs leading-relaxed text-muted">Dropping keeps every requested character clearly in frame.</small>
-                </label>
-              </div>}
             </fieldset>
 
           </fieldset>
@@ -370,7 +372,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
            <p>{scenePlannerBusy || isGenerating ? "Scenes will appear here as planning progresses." : "Set up your idea on Configure, then choose Generate."}</p>
           <button className={ui.button} onClick={() => goToStep("configure")}>Back to Configure</button>
         </div> : <>
-        <HelpDetails>Idea edits discard stale descriptions and invalidate that scene, check and prompt. Scene edits invalidate that check and prompt. Output settings reuse checked scenes and invalidate prompts.</HelpDetails>
+        <HelpDetails>Each idea comes with its finished scene, and the final prompt is written from the scene. Edit the scene to change the image; edits invalidate only that prompt. Output settings reuse scenes and invalidate prompts.</HelpDetails>
         {staleScenePlan && <p className={ui.warningNote}>This plan no longer matches the Dataset settings. Generate fresh scenes before continuing.</p>}
         <div className="dataset-card-grid mt-4">
           {draft.scene_plan.map((item) => <article key={item.index} className="dataset-card dataset-scene-card" aria-label={`Scene ${item.index} card`}>
@@ -394,19 +396,15 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
             <div className="dataset-scene-editor dataset-scene-description">
               <div className="dataset-scene-editor-heading">
                 <label htmlFor={`dataset-scene-${item.index}`}><AlignLeft size={15} aria-hidden="true" />Scene {item.index}</label>
-                <DatasetIdeaDetails item={item} />
               </div>
               <textarea className={ui.notesInput} aria-label={`Planned scene ${item.index}`} value={item.scene}
                 id={`dataset-scene-${item.index}`} maxLength={preferences.record?.scene_limits?.characters} disabled={disabled}
                 onChange={(event) => update(editDatasetPlan(draft, item.index, "scene", event.target.value))} />
             </div>
-            <DatasetSceneCheck item={item} />
             </div>
             <footer className="dataset-scene-actions">
               <button className={ui.button} title="Regenerate idea" aria-label="Regenerate idea" disabled={!canWrite || staleScenePlan}
                 onClick={() => sceneAction(item.index, "regenerate_idea")}><RefreshCw size={14} aria-hidden="true" />Regenerate idea</button>
-              <button className={ui.button} title="Repair scene" aria-label="Repair scene" disabled={!canWrite || staleScenePlan || !item.idea?.trim()}
-                onClick={() => sceneAction(item.index, "repair_scene")}><Wrench size={14} aria-hidden="true" />Repair scene</button>
               <button className={`${ui.button} dataset-scene-write`} title="Regenerate prompt" aria-label="Regenerate prompt" disabled={!canWrite || staleScenePlan || !sceneUsable(item)}
                 onClick={() => sceneAction(item.index, "regenerate_prompt")}><WandSparkles size={14} aria-hidden="true" />Regenerate prompt</button>
             </footer>
@@ -457,7 +455,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
               </details> : <p className={`${ui.subtleNote} mb-3`}>Legacy result: no originating scene was saved.</p>}
               <FailureReason item={item} />
               {item.failed ? <button className={`${ui.button} mt-3`} disabled={!canWrite || staleScenePlan}
-                onClick={() => sceneAction(item.index, retryStage(item) === "scene" ? "repair_scene" : `regenerate_${retryStage(item)}`)}><RefreshCw size={14} aria-hidden="true" />Retry failed {retryStage(item)}</button> : <>
+                onClick={() => sceneAction(item.index, `regenerate_${retryStage(item)}`)}><RefreshCw size={14} aria-hidden="true" />Retry failed {retryStage(item)}</button> : <>
               <label htmlFor={`dataset-prompt-${item.index}`} className="dataset-final-label">Final prompt</label>
               <textarea className={ui.outputInput} style={{ minHeight: 220 }} aria-label={`Dataset prompt ${item.index}`}
                id={`dataset-prompt-${item.index}`}

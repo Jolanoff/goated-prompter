@@ -1,90 +1,96 @@
-import { useEffect } from "react";
-import { Copy, WandSparkles } from "lucide-react";
+import { useEffect, useRef } from "react";
+import { Copy, RotateCcw, WandSparkles } from "lucide-react";
 import { ui } from "../../ui.js";
-import { DetailLocks, PromptText, TargetSelect } from "../../shared/workflow/WorkflowControls.jsx";
-import VersionHistory, { VersionDiff } from "./VersionHistory.jsx";
+import { DetailLocks, TargetSelect } from "../../shared/workflow/WorkflowControls.jsx";
+import VersionDiff from "./VersionDiff.jsx";
 import AdvancedInstructions from "./AdvancedInstructions.jsx";
 import { quickActions } from "./options.js";
 
-export default function RefineTab({ workspace, current, disabled, canGenerate, builderPrompt, builderTarget, targets,
-  onGenerate, onCopy, onUsePrompt, preferences, onSavePrompt, canSavePrompt }) {
+export default function RefineTab({ workspace, current, disabled, canGenerate, targets,
+  builderImport, onGenerate, onCopy, onUsePrompt, preferences, onSavePrompt, canSavePrompt }) {
   const { changes, locks, source, target, editing, lock_version_id } = preferences.draft;
   const updatePreferences = preferences.update;
   const setChanges = (value) => preferences.update({ changes: typeof value === "function" ? value(changes) : value });
   const setLocks = (value) => preferences.update({ locks: value });
   const setSource = (value) => preferences.update({ source: value });
-  const setTarget = (value) => preferences.update({ target: value });
-  const setEditing = (value) => preferences.update({ editing: value });
+  const imported = useRef(null);
+  useEffect(() => {
+    if (builderImport && imported.current !== builderImport) {
+      imported.current = builderImport;
+      updatePreferences({ source: builderImport.prompt, target: builderImport.target, editing: null });
+    }
+  }, [builderImport, updatePreferences]);
   useEffect(() => {
     if (lock_version_id !== (current?.id || null)) updatePreferences({ locks: current ? current.locks : ["identity"], lock_version_id: current?.id || null });
   }, [current, lock_version_id, updatePreferences]);
   const parent = workspace.snapshot.versions.find((version) => version.id === current?.parent_id);
-  async function addSource(prompt, model) {
-    const result = await workspace.mutate({ action: "add", prompt, target: model });
-    if (result) setSource("");
+  const prompt = editing?.text ?? (source || current?.prompt || "");
+  const promptTarget = editing || source ? target : current?.target || target;
+  function changePrompt(value) {
+    if (current) updatePreferences({ editing: { id: editing?.id || current.id, text: value }, source: "", target: promptTarget });
+    else setSource(value);
   }
-  return <>
-    <div className="grid grid-cols-[minmax(0,2fr)_minmax(260px,1fr)] items-start gap-5 [@media(width<=1000px)]:grid-cols-1">
+  function changeTarget(value) {
+    updatePreferences({ target: value, ...(current
+      ? { editing: { id: editing?.id || current.id, text: prompt }, source: "" }
+      : { source: prompt }) });
+  }
+  async function refine() {
+    let revision = workspace.snapshot.revision;
+    if (!current || current.prompt !== prompt || current.target !== promptTarget) {
+      const saved = await workspace.mutate({ action: "add", prompt, target: promptTarget, locks,
+        edit: !!current && editing?.id === current.id && current.target === promptTarget });
+      if (!saved) return;
+      revision = saved.revision;
+    }
+    if (await onGenerate("refine", { changes, locks, revision,
+      settings: { target_model: promptTarget, prompt_length: "Medium" } })) {
+      updatePreferences({ source: "", editing: null });
+    }
+  }
+  async function undo() {
+    if ((editing || source) && prompt !== current?.prompt && !window.confirm("Discard your unsaved prompt changes and undo the refinement?")) return;
+    if (await workspace.mutate({ action: "undo" })) updatePreferences({ source: "", editing: null });
+  }
+  return <div className={ui.workspaceGrid}>
       <div className={ui.column}>
         <section className={ui.panel}>
-          <h3 className="mb-3 font-display text-base font-bold">{current ? "Current version" : "Choose a starting prompt"}</h3>
-          {current && <>
-            <p className="mb-3 text-xs text-muted">{current.label} · {current.target}</p>
-            <PromptText text={current.prompt} label="Current refinement prompt" />
-            <div className={ui.inlineActions}>
-              <button className={ui.button} onClick={() => onCopy(current.prompt)}><Copy size={15} />Copy prompt</button>
-              <button className={ui.saveButton} disabled={!canSavePrompt} onClick={() => onSavePrompt(current.prompt, current.target, "Refined prompt")}>Save prompt</button>
-              <button className={ui.button} disabled={disabled} onClick={() => onUsePrompt(current.prompt, current.target)}>Use in Builder</button>
-              <button className={ui.button} disabled={disabled} onClick={() => setEditing({ id: current.id, text: current.prompt })}>Edit text</button>
-            </div>
-            {editing && <div className="mt-4">
-              <label className={ui.field}><span>Manual prompt edit</span>
-                <textarea className={ui.outputInput} maxLength={100000} value={editing.text} disabled={disabled}
-                  onChange={(event) => setEditing({ ...editing, text: event.target.value })} />
-              </label>
-              {editing.id !== current.id && <p className={ui.warningNote}>The current version changed. Your edit is kept here; copy it or cancel and edit the current version.</p>}
-              <div className={ui.inlineActions}>
-                <button className={ui.button} disabled={disabled || editing.id !== current.id || !editing.text.trim()} onClick={async () => {
-                  if (await workspace.mutate({ action: "add", prompt: editing.text, target: current.target, edit: true })) setEditing(null);
-                }}>Save as new version</button>
-                <button className={ui.button} disabled={disabled} onClick={() => setEditing(null)}>Cancel edit</button>
-              </div>
-            </div>}
-            {parent && <VersionDiff before={parent.prompt} after={current.prompt} />}
-          </>}
-          <details className="mt-4" open={!current || undefined}>
-            <summary className="cursor-pointer text-xs font-semibold">Start from another prompt</summary>
-            <p className="my-3 text-xs text-muted">Import Builder output or paste a prompt. Earlier versions remain in history.</p>
-            <button className={ui.button} disabled={disabled || !builderPrompt.trim()} onClick={() => addSource(builderPrompt, builderTarget)}>Use Builder prompt</button>
-            <label className={`${ui.field} mt-4`}><span>Starting prompt</span>
-              <textarea className={ui.ideaInput} aria-label="Starting prompt" value={source} maxLength={100000} disabled={disabled}
-                onChange={(event) => setSource(event.target.value)} placeholder="Paste the prompt you want to improve…" />
-            </label>
-            <div className="mt-3 max-w-xs"><TargetSelect value={target} onChange={setTarget} targets={targets} disabled={disabled} label="Starting prompt target" /></div>
-            <button className={ui.primaryButton} disabled={disabled || !source.trim()} onClick={() => addSource(source, target)}>Start refining</button>
-          </details>
+          <label className={ui.field}><span>Prompt</span>
+            <textarea className={ui.outputInput} aria-label="Refinement prompt" value={prompt} maxLength={100000}
+              disabled={disabled} onChange={(event) => changePrompt(event.target.value)}
+              placeholder="Paste your prompt here, or send one from Builder…" />
+          </label>
+          <div className="my-4 max-w-xs"><TargetSelect value={promptTarget} onChange={changeTarget}
+            targets={targets} disabled={disabled} label="Prompt target" /></div>
+          <div className={ui.inlineActions}>
+            <button className={ui.button} disabled={!prompt.trim()} onClick={() => onCopy(prompt)}><Copy size={15} />Copy prompt</button>
+            <button className={ui.saveButton} disabled={!prompt.trim() || !canSavePrompt} onClick={() => onSavePrompt(prompt, promptTarget, "Refined prompt")}>Save prompt</button>
+            <button className={ui.button} disabled={disabled || !prompt.trim()} onClick={() => onUsePrompt(prompt, promptTarget)}>Use in Builder</button>
+            <button className={ui.button} disabled={disabled || !current?.parent_id} onClick={undo}><RotateCcw size={15} />Undo</button>
+          </div>
+          {editing && editing.id !== current?.id && <p className={`${ui.warningNote} mt-3`}>The saved prompt changed. Your draft is kept in this box.</p>}
+          {parent && <VersionDiff before={parent.prompt} after={current.prompt} />}
         </section>
-        <AdvancedInstructions settings={preferences} label="Refine" disabled={disabled} />
+      </div>
+      <div className={ui.column}>
         <section className={ui.panel}>
           <h3 className="font-display text-base font-bold">What should change?</h3>
           <div className="my-4 flex flex-wrap gap-2">
-            {quickActions.map(([label, instruction]) => <button key={label} className={ui.button} disabled={disabled || !current}
+            {quickActions.map(([label, instruction]) => <button key={label} className={ui.button} disabled={disabled}
               onClick={() => setChanges((previous) => previous ? `${previous}\n${instruction}` : instruction)}>{label}</button>)}
           </div>
           <label className={ui.field}><span>Refinement instructions</span>
-            <textarea className={ui.notesInput} value={changes} maxLength={10000} disabled={disabled || !current}
+            <textarea className={ui.notesInput} value={changes} maxLength={10000} disabled={disabled}
               onChange={(event) => setChanges(event.target.value)} placeholder="Make the lighting more dramatic, pull the camera back, and keep everything else." />
           </label>
-          <DetailLocks value={locks} onChange={setLocks} disabled={disabled || !current} prefix="Refine" />
+          <DetailLocks value={locks} onChange={setLocks} disabled={disabled} prefix="Refine" />
           <p className="mt-3 text-xs leading-relaxed text-muted">Locks guide the prompt engine; check the changes before using the result. This works from prompt text, including details already described from your references.</p>
-          <button className={ui.primaryButton} disabled={disabled || !canGenerate || !current || !changes.trim() || !!editing}
-            onClick={() => onGenerate("refine", { changes, locks, settings: { target_model: current.target, prompt_length: "Medium" } })}>
+          <button className={ui.primaryButton} disabled={disabled || !canGenerate || !prompt.trim() || !changes.trim()}
+            onClick={refine}>
             <WandSparkles size={16} />Refine prompt
           </button>
-          {editing && <p className={ui.subtleNote}>Save or cancel your manual edit before refining.</p>}
         </section>
+        <AdvancedInstructions settings={preferences} label="Refine" disabled={disabled} />
       </div>
-      <VersionHistory snapshot={workspace.snapshot} current={current} disabled={disabled || !!editing} onAction={workspace.mutate} />
-    </div>
-  </>;
+  </div>;
 }

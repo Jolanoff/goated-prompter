@@ -204,8 +204,9 @@ class CoreTests(unittest.TestCase):
                                     core.PRIORITY_CONTRACT)
                         self.assertIn(contract, message)
                         if path == "text_only":
-                            self.assertLess(contract.index("selected Mode"), contract.index("Director behavior"))
-                            self.assertLess(contract.index("prompt-length settings"), contract.index("Director behavior"))
+                            # The Director outranks creativity, length and Mode when they compete.
+                            self.assertLess(contract.index("Director behavior"), contract.index("prompt-length settings"))
+                            self.assertLess(contract.index("Director behavior"), contract.index("Selected Mode"))
 
     def test_edited_director_remains_subject_to_control_contract(self):
         request = replace(self.request(), mode="Dataset Caption", prompt_length="Short",
