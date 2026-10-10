@@ -162,9 +162,9 @@ def assemble_instruction(
         # The recast scenario is meant to be reused, so it is neither a style reference nor copy-checked.
         references = tuple(reference for reference in references if reference != scenario)
     # Library templates go last, right before the output rules, so the user's way of building a
-    # prompt is the freshest guidance; the built-in example stays with the adapter for empty libraries.
+    # prompt is the freshest guidance. Only Qwen editing keeps a built-in worked example.
     library_style = library_reference_section(references, continuation=not include_target_example) if references else ""
-    target_example = ("" if references else get_target_example(request.target_model, qwen_task="edit" if qwen_images else "t2i")
+    target_example = (get_target_example(request.target_model, qwen_task="edit" if qwen_images else "t2i")
                       if include_target_example else "")
     if has_visual_context:
         sections.append(f"VISUAL GROUNDING\n{get_vision_mode_adapter(request.mode)}")

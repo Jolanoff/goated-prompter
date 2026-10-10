@@ -117,93 +117,8 @@ def get_model_adapter(name, *, templates=False):
     return adapter if templates or not layout else f"{adapter} {layout}"
 
 
-# One worked example per target: the request it came from and the expected
-# output. Subjects deliberately differ from common requests so the writer
-# copies the form, not the content. MiniMax H3 keeps its own contract.
-TARGET_EXAMPLES = {
-    "Generic": (
-        "a fishing boat on a beach, cloudy",
-        "A weathered wooden fishing boat rests on a pebble beach at low tide, blue paint peeling from its hull "
-        "to reveal bare grey wood. Coiled ropes and a rusted anchor lie on the wet stones beside it, which reflect "
-        "a pale overcast sky. Soft, diffuse daylight keeps the shadows faint. Seen from a low angle near the bow, "
-        "the boat fills the left two-thirds of the frame while the calm grey sea fades into mist on the right.",
-    ),
-    "Anima": (
-        "a boy and a girl sharing an umbrella at a rainy bus stop at night",
-        "1boy, 1girl, sharing umbrella, transparent umbrella, bus stop, rain, night, city lights, puddle, "
-        "reflection, standing, side-by-side, school uniform, yellow raincoat, full body\n\n"
-        "A boy in a dark school uniform and a girl in a bright yellow raincoat stand side by side under one clear "
-        "umbrella at a rain-soaked bus stop, the boy on the left holding the handle. She glances up at him with a "
-        "shy smile while streetlights and passing headlights shimmer in the puddles at their feet.",
-    ),
-    "Krea 2": (
-        "watercolor fox sleeping in the snow",
-        "A watercolor illustration of a fox curled asleep in a hollow log on a snowy forest floor. Loose washes "
-        "of cool blue and violet shape the snow, while the fox's rust-orange fur is painted in warm, bleeding "
-        "strokes with bare white paper left for highlights. Pale birch trunks rise behind it in soft vertical "
-        "bands, and a few flakes drift across the upper corner. Quiet, even winter light.",
-    ),
-    "FLUX.2 Klein": (
-        "old clockmaker repairing a pocket watch",
-        "An elderly clockmaker leans over his workbench, fitting a tiny brass gear into an open pocket watch with "
-        "steel tweezers. He wears round wire spectacles and a dark green apron over a rolled-sleeve linen shirt. "
-        "Jeweler's screwdrivers, a magnifying lamp and loose watch faces are scattered across the worn oak bench. "
-        "Warm lamplight from the upper left falls on his hands and the watch while shelves of ticking clocks "
-        "behind him sink into soft shadow. Shot on a 50mm lens at f/2, film grain, unretouched skin.",
-    ),
-    "Z-Image Base": (
-        "red bicycle in a sunny mediterranean alley",
-        "A red vintage bicycle leans against a whitewashed stone wall in a narrow Mediterranean alley. A wicker "
-        "basket on the handlebars holds a loaf of bread and a bunch of lavender. Bright midday sun casts a crisp "
-        "diagonal shadow of the bicycle across the worn cobblestones, and a blue wooden door stands half open "
-        "beside it.",
-    ),
-    "Z-Image Turbo": (
-        "barista making latte art",
-        "A barista pours steamed milk from a steel pitcher into a white ceramic cup, drawing a leaf pattern in "
-        "the coffee's golden crema. Her tattooed forearm and black apron are visible at the edge of the frame. "
-        "Behind the counter, an espresso machine and stacked cups blur into warm café light from a window on "
-        "the left.",
-    ),
-    "Qwen Image (original)": (
-        'bakery storefront with a sign saying "MILL & CRUMB", baker in the doorway',
-        "A small bakery storefront with a dark green wooden facade and a wide front window displaying round "
-        "loaves and croissants on wire racks. Above the door, a hand-painted cream sign reads \"MILL & CRUMB\" "
-        "in gold serif letters. A baker in a white apron stands in the doorway holding a tray of bread at waist "
-        "height and smiling toward the street. Morning sunlight from the right warms the facade and casts the "
-        "awning's shadow across the window.",
-    ),
-    "Qwen Image 2.1": (
-        "greenhouse with herbs and tomato plants",
-        "A horizontal photograph of a quiet greenhouse interior in soft greens and whites. In the center, a long "
-        "wooden potting table holds two rows of terracotta pots planted with basil, rosemary and young tomato "
-        "seedlings. On the left, a galvanized watering can rests on the gravel floor beside a coiled green hose. "
-        "On the right, tall tomato vines climb bamboo canes toward the glass roof, their leaves overlapping the "
-        "upper right corner. In the background, whitewashed glass panes turn the sky into a pale, even glow. "
-        "Soft overcast daylight enters through the roof from above, leaving faint shadows beneath the pots and "
-        "gentle highlights on the leaves. The whole frame is a balanced eye-level view with the table leading "
-        "the eye toward the far end of the greenhouse.",
-    ),
-    "LTX 2.5": (
-        "golden retriever running through a meadow with a ball",
-        "A golden retriever is sprinting across a sunlit meadow toward the camera, ears flapping and a red ball "
-        "in its mouth as tall grass parts around its chest. It slows in the foreground, drops the ball and sits, "
-        "tail sweeping the grass, while wind rolls through the meadow in slow waves under a hazy late-afternoon "
-        "sun. The dog's panting and distant birdsong fill the quiet air.",
-    ),
-    "Ideogram4": (
-        "minimal travel poster of a lighthouse at dusk titled NORTH CAPE",
-        '{"high_level_description":"A minimalist travel poster of a lighthouse on a rocky cliff at dusk, with the '
-        'title across the top.","style_description":{"aesthetics":"clean flat poster design with bold shapes and '
-        'generous negative space","lighting":"soft dusk glow with a bright lighthouse beam","medium":"digital '
-        'illustration","art_style":"mid-century travel poster, flat color fields, subtle paper grain",'
-        '"color_palette":["#1B2A41","#F2A65A","#F6E7CB","#C8553D"]},"compositional_deconstruction":{"background":'
-        '"A deep navy dusk sky fading to warm orange at the horizon above a calm sea.","elements":[{"type":"obj",'
-        '"desc":"A white lighthouse with a red cap on a dark rocky cliff in the lower right, its beam sweeping '
-        'left across the sky."},{"type":"text","text":"NORTH CAPE","desc":"Large cream sans-serif capitals '
-        'centered across the top, evenly spaced."}]}}',
-    ),
-}
+# Edit instructions are not covered by the prompt library (it holds generation prompts), so
+# Qwen Image 2.1 editing keeps one worked example.
 QWEN21_EDIT_EXAMPLE = (
     "make the sky a sunset",
     "Replace the overcast sky in the image with a clear sunset sky in warm orange and pink gradients, and "
@@ -231,11 +146,12 @@ def library_reference_section(references, *, continuation=False):
 
 
 def get_target_example(name, *, qwen_task="t2i"):
-    """Return the worked example section for a target, or an empty string."""
-    target = canonical_target(name)
-    example = QWEN21_EDIT_EXAMPLE if target == "Qwen Image 2.1" and qwen_task == "edit" else TARGET_EXAMPLES.get(target)
-    if example is None:
+    """Return the worked example for Qwen Image 2.1 editing, or an empty string.
+
+    Generation prompts learn their form from the user's library templates instead.
+    """
+    if canonical_target(name) != "Qwen Image 2.1" or qwen_task != "edit":
         return ""
-    request, output = example
+    request, output = QWEN21_EDIT_EXAMPLE
     return ("STYLE EXAMPLE (a different subject: copy its form, never its content; follow the selected length, "
             "not this example's)\nRequest: " + request + "\nOutput:\n" + output)

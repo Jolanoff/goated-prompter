@@ -1,7 +1,5 @@
 """Builder system prompts contain only sections that apply to the request."""
 
-import json
-import re
 import unittest
 
 from goated_prompter.contracts import GoatedPrompterRequest
@@ -10,8 +8,7 @@ from goated_prompter.image_utils import EncodedImage
 from goated_prompter.options.targets import TARGET_MODEL_NAMES
 from goated_prompter.output_repetition import drop_repeated_tags, remove_contradictory_solo
 from goated_prompter.prompting.base import PRIORITY_CONTRACT, SETTINGS_PRECEDENCE, TEXT_ONLY_PRIORITY_CONTRACT
-from goated_prompter.prompting.target_models import QWEN21_EDIT_EXAMPLE, TARGET_EXAMPLES
-from goated_prompter.workflow_output import normalize_workflow_output, requested_visible_text
+from goated_prompter.prompting.target_models import QWEN21_EDIT_EXAMPLE
 
 IMAGE = EncodedImage("Zm91cg==", "image/png", 16, 16)
 
@@ -61,25 +58,11 @@ class BuilderPromptAssemblyTests(unittest.TestCase):
         self.assertNotIn("DIRECTOR BEHAVIOR", inactive)
         self.assertNotIn("inactive", inactive)
 
-    def test_each_target_carries_one_valid_style_example(self):
-        self.assertEqual(set(TARGET_EXAMPLES), set(TARGET_MODEL_NAMES) - {"MiniMax H3"})
+    def test_generation_prompts_carry_no_built_in_example(self):
         for target in TARGET_MODEL_NAMES:
             with self.subTest(target=target):
-                message = system_message(target_model=target)
-                self.assertEqual(message.count("STYLE EXAMPLE"), int(target in TARGET_EXAMPLES))
-                if target in TARGET_EXAMPLES:
-                    request, output = TARGET_EXAMPLES[target]
-                    self.assertIn(output, message)
-                    self.assertLess(message.index("STYLE EXAMPLE"), message.index("USER SETTINGS"))
-                    normalize_workflow_output(output, target, expected_visible_text=requested_visible_text(request),
-                                              mode="Enhance")
-        json.loads(TARGET_EXAMPLES["Ideogram4"][1])
-
-    def test_anima_example_never_pairs_solo_with_several_characters(self):
-        tags = [tag.strip() for tag in TARGET_EXAMPLES["Anima"][1].split("\n\n")[0].split(",")]
-        characters = sum(int(match[1]) for tag in tags if (match := re.fullmatch(r"(\d+)(?:boys?|girls?|others?)", tag)))
-        self.assertGreater(characters, 1, "The example should show multi-character count tags.")
-        self.assertNotIn("solo", tags)
+                self.assertNotIn("STYLE EXAMPLE", system_message(target_model=target),
+                                 "The user's library templates show the form instead.")
         message = system_message(target_model="Anima", idea="three boys jumping on top of a train")
         self.assertIn("use solo only when exactly one character appears", message)
 
@@ -127,10 +110,9 @@ class BuilderPromptAssemblyTests(unittest.TestCase):
     def test_qwen21_edit_uses_the_edit_example(self):
         message = system_message(target_model="Qwen Image 2.1", image=IMAGE)
         self.assertIn(QWEN21_EDIT_EXAMPLE[1], message)
-        self.assertNotIn(TARGET_EXAMPLES["Qwen Image 2.1"][1], message)
 
     def test_example_can_be_omitted(self):
-        request = GoatedPrompterRequest(idea="a lantern", target_model="Anima")
+        request = GoatedPrompterRequest(idea="make the sky a sunset", target_model="Qwen Image 2.1", image=IMAGE)
         self.assertNotIn("STYLE EXAMPLE", assemble_instruction(request, include_target_example=False).system_message)
 
 

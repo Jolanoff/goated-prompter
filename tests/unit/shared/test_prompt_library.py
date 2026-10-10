@@ -80,7 +80,7 @@ class PromptLibraryTests(unittest.TestCase):
         self.assertFalse(copied_reference("Naruto grips the wheel while a girl naps against the window.", [CAR]))
 
     def test_builder_uses_library_prompts_instead_of_the_built_in_example(self):
-        self.assertIn("STYLE EXAMPLE", assemble_instruction(GoatedPrompterRequest(idea="driving a car", target_model="Anima")).system_message)
+        self.assertNotIn("STYLE EXAMPLE", assemble_instruction(GoatedPrompterRequest(idea="driving a car", target_model="Anima")).system_message)
         self.write("Anima", CAR, KITCHEN)
         instruction = assemble_instruction(GoatedPrompterRequest(idea="naruto driving a car", target_model="Anima"))
         self.assertIn("TEMPLATES FROM THE USER'S PROMPT LIBRARY", instruction.system_message)
