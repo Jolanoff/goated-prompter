@@ -187,8 +187,10 @@ LOOK_AXES = {
              "thick dark waves", "a grey crew cut", "red pixie-cut hair"),
     "build": ("slim", "athletic", "stocky", "tall and lanky", "curvy", "broad-shouldered", "petite", "heavyset"),
 }
-# A role that already implies an age ("girl", "old man", "grandma") keeps it; the scene picks outfits to fit the setting.
-_AGED_ROLE = re.compile(r"\b(?:girl|boy|kid|child|teen\w*|old|elderly|grand\w*|senior|young|baby|toddler)s?\b", re.I)
+# A role or trait that already gives an age ("girl", "old man", "20 yo man", "in her 30s") keeps it; the
+# scene picks outfits to fit the setting.
+_AGED_ROLE = re.compile(r"\b(?:girl|boy|kid|child|teen\w*|old|elderly|grand\w*|senior|young|baby|toddler)s?\b"
+                        r"|\b\d{1,3}\s*(?:yo|y/o|yrs?|years?)\b|\b\d{1,3}-year\b|\b\d0'?s\b", re.I)
 LOOK_KINDS = {"human", "humanoid"}
 SEX_LOOKS = ("woman", "man")
 _DIRECTION_SOURCE = ("subject", "trigger", "trigger_type", "custom_type", "constraints", "inputs", "source_mode")
@@ -222,7 +224,8 @@ def creative_directions(data, indexes, salt=0):
         orders[axis] = order
     # A single random person whose sex the user left open gets one drawn here, so prompts never
     # fall back to "a person" or a bare role label.
-    random_cast = [(item["name"], item.get("sex") == "unspecified" and item.get("count") == 1)
+    random_cast = [(item["name"], item.get("sex") == "unspecified" and item.get("count") == 1,
+                    bool(_AGED_ROLE.search(f"{item['name']} {item.get('traits', '')}")))
                    for item in brief.get("characters") or ()
                    if item.get("origin") == "random" and item.get("kind") in LOOK_KINDS]
     looks = {}
@@ -240,8 +243,8 @@ def creative_directions(data, indexes, salt=0):
             directions[index]["random_character_looks"] = {
                 name: ", ".join(([random.Random(f"{seed}|{index}|{slot}").choice(SEX_LOOKS)] if open_sex else [])
                                 + [looks[axis][(index - 1 + 3 * slot) % len(looks[axis])] for axis in LOOK_AXES
-                                   if not (axis == "age" and _AGED_ROLE.search(name))])
-                for slot, (name, open_sex) in enumerate(random_cast)}
+                                   if not (axis == "age" and aged)])
+                for slot, (name, open_sex, aged) in enumerate(random_cast)}
     return directions
 
 
@@ -364,7 +367,7 @@ def _looks_described(looks):
     for name, look in (looks or {}).items():
         parts = [part.strip() for part in look.split(",")]
         hair = next((part for part in parts if part in LOOK_AXES["hair"]), "")
-        noun = parts[0] if parts and parts[0] in SEX_LOOKS else " ".join(re.sub(r"\d+", " ", name).split()).casefold() or "person"
+        noun = parts[0] if parts and parts[0] in SEX_LOOKS else " ".join(re.sub(r"[#\d]+", " ", name).split()).casefold() or "person"
         if hair:
             described[name] = f"the {noun} with {hair}"
     return described

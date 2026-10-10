@@ -565,10 +565,22 @@ _ORDINALS = ("first", "second", "third", "fourth", "fifth", "sixth", "seventh", 
              "eleventh", "twelfth")
 
 
+_POSITION_LABEL = re.compile(r"^\s*([^\W\d_][^\d]*?)\s*#?(\d{1,2})\s*$")
+
+
 def numbered_labels(characters):
-    """Names of random characters that are only numbered role labels ("friend 1")."""
-    return [item["name"] for item in characters or ()
-            if item.get("origin") == "random" and re.search(r"\d", item.get("name", ""))]
+    """Names of random characters that are only numbered role labels ("friend 1", "coworker #3").
+
+    The number must end the name and count a position in this cast, so a name that carries a
+    real fact ("20 yo man", "agent 47") is a description, not a label.
+    """
+    characters = list(characters or ())
+    labels = []
+    for item in characters:
+        match = _POSITION_LABEL.match(item.get("name", ""))
+        if item.get("origin") == "random" and match and 1 <= int(match.group(2)) <= max(len(characters), 1):
+            labels.append(item["name"])
+    return labels
 
 
 def label_replacements(characters, described=None):
@@ -583,7 +595,7 @@ def label_replacements(characters, described=None):
             replacements[name] = described[name]
             continue
         number = re.search(r"\d+", name)
-        noun = " ".join(re.sub(r"\d+", " ", name).split()).casefold() or "person"
+        noun = " ".join(re.sub(r"[#\d]+", " ", name).split()).casefold() or "person"
         position = int(number.group()) - 1 if number else -1
         replacements[name] = (f"the {_ORDINALS[position]} {noun}" if 0 <= position < len(_ORDINALS)
                               else f"another {noun}")

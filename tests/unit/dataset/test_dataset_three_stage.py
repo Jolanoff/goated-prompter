@@ -384,6 +384,12 @@ class PlausibilityTests(unittest.TestCase):
         from goated_prompter.features.dataset.ideas import LOOK_AXES
         self.assertFalse(any(age in look for look in looks for age in LOOK_AXES["age"]))
         self.assertTrue(all(look.count(",") == 1 for look in looks), "Only hair and build are drawn.")
+        for stated in ({"name": "20 yo man"}, {"name": "man", "traits": "25 years old"}, {"name": "woman in her 30s"},
+                       {"name": "a 40-year-old chef"}):
+            person = {**COMPANION, "sex": "male", **stated}
+            look = creative_directions(valid_draft(amount=1, _confirmed_intent=dataset_understanding_fixture(
+                characters=[person])), [1])[1]["random_character_looks"][person["name"]]
+            self.assertFalse(any(age in look for age in LOOK_AXES["age"]), (stated, look))
         adult = creative_directions(valid_draft(amount=1, _confirmed_intent=dataset_understanding_fixture(
             characters=[COMPANION])), [1])[1]["random_character_looks"]["random companion"]
         self.assertTrue(any(age in adult for age in LOOK_AXES["age"]))
@@ -472,6 +478,12 @@ class LabelAndTriggerTidyTests(unittest.TestCase):
                          "The first friend holds the cake. The second friend laughs at the first friend’s hat.")
         roles = [{**COMPANION, "name": "old man"}, {**COMPANION, "name": "grandson"}, NARUTO]
         self.assertEqual(label_replacements(roles), {}, "Plain roles and named characters stay as written.")
+        facts = [{**COMPANION, "name": "20 yo man"}, {**COMPANION, "name": "agent 47"}, {**COMPANION, "name": "2 girls"},
+                 {**COMPANION, "name": "a man in his 30s"}]
+        self.assertEqual(label_replacements(facts), {}, "A number that states a fact is a description, not a label.")
+        self.assertEqual(replace_labels("A 20 yo man waves.", label_replacements(facts)), "A 20 yo man waves.")
+        self.assertEqual(label_replacements([{**COMPANION, "name": "coworker #3"}, *self.PAIR, COMPANION])["coworker #3"],
+                         "the third coworker")
         row = {"index": 1, "idea": "Friend 1 slips.", "scene": "Friend 1 slips beside Friend 2.", "idea_status": "valid"}
         looks = {"Friend 1": "woman, mid twenties, long braids, slim", "Friend 2": "early thirties, a buzz cut, stocky"}
         relabelled = _relabel(row, self.PAIR, looks)
