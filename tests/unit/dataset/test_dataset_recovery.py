@@ -30,9 +30,10 @@ class RecoveryTests(unittest.TestCase):
 
     def test_new_idea_is_one_targeted_call_whose_scene_is_written_directly(self):
         result = self.run_service(scene_action=("regenerate_idea", 1))
-        self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:ideas", "dataset:1"])
+        self.assertEqual([call.diagnostic_stage for call in self.backend.calls],
+            ["dataset:ideas:brainstorm", "dataset:ideas", "dataset:1"])
         self.assertEqual(result["scene_plan"][0]["scene"], dataset_idea_fixture(1)["scene"])
-        self.assertEqual(self.backend.calls[1].user_message, dataset_idea_fixture(1)["scene"])
+        self.assertEqual(self.backend.calls[2].user_message, dataset_idea_fixture(1)["scene"])
         self.assertEqual(result["scene_plan"][1], self.data["scene_plan"][1])
         self.assertEqual(result["prompts"][1], self.data["results"][0])
 
@@ -116,9 +117,9 @@ class RecoveryTests(unittest.TestCase):
         result = self.run_service()
         self.assertEqual(result["completed"], 3)
         self.assertEqual([row["index"] for row in result["prompts"]], [1, 2, 3])
-        self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:ideas",
-            "dataset:1", "dataset:3", "dataset:ideas", "dataset:2"])
-        repairs = json.loads(self.backend.calls[3].user_message)
+        self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:ideas:brainstorm",
+            "dataset:ideas", "dataset:1", "dataset:3", "dataset:ideas:brainstorm", "dataset:ideas", "dataset:2"])
+        repairs = json.loads(self.backend.calls[5].user_message)
         self.assertEqual(repairs["output_contract"]["indexes"], [2])
         self.assertTrue(any([row["index"] for row in snapshot["prompts"]] == [1, 3] for snapshot in self.snapshots))
         for snapshot in self.snapshots:

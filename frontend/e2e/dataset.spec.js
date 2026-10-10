@@ -222,11 +222,11 @@ test("accepted replacement survives a lost admission response", async ({ page, r
   await expect(page.getByLabel("Planned scene 1")).toHaveValue(recovered.scene_plan[0].scene);
 });
 
-test("ten finished scenes come from two idea calls without per-scene calls", async ({ page, request }) => {
+test("ten finished scenes come from a brainstorm and two idea calls without per-scene calls", async ({ page, request }) => {
   await openDataset(page, "10");
   const response = await submit(page, "Generate 10 scenes only", "/api/workspace/dataset/scenes");
   const finished = await finish(request, (await response.json()).id);
-  expect(finished.llm_trace.request_number).toBe(2);
+  expect(finished.llm_trace.request_number).toBe(3);
   expect(finished.result.scene_plan.map((row) => row.index)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   expect(finished.result.scene_plan.every((row) => row.self_check === "PASS" && row.scene && !("geometry" in row))).toBe(true);
   await expect(page.getByLabel("Dataset planning mode")).toHaveCount(0);
@@ -248,7 +248,7 @@ test("a saved REPAIR note blocks only its scene until a new idea replaces it", a
   expect(generated.llm_trace.request_number).toBe(1);
   expect(generated.result.prompts.map((row) => row.index)).toEqual([2]);
   const replaced = await finish(request, (await (await submit(page, "Regenerate idea", "/api/workspace/dataset/scene")).json()).id);
-  expect(replaced.llm_trace.request_number).toBe(2);
+  expect(replaced.llm_trace.request_number).toBe(3);
   expect(replaced.result.scene_plan[0].self_check).toBe("PASS");
   expect(replaced.result.prompts[1]).toEqual(generated.result.prompts[0]);
 });
@@ -324,7 +324,7 @@ test("per-scene actions preserve siblings; idea edits keep the scene", async ({ 
   await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/saved_person/);
   await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
   const before = (await settings(request)).draft;
-  for (const [label, calls] of [["Regenerate prompt", 1], ["Regenerate idea", 2]]) {
+  for (const [label, calls] of [["Regenerate prompt", 1], ["Regenerate idea", 3]]) {
     const done = await finish(request, (await (await submit(page, label, "/api/workspace/dataset/scene")).json()).id);
     expect(done.llm_trace.request_number).toBe(calls);
     await expect.poll(async () => (await settings(request)).draft.scene_plan).toEqual(done.result.scene_plan);

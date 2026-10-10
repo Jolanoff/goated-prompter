@@ -61,7 +61,7 @@ class DatasetIdeaHistoryTests(unittest.TestCase):
         session.generate.return_value = json.dumps([{**previous, "idea": previous["idea"].upper(),
             "scene": "The same punch from a new camera angle in a different location."}])
         with self.assertRaisesRegex(BackendGenerationError, "recently generated event") as caught:
-            ScenePlanner(lambda: None, history).plan_ideas(session=session, data=data,
+            DatasetIdeasService(lambda: None, history).run(session=session, data=data,
                 assignments=dataset_assignments(data), progress=lambda _: None)
         self.assertNotIn(previous["idea"], str(caught.exception))
         session.generate.assert_called_once()

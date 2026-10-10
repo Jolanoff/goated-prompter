@@ -326,17 +326,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                   placeholder={"standing portrait in a city at night\nrunning through a sunlit field\nclose-up profile in a quiet studio"} />
                    <small className={ui.directorDescription}>Lines cycle to fill the batch; each action stays fixed.</small>
               </label>}
-              {draft.source_mode === "library" && <div className="mt-4">
-                <LibraryStatus target={draft.target} className="block" />
-                <label className={`${ui.field} mt-3`}><span>Roles your cast doesn't fill</span>
-                  <select className={ui.select} aria-label="Dataset library extra roles" value={draft.library_extras || "drop"}
-                    onChange={(event) => updateSceneSettings({ library_extras: event.target.value })}>
-                    <option value="drop">Drop them</option>
-                    <option value="keep">Keep as background characters</option>
-                  </select>
-                  <small className="text-xs leading-relaxed text-muted">Dropping keeps every requested character clearly in frame.</small>
-                </label>
-              </div>}
+              {draft.source_mode === "library" && <LibraryStatus target={draft.target} className="mt-4 block" />}
             </fieldset>
 
           </fieldset>

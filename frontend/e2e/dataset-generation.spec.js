@@ -279,7 +279,7 @@ test("Anima inserts locked multiple-character tags unchanged before a scene-only
   const finished = await (await request.get(`/api/jobs/${id}`)).json();
   expect(finished.llm_trace.messages[0].content).toContain("The application inserts the locked trigger");
   expect(finished.llm_trace.messages[0].content).not.toContain("Render the scene as anime/manga rather than realistic photography.");
-  expect(finished.llm_trace.request_number).toBe(2); // IDEAS and one body-only writer call.
+  expect(finished.llm_trace.request_number).toBe(3); // Brainstorm, IDEAS and one body-only writer call.
   const saved = await (await request.get("/api/workspace/settings/dataset")).json();
   expect(saved.draft.trigger).toBe(trigger);
   expect(saved.draft.results[0].prompt).toBe(expected);

@@ -18,7 +18,9 @@ from goated_prompter.features.dataset.understanding import (_expand_understandin
     validate_understanding)
 from goated_prompter.prompt_library import LIBRARY_DIR_ENV, library_path
 from tests.helpers import dataset_idea_fixture, dataset_understanding_fixture
-from tests.support.dataset import CaptureBackend, saved_scene, valid_draft
+from goated_prompter.features.dataset.brainstorm import (brainstorm_events, candidate_count, pick_events,
+    validate_brainstorm)
+from tests.support.dataset import CaptureBackend, brainstorm_fixture, saved_scene, valid_draft
 
 SCOPES = ("all_outputs", "dataset")
 NARUTO = {"name": "Naruto Uzumaki", "count": 1, "sex": "male", "kind": "human", "origin": "named",
@@ -193,7 +195,9 @@ class ChunkedIdeasTests(unittest.TestCase):
             rows = ScenePlanner(lambda: None).plan_ideas(session=backend, data=data,
                 assignments=dataset_assignments(data), progress=lambda _message: None, allow_partial=True)
         self.assertEqual([row["index"] for row in rows], list(range(1, 8)))
-        first, second = [json.loads(call.user_message) for call in backend.calls]
+        self.assertEqual([call.diagnostic_stage for call in backend.calls],
+                         ["dataset:ideas:brainstorm", "dataset:ideas", "dataset:ideas"])
+        first, second = [json.loads(call.user_message) for call in backend.calls[1:]]
         self.assertEqual(first["output_contract"]["indexes"], [1, 2, 3, 4, 5])
         self.assertEqual(second["output_contract"]["indexes"], [6, 7])
         self.assertEqual([row["index"] for row in second["existing_ideas"]], [1, 2, 3, 4, 5])
@@ -217,3 +221,67 @@ class ChunkedIdeasTests(unittest.TestCase):
                      for row in json.loads(call.user_message)["assignments"]]
         self.assertEqual(len(backend.calls), 2)
         self.assertEqual(sorted(scenarios), sorted(prompts))
+
+
+class BrainstormTests(unittest.TestCase):
+    def test_events_skip_recent_repeats_and_each_other(self):
+        candidates = [("She juggles three oranges on a bus.", .9), ("She juggles oranges on a moving bus.", .8),
+                      ("She rescues a kite from a tree.", .3), ("She teaches a goose to dance.", .1)]
+        chosen = pick_events(candidates, 4, random.Random(1), avoid=["She juggles oranges on the bus."])
+        self.assertEqual(sorted(chosen), ["She rescues a kite from a tree.", "She teaches a goose to dance."])
+        picked = pick_events(candidates[:2], 2, random.Random(2))
+        self.assertEqual(len(picked), 1, "Two near-identical candidates fill only one slot.")
+
+    def test_unusual_events_are_favoured_but_obvious_ones_stay_possible(self):
+        candidates = [("obvious event", 1.0), ("rare event", 0.0)]
+        firsts = [pick_events(candidates, 1, random.Random(seed))[0] for seed in range(400)]
+        self.assertGreater(firsts.count("rare event"), firsts.count("obvious event") * 4)
+        self.assertIn("obvious event", firsts)
+
+    def test_different_runs_pick_different_events_from_the_same_pool(self):
+        pool = [(row["event"], row["typicality"]) for row in brainstorm_fixture(15)]
+        batches = {tuple(pick_events(pool, 5, random.Random(seed))) for seed in range(10)}
+        self.assertGreater(len(batches), 5)
+
+    def test_parser_keeps_usable_rows_and_clamps_typicality(self):
+        raw = json.dumps([{"event": " A  dog surfs. ", "typicality": 3}, {"event": "", "typicality": .2},
+                          {"event": "A cat bakes.", "typicality": True}, "junk", {"event": "A fox paints.", "typicality": -1}])
+        self.assertEqual(validate_brainstorm(raw, 10), [("A dog surfs.", 1.0), ("A fox paints.", 0.0)])
+        with self.assertRaises(ValueError):
+            validate_brainstorm("[]", 10)
+
+    def test_seeds_reach_each_idea_and_an_unusable_brainstorm_falls_back(self):
+        data = valid_draft(amount=3, _confirmed_intent=dataset_understanding_fixture())
+        backend = CaptureBackend()
+        ScenePlanner(lambda: None).plan_ideas(session=backend, data=data, assignments=dataset_assignments(data),
+                                              progress=lambda _message: None, allow_partial=True)
+        brainstorm, ideas = backend.calls
+        self.assertEqual(json.loads(brainstorm.user_message)["requested_events"], candidate_count(3))
+        self.assertGreaterEqual(brainstorm.temperature, 1.0)
+        seeds = [row["event_seed"] for row in json.loads(ideas.user_message)["assignments"]]
+        self.assertEqual(len(set(seeds)), 3)
+        messages = []
+        session = Mock()
+        session.generate.return_value = "not json"
+        self.assertEqual(brainstorm_events(session, data, 3, random.Random(1), progress=messages.append,
+                                           checkpoint=lambda: None), [])
+        self.assertIn("without event seeds", messages[-1])
+
+    def test_guided_and_library_batches_do_not_brainstorm(self):
+        for changes in ({"source_mode": "guided", "inputs": "a punch\na block"},):
+            data = valid_draft(amount=2, _confirmed_intent=dataset_understanding_fixture(), **changes)
+            backend = CaptureBackend()
+            ScenePlanner(lambda: None).plan_ideas(session=backend, data=data, assignments=dataset_assignments(data),
+                                                  progress=lambda _message: None, allow_partial=True)
+            self.assertEqual([call.diagnostic_stage for call in backend.calls], ["dataset:ideas"])
+
+    def test_recent_ideas_and_current_siblings_are_avoided(self):
+        from goated_prompter.features.dataset.idea_history import RecentIdeaHistory
+        data = valid_draft(amount=2, _confirmed_intent=dataset_understanding_fixture())
+        history = RecentIdeaHistory()
+        history.remember(data, [{"idea": "An earlier event."}])
+        backend = CaptureBackend()
+        ScenePlanner(lambda: None, history).plan_ideas(session=backend, data=data, assignments=dataset_assignments(data),
+            progress=lambda _message: None, indexes=[2], existing=[dataset_idea_fixture(1)], allow_partial=True)
+        avoid = json.loads(backend.calls[0].user_message)["recently_used_ideas"]
+        self.assertEqual(avoid, ["An earlier event.", dataset_idea_fixture(1)["idea"]])

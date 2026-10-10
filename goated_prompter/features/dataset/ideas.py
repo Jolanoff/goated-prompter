@@ -79,9 +79,15 @@ existing_ideas. Vary the stage or interaction around that shared choice rather t
 replacing the choice. If its value is still unspecified, choose it once for the batch and
 keep it consistent across all proposed ideas, not independently per image.
 
+EVENT SEEDS
+An assignment may carry event_seed: the core event the app picked for this image from a
+wide brainstorm, so batches do not repeat the same favourite ideas. Build the idea around
+that event and stage it fully. Change only a part that conflicts with HARD.
+
 CREATIVE DIRECTION
 Each assignment carries a creative_direction chosen by the app to spread the batch
-across moments, moods, framing, settings and light. Start that image's idea from it.
+across moments, moods, framing, settings and light. Start that image's idea from it;
+with an event_seed, the seed decides what happens and the direction how it is shown.
 HARD requirements, the guided input, expansion_freedom and batch-shared choices always
 win: drop only the conflicting part of a direction, never the requirement. A required
 action stays visibly in progress in every image whatever the direction says.
@@ -97,9 +103,8 @@ An assignment may carry library_scenario, one of the user's own saved prompts, i
 of a creative_direction. Recast that scenario rather than inventing a new one: keep its
 place, situation, activity, props, camera and mood, and cast the confirmed subjects into
 its roles, main role first. Adapt wording about gender, age or relationships to the new
-cast and never reuse the saved prompt's character names. Roles the cast does not fill:
-with library_extras "drop" remove them; with "keep" keep them as unnamed background
-characters. HARD requirements, supplied character facts and counts still win: drop any
+cast and never reuse the saved prompt's character names. Remove roles the cast does not
+fill, so the image shows exactly the confirmed characters. HARD requirements, supplied character facts and counts still win: drop any
 part of the scenario that conflicts with them.
 
 VARIETY
@@ -205,7 +210,7 @@ def _ideas_schema(indexes):
 
 
 def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existing=(), recent=(), direction_salt=0,
-                      rng=None):
+                      rng=None, event_seeds=None):
     source_context = json.loads(understanding_instruction(data).user_message)
     brief = validate_understanding(data.get("_confirmed_intent"), tuple(source_context["scopes"]))
     if brief["clarifications"]:
@@ -239,13 +244,14 @@ def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existin
             entry["library_scenario"] = scenarios[index]
         else:
             entry["creative_direction"] = directions[index]
+            if (event_seeds or {}).get(index):
+                entry["event_seed"] = event_seeds[index]
         selected.append(entry)
     context = {"source": source_context["source"], "confirmed_intent": brief,
         "output_contract": {"record_count": len(indexes), "indexes": indexes},
         "assignments": selected,
         "existing_ideas": [{key: row[key] for key in ("index", *IDEA_FIELDS) if key in row} for row in existing],
         "recently_used_ideas": list(recent)[:40],
-        **({"library_extras": data.get("library_extras", "drop")} if library else {}),
         **({"library_examples": list(examples)} if examples else {})}
     budget = 512 + len(indexes) * 512
     return PromptInstruction(system_message=IDEAS_SYSTEM, user_message=json.dumps(context,
@@ -332,14 +338,14 @@ class DatasetIdeasService:
         self.checkpoint, self.idea_history = checkpoint, idea_history
 
     def run(self, *, session, data, assignments, family="qwen", progress, indexes=None, existing=(), allow_partial=False,
-            direction_salt=None, scenario_seed=None):
+            direction_salt=None, scenario_seed=None, event_seeds=None):
         self.checkpoint()
         recent = self.idea_history.recent(data) if self.idea_history is not None else []
         # A fresh salt per run so repeating the same draft explores new directions;
         # chunks of one batch share theirs so directions and scenarios stay spread.
         instruction = ideas_instruction(data, assignments, family, indexes=indexes, existing=existing, recent=recent,
             direction_salt=secrets.randbits(32) if direction_salt is None else direction_salt,
-            rng=None if scenario_seed is None else random.Random(scenario_seed))
+            rng=None if scenario_seed is None else random.Random(scenario_seed), event_seeds=event_seeds)
         selected = json.loads(instruction.user_message)["assignments"]
         indexes = [row["index"] for row in selected]
         progress("Creating ideas from your approved understanding…")

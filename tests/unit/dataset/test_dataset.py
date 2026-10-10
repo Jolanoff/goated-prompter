@@ -95,7 +95,7 @@ class DatasetUnitTests(unittest.TestCase):
         snapshots = []
         with patch("goated_prompter.features.dataset.service.create_backend", return_value=backend):
             result = DatasetService({"backend": "mock"}, lambda: None).run(GoatedPrompterRequest(idea=self.data["subject"], prompt_model="Custom"), self.data, lambda _: None, snapshots.append)
-        self.assertEqual([call.diagnostic_stage for call in backend.calls], ["dataset:ideas", "dataset:1"])
+        self.assertEqual([call.diagnostic_stage for call in backend.calls], ["dataset:ideas:brainstorm", "dataset:ideas", "dataset:1"])
         self.assertEqual(backend.sessions, 1)
         self.assertEqual(result["completed"], 1)
         self.assertNotIn("quality_report", result)

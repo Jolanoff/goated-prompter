@@ -53,25 +53,25 @@ class LibraryRecastTests(unittest.TestCase):
 
     def test_library_mode_gives_each_idea_a_saved_scenario_instead_of_a_direction(self):
         self.library("Anima", CAR, PICNIC)
-        data = valid_draft(amount=2, target="Anima", source_mode="library", library_extras="keep",
+        data = valid_draft(amount=2, target="Anima", source_mode="library",
                            subject="Naruto and a random character doing anything",
                            _confirmed_intent=dataset_understanding_fixture(character_count=2))
         context = json.loads(ideas_instruction(data, dataset_assignments(data), rng=random.Random(4)).user_message)
         scenarios = [row["library_scenario"] for row in context["assignments"]]
         self.assertEqual(set(scenarios), {CAR, PICNIC})
         self.assertTrue(all("creative_direction" not in row for row in context["assignments"]))
-        self.assertEqual(context["library_extras"], "keep")
+        self.assertNotIn("library_extras", context)
+        self.assertIn("Remove roles the cast does not fill", IDEAS_SYSTEM.replace("\n", " "))
         self.assertIn("LIBRARY SCENARIOS", IDEAS_SYSTEM)
         self.assertIn("never reuse the saved prompt's character names", IDEAS_SYSTEM.replace("\n", " "))
 
-    def test_library_mode_requires_saved_prompts_and_valid_extras(self):
+    def test_library_mode_requires_saved_prompts(self):
         data = valid_draft(target="Anima", source_mode="library")
         with self.assertRaisesRegex(ValueError, "data/prompt_library/anima.txt"):
             validate_dataset_draft(data, generation=True)
         self.library("Anima", CAR)
-        self.assertEqual(validate_dataset_draft(data, generation=True)["library_extras"], "drop")
-        with self.assertRaises(ValueError):
-            validate_dataset_draft({**data, "library_extras": "duplicate"})
+        validated = validate_dataset_draft({**data, "library_extras": "keep"}, generation=True)
+        self.assertNotIn("library_extras", validated, "A setting saved by an earlier build is dropped.")
 
     def test_library_recasts_are_not_copy_checked_against_their_own_scene(self):
         self.library("Krea 2", "A boxer slams a heavy training bag under harsh gym lights.")
