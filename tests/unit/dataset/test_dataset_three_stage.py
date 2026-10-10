@@ -573,10 +573,11 @@ class BatchVarietyTests(unittest.TestCase):
                 self.assertFalse(passive_idea(idea))
 
     def test_a_distinctive_word_shared_by_two_ideas_cannot_appear_in_a_third(self):
-        from goated_prompter.features.dataset.quality import repeated_motif
+        from goated_prompter.features.dataset.quality import repeated_motif, repeated_word
         earlier = ["A woman tries to balance a pizza box on her head.", "A woman balances donuts on her palm."]
         self.assertEqual(repeated_motif("A woman balancing a teacup while walking.", earlier), "balancing")
         self.assertIsNone(repeated_motif("A woman chases her hat down the sidewalk.", earlier))
+        self.assertIsNone(repeated_word("Mock activity3.", ["Mock activity1.", "Mock activity2."]))
         self.assertIsNone(repeated_motif("A woman balances a feather.", earlier, ignore={"balancing"}))
         self.assertIsNone(repeated_motif("A woman tries a street trick.", ["A woman tries to wave on a street.",
                                                                          "A woman tries to skip on a street."],

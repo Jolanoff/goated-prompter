@@ -120,8 +120,9 @@ def _stem(word):
 
 
 def _content_words(text, ignore):
-    return {_stem(word): word for word in re.findall(r"[a-z]+", str(text or "").casefold())
-            if len(word) >= 5 and word not in _WORD_STOP and word not in ignore and _stem(word) not in ignore}
+    return {_stem(word): word for word in re.findall(r"[a-z0-9]+", str(text or "").casefold())
+            if len(word) >= 5 and not any(char.isdigit() for char in word)
+            and word not in _WORD_STOP and word not in ignore and _stem(word) not in ignore}
 
 
 def repeated_word(text, others, ignore=()):
