@@ -8,6 +8,7 @@ import CreativeWorkspace from "./features/refine/CreativeWorkspace.jsx";
 import MiniMaxTab from "./features/minimax/MiniMaxTab.jsx";
 import DatasetTab from "./features/dataset/DatasetTab.jsx";
 import SavedPromptsTab from "./features/saved-prompts/SavedPromptsTab.jsx";
+import PromptLibraryTab from "./features/prompt-library/PromptLibraryTab.jsx";
 import SettingsTab from "./features/settings/SettingsTab.jsx";
 import DirectorsTab from "./features/directors/DirectorsTab.jsx";
 import BuilderTab from "./features/builder/BuilderTab.jsx";
@@ -24,6 +25,7 @@ import {
   Database,
   FileText,
   Film,
+  Library,
   Moon,
   ScrollText,
   Settings2,
@@ -49,6 +51,7 @@ const workspaceViews = [
   { id: "minimax", label: "MiniMax H3", icon: Film },
   { id: "dataset", label: "Dataset", icon: Database },
   { id: "saved", label: "Saved Prompts", icon: Bookmark },
+  { id: "library", label: "Prompt Library", icon: Library },
   { id: "directors", label: "Instruction presets", icon: FileText },
   { id: "settings", label: "Settings", icon: Settings2 },
 ];
@@ -91,6 +94,7 @@ function App() {
       },
     );
   const [view, setView] = useState("builder");
+  const [refineInput, setRefineInput] = useState(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [job, setJob] = useState(null);
@@ -105,7 +109,7 @@ function App() {
   const { images, uploading, upload, remove: removeImage } = useReferenceImages({ busy, setError });
   const {
     saved, storageReady, storageWarning, storageError, promptsBusy, saveKind, dialogBusy,
-    reload: reloadSavedPrompts, deletePrompt, requestPromptSave, dialog: savePromptDialog,
+    reload: reloadSavedPrompts, deletePrompt, requestPromptSave, requestNewPrompt, dialog: savePromptDialog,
   } = useSavedPrompts({ setError, setNotice });
   const {
     directorId, directorDraft, setDirectorDraft, directorOriginal, directorDirty, editorDirector,
@@ -195,7 +199,7 @@ function App() {
           setSettings((current) => ({ ...current, generated_prompt: next.result.prompt }));
         }
         if (next.result.history_error) setError(next.result.history_error);
-        setNotice(next.kind === "refine" ? "Refinement saved as a new version."
+        setNotice(next.kind === "refine" ? "Prompt refined."
           : next.kind === "dataset" ? `${next.result.completed} dataset prompts are ready.`
           : next.kind === "dataset_scenes" ? `${next.result.scene_plan.length} scene ideas are ready to review or generate.`
           : next.kind === "dataset_understanding" ? "Review your Dataset request before generating."
@@ -323,7 +327,7 @@ function App() {
     }));
   }
 
-  function navigate(next) {
+  function navigate(next, refinePrompt) {
     if (
       next === view ||
       (view === "directors" && (actionBusy || !discardDirector()))
@@ -332,6 +336,7 @@ function App() {
     if (view === "directors") setDirectorDraft(directorOriginal);
     if (next === "directors" && !directorId)
       selectDirector(preset || bootstrap?.presets.presets[0]);
+    if (next === "refine" && refinePrompt) setRefineInput(refinePrompt);
     setView(next);
   }
 
@@ -639,8 +644,8 @@ function App() {
 
           {bootstrap && (
             <CreativeWorkspace view={view} job={job} busy={busy || actionBusy || settingsBusy || !!uploading}
-              active={active} noEngine={noEngine} builderPrompt={prompt} builderIdea={settings.idea}
-              builderTarget={settings.target_model} inputs={bootstrap.inputs}
+              active={active} noEngine={noEngine} builderIdea={settings.idea}
+              builderImport={refineInput} inputs={bootstrap.inputs}
               onSavePrompt={requestPromptSave} canSavePrompt={storageReady && !promptsBusy && !dialogBusy && !saveKind}
               engineLabel={configuredBackend ? `Configured backend (${bootstrap.backend})` : selectedProfile?.label}
               onGenerate={startWorkflow} onCancel={endGeneration} onCopy={copy}
@@ -667,9 +672,14 @@ function App() {
             </div>
           )}
 
-          {view === "refine" || view === "minimax" || view === "dataset" ? null : view === "saved" ? (
+          {bootstrap && <PromptLibraryTab visible={view === "library"}
+            targets={bootstrap.inputs.target_model[0]} initialTarget={settings.target_model}
+            onNotice={setNotice} />}
+          {view === "refine" || view === "minimax" || view === "dataset" || view === "library" ? null : view === "saved" ? (
             <SavedPromptsTab records={saved} ready={storageReady} busy={busy}
               deletingDisabled={!storageReady || promptsBusy || dialogBusy}
+              addingDisabled={!bootstrap || !storageReady || promptsBusy || dialogBusy || !!saveKind}
+              onAdd={() => requestNewPrompt(settings.target_model)}
               onBack={() => setView("builder")} onCopy={copy} onDelete={deletePrompt}
               onOpen={(record) => {
                 setSettings((current) => ({ ...current, generated_prompt: record.prompt,
@@ -730,7 +740,7 @@ function App() {
         engineLabel={configuredBackend ? `Configured backend (${bootstrap?.backend})` : selectedProfile?.label}
         onClose={() => setLogOpen(false)} />
 
-      <SavePromptDialog {...savePromptDialog} />
+      <SavePromptDialog {...savePromptDialog} targets={bootstrap?.inputs.target_model[0] || []} />
     </div>
   );
 }

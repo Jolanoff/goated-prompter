@@ -149,8 +149,8 @@ export default function BuilderTab({ settings, inputs, presets, preset, engine, 
                 <button className={ui.saveButton} disabled={!prompt.trim() || !canSave} onClick={onSave}>
                   <Bookmark size={15} />Save Prompt
                 </button>
-                <button className={ui.button} disabled={!prompt.trim()} onClick={() => onNavigate("refine")}>
-                  <WandSparkles size={15} />Refine & history
+                <button className={ui.button} disabled={!prompt.trim()} onClick={() => onNavigate("refine", { prompt, target: settings.target_model })}>
+                  <WandSparkles size={15} />Refine prompt
                 </button>
                 <button className={ui.iconButton} disabled={!prompt} aria-label="Clear" title="Clear"
                   onClick={() => onChange("generated_prompt", "")}>
