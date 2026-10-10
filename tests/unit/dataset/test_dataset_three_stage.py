@@ -541,3 +541,47 @@ class IdeaQualityTests(unittest.TestCase):
             self.assertFalse(any(hair in wife for hair in ("crew cut", "buzz cut", "shaved", "undercut")), wife)
             self.assertFalse(any(age in look for look in (man, wife) for age in LOOK_AXES["age"]),
                              "The user gave an age, so the app draws none.")
+
+
+class BatchVarietyTests(unittest.TestCase):
+    def test_passive_ideas_are_recognised_by_their_main_action(self):
+        from goated_prompter.features.dataset.quality import passive_idea
+        for idea in ("The couple leans close to watch sumo warm-up practice.",
+                     "They hold hands tightly while watching a street performer.",
+                     "They sit in a tatami room, watching a chef prepare dinner.",
+                     "They sit on a bench overlooking the bamboo grove."):
+            with self.subTest(idea=idea):
+                self.assertTrue(passive_idea(idea))
+        for idea in ("Naruto paints a door while a skeptical girl watches from below.",
+                     "He shields his wife from a wind gust at a busy crossing.",
+                     "She tries to feed a koi without splashing his shirt."):
+            with self.subTest(idea=idea):
+                self.assertFalse(passive_idea(idea))
+
+    def test_a_place_or_prop_shared_by_two_ideas_cannot_appear_in_a_third(self):
+        from goated_prompter.features.dataset.quality import repeated_motif
+        earlier = ["They stand at a vending machine comparing drinks.", "They pick drinks from a vending machine in the rain."]
+        self.assertEqual(repeated_motif("They argue at a vending machine in a station.", earlier), "vending machine")
+        self.assertIsNone(repeated_motif("They argue at a vending machine in a station.", earlier[:1]))
+        self.assertIsNone(repeated_motif("A 40-year-old man laughs.", ["A 40-year-old man waves.", "A 40-year-old man runs."]))
+        self.assertIsNone(repeated_motif("Naruto eats ramen.", ["Naruto eats ramen at home.", "Naruto eats ramen outside."],
+                                         ignore={"naruto", "eats", "ramen"}))
+
+    def test_a_second_passive_idea_and_a_third_repeat_are_queued_for_repair(self):
+        from unittest.mock import Mock
+        from goated_prompter.features.dataset.ideas import DatasetIdeasService, PASSIVE_REPEAT
+        couple = [{**COMPANION, "name": "man", "sex": "male"}, {**COMPANION, "name": "wife", "sex": "female"}]
+        data = valid_draft(amount=5, subject="a man and his wife exploring japan", trigger_type="Multiple characters",
+                           _confirmed_intent=dataset_understanding_fixture(characters=couple))
+        ideas = ["The couple leans close to watch sumo practice.", "They sit at a counter, watching a chef slice fish.",
+                 "They compare drinks at a vending machine.", "They share one umbrella at a vending machine.",
+                 "They argue over coins at a vending machine."]
+        session = Mock()
+        session.generate.return_value = json.dumps([{"index": index, "idea": idea, "scene": f"Scene {index}: {idea}"}
+                                                    for index, idea in enumerate(ideas, 1)])
+        rows = DatasetIdeasService(lambda: None).run(session=session, data=data, assignments=dataset_assignments(data),
+                                                     progress=lambda _message: None, allow_partial=True)
+        reasons = {row["index"]: row.get("failure_reason") for row in rows}
+        self.assertEqual(reasons[2], PASSIVE_REPEAT)
+        self.assertIn('"vending machine"', reasons[5])
+        self.assertEqual([index for index, reason in reasons.items() if reason], [2, 5])

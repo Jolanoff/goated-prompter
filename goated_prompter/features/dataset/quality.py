@@ -56,3 +56,41 @@ def analyze_idea_diversity(data, rows):
                     records[current["index"]]["issues"].append({"code": code, "severity": "warning", "related": other["index"],
                         "message": f"Idea may repeat the concept of idea {other['index']}. Check distinct activities, not just presentation differences."})
     return {"ideas": list(records.values()), "method": "concept-aware lexical hints; not semantic verification"}
+
+
+# An idea where the cast only watches, looks at or admires something is passive: one per batch
+# at most. The main clause decides; standing, sitting or holding hands while watching counts too.
+_PASSIVE = re.compile(r"\b(?:watch\w*|look(?:s|ing)? (?:at|out|on|over)|gaz\w*|admir\w*|observ\w*|star(?:e|es|ing)|"
+                      r"overlook\w*|sightsee\w*|(?:scenic|the) view|taking in)\b")
+_STANCE = re.compile(r"\b(?:stand\w*|sit|sits|sitting|seated|lean\w*|rest\w*|kneel\w*|wait\w*|hold(?:s|ing)? hands)\b")
+
+
+def passive_idea(text):
+    text = " ".join(str(text or "").casefold().split())
+    parts = re.split(r"\bwhile\b|\bas\b|,|;", text, maxsplit=1)
+    main, rest = parts[0], parts[1] if len(parts) > 1 else ""
+    if _PASSIVE.search(main):
+        return True
+    return bool(_STANCE.search(main) and _PASSIVE.search(rest))
+
+
+_MOTIF_STOP = {"a", "an", "the", "and", "or", "of", "in", "on", "at", "to", "for", "with", "by", "from", "into", "onto",
+               "while", "as", "her", "his", "their", "its", "she", "he", "they", "is", "are", "one", "two", "three",
+               "each", "other", "both", "together", "small", "large", "little", "big", "old", "year", "yo"}
+
+
+def _bigrams(text, ignore):
+    words = re.findall(r"[a-z0-9]+", str(text or "").casefold())
+    keep = lambda word: word not in _MOTIF_STOP and word not in ignore and not any(char.isdigit() for char in word)
+    return {(left, right) for left, right in zip(words, words[1:]) if keep(left) and keep(right)}
+
+
+def repeated_motif(text, others, ignore=()):
+    """A two-word place, prop or activity ("vending machine") already in two other ideas of the batch."""
+    ignore = set(ignore)
+    counts = {}
+    for other in others:
+        for pair in _bigrams(other, ignore):
+            counts[pair] = counts.get(pair, 0) + 1
+    repeated = sorted(" ".join(pair) for pair in _bigrams(text, ignore) if counts.get(pair, 0) >= 2)
+    return repeated[0] if repeated else None

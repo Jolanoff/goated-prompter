@@ -10,7 +10,7 @@ import secrets
 from ...backends.base import BackendGenerationError
 from ...contracts import PromptInstruction
 from .brainstorm import PLAUSIBLE_BODIES
-from .quality import analyze_idea_diversity
+from .quality import analyze_idea_diversity, passive_idea, repeated_motif
 from .understanding import (label_replacements, numbered_labels, replace_labels, understanding_instruction,
                             unwrap_json_fence, validate_understanding)
 from ...strict_json import reject_duplicate_keys
@@ -39,7 +39,10 @@ other, not just stand side by side. Give each idea one concrete detail that belo
 place and this image only (a particular dish, object, tool, local custom or feature of the
 setting) and a readable emotion. Never fall back on sightseeing or stock poses: standing,
 walking or sitting while looking at a view, admiring scenery, posing or smiling at the
-camera, holding hands on a path, unless the user asked for that. Weak: "two chefs cook
+camera, holding hands on a path, or standing, sitting or leaning while watching someone else
+do something (a performer, a chef, a game), unless the user asked for that. At most one image
+in a batch may show the cast just watching, and no place, prop or activity may appear in
+more than two images. Weak: "two chefs cook
 dinner". Strong: "the older chef tastes the sauce and winces while the younger one hides the
 empty salt jar behind her back". Prefer a surprising but plausible situation over the first
 obvious one.
@@ -389,6 +392,10 @@ def _reject_unrenderable_pose(row, data, allow_partial):
     return _failed_idea(row, row["index"], reason)
 
 
+PASSIVE_REPEAT = ("Another idea in this batch already shows the cast just watching or looking at something; "
+                  "give this one an activity they do themselves.")
+
+
 class IdeasFormatError(ValueError):
     """The ideas response is not the requested JSON array; eligible for one format correction."""
 
@@ -489,6 +496,10 @@ class DatasetIdeasService:
                 return event in recent_events and not anchored
 
             if allow_partial:
+                # Words of the request and the cast repeat on purpose; only other shared pairs count.
+                motif_ignore = {word for key in ("subject", "constraints", "trigger") for word in
+                                re.findall(r"[a-z]+", str(data.get(key) or "").casefold())}
+                motif_ignore |= {word for item in cast or () for word in re.findall(r"[a-z]+", item.get("name", "").casefold())}
                 accepted = [{**row, "input": inputs[row["index"]]} for row in existing
                     if row["index"] not in indexes and row.get("idea_status") != "failed"]
                 retained = []
@@ -500,10 +511,17 @@ class DatasetIdeasService:
                         audit = analyze_idea_diversity(data, [*accepted, candidate])
                         duplicate = any(issue["code"] == "exact_duplicate_idea" for record in audit["ideas"]
                             if record["index"] == row["index"] for issue in record["issues"])
+                        # Guided inputs fix each image's event, and cycled inputs repeat on purpose.
+                        others = [] if data.get("source_mode") == "guided" else [item["idea"] for item in accepted]
+                        motif = repeated_motif(row["idea"], others, motif_ignore)
                         if repeats_history(row):
                             row = _failed_idea(row, row["index"], "The idea repeats a recently generated event. Choose a different permitted action or interaction.")
                         elif unchanged or duplicate:
                             row = _failed_idea(row, row["index"], "The idea repeats an existing event or unchanged planning choices.")
+                        elif passive_idea(row["idea"]) and any(passive_idea(other) for other in others):
+                            row = _failed_idea(row, row["index"], PASSIVE_REPEAT)
+                        elif motif:
+                            row = _failed_idea(row, row["index"], f'Two other ideas already use "{motif}"; choose a different place, prop or activity.')
                         else:
                             accepted.append(candidate)
                     if row.get("idea_status") == "failed":
