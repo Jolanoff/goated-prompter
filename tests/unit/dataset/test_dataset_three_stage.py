@@ -332,3 +332,25 @@ class GeometryTests(unittest.TestCase):
                                               plan_item=saved_scene()).system_message.split())
         self.assertIn("never add a second angle, viewpoint or lens perspective", writer)
         self.assertIn("add no pose details beyond the scene's", writer)
+
+
+class PlausibilityTests(unittest.TestCase):
+    def test_brainstorm_and_ideas_forbid_impossible_bodies(self):
+        from goated_prompter.features.dataset.brainstorm import BRAINSTORM_SYSTEM
+        data = valid_draft(amount=1, _confirmed_intent=dataset_understanding_fixture())
+        ideas = " ".join(ideas_instruction(data, dataset_assignments(data)).system_message.split())
+        for rules in (" ".join(BRAINSTORM_SYSTEM.split()), ideas):
+            self.assertIn("physically possible for real bodies", rules)
+            self.assertIn("no one stuck head-first or upside down", rules)
+            self.assertIn("not from twisted anatomy", rules)
+
+    def test_drawn_looks_keep_an_age_the_role_implies_and_leave_clothing_to_the_scene(self):
+        girl = character(name="random girl", sex="female", origin="random", series="")
+        data = valid_draft(amount=3, _confirmed_intent=dataset_understanding_fixture(characters=[NARUTO, girl]))
+        looks = [item["random_character_looks"]["random girl"] for item in creative_directions(data, [1, 2, 3]).values()]
+        from goated_prompter.features.dataset.ideas import LOOK_AXES
+        self.assertFalse(any(age in look for look in looks for age in LOOK_AXES["age"]))
+        self.assertTrue(all(look.count(",") == 1 for look in looks), "Only hair and build are drawn.")
+        adult = creative_directions(valid_draft(amount=1, _confirmed_intent=dataset_understanding_fixture(
+            characters=[COMPANION])), [1])[1]["random_character_looks"]["random companion"]
+        self.assertTrue(any(age in adult for age in LOOK_AXES["age"]))
