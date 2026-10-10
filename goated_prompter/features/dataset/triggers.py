@@ -180,3 +180,25 @@ def trigger_presence_error(prompt, trigger, target, *, expand=False):
     if expand:
         return f"Could not find the required trigger subject/attribute word(s): {quoted}. Expansion allows descriptive wording, not subject omission; check paraphrases manually."
     return f"The result is missing the exact required trigger term(s): {quoted}."
+
+
+
+def tidy_expanded_trigger(prompt, trigger, target, scene=""):
+    """Undo two ways a writer satisfies an expanded trigger without describing it.
+
+    A quoted trigger asks the image model to letter it as text, and a trigger left alone on
+    the last line or as a final tag adds nothing visible. Quotes are dropped (the words stay)
+    unless the scene itself quotes that text; a trailing copy is removed when the rest of
+    the prompt still has content.
+    """
+    value = str(prompt or "")
+    phrase = str(trigger or "").strip()
+    if not phrase or target in {"Ideogram4", "Anima"}:
+        return value
+    escaped = re.escape(phrase)
+    if not re.search(rf'["“]{escaped}["”]', str(scene), re.I):
+        value = re.sub(rf'["“]({escaped})["”]', r"\1", value, flags=re.I)
+    trailing = re.compile(rf"(?:\s*[,;]|\s*\n)\s*{escaped}\s*\.?\s*$", re.I)
+    if (match := trailing.search(value)) and len(value[:match.start()].split()) >= 10:
+        value = value[:match.start()].rstrip()
+    return value

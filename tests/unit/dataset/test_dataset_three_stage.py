@@ -118,7 +118,7 @@ class IdeaSceneTests(unittest.TestCase):
 
     def test_ideas_prompt_asks_for_finished_scenes_with_the_whole_cast_in_frame(self):
         rules = " ".join(ideas_instruction(self.data, dataset_assignments(self.data)).system_message.split())
-        self.assertIn("idea, the core event in one line, and scene", rules)
+        self.assertIn("idea, the core event in one sentence of at most 30 words, and scene", rules)
         self.assertIn("Put exactly that cast in every scene", rules)
         self.assertIn("keeps every character clearly in frame", rules)
 
@@ -143,6 +143,10 @@ class CastWriterTests(unittest.TestCase):
         self.assertEqual(anima_count_tags([character(sex="none", kind="robot")]), ["1other"])
         self.assertEqual(anima_count_tags([character(sex="none", kind="animal")]), ["no humans"])
         self.assertIsNone(anima_count_tags([NARUTO, COMPANION]), "An open sex is decided per scene.")
+        pet = character(name="pet dragon", sex="unspecified", kind="animal", origin="random")
+        robot = character(name="little robot", sex="none", kind="robot", origin="random")
+        self.assertEqual(anima_count_tags([character(sex="female", origin="random"), pet, robot]), ["1girl", "1other"],
+                         "An animal takes no count tag even when its sex is left open.")
         self.assertIsNone(anima_count_tags([]))
 
     def test_anima_writer_starts_with_count_and_named_character_tags(self):
@@ -177,6 +181,8 @@ class CastCheckTests(unittest.TestCase):
         data = self.data([NARUTO, character(name="Hinata Hyuga", sex="female")], target="Anima")
         self.assertIsNone(cast_error("1girl, 1boy, uzumaki naruto, hyuuga hinata\n\nNaruto and Hinata share ramen.", data))
         self.assertIn("1girl", cast_error("1boy, uzumaki naruto, hinata\n\nNaruto and Hinata share ramen.", data))
+        extra = cast_error("1girl, 1boy, uzumaki naruto, hinata, 3boys, 3girls\n\nNaruto and Hinata share ramen.", data)
+        self.assertIn("remove 3boys, 3girls", extra)
 
     def test_open_sexes_locked_triggers_and_briefs_without_a_cast_are_not_checked_for_tags(self):
         self.assertIsNone(cast_error("Naruto and a friend.", self.data([NARUTO, COMPANION], target="Anima")))
@@ -397,6 +403,21 @@ class RepeatedInventoryTests(unittest.TestCase):
         result = DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None, row)
         self.assertEqual(result.split("\n\n")[0], tags)
 
+    def test_an_anima_prompt_with_several_characters_drops_a_contradictory_solo_tag(self):
+        from unittest.mock import Mock
+        from goated_prompter.features.dataset.service import DatasetService
+        cast = [character(name="knight girl", sex="female", origin="random", series=""),
+                character(name="little robot", sex="none", kind="robot", origin="random", series="")]
+        data = valid_draft(amount=1, target="Anima", trigger="knight girl, robot", trigger_type="Multiple characters",
+                           expand_trigger=True, _confirmed_intent=dataset_understanding_fixture(characters=cast))
+        row = saved_scene()
+        instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=row)
+        session = Mock()
+        session.generate.return_value = ("1girl, 1other, solo, knight, robot, campfire\n\n"
+                                         "A knight girl warms her hands while a little robot sits by the fire.")
+        result = DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None, row)
+        self.assertEqual(result.split("\n\n")[0], "1girl, 1other, knight, robot, campfire")
+
 
 class RenderabilityGateTests(unittest.TestCase):
     def test_prompts_that_list_rules_or_settings_or_loop_are_rejected(self):
@@ -438,3 +459,30 @@ class RenderabilityGateTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             _reject_unrenderable_pose(row, data, allow_partial=False)
         self.assertIs(_reject_unrenderable_pose(row, {**data, "source_mode": "library"}, allow_partial=True), row)
+
+
+class LabelAndTriggerTidyTests(unittest.TestCase):
+    PAIR = [{**COMPANION, "name": "Friend 1"}, {**COMPANION, "name": "Friend 2"}]
+
+    def test_numbered_labels_are_rejected_in_ideas_and_prompts_but_plain_roles_are_fine(self):
+        from goated_prompter.features.dataset.understanding import label_error
+        from goated_prompter.features.dataset.ideas import _reject_numbered_label
+        self.assertIn('"Friend 1"', label_error("Friend 1 holds the cake while Friend 2 laughs.", self.PAIR))
+        self.assertIsNone(label_error("A woman holds the cake while a man laughs.", self.PAIR))
+        roles = [{**COMPANION, "name": "old man"}, {**COMPANION, "name": "grandson"}, NARUTO]
+        self.assertIsNone(label_error("The old man shows his grandson a fish; Naruto waves.", roles))
+        row = {"index": 1, "idea": "Friend 1 slips.", "scene": "Friend 1 slips by Friend 2.", "idea_status": "valid"}
+        self.assertEqual(_reject_numbered_label(row, self.PAIR, True)["failure_stage"], "idea")
+
+    def test_an_expanded_trigger_is_never_quoted_or_left_alone_at_the_end(self):
+        from goated_prompter.features.dataset.triggers import tidy_expanded_trigger
+        body = "Five people crowd a karaoke booth, holding a lopsided cake under purple neon light."
+        self.assertEqual(tidy_expanded_trigger(body + "\n\nfive friends", "five friends", "Krea 2"), body)
+        self.assertEqual(tidy_expanded_trigger(body + ", five friends", "five friends", "Krea 2"), body)
+        self.assertEqual(tidy_expanded_trigger('photograph, "five friends"\n\n' + body, "five friends", "Krea 2"),
+                         "photograph, five friends\n\n" + body)
+        lettering = 'A banner reads "five friends" over the booth.'
+        self.assertEqual(tidy_expanded_trigger(lettering, "five friends", "Krea 2", lettering), lettering)
+        self.assertEqual(tidy_expanded_trigger("Five friends laugh, five friends", "five friends", "Krea 2"),
+                         "Five friends laugh, five friends", "A short prompt keeps its only copy.")
+        self.assertEqual(tidy_expanded_trigger(body + ", five friends", "five friends", "Anima"), body + ", five friends")

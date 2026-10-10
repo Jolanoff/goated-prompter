@@ -16,10 +16,12 @@ from ...options.targets import TARGET_MODEL_NAMES, canonical_target
 from ...workflow_output import WorkflowFormatError, normalize_workflow_output, sanitize_prompt_text, requested_visible_text
 from .assignments import dataset_assignments
 from .quality import analyze_idea_diversity
-from .triggers import trigger_presence_error, trigger_terms, fixed_anima_prefix, restore_numeric_trigger_spelling
+from .triggers import (trigger_presence_error, trigger_terms, fixed_anima_prefix, restore_numeric_trigger_spelling,
+                       tidy_expanded_trigger)
+from .understanding import label_error
 from ...prompt_library import copied_reference
 from ...output_repetition import (MAX_ANIMA_TAGS, anima_tag_count, anima_tag_key, anima_tags, drop_repeated_tags,
-                                 drop_supplied_tags)
+                                 drop_supplied_tags, remove_contradictory_solo)
 from .visible_content import PositiveContentError, positive_prompt_error, sanitize_positive_prompt
 from .plan import (ScenePlanner, MAX_STORED_SCENE_CHARACTERS, MAX_STORED_IDEA_CHARACTERS,
                            reusable_scene_plan, scene_plan_signature, validate_saved_scene_plan,
@@ -155,7 +157,9 @@ class DatasetService:
         def validate(raw):
             prompt = normalize_workflow_output(raw, data["target"], mode="Enhance", expected_visible_text=expected_text)
             if data["target"] == "Anima":
-                prompt = drop_repeated_tags(prompt)
+                prompt = drop_repeated_tags(remove_contradictory_solo(prompt))
+            if data["expand_trigger"]:
+                prompt = tidy_expanded_trigger(prompt, data["trigger"], data["target"], plan_item["scene"])
             if prefix := fixed_anima_prefix(data):
                 tail = prompt[len(prefix):] if prompt.startswith(prefix) else None
                 if tail is not None and (not tail or tail.lstrip(" \t")[:1] in ",;:\r\n"):
@@ -188,6 +192,8 @@ class DatasetService:
                 raise WorkflowFormatError(conflicting_view)
             if leak := instruction_leak_error(prompt, plan_item["scene"]):
                 raise WorkflowFormatError(leak)
+            if labelled := label_error(prompt, (data.get("_confirmed_intent") or {}).get("characters")):
+                raise WorkflowFormatError(labelled)
             if original.reference_prompts and copied_reference(prompt, original.reference_prompts):
                 raise WorkflowFormatError("The prompt copied wording from a library reference prompt. Write new wording "
                                           "for this scene; use the references only for style and quality.")

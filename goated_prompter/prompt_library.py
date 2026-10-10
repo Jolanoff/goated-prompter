@@ -235,12 +235,14 @@ def cast_size(prompt):
 
 
 def _recast_recently(prompt, ideas, query):
-    """True when a recent idea reads as a recast of this prompt: most of its own words
-    (beyond the concept's) appear in the prompt."""
+    """True when a recent idea reads as a recast of this prompt: at least four of its own words
+    (beyond the concept's) and over a third of them appear in the prompt; the rest are
+    usually what the recast cast does."""
     words, shared = set(tokenize(prompt)), set(tokenize(query))
     for idea in ideas:
         own = set(tokenize(idea)) - shared
-        if len(own) >= 3 and len(own & words) / len(own) >= .6:
+        shared_words = len(own & words)
+        if shared_words >= 4 and shared_words / len(own) >= .35:
             return True
     return False
 

@@ -1,5 +1,6 @@
 """Dataset request understanding only; no ideas, scenes, writing or persistence."""
 
+import re
 import json
 from dataclasses import replace
 from typing import Callable
@@ -557,3 +558,19 @@ class DatasetUnderstandingService:
         except (ValueError, TypeError, RecursionError) as error:
             raise BackendGenerationError("Dataset understanding returned an invalid brief: " + str(error)
                                          + " No generation started.") from error
+
+
+def numbered_labels(characters):
+    """Names of random characters that are only numbered role labels ("friend 1")."""
+    return [item["name"] for item in characters or ()
+            if item.get("origin") == "random" and re.search(r"\d", item.get("name", ""))]
+
+
+def label_error(text, characters):
+    """A numbered label written into a scene or prompt names nobody an image can show."""
+    found = [name for name in numbered_labels(characters)
+             if re.search(rf"\b{re.escape(name)}\b", str(text), re.I)]
+    if not found:
+        return None
+    return ("Describe each person by look and position, never by a numbered label ("
+            + ", ".join(f'"{name}"' for name in found[:3]) + ").")

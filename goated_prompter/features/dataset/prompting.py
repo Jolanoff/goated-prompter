@@ -39,6 +39,7 @@ apply the saved source requirements instead. Return only the finished target pro
 _SEX_LABELS = {"female": "female", "male": "male", "mixed": "mixed group", "unspecified": "sex open", "none": "no sex"}
 _COUNT_NOUNS = {"female": "girl", "male": "boy"}
 _NO_COUNT_KINDS = {"animal", "creature"}
+_COUNT_TAG = re.compile(r"(?:\d+\+?(?:girl|boy|other)s?|multiple(?:girls|boys|others)|nohumans)")
 
 
 def cast_section(characters):
@@ -62,11 +63,11 @@ def anima_count_tags(characters):
         return None
     totals = {"girl": 0, "boy": 0, "other": 0}
     for item in characters:
-        if item["sex"] in ("unspecified", "mixed"):
-            return None
         noun = _COUNT_NOUNS.get(item["sex"])
         if noun is None and item["kind"] in _NO_COUNT_KINDS:
-            continue
+            continue  # Animals and creatures take no count tag, whatever their sex.
+        if item["sex"] in ("unspecified", "mixed"):
+            return None
         totals[noun or "other"] += item["count"]
     tags = [f"{count}{noun}" if count == 1 else f"{min(count, 6)}{'+' if count >= 6 else ''}{noun}s"
             for noun, count in totals.items() if count]
@@ -128,6 +129,11 @@ def cast_error(prompt, data):
     if data["target"] == "Anima" and not fixed_anima_prefix(data) and (tags := anima_count_tags(characters)):
         present = {anima_tag_key(tag) for tag in anima_tags(prompt)}
         missing += [tag for tag in tags if anima_tag_key(tag) not in present]
+        expected = {anima_tag_key(tag) for tag in tags}
+        extra = sorted(key for key in present if _COUNT_TAG.fullmatch(key) and key not in expected)
+        if extra:
+            return ("Use only the count tags " + ", ".join(tags) + " for this cast; remove "
+                    + ", ".join(extra) + ".")
     text = str(prompt).casefold()
     for item in characters:
         names = [word for word in re.findall(r"[^\W\d_]{3,}", item["name"].casefold())]
@@ -181,7 +187,9 @@ def dataset_instruction(request, data, index, model_family="qwen", plan_item=Non
         grouping = ("Keep trigger subjects together in one meaningful phrase." if data["trigger_connected"] else
                     "Distribute trigger subjects near the things they identify.")
         grouping += " Required subjects/attributes: " + json.dumps(trigger_terms(data["trigger"], False), ensure_ascii=False)
-        grouping += ". Natural articles, capitalization and inserted descriptive words may vary. Do not rename custom identifier tokens."
+        grouping += (". Natural articles, capitalization and inserted descriptive words may vary. Do not rename custom "
+                     "identifier tokens. Work them into the description itself; never add them in quotes, on a line of "
+                     "their own or as a tag at the end.")
     else:
         grouping = "Include exact case-sensitive trigger wording: " + json.dumps(terms, ensure_ascii=False)
         grouping += ". Keep it connected." if data["trigger_connected"] else ". Distribute terms naturally near the things they identify."
