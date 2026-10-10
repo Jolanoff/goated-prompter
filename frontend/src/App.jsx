@@ -109,7 +109,7 @@ function App() {
   const { images, uploading, upload, remove: removeImage } = useReferenceImages({ busy, setError });
   const {
     saved, storageReady, storageWarning, storageError, promptsBusy, saveKind, dialogBusy,
-    reload: reloadSavedPrompts, deletePrompt, requestPromptSave, dialog: savePromptDialog,
+    reload: reloadSavedPrompts, deletePrompt, requestPromptSave, requestNewPrompt, dialog: savePromptDialog,
   } = useSavedPrompts({ setError, setNotice });
   const {
     directorId, directorDraft, setDirectorDraft, directorOriginal, directorDirty, editorDirector,
@@ -678,6 +678,8 @@ function App() {
           {view === "refine" || view === "minimax" || view === "dataset" || view === "library" ? null : view === "saved" ? (
             <SavedPromptsTab records={saved} ready={storageReady} busy={busy}
               deletingDisabled={!storageReady || promptsBusy || dialogBusy}
+              addingDisabled={!bootstrap || !storageReady || promptsBusy || dialogBusy || !!saveKind}
+              onAdd={() => requestNewPrompt(settings.target_model)}
               onBack={() => setView("builder")} onCopy={copy} onDelete={deletePrompt}
               onOpen={(record) => {
                 setSettings((current) => ({ ...current, generated_prompt: record.prompt,
@@ -738,7 +740,7 @@ function App() {
         engineLabel={configuredBackend ? `Configured backend (${bootstrap?.backend})` : selectedProfile?.label}
         onClose={() => setLogOpen(false)} />
 
-      <SavePromptDialog {...savePromptDialog} />
+      <SavePromptDialog {...savePromptDialog} targets={bootstrap?.inputs.target_model[0] || []} />
     </div>
   );
 }

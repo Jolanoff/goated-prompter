@@ -392,6 +392,27 @@
   .select option { color: var(--color-ink); background: var(--color-surface); }
   .select-wrap { display: block; position: relative; min-width: 0; }
   .select-wrap > svg { display: none; }
+  @supports (appearance: base-select) {
+    select, .select, .pill-field select, select::picker(select) { appearance: base-select; }
+    select { align-items: center; white-space: nowrap; overflow: hidden; }
+    select::picker-icon { display: none; }
+    select::picker(select) {
+      margin-top: 6px; padding: 5px; border: 1px solid var(--control-border); border-radius: 12px;
+      background: var(--surface); color: var(--ink); box-shadow: 0 12px 32px var(--shadow);
+      font-family: var(--font-sans); font-size: 14px; font-weight: 500; line-height: 1.4;
+      min-width: anchor-size(width); max-width: calc(100vw - 24px); max-height: min(360px, 60dvh);
+      overflow-y: auto; overscroll-behavior: contain;
+    }
+    select option, .select option, .pill-field select option {
+      min-height: 40px; padding: 10px 12px; gap: 12px; border-radius: 7px;
+      background: transparent; color: var(--ink); font-family: var(--font-sans); font-size: 14px;
+      font-weight: 500; line-height: 1.4; white-space: normal; overflow-wrap: anywhere;
+    }
+    select option:hover:not(:disabled), select option:focus-visible { background: var(--hover); outline: none; }
+    select option:checked { background: var(--selected); color: var(--accent); font-weight: 600; }
+    select option::checkmark { margin-left: auto; order: 1; color: var(--accent); }
+    select option:disabled { color: var(--muted); opacity: .5; cursor: not-allowed; }
+  }
   .textarea { display: block; padding: 14px 16px; resize: vertical; line-height: 1.7; }
   .idea-input { height: 190px; padding-bottom: 36px; font-size: 15px; }
   .notes-input { height: 120px; font-size: 14px; }
@@ -505,6 +526,8 @@
   .app-dialog { margin: auto; max-width: calc(100vw - 32px); max-height: calc(100dvh - 32px); overflow-y: auto; border: 1px solid var(--line); border-radius: 20px; background: var(--color-surface); color: var(--color-ink); box-shadow: 0 30px 100px var(--shadow); }
   .app-dialog::backdrop { background: #0c0c0bb3; backdrop-filter: blur(4px); }
   .save-dialog { width: 440px; padding: 28px; }
+  .new-prompt-dialog { width: 640px; }
+  .new-prompt-dialog .output-input { height: 220px; min-height: 160px; padding-bottom: 14px; }
   .save-dialog h2 { font-family: var(--font-display); font-size: 26px; font-weight: 800; letter-spacing: -.7px; }
   .save-dialog p { margin: 8px 0 22px; font-size: 14px; line-height: 1.65; color: var(--color-muted); }
   .save-dialog form > button:last-child { width: 100%; margin-top: 20px; }

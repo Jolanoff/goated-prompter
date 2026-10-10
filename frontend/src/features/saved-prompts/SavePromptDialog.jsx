@@ -1,11 +1,12 @@
 import { Bookmark, Save, X } from "lucide-react";
 import { ui } from "../../ui.js";
+import { TargetSelect } from "../../shared/workflow/WorkflowControls.jsx";
 
 export default function SavePromptDialog({ dialogRef, saveNameRef, dialogBusy, dialogError, saveName, setSaveName,
-  onSubmit, onClose }) {
+  creating, saveText, setSaveText, saveTarget, setSaveTarget, targets, onSubmit, onClose }) {
   return (
     <dialog
-      className={ui.dialog}
+      className={`${ui.dialog}${creating ? " new-prompt-dialog" : ""}`}
       aria-labelledby="save-prompt-title"
       ref={dialogRef}
       onCancel={(event) => {
@@ -29,10 +30,10 @@ export default function SavePromptDialog({ dialogRef, saveNameRef, dialogBusy, d
             <X size={19} />
           </button>
         </div>
-        <h2 id="save-prompt-title">Save your prompt</h2>
+        <h2 id="save-prompt-title">{creating ? "Add a prompt" : "Save your prompt"}</h2>
         <p>
-          Give your prompt a name. It will be saved in a local JSON file on
-          this server.
+          {creating ? "Paste or write a prompt, give it a name and choose its target model."
+            : "Give your prompt a name. It will be saved in a local JSON file on this server."}
         </p>
         {dialogError && (
           <div className={ui.message} role="alert">
@@ -52,9 +53,18 @@ export default function SavePromptDialog({ dialogRef, saveNameRef, dialogBusy, d
             onChange={(event) => setSaveName(event.target.value)}
           />
         </label>
+        {creating && <>
+          <label className={`${ui.field} mt-4`}><span>Prompt text</span>
+            <textarea className={ui.outputInput} required maxLength={100000} value={saveText}
+              disabled={dialogBusy} onChange={(event) => setSaveText(event.target.value)}
+              placeholder="Paste a prompt here, or write your own…" />
+          </label>
+          <div className="mt-4"><TargetSelect label="Target model" ariaLabel="Saved prompt target"
+            value={saveTarget} onChange={setSaveTarget} targets={targets} disabled={dialogBusy} /></div>
+        </>}
         <button
           className={ui.primaryButton}
-          disabled={dialogBusy || !saveName.trim()}
+          disabled={dialogBusy || !saveName.trim() || (creating && !saveText.trim())}
         >
           <Save size={16} />
           {dialogBusy ? "Saving..." : "Save"}

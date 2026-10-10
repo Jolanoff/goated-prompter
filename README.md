@@ -33,7 +33,7 @@ Goated Prompter pairs a **React + Tailwind interface** with a **Python backend**
 | **Refine** | Paste a prompt or send one from Builder, request targeted edits, compare changes and undo a refinement. |
 | **MiniMax H3** | Write video prompts for **4–15-second clips**, with symbolic references, automatic role analysis, H3 schemas, and Director presets. |
 | **Dataset** | Create **1–25 prompts** from a shared concept, with trigger controls, scene planning, quality checks, and TXT/JSONL export. |
-| **Saved Prompts** | Keep a named prompt library, reuse instruction presets, and pick up where you left off with autosaved drafts. |
+| **Saved Prompts** | Add your own prompts directly, keep named outputs, and open saved text in Builder. |
 | **Prompt Library** | Add, edit and delete target-specific writing examples in a compact list. Stored in the same plain-text files. |
 
 - **Your creative direction:** photography, architecture, characters, products, image editing, style transfer, dataset captions, and video shots.
@@ -217,6 +217,8 @@ Use your own absolute model directory in Settings. The browser workflow is the s
 
 ## Using the controls
 
+Dropdown menus follow the app theme in browsers that support customizable native selects (Chrome and Edge 135+). Other browsers keep their native menus and keyboard controls.
+
 | Control | What it does |
 | --- | --- |
 | **Prompt task** | Chooses the type of work and selects its matching instruction preset. You can then choose a different preset. |
@@ -256,6 +258,7 @@ Slots keep their numbers when an image is removed. Removing a required image res
 - **End generation** first interrupts the active HTTP request safely. The managed model process is only stopped as a fallback when no cancellable transport is registered. Closing an external request does not guarantee the remote provider stops its computation immediately.
 - One generation runs at a time. Settings and preset editing are locked while a job is active.
 - **Save Prompt** adds named output text to the saved-prompt library. Instruction presets are a separate library.
+- In **Saved Prompts**, click **Add prompt** to paste or write your own text, name it and choose its target model. No Builder generation is needed. Failed saves keep the form available for retry.
 - **Per-target prompt library**: on first launch the app creates one text file per target model in `data/prompt_library/` (for example `krea-2.txt`). Use **Prompt Library** to select a target and add, edit or delete prompts in a compact list. You can also paste prompts into the text file, separated by a line containing only `---`. Whenever a target's file has prompts, they become templates for how a good prompt is built, not for how the image looks: the app measures their range of lengths, structure (labeled sections, prose or tags) and any shared trigger word, and shows the final writer two of them, drawn at random for each Dataset image. There are no built-in example prompts: an empty library means the writer follows only the target's rules (Qwen Image 2.1 editing keeps one worked edit example). Dataset ideas never see the library, so your saved prompts' places and situations do not turn up in every batch. The writer copies their structure, order and level of detail, while the medium, style, palette and mood still come from your idea, the Style setting and the Director; length settings pick a point in your library's own range of lengths (Short near your shorter prompts, Maximum Detail near your longest); **Remix** (Builder) recasts a saved prompt with your characters.
 
 The app writes prompts; the quality and faithfulness of the generated description depend on your chosen model and inputs. It does not generate images or videos itself.
