@@ -40,8 +40,8 @@ Name the action, not the camera, light, outfit or location: a new place alone is
 event. Every event has something happening: an activity with a goal, a problem, a mishap or
 a reaction, and with several characters, something they do to or with each other. At most
 one event may be people simply watching, admiring or walking past something, including
-watching someone else perform, cook or play, and no place, prop or activity may appear in
-more than two events.
+watching someone else perform, cook or play, and apart from what the request itself asks
+for, no place, prop or activity may appear in more than two events.
 """ + PLAUSIBLE_BODIES + """
 Do not list recently_used_ideas events or close variations of them.
 For each event give typicality from 0 to 1: how likely a typical writer would think of it

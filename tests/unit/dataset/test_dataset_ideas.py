@@ -165,22 +165,28 @@ class DatasetIdeasTests(unittest.TestCase):
         with self.assertRaisesRegex(BackendGenerationError, "Duplicate idea indexes: 5, 21\\.") as caught:
             self.run_ideas([replacement], indexes=[21], existing=existing)
         self.assertNotIn("indexes: 1,", str(caught.exception))
-        # The copied idea also repeats the batch's wording, so it gets one variety retry first.
-        self.assertEqual(self.session.generate.call_count, 2)
+        self.session.generate.assert_called_once()
 
-    def test_a_replacement_that_repeats_the_batch_gets_one_retry_and_keeps_a_valid_answer(self):
+    def test_a_second_watching_replacement_gets_one_retry_and_keeps_a_valid_answer(self):
         self.data.update(amount=4, subject="A festival volunteer at work.")
         existing = self.festival_ideas(4)
-        existing[0]["idea"], existing[1]["idea"] = ("A festival volunteer watches a juggler.",
-                                                    "A festival volunteer balances a crate on a cart.")
-        existing[2]["idea"] = "A festival volunteer balances cups on a tray."
-        repeat = {**existing[3], "idea": "A festival volunteer balances a ladder on one shoulder."}
+        existing[0]["idea"] = "A festival volunteer watches a juggler."
+        repeat = {**existing[3], "idea": "A festival volunteer stands watching the fireworks."}
         fixed = {**existing[3], "idea": "A festival volunteer chases a runaway hat across the lawn."}
         self.session.generate.side_effect = [json.dumps([repeat]), json.dumps([fixed])]
         rows = self.run_ideas([repeat], indexes=[4], existing=existing)
         self.assertEqual(rows[0]["idea"], fixed["idea"])
         retry = self.session.generate.call_args_list[1].args[0]
-        self.assertIn('already use "balances"', retry.system_message)
+        self.assertIn("watching", retry.system_message)
+
+    def test_shared_props_and_words_do_not_fail_a_replacement(self):
+        self.data.update(amount=4, subject="A festival volunteer at work.")
+        existing = self.festival_ideas(4)
+        existing[0]["idea"], existing[1]["idea"] = ("A festival volunteer eats noodles at a food stall.",
+                                                    "A festival volunteer eats dumplings at a food stall.")
+        replacement = {**existing[3], "idea": "A festival volunteer eats skewers at a food stall."}
+        self.assertEqual(self.run_ideas([replacement], indexes=[4], existing=existing)[0]["idea"], replacement["idea"])
+        self.session.generate.assert_called_once()
 
     def test_large_guided_repeats_remain_valid_when_the_user_requires_the_same_event(self):
         self.data.update(amount=25, source_mode="guided", inputs="A volunteer hands a ticket to a visitor.")

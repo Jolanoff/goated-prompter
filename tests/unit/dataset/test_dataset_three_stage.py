@@ -572,27 +572,7 @@ class BatchVarietyTests(unittest.TestCase):
             with self.subTest(idea=idea):
                 self.assertFalse(passive_idea(idea))
 
-    def test_a_distinctive_word_shared_by_two_ideas_cannot_appear_in_a_third(self):
-        from goated_prompter.features.dataset.quality import repeated_motif, repeated_word
-        earlier = ["A woman tries to balance a pizza box on her head.", "A woman balances donuts on her palm."]
-        self.assertEqual(repeated_motif("A woman balancing a teacup while walking.", earlier), "balancing")
-        self.assertIsNone(repeated_motif("A woman chases her hat down the sidewalk.", earlier))
-        self.assertIsNone(repeated_word("Mock activity3.", ["Mock activity1.", "Mock activity2."]))
-        self.assertIsNone(repeated_motif("A woman balances a feather.", earlier, ignore={"balancing"}))
-        self.assertIsNone(repeated_motif("A woman tries a street trick.", ["A woman tries to wave on a street.",
-                                                                         "A woman tries to skip on a street."],
-                                         ignore={"woman"}))
-
-    def test_a_place_or_prop_shared_by_two_ideas_cannot_appear_in_a_third(self):
-        from goated_prompter.features.dataset.quality import repeated_motif
-        earlier = ["They stand at a vending machine comparing drinks.", "They pick drinks from a vending machine in the rain."]
-        self.assertEqual(repeated_motif("They argue at a vending machine in a station.", earlier), "vending machine")
-        self.assertIsNone(repeated_motif("They argue at a vending machine in a station.", earlier[:1]))
-        self.assertIsNone(repeated_motif("A 40-year-old man laughs.", ["A 40-year-old man waves.", "A 40-year-old man runs."]))
-        self.assertIsNone(repeated_motif("Naruto eats ramen.", ["Naruto eats ramen at home.", "Naruto eats ramen outside."],
-                                         ignore={"naruto", "eats", "ramen"}))
-
-    def test_a_second_passive_idea_and_a_third_repeat_are_queued_for_repair(self):
+    def test_a_second_passive_idea_is_queued_for_repair_but_shared_props_are_not(self):
         from unittest.mock import Mock
         from goated_prompter.features.dataset.ideas import DatasetIdeasService, PASSIVE_REPEAT
         couple = [{**COMPANION, "name": "man", "sex": "male"}, {**COMPANION, "name": "wife", "sex": "female"}]
@@ -608,8 +588,7 @@ class BatchVarietyTests(unittest.TestCase):
                                                      progress=lambda _message: None, allow_partial=True)
         reasons = {row["index"]: row.get("failure_reason") for row in rows}
         self.assertEqual(reasons[2], PASSIVE_REPEAT)
-        self.assertIn('"vending machine"', reasons[5])
-        self.assertEqual([index for index, reason in reasons.items() if reason], [2, 5])
+        self.assertEqual([index for index, reason in reasons.items() if reason], [2])
 
 
 class ClarificationTests(unittest.TestCase):

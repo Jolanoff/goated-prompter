@@ -10,7 +10,7 @@ import secrets
 from ...backends.base import BackendGenerationError
 from ...contracts import PromptInstruction
 from .brainstorm import PLAUSIBLE_BODIES
-from .quality import analyze_idea_diversity, passive_idea, passive_request, repeated_motif
+from .quality import analyze_idea_diversity, passive_idea, passive_request
 from .understanding import (label_replacements, numbered_labels, replace_labels, understanding_instruction,
                             unwrap_json_fence, validate_understanding)
 from ...strict_json import reject_duplicate_keys
@@ -41,8 +41,8 @@ setting) and a readable emotion. Never fall back on sightseeing or stock poses: 
 walking or sitting while looking at a view, admiring scenery, posing or smiling at the
 camera, holding hands on a path, or standing, sitting or leaning while watching someone else
 do something (a performer, a chef, a game), unless the user asked for that. At most one image
-in a batch may show the cast just watching, and no place, prop or activity may appear in
-more than two images. Weak: "two chefs cook
+in a batch may show the cast just watching, and apart from what the request itself asks for,
+no place, prop or activity may appear in more than two images. Weak: "two chefs cook
 dinner". Strong: "the older chef tastes the sauce and winces while the younger one hides the
 empty salt jar behind her back". Prefer a surprising but plausible situation over the first
 obvious one.
@@ -503,26 +503,21 @@ class DatasetIdeasService:
                 anchored = data.get("source_mode") == "guided" and event == " ".join(inputs[row["index"]].casefold().split())
                 return event in recent_events and not anchored
 
-            # Words of the request and the cast repeat on purpose; only other shared words count.
-            motif_ignore = {word for key in ("subject", "constraints", "trigger") for word in
-                            re.findall(r"[a-z]+", str(data.get(key) or "").casefold())}
-            motif_ignore |= {word for item in cast or () for word in re.findall(r"[a-z]+", item.get("name", "").casefold())}
             limit_passive = not passive_request(data)
 
             def variety_issue(row, others):
                 if limit_passive and passive_idea(row["idea"]) and any(passive_idea(other) for other in others):
                     return PASSIVE_REPEAT
-                motif = repeated_motif(row["idea"], others, motif_ignore)
-                return motif and f'Two other ideas already use "{motif}"; choose a different place, prop, action or wording.'
+                return None
 
             if not allow_partial and data.get("source_mode") != "guided":
-                # A single new idea gets one retry when it breaks the batch's variety rules; the
+                # A single new idea gets one retry when it is a second watching idea; the
                 # retry is kept only when it is valid, so a new idea is never lost to these rules.
                 others = [row["idea"] for row in existing if row["index"] not in indexes
                           and row.get("idea_status") != "failed" and row.get("idea")]
                 issues = [issue for row in rows if (issue := variety_issue(row, others))]
                 if issues:
-                    progress("The new idea repeats the batch; requesting one more varied idea…")
+                    progress("The new idea only shows watching again; requesting one more varied idea…")
                     retry = replace(instruction, system_message=instruction.system_message + "\n\nFIX THIS: "
                         + " ".join(dict.fromkeys(issues)), diagnostic_stage="dataset:ideas:variety_retry")
                     session.validate_instruction(retry)
