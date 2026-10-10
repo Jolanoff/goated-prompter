@@ -7,6 +7,7 @@ import secrets
 import random
 
 from .brainstorm import brainstorm_events, uses_event_seeds
+from .craft_notes import library_craft_notes
 from .ideas import DatasetIdeasService
 from .eligibility import scene_eligibility, validate_self_check
 
@@ -103,9 +104,9 @@ class ScenePlanner:
     def __init__(self, checkpoint, idea_history=None):
         self.checkpoint, self.idea_history = checkpoint, idea_history
 
-    def plan_batch(self, *, session, data, assignments, family="qwen", progress, plan_update=None):
+    def plan_batch(self, *, session, data, assignments, family="qwen", progress, plan_update=None, seed=None):
         ideas = self.plan_ideas(session=session, data=data, assignments=assignments, family=family,
-            progress=progress, allow_partial=True)
+            progress=progress, allow_partial=True, seed=seed)
         rows = [{**row, "scene": row.get("scene", ""), "self_check": "", "scene_status": row.get("scene_status", "not_generated"),
             "prompt_status": row.get("prompt_status", "not_generated")} for row in ideas]
         def update(composed):
@@ -117,13 +118,21 @@ class ScenePlanner:
         self.compose([row for row in ideas if row.get("idea_status") != "failed"], plan_update=update)
         return rows
 
-    def plan_ideas(self, *, session, data, assignments, family="qwen", progress, indexes=None, existing=(), allow_partial=False):
-        """Create ideas in chunks; each chunk sees the earlier ones so the batch keeps varying."""
+    def plan_ideas(self, *, session, data, assignments, family="qwen", progress, indexes=None, existing=(), allow_partial=False,
+                   seed=None):
+        """Create ideas in chunks; each chunk sees the earlier ones so the batch keeps varying.
+
+        A seed makes the app's random picks (directions, looks, brainstorm sampling) repeatable;
+        without one every run draws fresh ones.
+        """
         indexes = list(range(1, data["amount"] + 1)) if indexes is None else list(indexes)
         service = DatasetIdeasService(self.checkpoint, self.idea_history)
-        salt, seed = secrets.randbits(32), secrets.randbits(32)
+        picks = random.Random(f"{seed}|{','.join(map(str, indexes))}") if seed is not None else None
+        salt, seed = (picks.getrandbits(32), picks.getrandbits(32)) if picks else (secrets.randbits(32), secrets.randbits(32))
         known = [row for row in existing if row["index"] not in indexes]
         seeds = {}
+        notes = library_craft_notes(session, data["target"], family=family, progress=progress,
+                                    checkpoint=self.checkpoint)
         if uses_event_seeds(data):
             # Seed each image's event from a wider pool so repeated runs do not converge
             # on the model's favourite ideas; recent and current ideas are avoided.
@@ -139,7 +148,7 @@ class ScenePlanner:
                 progress(f"Creating ideas {start + 1}-{start + len(chunk)} of {len(indexes)}…")
             created = service.run(session=session, data=data, assignments=assignments, family=family, progress=progress,
                 indexes=chunk, existing=[*known, *[row for row in existing if row["index"] in chunk]],
-                allow_partial=allow_partial, direction_salt=salt, event_seeds=seeds)
+                allow_partial=allow_partial, direction_salt=salt, event_seeds=seeds, craft_notes=notes)
             rows.extend(created)
             known.extend(row for row in created if row.get("idea_status") != "failed")
         return rows

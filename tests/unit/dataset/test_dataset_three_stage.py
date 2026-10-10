@@ -102,6 +102,29 @@ class IdeaSceneTests(unittest.TestCase):
         self.assertIn("Put exactly that cast in every scene", rules)
         self.assertIn("keeps every character clearly in frame", rules)
 
+    def test_the_director_stages_every_scene(self):
+        selfie = {**self.data, "director_preset": "Arm's-Length Selfie"}
+        rules = ideas_instruction(selfie, dataset_assignments(selfie)).system_message
+        self.assertIn("DIRECTOR (MANDATORY) — Arm's-Length Selfie", rules)
+        self.assertIn("arm's-length front-camera selfie", rules)
+        self.assertIn("It decides framing, camera, light", rules)
+        krea_only = {**self.data, "director_preset": "Krea 2 Pose Lock", "target": "Anima"}
+        self.assertNotIn("DIRECTOR —", ideas_instruction(krea_only, dataset_assignments(krea_only)).system_message)
+
+    def test_a_saved_director_is_mandatory_in_ideas_and_final_prompts(self):
+        from goated_prompter.features.dataset.prompting import dataset_instruction
+        from goated_prompter.presets import USER_DIRECTOR_DIR_ENV, save_user_director
+        with patch.dict(os.environ, {USER_DIRECTOR_DIR_ENV: tempfile.mkdtemp()}):
+            director = save_user_director("Word Director", "Always use the words velvet, ember and hush.")[0]
+            data = {**self.data, "director_preset": director.id, "target": "Krea 2"}
+            ideas = " ".join(ideas_instruction(data, dataset_assignments(data)).system_message.split())
+            final = " ".join(dataset_instruction(GoatedPrompterRequest(idea=data["subject"], prompt_model="Custom"),
+                                                 data, 1, plan_item=saved_scene(1)).system_message.split())
+        for message in (ideas, final):
+            self.assertIn("velvet, ember and hush", message)
+        self.assertIn("Use any words, vocabulary, tone or style it asks for", ideas)
+        self.assertIn("mandatory here, not optional enrichment", final)
+
 
 class CastWriterTests(unittest.TestCase):
     def writer(self, characters, **changes):
@@ -190,7 +213,11 @@ class ChunkedIdeasTests(unittest.TestCase):
         # One salt for the whole batch keeps the creative directions spread across every chunk.
         directions = creative_directions(data, list(range(1, 8)), 11)
         sent = [row["creative_direction"] for context in (first, second) for row in context["assignments"]]
-        self.assertEqual(sent, [directions[index] for index in range(1, 8)])
+        seeded = {row["index"] for context in (first, second) for row in context["assignments"] if row.get("event_seed")}
+        expected = [{axis: value for axis, value in directions[index].items()
+                     if index not in seeded or axis not in ("moment", "interaction")} for index in range(1, 8)]
+        self.assertEqual(sent, expected, "A seeded image keeps framing, light, mood and setting, not a moment label.")
+        self.assertTrue(seeded)
 
 
 class BrainstormTests(unittest.TestCase):
@@ -413,7 +440,8 @@ class RenderabilityGateTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertIsNotNone(unrenderable_pose(text, "two friends dancing at a festival"))
         for text in ("She is about to jump over the puddle, knees bent.", "Her slipper flies through the air.",
-                     "Dust motes drift in the air above the desk.", "He sits on the curb after the jump."):
+                     "Dust motes drift in the air above the desk.", "He sits on the curb after the jump.",
+                     "They freeze in surprise as a small animal jumps between them."):
             with self.subTest(text=text):
                 self.assertIsNone(unrenderable_pose(text, "a woman doing stunts"))
         self.assertIsNone(unrenderable_pose("She lands a backflip on the beach.", "a gymnast doing backflips"))
@@ -507,3 +535,226 @@ class AnimaGroupTagTests(unittest.TestCase):
         self.assertIsNone(instruction_leak_error(prompt, "They cook dinner."))
         self.assertIsNone(instruction_leak_error("high contrast, kitchen, high contrast, high contrast", "x"),
                           "Three mentions are emphasis, not a loop.")
+
+
+class IdeaQualityTests(unittest.TestCase):
+    def test_ideas_and_brainstorm_ask_for_something_happening_not_sightseeing(self):
+        from goated_prompter.features.dataset.brainstorm import BRAINSTORM_SYSTEM
+        data = valid_draft(amount=1, _confirmed_intent=dataset_understanding_fixture())
+        ideas = " ".join(ideas_instruction(data, dataset_assignments(data)).system_message.split())
+        self.assertIn("Each idea is a moment where something is happening", ideas)
+        self.assertIn("Never fall back on sightseeing or stock poses", ideas)
+        self.assertIn("At most one event may be people simply watching, admiring or walking past something",
+                      " ".join(BRAINSTORM_SYSTEM.split()))
+
+    def test_several_characters_get_an_interaction_and_settings_skip_scenic_views(self):
+        from goated_prompter.features.dataset.ideas import DIRECTION_AXES
+        couple = [{**COMPANION, "name": "man", "sex": "male"}, {**COMPANION, "name": "wife", "sex": "female"}]
+        data = valid_draft(amount=8, trigger_type="Multiple characters",
+                           _confirmed_intent=dataset_understanding_fixture(characters=couple))
+        directions = creative_directions(data, range(1, 9))
+        self.assertEqual({item["interaction"] for item in directions.values()}, set(DIRECTION_AXES["interaction"]))
+        self.assertFalse(any("view" in setting for setting in DIRECTION_AXES["setting"]))
+
+    def test_drawn_hair_and_build_fit_each_persons_sex_and_a_stated_age_is_kept(self):
+        from goated_prompter.features.dataset.ideas import LOOKS_BY_SEX, LOOK_AXES
+        couple = [{**COMPANION, "name": "man", "sex": "male"}, {**COMPANION, "name": "wife", "sex": "female"}]
+        data = valid_draft(amount=10, trigger_type="Multiple characters", subject="a man and his wife exploring japan",
+                           trigger="40 yo man", _confirmed_intent=dataset_understanding_fixture(characters=couple))
+        for item in creative_directions(data, range(1, 11)).values():
+            man, wife = item["random_character_looks"]["man"], item["random_character_looks"]["wife"]
+            self.assertTrue(any(hair in man for hair in LOOKS_BY_SEX["man"]["hair"]), man)
+            self.assertFalse(any(hair in man for hair in ("pixie", "bob", "braids", "bun", "ponytail")), man)
+            self.assertTrue(any(hair in wife for hair in LOOKS_BY_SEX["woman"]["hair"]), wife)
+            self.assertFalse(any(hair in wife for hair in ("crew cut", "buzz cut", "shaved", "undercut")), wife)
+            self.assertFalse(any(age in look for look in (man, wife) for age in LOOK_AXES["age"]),
+                             "The user gave an age, so the app draws none.")
+
+
+class BatchVarietyTests(unittest.TestCase):
+    def test_passive_ideas_are_recognised_by_their_main_action(self):
+        from goated_prompter.features.dataset.quality import passive_idea
+        for idea in ("The couple leans close to watch sumo warm-up practice.",
+                     "They hold hands tightly while watching a street performer.",
+                     "They sit in a tatami room, watching a chef prepare dinner.",
+                     "They sit on a bench overlooking the bamboo grove.",
+                     "Couple standing in awe before a massive ancient temple gate.",
+                     "Man shows wife a beautiful view from a mountain lookout.",
+                     "They marvel at the intricate architecture of a temple roof.",
+                     "They react with surprise at a sudden street performance.",
+                     "They react with excitement as they see a massive temple gate.",
+                     "They share a quiet moment, looking out at a misty mountain view.",
+                     "They sit on a park bench, sharing a quiet moment amidst city life."):
+            with self.subTest(idea=idea):
+                self.assertTrue(passive_idea(idea))
+        for idea in ("Naruto paints a door while a skeptical girl watches from below.",
+                     "He shields his wife from a wind gust at a busy crossing.",
+                     "She tries to feed a koi without splashing his shirt.",
+                     "They react to a spilled drink by scrambling for napkins.",
+                     "The pair pause to haggle with a vendor over a broken fan."):
+            with self.subTest(idea=idea):
+                self.assertFalse(passive_idea(idea))
+
+    def test_a_second_passive_idea_is_queued_for_repair_but_shared_props_are_not(self):
+        from unittest.mock import Mock
+        from goated_prompter.features.dataset.ideas import DatasetIdeasService, PASSIVE_REPEAT
+        couple = [{**COMPANION, "name": "man", "sex": "male"}, {**COMPANION, "name": "wife", "sex": "female"}]
+        data = valid_draft(amount=5, subject="a man and his wife exploring japan", trigger_type="Multiple characters",
+                           _confirmed_intent=dataset_understanding_fixture(characters=couple))
+        ideas = ["The couple leans close to watch sumo practice.", "They sit at a counter, watching a chef slice fish.",
+                 "They compare drinks at a vending machine.", "They share one umbrella at a vending machine.",
+                 "They argue over coins at a vending machine."]
+        session = Mock()
+        session.generate.return_value = json.dumps([{"index": index, "idea": idea, "scene": f"Scene {index}: {idea}"}
+                                                    for index, idea in enumerate(ideas, 1)])
+        rows = DatasetIdeasService(lambda: None).run(session=session, data=data, assignments=dataset_assignments(data),
+                                                     progress=lambda _message: None, allow_partial=True)
+        reasons = {row["index"]: row.get("failure_reason") for row in rows}
+        self.assertEqual(reasons[2], PASSIVE_REPEAT)
+        self.assertEqual([index for index, reason in reasons.items() if reason], [2])
+
+
+class ClarificationTests(unittest.TestCase):
+    def test_a_remark_is_not_a_clarification_question(self):
+        from goated_prompter.features.dataset.understanding import validate_understanding
+        brief = dataset_understanding_fixture(clarifications=[
+            "Be aware that 'funny stunts' is a broad category; each image will differ."])
+        self.assertEqual(validate_understanding(brief, ("all_outputs", "dataset"))["clarifications"], [])
+        asked = dataset_understanding_fixture(clarifications=["Should the stunts be dangerous?"])
+        self.assertEqual(validate_understanding(asked, ("all_outputs", "dataset"))["clarifications"],
+                         ["Should the stunts be dangerous?"])
+
+    def test_a_none_placeholder_is_not_an_unresolved_physical_conflict(self):
+        from goated_prompter.features.dataset.understanding import validate_understanding
+        for text in ("None", "N/A", "No physical conflicts."):
+            with self.subTest(text=text):
+                brief = dataset_understanding_fixture(physical_conflicts=[
+                    {"scope": "all_outputs", "conflict": text, "compatible_resolution": None}])
+                self.assertEqual(validate_understanding(brief, ("all_outputs", "dataset"))["physical_conflicts"], [])
+        real = dataset_understanding_fixture(physical_conflicts=[
+            {"scope": "all_outputs", "conflict": "He holds two cups and waves with both hands.", "compatible_resolution": None}])
+        with self.assertRaisesRegex(ValueError, "Unresolved physical conflicts"):
+            validate_understanding(real, ("all_outputs", "dataset"))
+
+
+class GemmaRobustnessTests(unittest.TestCase):
+    def test_strolling_counts_as_passive_unless_the_user_asked_for_it(self):
+        from goated_prompter.features.dataset.quality import passive_idea, passive_request
+        self.assertTrue(passive_idea("The couple walks through a field of blooming cherry blossoms."))
+        self.assertFalse(passive_idea("The wife guides the man through a crowded marketplace."))
+        self.assertTrue(passive_request({"subject": "a couple watching fireworks", "constraints": ""}))
+        self.assertFalse(passive_request({"subject": "a man and his wife exploring japan", "constraints": ""}))
+
+    def test_brainstorm_picks_at_most_one_passive_event(self):
+        candidates = [("The couple marvels at a neon sign.", .2), ("They stand in awe before a temple gate.", .2),
+                      ("They walk through red torii gates.", .2), ("He drops his ice cream on her shoe.", .9),
+                      ("She haggles with a fish vendor.", .9)]
+        for seed in range(20):
+            chosen = pick_events(candidates, 4, random.Random(seed))
+            from goated_prompter.features.dataset.quality import passive_idea
+            self.assertLessEqual(sum(passive_idea(event) for event in chosen), 1, chosen)
+        everything = pick_events(candidates, 5, random.Random(1), limit_passive=False)
+        self.assertEqual(len(everything), 5, "A request for watching keeps every candidate.")
+
+
+class SeedTests(unittest.TestCase):
+    def setUp(self):
+        patcher = patch.dict(os.environ, {LIBRARY_DIR_ENV: tempfile.mkdtemp()})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_seed_settings_are_validated_and_old_drafts_get_defaults(self):
+        from goated_prompter.features.dataset.service import validate_dataset_draft
+        old = {key: value for key, value in valid_draft().items() if key not in ("seed", "seed_mode")}
+        self.assertEqual({key: validate_dataset_draft(old)[key] for key in ("seed", "seed_mode")},
+                         {"seed": 0, "seed_mode": "randomize"})
+        for changes in ({"seed": -1}, {"seed": 2**32}, {"seed": "7"}, {"seed": True}, {"seed_mode": "sometimes"}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                validate_dataset_draft(valid_draft(**changes))
+
+    def test_a_new_seed_keeps_the_approved_understanding(self):
+        from goated_prompter.features.dataset.intent import intent_signature
+        self.assertEqual(intent_signature(valid_draft(seed=1)), intent_signature(valid_draft(seed=99, seed_mode="fixed")))
+
+    def plan(self, seed):
+        data = valid_draft(amount=3, _confirmed_intent=dataset_understanding_fixture())
+        backend = CaptureBackend()
+        ScenePlanner(lambda: None).plan_ideas(session=backend, data=data, assignments=dataset_assignments(data),
+                                              progress=lambda _message: None, allow_partial=True, seed=seed)
+        return [call.user_message for call in backend.calls]
+
+    def test_the_same_seed_repeats_the_random_picks_and_another_seed_changes_them(self):
+        self.assertEqual(self.plan(7), self.plan(7))
+        self.assertNotEqual(self.plan(7), self.plan(8))
+
+    def test_batch_runs_send_the_seed_and_a_fixed_seed_ignores_recent_history(self):
+        from goated_prompter.features.dataset.idea_history import RecentIdeaHistory
+        from goated_prompter.features.dataset.service import DatasetService
+        history = RecentIdeaHistory()
+        for mode, remembered in (("fixed", False), ("increment", True)):
+            with self.subTest(mode=mode):
+                data = valid_draft(amount=1, seed=42, seed_mode=mode, _confirmed_intent=dataset_understanding_fixture())
+                backend = CaptureBackend()
+                with patch("goated_prompter.features.dataset.service.create_backend", return_value=backend):
+                    DatasetService({"backend": "mock"}, lambda: None, idea_history=history).run(
+                        GoatedPrompterRequest(idea=data["subject"], prompt_model="Custom"), data,
+                        lambda _: None, lambda _: None, scenes_only=True)
+                self.assertTrue(all(call.seed == 42 for call in backend.calls))
+                self.assertEqual(bool(history.recent(data)), remembered)
+
+
+class SexualContentTests(unittest.TestCase):
+    def setUp(self):
+        patcher = patch.dict(os.environ, {LIBRARY_DIR_ENV: tempfile.mkdtemp()})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        couple = [{**COMPANION, "name": "man", "sex": "male"}, {**COMPANION, "name": "woman", "sex": "female"}]
+        self.brief = dataset_understanding_fixture(characters=couple)
+
+    def draft(self, subject, **changes):
+        return valid_draft(**{"amount": 8, "subject": subject, "trigger_type": "Multiple characters",
+                              "_confirmed_intent": self.brief, **changes})
+
+    def test_only_sexual_batches_get_sexual_moods_and_dynamics(self):
+        from goated_prompter.features.dataset.ideas import DIRECTION_AXES, SEXUAL_DIRECTIONS
+        normal = creative_directions(self.draft("a couple exploring japan"), range(1, 9))
+        sexual = creative_directions(self.draft("a couple having sex"), range(1, 9))
+        self.assertTrue(all(row["interaction"] in DIRECTION_AXES["interaction"] for row in normal.values()))
+        self.assertTrue(all(row["mood"] in DIRECTION_AXES["mood"] for row in normal.values()))
+        self.assertTrue(all("setting" in row and "moment" in row for row in normal.values()),
+                        "Normal batches keep place and moment variety whatever the Director.")
+        self.assertTrue(all(row["interaction"] in SEXUAL_DIRECTIONS["interaction"] for row in sexual.values()))
+        self.assertTrue(all("moment" not in row and "setting" in row for row in sexual.values()))
+
+    def test_sexual_batches_must_show_adults(self):
+        from goated_prompter.features.dataset.quality import adults_only_error, minor_reference, sexual_request
+        self.assertTrue(sexual_request(self.draft("an explicit nsfw scene")))
+        self.assertFalse(sexual_request(self.draft("a couple exploring japan")))
+        self.assertIsNotNone(adults_only_error(self.draft("a couple having sex", constraints="she is a teen")))
+        self.assertIsNotNone(adults_only_error(self.draft("boudoir photos of a 16 yo")))
+        self.assertIsNone(adults_only_error(self.draft("a couple having sex", constraints="both are 30 yo")))
+        self.assertIsNone(adults_only_error(self.draft("a kid flying a kite")), "Non-sexual batches may show children.")
+        self.assertIsNone(minor_reference("1girl, 1boy, a woman and a man in their thirties"))
+
+    def test_a_sexual_idea_that_shows_a_minor_is_queued_for_repair(self):
+        from goated_prompter.features.dataset.ideas import DatasetIdeasService
+        data = self.draft("a couple having sex", amount=2)
+        session = Mock()
+        session.generate.return_value = json.dumps([
+            {"index": 1, "idea": "A schoolgirl and a man in a classroom.", "scene": "Scene 1."},
+            {"index": 2, "idea": "A woman in her thirties pulls the man onto the bed.", "scene": "Scene 2."}])
+        rows = DatasetIdeasService(lambda: None).run(session=session, data=data, assignments=dataset_assignments(data),
+                                                     progress=lambda _message: None, allow_partial=True)
+        self.assertIn("only show adults", rows[0]["failure_reason"])
+        self.assertNotEqual(rows[1].get("idea_status"), "failed")
+
+    def test_a_sexual_request_with_a_minor_never_reaches_the_model(self):
+        from goated_prompter.features.dataset.service import DatasetService
+        data = self.draft("a couple having sex", constraints="she is 15 years old")
+        backend = CaptureBackend()
+        with patch("goated_prompter.features.dataset.service.create_backend", return_value=backend), \
+             self.assertRaisesRegex(ValueError, "only show adults"):
+            DatasetService({"backend": "mock"}, lambda: None).run(
+                GoatedPrompterRequest(idea=data["subject"], prompt_model="Custom"), data,
+                lambda _: None, lambda _: None, scenes_only=True)
+        self.assertEqual(backend.calls, [])

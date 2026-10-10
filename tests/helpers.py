@@ -36,7 +36,7 @@ def dataset_understanding_fixture(**changes):
 
 
 def dataset_idea_fixture(index=1, **changes):
-    return {"index": index, "idea": f"A boxer practising a straight punch at station {index}.",
+    return {"index": index, "idea": f"Boxer {index} practises at a station.",
             "scene": (f"At training station {index}, a boxer drives a straight punch into a swinging heavy bag; "
                       "the punching glove sinks into the leather while the other glove guards the chin. "
                       "Full-body three-quarter view in a dim arena training area lit by one overhead lamp."),

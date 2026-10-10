@@ -10,6 +10,7 @@ from ...backends.factory import create_backend
 from ...contracts import GoatedPrompterRequest, PromptInstruction, effective_model_family
 from ...director_profiles import resolve_director_config
 from ...strict_json import reject_duplicate_keys
+from .quality import adults_only_error
 
 
 SOURCE_FIELDS = (
@@ -328,12 +329,23 @@ def validate_understanding(value: dict, scopes: tuple[str, ...]) -> dict:
             entry = {"scope": _scope(item["scope"], scopes)}
             for key in expected - {"scope"}:
                 entry[key] = None if key == "compatible_resolution" and item[key] is None else _text(item[key], field)
+            # Small models fill the array with a "None" placeholder instead of leaving it empty.
+            if field == "physical_conflicts" and _NO_CONFLICT.fullmatch(entry["conflict"].casefold()):
+                continue
             result[field].append(entry)
-    if any(item["compatible_resolution"] is None for item in result["physical_conflicts"]) and not result["clarifications"]:
+    unresolved = any(item["compatible_resolution"] is None for item in result["physical_conflicts"])
+    if not unresolved:
+        # A remark ("be aware that stunts is a broad category") is not a question and must not
+        # block approval; only real questions stop the run.
+        result["clarifications"] = [question for question in result["clarifications"] if "?" in question]
+    if unresolved and not result["clarifications"]:
         raise ValueError("Unresolved physical conflicts require clarification.")
     if "characters" in value:
         result["characters"] = validate_characters(value["characters"])
     return result
+
+
+_NO_CONFLICT = re.compile(r"\W*(?:none|n/?a|nil|null|no(?:ne found| (?:physical )?conflicts?(?: found| detected)?)?)\W*")
 
 
 def validate_characters(items):
@@ -517,6 +529,8 @@ class DatasetUnderstandingService:
 
     def run(self, request: GoatedPrompterRequest, data: dict, progress: Callable[[str], None]) -> dict:
         self.checkpoint()
+        if blocked := adults_only_error(data):
+            raise ValueError(blocked)
         instruction = understanding_instruction(data)
         effective, profile = resolve_director_config(self.config, request)
         instruction = replace(instruction, model_family=effective_model_family(request, profile, effective))

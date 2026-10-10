@@ -10,7 +10,7 @@ import json
 
 from ...contracts import PromptInstruction
 from ...strict_json import reject_duplicate_keys
-from .quality import idea_concepts
+from .quality import idea_concepts, minor_reference, passive_idea, passive_request, sexual_request
 from .understanding import understanding_instruction, unwrap_json_fence, validate_understanding
 
 
@@ -28,7 +28,19 @@ on hands or fingertips, no
 flips, cartwheels, floor spins, freezes, lifts, handstands or contortions, no one upside
 down or held parallel to the ground, and no body parts inside or through objects, unless
 the user asked for that exact move. Humor and surprise come from the situation, props,
-timing and expressions, not from twisted anatomy."""
+timing and expressions, not from twisted anatomy.
+
+SEXUAL CONTENT
+When the request or confirmed_intent is sexual (sex, fucking, oral, anal, penetration, mutual masturbation, etc.), the sex act itself is the required core event in every idea.
+Every idea must show the sex in progress or at a clearly readable sexual peak.
+Use concrete sexual language when the request is explicit (fucking, sucking, cock, ass, cum, etc.).
+Vary only the exact acts, positions, who is active/receptive, expressions, arousal cues and immediate physical contact.
+Never replace the sex with “intimate moment”, “kissing”, “cuddling”, “looking at each other”, or any non-sexual activity.
+Clothing state follows the Director and the request: never force full nudity unless the user or Director asks for it; partial clothing, open clothes, pulled-down garments are fine and often preferred.
+Supported poses only (lying, kneeling, sitting, standing with weight on feet/seat/knees/back).
+Everyone in a sexual or suggestive image is an adult, clearly grown-up in face and body; write
+them as women and men. Never make anyone in it a child or teen, never mention school, a
+young age or a childlike body, even for anime characters."""
 
 BRAINSTORM_SYSTEM = """You are the Dataset BRAINSTORM stage, after the user approved the understanding.
 List candidate core events: what happens in one image, in one short line each. The app
@@ -37,7 +49,11 @@ common, unusual and rare events, different actions, roles, reactions and outcome
 Every event must satisfy the hard list in confirmed_intent and keep the confirmed cast;
 a required action stays in every event and you vary what happens around it.
 Name the action, not the camera, light, outfit or location: a new place alone is not a new
-event.
+event. Every event has something happening: an activity with a goal, a problem, a mishap or
+a reaction, and with several characters, something they do to or with each other. At most
+one event may be people simply watching, admiring or walking past something, including
+watching someone else perform, cook or play, and apart from what the request itself asks
+for, no place, prop or activity may appear in more than two events.
 """ + PLAUSIBLE_BODIES + """
 Do not list recently_used_ideas events or close variations of them.
 For each event give typicality from 0 to 1: how likely a typical writer would think of it
@@ -97,8 +113,12 @@ def _similar(left, right):
     return len(a & b) / len(a | b) >= SIMILAR_EVENT
 
 
-def pick_events(candidates, count, rng, *, avoid=()):
-    """Sample up to ``count`` distinct events, skipping near-repeats and favouring unusual ones."""
+def pick_events(candidates, count, rng, *, avoid=(), limit_passive=True):
+    """Sample up to ``count`` distinct events, skipping near-repeats and favouring unusual ones.
+
+    At most one passive event (watching, admiring, strolling through) is picked, matching the
+    idea stage's batch rule, because small models fill their candidate lists with them.
+    """
     pool = [(event, typicality) for event, typicality in candidates
             if not any(_similar(event, used) for used in avoid)]
     chosen = []
@@ -106,7 +126,8 @@ def pick_events(candidates, count, rng, *, avoid=()):
         weights = [1.4 - typicality for _event, typicality in pool]
         event, _typicality = rng.choices(pool, weights=weights)[0]
         chosen.append(event)
-        pool = [item for item in pool if item[0] != event and not _similar(item[0], event)]
+        pool = [item for item in pool if item[0] != event and not _similar(item[0], event)
+                and not (limit_passive and passive_idea(event) and passive_idea(item[0]))]
     return chosen
 
 
@@ -123,7 +144,9 @@ def brainstorm_events(session, data, count, rng, *, avoid=(), family="qwen", pro
     except (ValueError, TypeError, RecursionError):
         progress("The brainstorm came back unusable; writing ideas without event seeds.")
         return []
-    return pick_events(candidates, count, rng, avoid=avoid)
+    if sexual_request(data):
+        candidates = [candidate for candidate in candidates if not minor_reference(candidate[0])]
+    return pick_events(candidates, count, rng, avoid=avoid, limit_passive=not passive_request(data))
 
 
 def uses_event_seeds(data):
