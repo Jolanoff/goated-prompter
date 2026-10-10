@@ -88,6 +88,8 @@ CREATIVE DIRECTION
 Each assignment carries a creative_direction chosen by the app to spread the batch
 across moments, moods, framing, settings and light. Start that image's idea from it;
 with an event_seed, the seed decides what happens and the direction how it is shown.
+random_character_looks, when present, gives this image's age, hair, build and outfit for
+each randomly invented character; use it so random characters differ between images.
 HARD requirements, the guided input, expansion_freedom and batch-shared choices always
 win: drop only the conflicting part of a direction, never the requirement. A required
 action stays visibly in progress in every image whatever the direction says.
@@ -161,6 +163,19 @@ ACTION_SAFE_AXES = ("framing", "light")
 # with several characters draw framing from shots that keep everyone in frame.
 GROUP_FRAMING = ("medium shot with everyone in frame", "full-body shot", "wide shot where the place tells the story",
                  "low-angle shot with everyone in frame", "high-angle view from above")
+# Random characters otherwise collapse to the model's default person, so the app draws
+# each image's look for them (AttrPrompt: random attribute combinations beat fixed ones).
+LOOK_AXES = {
+    "age": ("early twenties", "late twenties", "thirties", "forties", "fifties", "sixties", "seventies"),
+    "hair": ("short curly black hair", "long straight auburn hair", "a buzz cut", "a silver bob", "long braids",
+             "wavy shoulder-length blonde hair", "a shaved head", "a messy brown ponytail", "short spiky dyed hair",
+             "thick dark waves", "a grey crew cut", "red pixie-cut hair"),
+    "build": ("slim", "athletic", "stocky", "tall and lanky", "curvy", "broad-shouldered", "petite", "heavyset"),
+    "outfit": ("worn workwear", "streetwear with a hoodie", "a tailored suit", "1970s vintage clothes",
+               "running gear", "chunky knitwear", "punk leather and studs", "business casual", "a floral summer dress",
+               "a utility jacket and cargo trousers", "a plain tee and jeans", "a long wool coat"),
+}
+LOOK_KINDS = {"human", "humanoid"}
 _DIRECTION_SOURCE = ("subject", "trigger", "trigger_type", "custom_type", "constraints", "inputs", "source_mode")
 
 
@@ -190,12 +205,23 @@ def creative_directions(data, indexes, salt=0):
         order = list(values)
         random.Random(seed + position).shuffle(order)
         orders[axis] = order
+    random_cast = [item["name"] for item in brief.get("characters") or ()
+                   if item.get("origin") == "random" and item.get("kind") in LOOK_KINDS]
+    looks = {}
+    for position, axis in enumerate(LOOK_AXES, len(DIRECTION_AXES)):
+        order = list(LOOK_AXES[axis])
+        random.Random(seed + position).shuffle(order)
+        looks[axis] = order
     directions = {}
     for index in indexes:
         scopes = {"all_outputs", *([f"guided:{(index - 1) % len(lines) + 1}"] if guided else [])}
         required_action = bool(action_scopes & scopes)
         directions[index] = {axis: order[(index - 1) % len(order)] for axis, order in orders.items()
                              if (axis in ACTION_SAFE_AXES if required_action else not (guided and axis == "moment"))}
+        if random_cast:
+            directions[index]["random_character_looks"] = {
+                name: ", ".join(looks[axis][(index - 1 + 3 * slot) % len(looks[axis])] for axis in LOOK_AXES)
+                for slot, name in enumerate(random_cast)}
     return directions
 
 

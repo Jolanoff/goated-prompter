@@ -285,3 +285,20 @@ class BrainstormTests(unittest.TestCase):
             progress=lambda _message: None, indexes=[2], existing=[dataset_idea_fixture(1)], allow_partial=True)
         avoid = json.loads(backend.calls[0].user_message)["recently_used_ideas"]
         self.assertEqual(avoid, ["An earlier event.", dataset_idea_fixture(1)["idea"]])
+
+
+class RandomLookTests(unittest.TestCase):
+    def test_random_human_characters_get_a_different_look_in_each_image(self):
+        brief = dataset_understanding_fixture(characters=[NARUTO, COMPANION])
+        data = valid_draft(amount=4, _confirmed_intent=brief)
+        directions = creative_directions(data, [1, 2, 3, 4], salt=5)
+        looks = [direction["random_character_looks"] for direction in directions.values()]
+        self.assertTrue(all(set(look) == {"random companion"} for look in looks), "Named characters keep their canon look.")
+        self.assertEqual(len({look["random companion"] for look in looks}), 4)
+        self.assertNotEqual(directions, creative_directions(data, [1, 2, 3, 4], salt=6))
+
+    def test_non_human_or_defined_casts_get_no_drawn_look(self):
+        for characters in ([NARUTO], [character(origin="random", kind="robot", name="a robot")], []):
+            data = valid_draft(amount=2, _confirmed_intent=dataset_understanding_fixture(characters=characters))
+            self.assertTrue(all("random_character_looks" not in item
+                                for item in creative_directions(data, [1, 2]).values()))

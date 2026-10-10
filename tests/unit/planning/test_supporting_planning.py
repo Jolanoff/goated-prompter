@@ -122,14 +122,14 @@ class SupportingPlanningTests(unittest.TestCase):
         golden = {
             "Generic": "f927ca5697c6313f2e86c1e82770f11e8777ba9625717a93c60b80cabb82fd81",
             "Anima": "1c2d8ec4824a2479d4e6492697dcce19056ef25d072ab535515c557a793c9d93",
-            "Krea 2": "7fa1d8c8f2ef9960a527031e3eff9f1d0b57080b6b4f9cb832cd1aff18ccfede",
-            "FLUX.2 Klein": "abb7327ea664ef6a98f996b4b6b3f52db1c224be21703452ff8ba7d6057754aa",
-            "Z-Image Base": "44e31092353301335c931d86fe1547d35eb1af32066901bf6ba189b790105664",
-            "Z-Image Turbo": "a6b4a417c74984bff8b225cf825eeee2db82b20bf6e2659d788ffe1bc61492b5",
-            "Qwen Image (original)": "b35b0bcc512ae6008c5d96a82fa0bcaeca2d166b544b9b65d2e2d23ea04f5833",
+            "Krea 2": "25d82849f1a2a3396384b700ad80e376501009a1874dfa75c8e3a9bc9831c732",
+            "FLUX.2 Klein": "ffa9c231551a66db21346976162c84a7ff3d765494a1bb5337a3df45219445b2",
+            "Z-Image Base": "f3e9f459ad9b957072d091fbbdea0db77042c78f348caf0603a01f404ddf5943",
+            "Z-Image Turbo": "13d6c8758b06f6d18e9a72a5a0080bacce5011e8d3cb3c8750cbc428fb9c07de",
+            "Qwen Image (original)": "a3a425133fedf2edb97bb0776553c43ea0d8c323e02abff03585108946236601",
             "Qwen Image 2.1": "c015eb5241a3b2f3d637bcf6ba28d9a56a604988f4c03a800a0d4935c090b845",
             "MiniMax H3": "e3826c171c1cd5a92e8f0024dd4fa035606d6968d0497715475a1ee3bbab8729",
-            "LTX 2.5": "31219178f71949b595dec7ec91adad7ac818a35ea36a60514b32ae3d89bc7213",
+            "LTX 2.5": "d9e4eee6b8fc619234f38c15cd0ccd1b38ceef5d2a9930c8cb0468632c29eb5f",
             "Ideogram4": "b9ab98a1821b1871c041b111090782501115c2cbf8b53501e8178dc1f90ef712"}
         self.assertEqual(set(golden), set(TARGET_MODEL_NAMES))
         for target, digest in golden.items():

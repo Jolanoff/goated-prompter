@@ -5,6 +5,7 @@ Dataset produces prompts, not images. There is one pipeline:
 ```text
 concept + rules + local guided input
   → UNDERSTAND (characters + hard / soft / free) → human approval
+  → BRAINSTORM candidate events (random batches) → app picks each image's event
   → IDEAS, five per call, each an idea with its finished scene
   → Builder ENHANCE / Direct with the approved cast → FINAL PROMPT
 ```
@@ -78,6 +79,12 @@ Explicit user counts, actions, contacts, exclusions and required visual evidence
 belong in hard, retaining their scope and qualifiers. A semantic trait does not
 automatically require exposure. Unresolved user conflicts block approval.
 
+For random batches, a brainstorm call (`brainstorm.py`) first lists about three candidate
+events per image with a typicality score. The app drops events similar to recent runs or
+current siblings and samples the batch weighted toward unusual events, then passes each
+image its `event_seed`. Randomly invented human characters also get a code-drawn age, hair,
+build and outfit per image in their creative direction. An unusable brainstorm is reported
+and ideas continue without seeds; guided and library batches skip it.
 IDEAS writes five images per call: each record is a one-line idea (the core event) and
 its scene, a complete three-to-five-sentence picture with the whole cast in frame,
 placement, action, setting, light and camera. Later calls receive the earlier ideas as
