@@ -11,7 +11,8 @@ from ...backends.base import BackendGenerationError
 from ...contracts import PromptInstruction
 from .brainstorm import PLAUSIBLE_BODIES
 from .quality import analyze_idea_diversity
-from .understanding import label_error, understanding_instruction, validate_understanding, unwrap_json_fence
+from .understanding import (label_replacements, numbered_labels, replace_labels, understanding_instruction,
+                            unwrap_json_fence, validate_understanding)
 from ...prompt_library import copied_reference, library_file_name, pick_references, pick_scenarios
 from ...strict_json import reject_duplicate_keys
 
@@ -357,12 +358,25 @@ def unrenderable_pose(text, request):
     return None
 
 
-def _reject_numbered_label(row, characters, allow_partial):
-    if row.get("idea_status") == "failed" or not (reason := label_error(f"{row['idea']} {row['scene']}", characters)):
+def _looks_described(looks):
+    """'woman, mid twenties, long braids, slim' -> 'the woman with long braids' for each label."""
+    described = {}
+    for name, look in (looks or {}).items():
+        parts = [part.strip() for part in look.split(",")]
+        hair = next((part for part in parts if part in LOOK_AXES["hair"]), "")
+        noun = parts[0] if parts and parts[0] in SEX_LOOKS else " ".join(re.sub(r"\d+", " ", name).split()).casefold() or "person"
+        if hair:
+            described[name] = f"the {noun} with {hair}"
+    return described
+
+
+def _relabel(row, characters, looks):
+    """Numbered labels name nobody an image can show; describe those people instead."""
+    if row.get("idea_status") == "failed" or not numbered_labels(characters):
         return row
-    if not allow_partial:
-        raise ValueError(f"Idea {row['index']}: {reason}")
-    return _failed_idea(row, row["index"], reason)
+    replacements = label_replacements(characters, _looks_described(looks))
+    return {**row, "idea": replace_labels(row["idea"], replacements),
+            "scene": replace_labels(row["scene"], replacements)}
 
 
 def _reject_unrenderable_pose(row, data, allow_partial):
@@ -467,7 +481,10 @@ class DatasetIdeasService:
             if instruction.reference_prompts:
                 rows = [_reject_copied_scene(row, instruction.reference_prompts, allow_partial) for row in rows]
             rows = [_reject_unrenderable_pose(row, data, allow_partial) for row in rows]
-            rows = [_reject_numbered_label(row, (data.get("_confirmed_intent") or {}).get("characters"), allow_partial) for row in rows]
+            looks = {entry["index"]: (entry.get("creative_direction") or {}).get("random_character_looks")
+                     for entry in selected}
+            cast = (data.get("_confirmed_intent") or {}).get("characters")
+            rows = [_relabel(row, cast, looks.get(row["index"])) for row in rows]
             previous = {row["index"]: row for row in existing if row["index"] in indexes}
             inputs = {row["index"]: row["input"] for row in assignments}
             recent_events = {" ".join(idea.casefold().split()) for idea in recent}

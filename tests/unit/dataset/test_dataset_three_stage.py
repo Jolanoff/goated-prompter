@@ -464,15 +464,34 @@ class RenderabilityGateTests(unittest.TestCase):
 class LabelAndTriggerTidyTests(unittest.TestCase):
     PAIR = [{**COMPANION, "name": "Friend 1"}, {**COMPANION, "name": "Friend 2"}]
 
-    def test_numbered_labels_are_rejected_in_ideas_and_prompts_but_plain_roles_are_fine(self):
-        from goated_prompter.features.dataset.understanding import label_error
-        from goated_prompter.features.dataset.ideas import _reject_numbered_label
-        self.assertIn('"Friend 1"', label_error("Friend 1 holds the cake while Friend 2 laughs.", self.PAIR))
-        self.assertIsNone(label_error("A woman holds the cake while a man laughs.", self.PAIR))
+    def test_numbered_labels_are_replaced_with_visible_descriptions_never_rejected(self):
+        from goated_prompter.features.dataset.understanding import label_replacements, replace_labels
+        from goated_prompter.features.dataset.ideas import _relabel
+        self.assertEqual(replace_labels("Friend 1 holds the cake. friend 2 laughs at Friend 1’s hat.",
+                                        label_replacements(self.PAIR)),
+                         "The first friend holds the cake. The second friend laughs at the first friend’s hat.")
         roles = [{**COMPANION, "name": "old man"}, {**COMPANION, "name": "grandson"}, NARUTO]
-        self.assertIsNone(label_error("The old man shows his grandson a fish; Naruto waves.", roles))
-        row = {"index": 1, "idea": "Friend 1 slips.", "scene": "Friend 1 slips by Friend 2.", "idea_status": "valid"}
-        self.assertEqual(_reject_numbered_label(row, self.PAIR, True)["failure_stage"], "idea")
+        self.assertEqual(label_replacements(roles), {}, "Plain roles and named characters stay as written.")
+        row = {"index": 1, "idea": "Friend 1 slips.", "scene": "Friend 1 slips beside Friend 2.", "idea_status": "valid"}
+        looks = {"Friend 1": "woman, mid twenties, long braids, slim", "Friend 2": "early thirties, a buzz cut, stocky"}
+        relabelled = _relabel(row, self.PAIR, looks)
+        self.assertEqual((relabelled["idea_status"], relabelled["idea"]), ("valid", "The woman with long braids slips."))
+        self.assertEqual(relabelled["scene"], "The woman with long braids slips beside the friend with a buzz cut.")
+        self.assertEqual(_relabel(row, self.PAIR, None)["scene"], "The first friend slips beside the second friend.")
+
+    def test_a_prompt_that_still_uses_labels_is_relabelled_not_retried(self):
+        from unittest.mock import Mock
+        from goated_prompter.features.dataset.service import DatasetService
+        data = valid_draft(amount=1, target="Krea 2", trigger="two friends", trigger_type="Multiple characters",
+                           expand_trigger=True, _confirmed_intent=dataset_understanding_fixture(characters=self.PAIR))
+        row = saved_scene()
+        instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=row)
+        session = Mock()
+        session.generate.return_value = "Two friends at a festival: Friend 1 dances while Friend 2 claps under string lights."
+        result = DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None, row)
+        self.assertEqual(result, "Two friends at a festival: the first friend dances while the second friend claps "
+                                 "under string lights.")
+        session.generate.assert_called_once()
 
     def test_an_expanded_trigger_is_never_quoted_or_left_alone_at_the_end(self):
         from goated_prompter.features.dataset.triggers import tidy_expanded_trigger

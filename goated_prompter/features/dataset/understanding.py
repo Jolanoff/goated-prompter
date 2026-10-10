@@ -560,17 +560,45 @@ class DatasetUnderstandingService:
                                          + " No generation started.") from error
 
 
+
+_ORDINALS = ("first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth",
+             "eleventh", "twelfth")
+
+
 def numbered_labels(characters):
     """Names of random characters that are only numbered role labels ("friend 1")."""
     return [item["name"] for item in characters or ()
             if item.get("origin") == "random" and re.search(r"\d", item.get("name", ""))]
 
 
-def label_error(text, characters):
-    """A numbered label written into a scene or prompt names nobody an image can show."""
-    found = [name for name in numbered_labels(characters)
-             if re.search(rf"\b{re.escape(name)}\b", str(text), re.I)]
-    if not found:
-        return None
-    return ("Describe each person by look and position, never by a numbered label ("
-            + ", ".join(f'"{name}"' for name in found[:3]) + ").")
+def label_replacements(characters, described=None):
+    """Map each numbered label to words an image can show.
+
+    ``described`` gives a visible description per label (from the drawn looks); otherwise the
+    label becomes an ordinal ("friend 2" -> "the second friend").
+    """
+    replacements = {}
+    for name in numbered_labels(characters):
+        if (described or {}).get(name):
+            replacements[name] = described[name]
+            continue
+        number = re.search(r"\d+", name)
+        noun = " ".join(re.sub(r"\d+", " ", name).split()).casefold() or "person"
+        position = int(number.group()) - 1 if number else -1
+        replacements[name] = (f"the {_ORDINALS[position]} {noun}" if 0 <= position < len(_ORDINALS)
+                              else f"another {noun}")
+    return replacements
+
+
+def replace_labels(text, replacements):
+    """Swap numbered labels for their replacements, capitalising at the start of a sentence."""
+    value = str(text or "")
+    for name in sorted(replacements, key=len, reverse=True):
+        source, phrase = value, replacements[name]
+
+        def swap(match, source=source, phrase=phrase):
+            before = source[:match.start()].rstrip()
+            return phrase[:1].upper() + phrase[1:] if not before or before[-1] in ".!?\n" else phrase
+
+        value = re.sub(rf"(?<![\w-]){re.escape(name)}(?![\w-])", swap, source, flags=re.I)
+    return value
