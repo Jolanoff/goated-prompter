@@ -104,18 +104,6 @@ Use all three top-level fields. Write rich, concrete descriptions within the fie
 
 # Targets whose adapter defines a required format rather than a writing style keep it in
 # full when the user's library sets the style; the rest shrink to a format line.
-STRUCTURED_TARGETS = {"Anima", "Ideogram4", "MiniMax H3", "LTX 2.5"}
-
-
-def library_format_adapter(name):
-    """The adapter to use when library prompts set the writing style."""
-    target = canonical_target(name)
-    if target in STRUCTURED_TARGETS:
-        return get_model_adapter(target)
-    return (f"{target} target: write the prompt as natural-language text for {target}. The user's library prompts "
-            "below set its style, structure and density. Put words to render in the image in double quotes.")
-
-
 def get_model_adapter(name):
     """Return the selected adapter, falling back to Generic."""
     return MODEL_ADAPTERS.get(canonical_target(name), MODEL_ADAPTERS["Generic"])
@@ -217,17 +205,19 @@ QWEN21_EDIT_EXAMPLE = (
 
 
 def library_reference_section(references, *, continuation=False):
-    """Present user library prompts as quality references, replacing the built-in example."""
+    """Present user library prompts as templates for how a good prompt is built, not for its look."""
     if not references:
         return ""
-    numbered = "\n\n".join(f"Reference {index}:\n{prompt}" for index, prompt in enumerate(references, 1))
-    return ("STYLE FROM THE USER'S PROMPT LIBRARY\n"
-            "The user wrote or saved these prompts because they work. Write your prompt the way they are written: "
-            "the same structure (one paragraph, labeled sections, a tag list, a trigger word first), the same order of "
-            "information, sentence style, vocabulary, kind of detail and density. Where they differ from each other, "
-            "follow whichever suits this image. Their style wins over the style advice of the target adapter and the "
-            "Director; the selected length still sets roughly how long, and the target's required format still applies. "
-            "Never copy their subjects, names, scene or sentences.\n\n" + numbered
+    numbered = "\n\n".join(f"Template {index}:\n{prompt}" for index, prompt in enumerate(references, 1))
+    return ("TEMPLATES FROM THE USER'S PROMPT LIBRARY\n"
+            "The user saved these prompts as examples of how a good prompt for this model is written. Use them as "
+            "templates for the craft: the structure (one paragraph, labeled sections, a tag list, a trigger word "
+            "first), the order of information, how concretely each subject, pose, outfit, camera and light is "
+            "described, and how dense the detail is. Do not take the look of the image from them: the medium, visual "
+            "style, aesthetic, palette, mood, subjects, names, setting and sentences come from this request, the "
+            "selected Style and the Director. Where the templates differ in structure, follow whichever suits this "
+            "image. The selected length still sets roughly how long, and the target's required format still applies."
+            "\n\n" + numbered
             + ("\n\nYour output is only the continuation after the app-inserted character tags; do not repeat character tags."
                if continuation else ""))
 

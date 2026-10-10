@@ -159,7 +159,7 @@ def _quantile(values, fraction):
 
 
 def style_profile_text(profile, length):
-    """Describe the library's style and the word target for the selected length."""
+    """Describe the library's prompt format (structure and length) and the word target for the selected length."""
     lengths = profile.get("lengths") or [profile["median_words"]]
     words = max(25, round(_quantile(lengths, LENGTH_QUANTILE.get(length, .75)) / 5) * 5)
     spread = (f"from about {lengths[0]} to {lengths[-1]} words, typically {profile['median_words']}"
@@ -170,8 +170,8 @@ def style_profile_text(profile, length):
     if profile["lead"]:
         parts.append(f'starting with "{profile["lead"]}"')
     saved = f"{profile['count']} saved prompt" + ("" if profile["count"] == 1 else "s")
-    return (f"YOUR LIBRARY'S STYLE ({saved}): " + "; ".join(parts) + ". "
-            f"Write this prompt in that style at about {words} words for the selected {length} length.")
+    return (f"YOUR LIBRARY'S PROMPT FORMAT ({saved}): " + "; ".join(parts) + ". "
+            f"Build this prompt in that format at about {words} words for the selected {length} length.")
 
 
 def load_library(target, directory=None):

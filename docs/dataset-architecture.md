@@ -121,9 +121,11 @@ the app's creative directions never ask for top-down or worm's-eye views, and th
 add a second viewpoint or extra pose detail. A deterministic check rejects final prompts that
 describe the camera from above and from below at once, because contradictory viewpoints are a
 common cause of folded anatomy. When the target's library has prompts, the writer gets a
-measured style profile (range of lengths, structure, section labels, shared trigger; the selected length picks a point in that range) and the same
-two library prompts for the whole batch; the target adapter shrinks to its required format and
-the default Director's style text is left out.
+measured prompt format (range of lengths, structure, section labels, shared trigger; the selected
+length picks a point in that range) and the same two library prompts for the whole batch as
+templates for how the prompt is built. The target adapter and the Director stay in full: the
+look (medium, style, palette, mood) comes from the request, the Style setting and the Director,
+never from the templates.
 Scene prose is Builder's entire creative input. `dataset_instruction` calls the
 existing `assemble_instruction` with **Enhance / Direct**, adds the approved cast and
 the applicable hard/soft/free contract. Director, creativity, style, length and target

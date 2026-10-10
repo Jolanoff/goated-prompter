@@ -29,7 +29,7 @@ def output_contract(target, *, qwen_task="t2i", qwen_images=None, library_style=
         return "OUTPUT FORMAT — MiniMax H3: In Video mode return integrated_multimodal_description, overall_soundscape, non_diegetic_music as nonempty named sections exactly once in that order. Full-reference output instead requires subject_definitions, summary, retention_analysis, detailed_description, overall_soundscape, non_diegetic_music in order. Only applicable frame instructions may precede the fields; no JSON or commentary. In other modes preserve the selected task. Target structure wins over Director and Length."
     return (
         f"OUTPUT FORMAT — {target}: Return only the complete prompt text "
-        + ("written like the user's library prompts above, including labeled sections if they use them. "
+        + ("built like the user's library templates above, including labeled sections if they use them. "
            if library_style else "in the target adapter's writing style. ")
         + "Do not output a JSON object, JSON array, key/value wrapper, markdown fence or direction label. "
         "The packaging of the user's text never determines your output format."

@@ -83,7 +83,7 @@ class PromptLibraryTests(unittest.TestCase):
         self.assertIn("STYLE EXAMPLE", assemble_instruction(GoatedPrompterRequest(idea="driving a car", target_model="Anima")).system_message)
         self.write("Anima", CAR, KITCHEN)
         instruction = assemble_instruction(GoatedPrompterRequest(idea="naruto driving a car", target_model="Anima"))
-        self.assertIn("STYLE FROM THE USER'S PROMPT LIBRARY", instruction.system_message)
+        self.assertIn("TEMPLATES FROM THE USER'S PROMPT LIBRARY", instruction.system_message)
         self.assertIn(CAR, instruction.system_message)
         self.assertNotIn("STYLE EXAMPLE", instruction.system_message)
         self.assertEqual(instruction.reference_prompts, (CAR, KITCHEN))
@@ -91,24 +91,23 @@ class PromptLibraryTests(unittest.TestCase):
         self.assertNotIn("STYLE EXAMPLE", unrelated.system_message, "Any saved prompt beats the built-in example.")
         self.assertEqual(set(unrelated.reference_prompts), {CAR, KITCHEN})
 
-    def test_library_style_is_the_last_guidance_and_the_output_rule_points_to_it(self):
+    def test_library_templates_shape_the_prompt_while_style_and_director_set_the_look(self):
         sectioned = "Subject and action:\nA courier sprints.\n\nComposition and camera:\nLow angle."
         self.write("Krea 2", sectioned)
         system = assemble_instruction(GoatedPrompterRequest(idea="a chef plating dessert", target_model="Krea 2")).system_message
-        style, settings, contract = (system.index("STYLE FROM THE USER'S PROMPT LIBRARY"),
-                                     system.index("USER SETTINGS"), system.index("Output contract:"))
-        self.assertLess(settings, style)
-        self.assertLess(style, contract)
-        self.assertNotIn("DIRECTOR BEHAVIOR", system, "The default Director's style advice would compete with the library.")
-        self.assertIn("Krea 2 target: write the prompt as natural-language text for Krea 2", system)
-        self.assertNotIn("exhaustive", system[:style], "Built-in style advice gives way to the library.")
-        self.assertIn('YOUR LIBRARY\'S STYLE (1 saved prompt): about 11 words; written as labeled sections; '
+        templates, settings, contract = (system.index("TEMPLATES FROM THE USER'S PROMPT LIBRARY"),
+                                         system.index("USER SETTINGS"), system.index("Output contract:"))
+        self.assertLess(settings, templates)
+        self.assertLess(templates, contract)
+        self.assertIn("DIRECTOR BEHAVIOR — General Director", system, "The Director keeps deciding the look.")
+        self.assertIn("exhaustive", system[:templates], "The full target adapter keeps its model knowledge.")
+        flat = " ".join(system.split())
+        self.assertIn("Do not take the look of the image from them: the medium, visual style, aesthetic, palette, mood", flat)
+        self.assertIn("come from this request, the selected Style and the Director", flat)
+        self.assertNotIn("wins over", flat)
+        self.assertIn('YOUR LIBRARY\'S PROMPT FORMAT (1 saved prompt): about 11 words; written as labeled sections; '
                       'with the sections "Subject and action:", "Composition and camera:"', system)
-        chosen = assemble_instruction(GoatedPrompterRequest(idea="a chef plating dessert", target_model="Krea 2",
-                                                            director_preset="photography_director")).system_message
-        self.assertIn("DIRECTOR BEHAVIOR", chosen, "A Director the user picked still applies.")
-        self.assertIn("written like the user's library prompts above, including labeled sections", system)
-        self.assertIn("wins over the style advice of the target adapter and the Director", " ".join(system.split()))
+        self.assertIn("built like the user's library templates above, including labeled sections", system)
         self.assertNotIn("headings", system[contract:])
         empty = assemble_instruction(GoatedPrompterRequest(idea="a chef plating dessert", target_model="Generic")).system_message
         self.assertIn("in the target adapter's writing style", empty)

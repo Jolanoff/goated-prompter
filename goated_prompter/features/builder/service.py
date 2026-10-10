@@ -30,9 +30,9 @@ from ...prompting.details import LENGTH_ADAPTERS as _LENGTH_ADAPTERS, MAXIMUM_DE
 from .prompting import EVIDENCE_ANALYSIS_SYSTEM_PROMPT, evidence_analysis_user_message
 from ...prompting.modes import get_mode_adapter, get_vision_mode_adapter
 from ...prompting.output import OUTPUT_CONTRACT, output_contract, qwen_format_repair, minimax_format_repair
-from ...prompting.target_models import QWEN21_EDIT_ADAPTER, get_model_adapter, get_target_example, library_format_adapter, library_reference_section, resolve_target_length, get_target_capabilities
+from ...prompting.target_models import QWEN21_EDIT_ADAPTER, get_model_adapter, get_target_example, library_reference_section, resolve_target_length, get_target_capabilities
 from ...prompt_library import copied_reference, library_file_name, library_profile, pick_references, pick_scenarios, style_profile_text
-from ...presets import DEFAULT_DIRECTOR_PRESET, get_director_preset
+from ...presets import get_director_preset
 from ...options.references import REFERENCE_IMAGE_SLOTS
 from ...reference_map import reference_images, resolve_reference_map
 from ...output_repetition import drop_repeated_tags, remove_contradictory_solo
@@ -161,8 +161,8 @@ def assemble_instruction(
         scenario = picks[0]
         # The recast scenario is meant to be reused, so it is neither a style reference nor copy-checked.
         references = tuple(reference for reference in references if reference != scenario)
-    # Library prompts go last, right before the output rules, so the user's style is the
-    # freshest guidance; the built-in example stays with the adapter for empty libraries.
+    # Library templates go last, right before the output rules, so the user's way of building a
+    # prompt is the freshest guidance; the built-in example stays with the adapter for empty libraries.
     library_style = library_reference_section(references, continuation=not include_target_example) if references else ""
     target_example = ("" if references else get_target_example(request.target_model, qwen_task="edit" if qwen_images else "t2i")
                       if include_target_example else "")
@@ -174,13 +174,11 @@ def assemble_instruction(
            + "\nKeep its place, situation, activity, props, camera and mood. Cast the subjects from the user's request "
            "into its roles, main role first; adapt gender, age and relationship wording; drop roles the request does not "
            "fill; never reuse its character names." if scenario else ""),
-        "TARGET MODEL ADAPTER\n" + (QWEN21_EDIT_ADAPTER if qwen_images
-                                      else library_format_adapter(request.target_model) if references
-                                      else get_model_adapter(request.target_model))
+        "TARGET MODEL ADAPTER\n" + (QWEN21_EDIT_ADAPTER if qwen_images else get_model_adapter(request.target_model))
         + ("\n\n" + target_example if target_example else ""),
         "USER SETTINGS",
         _CREATIVITY_ADAPTERS.get(request.creativity, _CREATIVITY_ADAPTERS["Balanced"]),
-        # With a library, length is measured against the user's own prompts instead of generic prose.
+        # With a library, structure and length are measured against the user's own prompts.
         style_profile_text(profile, request.prompt_length) if references and (profile := library_profile(request.target_model))
         else resolve_target_length(request.target_model, request.prompt_length),
     ])
@@ -192,9 +190,8 @@ def assemble_instruction(
         resolved_reference_map, has_visual_context,
     ))
 
-    # The default Director only adds generic style advice, which would compete with the library.
-    if active_director_instructions and not (references and preset.label == DEFAULT_DIRECTOR_PRESET
-                                             and not request.system_prompt_override.strip()):
+    # Library templates show how to write; the Director still decides the look, the default one included.
+    if active_director_instructions:
         sections.append(f"DIRECTOR BEHAVIOR — {preset.label}\n{active_director_instructions}")
     if prompt_scene_plan is not None:
         sections.append(prompt_scene_plan.supporting_input())
