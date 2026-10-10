@@ -89,9 +89,10 @@ def passive_idea(text):
 # Sexual requests get act-focused directions, and everyone in them must be an adult. The request,
 # rules, guided inputs, cast and selected Director all count, since any of them can make a batch sexual.
 _SEXUAL = re.compile(r"\b(?:sex|sexual\w*|nsfw|porn\w*|explicit|erotic\w*|nude|nudity|naked|fuck\w*|blowjob\w*|"
-                     r"handjob\w*|oral|anal|penetrat\w*|masturbat\w*|cum|cums|cumming|cumshot\w*|orgasm\w*|cock\w*|"
-                     r"dick\w*|pussy|pussies|boobs?|tits|nipples?|genitals?|horny|aroused)\b")
-_SUGGESTIVE = re.compile(r"\b(?:lingerie|boudoir|seductive\w*|sensual\w*|undress\w*|strip\w*|topless|bottomless)\b")
+                     r"handjob\w*|oral(?! (?:presentations?|exams?|examinations?|hygiene|history|health|surgery|traditions?|reports?|arguments?))|anal|penetrat\w*|masturbat\w*|cum|cums|cumming|cumshot\w*|orgasm\w*|cocks?|"
+                     r"dicks?|pussy|pussies|boobs?|tits|nipples?|genitals?|horny|aroused)\b")
+_SUGGESTIVE = re.compile(r"\b(?:lingerie|boudoir|seductive\w*|sensual\w*|undress\w*|striptease|strippers?|"
+                         r"strip(?:s|ped|ping)? (?:off|down|naked|nude)|topless|bottomless)\b")
 _MINOR = re.compile(r"\b(?:child|children|childlike|kids?|minors?|underage\w*|teens?|teenage\w*|preteens?|"
                     r"tweens?|loli\w*|shota\w*|schoolgirls?|schoolboys?|toddlers?|infants?|bab(?:y|ies)|"
                     r"(?:elementary|primary|middle|high|junior high) school\w*|little (?:girl|boy)s?|young (?:girl|boy)s?|"

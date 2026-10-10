@@ -220,3 +220,16 @@ class DatasetCheckpointTests(unittest.TestCase):
             current = self.begin()
         records = self.state.dataset_checkpoints.snapshot()["jobs"]
         self.assertEqual([row["job_id"] for row in records], [current.id])
+
+
+class DatasetSeedCheckpointTests(DatasetCheckpointTests):
+    def test_the_seed_sent_with_an_admitted_run_is_saved_with_the_other_settings(self):
+        self.data = {**self.data, "seed": 4242, "seed_mode": "increment"}
+        job = self.begin()
+        self.assertEqual(self.state.workflow_settings.snapshot("dataset")["draft"]["seed"], 4242)
+        job.result = self.result()
+        job.status = "succeeded"
+        self.state.workflow_settings.checkpoint_dataset(job)
+        restarted = self.make_state().workflow_settings.snapshot("dataset")["draft"]
+        self.assertEqual((restarted["seed"], restarted["seed_mode"]), (4242, "increment"))
+        self.assertEqual(restarted["results"], self.result()["prompts"])

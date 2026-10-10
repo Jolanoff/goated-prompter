@@ -729,11 +729,17 @@ class SexualContentTests(unittest.TestCase):
     def test_sexual_batches_must_show_adults(self):
         from goated_prompter.features.dataset.quality import adults_only_error, minor_reference, sexual_request
         self.assertTrue(sexual_request(self.draft("an explicit nsfw scene")))
+        self.assertTrue(sexual_request(self.draft("she gives him oral")))
         self.assertFalse(sexual_request(self.draft("a couple exploring japan")))
         self.assertIsNotNone(adults_only_error(self.draft("a couple having sex", constraints="she is a teen")))
         self.assertIsNotNone(adults_only_error(self.draft("boudoir photos of a 16 yo")))
         self.assertIsNone(adults_only_error(self.draft("a couple having sex", constraints="both are 30 yo")))
         self.assertIsNone(adults_only_error(self.draft("a kid flying a kite")), "Non-sexual batches may show children.")
+        for subject in ("kids at a cocktail party", "a kid reading Dickens", "kids drawing a comic strip",
+                        "a kid giving an oral presentation"):
+            with self.subTest(subject=subject):
+                self.assertIsNone(adults_only_error(self.draft(subject)))
+                self.assertFalse(sexual_request(self.draft(subject)))
         self.assertIsNone(minor_reference("1girl, 1boy, a woman and a man in their thirties"))
 
     def test_a_sexual_idea_that_shows_a_minor_is_queued_for_repair(self):
