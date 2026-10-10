@@ -148,7 +148,7 @@ def assemble_instruction(
         TEXT_ONLY_PRIORITY_CONTRACT if text_only or not has_visual_context
         else LINKED_PRIORITY_CONTRACT if request.linked_references else PRIORITY_CONTRACT,
     ]
-    # The user's own library wins over the built-in example when it has matching prompts.
+    # Any saved library prompt replaces the built-in example; matching ones are picked first.
     references = () if qwen_images else pick_references(request.target_model, idea)
     scenario = ""
     if request.mode == "Remix":

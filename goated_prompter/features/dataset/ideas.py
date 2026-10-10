@@ -251,7 +251,7 @@ def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existin
     guided_count = len(source_context["guided_inputs"])
     library = data.get("source_mode") == "library"
     query = " ".join((data.get("subject", ""), data.get("constraints", "")))
-    # Saved prompts that match the concept show the quality the user likes; recasts use them as scenarios instead.
+    # Saved prompts show the quality the user likes (matching ones first); recasts use them as scenarios instead.
     examples = () if library else pick_references(data["target"], query, count=2, rng=rng)
     if library:
         cast = brief.get("character_count") if type(brief.get("character_count")) is int else None

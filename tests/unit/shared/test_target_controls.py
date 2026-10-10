@@ -47,7 +47,8 @@ class TargetControlTests(unittest.TestCase):
         for medium in ("anime", "illustration", "graphic design", "3D"):
             self.assertIn(medium, adapter)
         self.assertIn("Always name a medium, era or process", adapter)
-        self.assertIn("For photographs, name the light's source, direction and color", adapter)
+        self.assertIn("long, exhaustive natural-language description", adapter)
+        self.assertIn('"Composition and camera:"', adapter)
         self.assertNotIn("photographic realism", adapter)
         self.assertIn("do not force photographic rendering", adapter)
         message = self.instruction("Krea 2", creativity="Dice")

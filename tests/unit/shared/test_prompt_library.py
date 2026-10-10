@@ -57,9 +57,14 @@ class PromptLibraryTests(unittest.TestCase):
         self.assertEqual(index.search("space station orbit"), [])
         self.assertEqual(index.search(""), [])
 
-    def test_references_are_sampled_from_the_best_matches(self):
+    def test_references_put_matches_first_and_top_up_from_the_rest_of_the_library(self):
         self.write("Anima", CAR, KITCHEN, BEACH)
-        self.assertEqual(pick_references("Anima", "car interior driving", count=2), (CAR,))
+        picks = pick_references("Anima", "car interior driving", count=2)
+        self.assertEqual(picks[0], CAR)
+        self.assertIn(picks[1], (KITCHEN, BEACH))
+        self.assertEqual(len(pick_references("Anima", "space station orbit", count=2)), 2)
+        self.assertEqual(len(pick_references("Anima", "car", count=5)), 3, "Never more than the library holds.")
+        self.assertEqual(pick_references("Generic", "car", count=2), ())
         picks = {pick_references("Anima", "car kitchen beach", count=1, rng=random.Random(seed))[0] for seed in range(40)}
         self.assertGreater(len(picks), 1)
 
@@ -80,19 +85,18 @@ class PromptLibraryTests(unittest.TestCase):
         instruction = assemble_instruction(GoatedPrompterRequest(idea="naruto driving a car", target_model="Anima"))
         self.assertIn("REFERENCE PROMPTS", instruction.system_message)
         self.assertIn(CAR, instruction.system_message)
-        self.assertNotIn(KITCHEN, instruction.system_message)
         self.assertNotIn("STYLE EXAMPLE", instruction.system_message)
-        self.assertEqual(instruction.reference_prompts, (CAR,))
+        self.assertEqual(instruction.reference_prompts, (CAR, KITCHEN))
         unrelated = assemble_instruction(GoatedPrompterRequest(idea="astronaut in orbit", target_model="Anima"))
-        self.assertIn("STYLE EXAMPLE", unrelated.system_message)
-        self.assertEqual(unrelated.reference_prompts, ())
+        self.assertNotIn("STYLE EXAMPLE", unrelated.system_message, "Any saved prompt beats the built-in example.")
+        self.assertEqual(set(unrelated.reference_prompts), {CAR, KITCHEN})
 
     def test_dataset_writer_picks_references_by_the_planned_scene(self):
         boxing = "1boy, boxing, punching bag, gym, sweat\n\nA boxer slams a heavy bag under harsh gym lights."
         self.write("Krea 2", boxing, KITCHEN)
         data = valid_draft(target="Krea 2")
         writer = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=saved_scene())
-        self.assertEqual(writer.reference_prompts, (boxing,))
+        self.assertEqual(writer.reference_prompts, (boxing, KITCHEN))
         self.assertIn(boxing, writer.system_message)
 
     def test_builder_retries_once_when_the_output_copies_a_reference(self):

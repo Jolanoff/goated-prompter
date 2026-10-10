@@ -255,6 +255,7 @@ Slots keep their numbers when an image is removed. Removing a required image res
 - **End generation** first interrupts the active HTTP request safely. The managed model process is only stopped as a fallback when no cancellable transport is registered. Closing an external request does not guarantee the remote provider stops its computation immediately.
 - One generation runs at a time. Settings and preset editing are locked while a job is active.
 - **Save Prompt** adds named output text to the saved-prompt library. Instruction presets are a separate library.
+- **Per-target prompt library**: on first launch the app creates one text file per target model in `data/prompt_library/` (for example `krea-2.txt`). Paste prompts you like there, separated by a line containing only `---`. Whenever a target's file has prompts, Builder and Dataset use two of them as style references instead of the built-in example, preferring ones that match your idea; **Remix** (Builder) and **From my library** (Dataset) recast a saved prompt with your characters.
 
 The app writes prompts; the quality and faithfulness of the generated description depend on your chosen model and inputs. It does not generate images or videos itself.
 

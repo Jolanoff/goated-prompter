@@ -141,11 +141,18 @@ def load_library(target, directory=None):
 
 
 def pick_references(target, query, count=2, pool=10, rng=None, directory=None):
-    """Pick up to ``count`` matching prompts at random from the best ``pool`` matches."""
-    matches = [prompt for _score, prompt in load_library(target, directory).search(query, pool)]
-    if len(matches) <= count:
-        return tuple(matches)
-    return tuple((rng or random).sample(matches, count))
+    """Pick ``count`` library prompts: random picks among the best matches, topped up with other saved prompts.
+
+    References teach the user's style, so any saved prompt beats the built-in example;
+    matching ones come first because they also fit the subject.
+    """
+    rng = rng or random
+    index = load_library(target, directory)
+    matches = [prompt for _score, prompt in index.search(query, pool)]
+    picks = rng.sample(matches, count) if len(matches) > count else matches
+    others = [prompt for prompt in index.prompts if prompt not in matches]
+    picks += rng.sample(others, min(count - len(picks), len(others)))
+    return tuple(picks)
 
 
 def library_status(target, directory=None):
