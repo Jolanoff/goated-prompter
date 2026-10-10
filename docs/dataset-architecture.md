@@ -89,7 +89,9 @@ IDEAS writes five images per call: each record is a one-line idea (the core even
 its scene, a complete three-to-five-sentence picture with the whole cast in frame,
 placement, action, setting, light and camera. Later calls receive the earlier ideas as
 existing ideas and share one creative-direction salt, so the
-batch stays spread without one long list. Ideas never see the prompt library. An
+batch stays spread without one long list. Ideas never see the prompt library's prompts;
+they get craft notes (`craft_notes.py`) distilled from it once per library version, and any
+note that repeats a word specific to the saved prompts is dropped. An
 explicit replacement requests only its index. History and diversity hints never
 override a guided action or approved hard requirement. There is no Fast/Quality
 dispatch, automatic substitute idea or fallback plan.

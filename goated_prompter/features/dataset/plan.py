@@ -7,6 +7,7 @@ import secrets
 import random
 
 from .brainstorm import brainstorm_events, uses_event_seeds
+from .craft_notes import library_craft_notes
 from .ideas import DatasetIdeasService
 from .eligibility import scene_eligibility, validate_self_check
 
@@ -124,6 +125,8 @@ class ScenePlanner:
         salt, seed = secrets.randbits(32), secrets.randbits(32)
         known = [row for row in existing if row["index"] not in indexes]
         seeds = {}
+        notes = library_craft_notes(session, data["target"], family=family, progress=progress,
+                                    checkpoint=self.checkpoint)
         if uses_event_seeds(data):
             # Seed each image's event from a wider pool so repeated runs do not converge
             # on the model's favourite ideas; recent and current ideas are avoided.
@@ -139,7 +142,7 @@ class ScenePlanner:
                 progress(f"Creating ideas {start + 1}-{start + len(chunk)} of {len(indexes)}…")
             created = service.run(session=session, data=data, assignments=assignments, family=family, progress=progress,
                 indexes=chunk, existing=[*known, *[row for row in existing if row["index"] in chunk]],
-                allow_partial=allow_partial, direction_salt=salt, event_seeds=seeds)
+                allow_partial=allow_partial, direction_salt=salt, event_seeds=seeds, craft_notes=notes)
             rows.extend(created)
             known.extend(row for row in created if row.get("idea_status") != "failed")
         return rows

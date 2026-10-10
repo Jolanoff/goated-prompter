@@ -112,6 +112,12 @@ HARD requirements, the guided input, expansion_freedom and batch-shared choices 
 win: drop only the conflicting part of a direction, never the requirement. A required
 action stays visibly in progress in every image whatever the direction says.
 
+CRAFT NOTES
+craft_notes, when present, are rules distilled from prompts the user saved because they
+make good images: how specific the action is, how props, staging, light and detail are
+handled. Write every idea and scene to that standard. They describe how to write, never
+what to show.
+
 VARIETY
 Make the core events differ: the moment in the event, who does what, the action, the
 interaction, the reaction or the outcome. Renamed subjects or a new camera, light, outfit
@@ -278,7 +284,7 @@ def _ideas_schema(indexes):
 
 
 def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existing=(), recent=(), direction_salt=0,
-                      event_seeds=None):
+                      event_seeds=None, craft_notes=()):
     source_context = json.loads(understanding_instruction(data).user_message)
     brief = validate_understanding(data.get("_confirmed_intent"), tuple(source_context["scopes"]))
     if brief["clarifications"]:
@@ -304,7 +310,8 @@ def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existin
         "output_contract": {"record_count": len(indexes), "indexes": indexes},
         "assignments": selected,
         "existing_ideas": [{key: row[key] for key in ("index", *IDEA_FIELDS) if key in row} for row in existing],
-        "recently_used_ideas": list(recent)[:40]}
+        "recently_used_ideas": list(recent)[:40],
+        **({"craft_notes": list(craft_notes)} if craft_notes else {})}
     budget = 512 + len(indexes) * 512
     return PromptInstruction(system_message=IDEAS_SYSTEM, user_message=json.dumps(context,
         ensure_ascii=False, separators=(",", ":")),
@@ -437,14 +444,14 @@ class DatasetIdeasService:
         self.checkpoint, self.idea_history = checkpoint, idea_history
 
     def run(self, *, session, data, assignments, family="qwen", progress, indexes=None, existing=(), allow_partial=False,
-            direction_salt=None, event_seeds=None):
+            direction_salt=None, event_seeds=None, craft_notes=()):
         self.checkpoint()
         recent = self.idea_history.recent(data) if self.idea_history is not None else []
         # A fresh salt per run so repeating the same draft explores new directions;
         # chunks of one batch share theirs so directions stay spread.
         instruction = ideas_instruction(data, assignments, family, indexes=indexes, existing=existing, recent=recent,
             direction_salt=secrets.randbits(32) if direction_salt is None else direction_salt,
-            event_seeds=event_seeds)
+            event_seeds=event_seeds, craft_notes=craft_notes)
         selected = json.loads(instruction.user_message)["assignments"]
         indexes = [row["index"] for row in selected]
         progress("Creating ideas from your approved understanding…")
