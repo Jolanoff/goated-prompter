@@ -1,3 +1,5 @@
+import { maxSeed } from "./options.js";
+
 /** Dataset's explicit dependency boundary: idea with its scene -> prompt. */
 export function invalidateDatasetPrompts(draft, patch = {}) {
   return { ...patch, results: [],
@@ -43,6 +45,14 @@ export function datasetReviewQuestions(brief) {
 export function canConfirmDatasetReview(review, busy, additions = "") {
   return review?.status === "ready" && !!review.confirmation_token && !busy &&
     !additions.trim() && !datasetReviewQuestions(review.brief).length;
+}
+
+/** The seed for the next batch run, like ComfyUI's control: same, last plus one, or new. */
+export function nextDatasetSeed(draft, random = Math.random) {
+  const seed = Number.isInteger(draft.seed) ? draft.seed : 0;
+  if (draft.seed_mode === "fixed") return seed;
+  if (draft.seed_mode === "increment") return seed >= maxSeed ? 0 : seed + 1;
+  return Math.floor(random() * (maxSeed + 1));
 }
 
 export function freshDatasetRequest(draft) {

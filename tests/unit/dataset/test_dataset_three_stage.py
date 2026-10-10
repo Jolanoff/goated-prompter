@@ -655,3 +655,49 @@ class GemmaRobustnessTests(unittest.TestCase):
             self.assertLessEqual(sum(passive_idea(event) for event in chosen), 1, chosen)
         everything = pick_events(candidates, 5, random.Random(1), limit_passive=False)
         self.assertEqual(len(everything), 5, "A request for watching keeps every candidate.")
+
+
+class SeedTests(unittest.TestCase):
+    def setUp(self):
+        patcher = patch.dict(os.environ, {LIBRARY_DIR_ENV: tempfile.mkdtemp()})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_seed_settings_are_validated_and_old_drafts_get_defaults(self):
+        from goated_prompter.features.dataset.service import validate_dataset_draft
+        old = {key: value for key, value in valid_draft().items() if key not in ("seed", "seed_mode")}
+        self.assertEqual({key: validate_dataset_draft(old)[key] for key in ("seed", "seed_mode")},
+                         {"seed": 0, "seed_mode": "randomize"})
+        for changes in ({"seed": -1}, {"seed": 2**32}, {"seed": "7"}, {"seed": True}, {"seed_mode": "sometimes"}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                validate_dataset_draft(valid_draft(**changes))
+
+    def test_a_new_seed_keeps_the_approved_understanding(self):
+        from goated_prompter.features.dataset.intent import intent_signature
+        self.assertEqual(intent_signature(valid_draft(seed=1)), intent_signature(valid_draft(seed=99, seed_mode="fixed")))
+
+    def plan(self, seed):
+        data = valid_draft(amount=3, _confirmed_intent=dataset_understanding_fixture())
+        backend = CaptureBackend()
+        ScenePlanner(lambda: None).plan_ideas(session=backend, data=data, assignments=dataset_assignments(data),
+                                              progress=lambda _message: None, allow_partial=True, seed=seed)
+        return [call.user_message for call in backend.calls]
+
+    def test_the_same_seed_repeats_the_random_picks_and_another_seed_changes_them(self):
+        self.assertEqual(self.plan(7), self.plan(7))
+        self.assertNotEqual(self.plan(7), self.plan(8))
+
+    def test_batch_runs_send_the_seed_and_a_fixed_seed_ignores_recent_history(self):
+        from goated_prompter.features.dataset.idea_history import RecentIdeaHistory
+        from goated_prompter.features.dataset.service import DatasetService
+        history = RecentIdeaHistory()
+        for mode, remembered in (("fixed", False), ("increment", True)):
+            with self.subTest(mode=mode):
+                data = valid_draft(amount=1, seed=42, seed_mode=mode, _confirmed_intent=dataset_understanding_fixture())
+                backend = CaptureBackend()
+                with patch("goated_prompter.features.dataset.service.create_backend", return_value=backend):
+                    DatasetService({"backend": "mock"}, lambda: None, idea_history=history).run(
+                        GoatedPrompterRequest(idea=data["subject"], prompt_model="Custom"), data,
+                        lambda _: None, lambda _: None, scenes_only=True)
+                self.assertTrue(all(call.seed == 42 for call in backend.calls))
+                self.assertEqual(bool(history.recent(data)), remembered)

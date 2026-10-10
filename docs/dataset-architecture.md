@@ -179,6 +179,14 @@ not affect identity.
 Plans created before ideas carried their own scenes also need replanning; their
 saved text and final prompts are not deleted or migrated.
 
+The draft's `seed` and `seed_mode` (randomize, fixed, increment) work like ComfyUI's seed
+control. The frontend picks each new batch's seed before admission and saves it, so the
+field shows the last batch's seed; Continue and per-image actions keep it. A batch run
+seeds the app's picks (brainstorm sampling, creative directions, drawn looks) and sends the
+seed with every model request; per-image regeneration stays random. With a fixed seed,
+recent-idea history is neither read nor written, so a repeated batch is not rejected. The
+seed is not part of the plan or intent signatures, so changing it invalidates nothing.
+
 The backend atomically checkpoints generated progress before publishing it. Workflow
 revision and input signatures prevent stale jobs from replacing newer edits. Restart
 marks running work interrupted without resuming inference. Generation does not clear
