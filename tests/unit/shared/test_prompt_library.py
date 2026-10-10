@@ -11,7 +11,8 @@ from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.builder.service import GoatedPrompterService, assemble_instruction
 from goated_prompter.options.targets import TARGET_MODEL_NAMES
 from goated_prompter.prompt_library import (LIBRARY_DIR_ENV, copied_reference, ensure_library_files, library_path,
-    library_status, load_library, parse_library, pick_references, style_profile, style_profile_text)
+    library_status, load_library, parse_library, pick_references, style_profile, style_profile_text,
+    LibraryConflict, library_snapshot, update_library)
 from goated_prompter.features.dataset.prompting import dataset_instruction
 from tests.support.dataset import saved_scene, valid_draft
 from tests.unit.planning.test_supporting_planning import ScriptedBackend
@@ -24,7 +25,9 @@ BEACH = "2girls, beach, volleyball, jumping, sand\n\nTwo girls leap for a volley
 
 class PromptLibraryTests(unittest.TestCase):
     def setUp(self):
-        self.directory = Path(tempfile.mkdtemp())
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.directory = Path(temporary.name)
         patcher = patch.dict(os.environ, {LIBRARY_DIR_ENV: str(self.directory)})
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -74,6 +77,45 @@ class PromptLibraryTests(unittest.TestCase):
         path.write_text(KITCHEN + "\n---\n" + BEACH + "\n---\n" + CAR, encoding="utf-8")
         os.utime(path, ns=(1, 10 ** 18))
         self.assertEqual(library_status("Anima")["count"], 3)
+
+    def test_editor_preserves_bom_crlf_comments_duplicates_and_untouched_blocks(self):
+        path = library_path("Anima")
+        original = b"\xef\xbb\xbf# My header\r\nSame prompt.\r\n---\r\nSame prompt.\r\n# Mid-prompt comment\r\n\r\nSecond paragraph.\r\n---\r\n# Last note\r\nUntouched.\r\n"
+        path.write_bytes(original)
+        state = library_snapshot("Anima")
+        updated = update_library("Anima", state["revision"], "edit", index=1, prompt="Edited.\n\nParagraph.")
+        self.assertEqual(updated["prompts"], ("Same prompt.", "Edited.\n\nParagraph.", "Untouched."))
+        self.assertEqual(path.read_bytes(), b"\xef\xbb\xbf# My header\r\nSame prompt.\r\n---\r\nEdited.\r\n\r\nParagraph.\r\n# Mid-prompt comment\r\n---\r\n# Last note\r\nUntouched.\r\n")
+        updated = update_library("Anima", updated["revision"], "delete", index=0)
+        self.assertEqual(updated["prompts"], ("Edited.\n\nParagraph.", "Untouched."))
+
+    def test_deleting_only_prompt_then_adding_does_not_reintroduce_deleted_text(self):
+        path = self.write("Generic", "Delete me.")
+        state = library_snapshot("Generic")
+        state = update_library("Generic", state["revision"], "delete", index=0)
+        self.assertEqual(state["prompts"], ())
+        self.assertIn("# comment line", path.read_text(encoding="utf-8"))
+        state = update_library("Generic", state["revision"], "add", prompt="Replacement.")
+        self.assertEqual(state["prompts"], ("Replacement.",))
+
+    def test_atomic_write_failure_keeps_original_and_removes_temporary_file(self):
+        path = self.write("Anima", KITCHEN)
+        original = path.read_bytes()
+        state = library_snapshot("Anima")
+        with patch("goated_prompter.prompt_library.os.replace", side_effect=OSError("Disk offline")):
+            with self.assertRaisesRegex(ValueError, "Cannot update"):
+                update_library("Anima", state["revision"], "edit", index=0, prompt=BEACH)
+        self.assertEqual(path.read_bytes(), original)
+        self.assertEqual(list(self.directory.glob("*.tmp")), [])
+        self.assertEqual(load_library("Anima").prompts, (KITCHEN,))
+
+    def test_two_editors_cannot_silently_overwrite_each_other(self):
+        self.write("Anima", KITCHEN)
+        state = library_snapshot("Anima")
+        update_library("Anima", state["revision"], "edit", index=0, prompt=BEACH)
+        with self.assertRaises(LibraryConflict):
+            update_library("Anima", state["revision"], "edit", index=0, prompt=CAR)
+        self.assertEqual(library_snapshot("Anima")["prompts"], (BEACH,))
 
     def test_copy_check_flags_long_shared_runs_only(self):
         self.assertTrue(copied_reference("Then a mother is concentrating on driving while her daughter sleeps beside her.", [CAR]))

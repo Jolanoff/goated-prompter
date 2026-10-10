@@ -8,16 +8,19 @@ very large libraries cost milliseconds per request and no model call.
 """
 
 from collections import Counter
+import hashlib
 import math
 import os
 from pathlib import Path
 import random
 import re
+import tempfile
 import threading
 
 from .config import PROJECT_ROOT
 from .options.targets import TARGET_MODEL_NAMES, canonical_target
 from .output_repetition import anima_tags
+from .workspace_store import text
 
 LIBRARY_DIR_ENV = "GOATED_PROMPTER_LIBRARY_DIR"
 SEPARATOR = "---"
@@ -31,7 +34,8 @@ HEADER = """# Goated Prompter prompt library for {target}
 # Lines starting with # are ignored. Blank lines inside a prompt are kept, so
 # Anima "tags, blank line, prose" prompts work as they are.
 # When your idea or scene matches a prompt here, the app uses it as a reference
-# for the final prompt. This file is yours: it is never tracked or overwritten.
+# for the final prompt. This file is yours and is never tracked. Use the Prompt
+# Library tab to add, edit or delete prompts, or edit this file directly.
 """
 _STOPWORDS = frozenset("a an the and or of in on at to with for from by is are was were be her his their its "
                        "she he they it this that as into over under while".split())
@@ -74,6 +78,106 @@ def parse_library(text):
             block.append(line.rstrip())
     prompts.append("\n".join(block).strip())
     return tuple(prompt for prompt in prompts if prompt)
+
+
+class LibraryConflict(ValueError):
+    """The text file changed since the editor loaded it."""
+
+
+def _library_bytes(path):
+    try:
+        return path.read_bytes()
+    except FileNotFoundError:
+        return b""
+
+
+def _library_snapshot(target, path, data):
+    return {"target": target, "file": path.name, "path": str(path),
+            "revision": hashlib.sha256(data).hexdigest(),
+            "prompts": parse_library(data.decode("utf-8-sig"))}
+
+
+def _editable_target(target):
+    target = canonical_target(target)
+    if target not in TARGET_MODEL_NAMES:
+        raise ValueError("Choose a supported target model.")
+    return target
+
+
+def library_snapshot(target, directory=None):
+    """Read the editable prompts and a revision of the complete text file."""
+    target = _editable_target(target)
+    path = library_path(target, directory)
+    with _lock:
+        try:
+            return _library_snapshot(target, path, _library_bytes(path))
+        except (OSError, UnicodeError) as exc:
+            raise ValueError(f"Cannot read {path.name}. Check its permissions and UTF-8 encoding, then reload.") from exc
+
+
+def update_library(target, revision, action, *, prompt=None, index=None, directory=None):
+    """Change one prompt atomically, retaining comments and all untouched blocks."""
+    target = _editable_target(target)
+    if action not in {"add", "edit", "delete"}:
+        raise ValueError("Unknown library action.")
+    if action != "delete":
+        prompt = text(prompt, "Prompt").strip().replace("\r\n", "\n").replace("\r", "\n")
+        if any(line.strip() == SEPARATOR or line.lstrip().startswith("#") for line in prompt.splitlines()):
+            raise ValueError("Lines starting with # and lines containing only --- are reserved by the text library.")
+    path = library_path(target, directory)
+    temporary = None
+    with _lock:
+        try:
+            original = _library_bytes(path)
+            current = _library_snapshot(target, path, original)
+            if revision != current["revision"]:
+                raise LibraryConflict("Library changed elsewhere. Reload the library before saving; your draft is kept.")
+            raw = original.decode("utf-8-sig")
+            newline = "\r\n" if "\r\n" in raw else "\n"
+            if action == "add":
+                if not raw:
+                    raw = HEADER.format(target=target)
+                raw += (newline if not raw.endswith(("\n", "\r")) else "")
+                if current["prompts"]:
+                    raw += newline + SEPARATOR + newline
+                raw += prompt.replace("\n", newline) + newline
+            else:
+                if type(index) is not int or not 0 <= index < len(current["prompts"]):
+                    raise ValueError("Choose an existing library prompt.")
+                lines, blocks, content = raw.splitlines(keepends=True), [], []
+                for position, line in enumerate(lines):
+                    if line.strip() == SEPARATOR:
+                        if content:
+                            blocks.append(content)
+                        content = []
+                    elif line.strip() and not line.lstrip().startswith("#"):
+                        content.append(position)
+                if content:
+                    blocks.append(content)
+                first, last = blocks[index][0], blocks[index][-1]
+                replacement = prompt.replace("\n", newline) + newline if action == "edit" else ""
+                raw = "".join(
+                    (replacement if position == first else "")
+                    if first <= position <= last and not line.lstrip().startswith("#") else line
+                    for position, line in enumerate(lines)
+                )
+            updated = (b"\xef\xbb\xbf" if original.startswith(b"\xef\xbb\xbf") else b"") + raw.encode("utf-8")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(dir=path.parent, prefix=path.name + ".", suffix=".tmp", delete=False) as file:
+                temporary = Path(file.name)
+                file.write(updated)
+                file.flush()
+                os.fsync(file.fileno())
+            if _library_bytes(path) != original:
+                raise LibraryConflict("Library changed elsewhere. Reload the library before saving; your draft is kept.")
+            os.replace(temporary, path)
+            _cache.pop(path, None)
+            return _library_snapshot(target, path, updated)
+        except (OSError, UnicodeError) as exc:
+            raise ValueError(f"Cannot update {path.name}. Check its permissions and UTF-8 encoding, then retry.") from exc
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
 
 def tokenize(text):

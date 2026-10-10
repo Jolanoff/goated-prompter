@@ -29,6 +29,7 @@ from goated_prompter.features.dataset.idea_history import RecentIdeaHistory
 from goated_prompter.features.dataset.intent import DatasetIntentTickets
 from goated_prompter.features.minimax import routes as minimax_routes
 from goated_prompter.features.presets import routes as presets_routes
+from goated_prompter.features.prompt_library import routes as prompt_library_routes
 from goated_prompter.features.presets.routes import presets_payload
 from goated_prompter.features.refine import routes as refine_routes
 from goated_prompter.features.saved_prompts import routes as saved_prompts_routes
@@ -355,7 +356,7 @@ def create_app(*, port=8190, dist=None, config_loader=load_config, service_facto
     app.add_routes([web.get("/api/bootstrap", bootstrap), web.delete("/api/jobs", release_job_checkpoints),
                     web.get("/api/jobs/{id}", job_endpoint),
                     web.post("/api/jobs/{id}/{action:pause|resume|cancel}", job_endpoint)])
-    for routes in (builder_routes, settings_routes, presets_routes, saved_prompts_routes,
+    for routes in (builder_routes, settings_routes, presets_routes, saved_prompts_routes, prompt_library_routes,
                    minimax_routes, dataset_routes, workflow_settings_routes, refine_routes):
         routes.register(app)
     root = Path(dist or Path(__file__).parent / "frontend" / "dist").resolve()

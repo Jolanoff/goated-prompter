@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./features/prompt-library/prompt-library.css";
 
 /* Signal: warm graphite studio with one electric-lime signal colour.
    Lime means "go", "live" and "selected"; everything else stays quiet. */

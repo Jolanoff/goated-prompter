@@ -8,6 +8,7 @@ import CreativeWorkspace from "./features/refine/CreativeWorkspace.jsx";
 import MiniMaxTab from "./features/minimax/MiniMaxTab.jsx";
 import DatasetTab from "./features/dataset/DatasetTab.jsx";
 import SavedPromptsTab from "./features/saved-prompts/SavedPromptsTab.jsx";
+import PromptLibraryTab from "./features/prompt-library/PromptLibraryTab.jsx";
 import SettingsTab from "./features/settings/SettingsTab.jsx";
 import DirectorsTab from "./features/directors/DirectorsTab.jsx";
 import BuilderTab from "./features/builder/BuilderTab.jsx";
@@ -24,6 +25,7 @@ import {
   Database,
   FileText,
   Film,
+  Library,
   Moon,
   ScrollText,
   Settings2,
@@ -49,6 +51,7 @@ const workspaceViews = [
   { id: "minimax", label: "MiniMax H3", icon: Film },
   { id: "dataset", label: "Dataset", icon: Database },
   { id: "saved", label: "Saved Prompts", icon: Bookmark },
+  { id: "library", label: "Prompt Library", icon: Library },
   { id: "directors", label: "Instruction presets", icon: FileText },
   { id: "settings", label: "Settings", icon: Settings2 },
 ];
@@ -667,7 +670,10 @@ function App() {
             </div>
           )}
 
-          {view === "refine" || view === "minimax" || view === "dataset" ? null : view === "saved" ? (
+          {bootstrap && <PromptLibraryTab visible={view === "library"}
+            targets={bootstrap.inputs.target_model[0]} initialTarget={settings.target_model}
+            onNotice={setNotice} />}
+          {view === "refine" || view === "minimax" || view === "dataset" || view === "library" ? null : view === "saved" ? (
             <SavedPromptsTab records={saved} ready={storageReady} busy={busy}
               deletingDisabled={!storageReady || promptsBusy || dialogBusy}
               onBack={() => setView("builder")} onCopy={copy} onDelete={deletePrompt}
