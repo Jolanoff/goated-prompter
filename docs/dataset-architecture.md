@@ -184,8 +184,10 @@ Plans created before ideas carried their own scenes also need replanning; their
 saved text and final prompts are not deleted or migrated.
 
 The draft's `seed` and `seed_mode` (randomize, fixed, increment) work like ComfyUI's seed
-control. The frontend picks each new batch's seed before admission and saves it, so the
-field shows the last batch's seed; Continue and per-image actions keep it. A batch run
+control. The frontend picks each new batch's seed and sends it with the request without
+saving it first; admission saves the request with the other settings, so a rejected run
+changes nothing and an admitted one keeps the seed it used. Continue and per-image actions
+keep the current seed. A batch run
 seeds the app's picks (brainstorm sampling, creative directions, drawn looks) and sends the
 seed with every model request; per-image regeneration stays random. With a fixed seed,
 recent-idea history is neither read nor written, so a repeated batch is not rejected. The

@@ -78,14 +78,10 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, d
         }
         token = saved.continuation_token;
       }
-      // A new batch takes its seed now, so the seed field always shows the seed of the last batch.
-      // Continuing a batch or regenerating one image keeps the current seed.
+      // A new batch sends its next seed with the request; admission saves it with the other
+      // settings, so a rejected run changes nothing. Continue and per-image actions keep the seed.
       const seed = ["dataset", "dataset/scenes"].includes(review.operation) && !review.options?.resume
         ? nextDatasetSeed(draft) : draft.seed;
-      if (seed !== draft.seed) {
-        update({ seed });
-        await preferences.flush();
-      }
       return await onGenerate(review.operation, { input: { ...review.input, seed, seed_mode: draft.seed_mode,
         results: draft.results, result_job_id: draft.result_job_id }, ...review.options,
         confirmation_token: token, workflow_revision: preferences.revision() });
