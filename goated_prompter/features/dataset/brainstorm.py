@@ -28,7 +28,16 @@ on hands or fingertips, no
 flips, cartwheels, floor spins, freezes, lifts, handstands or contortions, no one upside
 down or held parallel to the ground, and no body parts inside or through objects, unless
 the user asked for that exact move. Humor and surprise come from the situation, props,
-timing and expressions, not from twisted anatomy."""
+timing and expressions, not from twisted anatomy.
+
+SEXUAL CONTENT
+When the request or confirmed_intent is sexual (sex, fucking, oral, anal, penetration, mutual masturbation, etc.), the sex act itself is the required core event in every idea.
+Every idea must show the sex in progress or at a clearly readable sexual peak.
+Use concrete sexual language when the request is explicit (fucking, sucking, cock, ass, cum, etc.).
+Vary only the exact acts, positions, who is active/receptive, expressions, arousal cues and immediate physical contact.
+Never replace the sex with “intimate moment”, “kissing”, “cuddling”, “looking at each other”, or any non-sexual activity.
+Clothing state follows the Director and the request: never force full nudity unless the user or Director asks for it; partial clothing, open clothes, pulled-down garments are fine and often preferred.
+Supported poses only (lying, kneeling, sitting, standing with weight on feet/seat/knees/back)."""
 
 BRAINSTORM_SYSTEM = """You are the Dataset BRAINSTORM stage, after the user approved the understanding.
 List candidate core events: what happens in one image, in one short line each. The app

@@ -33,6 +33,7 @@ or output format.
 
 WHAT MAKES A STRONG IDEA
 """ + PLAUSIBLE_BODIES + """
+When the request is sexual, a strong idea is a concrete sexual act with clear roles, contact points, and expression.  
 Each idea is a moment where something is happening: someone is in the middle of a specific
 activity with a goal, a problem or a reaction (trying, fixing, bargaining, spilling, teaching,
 getting lost, failing, surprising someone). With two or more characters they act on each
@@ -80,6 +81,7 @@ second cameras. Write no tag lists, quality words, rules or target-model syntax;
 turns your scene into the final prompt.
 
 REQUIREMENTS
+When the request is sexual, the required interaction is the sex act itself; any idea that only shows foreplay, undressing, or aftermath without the act fails the requirement unless the user explicitly asked for that stage.
 Only the hard list in confirmed_intent is mandatory. soft holds preferences and free holds
 your open choices within expansion_freedom. Your scenes are creative suggestions, not
 immutable requirements: never promote your own choices into user requirements.
@@ -104,17 +106,12 @@ wide brainstorm, so batches do not repeat the same favourite ideas. Build the id
 that event and stage it fully. Change only a part that conflicts with HARD.
 
 CREATIVE DIRECTION
-Each assignment carries a creative_direction chosen by the app to spread the batch
-across moments, moods, framing, settings and light, and for several characters how they
-interact. Start that image's idea from it;
-with an event_seed, the seed decides what happens and the direction how it is shown.
-random_character_looks, when present, gives this image's sex (when the cast leaves it
-open), age, hair and build for each randomly invented character; use it so random characters differ between images. It never
-overrides what the character's name, the concept or the setting implies; choose clothing
-that fits the scene and its medium.
-HARD requirements, the guided input, expansion_freedom and batch-shared choices always
-win: drop only the conflicting part of a direction, never the requirement. A required
-action stays visibly in progress in every image whatever the direction says.
+Each assignment may carry a creative_direction. These are optional fills for framing and light only.
+When a DIRECTOR block is present, the Director has absolute priority over creative_direction.
+Never let moment, mood, setting or interaction labels dilute, replace or soften a required sexual act or the Director’s tone.
+With an event_seed, the seed decides what happens; the direction only suggests how it is framed and lit.
+random_character_looks, when present, gives age/hair/build for random characters; use it.
+HARD requirements, the guided input, the Director and batch-shared choices always win.
 
 CRAFT NOTES
 craft_notes, when present, are rules distilled from prompts the user saved because they
@@ -158,7 +155,7 @@ DIRECTION_AXES = {
     "moment": ("the build-up just before the main action", "the peak of the action",
                "the aftermath or reaction", "a small mishap in the middle of it", "an unguarded candid moment",
                "a playful or unexpected twist on the subject"),
-    "mood": ("joyful", "tense", "calm", "mischievous", "determined", "flustered", "tender", "chaotic"),
+    "mood": ("joyful", "tense", "calm", "mischievous", "determined", "flustered", "tender", "chaotic", "aroused", "hungry", "desperate", "dominant", "submissive", "overwhelmed"),
     "framing": ("close-up", "medium shot", "full-body shot", "wide shot where the place tells the story",
                 "three-quarter view at eye level", "slightly raised eye-level view", "over-the-shoulder view"),
     "setting": ("the most familiar spot in the subject's world", "a less obvious corner of the subject's world",
@@ -169,9 +166,14 @@ DIRECTION_AXES = {
               "night lit by practical lights", "dramatic single-source light", "overcast diffuse light",
               "warm lamplight from windows or lanterns"),
     # Only images with several characters get one; it decides how they relate in this moment.
-    "interaction": ("one teaches or shows the other something", "a playful disagreement", "a shared mishap",
-                    "one surprises the other", "working together on a fiddly task", "one helps the other out of a problem",
-                    "a small competition between them", "one teases the other"),
+    "interaction": ("one is clearly in control of the other",
+    "mutual and equal physical engagement",
+    "one gives while the other receives",
+    "a teasing or playful power dynamic",
+    "intense focused contact between them",
+    "one reacts strongly to what the other is doing",
+    "they move together in sync",
+    "one holds or guides the other’s body"),
 }
 # A required action must be visible in every image. Manual runs showed moment,
 # mood and setting directions (rest, water break, climbing a ladder) replacing it,
@@ -217,14 +219,15 @@ _DIRECTION_SOURCE = ("subject", "trigger", "trigger_type", "custom_type", "const
 def creative_directions(data, indexes, salt=0):
     """Return a reproducible, evenly spread creative direction for each requested index.
 
-    Each axis is shuffled once per draft and salt and dealt round-robin over the
-    whole dataset, so every value is used before any repeats. The same draft and
-    salt always give the same directions; each ideas run uses a new salt.
-    Guided inputs already fix the event, so they get
-    no moment. When the approved brief requires an action for an image, that
-    image only gets framing and light, because moment, mood and setting
-    directions otherwise replace the required action.
-    """
+Each axis is shuffled once per draft and salt and dealt round-robin over the
+whole dataset, so every value is used before any repeats. The same draft and
+salt always give the same directions; each ideas run uses a new salt.
+Guided inputs already fix the event, so they get no moment.
+When the approved brief requires an action, moment / mood / setting are kept
+mild or dropped only when they would replace the required action. Framing and
+light are always safe. Interaction is still applied for multi-character scenes
+so the characters keep a clear relationship around the required act.
+"""
     source = json.dumps({key: data.get(key) for key in _DIRECTION_SOURCE}, sort_keys=True, ensure_ascii=False)
     seed = int.from_bytes(hashlib.sha256((source + f"|{salt}").encode()).digest()[:8], "big")
     lines = [line for line in str(data.get("inputs") or "").splitlines() if line.strip()]
@@ -287,20 +290,23 @@ def _ideas_schema(indexes):
             for index in indexes]}
 
 
-DIRECTOR_STAGING = """This Director is the user's own direction for the whole batch; follow it in every idea and
-scene, keeping the approved requirements and the cast. Use any words, vocabulary, tone or
-style it asks for. It decides how every scene is shot: framing, camera position and height,
-lens feel, light and photographic character. When it fixes a kind of shot (a selfie, a mirror
-shot, first person, a fashion editorial), use that shot for every image; creative_direction
-framing and light only fill what the Director leaves open."""
-
+DIRECTOR_STAGING = """This Director is the user's own direction for the whole batch and has priority over creative_direction.
+Follow it in every idea and scene. Keep the approved requirements and the cast.
+Use any words, vocabulary, tone or style it asks for.
+It decides framing, camera, light, sexual tone, clothing state, expression and implied action.
+creative_direction values are only suggestions that fill gaps the Director left open;
+never let them override or dilute the Director.
+"""
 
 def director_section(data):
-    """The Director's instructions for staging scenes, or "" when it does not apply to the target."""
     preset = get_director_preset(data.get("director_preset"))
     if not preset.instructions.strip() or (preset.supported_targets and data.get("target") not in preset.supported_targets):
         return ""
-    return f"\n\nDIRECTOR — {preset.label}\n{preset.instructions.strip()}\n{DIRECTOR_STAGING}"
+    return (f"\n\n=== DIRECTOR (MANDATORY) — {preset.label} ===\n"
+            f"{preset.instructions.strip()}\n"
+            f"{DIRECTOR_STAGING}\n"
+            f"=== END DIRECTOR ===\n")
+
 
 
 def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existing=(), recent=(), direction_salt=0,
@@ -318,17 +324,23 @@ def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existin
     selected = []
     guided_count = len(source_context["guided_inputs"])
     directions = creative_directions(data, indexes, direction_salt)
+    director_active = bool(director_section(data))
     for index in indexes:
         row = by_index[index]
         entry = {"index": index, "input": row["input"],
             "guided_scope": f"guided:{(index - 1) % guided_count + 1}" if guided_count else None}
-        entry["creative_direction"] = directions[index]
+        direction = directions[index]
         if (event_seeds or {}).get(index):
             entry["event_seed"] = event_seeds[index]
-            # The seed already decides what happens; a moment or interaction label on top of it
-            # gets copied into the idea as vague words ("a shared mishap occurs") by small models.
-            entry["creative_direction"] = {axis: value for axis, value in directions[index].items()
-                                           if axis not in ("moment", "interaction")}
+            # Seed already decides what happens; drop moment/interaction labels.
+            direction = {axis: value for axis, value in direction.items()
+                         if axis not in ("moment", "interaction")}
+        if director_active:
+            # Director owns tone, clothing, pose, sexual content, camera character.
+            # Only keep framing + light (and random looks) as safe fills.
+            keep = {"framing", "light", "random_character_looks"}
+            direction = {k: v for k, v in direction.items() if k in keep}
+        entry["creative_direction"] = direction
         selected.append(entry)
     context = {"source": source_context["source"], "confirmed_intent": brief,
         "output_contract": {"record_count": len(indexes), "indexes": indexes},
@@ -337,7 +349,7 @@ def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existin
         "recently_used_ideas": list(recent)[:40],
         **({"craft_notes": list(craft_notes)} if craft_notes else {})}
     budget = 512 + len(indexes) * 512
-    return PromptInstruction(system_message=IDEAS_SYSTEM + director_section(data), user_message=json.dumps(context,
+    return PromptInstruction(system_message=director_section(data) + IDEAS_SYSTEM, user_message=json.dumps(context,
         ensure_ascii=False, separators=(",", ":")),
         model_family=family, diagnostic_stage="dataset:ideas", max_tokens=budget,
         hard_max_tokens=budget, unlimited_tokens=False, temperature=.7, top_p=.92,
