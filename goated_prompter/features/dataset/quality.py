@@ -61,7 +61,7 @@ def analyze_idea_diversity(data, rows):
 # An idea where the cast only watches, looks at or admires something is passive: one per batch
 # at most. The main clause decides; standing, sitting or holding hands while watching counts too.
 _PASSIVE = re.compile(r"\b(?:watch\w*|look(?:s|ing)? (?:at|out|on|over)|gaz\w*|admir\w*|observ\w*|star(?:e|es|ing)|"
-                      r"overlook\w*|sightsee\w*|(?:scenic|the) view|taking in)\b")
+                      r"overlook\w*|sightsee\w*|views?|vista|scenery|in awe|taking in)\b")
 _STANCE = re.compile(r"\b(?:stand\w*|sit|sits|sitting|seated|lean\w*|rest\w*|kneel\w*|wait\w*|hold(?:s|ing)? hands)\b")
 
 

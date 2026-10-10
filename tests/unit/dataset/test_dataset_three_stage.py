@@ -549,7 +549,9 @@ class BatchVarietyTests(unittest.TestCase):
         for idea in ("The couple leans close to watch sumo warm-up practice.",
                      "They hold hands tightly while watching a street performer.",
                      "They sit in a tatami room, watching a chef prepare dinner.",
-                     "They sit on a bench overlooking the bamboo grove."):
+                     "They sit on a bench overlooking the bamboo grove.",
+                     "Couple standing in awe before a massive ancient temple gate.",
+                     "Man shows wife a beautiful view from a mountain lookout."):
             with self.subTest(idea=idea):
                 self.assertTrue(passive_idea(idea))
         for idea in ("Naruto paints a door while a skeptical girl watches from below.",
@@ -585,3 +587,14 @@ class BatchVarietyTests(unittest.TestCase):
         self.assertEqual(reasons[2], PASSIVE_REPEAT)
         self.assertIn('"vending machine"', reasons[5])
         self.assertEqual([index for index, reason in reasons.items() if reason], [2, 5])
+
+
+class ClarificationTests(unittest.TestCase):
+    def test_a_remark_is_not_a_clarification_question(self):
+        from goated_prompter.features.dataset.understanding import validate_understanding
+        brief = dataset_understanding_fixture(clarifications=[
+            "Be aware that 'funny stunts' is a broad category; each image will differ."])
+        self.assertEqual(validate_understanding(brief, ("all_outputs", "dataset"))["clarifications"], [])
+        asked = dataset_understanding_fixture(clarifications=["Should the stunts be dangerous?"])
+        self.assertEqual(validate_understanding(asked, ("all_outputs", "dataset"))["clarifications"],
+                         ["Should the stunts be dangerous?"])
