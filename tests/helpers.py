@@ -36,8 +36,8 @@ def dataset_understanding_fixture(**changes):
 
 
 def dataset_idea_fixture(index=1, **changes):
-    # Wording shares no two-word phrase across indexes, so batches of fixtures are not repeated motifs.
-    return {"index": index, "idea": f"Boxer {index} practises at a station.",
+    # Wording shares no two-word phrase or long word across indexes, so batches of fixtures are not repeated motifs.
+    return {"index": index, "idea": f"Pug {index} hits a bag.",
             "scene": (f"At training station {index}, a boxer drives a straight punch into a swinging heavy bag; "
                       "the punching glove sinks into the leather while the other glove guards the chin. "
                       "Full-body three-quarter view in a dim arena training area lit by one overhead lamp."),

@@ -103,4 +103,34 @@ def repeated_motif(text, others, ignore=()):
         for pair in _bigrams(other, ignore):
             counts[pair] = counts.get(pair, 0) + 1
     repeated = sorted(" ".join(pair) for pair in _bigrams(text, ignore) if counts.get(pair, 0) >= 2)
+    return repeated[0] if repeated else repeated_word(text, others, ignore)
+
+
+# Words every idea may share: people, generic verbs and helpers, places any request implies.
+_WORD_STOP = frozenset("""
+woman women person people friend friends couple pair group tries trying attempts attempting performs performing
+holds holding helps helping together while their during sitting standing walking wearing small large little single
+giant tiny funny silly playful local other front under between behind around after before about street streets city
+outdoor outside inside indoor table hands hand face along through across there where which with without being makes
+making gets getting shares sharing laughs laughing moment someone another quickly suddenly slightly""".split())
+
+
+def _stem(word):
+    return re.sub(r"(?:ing|es|ed|e|s)$", "", word)
+
+
+def _content_words(text, ignore):
+    return {_stem(word): word for word in re.findall(r"[a-z]+", str(text or "").casefold())
+            if len(word) >= 5 and word not in _WORD_STOP and word not in ignore and _stem(word) not in ignore}
+
+
+def repeated_word(text, others, ignore=()):
+    """A distinctive word ("balance", "points") already in two other ideas: a small model's crutch."""
+    ignore = set(ignore) | {_stem(word) for word in ignore}
+    counts = {}
+    for other in others:
+        for stem in _content_words(other, ignore):
+            counts[stem] = counts.get(stem, 0) + 1
+    words = _content_words(text, ignore)
+    repeated = sorted(word for stem, word in words.items() if counts.get(stem, 0) >= 2)
     return repeated[0] if repeated else None

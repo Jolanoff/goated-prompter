@@ -503,12 +503,38 @@ class DatasetIdeasService:
                 anchored = data.get("source_mode") == "guided" and event == " ".join(inputs[row["index"]].casefold().split())
                 return event in recent_events and not anchored
 
+            # Words of the request and the cast repeat on purpose; only other shared words count.
+            motif_ignore = {word for key in ("subject", "constraints", "trigger") for word in
+                            re.findall(r"[a-z]+", str(data.get(key) or "").casefold())}
+            motif_ignore |= {word for item in cast or () for word in re.findall(r"[a-z]+", item.get("name", "").casefold())}
+            limit_passive = not passive_request(data)
+
+            def variety_issue(row, others):
+                if limit_passive and passive_idea(row["idea"]) and any(passive_idea(other) for other in others):
+                    return PASSIVE_REPEAT
+                motif = repeated_motif(row["idea"], others, motif_ignore)
+                return motif and f'Two other ideas already use "{motif}"; choose a different place, prop, action or wording.'
+
+            if not allow_partial and data.get("source_mode") != "guided":
+                # A single new idea gets one retry when it breaks the batch's variety rules; the
+                # retry is kept only when it is valid, so a new idea is never lost to these rules.
+                others = [row["idea"] for row in existing if row["index"] not in indexes
+                          and row.get("idea_status") != "failed" and row.get("idea")]
+                issues = [issue for row in rows if (issue := variety_issue(row, others))]
+                if issues:
+                    progress("The new idea repeats the batch; requesting one more varied idea…")
+                    retry = replace(instruction, system_message=instruction.system_message + "\n\nFIX THIS: "
+                        + " ".join(dict.fromkeys(issues)), diagnostic_stage="dataset:ideas:variety_retry")
+                    session.validate_instruction(retry)
+                    raw = session.generate(retry)
+                    self.checkpoint()
+                    try:
+                        retried = [_reject_unrenderable_pose(row, data, False) for row in validate_ideas(raw, indexes)]
+                    except ValueError:
+                        retried = None
+                    if retried:
+                        rows = [_relabel(row, cast, looks.get(row["index"])) for row in retried]
             if allow_partial:
-                # Words of the request and the cast repeat on purpose; only other shared pairs count.
-                motif_ignore = {word for key in ("subject", "constraints", "trigger") for word in
-                                re.findall(r"[a-z]+", str(data.get(key) or "").casefold())}
-                motif_ignore |= {word for item in cast or () for word in re.findall(r"[a-z]+", item.get("name", "").casefold())}
-                limit_passive = not passive_request(data)
                 accepted = [{**row, "input": inputs[row["index"]]} for row in existing
                     if row["index"] not in indexes and row.get("idea_status") != "failed"]
                 retained = []
@@ -522,15 +548,13 @@ class DatasetIdeasService:
                             if record["index"] == row["index"] for issue in record["issues"])
                         # Guided inputs fix each image's event, and cycled inputs repeat on purpose.
                         others = [] if data.get("source_mode") == "guided" else [item["idea"] for item in accepted]
-                        motif = repeated_motif(row["idea"], others, motif_ignore)
+                        issue = variety_issue(row, others)
                         if repeats_history(row):
                             row = _failed_idea(row, row["index"], "The idea repeats a recently generated event. Choose a different permitted action or interaction.")
                         elif unchanged or duplicate:
                             row = _failed_idea(row, row["index"], "The idea repeats an existing event or unchanged planning choices.")
-                        elif limit_passive and passive_idea(row["idea"]) and any(passive_idea(other) for other in others):
-                            row = _failed_idea(row, row["index"], PASSIVE_REPEAT)
-                        elif motif:
-                            row = _failed_idea(row, row["index"], f'Two other ideas already use "{motif}"; choose a different place, prop or activity.')
+                        elif issue:
+                            row = _failed_idea(row, row["index"], issue)
                         else:
                             accepted.append(candidate)
                     if row.get("idea_status") == "failed":

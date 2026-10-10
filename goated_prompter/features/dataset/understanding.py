@@ -328,6 +328,9 @@ def validate_understanding(value: dict, scopes: tuple[str, ...]) -> dict:
             entry = {"scope": _scope(item["scope"], scopes)}
             for key in expected - {"scope"}:
                 entry[key] = None if key == "compatible_resolution" and item[key] is None else _text(item[key], field)
+            # Small models fill the array with a "None" placeholder instead of leaving it empty.
+            if field == "physical_conflicts" and _NO_CONFLICT.fullmatch(entry["conflict"].casefold()):
+                continue
             result[field].append(entry)
     unresolved = any(item["compatible_resolution"] is None for item in result["physical_conflicts"])
     if not unresolved:
@@ -339,6 +342,9 @@ def validate_understanding(value: dict, scopes: tuple[str, ...]) -> dict:
     if "characters" in value:
         result["characters"] = validate_characters(value["characters"])
     return result
+
+
+_NO_CONFLICT = re.compile(r"\W*(?:none|n/?a|nil|null|no(?:ne found| (?:physical )?conflicts?(?: found| detected)?)?)\W*")
 
 
 def validate_characters(items):

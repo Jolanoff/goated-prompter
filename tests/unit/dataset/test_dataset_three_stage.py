@@ -572,6 +572,16 @@ class BatchVarietyTests(unittest.TestCase):
             with self.subTest(idea=idea):
                 self.assertFalse(passive_idea(idea))
 
+    def test_a_distinctive_word_shared_by_two_ideas_cannot_appear_in_a_third(self):
+        from goated_prompter.features.dataset.quality import repeated_motif
+        earlier = ["A woman tries to balance a pizza box on her head.", "A woman balances donuts on her palm."]
+        self.assertEqual(repeated_motif("A woman balancing a teacup while walking.", earlier), "balancing")
+        self.assertIsNone(repeated_motif("A woman chases her hat down the sidewalk.", earlier))
+        self.assertIsNone(repeated_motif("A woman balances a feather.", earlier, ignore={"balancing"}))
+        self.assertIsNone(repeated_motif("A woman tries a street trick.", ["A woman tries to wave on a street.",
+                                                                         "A woman tries to skip on a street."],
+                                         ignore={"woman"}))
+
     def test_a_place_or_prop_shared_by_two_ideas_cannot_appear_in_a_third(self):
         from goated_prompter.features.dataset.quality import repeated_motif
         earlier = ["They stand at a vending machine comparing drinks.", "They pick drinks from a vending machine in the rain."]
@@ -610,6 +620,18 @@ class ClarificationTests(unittest.TestCase):
         asked = dataset_understanding_fixture(clarifications=["Should the stunts be dangerous?"])
         self.assertEqual(validate_understanding(asked, ("all_outputs", "dataset"))["clarifications"],
                          ["Should the stunts be dangerous?"])
+
+    def test_a_none_placeholder_is_not_an_unresolved_physical_conflict(self):
+        from goated_prompter.features.dataset.understanding import validate_understanding
+        for text in ("None", "N/A", "No physical conflicts."):
+            with self.subTest(text=text):
+                brief = dataset_understanding_fixture(physical_conflicts=[
+                    {"scope": "all_outputs", "conflict": text, "compatible_resolution": None}])
+                self.assertEqual(validate_understanding(brief, ("all_outputs", "dataset"))["physical_conflicts"], [])
+        real = dataset_understanding_fixture(physical_conflicts=[
+            {"scope": "all_outputs", "conflict": "He holds two cups and waves with both hands.", "compatible_resolution": None}])
+        with self.assertRaisesRegex(ValueError, "Unresolved physical conflicts"):
+            validate_understanding(real, ("all_outputs", "dataset"))
 
 
 class GemmaRobustnessTests(unittest.TestCase):
