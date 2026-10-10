@@ -9,8 +9,8 @@ import secrets
 
 from ...backends.base import BackendGenerationError
 from ...contracts import PromptInstruction
-from ...presets import get_director_preset
 from .brainstorm import PLAUSIBLE_BODIES
+from .director import director_fixes_shot, director_section
 from .quality import ADULTS_ONLY, analyze_idea_diversity, minor_reference, passive_idea, passive_request, sexual_request
 from .understanding import (label_replacements, numbered_labels, replace_labels, understanding_instruction,
                             unwrap_json_fence, validate_understanding)
@@ -42,7 +42,7 @@ place and this image only (a particular dish, object, tool, local custom or feat
 setting) and a readable emotion. Never fall back on sightseeing or stock poses: standing,
 walking or sitting while looking at a view, admiring scenery, posing or smiling at the
 camera, holding hands on a path, or standing, sitting or leaning while watching someone else
-do something (a performer, a chef, a game), unless the user asked for that. At most one image
+do something (a performer, a chef, a game), unless the user or the Director asked for that. At most one image
 in a batch may show the cast just watching, and apart from what the request itself asks for,
 no place, prop or activity may appear in more than two images. Weak: "two chefs cook
 dinner". Strong: "the older chef tastes the sauce and winces while the younger one hides the
@@ -76,8 +76,8 @@ stand, sit or move, what the torso does, what the hands hold. Never stack opposi
 (head one way, torso another, legs a third) or describe the same limb twice. With two or more characters
 choose a medium, full-body or wide shot that keeps every character clearly in frame; never
 reduce one to a cropped fragment, a silhouette or a hand entering the frame. Use credible
-balance, reach and contact: no intersecting bodies, extra limbs, mirrors, collages or
-second cameras. Write no tag lists, quality words, rules or target-model syntax; the writer
+balance, reach and contact: no intersecting bodies, extra limbs, collages or second
+cameras, and no mirrors unless the Director's shot uses one. Write no tag lists, quality words, rules or target-model syntax; the writer
 turns your scene into the final prompt.
 
 REQUIREMENTS
@@ -309,25 +309,6 @@ def _ideas_schema(indexes):
             for index in indexes]}
 
 
-DIRECTOR_STAGING = """This Director is the user's own direction for the whole batch and has priority over creative_direction.
-Follow it in every idea and scene. Keep the approved requirements and the cast.
-Use any words, vocabulary, tone or style it asks for.
-It decides framing, camera, light, sexual tone, clothing state, expression and implied action.
-creative_direction values are only suggestions that fill gaps the Director left open;
-never let them override or dilute the Director.
-"""
-
-def director_section(data):
-    preset = get_director_preset(data.get("director_preset"))
-    if not preset.instructions.strip() or (preset.supported_targets and data.get("target") not in preset.supported_targets):
-        return ""
-    return (f"\n\n=== DIRECTOR (MANDATORY) — {preset.label} ===\n"
-            f"{preset.instructions.strip()}\n"
-            f"{DIRECTOR_STAGING}\n"
-            f"=== END DIRECTOR ===\n")
-
-
-
 def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existing=(), recent=(), direction_salt=0,
                       event_seeds=None, craft_notes=()):
     source_context = json.loads(understanding_instruction(data).user_message)
@@ -343,11 +324,15 @@ def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existin
     selected = []
     guided_count = len(source_context["guided_inputs"])
     directions = creative_directions(data, indexes, direction_salt)
+    fixed_shot = director_fixes_shot(data)
     for index in indexes:
         row = by_index[index]
         entry = {"index": index, "input": row["input"],
             "guided_scope": f"guided:{(index - 1) % guided_count + 1}" if guided_count else None}
         direction = directions[index]
+        if fixed_shot:
+            # The Director's own shot (a mirror selfie, first person) replaces the framing axis.
+            direction = {axis: value for axis, value in direction.items() if axis != "framing"}
         if (event_seeds or {}).get(index):
             entry["event_seed"] = event_seeds[index]
             # The seed already decides what happens; a moment or interaction label on top of it

@@ -3,6 +3,7 @@
 import re
 
 from ...presets import get_director_preset
+from .director import director_fixes_shot
 
 
 _CONCEPT_FAMILIES = {
@@ -73,8 +74,10 @@ _SEEN = re.compile(r"\b(?:see|sees|seeing|spot\w*|performance|parade|fireworks|s
 
 
 def passive_request(data):
-    """True when the user asked for watching or strolling themselves, so it is not limited."""
-    return passive_idea(" ".join(str(data.get(key) or "") for key in ("subject", "constraints")))
+    """True when the user asked for watching or strolling, or the Director fixes a posed shot such as a
+    mirror selfie, so it is not limited."""
+    return (passive_idea(" ".join(str(data.get(key) or "") for key in ("subject", "constraints")))
+            or director_fixes_shot(data))
 
 
 def passive_idea(text):
