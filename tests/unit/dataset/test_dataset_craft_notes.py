@@ -56,6 +56,20 @@ class CraftNoteTests(unittest.TestCase):
         self.assertEqual(filter_notes(GOOD + LEAKY, SAVED), GOOD)
         self.assertEqual(filter_notes(GOOD[:2] + LEAKY, SAVED), [], "Too few clean notes are not worth sending.")
 
+    def test_sample_lists_are_cut_so_a_good_rule_survives_without_the_saved_content(self):
+        from goated_prompter.features.dataset.craft_notes import strip_examples
+        self.assertEqual(strip_examples("Layer the setting into depth, using atmospheric effects like snowflakes, fog, "
+                                        "or a neon nightclub glow to create natural depth."),
+                         "Layer the setting into depth, using atmospheric effects to create natural depth.")
+        self.assertEqual(strip_examples("Use precise micro-details on materials, such as a textbook, noodle cup or "
+                                        "sequins, to ground the image."), "Use precise micro-details on materials, to ground the image.")
+        self.assertEqual(strip_examples("Describe how light falls (e.g. a red strobe) on the face."),
+                         "Describe how light falls on the face.")
+        noisy = [note.rstrip(".") + ", such as a dorm desk or a red strobe." for note in GOOD]
+        self.assertEqual(filter_notes(noisy, SAVED), GOOD)
+        self.assertEqual(filter_notes(GOOD + ["Make the place concrete, setting it in a dorm room with a textbook."], SAVED),
+                         GOOD, "A leak outside a sample list still drops the note.")
+
     def test_notes_are_made_once_per_library_version_and_never_carry_its_content(self):
         session = self.session(GOOD + LEAKY)
         self.assertEqual(self.make(session), GOOD)
