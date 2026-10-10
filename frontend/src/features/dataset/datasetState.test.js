@@ -38,6 +38,11 @@ test("scene signatures ignore key order and downstream prompt bookkeeping", () =
   assert.equal(isDatasetSceneCurrent(reordered, { ...record, scene_eligibility: { 1: { usable: false } } }), false);
 });
 
+test("scene signatures ignore the whitespace the server collapses when saving", () => {
+  const saved = { ...draft.scene_plan[0], scene: "A duck reads a map on a bench." };
+  assert.equal(datasetSceneSignature({ ...saved, scene: "  A duck\nreads a map   on a bench.  " }), datasetSceneSignature(saved));
+});
+
 test("scene signatures invalidate source, idea, prose, self-check and scene-state changes", () => {
   const row = draft.scene_plan[0];
   for (const change of [{ input: "new source" }, { idea: "new event" }, { scene: "new scene" },

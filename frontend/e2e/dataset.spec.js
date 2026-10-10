@@ -334,7 +334,8 @@ test("per-scene actions preserve siblings; idea edits keep the scene", async ({ 
     else expect(done.result.scene_plan[0].idea).toBe(before.scene_plan[0].idea);
   }
   await openDatasetPage(page, "Scenes");
-  const scene = await page.getByLabel("Planned scene 1").inputValue();
+  const scene = (await settings(request)).draft.scene_plan[0].scene;
+  await expect(page.getByLabel("Planned scene 1")).toHaveValue(scene);
   await page.getByLabel("Planned idea 1").fill("Edited activity");
   await expect(page.getByLabel("Planned scene 1")).toHaveValue(scene);
   await expect.poll(async () => (await settings(request)).draft.scene_plan[0].idea).toBe("Edited activity");
