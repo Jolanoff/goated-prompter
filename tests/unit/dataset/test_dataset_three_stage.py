@@ -332,6 +332,7 @@ class GeometryTests(unittest.TestCase):
                                               plan_item=saved_scene()).system_message.split())
         self.assertIn("never add a second angle, viewpoint or lens perspective", writer)
         self.assertIn("add no pose details beyond the scene's", writer)
+        self.assertIn("never on new limb positions, a new camera position", writer)
 
 
 class PlausibilityTests(unittest.TestCase):
@@ -341,7 +342,8 @@ class PlausibilityTests(unittest.TestCase):
         ideas = " ".join(ideas_instruction(data, dataset_assignments(data)).system_message.split())
         for rules in (" ".join(BRAINSTORM_SYSTEM.split()), ideas):
             self.assertIn("physically possible for real bodies", rules)
-            self.assertIn("No one is airborne, mid-fall or mid-jump", rules)
+            self.assertIn("No one is airborne, mid-fall, mid-trip or mid-jump", rules)
+            self.assertIn("never a tangle of limbs or limbs at odd angles", rules)
             self.assertIn("show the moment just before or just after it", rules)
             self.assertIn("No weight on hands or fingertips, no flips, cartwheels", rules)
             self.assertIn("not from twisted anatomy", rules)
@@ -379,3 +381,18 @@ class PlausibilityTests(unittest.TestCase):
         adult = creative_directions(valid_draft(amount=1, _confirmed_intent=dataset_understanding_fixture(
             characters=[COMPANION])), [1])[1]["random_character_looks"]["random companion"]
         self.assertTrue(any(age in adult for age in LOOK_AXES["age"]))
+
+
+class RepeatedInventoryTests(unittest.TestCase):
+    def test_an_anima_prompt_that_prints_its_tag_list_twice_keeps_one_copy(self):
+        from unittest.mock import Mock
+        from goated_prompter.features.dataset.service import DatasetService
+        data = valid_draft(amount=1, target="Anima", trigger="naruto", trigger_type="Character", expand_trigger=True,
+                           _confirmed_intent=dataset_understanding_fixture(characters=[NARUTO]))
+        row = saved_scene()
+        instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=row)
+        tags = "1boy, uzumaki naruto, naruto (series), snow, courtyard, evening"
+        session = Mock()
+        session.generate.return_value = f"{tags}, {tags}\n\nUzumaki Naruto packs snow onto a snowman in a quiet courtyard."
+        result = DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None, row)
+        self.assertEqual(result.split("\n\n")[0], tags)

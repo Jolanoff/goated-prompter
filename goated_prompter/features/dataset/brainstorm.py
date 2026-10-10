@@ -20,9 +20,11 @@ SIMILAR_EVENT = .6
 
 PLAUSIBLE_BODIES = """Every image must be physically possible for real bodies and readable in one photo. Each
 body rests in an ordinary way: standing, walking, sitting, kneeling, crouching or lying on
-something, with its weight on feet, seat, knees or back. No one is airborne, mid-fall or
-mid-jump: for a slip, fall, jump or collision show the moment just before or just after it
-(about to step on the peel, sitting in the puddle). No weight on hands or fingertips, no
+something, with its weight on feet, seat, knees or back. No one is airborne, mid-fall,
+mid-trip or mid-jump: for a slip, fall, jump or collision show the moment just before or
+just after it (about to step on the peel, sitting in the puddle). After a fall the body
+rests in one readable position, never a tangle of limbs or limbs at odd angles. No weight
+on hands or fingertips, no
 flips, cartwheels, floor spins, freezes, lifts, handstands or contortions, no one upside
 down or held parallel to the ground, and no body parts inside or through objects, unless
 the user asked for that exact move. Humor and surprise come from the situation, props,

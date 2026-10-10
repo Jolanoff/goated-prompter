@@ -18,7 +18,8 @@ from .assignments import dataset_assignments
 from .quality import analyze_idea_diversity
 from .triggers import trigger_presence_error, trigger_terms, fixed_anima_prefix, restore_numeric_trigger_spelling
 from ...prompt_library import copied_reference
-from ...output_repetition import MAX_ANIMA_TAGS, anima_tag_count, anima_tag_key, anima_tags, drop_supplied_tags
+from ...output_repetition import (MAX_ANIMA_TAGS, anima_tag_count, anima_tag_key, anima_tags, drop_repeated_tags,
+                                 drop_supplied_tags)
 from .visible_content import PositiveContentError, positive_prompt_error, sanitize_positive_prompt
 from .plan import (ScenePlanner, MAX_STORED_SCENE_CHARACTERS, MAX_STORED_IDEA_CHARACTERS,
                            reusable_scene_plan, scene_plan_signature, validate_saved_scene_plan,
@@ -153,6 +154,8 @@ class DatasetService:
         original = instruction
         def validate(raw):
             prompt = normalize_workflow_output(raw, data["target"], mode="Enhance", expected_visible_text=expected_text)
+            if data["target"] == "Anima":
+                prompt = drop_repeated_tags(prompt)
             if prefix := fixed_anima_prefix(data):
                 tail = prompt[len(prefix):] if prompt.startswith(prefix) else None
                 if tail is not None and (not tail or tail.lstrip(" \t")[:1] in ",;:\r\n"):

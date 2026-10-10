@@ -35,7 +35,7 @@ from ...prompt_library import copied_reference, library_file_name, library_profi
 from ...presets import DEFAULT_DIRECTOR_PRESET, get_director_preset
 from ...options.references import REFERENCE_IMAGE_SLOTS
 from ...reference_map import reference_images, resolve_reference_map
-from ...output_repetition import remove_contradictory_solo
+from ...output_repetition import drop_repeated_tags, remove_contradictory_solo
 from ...workflow_output import WorkflowFormatError, normalize_workflow_output, sanitize_prompt_text, requested_visible_text
 from ...contracts import GenerationResult, PromptInstruction, _reference_role, effective_model_family
 
@@ -535,7 +535,7 @@ class GoatedPrompterService:
         if request.target_model != "Ideogram4" and not (request.target_model == "MiniMax H3" and request.mode == "Video"):
             prompt = sanitize_prompt_text(prompt)
         if request.target_model == "Anima":
-            prompt = remove_contradictory_solo(prompt)
+            prompt = drop_repeated_tags(remove_contradictory_solo(prompt))
         if not prompt:
             raise RuntimeError("Goated Prompter backend returned only removable metadata.")
         return GenerationResult(

@@ -8,7 +8,7 @@ from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.builder.service import assemble_instruction
 from goated_prompter.image_utils import EncodedImage
 from goated_prompter.options.targets import TARGET_MODEL_NAMES
-from goated_prompter.output_repetition import remove_contradictory_solo
+from goated_prompter.output_repetition import drop_repeated_tags, remove_contradictory_solo
 from goated_prompter.prompting.base import PRIORITY_CONTRACT, SETTINGS_PRECEDENCE, TEXT_ONLY_PRIORITY_CONTRACT
 from goated_prompter.prompting.target_models import QWEN21_EDIT_EXAMPLE, TARGET_EXAMPLES
 from goated_prompter.workflow_output import normalize_workflow_output, requested_visible_text
@@ -98,6 +98,17 @@ class BuilderPromptAssemblyTests(unittest.TestCase):
         ):
             with self.subTest(text=text):
                 self.assertEqual(remove_contradictory_solo(text), expected)
+
+    def test_an_inventory_printed_twice_keeps_one_copy_and_per_character_tags_stay(self):
+        tags = "1girl, 1boy, uzumaki naruto, naruto (series), masterpiece, snow, evening"
+        self.assertEqual(drop_repeated_tags(f"{tags}, {tags}\n\nThey build a snowman."), f"{tags}\n\nThey build a snowman.")
+        self.assertEqual(drop_repeated_tags("rain, Rain, night, (night:1.1), street, street, 1girl\n\nShe waits."),
+                         "rain, Rain, night, (night:1.1), street, street, 1girl\n\nShe waits.")
+        for kept in ("2boys, ash ketchum, pokemon, 1boy, black hair, midoriya izuku, 1boy, freckles\n\nThey run.",
+                     "1girl, 1boy, kneeling, table, 1girl, 1boy, apron\n\nThey cook.",
+                     "a, b, c, d, a, b, c, d", "A girl waits.\n\nShe waits, waits, waits, waits."):
+            with self.subTest(text=kept):
+                self.assertEqual(drop_repeated_tags(kept), kept)
 
     def test_builder_applies_the_solo_guard_to_anima_only(self):
         from unittest.mock import patch

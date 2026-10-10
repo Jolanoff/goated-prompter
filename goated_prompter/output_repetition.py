@@ -115,3 +115,35 @@ def drop_supplied_tags(text, supplied):
     keys = {anima_tag_key(tag) for tag in anima_tags(supplied, tag_only=True)}
     kept = [field.strip() for field in re.split(r"[,;\r\n]", head) if field.strip() and anima_tag_key(field) not in keys]
     return ", ".join(kept) + separator + rest
+
+
+
+MIN_REPEATED_RUN = 4
+
+
+def drop_repeated_tags(text):
+    """Remove a run of tags printed twice in a row in a leading tag block followed by prose.
+
+    Writers sometimes print the whole inventory twice. Only a run of at least four tags that
+    immediately repeats (ignoring case, spacing, escapes and weights) is removed; single tags
+    that recur on purpose, such as one count tag per character block, are kept.
+    """
+    value = str(text or "")
+    parts = re.split(r"(\r?\n[ \t]*\r?\n)", value, maxsplit=1)
+    if len(parts) != 3 or "\n" in parts[0].strip():
+        return value
+    head, separator, rest = parts
+    fields = [field.strip() for field in head.split(",") if field.strip()]
+    if len(fields) != len(anima_tags(head, tag_only=True)):
+        return value
+    keys = [anima_tag_key(field) for field in fields]
+    changed = False
+    for size in range(len(keys) // 2, MIN_REPEATED_RUN - 1, -1):
+        start = 0
+        while start + 2 * size <= len(keys):
+            if keys[start:start + size] == keys[start + size:start + 2 * size]:
+                del keys[start + size:start + 2 * size], fields[start + size:start + 2 * size]
+                changed = True
+            else:
+                start += 1
+    return ", ".join(fields) + separator + rest if changed else value
