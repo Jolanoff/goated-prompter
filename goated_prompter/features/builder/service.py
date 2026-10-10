@@ -174,7 +174,8 @@ def assemble_instruction(
            + "\nKeep its place, situation, activity, props, camera and mood. Cast the subjects from the user's request "
            "into its roles, main role first; adapt gender, age and relationship wording; drop roles the request does not "
            "fill; never reuse its character names." if scenario else ""),
-        "TARGET MODEL ADAPTER\n" + (QWEN21_EDIT_ADAPTER if qwen_images else get_model_adapter(request.target_model))
+        "TARGET MODEL ADAPTER\n" + (QWEN21_EDIT_ADAPTER if qwen_images
+                                      else get_model_adapter(request.target_model, templates=bool(references)))
         + ("\n\n" + target_example if target_example else ""),
         "USER SETTINGS",
         _CREATIVITY_ADAPTERS.get(request.creativity, _CREATIVITY_ADAPTERS["Balanced"]),

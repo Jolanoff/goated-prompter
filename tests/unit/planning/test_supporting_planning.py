@@ -122,7 +122,7 @@ class SupportingPlanningTests(unittest.TestCase):
         golden = {
             "Generic": "47d08eeadbee43ff510f3d16c9cf609c7de931be25f883494e6bf5662b6f179b",
             "Anima": "7e4017d3e4830eb27db75e91a60b7dde72ae5ff781752adf0038981363df8c1c",
-            "Krea 2": "d64afb5835982a4d8223bd4ac2e07a4ccbabce19e8c922c226540705d5f540d2",
+            "Krea 2": "ce5c07fd3730eaa3716da60acc266bcd597400376cbfbfc52d44ba1b622ebaa6",
             "FLUX.2 Klein": "a879361be52b444d73c8bb15ea4e6baaea11a70f95cadc0a54c2509cf72bf8e8",
             "Z-Image Base": "908c33f0b63743419d033569e7caf7b8d5b9879310d2a4c0a0643df5f655a760",
             "Z-Image Turbo": "bdfb4d8b7af049ba77034e8e6b870d70649628ca94faa9f1d41b930536fb7e6e",

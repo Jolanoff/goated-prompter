@@ -91,6 +91,10 @@ class PromptLibraryTests(unittest.TestCase):
         self.assertNotIn("STYLE EXAMPLE", unrelated.system_message, "Any saved prompt beats the built-in example.")
         self.assertEqual(set(unrelated.reference_prompts), {CAR, KITCHEN})
 
+    def test_without_templates_krea_keeps_its_default_section_layout(self):
+        system = assemble_instruction(GoatedPrompterRequest(idea="a chef plating dessert", target_model="Krea 2")).system_message
+        self.assertIn('"Subject and action:", "Clothing and pose:"', system)
+
     def test_library_templates_shape_the_prompt_while_style_and_director_set_the_look(self):
         sectioned = "Subject and action:\nA courier sprints.\n\nComposition and camera:\nLow angle."
         self.write("Krea 2", sectioned)
@@ -101,6 +105,7 @@ class PromptLibraryTests(unittest.TestCase):
         self.assertLess(templates, contract)
         self.assertIn("DIRECTOR BEHAVIOR — General Director", system, "The Director keeps deciding the look.")
         self.assertIn("exhaustive", system[:templates], "The full target adapter keeps its model knowledge.")
+        self.assertNotIn("Clothing and pose:", system[:templates], "The templates decide the layout, not the adapter.")
         flat = " ".join(system.split())
         self.assertIn("Do not take the look of the image from them: the medium, visual style, aesthetic, palette, mood", flat)
         self.assertIn("come from this request, the selected Style and the Director", flat)
