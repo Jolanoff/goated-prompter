@@ -154,22 +154,25 @@ class RecoveryTests(unittest.TestCase):
             if instruction.diagnostic_stage == "dataset:ideas":
                 context = json.loads(instruction.user_message)
                 indexes = context["output_contract"]["indexes"]
-                if len(indexes) == 20:
+                chunks.append(indexes)
+                if len(chunks) <= 4:
                     self.backend.calls.append(instruction)
                     rows = [dataset_idea_fixture(index) for index in indexes]
-                    rows[6]["idea"] = rows[0]["idea"]
-                    rows[18]["idea"] = rows[0]["idea"]
+                    for row in rows:
+                        if row["index"] in (7, 19):
+                            row["idea"] = dataset_idea_fixture(1)["idea"]
                     return json.dumps(rows)
                 self.assertEqual(indexes, [7, 19])
                 self.assertEqual(sum(call.diagnostic_stage.split(":")[-1].isdigit()
                     for call in self.backend.calls), 18)
             return original(instruction)
+        chunks = []
         self.backend.generate = generate
         result = self.run_service()
         self.assertEqual(result["completed"], 20)
         self.assertEqual(result["failed"], 0)
         self.assertEqual([row["index"] for row in result["prompts"]], list(range(1, 21)))
-        self.assertEqual(sum(call.diagnostic_stage == "dataset:ideas" for call in self.backend.calls), 2)
+        self.assertEqual(chunks, [[1, 2, 3, 4, 5], [6, 7, 8, 9, 10], [11, 12, 13, 14, 15], [16, 17, 18, 19, 20], [7, 19]])
 
     def test_transport_failure_in_idea_repair_keeps_good_prompts_and_reports_failed_slot(self):
         self.duplicate_batch()

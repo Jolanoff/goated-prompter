@@ -222,11 +222,11 @@ test("accepted replacement survives a lost admission response", async ({ page, r
   await expect(page.getByLabel("Planned scene 1")).toHaveValue(recovered.scene_plan[0].scene);
 });
 
-test("one idea call plans ten finished scenes without per-scene calls", async ({ page, request }) => {
+test("ten finished scenes come from two idea calls without per-scene calls", async ({ page, request }) => {
   await openDataset(page, "10");
   const response = await submit(page, "Generate 10 scenes only", "/api/workspace/dataset/scenes");
   const finished = await finish(request, (await response.json()).id);
-  expect(finished.llm_trace.request_number).toBe(1);
+  expect(finished.llm_trace.request_number).toBe(2);
   expect(finished.result.scene_plan.map((row) => row.index)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   expect(finished.result.scene_plan.every((row) => row.self_check === "PASS" && row.scene && !("geometry" in row))).toBe(true);
   await expect(page.getByLabel("Dataset planning mode")).toHaveCount(0);

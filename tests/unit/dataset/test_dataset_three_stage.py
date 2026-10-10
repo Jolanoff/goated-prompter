@@ -11,13 +11,14 @@ from unittest.mock import Mock, patch
 from goated_prompter.backends.base import BackendGenerationError
 from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.dataset.assignments import dataset_assignments
-from goated_prompter.features.dataset.ideas import COPIED_SCENE, DatasetIdeasService, ideas_instruction
-from goated_prompter.features.dataset.prompting import anima_count_tags, dataset_instruction
+from goated_prompter.features.dataset.ideas import COPIED_SCENE, DatasetIdeasService, creative_directions, ideas_instruction
+from goated_prompter.features.dataset.plan import ScenePlanner
+from goated_prompter.features.dataset.prompting import anima_count_tags, cast_error, dataset_instruction
 from goated_prompter.features.dataset.understanding import (_expand_understanding, understanding_instruction,
     validate_understanding)
 from goated_prompter.prompt_library import LIBRARY_DIR_ENV, library_path
 from tests.helpers import dataset_idea_fixture, dataset_understanding_fixture
-from tests.support.dataset import saved_scene, valid_draft
+from tests.support.dataset import CaptureBackend, saved_scene, valid_draft
 
 SCOPES = ("all_outputs", "dataset")
 NARUTO = {"name": "Naruto Uzumaki", "count": 1, "sex": "male", "kind": "human", "origin": "named",
@@ -140,11 +141,13 @@ class CastWriterTests(unittest.TestCase):
         self.assertEqual(anima_count_tags([character(sex="none", kind="robot")]), ["1other"])
         self.assertEqual(anima_count_tags([character(sex="none", kind="animal")]), ["no humans"])
         self.assertIsNone(anima_count_tags([NARUTO, COMPANION]), "An open sex is decided per scene.")
+        self.assertIsNone(anima_count_tags([]))
 
     def test_anima_writer_starts_with_count_and_named_character_tags(self):
         system = self.writer([NARUTO, character(name="Hinata Hyuga", sex="female")], target="Anima").system_message
         self.assertIn("Start the tag block with these count tags: 1girl, 1boy.", system)
         self.assertIn("Danbooru character tag and series tag", system)
+        self.assertIn("give each one's basic appearance", system)
         open_cast = self.writer([NARUTO, COMPANION], target="Anima").system_message
         self.assertIn("count tags that match the characters in this scene", open_cast)
 
@@ -156,3 +159,61 @@ class CastWriterTests(unittest.TestCase):
     def test_other_targets_and_briefs_without_characters_get_no_tag_section(self):
         self.assertNotIn("ANIMA CAST TAGS", self.writer([NARUTO]).system_message)
         self.assertNotIn("CAST (", self.writer([]).system_message)
+
+
+class CastCheckTests(unittest.TestCase):
+    def data(self, characters, **changes):
+        return valid_draft(**changes, _confirmed_intent=dataset_understanding_fixture(characters=characters))
+
+    def test_named_characters_must_survive_into_the_prompt(self):
+        data = self.data([NARUTO, COMPANION])
+        self.assertIsNone(cast_error("Naruto grins at his friend on a rooftop.", data))
+        self.assertIsNone(cast_error("uzumaki naruto, 1boy\n\nA boy grins.", data))
+        self.assertIn("Missing: Naruto Uzumaki", cast_error("Two friends grin on a rooftop.", data))
+
+    def test_anima_count_tags_from_the_cast_must_lead_the_prompt(self):
+        data = self.data([NARUTO, character(name="Hinata Hyuga", sex="female")], target="Anima")
+        self.assertIsNone(cast_error("1girl, 1boy, uzumaki naruto, hyuuga hinata\n\nNaruto and Hinata share ramen.", data))
+        self.assertIn("1girl", cast_error("1boy, uzumaki naruto, hinata\n\nNaruto and Hinata share ramen.", data))
+
+    def test_open_sexes_locked_triggers_and_briefs_without_a_cast_are_not_checked_for_tags(self):
+        self.assertIsNone(cast_error("Naruto and a friend.", self.data([NARUTO, COMPANION], target="Anima")))
+        locked = self.data([NARUTO], target="Anima", trigger="1boy, uzumaki naruto", trigger_at_start=True,
+                           trigger_connected=True, expand_trigger=False)
+        self.assertIsNone(cast_error("rooftop, sunset\n\nNaruto waves.", locked))
+        self.assertIsNone(cast_error("Anything at all.", valid_draft(target="Anima",
+                                                                      _confirmed_intent=dataset_understanding_fixture())))
+
+
+class ChunkedIdeasTests(unittest.TestCase):
+    def test_batches_are_written_five_ideas_per_call_and_later_chunks_see_earlier_ideas(self):
+        data = valid_draft(amount=7, _confirmed_intent=dataset_understanding_fixture())
+        backend = CaptureBackend()
+        with patch("goated_prompter.features.dataset.plan.secrets.randbits", return_value=11):
+            rows = ScenePlanner(lambda: None).plan_ideas(session=backend, data=data,
+                assignments=dataset_assignments(data), progress=lambda _message: None, allow_partial=True)
+        self.assertEqual([row["index"] for row in rows], list(range(1, 8)))
+        first, second = [json.loads(call.user_message) for call in backend.calls]
+        self.assertEqual(first["output_contract"]["indexes"], [1, 2, 3, 4, 5])
+        self.assertEqual(second["output_contract"]["indexes"], [6, 7])
+        self.assertEqual([row["index"] for row in second["existing_ideas"]], [1, 2, 3, 4, 5])
+        # One salt for the whole batch keeps the creative directions spread across every chunk.
+        directions = creative_directions(data, list(range(1, 8)), 11)
+        sent = [row["creative_direction"] for context in (first, second) for row in context["assignments"]]
+        self.assertEqual(sent, [directions[index] for index in range(1, 8)])
+
+    def test_library_chunks_share_one_scenario_order_without_repeats(self):
+        directory = Path(tempfile.mkdtemp())
+        with patch.dict(os.environ, {LIBRARY_DIR_ENV: str(directory)}):
+            prompts = [f"1girl, 1boy, place {name}\n\nA couple visits the {name}." for name in
+                       ("harbor", "museum", "arcade", "bakery", "observatory", "greenhouse", "ferry")]
+            library_path("Anima").write_text("\n---\n".join(prompts), encoding="utf-8")
+            data = valid_draft(amount=7, target="Anima", source_mode="library",
+                               _confirmed_intent=dataset_understanding_fixture(character_count=2))
+            backend = CaptureBackend()
+            ScenePlanner(lambda: None).plan_ideas(session=backend, data=data, assignments=dataset_assignments(data),
+                                                  progress=lambda _message: None, allow_partial=True)
+        scenarios = [row["library_scenario"] for call in backend.calls
+                     for row in json.loads(call.user_message)["assignments"]]
+        self.assertEqual(len(backend.calls), 2)
+        self.assertEqual(sorted(scenarios), sorted(prompts))

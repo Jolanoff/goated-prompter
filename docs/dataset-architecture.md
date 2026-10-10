@@ -4,25 +4,23 @@ Dataset produces prompts, not images. There is one pipeline:
 
 ```text
 concept + rules + local guided input
-  → UNDERSTAND (hard / soft / free) → human approval
-  → IDEAS suggestions (Idea, Placement, Visibility, Camera, Framing, Context)
-  → SCENE + same-call correction and self-check (PASS / REPAIR:)
-  → Builder ENHANCE / Direct → FINAL PROMPT
+  → UNDERSTAND (characters + hard / soft / free) → human approval
+  → IDEAS, five per call, each an idea with its finished scene
+  → Builder ENHANCE / Direct with the approved cast → FINAL PROMPT
 ```
 
 ## Owners
 
 | Responsibility | Owner |
 | --- | --- |
-| Scoped understanding and richer brief validation | `goated_prompter/features/dataset/understanding.py` |
+| Scoped understanding, character list and richer brief validation | `goated_prompter/features/dataset/understanding.py` |
 | Source-bound, expiring approval tickets | `goated_prompter/features/dataset/intent.py` |
 | Guided assignment indexes and cycling | `goated_prompter/features/dataset/assignments.py` |
-| Six-field ideas and lexical duplicate hints | `goated_prompter/features/dataset/ideas.py`, `quality.py` |
+| Ideas with finished scenes, library examples and lexical duplicate hints | `goated_prompter/features/dataset/ideas.py`, `quality.py` |
 | Recent-event RAM history, read and written only by Ideas | `goated_prompter/features/dataset/ideas.py`, `idea_history.py` |
-| Frozen scene, same-call correction and self-check | `goated_prompter/features/dataset/scene.py` |
-| Compact orchestration and versioned saved-plan validation | `goated_prompter/features/dataset/plan.py` |
-| PASS eligibility, shared by API and enhancement | `goated_prompter/features/dataset/eligibility.py` |
-| Builder instruction handoff and trigger controls | `goated_prompter/features/dataset/prompting.py` |
+| Chunked idea orchestration and versioned saved-plan validation | `goated_prompter/features/dataset/plan.py` |
+| Writer eligibility, shared by API and enhancement | `goated_prompter/features/dataset/eligibility.py` |
+| Builder handoff, cast section, Anima cast tags, cast check and trigger controls | `goated_prompter/features/dataset/prompting.py` |
 | Batch/actions and bounded final-output recovery | `goated_prompter/features/dataset/service.py` |
 | Target syntax and output normalization | `goated_prompter/prompting/target_models.py`, `workflow_output.py` |
 | Editable drafts and durable generated progress | `goated_prompter/workflow_settings.py`, `goated_prompter/features/dataset/checkpoints.py` |
@@ -30,12 +28,14 @@ concept + rules + local guided input
 | Workflow execution | `goated_prompter/features/dataset/runner.py` (dispatched by `goated_prompter/workflow_runners.py`) |
 | Confirmation and job synchronization | `frontend/src/features/dataset/useDatasetConfirmation.js`, `useDatasetWorkflow.js` |
 | Autosave, revisions and refresh guards | `frontend/src/shared/workflow/useWorkflowSettings.js` |
-| Cards, edits, self-check display and exports | `frontend/src/features/dataset/DatasetTab.jsx`, `DatasetIdeaDetails.jsx`, `datasetState.js` |
+| Cards, edits, character review and exports | `frontend/src/features/dataset/DatasetTab.jsx`, `DatasetConfirmationModal.jsx`, `datasetState.js` |
 
 ## Authority and stages
 
-UNDERSTAND interprets the user's request without generating scenes. Its brief records
-character count, identity policy, scoped requirements, action alternatives, permitted
+UNDERSTAND interprets the user's request without generating scenes. Its brief lists the
+characters in every image (name, count, sex, kind such as human, anthro, monster, alien
+or robot, origin as an existing, described or randomly invented character, series and
+supplied traits) and records character count, identity policy, scoped requirements, action alternatives, permitted
 expansion, visible evidence, interactions, natural occlusions and physical conflicts.
 `all_outputs` applies to every image, `dataset` to the set, and `guided:N` only to that
 line's assignments. Clarifications prevent approval. Added instructions require
@@ -52,7 +52,7 @@ reserves one HARD slot for the app-retained character trigger when needed, witho
 reducing the other buckets' capacities. The app expands these facts into the same public
 brief, supplies output-setting prose from the request, and retains the supplied
 character trigger before approval. Existing full briefs remain valid; saved reviews,
-approval tickets, IDEAS and SCENE still consume the unchanged public contract.
+approval tickets, IDEAS and the writer still consume the unchanged public contract.
 Generation uses bucket-specific review-tag schemas: HARD excludes `may_vary`, FREE
 allows only `may_vary`, SOFT has no review tags, and CONTEXT requires exactly
 `natural_occlusions`. Required overlaps may still be HARD. This prevents constrained
@@ -78,78 +78,57 @@ Explicit user counts, actions, contacts, exclusions and required visual evidence
 belong in hard, retaining their scope and qualifiers. A semantic trait does not
 automatically require exposure. Unresolved user conflicts block approval.
 
-IDEAS makes one batch call with six short descriptions per image, each at most 600
-characters. An explicit replacement requests only its index. History and diversity
-hints never override a guided action or approved hard requirement. The six fields
-are proposals, not frozen staging: SCENE may adjust generated details. There is no
-Fast/Quality dispatch, automatic substitute idea or fallback plan.
-IDEAS requests minified, single-line JSON and asks the model to resolve generated
-repeats within that same call using permitted event differences. During a fresh
-batch, exact normalized duplicates retain the first valid idea and mark only later
-repeats for repair; permitted guided repeats remain accepted. Invalid individual
-rows also become explicit failed slots without dropping valid siblings. Valid scenes
-and prompts finish first, then one replacement call requests only failed idea indexes,
-followed by their scene/writer calls. Replacement validation still rejects unchanged
+IDEAS writes five images per call: each record is a one-line idea (the core event) and
+its scene, a complete three-to-five-sentence picture with the whole cast in frame,
+placement, action, setting, light and camera. Later calls receive the earlier ideas as
+existing ideas, share one creative-direction salt and one library scenario order, so the
+batch stays spread without one long list. Library prompts matching the concept are sent
+as quality examples; a scene that copies one is treated like a repeated idea. An
+explicit replacement requests only its index. History and diversity hints never
+override a guided action or approved hard requirement. There is no Fast/Quality
+dispatch, automatic substitute idea or fallback plan.
+During a fresh batch, exact normalized duplicates retain the first valid idea and mark
+only later repeats for repair; permitted guided repeats remain accepted. Invalid
+individual rows also become explicit failed slots without dropping valid siblings.
+Valid prompts finish first, then one replacement call requests only failed idea
+indexes, followed by their writer calls. Replacement validation still rejects unchanged
 or repeated ideas; unsuccessful repairs leave an inspectable partial batch, not an
-unbounded retry loop. Replacement scenes are composed independently: a scene failure
-is recorded on that slot while other usable replacements reach the writer. No failed
-scene is retried automatically. Explicit single-idea replacement remains strict. Lexical
-similarity remains a nonblocking hint, not semantic verification. There is no separate
-rejection threshold at 20 items. Globally malformed JSON or a wrong batch size is
-still rejected rather than guessing missing assignments.
+unbounded retry loop. Lexical similarity remains a nonblocking hint, not semantic
+verification. Globally malformed JSON or a wrong batch size gets one format correction
+and is otherwise rejected rather than guessing missing assignments.
 
 IDEAS owns recent-event memory and checks normalized exact repeats against it,
 including when only camera or context changed. Fresh accepted ideas are remembered;
 failed slots are not. An explicit guided input matching the event can still repeat.
 History stays bounded in RAM per concept and expires automatically. There is no
-manual reset control or endpoint. SCENE and the writer do not read this history or
-change an accepted event for novelty. Semantic variation beyond exact repeats
+manual reset control or endpoint. The writer does not read this history or change an
+accepted event for novelty. Semantic variation beyond exact repeats
 remains model-guided, not independently verified.
 
-SCENE makes one call per image. It expands a suggested idea into one spatial
-paragraph of at most 3,000 characters. Before returning `PASS`, its single focused
-self-check compares hard requirements and demanded evidence with the camera/crop,
-spatial relationships and invented details. Generated conflicts are corrected in
-that same call. For example, a generated upper-half cup crop yields to a hard
-requirement to show its base touching the table. User-required crops stay hard.
-This is model self-checking, not independently verified physics. There is no
-structured geometry output, separate evaluator or extra correction call.
-SCENE also requests minified, single-line JSON. A three-line `REPAIR:` remains a
-single JSON string with escaped line breaks. Both stages send compact input JSON,
-retain their sampling and token budgets, and accept valid pretty-printed responses
-without a formatting retry. Generation guidance alone does not guarantee minification.
+There is no separate scene-building call. Each idea's scene, or the user's edit of it,
+is accepted for the writer as written. A `REPAIR:` note saved by the former scene check
+still blocks its writer until the idea is regenerated.
 
-`REPAIR:` is reserved for incompatible actual user hard requirements: its two further
-lines name the conflict and ask the needed clarification. It blocks enhancement.
-Revise conflicting requirements through UNDERSTAND and approve them again; **Repair
-scene** cannot waive them. That button remains a single explicit build/check attempt
-for saved diagnoses, preserving hard requirements and compatible scene content.
-Another REPAIR stays blocked; nothing automatically loops or weakens requirements.
-Invalid SCENE output stops the initial scene stage without automatic retry; already
-published ideas and completed scenes remain checkpointed. During deferred idea
-recovery, it fails only that replacement slot and leaves siblings progressing.
-The parser validates
-the response shape, not whether the model's conflict diagnosis is semantically true.
-
-Accepted scene prose is Builder's entire creative input. `dataset_instruction`
-calls the existing `assemble_instruction` with **Enhance / Direct**, preserving
-subject, composition and camera. Director, creativity, length and target
-controls enrich compatible unspecified detail, not a different event or crop.
-Only the applicable hard/soft/free contract is supplied as approved requirements;
-older idea staging is not restored after SCENE corrects it.
+Scene prose is Builder's entire creative input. `dataset_instruction` calls the
+existing `assemble_instruction` with **Enhance / Direct**, adds the approved cast and
+the applicable hard/soft/free contract. Director, creativity, style, length and target
+controls enrich open detail, not a different event, cast or crop. For Anima, count tags
+derived from the cast lead the tag block, followed by named characters' Danbooru and
+series tags. A deterministic check retries the writer when cast-derived count tags or a
+named character's name are missing from the prompt.
 Dataset has no separate final writer or semantic/support reviewer. Shared Builder
 and MiniMax planning/validation remain independent and available.
 
 ## Recovery and text preservation
 
-Normal **Generate prompts** always runs ideas → scenes → prompts after the first
+Normal **Generate prompts** always runs ideas → prompts after the first
 UNDERSTAND approval, regardless of the legacy `plan_scenes_first` saved flag.
 **Generate scenes only** is an explicit separate action for manual scene review;
 Continue reuses the accepted plan and writes only its missing prompts.
 
 Final enhancement retains up to three bounded retries for transport errors, malformed
 target output, missing protected triggers, positive-content leakage and runaway
-generation. These retries never replan or repair the scene. Transport retries repeat
+generation, and for a dropped cast member. These retries never replan the scene. Transport retries repeat
 the instruction; output correction stays within the accepted scene and target format.
 Runaway retries reduce the output allowance. A sentence-complete prefix may be
 accepted only after normal output validation.
@@ -171,14 +150,12 @@ score or universal ban on words such as “no.”
 
 ## Edits, freshness and persistence
 
-Idea edits discard stale five-field descriptions and invalidate that scene/check/prompt.
-Scene edits retain the suggested idea descriptions but invalidate its check and prompt.
-A manual scene must be checked before enhancement. Output-setting changes reuse
-checked scenes; concept, guided input, amount, type or rules
+Idea and scene edits keep each other and invalidate only that prompt; an edited scene
+is written as edited. Output-setting changes reuse scenes; concept, guided input, amount, type or rules
 changes invalidate the plan. Server eligibility is accepted only while the client's
 scene matches its saved dependency projection; key order and prompt bookkeeping do
 not affect identity.
-Plans created under the earlier frozen-idea contract also need replanning; their
+Plans created before ideas carried their own scenes also need replanning; their
 saved text and final prompts are not deleted or migrated.
 
 The backend atomically checkpoints generated progress before publishing it. Workflow
@@ -196,7 +173,7 @@ checkpoint snapshots remain intact. No legacy staging migration is executed.
 ## Evidence boundary
 
 CPU tests use mocked models and synthetic temporary storage. Browser checks cover
-approval, persistence, admission races, edits, explicit repair and export. They do
+approval, persistence, admission races, edits, per-scene actions and export. They do
 not prove real-model creativity or visual correctness.
 
 `tests/eval/runner.py` uses the production Dataset pipeline with an interactive

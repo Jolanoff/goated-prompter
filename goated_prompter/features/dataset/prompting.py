@@ -4,7 +4,9 @@ import json
 from dataclasses import replace
 
 from .triggers import trigger_terms, fixed_anima_prefix
-from ...output_repetition import MAX_ANIMA_TAGS, anima_tag_count
+import re
+
+from ...output_repetition import MAX_ANIMA_TAGS, anima_tag_count, anima_tag_key, anima_tags
 from .understanding import CONTRACT_FIELDS
 from .eligibility import scene_eligibility
 from ...prompting.details import DATASET_OUTPUT_TOKEN_LIMITS
@@ -45,7 +47,9 @@ def cast_section(characters):
 
 
 def anima_count_tags(characters):
-    """Danbooru count tags for the cast, or None when a sex is left open and the scene decides."""
+    """Danbooru count tags for the cast, or None without a cast or when a sex is left open."""
+    if not characters:
+        return None
     totals = {"girl": 0, "boy": 0, "other": 0}
     for item in characters:
         if item["sex"] in ("unspecified", "mixed"):
@@ -57,6 +61,28 @@ def anima_count_tags(characters):
     tags = [f"{count}{noun}" if count == 1 else f"{min(count, 6)}{'+' if count >= 6 else ''}{noun}s"
             for noun, count in totals.items() if count]
     return tags if tags else ["no humans"]
+
+
+def cast_error(prompt, data):
+    """A cheap check that the final prompt kept the approved cast; None when it did.
+
+    Rewriting often drops counts or characters, so Anima count tags derived from
+    the cast and the names of existing characters must survive into the prompt.
+    """
+    characters = (data.get("_confirmed_intent") or {}).get("characters") or []
+    missing = []
+    if data["target"] == "Anima" and not fixed_anima_prefix(data) and (tags := anima_count_tags(characters)):
+        present = {anima_tag_key(tag) for tag in anima_tags(prompt)}
+        missing += [tag for tag in tags if anima_tag_key(tag) not in present]
+    text = str(prompt).casefold()
+    for item in characters:
+        names = [word for word in re.findall(r"[^\W\d_]{3,}", item["name"].casefold())]
+        if item["origin"] == "named" and names and not any(re.search(rf"\b{re.escape(word)}\b", text) for word in names):
+            missing.append(item["name"])
+    if missing:
+        return ("Keep the whole approved cast in the prompt. Missing: " + ", ".join(missing)
+                + ". Add them without changing the scene.")
+    return None
 
 
 def anima_cast_section(characters):
@@ -72,6 +98,9 @@ def anima_cast_section(characters):
     if named:
         lines.append("Then tag each named character with their Danbooru character tag and series tag, "
                      "for example uzumaki naruto, naruto (series).")
+    if len(characters) > 1 or characters[0]["count"] > 1:
+        lines.append("Names alone confuse Anima when several characters appear: give each one's basic appearance "
+                     "(hair, eyes, outfit) beside their name in the prose.")
     if any(item["kind"] == "anthro" for item in characters):
         lines.append("Tag anthro characters furry with furry female or furry male.")
     return "ANIMA CAST TAGS\n" + " ".join(lines)

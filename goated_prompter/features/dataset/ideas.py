@@ -224,7 +224,9 @@ def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existin
     examples = () if library else pick_references(data["target"], query, count=2, rng=rng)
     if library:
         cast = brief.get("character_count") if type(brief.get("character_count")) is int else None
-        scenarios = dict(zip(indexes, pick_scenarios(data["target"], query, len(indexes), cast=cast, rng=rng)))
+        # Order the whole batch once so chunks sharing one seed never reuse a scenario.
+        ordered = pick_scenarios(data["target"], query, data["amount"], cast=cast, rng=rng)
+        scenarios = {index: ordered[index - 1] for index in indexes} if ordered else {}
         if not scenarios:
             raise ValueError(f"Scenes from your library need saved prompts in data/prompt_library/"
                              f"{library_file_name(data['target'])} for {data['target']}.")
@@ -329,12 +331,15 @@ class DatasetIdeasService:
     def __init__(self, checkpoint, idea_history=None):
         self.checkpoint, self.idea_history = checkpoint, idea_history
 
-    def run(self, *, session, data, assignments, family="qwen", progress, indexes=None, existing=(), allow_partial=False):
+    def run(self, *, session, data, assignments, family="qwen", progress, indexes=None, existing=(), allow_partial=False,
+            direction_salt=None, scenario_seed=None):
         self.checkpoint()
         recent = self.idea_history.recent(data) if self.idea_history is not None else []
-        # A fresh salt per run so repeating the same draft explores new directions.
+        # A fresh salt per run so repeating the same draft explores new directions;
+        # chunks of one batch share theirs so directions and scenarios stay spread.
         instruction = ideas_instruction(data, assignments, family, indexes=indexes, existing=existing, recent=recent,
-                                        direction_salt=secrets.randbits(32))
+            direction_salt=secrets.randbits(32) if direction_salt is None else direction_salt,
+            rng=None if scenario_seed is None else random.Random(scenario_seed))
         selected = json.loads(instruction.user_message)["assignments"]
         indexes = [row["index"] for row in selected]
         progress("Creating ideas from your approved understanding…")

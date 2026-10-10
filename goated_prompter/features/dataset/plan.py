@@ -2,12 +2,15 @@
 
 import hashlib
 import json
+import secrets
 
 from .ideas import DatasetIdeasService
 from .eligibility import scene_eligibility, validate_self_check
 
 
 SCENE_PLAN_VERSION = 8
+# Small local models write better ideas a few at a time than as one long list.
+IDEAS_PER_CALL = 5
 MAX_STORED_SCENE_CHARACTERS = 10000
 MAX_STORED_IDEA_CHARACTERS = 10000
 FAILURE_METADATA = {"failure_reason", "failure_stage"}
@@ -112,8 +115,22 @@ class ScenePlanner:
         return rows
 
     def plan_ideas(self, *, session, data, assignments, family="qwen", progress, indexes=None, existing=(), allow_partial=False):
-        return DatasetIdeasService(self.checkpoint, self.idea_history).run(session=session, data=data,
-            assignments=assignments, family=family, progress=progress, indexes=indexes, existing=existing, allow_partial=allow_partial)
+        """Create ideas in chunks; each chunk sees the earlier ones so the batch keeps varying."""
+        indexes = list(range(1, data["amount"] + 1)) if indexes is None else list(indexes)
+        service = DatasetIdeasService(self.checkpoint, self.idea_history)
+        salt, seed = secrets.randbits(32), secrets.randbits(32)
+        known = [row for row in existing if row["index"] not in indexes]
+        rows = []
+        for start in range(0, len(indexes), IDEAS_PER_CALL):
+            chunk = indexes[start:start + IDEAS_PER_CALL]
+            if len(indexes) > IDEAS_PER_CALL:
+                progress(f"Creating ideas {start + 1}-{start + len(chunk)} of {len(indexes)}…")
+            created = service.run(session=session, data=data, assignments=assignments, family=family, progress=progress,
+                indexes=chunk, existing=[*known, *[row for row in existing if row["index"] in chunk]],
+                allow_partial=allow_partial, direction_salt=salt, scenario_seed=seed)
+            rows.extend(created)
+            known.extend(row for row in created if row.get("idea_status") != "failed")
+        return rows
 
     @staticmethod
     def compose(ideas, plan_update=None):

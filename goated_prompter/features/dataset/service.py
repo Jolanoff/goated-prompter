@@ -6,7 +6,7 @@ from ...backends.factory import create_backend
 from ...backends.base import BackendGenerationError, BackendRunawayError
 from ...contracts import effective_model_family
 from ...director_profiles import resolve_director_config
-from .prompting import dataset_instruction
+from .prompting import cast_error, dataset_instruction
 from ...options.dataset import DATASET_SOURCES, DATASET_TYPES, LIBRARY_EXTRAS
 from ...prompt_library import library_file_name, load_library
 from ...options.lengths import PROMPT_LENGTH_NAMES
@@ -180,6 +180,8 @@ class DatasetService:
                     session.emit_activity("normalization", workflow="dataset", index=index, operation="numeric_trigger_spelling")
                     progress(f"Dataset prompt {index}: restored the supplied numeric trigger spelling.")
                     prompt = corrected
+            if missing_cast := cast_error(prompt, data):
+                raise WorkflowFormatError(missing_cast)
             if original.reference_prompts and copied_reference(prompt, original.reference_prompts):
                 raise WorkflowFormatError("The prompt copied wording from a library reference prompt. Write new wording "
                                           "for this scene; use the references only for style and quality.")
