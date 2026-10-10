@@ -118,19 +118,19 @@ class SupportingPlanningTests(unittest.TestCase):
         # SHA256 of to_messages() from HEAD core.py before this feature. Isolated
         # built-in Directors ensure saved custom presets cannot affect fixtures.
         # Anima alone uses the updated compact hybrid adapter and flat-prefix format.
-        # Regenerated for the slimmed Builder prompt and per-target style examples.
+        # Regenerated for the slimmed Builder prompt, per-target guidance and library-style output rules.
         golden = {
-            "Generic": "f927ca5697c6313f2e86c1e82770f11e8777ba9625717a93c60b80cabb82fd81",
-            "Anima": "1c2d8ec4824a2479d4e6492697dcce19056ef25d072ab535515c557a793c9d93",
-            "Krea 2": "289440d8214885ded92648536c9861586f2e4872bc4b27fadb61ae8b3733ef99",
-            "FLUX.2 Klein": "ffa9c231551a66db21346976162c84a7ff3d765494a1bb5337a3df45219445b2",
-            "Z-Image Base": "f3e9f459ad9b957072d091fbbdea0db77042c78f348caf0603a01f404ddf5943",
-            "Z-Image Turbo": "13d6c8758b06f6d18e9a72a5a0080bacce5011e8d3cb3c8750cbc428fb9c07de",
-            "Qwen Image (original)": "a3a425133fedf2edb97bb0776553c43ea0d8c323e02abff03585108946236601",
-            "Qwen Image 2.1": "c015eb5241a3b2f3d637bcf6ba28d9a56a604988f4c03a800a0d4935c090b845",
-            "MiniMax H3": "e3826c171c1cd5a92e8f0024dd4fa035606d6968d0497715475a1ee3bbab8729",
-            "LTX 2.5": "d9e4eee6b8fc619234f38c15cd0ccd1b38ceef5d2a9930c8cb0468632c29eb5f",
-            "Ideogram4": "b9ab98a1821b1871c041b111090782501115c2cbf8b53501e8178dc1f90ef712"}
+            "Generic": "47d08eeadbee43ff510f3d16c9cf609c7de931be25f883494e6bf5662b6f179b",
+            "Anima": "7e4017d3e4830eb27db75e91a60b7dde72ae5ff781752adf0038981363df8c1c",
+            "Krea 2": "c0f169ebd6ad097d69c18644d1117735ef5db7ba0896f64077b48aa40652f72d",
+            "FLUX.2 Klein": "a879361be52b444d73c8bb15ea4e6baaea11a70f95cadc0a54c2509cf72bf8e8",
+            "Z-Image Base": "908c33f0b63743419d033569e7caf7b8d5b9879310d2a4c0a0643df5f655a760",
+            "Z-Image Turbo": "bdfb4d8b7af049ba77034e8e6b870d70649628ca94faa9f1d41b930536fb7e6e",
+            "Qwen Image (original)": "81e18b5ab50ae2d148c4e1cf58783922d5b34abcc5a79239cb63403002d37b11",
+            "Qwen Image 2.1": "2fc67a5fff577987e9b9afd38c805dd25c6ebd92a9dad7277a3b6ff6df8d6e31",
+            "MiniMax H3": "a04b31ec6240126aa893402cd0607e3792333c27769ada0961c5ae5bc94b45ed",
+            "LTX 2.5": "9b57c8f11262d3d154b9674104a488f6eae4633f63ff51c3e82010d09b9ad02e",
+            "Ideogram4": "b5fd715b0a662a526830c10ed061af21a94ea773905d6a01225332b7298f5864"}
         self.assertEqual(set(golden), set(TARGET_MODEL_NAMES))
         for target, digest in golden.items():
             with self.subTest(target=target):

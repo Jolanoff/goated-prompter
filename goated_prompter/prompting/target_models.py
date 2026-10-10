@@ -207,9 +207,14 @@ def library_reference_section(references, *, continuation=False):
     if not references:
         return ""
     numbered = "\n\n".join(f"Reference {index}:\n{prompt}" for index, prompt in enumerate(references, 1))
-    return ("REFERENCE PROMPTS (from the user's prompt library; match their tag style, wording, density and quality; "
-            "never copy their subjects, names, scene or sentences)\n" + numbered
-            + ("\nYour output is only the continuation after the app-inserted character tags; do not repeat character tags."
+    return ("STYLE FROM THE USER'S PROMPT LIBRARY\n"
+            "The user wrote or saved these prompts because they work. Write your prompt the way they are written: "
+            "the same structure (one paragraph, labeled sections, a tag list, a trigger word first), the same order of "
+            "information, sentence style, vocabulary, kind of detail and density. Where they differ from each other, "
+            "follow whichever suits this image. Their style wins over the style advice of the target adapter and the "
+            "Director; the selected length still sets roughly how long, and the target's required format still applies. "
+            "Never copy their subjects, names, scene or sentences.\n\n" + numbered
+            + ("\n\nYour output is only the continuation after the app-inserted character tags; do not repeat character tags."
                if continuation else ""))
 
 

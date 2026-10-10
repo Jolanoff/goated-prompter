@@ -159,8 +159,10 @@ def assemble_instruction(
         scenario = picks[0]
         # The recast scenario is meant to be reused, so it is neither a style reference nor copy-checked.
         references = tuple(reference for reference in references if reference != scenario)
-    target_example = (library_reference_section(references, continuation=not include_target_example) if references
-                      else get_target_example(request.target_model, qwen_task="edit" if qwen_images else "t2i")
+    # Library prompts go last, right before the output rules, so the user's style is the
+    # freshest guidance; the built-in example stays with the adapter for empty libraries.
+    library_style = library_reference_section(references, continuation=not include_target_example) if references else ""
+    target_example = ("" if references else get_target_example(request.target_model, qwen_task="edit" if qwen_images else "t2i")
                       if include_target_example else "")
     if has_visual_context:
         sections.append(f"VISUAL GROUNDING\n{get_vision_mode_adapter(request.mode)}")
@@ -232,8 +234,11 @@ def assemble_instruction(
                             "Do not reference unused or missing sources. Use natural language for a single image, "
                              "and individual source tags for multiple images.")
 
+    if library_style:
+        sections.append(library_style)
     sections.append(OUTPUT_CONTRACT)
-    sections.append(output_contract(request.target_model, qwen_task="edit" if qwen_images else "t2i", qwen_images=qwen_images))
+    sections.append(output_contract(request.target_model, qwen_task="edit" if qwen_images else "t2i", qwen_images=qwen_images,
+                                    library_style=bool(references)))
 
     if has_visual_context:
         user_message = (

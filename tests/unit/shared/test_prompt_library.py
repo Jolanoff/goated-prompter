@@ -83,13 +83,27 @@ class PromptLibraryTests(unittest.TestCase):
         self.assertIn("STYLE EXAMPLE", assemble_instruction(GoatedPrompterRequest(idea="driving a car", target_model="Anima")).system_message)
         self.write("Anima", CAR, KITCHEN)
         instruction = assemble_instruction(GoatedPrompterRequest(idea="naruto driving a car", target_model="Anima"))
-        self.assertIn("REFERENCE PROMPTS", instruction.system_message)
+        self.assertIn("STYLE FROM THE USER'S PROMPT LIBRARY", instruction.system_message)
         self.assertIn(CAR, instruction.system_message)
         self.assertNotIn("STYLE EXAMPLE", instruction.system_message)
         self.assertEqual(instruction.reference_prompts, (CAR, KITCHEN))
         unrelated = assemble_instruction(GoatedPrompterRequest(idea="astronaut in orbit", target_model="Anima"))
         self.assertNotIn("STYLE EXAMPLE", unrelated.system_message, "Any saved prompt beats the built-in example.")
         self.assertEqual(set(unrelated.reference_prompts), {CAR, KITCHEN})
+
+    def test_library_style_is_the_last_guidance_and_the_output_rule_points_to_it(self):
+        sectioned = "Subject and action:\nA courier sprints.\n\nComposition and camera:\nLow angle."
+        self.write("Krea 2", sectioned)
+        system = assemble_instruction(GoatedPrompterRequest(idea="a chef plating dessert", target_model="Krea 2")).system_message
+        style, director, contract = (system.index("STYLE FROM THE USER'S PROMPT LIBRARY"),
+                                     system.index("DIRECTOR BEHAVIOR"), system.index("Output contract:"))
+        self.assertLess(director, style)
+        self.assertLess(style, contract)
+        self.assertIn("written like the user's library prompts above, including labeled sections", system)
+        self.assertIn("wins over the style advice of the target adapter and the Director", " ".join(system.split()))
+        self.assertNotIn("headings", system[contract:])
+        empty = assemble_instruction(GoatedPrompterRequest(idea="a chef plating dessert", target_model="Generic")).system_message
+        self.assertIn("in the target adapter's writing style", empty)
 
     def test_dataset_writer_picks_references_by_the_planned_scene(self):
         boxing = "1boy, boxing, punching bag, gym, sweat\n\nA boxer slams a heavy bag under harsh gym lights."
