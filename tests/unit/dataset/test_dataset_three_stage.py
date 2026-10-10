@@ -417,7 +417,8 @@ class RenderabilityGateTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertIsNotNone(unrenderable_pose(text, "two friends dancing at a festival"))
         for text in ("She is about to jump over the puddle, knees bent.", "Her slipper flies through the air.",
-                     "Dust motes drift in the air above the desk.", "He sits on the curb after the jump."):
+                     "Dust motes drift in the air above the desk.", "He sits on the curb after the jump.",
+                     "They freeze in surprise as a small animal jumps between them."):
             with self.subTest(text=text):
                 self.assertIsNone(unrenderable_pose(text, "a woman doing stunts"))
         self.assertIsNone(unrenderable_pose("She lands a backflip on the beach.", "a gymnast doing backflips"))
@@ -555,12 +556,19 @@ class BatchVarietyTests(unittest.TestCase):
                      "They sit in a tatami room, watching a chef prepare dinner.",
                      "They sit on a bench overlooking the bamboo grove.",
                      "Couple standing in awe before a massive ancient temple gate.",
-                     "Man shows wife a beautiful view from a mountain lookout."):
+                     "Man shows wife a beautiful view from a mountain lookout.",
+                     "They marvel at the intricate architecture of a temple roof.",
+                     "They react with surprise at a sudden street performance.",
+                     "They react with excitement as they see a massive temple gate.",
+                     "They share a quiet moment, looking out at a misty mountain view.",
+                     "They sit on a park bench, sharing a quiet moment amidst city life."):
             with self.subTest(idea=idea):
                 self.assertTrue(passive_idea(idea))
         for idea in ("Naruto paints a door while a skeptical girl watches from below.",
                      "He shields his wife from a wind gust at a busy crossing.",
-                     "She tries to feed a koi without splashing his shirt."):
+                     "She tries to feed a koi without splashing his shirt.",
+                     "They react to a spilled drink by scrambling for napkins.",
+                     "The pair pause to haggle with a vendor over a broken fan."):
             with self.subTest(idea=idea):
                 self.assertFalse(passive_idea(idea))
 

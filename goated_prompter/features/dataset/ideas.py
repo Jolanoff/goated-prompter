@@ -346,6 +346,9 @@ _AIRBORNE = re.compile(
     r"upside[- ]down|(?:breakdanc\w*|dance|synchroni[sz]ed|low|hip-hop) freeze|freeze pose|"
     r"mid-(?:fall|jump|leap|flip|spin|trip|stumble)|balanc\w* on (?:one |his |her |their )?(?:hands?|elbows?|fingertips?))\b",
     re.I)
+# The move belongs to an animal or a thing, not the cast: "as a cat jumps onto the table".
+_OTHER_MOVER = re.compile(r"\b(?:animal|creature|pet|cat|kitten|dog|puppy|bird|fish|frog|toad|squirrel|rabbit|bunny|fox|"
+                          r"monkey|deer|insect|cricket|grasshopper|ball|toy|coin|spark)s?\W+(?:\w+\W+){0,1}$", re.I)
 _BEFORE_OR_AFTER = re.compile(r"\b(?:about to|ready to|preparing to|before|after|instead of|refuses? to)\W+(?:\w+\W+){0,2}$", re.I)
 
 
@@ -357,7 +360,8 @@ def unrenderable_pose(text, request):
         stem = re.sub(r"(?:ping|ing|s)$", "", word.split()[0]) if " " not in word else word
         if stem and stem in asked:
             continue
-        if _BEFORE_OR_AFTER.search(text[max(0, match.start() - 40):match.start()]):
+        before = text[max(0, match.start() - 40):match.start()]
+        if _BEFORE_OR_AFTER.search(before) or _OTHER_MOVER.search(before):
             continue
         return match.group()
     return None
