@@ -764,3 +764,36 @@ class SexualContentTests(unittest.TestCase):
                 GoatedPrompterRequest(idea=data["subject"], prompt_model="Custom"), data,
                 lambda _: None, lambda _: None, scenes_only=True)
         self.assertEqual(backend.calls, [])
+
+
+class FixedShotDirectorTests(unittest.TestCase):
+    def setUp(self):
+        patcher = patch.dict(os.environ, {LIBRARY_DIR_ENV: tempfile.mkdtemp()})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.selfie = valid_draft(amount=3, subject="ohwx_person", director_preset="Mirror Selfie",
+                                  _confirmed_intent=dataset_understanding_fixture())
+        self.general = {**self.selfie, "director_preset": "General Director"}
+
+    def test_a_shot_fixing_director_reaches_the_brainstorm(self):
+        from goated_prompter.features.dataset.brainstorm import brainstorm_instruction
+        system = brainstorm_instruction(self.selfie, 9).system_message
+        self.assertIn("DIRECTOR (MANDATORY) — Mirror Selfie", system)
+        self.assertIn("every image is that shot", " ".join(system.split()))
+
+    def test_the_directors_shot_replaces_framing_and_lifts_the_mirror_and_posing_bans(self):
+        from goated_prompter.features.dataset.director import director_fixes_shot
+        self.assertTrue(director_fixes_shot(self.selfie))
+        self.assertFalse(director_fixes_shot(self.general))
+        selfie = ideas_instruction(self.selfie, dataset_assignments(self.selfie))
+        general = ideas_instruction(self.general, dataset_assignments(self.general))
+        self.assertTrue(all("framing" not in row["creative_direction"] for row in json.loads(selfie.user_message)["assignments"]))
+        self.assertTrue(all("framing" in row["creative_direction"] for row in json.loads(general.user_message)["assignments"]))
+        rules = " ".join(selfie.system_message.split())
+        self.assertIn("no mirrors unless the Director's shot uses one", rules)
+        self.assertIn("unless the user or the Director asked for that", rules)
+
+    def test_posed_shots_are_not_limited_as_watching(self):
+        from goated_prompter.features.dataset.quality import passive_request
+        self.assertTrue(passive_request(self.selfie))
+        self.assertFalse(passive_request(self.general))

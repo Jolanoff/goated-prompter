@@ -10,6 +10,7 @@ import json
 
 from ...contracts import PromptInstruction
 from ...strict_json import reject_duplicate_keys
+from .director import director_section
 from .quality import idea_concepts, minor_reference, passive_idea, passive_request, sexual_request
 from .understanding import understanding_instruction, unwrap_json_fence, validate_understanding
 
@@ -77,7 +78,7 @@ def brainstorm_instruction(data, count, *, avoid=(), family="qwen"):
             "properties": {"event": {"type": "string", "minLength": 1, "maxLength": MAX_EVENT_CHARACTERS},
                            "typicality": {"type": "number"}}}
     budget = 256 + count * 64
-    return PromptInstruction(system_message=BRAINSTORM_SYSTEM,
+    return PromptInstruction(system_message=director_section(data) + BRAINSTORM_SYSTEM,
         user_message=json.dumps(context, ensure_ascii=False, separators=(",", ":")),
         model_family=family, diagnostic_stage="dataset:ideas:brainstorm", max_tokens=budget,
         hard_max_tokens=budget, unlimited_tokens=False, temperature=1.0, top_p=.95, json_output=True,
