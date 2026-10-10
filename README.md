@@ -30,7 +30,7 @@ Goated Prompter pairs a **React + Tailwind interface** with a **Python backend**
 | Workflow | What you can do |
 | --- | --- |
 | **Prompt Builder** | Turn text and up to **four reference images** into target-aware prompts. Mix a face from one image, a pose from another, and lighting from a third. |
-| **Refine & history** | Make targeted edits, lock important details, compare changes, and explore branching versions with persistent undo/redo. |
+| **Refine** | Paste a prompt or send one from Builder, request targeted edits, compare changes and undo a refinement. |
 | **MiniMax H3** | Write video prompts for **4–15-second clips**, with symbolic references, automatic role analysis, H3 schemas, and Director presets. |
 | **Dataset** | Create **1–25 prompts** from a shared concept, with trigger controls, scene planning, quality checks, and TXT/JSONL export. |
 | **Saved Prompts** | Keep a named prompt library, reuse instruction presets, and pick up where you left off with autosaved drafts. |
@@ -262,28 +262,28 @@ The app writes prompts; the quality and faithfulness of the generated descriptio
 
 </details>
 
-### Refine & version history
+### Refine
 
-Open **Refine** from the sidebar or **Refine & history** under Builder output. Successful website Builder generations are automatically recorded in history. To work on an edited Builder output or another prompt, expand **Start from another prompt**, import the Builder text or paste a prompt, and choose its target model.
+Open **Refine** from the sidebar and paste into **Prompt**, or click **Refine prompt** under Builder output to fill that same editable box. Choose the prompt's target model. There is no separate import or starting-prompt step.
 
 1. Enter the change you want, or use a quick action such as **Wider shot**, **Shorten**, or **Remove filler**.
 2. Select **Keep these details** locks. These refer to facts in the source prompt; locked attributes take priority over conflicting edits. Unrelated details are preserved by the refinement instructions.
-3. Click **Refine prompt**. The original and new version are saved separately, including the requested changes and locks.
-4. Expand **What changed** for added/removed text. Use **Undo**, **Redo**, or select any version in history. Refining an older version creates a branch and keeps the previous branch available.
-5. **Edit text → Save as new version** records a manual revision. **Save prompt** saves the current version directly to Saved Prompts with its target. **Use in Builder** transfers it back to Builder for further work.
+3. Click **Refine prompt**. The result replaces the text in **Prompt**. You can refine it again or paste a different prompt into the same box.
+4. Expand **What changed** for added/removed text. **Undo** returns to the source of the refinement. The version list, Redo and history-management controls are not shown.
+5. **Copy prompt**, **Save prompt** and **Use in Builder** act on the text currently in the box, with its selected target.
 
-Undo follows the current version's parent; each imported starting prompt or Builder generation begins a new history chain. History selection can restore any chain. The text diff uses bounded work and falls back to highlighting a larger changed region for very large prompts.
+The app records the exact source automatically before refining it, so Undo and What changed work for both Builder output and pasted text. The text diff uses bounded work and falls back to highlighting a larger changed region for very large prompts.
 
 <details>
-<summary><strong>History storage, autosave, and advanced instructions</strong></summary>
+<summary><strong>Undo storage, autosave, and advanced instructions</strong></summary>
 
-Completed versions and history selection/redo live in **`data/workspace.json`**. Writes are atomic and revision-checked so a stale browser tab cannot overwrite newer workspace edits. The storage limit is 1,000 versions and 16 MiB for the workspace file; copy or back up useful results before clearing history. If saving a generated result fails, its recovered text is shown for copying in the current session.
+Undo still uses the existing versions in **`data/workspace.json`** internally. Writes are atomic and revision-checked so a stale browser tab cannot overwrite newer workspace edits. The existing storage limit is 1,000 versions and 16 MiB for the workspace file. Refine has no history browser or clear-history control. If saving a generated result fails, its recovered text is shown for copying in the current session.
 
 The coding assistant must not inspect private **`data/`** contents. This is not a runtime restriction: the app still reads and writes its stores and sends the content selected for generation, including saved Director instructions, to your configured local LLM. Evaluation corpora live under **`tests/`** and generated evaluation artifacts under **`quality-artifacts/`**, separate from app storage.
 
 #### Saved creative settings and advanced instructions
 
-Refine, MiniMax H3, and Dataset settings autosave separately to **`data/workflow_settings.json`**. Refine retains requested changes, locks, starting text/target and manual-edit drafts; MiniMax and Dataset retain their workflow-specific inputs and current results. Wait for the respective **Saved** indicator before closing or reloading. Failed writes keep the local draft and expose retry/reload actions; revision checks prevent a stale browser tab from replacing newer settings.
+Refine, MiniMax H3, and Dataset settings autosave separately to **`data/workflow_settings.json`**. Refine retains requested changes, locks and editable prompt/target drafts; MiniMax and Dataset retain their workflow-specific inputs and current results. Wait for the respective **Saved** indicator before closing or reloading. Failed writes keep the local draft and expose retry/reload actions; revision checks prevent a stale browser tab from replacing newer settings.
 
 Dataset generated progress is different: the backend atomically writes completed ideas, checked scenes and final prompts to **`data/dataset_checkpoints.json`** before displaying them. Browser autosave is needed for your edits, not completed generation work. Revision and input signatures prevent stale jobs from replacing newer edits. After a backend restart, completed progress is recovered as interrupted work, not silently resumed inference. Generate from the recovered plan to continue.
 

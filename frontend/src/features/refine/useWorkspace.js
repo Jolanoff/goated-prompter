@@ -20,7 +20,7 @@ export function useWorkspace(job, onReceiveJob) {
       accept(next);
       return next;
     } catch (err) {
-      if (mounted.current) setError(`Could not load version history. ${err.message}`);
+      if (mounted.current) setError(`Could not load Refine. ${err.message}`);
       return null;
     }
   }, [accept]);

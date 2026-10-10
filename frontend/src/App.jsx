@@ -94,6 +94,7 @@ function App() {
       },
     );
   const [view, setView] = useState("builder");
+  const [refineInput, setRefineInput] = useState(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [job, setJob] = useState(null);
@@ -198,7 +199,7 @@ function App() {
           setSettings((current) => ({ ...current, generated_prompt: next.result.prompt }));
         }
         if (next.result.history_error) setError(next.result.history_error);
-        setNotice(next.kind === "refine" ? "Refinement saved as a new version."
+        setNotice(next.kind === "refine" ? "Prompt refined."
           : next.kind === "dataset" ? `${next.result.completed} dataset prompts are ready.`
           : next.kind === "dataset_scenes" ? `${next.result.scene_plan.length} scene ideas are ready to review or generate.`
           : next.kind === "dataset_understanding" ? "Review your Dataset request before generating."
@@ -326,7 +327,7 @@ function App() {
     }));
   }
 
-  function navigate(next) {
+  function navigate(next, refinePrompt) {
     if (
       next === view ||
       (view === "directors" && (actionBusy || !discardDirector()))
@@ -335,6 +336,7 @@ function App() {
     if (view === "directors") setDirectorDraft(directorOriginal);
     if (next === "directors" && !directorId)
       selectDirector(preset || bootstrap?.presets.presets[0]);
+    if (next === "refine" && refinePrompt) setRefineInput(refinePrompt);
     setView(next);
   }
 
@@ -642,8 +644,8 @@ function App() {
 
           {bootstrap && (
             <CreativeWorkspace view={view} job={job} busy={busy || actionBusy || settingsBusy || !!uploading}
-              active={active} noEngine={noEngine} builderPrompt={prompt} builderIdea={settings.idea}
-              builderTarget={settings.target_model} inputs={bootstrap.inputs}
+              active={active} noEngine={noEngine} builderIdea={settings.idea}
+              builderImport={refineInput} inputs={bootstrap.inputs}
               onSavePrompt={requestPromptSave} canSavePrompt={storageReady && !promptsBusy && !dialogBusy && !saveKind}
               engineLabel={configuredBackend ? `Configured backend (${bootstrap.backend})` : selectedProfile?.label}
               onGenerate={startWorkflow} onCancel={endGeneration} onCopy={copy}
