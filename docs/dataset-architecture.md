@@ -99,8 +99,8 @@ the cast, the brief and the Director) takes its mood, interaction, setting and c
 and a random handful of `position_ideas` for the brainstorm, from the user's private vocabulary file
 (`private_vocabulary.py`, `data/vocabulary/sexual.txt`, never committed; without it those axes stay open
 and the model invents them within the rules). `position_groups` builds weighted groups: the cast's own
-positions (solo, two men, two women, man and woman, three, a group; when the brief leaves sexes open,
-request words such as "two men" decide), toys and finishes for every batch, couple, oral and anal for
+positions (solo, two men, two women, man and woman, three, a group; `quality.resolved_sex` fills a sex the brief
+leaves open from a role ("master") or a pairing ("his male partner"), which also keeps the drawn look), toys and finishes for every batch, couple, oral and anal for
 two or more people, and kink (solo kink for one person), pet, furniture, feet, aftercare and `requested`
 groups only when the request or Director asks. Groups add to each other; `pick_position_ideas` draws
 round-robin over them, so a long kink or feet list never drowns the

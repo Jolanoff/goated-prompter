@@ -14,9 +14,9 @@ from ...contracts import PromptInstruction
 from ...strict_json import reject_duplicate_keys
 from .director import director_section
 from .private_vocabulary import load_vocabulary, private_rules
-from .quality import (aftercare_request, broken_anatomy, feet_request, furniture_request, idea_concepts, kink_request,
+from .quality import (MALE_PAIR, FEMALE_PAIR, aftercare_request, broken_anatomy, feet_request, furniture_request, idea_concepts, kink_request,
                       minor_reference, ownership_request, passive_idea, passive_request, pet_request,
-                      requested_text, sexual_request)
+                      requested_text, resolved_sex, sexual_request)
 from .understanding import understanding_instruction, unwrap_json_fence, validate_understanding
 
 
@@ -55,8 +55,9 @@ When the request, confirmed_intent or Director is sexual:
 - Never replace the act with a non-sexual activity or a vague moment.
 - Keep the act in every image and vary the whole situation around it: where it happens, what led to
   this moment, who starts it, the mood, the dynamic, the clothing state, the position and who is
-  active or receptive. No two images share both a place and a position, and each idea describes the
-  act in its own words instead of repeating another idea's phrasing.
+  active or receptive. Every event names its position in plain words (who is on top, behind or
+  kneeling, and how the bodies meet); no two events share a position or a place, and each idea
+  describes the act in its own words instead of repeating another idea's phrasing.
 - Clothing follows the request and the Director: partial clothing, open clothes and pulled-down
   garments are fine and often preferred; full nudity only when the user or Director asks for it.
 Supported poses (lying, kneeling, sitting, standing with weight on feet/seat/knees/back). A partner
@@ -78,10 +79,6 @@ young age or a childlike body, even for anime characters."""
 # own positions, toys and finishes, oral and anal for two or more people, then whatever the request
 # adds (kink, pet, furniture, feet, aftercare, named extras). Every group that applies stays in; the brainstorm gets a few from each,
 # so a long kink or feet list never drowns the cast's positions.
-_MALE_PAIR = re.compile(r"\b(?:two|2) (?:men|males|guys|boys)\b|\bgay\b|\byaoi\b|\bbara\b|\bmale[- ]male\b|\bmm\b")
-_FEMALE_PAIR = re.compile(r"\b(?:two|2) (?:women|females|girls)\b|\blesbian\w*\b|\byuri\b|\bfemale[- ]female\b")
-
-
 def position_groups(data):
     """(weight, positions) groups that fit this batch's cast and what the request asks for."""
     vocabulary = load_vocabulary()
@@ -92,12 +89,13 @@ def position_groups(data):
     brief = data.get("_confirmed_intent") or {}
     cast = [item for item in brief.get("characters") or () if isinstance(item, dict)]
     people = sum(item.get("count") or 1 for item in cast) or brief.get("character_count") or 1
-    men = sum(item.get("count") or 1 for item in cast if item.get("sex") == "male")
-    women = sum(item.get("count") or 1 for item in cast if item.get("sex") == "female")
+    # An open sex is filled from the request's words ("master", "his male partner", "lesbian").
+    men = sum(item.get("count") or 1 for item in cast if resolved_sex(item, data) == "male")
+    women = sum(item.get("count") or 1 for item in cast if resolved_sex(item, data) == "female")
     asked = requested_text(data)
-    if not men and not women:
-        # The understanding left the sexes open: the request's own words ("two men", "lesbian") decide.
-        men, women = (2, 0) if _MALE_PAIR.search(asked) else (0, 2) if _FEMALE_PAIR.search(asked) else (0, 0)
+    if not cast:
+        user = " ".join(str(data.get(key) or "") for key in ("subject", "constraints", "inputs", "trigger")).casefold()
+        men, women = (2, 0) if MALE_PAIR.search(user) else (0, 2) if FEMALE_PAIR.search(user) else (0, 0)
         people = max(people, men + women)
     kink = kink_request(data)
     owned = ownership_request(data)

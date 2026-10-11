@@ -363,7 +363,7 @@ Sexual requests are supported in the Dataset tab only, and everyone must be an a
 | `[group interaction]` | Three or more people |
 | `[kink mood]` `[kink interaction]` `[kink setting]` `[kink clothing]` `[props]` | When kink or ownership is requested |
 | `[pet mood]` `[pet interaction]` | When pet play is requested |
-| `[solo positions]` `[couple positions]` `[two men positions]` `[two women positions]` `[man and woman positions]` `[three positions]` `[group positions]` | By cast; when the understanding leaves sexes open, your words decide ("two men", "lesbian") |
+| `[solo positions]` `[couple positions]` `[two men positions]` `[two women positions]` `[man and woman positions]` `[three positions]` `[group positions]` | By cast; when the understanding leaves a sex open, your words decide: a role ("master", "wife") or a pairing ("two men", "his male partner", "lesbian") |
 | `[toys]` `[finish positions]` | Every adult batch |
 | `[oral positions]` `[anal positions]` | Two or more people |
 | `[kink positions]` (two or more) `[solo kink positions]` (one) `[feet positions]` `[pet positions]` `[furniture positions]` `[aftercare positions]` | When requested (furniture also with ownership) |

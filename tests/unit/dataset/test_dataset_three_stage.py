@@ -1188,3 +1188,25 @@ class PrivateVocabularyTests(unittest.TestCase):
                 self.assertTrue(all(len(set(pick) & men) >= 3 for pick in picks), "A long kink list never drowns them.")
                 self.assertTrue(all(set(pick) & set(private["finish positions"]) for pick in picks))
                 self.assertFalse(set(sexual_positions(data)) & set(private["man and woman positions"]))
+
+    def test_a_master_and_his_male_slave_get_two_men_positions_and_two_male_looks(self):
+        from goated_prompter.features.dataset.brainstorm import brainstorm_instruction, sexual_positions
+        from goated_prompter.features.dataset.private_vocabulary import load_vocabulary
+        from goated_prompter.features.dataset.quality import resolved_sex
+        private = load_vocabulary()
+        master = {**COMPANION, "name": "master"}
+        slave = {**COMPANION, "name": "slave", "sex": "male"}
+        data = {**self.data, "subject": "master fucking his tightly bound slave male partner",
+                "_confirmed_intent": dataset_understanding_fixture(characters=[master, slave], character_count=2)}
+        positions = set(sexual_positions(data))
+        self.assertTrue(set(private["two men positions"]) | set(private["anal positions"]) | set(private["kink positions"])
+                        <= positions)
+        self.assertFalse(positions & set(private["man and woman positions"]))
+        for row in creative_directions(data, range(1, 9), 4).values():
+            self.assertNotIn("woman", row["random_character_looks"]["master"])
+        partner = {**COMPANION, "name": "partner"}
+        self.assertIsNone(resolved_sex(partner, {**self.data, "subject": "a woman and her partner having sex"}))
+        self.assertEqual(resolved_sex({**COMPANION, "name": "his wife"}, self.data), "female")
+        system = " ".join(brainstorm_instruction(data, 10).system_message.split())
+        self.assertIn("Every event names its position in plain words", system)
+        self.assertIn("no two events share a position or a place", system)

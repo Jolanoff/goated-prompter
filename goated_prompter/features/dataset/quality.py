@@ -243,3 +243,28 @@ def furniture_request(data):
 
 def aftercare_request(data):
     return _asked(_user_text(data) + "\n" + _director_text(data), _AFTERCARE)
+
+
+# A cast member the understanding left without a sex still has one when the request says so: a
+# sexed role ("master", "wife") or a same-sex pairing ("two men", "his male partner", "lesbian").
+_MAN_ROLE = re.compile(r"\b(?:master|sir|king|prince|husband|boyfriend|daddy|groom)\b")
+_WOMAN_ROLE = re.compile(r"\b(?:mistress|queen|princess|wife|girlfriend|dominatrix|goddess|bride)\b")
+MALE_PAIR = re.compile(r"\b(?:two|2|three|3|several) (?:men|males|guys)\b|\bgay\b|\byaoi\b|\bbara\b|\bmale[- ]male\b|"
+                       r"\bmm\b|\bmale (?:partner|slave|sub|lover|pet|friend)s?\b")
+FEMALE_PAIR = re.compile(r"\b(?:two|2|three|3|several) (?:women|females)\b|\blesbian\w*\b|\byuri\b|"
+                         r"\bfemale[- ]female\b|\bfemale (?:partner|slave|sub|lover|pet|friend)s?\b")
+
+
+def resolved_sex(item, data):
+    """"male", "female" or None for one cast entry, filling an open sex from the request's words."""
+    sex = item.get("sex")
+    if sex in ("male", "female"):
+        return sex
+    role = f"{item.get('name') or ''} {item.get('traits') or ''}".casefold()
+    if _MAN_ROLE.search(role):
+        return "male"
+    if _WOMAN_ROLE.search(role):
+        return "female"
+    asked = _user_text(data)
+    male, female = bool(MALE_PAIR.search(asked)), bool(FEMALE_PAIR.search(asked))
+    return "male" if male and not female else "female" if female and not male else None

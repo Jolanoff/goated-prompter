@@ -13,7 +13,8 @@ from .brainstorm import PLAUSIBLE_BODIES
 from .director import director_fixes_shot, director_section
 from .private_vocabulary import load_vocabulary, private_rules
 from .quality import (ADULTS_ONLY, BROKEN_ANATOMY, analyze_idea_diversity, broken_anatomy, kink_request,
-                      minor_reference, ownership_request, passive_idea, passive_request, pet_request, sexual_request)
+                      minor_reference, ownership_request, passive_idea, passive_request, pet_request, resolved_sex,
+                      sexual_request)
 from .understanding import (label_replacements, numbered_labels, replace_labels, understanding_instruction,
                             unwrap_json_fence, validate_understanding)
 from ...strict_json import reject_duplicate_keys
@@ -225,8 +226,9 @@ def creative_directions(data, indexes, salt=0):
     # a trait, the concept or the trigger: "40 yo man", "his teenage son") is never replaced.
     aged_role = _STATED_NUMERIC_AGE if sexual else _AGED_ROLE
     stated_age = bool(aged_role.search(" ".join(str(data.get(key) or "") for key in ("subject", "constraints", "trigger"))))
-    random_cast = [(item["name"], _SEX_WORDS.get(item.get("sex")),
-                    item.get("sex") == "unspecified" and item.get("count") == 1,
+    # A sex the request implies ("master", "his male partner") is kept instead of drawn.
+    random_cast = [(item["name"], _SEX_WORDS.get(resolved_sex(item, data)),
+                    resolved_sex(item, data) is None and item.get("count") == 1,
                     stated_age or bool(aged_role.search(f"{item['name']} {item.get('traits', '')}")),
                     item.get("count") or 1)
                    for item in brief.get("characters") or ()
