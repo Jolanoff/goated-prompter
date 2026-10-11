@@ -41,6 +41,7 @@ SECTIONS = {
     "group positions": "four or more people",
     "oral positions": "when oral is requested",
     "feet positions": "when feet are requested",
+    "finish positions": "climax and finish moments for every sexual batch",
     "kink positions": "when kink or ownership is requested",
     "pet positions": "when pet play is requested",
     "furniture positions": "when human furniture or ownership is requested",

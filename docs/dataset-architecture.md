@@ -98,13 +98,16 @@ framing direction, lifts the mirror and posing bans, and is not limited as a wat
 the cast, the brief and the Director) takes its mood, interaction, setting and clothing directions,
 and a random handful of `position_ideas` for the brainstorm, from the user's private vocabulary file
 (`private_vocabulary.py`, `data/vocabulary/sexual.txt`, never committed; without it those axes stay open
-and the model invents them within the rules). Positions follow the cast (solo, couple, two men, two
-women, three, a group); oral, feet, kink, pet, furniture and aftercare positions and the file's
-`requested` entries join only when the request or Director asks. Kink moods, dynamics, clothing and a
+and the model invents them within the rules). `position_groups` builds weighted groups: the cast's own
+positions (solo, two men, two women, man and woman, three, a group; when the brief leaves sexes open,
+request words such as "two men" decide), couple and finish positions, and the oral, feet, kink, pet,
+furniture, aftercare and `requested` groups only when the request or Director asks. Groups add to each
+other; `pick_position_ideas` draws round-robin over them, so a long kink or feet list never drowns the
+cast's positions, and the brainstorm builds most events around them. Kink moods, dynamics, clothing and a
 prop per image join only when `kink_request` finds BDSM or fetish wording in the request, or a Director
 clause that asks for it (a clause that forbids it does not count). An `ownership_request` (slave, owned,
-master or mistress, human pet) uses only the kink moods, dynamics and clothing, replaces ordinary couple
-positions with power-exchange ones, and adds the file's ownership rules. Every file entry passes the
+master or mistress, human pet) uses only the kink moods, dynamics and clothing, weights kink positions
+higher next to the cast's own, and adds the file's ownership rules. Every file entry passes the
 adults-only and anatomy checks plus consent, incapacitation, death, family, animal, school and
 breath-restriction checks before use. The stage also keeps
 every sexual act between the people the request pairs, allows a partner-supported lift during sex, keeps the place and

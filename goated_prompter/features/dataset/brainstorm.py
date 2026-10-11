@@ -74,55 +74,87 @@ Everyone in a sexual or suggestive image is an adult, clearly grown-up in face a
 them as women and men. Never make anyone in it a child or teen, never mention school, a
 young age or a childlike body, even for anime characters."""
 
-# Positions come from the private vocabulary file (private_vocabulary.py): a random handful per
-# batch, as inspiration next to the model's own ideas, never one forced per image. The pool follows
-# the cast (solo, couple, two men, two women, three, a group) and only adds oral, feet, kink, pet,
-# furniture or aftercare positions when the request or Director asks for them.
-def sexual_positions(data):
-    """The positions that fit this batch's cast and what the request asks for."""
+# Positions come from the private vocabulary file (private_vocabulary.py), in groups: the cast's
+# own positions, the finish, then whatever the request adds (kink, pet, furniture, oral, feet,
+# aftercare, named extras). Every group that applies stays in; the brainstorm gets a few from each,
+# so a long kink or feet list never drowns the cast's positions.
+_MALE_PAIR = re.compile(r"\b(?:two|2) (?:men|males|guys|boys)\b|\bgay\b|\byaoi\b|\bbara\b|\bmale[- ]male\b|\bmm\b")
+_FEMALE_PAIR = re.compile(r"\b(?:two|2) (?:women|females|girls)\b|\blesbian\w*\b|\byuri\b|\bfemale[- ]female\b")
+
+
+def position_groups(data):
+    """(weight, positions) groups that fit this batch's cast and what the request asks for."""
     vocabulary = load_vocabulary()
 
     def take(name):
-        return list(vocabulary.get(f"{name} positions", ()))
+        return tuple(vocabulary.get(f"{name} positions", ()))
 
-    cast = [item for item in (data.get("_confirmed_intent") or {}).get("characters") or () if isinstance(item, dict)]
-    people = sum(item.get("count") or 1 for item in cast) or (data.get("_confirmed_intent") or {}).get("character_count") or 1
+    brief = data.get("_confirmed_intent") or {}
+    cast = [item for item in brief.get("characters") or () if isinstance(item, dict)]
+    people = sum(item.get("count") or 1 for item in cast) or brief.get("character_count") or 1
     men = sum(item.get("count") or 1 for item in cast if item.get("sex") == "male")
     women = sum(item.get("count") or 1 for item in cast if item.get("sex") == "female")
-    owned = people > 1 and ownership_request(data)
-    pool = []
-    if people <= 1:
-        pool += take("solo")
-    elif owned and people == 2:
-        # A requested ownership dynamic replaces ordinary couple positions with power-exchange ones.
-        pass
-    elif women >= 2 and not men:
-        pool += take("two women")
-    else:
-        pool += take("couple")
-        if men >= 2 and not women:
-            pool += take("two men")
-        elif men and women:
-            pool += take("man and woman")
-        if people == 3:
-            pool += take("three")
-        elif people >= 4:
-            pool += take("group")
-    if people > 1 and oral_request(data):
-        pool += take("oral")
-    if feet_request(data):
-        pool += take("feet")
-    if people > 1 and kink_request(data):
-        pool += take("kink")
-    if people > 1 and pet_request(data):
-        pool += take("pet")
-    if people > 1 and (owned or furniture_request(data)):
-        pool += take("furniture")
-    if aftercare_request(data):
-        pool += take("aftercare")
     asked = requested_text(data)
-    pool += [entry for pattern, entry in vocabulary.get("requested", ()) if pattern.search(asked)]
-    return tuple(dict.fromkeys(pool))
+    if not men and not women:
+        # The understanding left the sexes open: the request's own words ("two men", "lesbian") decide.
+        men, women = (2, 0) if _MALE_PAIR.search(asked) else (0, 2) if _FEMALE_PAIR.search(asked) else (0, 0)
+        people = max(people, men + women)
+    kink = people > 1 and kink_request(data)
+    groups = []
+    if people <= 1:
+        groups.append((3, take("solo")))
+    else:
+        if men >= 2 and not women:
+            groups.append((3, take("two men")))
+        elif women >= 2 and not men:
+            groups.append((3, take("two women")))
+        elif men and women:
+            groups.append((3, take("man and woman")))
+        if people == 3:
+            groups.append((3, take("three")))
+        elif people >= 4:
+            groups.append((3, take("group")))
+        if not (women >= 2 and not men):
+            groups.append((1, take("couple")))
+    groups.append((1, take("finish")))
+    if kink:
+        groups.append((3 if ownership_request(data) else 2, take("kink")))
+    if people > 1 and pet_request(data):
+        groups.append((2, take("pet")))
+    if people > 1 and (ownership_request(data) or furniture_request(data)):
+        groups.append((1, take("furniture")))
+    if people > 1 and oral_request(data):
+        groups.append((2, take("oral")))
+    if feet_request(data):
+        groups.append((2, take("feet")))
+    if aftercare_request(data):
+        groups.append((1, take("aftercare")))
+    groups.append((2, tuple(entry for pattern, entry in vocabulary.get("requested", ()) if pattern.search(asked))))
+    return [(weight, entries) for weight, entries in groups if entries]
+
+
+def sexual_positions(data):
+    """Every position that fits this batch, in group order."""
+    return tuple(dict.fromkeys(entry for _weight, entries in position_groups(data) for entry in entries))
+
+
+def pick_position_ideas(groups, rng, count):
+    """Draw up to ``count`` positions round-robin over the groups, more from heavier ones."""
+    pools = []
+    for weight, entries in groups:
+        pool = list(entries)
+        rng.shuffle(pool)
+        pools.append((weight, pool))
+    picked = []
+    while len(picked) < count and any(pool for _weight, pool in pools):
+        for weight, pool in pools:
+            for _turn in range(weight):
+                while pool and len(picked) < count:
+                    entry = pool.pop()
+                    if entry not in picked:
+                        picked.append(entry)
+                        break
+    return picked
 
 
 POSITION_IDEAS = 12
@@ -143,9 +175,9 @@ one event may be people simply watching, admiring or walking past something, inc
 watching someone else perform, cook or play, and apart from what the request itself asks
 for, no place, prop or activity may appear in more than two events.
 """ + PLAUSIBLE_BODIES + """
-position_ideas, when present, is a random handful of positions that suit this cast and request.
-Treat them as inspiration: use some, change them, and invent your own as well; they are not a list
-to copy in order, and no position has to appear.
+position_ideas, when present, is a random handful of positions and finishes that suit this cast
+and request. Build most events around one of them, adapted to the event's place and people (change
+or combine them freely), and invent a few of your own; they are not a list to copy in order.
 Do not list recently_used_ideas events or close variations of them.
 For each event give typicality from 0 to 1: how likely a typical writer would think of it
 first (1 is the obvious first idea, 0.1 is one few people would think of).
@@ -227,8 +259,7 @@ def brainstorm_events(session, data, count, rng, *, avoid=(), seen=None, family=
     """Return up to ``count`` event seeds, or none when the brainstorm is unusable."""
     checkpoint()
     # A different random handful each batch keeps the model inventing instead of copying a list.
-    pool = list(sexual_positions(data)) if sexual_request(data) else []
-    ideas = rng.sample(pool, min(POSITION_IDEAS, len(pool))) if pool else []
+    ideas = pick_position_ideas(position_groups(data), rng, POSITION_IDEAS) if sexual_request(data) else []
     instruction = brainstorm_instruction(data, candidate_count(count), avoid=avoid, family=family, position_ideas=ideas)
     progress("Brainstorming candidate events for this batch…")
     session.validate_instruction(instruction)

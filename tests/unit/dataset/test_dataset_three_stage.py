@@ -975,7 +975,7 @@ class CastPositionTests(SeedVarietyTests):
         from goated_prompter.features.dataset.private_vocabulary import load_vocabulary
         SEXUAL_POSITIONS = {name.removesuffix(" positions"): entries for name, entries in load_vocabulary().items()}
         solo = set(sexual_positions(self.cast("female", subject="a woman masturbating")))
-        self.assertEqual(solo, set(SEXUAL_POSITIONS["solo"]))
+        self.assertEqual(solo, set(SEXUAL_POSITIONS["solo"]) | set(SEXUAL_POSITIONS["finish"]))
         men = set(sexual_positions(self.cast("male", "male", subject="two men having sex")))
         self.assertTrue(set(SEXUAL_POSITIONS["two men"]) <= men)
         self.assertFalse(men & set(SEXUAL_POSITIONS["man and woman"]))
@@ -1099,7 +1099,7 @@ class PrivateVocabularyTests(unittest.TestCase):
             self.assertIn(row["prop"], private["props"])
         positions = set(sexual_positions(owned))
         self.assertTrue(set(private["kink positions"]) | set(private["furniture positions"]) <= positions)
-        self.assertFalse(positions & set(private["couple positions"]))
+        self.assertTrue(set(private["man and woman positions"]) <= positions, "Ownership adds to the cast's positions.")
         kinky = {**self.data, "subject": "a couple having sex in bondage"}
         moods = {row["mood"] for row in creative_directions(kinky, range(1, 9), 2).values()}
         self.assertTrue(moods & set(private["mood"]), "A kink request without ownership keeps ordinary moods too.")
@@ -1165,3 +1165,22 @@ class PrivateVocabularyTests(unittest.TestCase):
         path.write_text("[mood]\nmine\n", encoding="utf-8")
         ensure_vocabulary_file(path)
         self.assertEqual(path.read_text(encoding="utf-8"), "[mood]\nmine\n")
+
+    def test_cast_positions_survive_kink_feet_and_open_sexes_and_finishes_always_join(self):
+        from goated_prompter.features.dataset.brainstorm import (POSITION_IDEAS, pick_position_ideas, position_groups,
+                                                                 sexual_positions)
+        from goated_prompter.features.dataset.private_vocabulary import load_vocabulary
+        private = load_vocabulary()
+        men = set(private["two men positions"])
+        two_men = [{**COMPANION, "name": "man", "count": 2, "sex": "male"}]
+        for subject, cast in (("two men having sex, one collared and bound, with a footjob", two_men),
+                              ("two men having sex", []), ("his slave and his master, two men having sex", [])):
+            data = {**self.data, "subject": subject,
+                    "_confirmed_intent": dataset_understanding_fixture(characters=cast, character_count=2)}
+            with self.subTest(subject=subject, cast=bool(cast)):
+                self.assertTrue(men <= set(sexual_positions(data)))
+                picks = [pick_position_ideas(position_groups(data), random.Random(seed), POSITION_IDEAS)
+                         for seed in range(30)]
+                self.assertTrue(all(len(set(pick) & men) >= 3 for pick in picks), "A long kink list never drowns them.")
+                self.assertTrue(all(set(pick) & set(private["finish positions"]) for pick in picks))
+                self.assertFalse(set(sexual_positions(data)) & set(private["man and woman positions"]))
