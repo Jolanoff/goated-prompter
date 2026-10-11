@@ -726,6 +726,15 @@ class SexualContentTests(unittest.TestCase):
         self.assertTrue(all(row["interaction"] in SEXUAL_DIRECTIONS["interaction"] for row in sexual.values()))
         self.assertTrue(all("moment" not in row and "setting" in row for row in sexual.values()))
 
+    def test_a_sexual_act_keeps_a_concrete_place_and_seeds_change_it(self):
+        from goated_prompter.features.dataset.ideas import PEOPLE_SETTINGS
+        act = {"scope": "all_outputs", "text": "the couple is having sex"}
+        brief = {**self.brief, "action_options": [act], "interactions": [act], "hard": [act]}
+        data = self.draft("a couple having sex", _confirmed_intent=brief)
+        first, second = creative_directions(data, range(1, 9), 1), creative_directions(data, range(1, 9), 2)
+        self.assertTrue(all(row["setting"] in PEOPLE_SETTINGS for row in first.values()))
+        self.assertNotEqual([row["setting"] for row in first.values()], [row["setting"] for row in second.values()])
+
     def test_sexual_batches_must_show_adults(self):
         from goated_prompter.features.dataset.quality import adults_only_error, minor_reference, sexual_request
         self.assertTrue(sexual_request(self.draft("an explicit nsfw scene")))

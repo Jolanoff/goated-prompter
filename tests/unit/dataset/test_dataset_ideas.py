@@ -10,7 +10,7 @@ from urllib.error import HTTPError
 from goated_prompter.backends.base import BackendGenerationError
 from goated_prompter.backends.openai_compatible import OpenAICompatibleBackend
 from goated_prompter.features.dataset.assignments import dataset_assignments
-from goated_prompter.features.dataset.ideas import (ACTION_SAFE_AXES, DIRECTION_AXES, GROUP_FRAMING, DatasetIdeasService, IDEA_FIELDS, IDEAS_SYSTEM,
+from goated_prompter.features.dataset.ideas import (ACTION_SAFE_AXES, DIRECTION_AXES, GROUP_FRAMING, PEOPLE_SETTINGS, DatasetIdeasService, IDEA_FIELDS, IDEAS_SYSTEM,
     creative_directions, ideas_instruction, validate_ideas)
 from goated_prompter.features.dataset.plan import validate_saved_scene_plan
 from tests.helpers import dataset_idea_fixture, dataset_understanding_fixture
@@ -34,6 +34,11 @@ class DatasetIdeasTests(unittest.TestCase):
             if axis == "interaction":
                 continue
             used = [directions[index][axis] for index in range(1, 17)]
+            if axis == "setting":
+                # A batch about a character draws concrete places; 16 images use 16 different ones.
+                self.assertTrue(set(used) <= set(PEOPLE_SETTINGS))
+                self.assertEqual(len(set(used)), 16)
+                continue
             self.assertEqual(set(used[:len(values)]), set(values), f"Every {axis} is used before any repeats.")
         self.assertGreater(len({tuple(item.values()) for item in directions.values()}), 15)
         other = creative_directions({**data, "subject": "A chef plating dessert."}, range(1, 17))

@@ -186,12 +186,25 @@ SEXUAL_DIRECTIONS = {
                     "intense focused contact between them", "one reacts strongly to what the other is doing",
                     "they move together in sync", "one holds or guides the other's body"),
 }
+# Abstract settings ("a home, room or other private space") let a small model pick its favourite
+# room every time, so batches about people draw a concrete place; the seed decides which ones.
+PEOPLE_SETTINGS = (
+    "a small apartment kitchen", "a hotel room with a city view", "a bathroom with a large mirror",
+    "a gym locker room", "a living room couch by a rainy window", "a rooftop terrace at the edge of the city",
+    "a wooden cabin with a wood stove", "a beach at the waterline", "a car parked under a streetlight",
+    "an elevator with mirrored walls", "an office after hours", "a backstage dressing room",
+    "a laundromat at night", "a library aisle", "a poolside lounger", "a balcony in the rain",
+    "a recording studio", "a sleeper train compartment", "a greenhouse full of plants", "a tattoo studio",
+    "a booth in a dim bar", "a camping tent in the woods", "a sailboat deck", "an art studio with canvases",
+    "a garage workshop", "a sauna", "a vintage clothing store fitting room", "a ski lodge by the fireplace",
+)
+PEOPLE_TYPES = {"Character", "Multiple characters"}
 # A required action must be visible in every image. Manual runs showed moment,
 # mood and setting directions (rest, water break, climbing a ladder) replacing it,
 # so those items only vary how the image is shot.
 ACTION_SAFE_AXES = ("framing", "light")
-# In a sexual batch the act is the required action; its mood and dynamic support it.
-SEXUAL_ACTION_SAFE_AXES = ("framing", "light", "mood", "interaction")
+# In a sexual batch the act is the required action; its mood, dynamic and place support it.
+SEXUAL_ACTION_SAFE_AXES = ("framing", "light", "mood", "interaction", "setting")
 # Steep top-down and worm's-eye angles foreshorten full bodies into broken anatomy,
 # so no direction asks for them; the user can still request one explicitly.
 # Close-ups and over-the-shoulder views crop or hide a participant, so datasets
@@ -241,7 +254,8 @@ def creative_directions(data, indexes, salt=0):
     brief requires an action for an image, that image only gets framing and light,
     because moment, mood and setting directions otherwise replace the required action.
     Sexual batches draw mood and interaction from SEXUAL_DIRECTIONS, get no moment, and
-    keep mood and interaction alongside a required act. Every random character in them
+    keep mood, interaction and setting alongside a required act. Batches about people and
+    sexual batches draw a concrete place from PEOPLE_SETTINGS. Every random character in them
     gets a drawn adult age unless a numeric adult age is stated.
     """
     source = json.dumps({key: data.get(key) for key in _DIRECTION_SOURCE}, sort_keys=True, ensure_ascii=False)
@@ -258,6 +272,8 @@ def creative_directions(data, indexes, salt=0):
     orders = {}
     for position, (axis, values) in enumerate(DIRECTION_AXES.items()):
         values = GROUP_FRAMING if group and axis == "framing" else SEXUAL_DIRECTIONS.get(axis, values) if sexual else values
+        if axis == "setting" and (sexual or data.get("trigger_type") in PEOPLE_TYPES):
+            values = PEOPLE_SETTINGS
         order = list(values)
         random.Random(seed + position).shuffle(order)
         orders[axis] = order
