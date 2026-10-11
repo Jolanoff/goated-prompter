@@ -15,17 +15,12 @@ from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.builder.service import GoatedPrompterService, assemble_instruction
 from goated_prompter.features.builder.evidence import clear_evidence_cache
 from goated_prompter.image_utils import EncodedImage
-from goated_prompter.features.minimax.service import MiniMaxService
 from goated_prompter.planning.complexity import needs_planning
 from goated_prompter.planning.constraints import compile_request
 from goated_prompter.planning.scene_plan import PromptScenePlan
 from goated_prompter.planning.scene_planner import scene_planning_instruction
 from goated_prompter.planning.validation import validate_plan
-from goated_prompter.planning.video_plan import VideoScenePlan
-from goated_prompter.planning.video_planner import video_planning_instruction
-from goated_prompter.presets import DIRECTOR_PRESETS, get_director_preset
-from goated_prompter.features.minimax.contract import validate_minimax_draft, validate_analysis, exact_dialogue
-from goated_prompter.features.minimax.prompting import generation_instruction, parse_shot_outline
+from goated_prompter.presets import DIRECTOR_PRESETS
 from goated_prompter.options.targets import TARGET_MODEL_NAMES
 from tests.helpers import enter_context
 from tests.support.paths import ROOT
@@ -34,21 +29,12 @@ from tests.support.paths import ROOT
 HOOP = ("a performer suspended sideways from a hoop, one knee hooked over the top, "
         "opposite leg extended downward, torso twisted toward the viewer")
 PAIR = "two people counterbalancing each other, holding one hand while leaning in opposite directions"
-MOTION = "Two dancers exchange positions while rotating around each other, then one lifts the other as the camera circles them."
 HOOP_PLAN = {"primary_action": "Suspended sideways from the hoop", "subjects": ["one performer"],
     "pose_detail": "One knee hooked over the top provides support/contact; opposite leg extends downward; torso twists toward the viewer.",
     "important_visibility": ["hooked knee contact with hoop", "opposite extended leg and torso twist"]}
 PAIR_PLAN = {"subjects": ["person A", "person B"], "primary_action": "counterbalance each other",
     "interactions": ["A and B grip one shared hand; lean in opposite directions, tension through their grip stabilizing the opposing weight."],
     "pose_detail": "Each person's feet support their own weight; their connected hands supply reciprocal balance."}
-VIDEO_PLAN = {"subjects": ["dancer A", "dancer B"],
-    "action_progression": ["Exchange positions while rotating around each other.", "A lifts B as requested; camera circles the pair."],
-    "interactions": ["Maintain a shared axis during the exchange and support B during the lift."],
-    "continuity": ["Same two participants throughout; rotation develops continuously into the lift."],
-    "camera_intent": ["Circle to reveal the exchange and lift without replacing either action."]}
-H3 = ("integrated_multimodal_description:\n[Shot 1] Two dancers rotate around each other, "
-      "exchange positions, then one lifts the other as the camera circles them.\n\n"
-      "overall_soundscape:\nFootsteps.\n\nnon_diegetic_music:\nNone.")
 
 
 class ScriptedBackend(GoatedPrompterBackend):
@@ -98,21 +84,11 @@ class SupportingPlanningTests(unittest.TestCase):
             result = GoatedPrompterService(config={"backend": "mock"}, checkpoint=checkpoint).generate(request)
         return result, backend
 
-    def minimax(self, data, *responses):
-        backend = ScriptedBackend(*responses)
-        with patch("goated_prompter.features.minimax.service.create_backend", return_value=backend):
-            result = MiniMaxService({"backend": "mock"}, lambda: None).run(
-                GoatedPrompterRequest(idea=data["user_request"]), data, lambda _: None)
-        return result, backend
-
     def test_default_modes_and_bad_modes(self):
         self.assertEqual(GoatedPrompterRequest(idea="apple").planning_mode, "Auto")
-        self.assertEqual(validate_minimax_draft({})["planning_mode"], "Auto")
         self.assertEqual(GoatedPrompterRequest.from_mapping({"idea": "apple", "planning_mode": "Direct"}).planning_mode, "Direct")
         with self.assertRaises(ValueError):
             GoatedPrompterRequest(idea="apple", planning_mode="maybe")
-        with self.assertRaises(ValueError):
-            validate_minimax_draft({"planning_mode": "maybe"})
 
     def test_direct_messages_match_pre_feature_golden_for_every_target(self):
         # SHA256 of to_messages() from HEAD core.py before this feature. Isolated
@@ -157,11 +133,11 @@ class SupportingPlanningTests(unittest.TestCase):
         self.assertEqual(result.instruction.to_messages(), assemble_instruction(replace(request, planning_mode="Direct")).to_messages())
 
     def test_detector_uses_structure_not_length_or_literal_text(self):
-        for text in (HOOP, PAIR, "two wrestlers mid-throw", MOTION):
+        for text in (HOOP, PAIR, "two wrestlers mid-throw"):
             self.assertTrue(needs_planning(text), text)
         for text in ("red apple on a wooden table", "A car drives down a rainy street.",
                      'a sign reads "two wrestlers mid-throw"', "red apple with a richly textured red peel " * 20):
-            self.assertFalse(needs_planning(text, video=True), text)
+            self.assertFalse(needs_planning(text), text)
 
     def test_auto_pose_one_plan_keeps_mechanics_and_original_request(self):
         request = GoatedPrompterRequest(idea=HOOP, creativity="Strict")
@@ -258,11 +234,11 @@ class SupportingPlanningTests(unittest.TestCase):
         self.assertFalse(compile_request(text).forbidden)
 
     def test_compact_scalar_details_normalize_without_loosening_other_types(self):
-        compiled = compile_request(MOTION)
-        payload = {"action_progression": ["exchange then lift"], "continuity": "same participants throughout"}
-        self.assertEqual(validate_plan(json.dumps(payload), compiled, video=True)["continuity"], ["same participants throughout"])
+        compiled = compile_request(HOOP)
+        payload = {"primary_action": "Suspended sideways from the hoop", "subjects": "one performer"}
+        self.assertEqual(validate_plan(json.dumps(payload), compiled)["subjects"], ["one performer"])
         with self.assertRaises(ValueError):
-            validate_plan(json.dumps({**payload, "subjects": [{"id": "invented object"}]}), compiled, video=True)
+            validate_plan(json.dumps({**payload, "subjects": [{"id": "invented object"}]}), compiled)
 
     def test_empty_image_only_direction_does_not_invent_requested_constraints(self):
         self.assertEqual(compile_request("", has_context=True).writer_request(), "")
@@ -304,17 +280,6 @@ class SupportingPlanningTests(unittest.TestCase):
                             "The leg may be vertically down or parallel to the ground depending on the moment.",
                             "The vertical leg appears parallel to the ground in the tilted camera frame."):
             self.assertTrue(validate_plan(json.dumps({"pose_detail": description}), compiled))
-
-    def test_video_plan_cannot_claim_observation_of_symbolic_media(self):
-        data = validate_minimax_draft({"user_request": "Identity from <image1>", "references": ["image1"]})
-        raw = '{"references":[{"token":"image1","roles":["identity"],"target":"person","transfer":"identity only","exclude":"unrequested facts"}],"first_frame":null,"last_frame":null}'
-        reference = validate_analysis(raw, data)
-        with self.assertRaisesRegex(ValueError, "observation"):
-            validate_plan('{"action_progression":["Person with blonde hair seen in <image1> rotates."]}', compile_request(data["user_request"]), video=True, reference_analysis=reference)
-        words = "A figure was seen in <image1>."
-        compiled = compile_request('A person says "' + words + '".')
-        payload = {"action_progression": ['The person says "' + words + '".'], "protected_dialogue": [words]}
-        self.assertTrue(validate_plan(json.dumps(payload), compiled, video=True, reference_analysis=reference, dialogue=[words]))
 
     def test_target_director_creativity_length_adapters_remain_unchanged(self):
         compiled = compile_request(PAIR + '. A placard reads "BALANCE".')
@@ -362,66 +327,6 @@ class SupportingPlanningTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 validate_plan(json.dumps(details), compiled)
 
-    def test_minimax_auto_simple_and_direct_complex_add_no_calls(self):
-        for mode, text in (("Auto", "A car drives down a rainy street."), ("Direct", MOTION)):
-            data = validate_minimax_draft({"planning_mode": mode, "user_request": text})
-            result, backend = self.minimax(data, H3)
-            self.assertEqual(len(backend.calls), 1)
-            self.assertEqual(result["planning_status"], "direct")
-            self.assertNotIn("SUPPORTING INTERPRETATION", backend.calls[0].user_message)
-
-    def test_minimax_complex_is_one_temporal_plan_then_existing_writer(self):
-        data = validate_minimax_draft({"user_request": MOTION})
-        result, backend = self.minimax(data, json.dumps(VIDEO_PLAN), H3)
-        self.assertEqual([call.diagnostic_stage for call in backend.calls], ["minimax:video_planning", "minimax:prompt"])
-        self.assertEqual((backend.sessions, backend.exits), (1, 1))
-        self.assertEqual(result["planning_status"], "planned")
-        self.assertIn("VIDEO SCENE PLAN", backend.calls[-1].user_message)
-        self.assertIn("USER REQUEST\n" + MOTION, backend.calls[-1].user_message)
-        self.assertIn("action_progression", backend.calls[-1].user_message)
-        self.assertTrue(backend.calls[-1].unlimited_tokens)
-        self.assertEqual(backend.calls[0].hard_max_tokens, 1600)
-
-    def test_minimax_auto_failure_falls_back_to_identical_writer(self):
-        data = validate_minimax_draft({"user_request": MOTION})
-        reference_plan = validate_analysis('{"references":[],"first_frame":null,"last_frame":null}', data)
-        direct = generation_instruction(data, reference_plan, get_director_preset(data["director_preset"]), "qwen")
-        with self.assertLogs("goated_prompter.planning.scene_planner", level="WARNING"):
-            result, backend = self.minimax(data, "invalid JSON", H3)
-        self.assertEqual(result["planning_status"], "fallback")
-        self.assertEqual(backend.calls[-1].to_messages(), direct.to_messages())
-        self.assertEqual(len(backend.calls), 2)
-
-    def test_minimax_always_failure_reports_without_final_call(self):
-        data = validate_minimax_draft({"planning_mode": "Always", "user_request": "A leaf falls."})
-        backend = ScriptedBackend("bad JSON")
-        with patch("goated_prompter.features.minimax.service.create_backend", return_value=backend), self.assertRaisesRegex(BackendGenerationError, "Required scene planning failed"):
-            MiniMaxService({"backend": "mock"}, lambda: None).run(GoatedPrompterRequest(idea=data["user_request"]), data, lambda _: None)
-        self.assertEqual(len(backend.calls), 1)
-
-    def test_minimax_existing_writer_repair_reuses_plan_without_replanning(self):
-        data = validate_minimax_draft({"user_request": MOTION})
-        result, backend = self.minimax(data, json.dumps(VIDEO_PLAN), "malformed H3", H3)
-        self.assertEqual(len(backend.calls), 3)
-        self.assertEqual(result["planning_status"], "planned")
-        self.assertIn("VALIDATION CORRECTION", backend.calls[-1].user_message)
-        self.assertIn("VIDEO SCENE PLAN", backend.calls[-1].user_message)
-        self.assertEqual(backend.calls[-1].system_message, backend.calls[-2].system_message)
-        self.assertEqual(sum(call.diagnostic_stage == "minimax:video_planning" for call in backend.calls), 1)
-
-    def test_minimax_real_reference_analysis_precedes_supporting_pass_in_one_session(self):
-        # Reuse the existing verified H3/reference fixtures, not an alternate validator.
-        from tests.support.minimax import REF, DANCE_PLAN, REQUEST
-        data = validate_minimax_draft({"planning_mode": "Always", "user_request": REQUEST, "references": ["image1", "video1"], "duration_seconds": 15})
-        payload = {"subjects": ["requested target person"], "action_progression": ["Identity from <image1> performs requested movement characteristics from <video1>."]}
-        result, backend = self.minimax(data, DANCE_PLAN, json.dumps(payload), REF)
-        self.assertEqual([call.diagnostic_stage for call in backend.calls], ["minimax:analysis", "minimax:video_planning", "minimax:prompt"])
-        self.assertEqual((backend.sessions, backend.exits), (1, 1))
-        self.assertEqual(result["planning_status"], "planned")
-        reference = validate_analysis(DANCE_PLAN, data)
-        self.assertEqual(json.loads(backend.calls[1].user_message)["reference_analysis"], reference)
-        self.assertIn(json.dumps(reference, ensure_ascii=False), backend.calls[-1].user_message)
-
     def test_builder_text_only_planning_does_not_touch_reference_evidence(self):
         backend = ScriptedBackend(json.dumps(HOOP_PLAN), HOOP)
         request = GoatedPrompterRequest(idea=HOOP, image=EncodedImage("aW1hZ2U=", "image/png", 32, 32),
@@ -432,50 +337,6 @@ class SupportingPlanningTests(unittest.TestCase):
         self.assertIsNone(result.instruction.resolved_scene)
         self.assertIsNone(result.instruction.image)
         self.assertNotIn("preserved_reference_evidence", json.loads(backend.calls[0].user_message))
-
-    def test_minimax_shots_timing_and_dialogue_are_exact(self):
-        text = '<shot1> 0-4s A turns and says "No, don’t stop—go!" <shot2> 4-10s B catches A.'
-        data = validate_minimax_draft({"user_request": text})
-        reference = validate_analysis('{"references":[],"first_frame":null,"last_frame":null}', data)
-        compiled = compile_request(text)
-        shots = parse_shot_outline(text, 10)
-        words = exact_dialogue(text)
-        payload = {"action_progression": ["A turns; B catches A."],
-            "shot_details": [{**{key: shot[key] for key in ("number", "start_ms", "end_ms")}, "action": shot["description"]} for shot in shots],
-            "protected_dialogue": words}
-        details = validate_plan(json.dumps(payload), compiled, video=True, reference_analysis=reference, shots=shots, dialogue=words)
-        planned = generation_instruction(data, reference, get_director_preset(data["director_preset"]), "qwen", VideoScenePlan(details, compiled))
-        self.assertIn(text, planned.user_message)
-        self.assertEqual(details["protected_dialogue"], ["No, don’t stop—go!"])
-        self.assertEqual([(item["number"], item["start_ms"], item["end_ms"]) for item in details["shot_details"]], [(1, 0, 4000), (2, 4000, 10000)])
-        for corrupt in ({**payload, "protected_dialogue": ["Keep going!"]},
-                        {**payload, "shot_details": list(reversed(payload["shot_details"]))},
-                        {**payload, "shot_details": payload["shot_details"][:1]}):
-            with self.assertRaises(ValueError):
-                validate_plan(json.dumps(corrupt), compiled, video=True, shots=shots, dialogue=words)
-        with self.assertRaises(ValueError):
-            validate_plan(json.dumps(payload), compiled, video=True)
-
-    def test_minimax_reference_analysis_remains_authoritative_and_symbolic(self):
-        text = 'Use identity from <image1> and dance motion from <video1>. Two dancers exchange positions then one lifts the other.'
-        data = validate_minimax_draft({"user_request": text, "references": ["image1", "video1"]})
-        analysis = json.dumps({"references": [{"token": "image1", "roles": ["identity"], "target": "dancer", "transfer": "identity only", "exclude": "unrequested environment and audio"},
-            {"token": "video1", "roles": ["motion", "dance"], "target": "dancer", "transfer": "movement only", "exclude": "unrequested appearance, environment and audio"}],
-            "first_frame": None, "last_frame": None})
-        reference = validate_analysis(analysis, data)
-        compiled = compile_request(text)
-        instruction = video_planning_instruction(data, reference, compiled)
-        self.assertEqual(json.loads(instruction.user_message)["reference_analysis"], reference)
-        self.assertIn("symbolic and UNSEEN", instruction.system_message)
-        self.assertIsNone(instruction.image)
-        details = validate_plan(json.dumps(VIDEO_PLAN), compiled, video=True, reference_analysis=reference)
-        self.assertEqual(details["reference_constraints"], ["<image1>: identity", "<video1>: motion, dance"])
-        planned = generation_instruction(data, reference, get_director_preset(data["director_preset"]), "qwen", VideoScenePlan(details, compiled))
-        direct = generation_instruction(data, reference, get_director_preset(data["director_preset"]), "qwen")
-        self.assertEqual(planned.system_message, direct.system_message)
-        self.assertEqual(planned.user_message.replace("\n\n" + VideoScenePlan(details, compiled).supporting_input(), ""), direct.user_message)
-        with self.assertRaises(ValueError):
-            validate_plan(json.dumps({"action_progression": ["Copy motion from <video9>"]}), compiled, video=True, reference_analysis=reference)
 
     def test_planning_package_has_no_dataset_batch_imports(self):
         directory = ROOT / "goated_prompter" / "planning"

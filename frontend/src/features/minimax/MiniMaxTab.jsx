@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Copy, Film, RefreshCw, SlidersHorizontal, Sparkles, Trash2 } from "lucide-react";
 import { ui } from "../../ui.js";
 import { orderDisplayPresets, presetDisplayLabel } from "../../presetPresentation.js";
-import { TargetSelect, PlanningSelect } from "../../shared/workflow/WorkflowControls.jsx";
+import { TargetSelect } from "../../shared/workflow/WorkflowControls.jsx";
 import { useWorkflowSettings } from "../../shared/workflow/useWorkflowSettings.js";
 import WorkflowSettingsStatus from "../../shared/workflow/WorkflowSettingsStatus.jsx";
 import { insertReference, insertShot, nextReference, nextShot, parseReferences, parseShots } from "./minimaxReferences.js";
@@ -111,21 +111,20 @@ export default function MiniMaxTab({ visible, job, busy, active, noEngine, engin
       <span role="status">{active ? job.status === "cancelling" ? "Ending generation…" : job.progress || "Generating prompt…" : "Prompt writing only · symbolic references"}</span>
       {active && <button className={ui.button} onClick={onCancel} disabled={job.status === "cancelling"}>End generation</button>}
     </div>
-    {draft && <div className="grid grid-cols-[minmax(230px,0.7fr)_minmax(0,1.6fr)] items-start gap-6 [@media(width<=850px)]:grid-cols-1">
+    {draft && <div className="grid grid-cols-[minmax(320px,1fr)_minmax(0,1.6fr)] items-start gap-6 [@media(width<=960px)]:grid-cols-1">
       <section className={ui.panel} aria-label="MiniMax settings">
         <header className={ui.panelHeader}>
           <div className={ui.panelIcon}><SlidersHorizontal size={21} /></div>
           <div className={ui.panelHeading}><h2>Scene settings</h2><p>A few choices to shape your prompt.</p></div>
         </header>
-        <div className={`${ui.fields} grid-cols-3 tablet:grid-cols-2 mobile:grid-cols-1`}>
+        <div className={`${ui.fields} grid-cols-2 mobile:grid-cols-1`}>
           <TargetSelect label="Model" value={draft.model} targets={models} disabled={disabled} onChange={(model) => update({ model })} />
-          <PlanningSelect video value={draft.planning_mode} disabled={disabled} onChange={(planning_mode) => update({ planning_mode })} />
           <label className={ui.field}><span>Clip Length</span>
             <select className={ui.select} aria-label="Clip Length" value={draft.duration_seconds} disabled={disabled} onChange={(event) => update({ duration_seconds: Number(event.target.value) })}>
               {Array.from(new Set([4, 5, 6, 8, 10, 12, 15, draft.duration_seconds])).sort((a, b) => a - b).map((duration) => <option key={duration} value={duration}>{duration} seconds</option>)}
             </select>
           </label>
-          <label className={ui.field}><span>Mode</span>
+          <label className={`${ui.field} col-span-full`}><span>Mode</span>
             <select className={ui.select} aria-label="Mode" value={draft.mode} disabled={disabled} onChange={(event) => update({ mode: event.target.value })}>
               {modes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
             </select>
@@ -136,7 +135,7 @@ export default function MiniMaxTab({ visible, job, busy, active, noEngine, engin
               {ratios.map((ratio) => <option key={ratio}>{ratio}</option>)}
             </select>
           </label>
-          <label className={ui.field}><span>Director Preset</span>
+          <label className={`${ui.field} col-span-full`}><span>Director Preset</span>
             <select className={ui.select} aria-label="Director Preset" aria-describedby="minimax-director-description" value={draft.director_preset} disabled={disabled} onChange={(event) => update({ director_preset: event.target.value })}>
               {!director && <option value={draft.director_preset}>Unavailable Director — choose a preset</option>}
               {availablePresets.map((preset) => <option key={preset.id} value={preset.id}>{presetDisplayLabel(preset)}</option>)}
@@ -195,8 +194,6 @@ export default function MiniMaxTab({ visible, job, busy, active, noEngine, engin
           <textarea id="minimax-output" className={ui.outputInput} style={{ minHeight: 360 }} value={draft.generated_prompt}
             maxLength={100000} disabled={disabled} onChange={(event) => update({ generated_prompt: event.target.value })}
             placeholder="Your MiniMax H3 prompt will appear here." />
-          {job?.kind === "minimax" && job?.result?.planning_status === "planned" &&
-            <p className={ui.subtleNote} role="status">Supporting video scene planning used for the latest generation.</p>}
           <div className={ui.outputActions}>
             <button className={ui.button} disabled={!draft.generated_prompt} onClick={() => onCopy(draft.generated_prompt)}><Copy size={14} />Copy</button>
             <button className={ui.button} disabled={!canGenerate} onClick={generate}><RefreshCw size={14} />Regenerate</button>

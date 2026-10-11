@@ -27,7 +27,7 @@ class ContractsTests(unittest.TestCase):
 
     def test_planning_modules_import_without_builder(self):
         script = (
-            "import sys; import goated_prompter.planning.video_planner, "
+            "import sys; import goated_prompter.planning.scene_planner, "
             "goated_prompter.planning.semantic_validation; "
             "print('goated_prompter.features.builder.service' in sys.modules)"
         )

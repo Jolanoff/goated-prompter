@@ -107,7 +107,7 @@ class SemanticInvariantTests(unittest.TestCase):
         backend=SequenceBackend([bad,verdict(("constraint_validity",),issue),good,verdict(("constraint_validity",))])
         with patch("goated_prompter.features.minimax.service.create_backend",return_value=backend):
             result=MiniMaxService({"backend":"mock","semantic_constraints":True},lambda:None).run(
-                GoatedPrompterRequest(idea=row["request"]),{"user_request":row["request"],"planning_mode":"Direct"},lambda _:None)
+                GoatedPrompterRequest(idea=row["request"]),{"user_request":row["request"]},lambda _:None)
         self.assertNotIn("peaked cap",result["prompt"])
         for instruction in (backend.calls[1],backend.calls[3]):
             self.assertEqual(json.loads(instruction.user_message)["checks"],["constraint_validity"])
@@ -161,7 +161,7 @@ class SemanticInvariantTests(unittest.TestCase):
         issue = defect("constraint_validity", "forbidden_content", "hats", "peaked cap")
         checks = (*CHECKS,"temporal_fidelity")
         backend = SequenceBackend([bad, verdict(checks,issue), good, verdict((*checks,"repair_preservation"))])
-        data = {"user_request":row["request"],"planning_mode":"Direct","director_preset":"general_director"}
+        data = {"user_request":row["request"],"director_preset":"general_director"}
         with patch("goated_prompter.features.minimax.service.create_backend", return_value=backend):
             result = MiniMaxService({"backend":"mock","semantic_validation":True},lambda:None).run(
                 GoatedPrompterRequest(idea=row["request"]),data,lambda _:None)

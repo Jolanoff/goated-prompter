@@ -43,6 +43,34 @@ Footsteps and soft crying accompany the street ambience.
 non_diegetic_music:
 N/A"""
 class MiniMaxContractTests(unittest.TestCase):
+    def test_complex_requests_and_legacy_planning_modes_go_straight_to_the_writer(self):
+        text = "Two dancers exchange positions while rotating around each other, then one lifts the other as the camera circles them."
+        prompt = BASE.replace("A leaf falls onto a quiet path.", text)
+        for mode in (None, "Auto", "Direct", "Always"):
+            with self.subTest(mode=mode):
+                data = {"user_request": text, **({"planning_mode": mode} if mode else {})}
+                backend = ScriptedBackend(prompt)
+                with patch("goated_prompter.features.minimax.service.create_backend", return_value=backend):
+                    result = MiniMaxService({"backend": "mock"}, lambda: None).run(
+                        GoatedPrompterRequest(idea=text), data, lambda _: None)
+                self.assertEqual(result["prompt"], prompt)
+                self.assertEqual([call.diagnostic_stage for call in backend.calls], ["minimax:prompt"])
+                self.assertNotIn("planning_status", result)
+                self.assertNotIn("SUPPORTING INTERPRETATION", backend.calls[0].user_message)
+                self.assertIn("USER REQUEST\n" + text, backend.calls[0].user_message)
+
+    def test_reference_analysis_and_writer_repairs_remain_in_one_session_without_planning(self):
+        backend = ScriptedBackend(DANCE_PLAN, "malformed H3", REF)
+        with patch("goated_prompter.features.minimax.service.create_backend", return_value=backend):
+            result = MiniMaxService({"backend": "mock"}, lambda: None).run(
+                GoatedPrompterRequest(idea=REQUEST), dance_input(), lambda _: None)
+        self.assertEqual(result["prompt"], REF)
+        self.assertEqual([call.diagnostic_stage for call in backend.calls],
+                         ["minimax:analysis", "minimax:prompt", "minimax:prompt:repair"])
+        self.assertEqual((backend.sessions, backend.exits), (1, 1))
+        self.assertIn("reference_analysis", backend.calls[1].user_message)
+        self.assertIn("VALIDATION CORRECTION", backend.calls[2].user_message)
+
     def test_tokens_case_limits_missing_assets_and_draft_tolerance(self):
         self.assertEqual(parse_reference_tokens("<IMAGE1> <video3> <Audio2> <image1>"), ["image1", "video3", "audio2"])
         for token in ("<image10>", "<image0>", "<image01>", "<video4>", "<audio4>"):
@@ -77,7 +105,6 @@ class MiniMaxContractTests(unittest.TestCase):
 
     def test_image_only_shot_outline_converts_to_guide_fields_and_keeps_speech(self):
         data = validate_minimax_draft({"references": ["image1", "image2", "image3"],
-                                       "planning_mode": "Direct",
                                        "user_request": APPLE_SHOTS.replace("<shot1> apple", "<shot1> 0-3s apple")}, generation=True)
         roles = plan_json(role("image1", "character"), role("image2", "character"), role("image3", "environment"))
         plan = validate_analysis(roles, data)

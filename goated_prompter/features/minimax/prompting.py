@@ -95,9 +95,9 @@ def analysis_instruction(data, family):
         model_family=family, diagnostic_stage="minimax:analysis", unlimited_tokens=True, json_output=True)
 
 
-def generation_instruction(data, plan, director, family, video_scene_plan=None):
+def generation_instruction(data, plan, director, family):
     from ...planning.constraints import compile_request, COMPILED_CONTRACT
-    compiled = video_scene_plan.compiled_request if video_scene_plan is not None else compile_request(
+    compiled = compile_request(
         data["user_request"], has_context=bool(plan["references"]))
     mode = plan["mode"]
     context = {key: data[key] for key in ("model", "duration_seconds", "mode", "references")}
@@ -143,9 +143,8 @@ def generation_instruction(data, plan, director, family, video_scene_plan=None):
     ]), user_message="\n\n".join([
         "STRUCTURED SETTINGS\n" + json.dumps(context, ensure_ascii=False),
         "DIRECTOR PRESET — CREATIVE GUIDANCE ONLY\n" + json.dumps({"name": director.label, "instructions": director.instructions}, ensure_ascii=False),
-        *([video_scene_plan.supporting_input()] if video_scene_plan is not None else []),
         *([COMPILED_CONTRACT + "\n" + json.dumps(compiled.workflow_data(), ensure_ascii=False)]
-          if video_scene_plan is None and (compiled.forbidden or compiled.variable) else []),
+          if compiled.forbidden or compiled.variable else []),
         "USER REQUEST\n" + compiled.writer_request(include_constraints=False),
         f"Write the complete {mode} prompt for exactly {data['duration_seconds']} seconds. Return only the final prompt.",
     ]), model_family=family, diagnostic_stage="minimax:prompt", unlimited_tokens=True)

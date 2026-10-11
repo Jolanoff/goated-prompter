@@ -161,7 +161,7 @@ derived from the cast lead the tag block, followed by named characters' Danbooru
 series tags. A deterministic check retries the writer when cast-derived count tags or a
 named character's name are missing from the prompt.
 Dataset has no separate final writer or semantic/support reviewer. Shared Builder
-and MiniMax planning/validation remain independent and available.
+and MiniMax reference/timeline validation remain independent and available.
 
 ## Recovery and text preservation
 
