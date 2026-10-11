@@ -96,7 +96,9 @@ the writer then keeps them. The brainstorm gets the same Director section (`dire
 Director built around one kind of shot (selfie, mirror, first person) also replaces each image's
 framing direction, lifts the mirror and posing bans, and is not limited as a watching idea. A sexual request (`quality.sexual_request`, which also reads
 the cast, the brief and the Director) swaps mood and interaction for the larger `SEXUAL_DIRECTIONS`,
-adds a supported `SEXUAL_POSITIONS` direction for two or more people, keeps the place and
+adds a supported `SEXUAL_POSITIONS` direction for two or more people (`ORAL_POSITIONS` only
+when oral is requested; `KINK_DIRECTIONS` and `KINK_POSITIONS` only when `kink_request` finds BDSM or
+fetish wording in the request or Director), catches lifted or carried bodies (`sexual_lift`), keeps the place and
 position next to a required act, drops the moment axis, and draws an adult age for random characters; `adults_only_error` refuses a
 sexual or suggestive batch that names someone under 18 or involves an animal before any model call, and brainstorm
 events, ideas and final prompts that do so are dropped, repaired or retried. The same stages tie every body part to

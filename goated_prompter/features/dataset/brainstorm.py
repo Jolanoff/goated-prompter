@@ -11,7 +11,7 @@ import json
 from ...contracts import PromptInstruction
 from ...strict_json import reject_duplicate_keys
 from .director import director_section
-from .quality import broken_anatomy, idea_concepts, minor_reference, passive_idea, passive_request, sexual_request
+from .quality import broken_anatomy, idea_concepts, minor_reference, sexual_lift, passive_idea, passive_request, sexual_request
 from .understanding import understanding_instruction, unwrap_json_fence, validate_understanding
 
 
@@ -39,8 +39,10 @@ masturbation, slave, owned, collared, domination, bondage, yaoi and other explic
 - Use concrete sexual language when the request is explicit. Name the anatomy that is part of
   the act or exposed (penis, cock, balls, ass, hole, pussy, breasts, mouth on cock) and its state
   (erect, hard, wet, stretched, dripping).
-- For a sex slave, owned or collared role, show the ownership visually: a collar or leash, posture,
-  who controls whom, presenting, being used. Never rely on the word "slave" alone.
+- Ordinary consensual sex is the default: no BDSM, domination, restraint, collars, leashes or fetishes
+  unless the request or the Director asks for them.
+- For a requested sex slave, owned or collared role, show the ownership visually: a collar or leash,
+  posture, who controls whom, presenting, being used. Never rely on the word "slave" alone.
 - Never replace the act with kissing, cuddling, undressing only, "an intimate moment", looking at
   each other or any non-sexual activity.
 - Keep the act in every image and vary the whole situation around it: where it happens, what led to
@@ -49,7 +51,8 @@ masturbation, slave, owned, collared, domination, bondage, yaoi and other explic
   same phrase (such as "deep penetration") for the act.
 - Clothing follows the request and the Director: partial clothing, open clothes and pulled-down
   garments are fine and often preferred; full nudity only when the user or Director asks for it.
-Supported poses only (lying, kneeling, sitting, standing with weight on feet/seat/knees/back).
+Supported poses only (lying, kneeling, sitting, standing with weight on feet/seat/knees/back): no one
+is lifted, carried or held up in the air.
 Every body part belongs to exactly one person and stays attached to that person's body: name
 it with its owner ("his", "her", "the taller man's"), and never describe one on its own,
 detached, held up alone, floating, or shared, joined or merged between two people. Visible
@@ -166,8 +169,8 @@ def brainstorm_events(session, data, count, rng, *, avoid=(), family="qwen", pro
         progress("The brainstorm came back unusable; writing ideas without event seeds.")
         return []
     if sexual_request(data):
-        candidates = [candidate for candidate in candidates
-                      if not minor_reference(candidate[0]) and not broken_anatomy(candidate[0])]
+        candidates = [candidate for candidate in candidates if not minor_reference(candidate[0])
+                      and not broken_anatomy(candidate[0]) and not sexual_lift(candidate[0])]
     return pick_events(candidates, count, rng, avoid=avoid, limit_passive=not passive_request(data))
 
 

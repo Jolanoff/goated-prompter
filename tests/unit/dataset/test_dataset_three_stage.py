@@ -909,3 +909,39 @@ class SexualVarietyTests(SeedVarietyTests):
         self.assertIn("show the ownership visually", ideas)
         self.assertIn("no two ideas reuse the same phrase", ideas)
         self.assertIn("name the anatomy that is part of the act or exposed", final)
+
+
+class VanillaDefaultTests(SeedVarietyTests):
+    def directions(self, subject):
+        act = {"scope": "all_outputs", "text": subject}
+        brief = {**self.data["_confirmed_intent"], "action_options": [act], "interactions": [act]}
+        return list(creative_directions({**self.data, "subject": subject, "_confirmed_intent": brief},
+                                        range(1, 11), 5).values())
+
+    def test_ordinary_sex_gets_no_kink_or_oral_directions_unless_asked(self):
+        from goated_prompter.features.dataset.ideas import KINK_DIRECTIONS, KINK_POSITIONS, ORAL_POSITIONS
+        kink_values = {*KINK_DIRECTIONS["mood"], *KINK_DIRECTIONS["interaction"], *KINK_POSITIONS}
+        for salt in range(10):
+            for row in creative_directions(self.data, range(1, 11), salt).values():
+                values = {value for value in row.values() if isinstance(value, str)}
+                self.assertFalse(values & (kink_values | set(ORAL_POSITIONS)), row)
+        kinky = self.directions("a collared man in bondage having sex with his mistress")
+        self.assertTrue(any({value for value in row.values() if isinstance(value, str)} & kink_values for row in kinky))
+        oral = self.directions("a woman giving a man a blowjob")
+        self.assertTrue(any(row["position"] in ORAL_POSITIONS for row in oral))
+
+    def test_lifted_bodies_are_redone_in_sexual_images(self):
+        from goated_prompter.features.dataset.quality import sexual_lift
+        self.assertIsNotNone(sexual_lift("she is being lifted against a large window"))
+        self.assertIsNotNone(sexual_lift("he carries her to the bed while inside her"))
+        self.assertIsNone(sexual_lift("she lies on the bed with her hips raised on a pillow"))
+
+    def test_seeded_sexual_images_keep_a_place_and_looks_keep_build_and_skin_apart(self):
+        seeds = {index: f"Event {index} somewhere." for index in range(1, 11)}
+        context = json.loads(ideas_instruction(self.data, dataset_assignments(self.data), event_seeds=seeds).user_message)
+        self.assertTrue(all("setting" in row["creative_direction"] for row in context["assignments"]))
+        look = context["assignments"][0]["creative_direction"]["random_character_looks"]["woman"]
+        self.assertRegex(look, r" build, [a-z -]+ skin$")
+        rules = " ".join(ideas_instruction(self.data, dataset_assignments(self.data)).system_message.split())
+        self.assertIn("Ordinary consensual sex is the default", rules)
+        self.assertIn("no one is lifted, carried or held up in the air", rules)

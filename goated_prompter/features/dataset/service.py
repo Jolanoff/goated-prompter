@@ -14,8 +14,8 @@ from ...options.styles import STYLE_NAMES
 from ...options.targets import TARGET_MODEL_NAMES, canonical_target
 from ...workflow_output import WorkflowFormatError, normalize_workflow_output, sanitize_prompt_text, requested_visible_text
 from .assignments import dataset_assignments
-from .quality import (ADULTS_ONLY, BROKEN_ANATOMY, adults_only_error, analyze_idea_diversity, broken_anatomy,
-                      minor_reference, sexual_request)
+from .quality import (ADULTS_ONLY, BROKEN_ANATOMY, SEXUAL_LIFT, adults_only_error, analyze_idea_diversity,
+                      broken_anatomy, minor_reference, sexual_lift, sexual_request)
 from .triggers import (trigger_presence_error, trigger_terms, fixed_anima_prefix, restore_numeric_trigger_spelling,
                        tidy_expanded_trigger)
 from .understanding import label_replacements, replace_labels
@@ -215,6 +215,8 @@ class DatasetService:
                 raise WorkflowFormatError(f'{ADULTS_ONLY} ("{word}")')
             if sexual_request(data) and (word := broken_anatomy(prompt)):
                 raise WorkflowFormatError(f'{BROKEN_ANATOMY} ("{word}")')
+            if sexual_request(data) and (word := sexual_lift(prompt)):
+                raise WorkflowFormatError(f'{SEXUAL_LIFT} ("{word}")')
 
             if original.reference_prompts and copied_reference(prompt, original.reference_prompts):
                 raise WorkflowFormatError("The prompt copied wording from a library reference prompt. Write new wording "

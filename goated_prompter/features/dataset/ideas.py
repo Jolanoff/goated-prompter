@@ -11,7 +11,7 @@ from ...backends.base import BackendGenerationError
 from ...contracts import PromptInstruction
 from .brainstorm import PLAUSIBLE_BODIES
 from .director import director_fixes_shot, director_section
-from .quality import ADULTS_ONLY, BROKEN_ANATOMY, analyze_idea_diversity, broken_anatomy, minor_reference, passive_idea, passive_request, sexual_request
+from .quality import ADULTS_ONLY, BROKEN_ANATOMY, SEXUAL_LIFT, analyze_idea_diversity, broken_anatomy, kink_request, minor_reference, oral_request, sexual_lift, passive_idea, passive_request, sexual_request
 from .understanding import (label_replacements, numbered_labels, replace_labels, understanding_instruction,
                             unwrap_json_fence, validate_understanding)
 from ...strict_json import reject_duplicate_keys
@@ -104,7 +104,10 @@ EVENT SEEDS
 An assignment may carry event_seed: the core event and place the app picked for this image
 from a wide brainstorm, so batches do not repeat the same favourite ideas. Build the idea
 around that event, set it in that place and stage it fully. In a sexual batch take the
-situation and place from the seed and the position from creative_direction. Change only a part that conflicts with HARD.
+situation and place from the seed (creative_direction.setting when the seed names no place) and
+the position from creative_direction; when that position cannot fit the seed's act, keep the act
+and choose a position that fits it. The idea line then states that act, position and place, in
+words different from the other ideas. Change only a part that conflicts with HARD.
 
 CREATIVE DIRECTION
 Each assignment carries a creative_direction chosen by the app to spread the batch
@@ -181,31 +184,43 @@ DIRECTION_AXES = {
 # Sexual batches vary the mood and dynamic of the act instead; their moment axis (build-up,
 # aftermath, mishap) would move the image away from the act, so they get none.
 SEXUAL_DIRECTIONS = {
-    "mood": ("aroused", "hungry", "desperate", "dominant", "submissive", "overwhelmed", "tender", "playful",
-             "rough", "worshipful", "teasing", "needy", "possessive", "slow and sensual", "breathless", "defiant"),
-    "interaction": ("one is clearly in control of the other", "mutual and equal physical engagement",
-                    "one gives while the other receives", "a teasing or playful power dynamic",
-                    "intense focused contact between them", "one reacts strongly to what the other is doing",
-                    "they move together in sync", "one holds or guides the other's body",
-                    "one worships the other's body", "one pins the other down", "one teases and makes the other wait",
-                    "one obeys the other's orders", "rough and urgent", "slow and loving",
-                    "one presents for the other", "one guides the other's hands"),
+    "mood": ("aroused", "hungry", "desperate", "overwhelmed", "tender", "playful", "teasing", "needy",
+             "slow and sensual", "breathless", "passionate", "giggly and relaxed", "urgent", "intimate and focused"),
+    "interaction": ("mutual and equal physical engagement", "one gives while the other receives",
+                    "a teasing, playful mood between them", "intense focused contact between them",
+                    "one reacts strongly to what the other is doing", "they move together in sync",
+                    "one holds or guides the other's body", "one teases and makes the other wait",
+                    "urgent and hungry for each other", "slow and loving", "one guides the other's hands",
+                    "one takes the lead, the other eagerly follows"),
+    # Private kinds of place, not named rooms, so the model picks one that fits the batch.
+    "setting": ("a home, away from the bed", "a hotel or rented room", "a bathroom or shower",
+                "a living space with furniture to lean on", "a kitchen or dining area", "a secluded outdoor spot",
+                "a parked car or other private vehicle", "a workplace after hours"),
+}
+# Domination, restraint and fetish dynamics only when the request or Director asks for them;
+# ordinary sex is the default.
+KINK_DIRECTIONS = {
+    "mood": ("dominant", "submissive", "possessive", "defiant", "worshipful", "rough"),
+    "interaction": ("one is clearly in control of the other", "one pins the other down", "one obeys the other's orders",
+                    "one presents for the other", "one worships the other's body", "rough and urgent"),
 }
 # With two or more people each sexual image also gets a position, so a batch spreads over many
-# instead of the model's favourite few. Every one keeps bodies supported (no lifts or inversions).
+# instead of the model's favourite few. Every one keeps bodies supported (no lifts or inversions)
+# and suits penetration; oral positions only join when the request asks for oral.
 SEXUAL_POSITIONS = (
     "missionary, legs wrapped around the partner", "missionary, legs over the partner's shoulders",
     "on all fours, taken from behind", "lying flat on the stomach, partner on top from behind",
     "riding on top, facing the partner", "riding on top, facing away", "spooning on their sides",
     "standing, bent over a table or counter, from behind", "standing face to face, one leg raised on a support",
     "sitting on the partner's lap, facing them", "sitting on the partner's lap, facing away",
-    "lying at the edge of a bed or table, partner standing between the legs", "kneeling oral, partner standing",
-    "lying back, receiving oral", "sixty-nine, lying on their sides", "sitting on the partner's face",
+    "lying at the edge of a bed or table, partner standing between the legs",
     "lotus, seated and wrapped around each other", "kneeling upright, taken from behind",
-    "face down with hips raised, wrists held", "lying side by side, mutual masturbation",
-    "on the knees, presenting from behind", "lying back with knees pulled to the chest",
-    "seated on a chair, partner straddling it", "kneeling between the partner's legs, hands on their thighs",
+    "lying back with knees pulled to the chest", "seated on a chair, partner straddling it",
+    "side by side, one leg raised over the partner's hip",
 )
+ORAL_POSITIONS = ("kneeling oral, partner standing", "lying back, receiving oral", "sixty-nine, lying on their sides",
+                  "sitting on the partner's face", "kneeling between the partner's legs, mouth on them")
+KINK_POSITIONS = ("face down with hips raised, wrists held", "on the knees, presenting from behind")
 # A required action must be visible in every image. Manual runs showed moment,
 # mood and setting directions (rest, water break, climbing a ladder) replacing it,
 # so those items only vary how the image is shot.
@@ -276,15 +291,19 @@ def creative_directions(data, indexes, salt=0):
     brief_count = brief.get("character_count")
     group = data.get("trigger_type") == "Multiple characters" or (type(brief_count) is int and brief_count > 1)
     sexual = sexual_request(data)
+    kink = sexual and kink_request(data)
     safe_axes = SEXUAL_ACTION_SAFE_AXES if sexual else ACTION_SAFE_AXES
     orders = {}
     for position, (axis, values) in enumerate(DIRECTION_AXES.items()):
         values = GROUP_FRAMING if group and axis == "framing" else SEXUAL_DIRECTIONS.get(axis, values) if sexual else values
+        if sexual and axis in KINK_DIRECTIONS and kink:
+            values = values + KINK_DIRECTIONS[axis]
         order = list(values)
         random.Random(seed + position).shuffle(order)
         orders[axis] = order
     if sexual:
-        order = list(SEXUAL_POSITIONS)
+        order = list(SEXUAL_POSITIONS + (ORAL_POSITIONS if oral_request(data) else ())
+                     + (KINK_POSITIONS if kink_request(data) else ()))
         random.Random(seed + len(DIRECTION_AXES)).shuffle(order)
         orders["position"] = order
     # A single random person whose sex the user left open gets one drawn here, so prompts never
@@ -309,7 +328,8 @@ def creative_directions(data, indexes, salt=0):
             # Very short hair cannot be braided, tied up or slicked back.
             styles = [style for style in parts["style"] if length not in SHORT_HAIR or style not in LONG_HAIR_STYLES]
             hair = f"{length} {rng.choice(styles)} {rng.choice(parts['color'])} hair"
-            look = ([] if aged else [rng.choice(AGES)]) + [hair, rng.choice(parts["build"]), f"{rng.choice(SKIN_TONES)} skin"]
+            look = ([] if aged else [rng.choice(AGES)]) + [hair, f"{rng.choice(parts['build'])} build",
+                                                           f"{rng.choice(SKIN_TONES)} skin"]
             if hair not in used_looks:
                 break
         used_looks.add(hair)
@@ -357,6 +377,7 @@ def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existin
     guided_count = len(source_context["guided_inputs"])
     directions = creative_directions(data, indexes, direction_salt)
     fixed_shot = director_fixes_shot(data)
+    sexual = sexual_request(data)
     for index in indexes:
         row = by_index[index]
         entry = {"index": index, "input": row["input"],
@@ -369,8 +390,9 @@ def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existin
             entry["event_seed"] = event_seeds[index]
             # The seed already decides what happens and where; a moment, interaction or setting label
             # on top of it gets copied into the idea as vague words ("a shared mishap occurs").
-            direction = {axis: value for axis, value in direction.items()
-                         if axis not in ("moment", "interaction", "setting")}
+            # A sexual image keeps its setting as a fallback for a seed that names no place.
+            dropped = ("moment", "interaction") if sexual else ("moment", "interaction", "setting")
+            direction = {axis: value for axis, value in direction.items() if axis not in dropped}
         entry["creative_direction"] = direction
         selected.append(entry)
     context = {"source": source_context["source"], "confirmed_intent": brief,
@@ -469,6 +491,8 @@ def _reject_sexual_content(row, data, allow_partial):
         reason = f'{ADULTS_ONLY} ("{word}")'
     elif word := broken_anatomy(text):
         reason = f'{BROKEN_ANATOMY} ("{word}")'
+    elif word := sexual_lift(text):
+        reason = f'{SEXUAL_LIFT} ("{word}")'
     else:
         return row
     if not allow_partial:
