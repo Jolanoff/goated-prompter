@@ -47,7 +47,7 @@ class SeededSession:
 def default_dataset_draft():
     return {
         "trigger": "", "trigger_type": "Character", "custom_type": "", "subject": "",
-        "trigger_at_start": False, "trigger_connected": True, "expand_trigger": False,
+        "trigger_at_start": False, "trigger_connected": True, "expand_trigger": True,
         "amount": 12,
         "source_mode": "random", "inputs": "", "target": "Generic", "length": "Medium",
         "director_preset": "general_director", "constraints": "",

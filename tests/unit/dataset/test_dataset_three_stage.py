@@ -915,7 +915,9 @@ class SexualVarietyTests(SeedVarietyTests):
         final = " ".join(dataset_instruction(GoatedPrompterRequest(idea=self.data["subject"], prompt_model="Custom"),
                                              self.data, 1, plan_item=saved_scene(1)).system_message.split())
         self.assertIn("show the ownership visually", ideas)
-        self.assertIn("no two ideas reuse the same phrase", ideas)
+        self.assertIn("each idea describes the act in its own words", ideas)
+        self.assertIn("keep every act between them", ideas)
+        self.assertNotIn("mouth on cock", ideas)
         self.assertIn("name the anatomy that is part of the act or exposed", final)
 
 
@@ -998,3 +1000,67 @@ class CastPositionTests(SeedVarietyTests):
             with self.subTest(position=position):
                 self.assertIsNone(broken_anatomy(position))
                 self.assertNotIn("frot", position)
+
+
+class FinalTestFixesTests(unittest.TestCase):
+    def test_a_looping_brainstorm_or_ideas_call_never_stops_the_run(self):
+        from goated_prompter.backends.base import BackendRunawayError
+        from goated_prompter.features.dataset.ideas import DatasetIdeasService
+        data = valid_draft(amount=2, _confirmed_intent=dataset_understanding_fixture())
+        session = Mock()
+        session.generate.side_effect = BackendRunawayError("loop")
+        messages = []
+        self.assertEqual(brainstorm_events(session, data, 2, random.Random(1), progress=messages.append,
+                                           checkpoint=lambda: None), [])
+        self.assertIn("repeated itself", messages[-1])
+        session.generate.reset_mock()
+        rows = DatasetIdeasService(lambda: None).run(session=session, data=data, assignments=dataset_assignments(data),
+                                                     progress=lambda _message: None, allow_partial=True)
+        self.assertEqual(session.generate.call_count, 2, "One varied retry before the slots fail on their own.")
+        self.assertEqual([row["index"] for row in rows], [1, 2])
+        self.assertTrue(all("repeated itself" in row["failure_reason"] for row in rows))
+        with self.assertRaises(BackendRunawayError):
+            DatasetIdeasService(lambda: None).run(session=session, data=data, assignments=dataset_assignments(data),
+                                                  progress=lambda _message: None)
+
+    def test_near_repeat_events_still_fill_every_slot_with_the_least_obvious_leftovers(self):
+        data = valid_draft(amount=3, _confirmed_intent=dataset_understanding_fixture())
+        session = Mock()
+        session.generate.return_value = json.dumps([
+            {"event": "She juggles oranges on a bus.", "typicality": .9},
+            {"event": "She juggles oranges on a moving bus.", "typicality": .2},
+            {"event": "She juggles three oranges on the bus.", "typicality": .5}])
+        events = brainstorm_events(session, data, 3, random.Random(1), progress=lambda _message: None,
+                                   checkpoint=lambda: None)
+        self.assertEqual(len(events), 3)
+        self.assertEqual(len(set(events)), 3)
+
+    def test_only_a_request_or_a_bdsm_director_unlocks_kinks(self):
+        from goated_prompter.features.dataset.quality import kink_request
+        self.assertFalse(kink_request(valid_draft(subject="two men and a woman having sex",
+                                                  director_preset="NSFW Director")))
+        self.assertTrue(kink_request(valid_draft(subject="a woman in bondage")))
+        with patch("goated_prompter.features.dataset.quality.get_director_preset",
+                   return_value=Mock(instructions="Stage BDSM scenes with a collared partner.")):
+            self.assertTrue(kink_request(valid_draft(subject="two men and a woman having sex")))
+
+    def test_a_partial_cast_is_dropped_and_broken_traits_are_blanked(self):
+        from goated_prompter.features.dataset.understanding import validate_understanding
+        partial = dataset_understanding_fixture(character_count=8, characters=[character(name="A", traits=":[")])
+        self.assertEqual(validate_understanding(partial, SCOPES)["characters"], [])
+        whole = dataset_understanding_fixture(character_count=1, characters=[character(traits=":[")])
+        self.assertEqual(validate_understanding(whole, SCOPES)["characters"][0]["traits"], "")
+
+    def test_each_person_in_a_counted_random_cast_entry_gets_their_own_look(self):
+        men = {**COMPANION, "name": "man", "count": 2, "sex": "male"}
+        data = valid_draft(amount=1, trigger_type="Multiple characters",
+                           _confirmed_intent=dataset_understanding_fixture(character_count=2, characters=[men]))
+        look = creative_directions(data, [1], salt=3)[1]["random_character_looks"]["man"]
+        first, second = look.split("; ")
+        self.assertTrue(first.startswith("first: ") and second.startswith("second: "))
+
+    def test_trigger_expansion_is_the_default_and_the_writer_never_uses_letter_labels(self):
+        from goated_prompter.features.dataset.prompting import ENHANCE_SCENE_CONTRACT
+        from goated_prompter.features.dataset.service import default_dataset_draft
+        self.assertTrue(default_dataset_draft()["expand_trigger"])
+        self.assertIn("Never write the user's letter or number labels", ENHANCE_SCENE_CONTRACT)

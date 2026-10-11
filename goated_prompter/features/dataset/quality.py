@@ -194,8 +194,19 @@ def feet_request(data):
     return bool(_FEET.search(requested_text(data)))
 
 
+# A Director only unlocks BDSM when it is built for it; a general NSFW Director that mentions
+# control or dominance in passing keeps sex ordinary.
+_KINK_DIRECTOR = re.compile(r"\b(?:bdsm|bondage|collar(?:ed|s)?|leash(?:ed)?|slaves?|restrain\w*|handcuff\w*|"
+                            r"spank\w*|dominatrix|fetish\w*|kinky)\b")
+_NEGATED = re.compile(r"\b(?:do not|don't|never|no|avoid|without|unrequested|unless)\b")
+
+
 def kink_request(data):
-    return bool(_KINK.search(requested_text(data)))
+    asked = " ".join(str(data.get(key) or "") for key in ("subject", "constraints", "inputs", "trigger")).casefold()
+    director = get_director_preset(data.get("director_preset")).instructions.casefold()
+    # "Do not invent unrequested fetish elements" forbids kinks; only sentences that ask for one count.
+    asking = (sentence for sentence in re.split(r"[.!?\n]+", director) if not _NEGATED.search(sentence))
+    return bool(_KINK.search(asked) or any(_KINK_DIRECTOR.search(sentence) for sentence in asking))
 
 
 def oral_request(data):

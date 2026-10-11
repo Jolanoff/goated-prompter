@@ -99,7 +99,9 @@ the cast, the brief and the Director) swaps mood and interaction for the larger 
 gives the brainstorm a random handful of `position_ideas` as inspiration (from
 `brainstorm.SEXUAL_POSITIONS`, chosen by cast: solo, couple, two men, two women, three, a group; oral,
 feet and `KINK` positions and named extras only when the request or Director asks), adds
-`KINK_DIRECTIONS` moods and dynamics only when `kink_request` finds BDSM or fetish wording, allows a partner-supported lift during sex, keeps the place and
+`KINK_DIRECTIONS` moods and dynamics only when `kink_request` finds BDSM or fetish wording in the
+request, or a Director sentence that asks for them (a sentence that forbids them does not count), keeps
+every sexual act between the people the request pairs, allows a partner-supported lift during sex, keeps the place and
 position next to a required act, drops the moment axis, and draws an adult age for random characters; `adults_only_error` refuses a
 sexual or suggestive batch that names someone under 18 or involves an animal before any model call, and brainstorm
 events, ideas and final prompts that do so are dropped, repaired or retried. The same stages tie every body part to
@@ -118,13 +120,17 @@ individual rows also become explicit failed slots without dropping valid sibling
 Valid prompts finish first, then one replacement call requests only failed idea
 indexes, followed by their writer calls. Replacement validation still rejects unchanged
 or repeated ideas; unsuccessful repairs leave an inspectable partial batch, not an
-unbounded retry loop. Lexical similarity remains a nonblocking hint, not semantic
+unbounded retry loop. A brainstorm that loops continues without event seeds; an ideas call that
+loops gets one varied retry and then fails only its slots for repair. When near-repeat filtering leaves
+too few events, the least typical leftovers fill the remaining slots, so no image falls back to bare
+direction labels. Rule texts carry no worked examples, which small models copied into every idea. Lexical similarity remains a nonblocking hint, not semantic
 verification. Globally malformed JSON or a wrong batch size gets one format correction
 and is otherwise rejected rather than guessing missing assignments.
 
 IDEAS owns recent-event memory and checks normalized exact repeats against it,
 including when only camera or context changed. Fresh accepted ideas are remembered;
-failed slots are not. An explicit guided input matching the event can still repeat.
+failed slots are not. A repair of a slot that failed as a history repeat is kept rather than rejected again.
+An explicit guided input matching the event can still repeat.
 History stays bounded in RAM per concept and expires automatically. There is no
 manual reset control or endpoint. The writer does not read this history or change an
 accepted event for novelty. Semantic variation beyond exact repeats

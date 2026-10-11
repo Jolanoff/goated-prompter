@@ -259,27 +259,27 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                <div className="mt-4 grid gap-4">
             <div className="grid gap-2">
                <label className={ui.choiceCard}>
+                 <input type="checkbox" className="mt-0.5" aria-label="Allow trigger expansion"
+                  checked={draft.expand_trigger !== false} onChange={(event) => updateWriterSettings({ expand_trigger: event.target.checked })} />
+                 <span title="On: natural articles, capitalization and added descriptors are allowed while each subject stays mentioned. Off: preserve each trigger term exactly as typed and avoid unsolicited identity, appearance, design, material or style details. Explicit concept and rule requirements remain allowed."><strong className="block">Allow trigger expansion</strong>
+                    <small className="mt-1 block leading-relaxed text-muted">On: expand wording; terms stay together or spread out as reads best. Off: keep exact trigger terms.</small></span>
+              </label>
+               <label className={ui.choiceCard}>
                  <input type="checkbox" className="mt-0.5" aria-label="Require trigger at beginning"
                   checked={draft.trigger_at_start === true} onChange={(event) => updateWriterSettings({ trigger_at_start: event.target.checked })} />
                  <span title="Beginning placement is a preference; it never makes an otherwise usable prompt fail."><strong className="block">Require trigger at beginning</strong>
                    <small className="mt-1 block leading-relaxed text-muted">Prefer the trigger before other details.</small></span>
               </label>
-               <label className={ui.choiceCard}>
+               {draft.expand_trigger === false && <label className={ui.choiceCard}>
                  <input type="checkbox" className="mt-0.5" aria-label="Keep trigger text connected"
                   checked={draft.trigger_connected !== false} onChange={(event) => updateWriterSettings({ trigger_connected: event.target.checked })} />
                  <span title="Turn off to distribute comma-, line-, or ‘and’-separated terms. Grouping is a preference; exact wording is required when trigger expansion is off."><strong className="block">Keep trigger connected</strong>
                    <small className="mt-1 block leading-relaxed text-muted">Keep terms together, or distribute them.</small></span>
-              </label>
-              {draft.trigger_connected === false && triggerParts.length > 0 && <p className={ui.subtleNote}>
+              </label>}
+              {draft.expand_trigger === false && draft.trigger_connected === false && triggerParts.length > 0 && <p className={ui.subtleNote}>
                 {triggerParts.length === 1 ? "One required term detected. Add commas, new lines, or “and” to distribute multiple terms: " : "Required distributed terms: "}
                 {triggerParts.map((part) => `“${part}”`).join(" · ")}
               </p>}
-               <label className={ui.choiceCard}>
-                 <input type="checkbox" className="mt-0.5" aria-label="Allow trigger expansion"
-                  checked={draft.expand_trigger === true} onChange={(event) => updateWriterSettings({ expand_trigger: event.target.checked })} />
-                 <span title="On: natural articles, capitalization and added descriptors are allowed while each subject stays mentioned. Off: preserve each trigger term exactly as typed and avoid unsolicited identity, appearance, design, material or style details. Explicit concept and rule requirements remain allowed."><strong className="block">Allow trigger expansion</strong>
-                    <small className="mt-1 block leading-relaxed text-muted">On: expand wording. Off: keep exact trigger terms.</small></span>
-              </label>
             </div>
               </div>
              </details>

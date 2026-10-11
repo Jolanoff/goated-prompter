@@ -7,7 +7,7 @@ import random
 import re
 import secrets
 
-from ...backends.base import BackendGenerationError
+from ...backends.base import BackendGenerationError, BackendRunawayError
 from ...contracts import PromptInstruction
 from .brainstorm import PLAUSIBLE_BODIES
 from .director import director_fixes_shot, director_section
@@ -34,21 +34,18 @@ or output format.
 
 WHAT MAKES A STRONG IDEA
 """ + PLAUSIBLE_BODIES + """
-When the request is sexual, a strong idea is a concrete sexual act with clear roles, contact points, and expression.  
+When the request is sexual, a strong idea is a concrete sexual act with clear roles, contact points and expression.
 Each idea is a moment where something is happening: someone is in the middle of a specific
-activity with a goal, a problem or a reaction (trying, fixing, bargaining, spilling, teaching,
-getting lost, failing, surprising someone). With two or more characters they act on each
+activity with a goal, a problem or a reaction. With two or more characters they act on each
 other, not just stand side by side. Give each idea one concrete detail that belongs to this
-place and this image only (a particular dish, object, tool, local custom or feature of the
-setting) and a readable emotion. Never fall back on sightseeing or stock poses: standing,
+place and this image only, and a readable emotion. Never fall back on sightseeing or stock poses: standing,
 walking or sitting while looking at a view, admiring scenery, posing or smiling at the
 camera, holding hands on a path, or standing, sitting or leaning while watching someone else
-do something (a performer, a chef, a game), unless the user or the Director asked for that. At most one image
+do something, unless the user or the Director asked for that. At most one image
 in a batch may show the cast just watching, and apart from what the request itself asks for,
-no place, prop or activity may appear in more than two images. Weak: "two chefs cook
-dinner". Strong: "the older chef tastes the sauce and winces while the younger one hides the
-empty salt jar behind her back". Prefer a surprising but plausible situation over the first
-obvious one.
+no place, prop or activity may appear in more than two images. A strong idea is specific: who
+does what, with which detail, and how they react, rather than a generic activity. Prefer a
+surprising but plausible situation over the first obvious one.
 
 THE CAST
 confirmed_intent.characters, when present, lists who appears in every image with their
@@ -113,7 +110,8 @@ CREATIVE DIRECTION
 Each assignment carries a creative_direction chosen by the app to spread the batch
 across moments, moods, framing, settings and light, and for several characters how they
 interact. Start that image's idea from it; with an event_seed, the seed decides what
-happens and the direction how it is shown. When a DIRECTOR block is present it has
+happens and the direction how it is shown. Direction values are ingredients, not the idea:
+never write a mood, dynamic or place label as the idea itself; the idea is always a concrete event. When a DIRECTOR block is present it has
 priority: the direction only fills what the Director leaves open. Never let a moment, mood,
 setting or interaction label dilute, replace or soften a required act (a sexual act
 included) or the Director's tone.
@@ -133,9 +131,7 @@ what to show.
 VARIETY
 Make the core events differ: the moment in the event, who does what, the action, the
 interaction, the reaction or the outcome. Renamed subjects or a new camera, light, outfit
-or location alone do not make a new idea. For "duck fighting dinosaur", different ideas are
-the duck charging, dodging snapping jaws, counterattacking the snout or retreating while
-the dinosaur attacks; the same fight at sunset is not a new idea.
+or location alone do not make a new idea: the same event at another time of day is the same idea.
 Do not repeat a recently_used_ideas event when creative choices remain open; history lists
 events to move away from, not a menu. For a replacement, return only the requested indexes.
 Before returning, compare every proposed event with the others, existing_ideas and
@@ -239,6 +235,7 @@ LOOK_PARTS = {
             "build": ("slim", "athletic", "stocky", "broad-shouldered", "tall and lean", "heavyset", "muscular",
                       "wiry", "soft-bellied", "barrel-chested")},
 }
+ORDINALS = ("first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth")
 SHORT_HAIR = {"pixie-length", "chin-length", "buzzed", "short", "cropped"}
 LONG_HAIR_STYLES = {"braided", "tied-up", "slicked-back"}
 SKIN_TONES = ("fair", "freckled fair", "light", "olive", "tan", "golden-brown", "brown", "deep brown")
@@ -296,7 +293,8 @@ def creative_directions(data, indexes, salt=0):
     stated_age = bool(aged_role.search(" ".join(str(data.get(key) or "") for key in ("subject", "constraints", "trigger"))))
     random_cast = [(item["name"], _SEX_WORDS.get(item.get("sex")),
                     item.get("sex") == "unspecified" and item.get("count") == 1,
-                    stated_age or bool(aged_role.search(f"{item['name']} {item.get('traits', '')}")))
+                    stated_age or bool(aged_role.search(f"{item['name']} {item.get('traits', '')}")),
+                    item.get("count") or 1)
                    for item in brief.get("characters") or ()
                    if item.get("origin") == "random" and item.get("kind") in LOOK_KINDS]
 
@@ -327,9 +325,14 @@ def creative_directions(data, indexes, salt=0):
                              and (group or axis != "interaction")}
         if random_cast:
             looks = {}
-            for slot, (name, sex, open_sex, aged) in enumerate(random_cast):
+            for slot, (name, sex, open_sex, aged, count) in enumerate(random_cast):
                 sex = random.Random(f"{seed}|{index}|{slot}").choice(SEX_LOOKS) if open_sex else sex
-                looks[name] = ", ".join(([sex] if open_sex else []) + draw_look(index, slot, sex, aged))
+                if count == 1:
+                    looks[name] = ", ".join(([sex] if open_sex else []) + draw_look(index, slot, sex, aged))
+                else:
+                    # A group entry ("two men") gets one look per person, so they do not share one.
+                    looks[name] = "; ".join(f"{ORDINALS[person]}: " + ", ".join(draw_look(index, f"{slot}.{person}", sex, aged))
+                                            for person in range(min(count, len(ORDINALS))))
             directions[index]["random_character_looks"] = looks
     return directions
 
@@ -481,6 +484,7 @@ def _reject_sexual_content(row, data, allow_partial):
     return _failed_idea(row, row["index"], reason)
 
 
+HISTORY_REPEAT = "The idea repeats a recently generated event. Choose a different permitted action or interaction."
 PASSIVE_REPEAT = ("Another idea in this batch already shows the cast just watching or looking at something; "
                   "give this one an activity they do themselves.")
 
@@ -488,6 +492,10 @@ PASSIVE_REPEAT = ("Another idea in this batch already shows the cast just watchi
 class IdeasFormatError(ValueError):
     """The ideas response is not the requested JSON array; eligible for one format correction."""
 
+
+IDEAS_LOOP_CORRECTION = """LOOP CORRECTION
+The previous response kept repeating the same phrase. Write every idea and scene in fresh
+words, never reuse a phrase from another record, and finish the JSON array."""
 
 IDEAS_FORMAT_CORRECTION = """FORMAT CORRECTION
 The previous response was not usable: {error}
@@ -552,7 +560,24 @@ class DatasetIdeasService:
         indexes = [row["index"] for row in selected]
         progress("Creating ideas from your approved understanding…")
         session.validate_instruction(instruction)
-        raw = session.generate(instruction)
+        try:
+            raw = session.generate(instruction)
+        except BackendRunawayError:
+            # A small model can loop on one phrase across ideas; one varied retry, then these
+            # slots fail on their own so the rest of the batch keeps going and is repaired later.
+            self.checkpoint()
+            progress("The prompt engine repeated itself; requesting the ideas once more with varied wording…")
+            retry = replace(instruction, system_message=instruction.system_message + "\n\n" + IDEAS_LOOP_CORRECTION,
+                            temperature=.85, diagnostic_stage="dataset:ideas:loop_retry")
+            session.validate_instruction(retry)
+            try:
+                raw = session.generate(retry)
+            except BackendRunawayError:
+                if not allow_partial:
+                    raise
+                self.checkpoint()
+                return [_failed_idea({}, index, "The prompt engine repeated itself while writing this idea. Retry it.")
+                        for index in indexes]
         self.checkpoint()
         corrected = False
         try:
@@ -582,7 +607,10 @@ class DatasetIdeasService:
             def repeats_history(row):
                 event = " ".join(row["idea"].casefold().split())
                 anchored = data.get("source_mode") == "guided" and event == " ".join(inputs[row["index"]].casefold().split())
-                return event in recent_events and not anchored
+                # A repair of a slot that already failed for repeating history is kept: an old
+                # event in one image is better than a failed image.
+                repaired = str(previous.get(row["index"], {}).get("failure_reason", "")).startswith(HISTORY_REPEAT)
+                return event in recent_events and not anchored and not repaired
 
             limit_passive = not passive_request(data)
 
@@ -617,7 +645,8 @@ class DatasetIdeasService:
                 for row in rows:
                     if row.get("idea_status") != "failed":
                         unchanged = row["index"] in previous and all(
-                            row[field] == previous[row["index"]].get(field) for field in IDEA_FIELDS)
+                            row[field] == previous[row["index"]].get(field) for field in IDEA_FIELDS) and not str(
+                            previous[row["index"]].get("failure_reason", "")).startswith(HISTORY_REPEAT)
                         candidate = {**row, "input": inputs[row["index"]]}
                         audit = analyze_idea_diversity(data, [*accepted, candidate])
                         duplicate = any(issue["code"] == "exact_duplicate_idea" for record in audit["ideas"]
@@ -626,7 +655,7 @@ class DatasetIdeasService:
                         others = [] if data.get("source_mode") == "guided" else [item["idea"] for item in accepted]
                         issue = variety_issue(row, others)
                         if repeats_history(row):
-                            row = _failed_idea(row, row["index"], "The idea repeats a recently generated event. Choose a different permitted action or interaction.")
+                            row = _failed_idea(row, row["index"], HISTORY_REPEAT)
                         elif unchanged or duplicate:
                             row = _failed_idea(row, row["index"], "The idea repeats an existing event or unchanged planning choices.")
                         elif issue:
