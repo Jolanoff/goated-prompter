@@ -870,15 +870,23 @@ class SeedVarietyTests(unittest.TestCase):
 
 
 class SexualVarietyTests(SeedVarietyTests):
-    def test_sexual_couples_get_many_positions_and_short_hair_is_never_braided(self):
-        from goated_prompter.features.dataset.ideas import SEXUAL_POSITIONS
-        act = {"scope": "all_outputs", "text": "the woman and man are having sex"}
-        brief = {**self.data["_confirmed_intent"], "action_options": [act], "interactions": [act]}
-        rows = creative_directions({**self.data, "_confirmed_intent": brief}, range(1, 11), 3).values()
-        positions = [row["position"] for row in rows]
-        self.assertEqual(len(set(positions)), 10)
-        self.assertTrue(set(positions) <= set(SEXUAL_POSITIONS))
-        self.assertTrue(all("setting" in row and "mood" in row for row in rows))
+    def test_sexual_brainstorms_get_a_random_handful_of_positions_as_inspiration(self):
+        from goated_prompter.features.dataset.brainstorm import POSITION_IDEAS, brainstorm_events, sexual_positions
+        def ideas(seed):
+            session = Mock()
+            session.generate.return_value = "not json"
+            brainstorm_events(session, self.data, 10, random.Random(seed), progress=lambda _m: None, checkpoint=lambda: None)
+            return json.loads(session.generate.call_args.args[0].user_message)["position_ideas"]
+        first, second = ideas(1), ideas(2)
+        self.assertEqual(len(first), POSITION_IDEAS)
+        self.assertTrue(set(first) <= set(sexual_positions(self.data)))
+        self.assertNotEqual(first, second)
+        rows = creative_directions(self.data, range(1, 11), 3).values()
+        self.assertTrue(all("position" not in row for row in rows), "No position is forced on an image.")
+        system = " ".join(ideas_instruction(self.data, dataset_assignments(self.data)).system_message.split())
+        self.assertNotIn("position from creative_direction", system)
+
+    def test_short_hair_is_never_braided(self):
         for salt in range(20):
             for row in creative_directions(self.data, range(1, 11), salt).values():
                 woman = row["random_character_looks"]["woman"]
@@ -919,16 +927,19 @@ class VanillaDefaultTests(SeedVarietyTests):
                                         range(1, 11), 5).values())
 
     def test_ordinary_sex_gets_no_kink_or_oral_directions_unless_asked(self):
-        from goated_prompter.features.dataset.ideas import KINK_DIRECTIONS, KINK_POSITIONS, ORAL_POSITIONS
-        kink_values = {*KINK_DIRECTIONS["mood"], *KINK_DIRECTIONS["interaction"], *KINK_POSITIONS}
+        from goated_prompter.features.dataset.ideas import KINK_DIRECTIONS
+        from goated_prompter.features.dataset.brainstorm import SEXUAL_POSITIONS
+        ORAL_POSITIONS = SEXUAL_POSITIONS["oral"]
+        kink_values = {*KINK_DIRECTIONS["mood"], *KINK_DIRECTIONS["interaction"], *SEXUAL_POSITIONS["kink"]}
         for salt in range(10):
             for row in creative_directions(self.data, range(1, 11), salt).values():
                 values = {value for value in row.values() if isinstance(value, str)}
                 self.assertFalse(values & (kink_values | set(ORAL_POSITIONS)), row)
         kinky = self.directions("a collared man in bondage having sex with his mistress")
         self.assertTrue(any({value for value in row.values() if isinstance(value, str)} & kink_values for row in kinky))
-        oral = self.directions("a woman giving a man a blowjob")
-        self.assertTrue(any(row["position"] in ORAL_POSITIONS for row in oral))
+        from goated_prompter.features.dataset.brainstorm import sexual_positions
+        oral = {**self.data, "subject": "a woman giving a man a blowjob"}
+        self.assertTrue(set(ORAL_POSITIONS) <= set(sexual_positions(oral)))
 
     def test_lifted_bodies_are_redone_in_sexual_images(self):
         from goated_prompter.features.dataset.quality import sexual_lift
@@ -945,3 +956,47 @@ class VanillaDefaultTests(SeedVarietyTests):
         rules = " ".join(ideas_instruction(self.data, dataset_assignments(self.data)).system_message.split())
         self.assertIn("Ordinary consensual sex is the default", rules)
         self.assertIn("no one is lifted, carried or held up in the air", rules)
+
+
+class CastPositionTests(SeedVarietyTests):
+    def cast(self, *sexes, subject="having sex", **changes):
+        people = [{**COMPANION, "name": f"person {index}", "sex": sex} for index, sex in enumerate(sexes, 1)]
+        return {**self.data, "subject": subject, "trigger": "",
+                "_confirmed_intent": dataset_understanding_fixture(characters=people), **changes}
+
+    def test_positions_follow_the_cast(self):
+        from goated_prompter.features.dataset.brainstorm import SEXUAL_POSITIONS, sexual_positions
+        solo = set(sexual_positions(self.cast("female", subject="a woman masturbating")))
+        self.assertEqual(solo, set(SEXUAL_POSITIONS["solo"]))
+        men = set(sexual_positions(self.cast("male", "male", subject="two men having sex")))
+        self.assertTrue(set(SEXUAL_POSITIONS["two men"]) <= men)
+        self.assertFalse(men & set(SEXUAL_POSITIONS["man and woman"]))
+        women = set(sexual_positions(self.cast("female", "female", subject="two women having sex")))
+        self.assertTrue(set(SEXUAL_POSITIONS["two women"]) <= women)
+        self.assertFalse(women & set(SEXUAL_POSITIONS["couple"]))
+        three = set(sexual_positions(self.cast("female", "male", "male", subject="a threesome")))
+        self.assertTrue(set(SEXUAL_POSITIONS["three"]) <= three)
+        self.assertFalse(three & set(SEXUAL_POSITIONS["group"]))
+        group = set(sexual_positions(self.cast("female", "male", "male", "male", subject="a group having sex")))
+        self.assertTrue(set(SEXUAL_POSITIONS["group"]) <= group)
+
+    def test_oral_feet_kink_and_named_extras_only_when_asked(self):
+        from goated_prompter.features.dataset.brainstorm import SEXUAL_POSITIONS, sexual_positions
+        plain = set(sexual_positions(self.cast("female", "male")))
+        for kind in ("oral", "feet", "kink"):
+            self.assertFalse(plain & set(SEXUAL_POSITIONS[kind]), kind)
+        self.assertNotIn("blindfolded", plain)
+        asked = set(sexual_positions(self.cast("female", "male",
+            subject="a footjob and a blowjob in bondage while she is blindfolded")))
+        for kind in ("oral", "feet", "kink"):
+            self.assertTrue(set(SEXUAL_POSITIONS[kind]) <= asked, kind)
+        self.assertIn("blindfolded", asked)
+
+    def test_no_position_lifts_a_body_or_presses_genitals_together(self):
+        from goated_prompter.features.dataset.brainstorm import SEXUAL_POSITIONS
+        from goated_prompter.features.dataset.quality import broken_anatomy, sexual_lift
+        for position in (item for pool in SEXUAL_POSITIONS.values() for item in pool):
+            with self.subTest(position=position):
+                self.assertIsNone(sexual_lift(position))
+                self.assertIsNone(broken_anatomy(position))
+                self.assertNotIn("frot", position)

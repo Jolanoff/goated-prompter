@@ -183,12 +183,27 @@ _SEXUAL_LIFT = re.compile(r"\b(?:lift(?:s|ed|ing)? (?:her|him|them|the \w+)|lift
 SEXUAL_LIFT = "Every body stays supported by a bed, floor, furniture or wall; no one is lifted, carried or held up."
 
 
+# The user's own words (concept, rules, trigger, guided input) and the Director, without the
+# brief the model wrote, so a word the model added never unlocks anything.
+def requested_text(data):
+    parts = [str(data.get(key) or "") for key in ("subject", "constraints", "inputs", "trigger")]
+    parts.append(get_director_preset(data.get("director_preset")).instructions)
+    return " ".join(parts).casefold()
+
+
+_FEET = re.compile(r"\b(?:feet|foot\w*|soles|toes)\b")
+
+
+def feet_request(data):
+    return bool(_FEET.search(requested_text(data)))
+
+
 def kink_request(data):
-    return bool(_KINK.search(_request_text(data)))
+    return bool(_KINK.search(requested_text(data)))
 
 
 def oral_request(data):
-    return bool(_ORAL.search(_request_text(data)))
+    return bool(_ORAL.search(requested_text(data)))
 
 
 def sexual_lift(text):
