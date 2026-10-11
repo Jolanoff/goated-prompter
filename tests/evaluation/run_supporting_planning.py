@@ -1,4 +1,4 @@
-"""Opt-in same-engine Direct/Auto probe. Human review, not semantic guarantees."""
+"""Opt-in Builder Direct/Auto probe and direct MiniMax cases for human review."""
 
 import argparse
 from contextlib import nullcontext
@@ -46,7 +46,7 @@ def main(argv=None, gpu=False):
     parser.add_argument("--limit", type=int, default=1 if gpu else None)
     parser.add_argument("--allow-live", action="store_true")
     parser.add_argument("--task-key")
-    parser.add_argument("--max-runs", type=int, help="Approved workflow-run ceiling; Direct and Auto each count")
+    parser.add_argument("--max-runs", type=int, help="Approved workflow-run ceiling; Builder Direct and Auto each count")
     args = parser.parse_args(argv)
     if gpu and not args.workflow:
         parser.error("Real-engine execution requires one explicit --workflow.")
@@ -54,17 +54,18 @@ def main(argv=None, gpu=False):
         cases = select_cases(CASES, args.case, args.workflow, args.seed, args.limit)
     except ValueError as exc:
         parser.error(str(exc))
+    total_runs = sum(2 if case["workflow"] == "builder" else 1 for case in cases)
     if args.dry_run:
-        print(json.dumps({"cases": cases, "conditions": ["Direct", "Auto"],
+        print(json.dumps({"cases": cases, "conditions": ["Direct", "Auto"] if any(case["workflow"] == "builder" for case in cases) else ["Direct"],
                           "scenario_seed": args.seed, "inference": False,
-                          "note": "Auto adds one planning pass; existing reference analysis and repairs remain."}, indent=2))
+                          "note": "Builder Auto may add one planning pass. MiniMax runs directly with reference analysis and repairs."}, indent=2))
         return
     scratch = None
     if gpu:
         if not args.allow_live or not args.config or not args.task_key or args.max_runs is None:
             parser.error("Real-engine execution requires --allow-live, --config, --task-key and --max-runs after owner approval.")
-        if args.max_runs < 1 or len(cases) * 2 > args.max_runs:
-            parser.error("Direct/Auto workflow runs exceed --max-runs; narrow --case/--limit.")
+        if args.max_runs < 1 or total_runs > args.max_runs:
+            parser.error("Selected workflow runs exceed --max-runs; narrow --case/--limit.")
         try:
             results, scratch = task_paths(args.task_key, "gpu")
             args.artifacts = new_output(args.artifacts or results / "results.json", args.task_key, "gpu")
@@ -91,7 +92,7 @@ def main(argv=None, gpu=False):
     try:
         with synthetic_storage(scratch) if gpu else nullcontext():
             for case in cases:
-                for mode in ("Direct", "Auto"):
+                for mode in (("Direct", "Auto") if case["workflow"] == "builder" else ("Direct",)):
                     calls = []
                     request = GoatedPrompterRequest(idea=case["request"], target_model=args.target,
                         creativity="Strict", prompt_length="Medium", planning_mode=mode, prompt_model="Custom",
@@ -108,9 +109,9 @@ def main(argv=None, gpu=False):
                             record.update(prompt=generated.prompt, planning_status=generated.planning_status)
                         else:
                             generated = MiniMaxService(run_config, lambda: None).run(request,
-                                {"planning_mode": mode, "user_request": case["request"], "duration_seconds": 10,
+                                {"user_request": case["request"], "duration_seconds": 10,
                                  "references": case.get("references", [])}, lambda _message: None)
-                            record.update(prompt=generated["prompt"], planning_status=generated["planning_status"])
+                            record.update(prompt=generated["prompt"])
                     except Exception as exc:
                         record["error"] = str(exc)
                         if gpu:
@@ -128,7 +129,7 @@ def main(argv=None, gpu=False):
                     if gpu:
                         if record.get("error"):
                             return 1
-                        if len(records) < len(cases) * 2:
+                        if len(records) < total_runs:
                             if input("Inspect this result before continuing. Type yes: ").strip() != "yes":
                                 return
     finally:
