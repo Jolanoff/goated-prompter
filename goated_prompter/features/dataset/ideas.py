@@ -103,12 +103,13 @@ keep it consistent across all proposed ideas, not independently per image.
 EVENT SEEDS
 An assignment may carry event_seed: the core event and place the app picked for this image
 from a wide brainstorm, so batches do not repeat the same favourite ideas. Build the idea
-around that event, set it in that place and stage it fully. Change only a part that conflicts with HARD.
+around that event, set it in that place and stage it fully. In a sexual batch take the
+situation and place from the seed and the position from creative_direction. Change only a part that conflicts with HARD.
 
 CREATIVE DIRECTION
 Each assignment carries a creative_direction chosen by the app to spread the batch
-across moments, moods, framing, settings and light, and for several characters how they
-interact. Start that image's idea from it; with an event_seed, the seed decides what
+across moments, moods, framing, settings and light, for several characters how they
+interact, and in a sexual batch the position. Start that image's idea from it; with an event_seed, the seed decides what
 happens and the direction how it is shown. When a DIRECTOR block is present it has
 priority: the direction only fills what the Director leaves open. Never let a moment, mood,
 setting or interaction label dilute, replace or soften a required act (a sexual act
@@ -180,18 +181,37 @@ DIRECTION_AXES = {
 # Sexual batches vary the mood and dynamic of the act instead; their moment axis (build-up,
 # aftermath, mishap) would move the image away from the act, so they get none.
 SEXUAL_DIRECTIONS = {
-    "mood": ("aroused", "hungry", "desperate", "dominant", "submissive", "overwhelmed", "tender", "playful"),
+    "mood": ("aroused", "hungry", "desperate", "dominant", "submissive", "overwhelmed", "tender", "playful",
+             "rough", "worshipful", "teasing", "needy", "possessive", "slow and sensual", "breathless", "defiant"),
     "interaction": ("one is clearly in control of the other", "mutual and equal physical engagement",
                     "one gives while the other receives", "a teasing or playful power dynamic",
                     "intense focused contact between them", "one reacts strongly to what the other is doing",
-                    "they move together in sync", "one holds or guides the other's body"),
+                    "they move together in sync", "one holds or guides the other's body",
+                    "one worships the other's body", "one pins the other down", "one teases and makes the other wait",
+                    "one obeys the other's orders", "rough and urgent", "slow and loving",
+                    "one presents for the other", "one guides the other's hands"),
 }
+# With two or more people each sexual image also gets a position, so a batch spreads over many
+# instead of the model's favourite few. Every one keeps bodies supported (no lifts or inversions).
+SEXUAL_POSITIONS = (
+    "missionary, legs wrapped around the partner", "missionary, legs over the partner's shoulders",
+    "on all fours, taken from behind", "lying flat on the stomach, partner on top from behind",
+    "riding on top, facing the partner", "riding on top, facing away", "spooning on their sides",
+    "standing, bent over a table or counter, from behind", "standing face to face, one leg raised on a support",
+    "sitting on the partner's lap, facing them", "sitting on the partner's lap, facing away",
+    "lying at the edge of a bed or table, partner standing between the legs", "kneeling oral, partner standing",
+    "lying back, receiving oral", "sixty-nine, lying on their sides", "sitting on the partner's face",
+    "lotus, seated and wrapped around each other", "kneeling upright, taken from behind",
+    "face down with hips raised, wrists held", "lying side by side, mutual masturbation",
+    "on the knees, presenting from behind", "lying back with knees pulled to the chest",
+    "seated on a chair, partner straddling it", "kneeling between the partner's legs, hands on their thighs",
+)
 # A required action must be visible in every image. Manual runs showed moment,
 # mood and setting directions (rest, water break, climbing a ladder) replacing it,
 # so those items only vary how the image is shot.
 ACTION_SAFE_AXES = ("framing", "light")
-# In a sexual batch the act is the required action; its mood and dynamic support it.
-SEXUAL_ACTION_SAFE_AXES = ("framing", "light", "mood", "interaction")
+# In a sexual batch the act is the required action; its mood, dynamic, place and position support it.
+SEXUAL_ACTION_SAFE_AXES = ("framing", "light", "mood", "interaction", "setting", "position")
 # Steep top-down and worm's-eye angles foreshorten full bodies into broken anatomy,
 # so no direction asks for them; the user can still request one explicitly.
 # Close-ups and over-the-shoulder views crop or hide a participant, so datasets
@@ -209,7 +229,7 @@ LOOK_PARTS = {
     "woman": {"length": ("pixie-length", "chin-length", "shoulder-length", "mid-back-length", "waist-length"),
               "style": ("straight", "wavy", "curly", "braided", "tied-up", "messy", "sleek"),
               "color": ("black", "dark brown", "chestnut", "auburn", "copper-red", "honey-blonde", "platinum-blonde",
-                        "ash-brown", "silver-grey", "dyed pastel pink"),
+                        "ash-brown", "silver-grey", "dark blonde"),
               "build": ("slim", "athletic", "curvy", "petite", "tall and slender", "full-figured", "toned",
                         "soft and round", "heavyset", "willowy")},
     "man": {"length": ("buzzed", "short", "cropped", "medium-length", "shoulder-length"),
@@ -218,6 +238,8 @@ LOOK_PARTS = {
             "build": ("slim", "athletic", "stocky", "broad-shouldered", "tall and lean", "heavyset", "muscular",
                       "wiry", "soft-bellied", "barrel-chested")},
 }
+SHORT_HAIR = {"pixie-length", "chin-length", "buzzed", "short", "cropped"}
+LONG_HAIR_STYLES = {"braided", "tied-up", "slicked-back"}
 SKIN_TONES = ("fair", "freckled fair", "light", "olive", "tan", "golden-brown", "brown", "deep brown")
 _SEX_WORDS = {"female": "woman", "male": "man"}
 # A role or trait that already gives an age ("girl", "old man", "20 yo man", "in her 30s") keeps it; the
@@ -261,6 +283,10 @@ def creative_directions(data, indexes, salt=0):
         order = list(values)
         random.Random(seed + position).shuffle(order)
         orders[axis] = order
+    if sexual:
+        order = list(SEXUAL_POSITIONS)
+        random.Random(seed + len(DIRECTION_AXES)).shuffle(order)
+        orders["position"] = order
     # A single random person whose sex the user left open gets one drawn here, so prompts never
     # fall back to "a person" or a bare role label. An age the user already gave anywhere (a role,
     # a trait, the concept or the trigger: "40 yo man", "his teenage son") is never replaced.
@@ -279,7 +305,10 @@ def creative_directions(data, indexes, salt=0):
         rng = random.Random(f"{seed}|look|{index}|{slot}")
         for _attempt in range(20):
             parts = LOOK_PARTS[sex or rng.choice(SEX_LOOKS)]
-            hair = f"{rng.choice(parts['length'])} {rng.choice(parts['style'])} {rng.choice(parts['color'])} hair"
+            length = rng.choice(parts["length"])
+            # Very short hair cannot be braided, tied up or slicked back.
+            styles = [style for style in parts["style"] if length not in SHORT_HAIR or style not in LONG_HAIR_STYLES]
+            hair = f"{length} {rng.choice(styles)} {rng.choice(parts['color'])} hair"
             look = ([] if aged else [rng.choice(AGES)]) + [hair, rng.choice(parts["build"]), f"{rng.choice(SKIN_TONES)} skin"]
             if hair not in used_looks:
                 break
@@ -292,7 +321,7 @@ def creative_directions(data, indexes, salt=0):
         required_action = bool(action_scopes & scopes)
         directions[index] = {axis: order[(index - 1) % len(order)] for axis, order in orders.items()
                              if (axis in safe_axes if required_action else not ((guided or sexual) and axis == "moment"))
-                             and (group or axis != "interaction")}
+                             and (group or axis not in ("interaction", "position"))}
         if random_cast:
             looks = {}
             for slot, (name, sex, open_sex, aged) in enumerate(random_cast):

@@ -32,14 +32,23 @@ the user asked for that exact move. Humor and surprise come from the situation, 
 timing and expressions, not from twisted anatomy.
 
 SEXUAL CONTENT
-When the request or confirmed_intent is sexual (sex, fucking, oral, anal, penetration, mutual masturbation, etc.), the sex act itself is the required core event in every idea.
-Every idea must show the sex in progress or at a clearly readable sexual peak.
-Use concrete sexual language when the request is explicit (fucking, sucking, cock, ass, cum, etc.).
-Keep the act in every image and vary the whole situation around it: where it happens, what led to this
-moment, who starts it, the mood, the clothing state, the position and who is active or receptive.
-No two images share both a place and a position.
-Never replace the sex with “intimate moment”, “kissing”, “cuddling”, “looking at each other”, or any non-sexual activity.
-Clothing state follows the Director and the request: never force full nudity unless the user or Director asks for it; partial clothing, open clothes, pulled-down garments are fine and often preferred.
+When the request, confirmed_intent or Director is sexual (sex, fucking, oral, anal, penetration, mutual
+masturbation, slave, owned, collared, domination, bondage, yaoi and other explicit acts):
+- The sex act or sexual use is the core event in every idea: visible and in progress or at a
+  clearly readable peak, never implied.
+- Use concrete sexual language when the request is explicit. Name the anatomy that is part of
+  the act or exposed (penis, cock, balls, ass, hole, pussy, breasts, mouth on cock) and its state
+  (erect, hard, wet, stretched, dripping).
+- For a sex slave, owned or collared role, show the ownership visually: a collar or leash, posture,
+  who controls whom, presenting, being used. Never rely on the word "slave" alone.
+- Never replace the act with kissing, cuddling, undressing only, "an intimate moment", looking at
+  each other or any non-sexual activity.
+- Keep the act in every image and vary the whole situation around it: where it happens, what led to
+  this moment, who starts it, the mood, the dynamic, the clothing state, the position and who is
+  active or receptive. No two images share both a place and a position, and no two ideas reuse the
+  same phrase (such as "deep penetration") for the act.
+- Clothing follows the request and the Director: partial clothing, open clothes and pulled-down
+  garments are fine and often preferred; full nudity only when the user or Director asks for it.
 Supported poses only (lying, kneeling, sitting, standing with weight on feet/seat/knees/back).
 Every body part belongs to exactly one person and stays attached to that person's body: name
 it with its owner ("his", "her", "the taller man's"), and never describe one on its own,

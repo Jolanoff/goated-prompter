@@ -867,3 +867,45 @@ class SeedVarietyTests(unittest.TestCase):
     def test_impossible_positions_are_caught(self):
         from goated_prompter.features.dataset.quality import broken_anatomy
         self.assertIsNotNone(broken_anatomy("she receives ass-to-ass fucking"))
+
+
+class SexualVarietyTests(SeedVarietyTests):
+    def test_sexual_couples_get_many_positions_and_short_hair_is_never_braided(self):
+        from goated_prompter.features.dataset.ideas import SEXUAL_POSITIONS
+        act = {"scope": "all_outputs", "text": "the woman and man are having sex"}
+        brief = {**self.data["_confirmed_intent"], "action_options": [act], "interactions": [act]}
+        rows = creative_directions({**self.data, "_confirmed_intent": brief}, range(1, 11), 3).values()
+        positions = [row["position"] for row in rows]
+        self.assertEqual(len(set(positions)), 10)
+        self.assertTrue(set(positions) <= set(SEXUAL_POSITIONS))
+        self.assertTrue(all("setting" in row and "mood" in row for row in rows))
+        for salt in range(20):
+            for row in creative_directions(self.data, range(1, 11), salt).values():
+                woman = row["random_character_looks"]["woman"]
+                self.assertNotIn("pink", woman)
+                self.assertFalse(any(f"{short} {style}" in woman for short in ("pixie-length", "chin-length")
+                                     for style in ("braided", "tied-up")), woman)
+
+    def test_kink_requests_count_as_sexual_and_everyday_words_do_not(self):
+        from goated_prompter.features.dataset.quality import sexual_request
+        for subject in ("a collared slave kneels for his owner", "a yaoi couple", "a bdsm scene", "a footjob"):
+            with self.subTest(subject=subject):
+                self.assertTrue(sexual_request({**self.data, "subject": subject}))
+        neutral = {**self.data, "subject": "a dog breeding farm with a family-owned shop", "_confirmed_intent": {}}
+        self.assertFalse(sexual_request({**neutral, "subject": neutral["subject"] + ", a shirt collar, on her feet"}))
+
+    def test_sexual_batches_never_involve_animals(self):
+        from goated_prompter.features.dataset.quality import adults_only_error
+        dog = {**COMPANION, "name": "dog", "kind": "animal", "sex": "male"}
+        data = {**self.data, "_confirmed_intent": dataset_understanding_fixture(characters=[dog])}
+        self.assertIn("cannot involve animals", adults_only_error(data))
+        self.assertIsNone(adults_only_error({**data, "subject": "a dog playing fetch"}))
+
+    def test_the_new_rules_reach_ideas_and_the_writer(self):
+        from goated_prompter.features.dataset.prompting import dataset_instruction
+        ideas = " ".join(ideas_instruction(self.data, dataset_assignments(self.data)).system_message.split())
+        final = " ".join(dataset_instruction(GoatedPrompterRequest(idea=self.data["subject"], prompt_model="Custom"),
+                                             self.data, 1, plan_item=saved_scene(1)).system_message.split())
+        self.assertIn("show the ownership visually", ideas)
+        self.assertIn("no two ideas reuse the same phrase", ideas)
+        self.assertIn("name the anatomy that is part of the act or exposed", final)

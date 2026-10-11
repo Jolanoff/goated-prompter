@@ -93,7 +93,12 @@ def passive_idea(text):
 # rules, guided inputs, cast and selected Director all count, since any of them can make a batch sexual.
 _SEXUAL = re.compile(r"\b(?:sex|sexual\w*|nsfw|porn\w*|explicit|erotic\w*|nude|nudity|naked|fuck\w*|blowjob\w*|"
                      r"handjob\w*|oral(?! (?:presentations?|exams?|examinations?|hygiene|history|health|surgery|traditions?|reports?|arguments?))|anal|penetrat\w*|masturbat\w*|cum|cums|cumming|cumshot\w*|orgasm\w*|cocks?|"
-                     r"dicks?|pussy|pussies|boobs?|tits|nipples?|genitals?|horny|aroused)\b")
+                     r"dicks?|pussy|pussies|boobs?|tits|nipples?|genitals?|horny|aroused|"
+                     # Kink and genre words; ambiguous ones need their sexual form ("collared", not "collar").
+                     r"slaves?|sex slaves?|owned by|collared|leash(?:ed)?|pet play|bdsm|dominatrix|dom(?:/| and )sub|"
+                     r"submissive|bondage|yaoi|bara|male[- ]male|mm sex|footjob\w*|foot fetish|feet worship|"
+                     r"breeding (?:kink|her|him)|breed (?:her|him|me)|"
+                     r"presenting (?:herself|himself|themselves|her ass|his ass))\b")
 _SUGGESTIVE = re.compile(r"\b(?:lingerie|boudoir|seductive\w*|sensual\w*|undress\w*|striptease|strippers?|"
                          r"strip(?:s|ped|ping)? (?:off|down|naked|nude)|topless|bottomless)\b")
 _MINOR = re.compile(r"\b(?:child|children|childlike|kids?|minors?|underage\w*|teens?|teenage\w*|preteens?|"
@@ -126,11 +131,19 @@ def minor_reference(text):
     return match.group() if match else None
 
 
+NO_ANIMALS = "Sexual content cannot involve animals. Remove the animal from the cast or the sexual request."
+
+
 def adults_only_error(data):
-    """For a sexual or suggestive batch, the reason it cannot run when anyone in it is under 18."""
+    """For a sexual or suggestive batch, the reason it cannot run: someone under 18, or an animal."""
     text = _request_text(data)
-    if (_SEXUAL.search(text) or _SUGGESTIVE.search(text)) and (word := minor_reference(text)):
+    if not (_SEXUAL.search(text) or _SUGGESTIVE.search(text)):
+        return None
+    if word := minor_reference(text):
         return f'{ADULTS_ONLY} ("{word}")'
+    cast = (data.get("_confirmed_intent") or {}).get("characters") or ()
+    if data.get("trigger_type") == "Animal" or any(isinstance(item, dict) and item.get("kind") == "animal" for item in cast):
+        return NO_ANIMALS
     return None
 
 

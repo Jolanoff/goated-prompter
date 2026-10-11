@@ -34,7 +34,10 @@ camera position or a second description of the light or the pose. Prefer specifi
 image: never write "no ..." lists or repeat these instructions in the prompt.
 Everyone in a sexual or suggestive prompt is an adult: describe them as grown women and men,
 never as children or teens, never with school, a young age or a childlike body.
-In a sexual prompt every body part is named with its owner and stays attached to that body;
+In a sexual prompt name the anatomy that is part of the act or exposed, and its state (erect,
+wet, stretched), directly; show ownership in a slave, owned or collared role visually (collar,
+leash, posture, who controls whom), never by the word alone. Every body part is named with its
+owner and stays attached to that body;
 visible genitals keep their owner's hips and torso in frame; never describe a body part alone,
 detached, floating, or shared, joined or merged between two people, and keep two men's
 genitals apart.
