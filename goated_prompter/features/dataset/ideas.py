@@ -7,11 +7,12 @@ import random
 import re
 import secrets
 
-from ...backends.base import BackendGenerationError
+from ...backends.base import BackendGenerationError, BackendRunawayError
 from ...contracts import PromptInstruction
 from .brainstorm import PLAUSIBLE_BODIES
 from .director import director_fixes_shot, director_section
-from .quality import ADULTS_ONLY, analyze_idea_diversity, minor_reference, passive_idea, passive_request, sexual_request
+from .quality import (ADULTS_ONLY, BROKEN_ANATOMY, analyze_idea_diversity, broken_anatomy, kink_request,
+                      minor_reference, passive_idea, passive_request, sexual_request)
 from .understanding import (label_replacements, numbered_labels, replace_labels, understanding_instruction,
                             unwrap_json_fence, validate_understanding)
 from ...strict_json import reject_duplicate_keys
@@ -33,21 +34,18 @@ or output format.
 
 WHAT MAKES A STRONG IDEA
 """ + PLAUSIBLE_BODIES + """
-When the request is sexual, a strong idea is a concrete sexual act with clear roles, contact points, and expression.  
+When the request is sexual, a strong idea is a concrete sexual act with clear roles, contact points and expression.
 Each idea is a moment where something is happening: someone is in the middle of a specific
-activity with a goal, a problem or a reaction (trying, fixing, bargaining, spilling, teaching,
-getting lost, failing, surprising someone). With two or more characters they act on each
+activity with a goal, a problem or a reaction. With two or more characters they act on each
 other, not just stand side by side. Give each idea one concrete detail that belongs to this
-place and this image only (a particular dish, object, tool, local custom or feature of the
-setting) and a readable emotion. Never fall back on sightseeing or stock poses: standing,
+place and this image only, and a readable emotion. Never fall back on sightseeing or stock poses: standing,
 walking or sitting while looking at a view, admiring scenery, posing or smiling at the
 camera, holding hands on a path, or standing, sitting or leaning while watching someone else
-do something (a performer, a chef, a game), unless the user or the Director asked for that. At most one image
+do something, unless the user or the Director asked for that. At most one image
 in a batch may show the cast just watching, and apart from what the request itself asks for,
-no place, prop or activity may appear in more than two images. Weak: "two chefs cook
-dinner". Strong: "the older chef tastes the sauce and winces while the younger one hides the
-empty salt jar behind her back". Prefer a surprising but plausible situation over the first
-obvious one.
+no place, prop or activity may appear in more than two images. A strong idea is specific: who
+does what, with which detail, and how they react, rather than a generic activity. Prefer a
+surprising but plausible situation over the first obvious one.
 
 THE CAST
 confirmed_intent.characters, when present, lists who appears in every image with their
@@ -101,15 +99,19 @@ replacing the choice. If its value is still unspecified, choose it once for the 
 keep it consistent across all proposed ideas, not independently per image.
 
 EVENT SEEDS
-An assignment may carry event_seed: the core event the app picked for this image from a
-wide brainstorm, so batches do not repeat the same favourite ideas. Build the idea around
-that event and stage it fully. Change only a part that conflicts with HARD.
+An assignment may carry event_seed: the core event and place the app picked for this image
+from a wide brainstorm, so batches do not repeat the same favourite ideas. Build the idea
+around that event, set it in that place and stage it fully. In a sexual batch take the
+act, position, situation and place from the seed (creative_direction.setting when the seed names
+no place). The idea line then states that act, position and place, in words different from the
+other ideas. Change only a part that conflicts with HARD.
 
 CREATIVE DIRECTION
 Each assignment carries a creative_direction chosen by the app to spread the batch
 across moments, moods, framing, settings and light, and for several characters how they
 interact. Start that image's idea from it; with an event_seed, the seed decides what
-happens and the direction how it is shown. When a DIRECTOR block is present it has
+happens and the direction how it is shown. Direction values are ingredients, not the idea:
+never write a mood, dynamic or place label as the idea itself; the idea is always a concrete event. When a DIRECTOR block is present it has
 priority: the direction only fills what the Director leaves open. Never let a moment, mood,
 setting or interaction label dilute, replace or soften a required act (a sexual act
 included) or the Director's tone.
@@ -129,9 +131,7 @@ what to show.
 VARIETY
 Make the core events differ: the moment in the event, who does what, the action, the
 interaction, the reaction or the outcome. Renamed subjects or a new camera, light, outfit
-or location alone do not make a new idea. For "duck fighting dinosaur", different ideas are
-the duck charging, dodging snapping jaws, counterattacking the snout or retreating while
-the dinosaur attacks; the same fight at sunset is not a new idea.
+or location alone do not make a new idea: the same event at another time of day is the same idea.
 Do not repeat a recently_used_ideas event when creative choices remain open; history lists
 events to move away from, not a menu. For a replacement, return only the requested indexes.
 Before returning, compare every proposed event with the others, existing_ideas and
@@ -180,18 +180,35 @@ DIRECTION_AXES = {
 # Sexual batches vary the mood and dynamic of the act instead; their moment axis (build-up,
 # aftermath, mishap) would move the image away from the act, so they get none.
 SEXUAL_DIRECTIONS = {
-    "mood": ("aroused", "hungry", "desperate", "dominant", "submissive", "overwhelmed", "tender", "playful"),
-    "interaction": ("one is clearly in control of the other", "mutual and equal physical engagement",
-                    "one gives while the other receives", "a teasing or playful power dynamic",
-                    "intense focused contact between them", "one reacts strongly to what the other is doing",
-                    "they move together in sync", "one holds or guides the other's body"),
+    "mood": ("aroused", "hungry", "desperate", "overwhelmed", "tender", "playful", "teasing", "needy",
+             "slow and sensual", "breathless", "passionate", "giggly and relaxed", "urgent", "intimate and focused"),
+    "interaction": ("mutual and equal physical engagement", "one gives while the other receives",
+                    "a teasing, playful mood between them", "intense focused contact between them",
+                    "one reacts strongly to what the other is doing", "they move together in sync",
+                    "one holds or guides the other's body", "one teases and makes the other wait",
+                    "urgent and hungry for each other", "slow and loving", "one guides the other's hands",
+                    "one takes the lead, the other eagerly follows"),
+    # Private kinds of place, not named rooms, so the model picks one that fits the batch.
+    "setting": ("a home, away from the bed", "a hotel or rented room", "a bathroom or shower",
+                "a living space with furniture to lean on", "a kitchen or dining area", "a secluded outdoor spot",
+                "a parked car or other private vehicle", "a workplace after hours"),
+}
+# Dynamics that need three or more people.
+GROUP_INTERACTIONS = ("shared between the partners", "the center of attention in the group")
+# Domination, restraint and fetish dynamics only when the request or Director asks for them;
+# ordinary sex is the default.
+KINK_DIRECTIONS = {
+    "mood": ("dominant", "submissive", "possessive", "defiant", "worshipful", "rough"),
+    "interaction": ("one is clearly in control of the other", "one pins the other down", "one obeys the other's orders",
+                    "one presents for the other", "one worships the other's body", "rough and urgent",
+                    "owned and being used", "presenting for use", "a teasing power exchange"),
 }
 # A required action must be visible in every image. Manual runs showed moment,
 # mood and setting directions (rest, water break, climbing a ladder) replacing it,
 # so those items only vary how the image is shot.
 ACTION_SAFE_AXES = ("framing", "light")
-# In a sexual batch the act is the required action; its mood and dynamic support it.
-SEXUAL_ACTION_SAFE_AXES = ("framing", "light", "mood", "interaction")
+# In a sexual batch the act is the required action; its mood, dynamic and place support it.
+SEXUAL_ACTION_SAFE_AXES = ("framing", "light", "mood", "interaction", "setting")
 # Steep top-down and worm's-eye angles foreshorten full bodies into broken anatomy,
 # so no direction asks for them; the user can still request one explicitly.
 # Close-ups and over-the-shoulder views crop or hide a participant, so datasets
@@ -200,25 +217,28 @@ GROUP_FRAMING = ("medium shot with everyone in frame", "full-body shot", "wide s
                  "three-quarter view at eye level with everyone in frame", "slightly raised eye-level view with everyone in frame")
 # Random characters otherwise collapse to the model's default person, so the app draws
 # each image's look for them (AttrPrompt: random attribute combinations beat fixed ones).
-LOOK_AXES = {
-    "age": ("early twenties", "mid twenties", "late twenties", "early thirties", "late thirties", "forties"),
-    "hair": ("short curly black hair", "long straight auburn hair", "a buzz cut", "a silver bob", "long braids",
-             "wavy shoulder-length blonde hair", "a shaved head", "a messy brown ponytail", "short spiky dyed hair",
-             "thick dark waves", "a grey crew cut", "red pixie-cut hair"),
-    "build": ("slim", "athletic", "stocky", "tall and lanky", "curvy", "broad-shouldered", "petite", "heavyset"),
+# Looks are built from independent parts, so a batch of ten draws ten of hundreds of
+# combinations instead of walking through one short list that every batch repeats.
+AGES = ("early twenties", "mid twenties", "late twenties", "early thirties", "late thirties", "forties")
+# Hair and build are drawn per sex, so a man does not get a pixie cut or a woman a crew cut by chance;
+# people whose sex is open draw from both.
+LOOK_PARTS = {
+    "woman": {"length": ("pixie-length", "chin-length", "shoulder-length", "mid-back-length", "waist-length"),
+              "style": ("straight", "wavy", "curly", "braided", "tied-up", "messy", "sleek"),
+              "color": ("black", "dark brown", "chestnut", "auburn", "copper-red", "honey-blonde", "platinum-blonde",
+                        "ash-brown", "silver-grey", "dark blonde"),
+              "build": ("slim", "athletic", "curvy", "petite", "tall and slender", "full-figured", "toned",
+                        "soft and round", "heavyset", "willowy")},
+    "man": {"length": ("buzzed", "short", "cropped", "medium-length", "shoulder-length"),
+            "style": ("straight", "wavy", "curly", "slicked-back", "tousled", "faded at the sides"),
+            "color": ("black", "dark brown", "light brown", "sandy-blond", "ginger", "grey", "salt-and-pepper"),
+            "build": ("slim", "athletic", "stocky", "broad-shouldered", "tall and lean", "heavyset", "muscular",
+                      "wiry", "soft-bellied", "barrel-chested")},
 }
-# Hair and build drawn per sex, so a man does not get a pixie cut and a petite frame by chance
-# while a woman gets a grey crew cut. LOOK_AXES stays the pool for people whose sex is open.
-LOOKS_BY_SEX = {
-    "woman": {"hair": ("long straight auburn hair", "wavy shoulder-length blonde hair", "a messy brown ponytail",
-                       "a sleek black bob", "long braids", "thick dark waves", "a high bun", "red pixie-cut hair",
-                       "short curly black hair", "a silver bob"),
-              "build": ("slim", "athletic", "curvy", "petite", "tall and lanky", "heavyset")},
-    "man": {"hair": ("short curly black hair", "a buzz cut", "a grey crew cut", "short spiky dyed hair",
-                     "slicked-back dark hair", "a messy brown undercut", "shoulder-length wavy hair", "a shaved head",
-                     "a tousled sandy mop", "a neat side part"),
-            "build": ("slim", "athletic", "stocky", "broad-shouldered", "tall and lanky", "heavyset")},
-}
+ORDINALS = ("first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth")
+SHORT_HAIR = {"pixie-length", "chin-length", "buzzed", "short", "cropped"}
+LONG_HAIR_STYLES = {"braided", "tied-up", "slicked-back"}
+SKIN_TONES = ("fair", "freckled fair", "light", "olive", "tan", "golden-brown", "brown", "deep brown")
 _SEX_WORDS = {"female": "woman", "male": "man"}
 # A role or trait that already gives an age ("girl", "old man", "20 yo man", "in her 30s") keeps it; the
 # scene picks outfits to fit the setting.
@@ -254,10 +274,15 @@ def creative_directions(data, indexes, salt=0):
     brief_count = brief.get("character_count")
     group = data.get("trigger_type") == "Multiple characters" or (type(brief_count) is int and brief_count > 1)
     sexual = sexual_request(data)
+    kink = sexual and kink_request(data)
     safe_axes = SEXUAL_ACTION_SAFE_AXES if sexual else ACTION_SAFE_AXES
     orders = {}
     for position, (axis, values) in enumerate(DIRECTION_AXES.items()):
         values = GROUP_FRAMING if group and axis == "framing" else SEXUAL_DIRECTIONS.get(axis, values) if sexual else values
+        if sexual and axis in KINK_DIRECTIONS and kink:
+            values = values + KINK_DIRECTIONS[axis]
+        if sexual and axis == "interaction" and type(brief_count) is int and brief_count >= 3:
+            values = values + GROUP_INTERACTIONS
         order = list(values)
         random.Random(seed + position).shuffle(order)
         orders[axis] = order
@@ -268,18 +293,29 @@ def creative_directions(data, indexes, salt=0):
     stated_age = bool(aged_role.search(" ".join(str(data.get(key) or "") for key in ("subject", "constraints", "trigger"))))
     random_cast = [(item["name"], _SEX_WORDS.get(item.get("sex")),
                     item.get("sex") == "unspecified" and item.get("count") == 1,
-                    stated_age or bool(aged_role.search(f"{item['name']} {item.get('traits', '')}")))
+                    stated_age or bool(aged_role.search(f"{item['name']} {item.get('traits', '')}")),
+                    item.get("count") or 1)
                    for item in brief.get("characters") or ()
                    if item.get("origin") == "random" and item.get("kind") in LOOK_KINDS]
 
-    def shuffled(values, position):
-        order = list(values)
-        random.Random(seed + position).shuffle(order)
-        return order
+    used_looks = set()
 
-    pools = {sex: {axis: shuffled((LOOKS_BY_SEX.get(sex) or {}).get(axis, values), position)
-                   for position, (axis, values) in enumerate(LOOK_AXES.items(), len(DIRECTION_AXES))}
-             for sex in (None, *SEX_LOOKS)}
+    def draw_look(index, slot, sex, aged):
+        """One random look from independent parts; the same draft and salt draw the same look."""
+        rng = random.Random(f"{seed}|look|{index}|{slot}")
+        for _attempt in range(20):
+            parts = LOOK_PARTS[sex or rng.choice(SEX_LOOKS)]
+            length = rng.choice(parts["length"])
+            # Very short hair cannot be braided, tied up or slicked back.
+            styles = [style for style in parts["style"] if length not in SHORT_HAIR or style not in LONG_HAIR_STYLES]
+            hair = f"{length} {rng.choice(styles)} {rng.choice(parts['color'])} hair"
+            look = ([] if aged else [rng.choice(AGES)]) + [hair, f"{rng.choice(parts['build'])} build",
+                                                           f"{rng.choice(SKIN_TONES)} skin"]
+            if hair not in used_looks:
+                break
+        used_looks.add(hair)
+        return look
+
     directions = {}
     for index in indexes:
         scopes = {"all_outputs", *([f"guided:{(index - 1) % len(lines) + 1}"] if guided else [])}
@@ -289,12 +325,14 @@ def creative_directions(data, indexes, salt=0):
                              and (group or axis != "interaction")}
         if random_cast:
             looks = {}
-            for slot, (name, sex, open_sex, aged) in enumerate(random_cast):
+            for slot, (name, sex, open_sex, aged, count) in enumerate(random_cast):
                 sex = random.Random(f"{seed}|{index}|{slot}").choice(SEX_LOOKS) if open_sex else sex
-                pool = pools[sex]
-                looks[name] = ", ".join(([sex] if open_sex else [])
-                                        + [pool[axis][(index - 1 + 3 * slot) % len(pool[axis])] for axis in LOOK_AXES
-                                           if not (axis == "age" and aged)])
+                if count == 1:
+                    looks[name] = ", ".join(([sex] if open_sex else []) + draw_look(index, slot, sex, aged))
+                else:
+                    # A group entry ("two men") gets one look per person, so they do not share one.
+                    looks[name] = "; ".join(f"{ORDINALS[person]}: " + ", ".join(draw_look(index, f"{slot}.{person}", sex, aged))
+                                            for person in range(min(count, len(ORDINALS))))
             directions[index]["random_character_looks"] = looks
     return directions
 
@@ -325,6 +363,7 @@ def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existin
     guided_count = len(source_context["guided_inputs"])
     directions = creative_directions(data, indexes, direction_salt)
     fixed_shot = director_fixes_shot(data)
+    sexual = sexual_request(data)
     for index in indexes:
         row = by_index[index]
         entry = {"index": index, "input": row["input"],
@@ -335,10 +374,11 @@ def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existin
             direction = {axis: value for axis, value in direction.items() if axis != "framing"}
         if (event_seeds or {}).get(index):
             entry["event_seed"] = event_seeds[index]
-            # The seed already decides what happens; a moment or interaction label on top of it
-            # gets copied into the idea as vague words ("a shared mishap occurs") by small models.
-            direction = {axis: value for axis, value in direction.items()
-                         if axis not in ("moment", "interaction")}
+            # The seed already decides what happens and where; a moment, interaction or setting label
+            # on top of it gets copied into the idea as vague words ("a shared mishap occurs").
+            # A sexual image keeps its setting as a fallback for a seed that names no place.
+            dropped = ("moment", "interaction") if sexual else ("moment", "interaction", "setting")
+            direction = {axis: value for axis, value in direction.items() if axis not in dropped}
         entry["creative_direction"] = direction
         selected.append(entry)
     context = {"source": source_context["source"], "confirmed_intent": brief,
@@ -400,7 +440,7 @@ def _looks_described(looks):
     described = {}
     for name, look in (looks or {}).items():
         parts = [part.strip() for part in look.split(",")]
-        hair = next((part for part in parts if part in LOOK_AXES["hair"]), "")
+        hair = next((part for part in parts if part.endswith(" hair")), "")
         noun = parts[0] if parts and parts[0] in SEX_LOOKS else " ".join(re.sub(r"[#\d]+", " ", name).split()).casefold() or "person"
         if hair:
             described[name] = f"the {noun} with {hair}"
@@ -428,18 +468,23 @@ def _reject_unrenderable_pose(row, data, allow_partial):
     return _failed_idea(row, row["index"], reason)
 
 
-def _reject_minor(row, data, allow_partial):
-    """In a sexual batch, an idea or scene that makes anyone a child or teen fails."""
+def _reject_sexual_content(row, data, allow_partial):
+    """In a sexual batch, an idea or scene that makes anyone a child or teen, or detaches or merges a body part, fails."""
     if row.get("idea_status") == "failed" or not sexual_request(data):
         return row
-    if not (word := minor_reference(f"{row['idea']} {row['scene']}")):
+    text = f"{row['idea']} {row['scene']}"
+    if word := minor_reference(text):
+        reason = f'{ADULTS_ONLY} ("{word}")'
+    elif word := broken_anatomy(text):
+        reason = f'{BROKEN_ANATOMY} ("{word}")'
+    else:
         return row
-    reason = f'{ADULTS_ONLY} ("{word}")'
     if not allow_partial:
         raise ValueError(f"Idea {row['index']}: {reason}")
     return _failed_idea(row, row["index"], reason)
 
 
+HISTORY_REPEAT = "The idea repeats a recently generated event. Choose a different permitted action or interaction."
 PASSIVE_REPEAT = ("Another idea in this batch already shows the cast just watching or looking at something; "
                   "give this one an activity they do themselves.")
 
@@ -447,6 +492,10 @@ PASSIVE_REPEAT = ("Another idea in this batch already shows the cast just watchi
 class IdeasFormatError(ValueError):
     """The ideas response is not the requested JSON array; eligible for one format correction."""
 
+
+IDEAS_LOOP_CORRECTION = """LOOP CORRECTION
+The previous response kept repeating the same phrase. Write every idea and scene in fresh
+words, never reuse a phrase from another record, and finish the JSON array."""
 
 IDEAS_FORMAT_CORRECTION = """FORMAT CORRECTION
 The previous response was not usable: {error}
@@ -511,7 +560,24 @@ class DatasetIdeasService:
         indexes = [row["index"] for row in selected]
         progress("Creating ideas from your approved understanding…")
         session.validate_instruction(instruction)
-        raw = session.generate(instruction)
+        try:
+            raw = session.generate(instruction)
+        except BackendRunawayError:
+            # A small model can loop on one phrase across ideas; one varied retry, then these
+            # slots fail on their own so the rest of the batch keeps going and is repaired later.
+            self.checkpoint()
+            progress("The prompt engine repeated itself; requesting the ideas once more with varied wording…")
+            retry = replace(instruction, system_message=instruction.system_message + "\n\n" + IDEAS_LOOP_CORRECTION,
+                            temperature=.85, diagnostic_stage="dataset:ideas:loop_retry")
+            session.validate_instruction(retry)
+            try:
+                raw = session.generate(retry)
+            except BackendRunawayError:
+                if not allow_partial:
+                    raise
+                self.checkpoint()
+                return [_failed_idea({}, index, "The prompt engine repeated itself while writing this idea. Retry it.")
+                        for index in indexes]
         self.checkpoint()
         corrected = False
         try:
@@ -529,7 +595,7 @@ class DatasetIdeasService:
                 raw = session.generate(retry)
                 self.checkpoint()
                 rows = validate_ideas(raw, indexes, allow_partial=allow_partial)
-            rows = [_reject_minor(_reject_unrenderable_pose(row, data, allow_partial), data, allow_partial) for row in rows]
+            rows = [_reject_sexual_content(_reject_unrenderable_pose(row, data, allow_partial), data, allow_partial) for row in rows]
             looks = {entry["index"]: (entry.get("creative_direction") or {}).get("random_character_looks")
                      for entry in selected}
             cast = (data.get("_confirmed_intent") or {}).get("characters")
@@ -541,7 +607,10 @@ class DatasetIdeasService:
             def repeats_history(row):
                 event = " ".join(row["idea"].casefold().split())
                 anchored = data.get("source_mode") == "guided" and event == " ".join(inputs[row["index"]].casefold().split())
-                return event in recent_events and not anchored
+                # A repair of a slot that already failed for repeating history is kept: an old
+                # event in one image is better than a failed image.
+                repaired = str(previous.get(row["index"], {}).get("failure_reason", "")).startswith(HISTORY_REPEAT)
+                return event in recent_events and not anchored and not repaired
 
             limit_passive = not passive_request(data)
 
@@ -576,7 +645,8 @@ class DatasetIdeasService:
                 for row in rows:
                     if row.get("idea_status") != "failed":
                         unchanged = row["index"] in previous and all(
-                            row[field] == previous[row["index"]].get(field) for field in IDEA_FIELDS)
+                            row[field] == previous[row["index"]].get(field) for field in IDEA_FIELDS) and not str(
+                            previous[row["index"]].get("failure_reason", "")).startswith(HISTORY_REPEAT)
                         candidate = {**row, "input": inputs[row["index"]]}
                         audit = analyze_idea_diversity(data, [*accepted, candidate])
                         duplicate = any(issue["code"] == "exact_duplicate_idea" for record in audit["ideas"]
@@ -585,7 +655,7 @@ class DatasetIdeasService:
                         others = [] if data.get("source_mode") == "guided" else [item["idea"] for item in accepted]
                         issue = variety_issue(row, others)
                         if repeats_history(row):
-                            row = _failed_idea(row, row["index"], "The idea repeats a recently generated event. Choose a different permitted action or interaction.")
+                            row = _failed_idea(row, row["index"], HISTORY_REPEAT)
                         elif unchanged or duplicate:
                             row = _failed_idea(row, row["index"], "The idea repeats an existing event or unchanged planning choices.")
                         elif issue:

@@ -54,7 +54,10 @@ class DatasetUIMock(MockBackend):
             if "The application inserts the locked trigger" in instruction.system_message:
                 result = instruction.user_message
             else:
-                supplied = instruction.system_message.split("Include exact case-sensitive trigger wording: ", 1)[1]
+                marker = ("Include exact case-sensitive trigger wording: "
+                          if "Include exact case-sensitive trigger wording: " in instruction.system_message
+                          else "Required subjects/attributes: ")
+                supplied = instruction.system_message.split(marker, 1)[1]
                 terms, _ = json.JSONDecoder().raw_decode(supplied)
                 result = f"{', '.join(terms)}: {instruction.user_message}"
         else:

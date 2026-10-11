@@ -80,10 +80,13 @@ belong in hard, retaining their scope and qualifiers. A semantic trait does not
 automatically require exposure. Unresolved user conflicts block approval.
 
 For random batches, a brainstorm call (`brainstorm.py`) first lists about three candidate
-events per image with a typicality score. The app drops events similar to recent runs or
-current siblings and samples the batch gently weighted toward unusual events, then passes each
-image its `event_seed`. Randomly invented human characters also get a code-drawn age, hair,
-build and outfit per image in their creative direction. An unusable brainstorm is reported
+scenarios per image (what happens and where, each in its own place) with a typicality score.
+The app drops events similar to recent runs or current siblings and samples the batch gently
+weighted toward unusual events, then passes each image its `event_seed`, which replaces that
+image's moment, interaction and setting directions. Randomly invented human characters also
+get a look per image built from independent parts (`LOOK_PARTS`: hair length, style and colour,
+build, skin tone, plus an age from `AGES` unless one is stated), so each seed draws new people
+from hundreds of combinations instead of reshuffling one short list. An unusable brainstorm is reported
 and ideas continue without seeds; guided batches skip it.
 IDEAS writes five images per call: each record is a one-line idea (the core event) and
 its scene, a complete three-to-five-sentence picture with the whole cast in frame,
@@ -92,10 +95,18 @@ applies to the target) go to IDEAS too, so it decides each scene's framing, came
 the writer then keeps them. The brainstorm gets the same Director section (`director.py`). A
 Director built around one kind of shot (selfie, mirror, first person) also replaces each image's
 framing direction, lifts the mirror and posing bans, and is not limited as a watching idea. A sexual request (`quality.sexual_request`, which also reads
-the cast, the brief and the Director) swaps mood and interaction for `SEXUAL_DIRECTIONS`, drops
-the moment axis, and draws an adult age for random characters; `adults_only_error` refuses a
-sexual or suggestive batch that names someone under 18 before any model call, and brainstorm
-events, ideas and final prompts that do so are dropped, repaired or retried. Later calls receive the earlier ideas as
+the cast, the brief and the Director) swaps mood and interaction for the larger `SEXUAL_DIRECTIONS`,
+gives the brainstorm a random handful of `position_ideas` as inspiration (from
+`brainstorm.SEXUAL_POSITIONS`, chosen by cast: solo, couple, two men, two women, three, a group; oral,
+feet and `KINK` positions and named extras only when the request or Director asks), adds
+`KINK_DIRECTIONS` moods and dynamics only when `kink_request` finds BDSM or fetish wording in the
+request, or a Director sentence that asks for them (a sentence that forbids them does not count), keeps
+every sexual act between the people the request pairs, allows a partner-supported lift during sex, keeps the place and
+position next to a required act, drops the moment axis, and draws an adult age for random characters; `adults_only_error` refuses a
+sexual or suggestive batch that names someone under 18 or involves an animal before any model call, and brainstorm
+events, ideas and final prompts that do so are dropped, repaired or retried. The same stages tie every body part to
+its owner and keep visible genitals with their owner's hips and torso in frame; `broken_anatomy`
+drops, repairs or retries wording that detaches a body part or merges two people's genitals. Later calls receive the earlier ideas as
 existing ideas and share one creative-direction salt, so the
 batch stays spread without one long list. Ideas never see the prompt library's prompts;
 they get craft notes (`craft_notes.py`) distilled from it once per library version, and any
@@ -109,13 +120,17 @@ individual rows also become explicit failed slots without dropping valid sibling
 Valid prompts finish first, then one replacement call requests only failed idea
 indexes, followed by their writer calls. Replacement validation still rejects unchanged
 or repeated ideas; unsuccessful repairs leave an inspectable partial batch, not an
-unbounded retry loop. Lexical similarity remains a nonblocking hint, not semantic
+unbounded retry loop. A brainstorm that loops continues without event seeds; an ideas call that
+loops gets one varied retry and then fails only its slots for repair. When near-repeat filtering leaves
+too few events, the least typical leftovers fill the remaining slots, so no image falls back to bare
+direction labels. Rule texts carry no worked examples, which small models copied into every idea. Lexical similarity remains a nonblocking hint, not semantic
 verification. Globally malformed JSON or a wrong batch size gets one format correction
 and is otherwise rejected rather than guessing missing assignments.
 
 IDEAS owns recent-event memory and checks normalized exact repeats against it,
 including when only camera or context changed. Fresh accepted ideas are remembered;
-failed slots are not. An explicit guided input matching the event can still repeat.
+failed slots are not. A repair of a slot that failed as a history repeat is kept rather than rejected again.
+An explicit guided input matching the event can still repeat.
 History stays bounded in RAM per concept and expires automatically. There is no
 manual reset control or endpoint. The writer does not read this history or change an
 accepted event for novelty. Semantic variation beyond exact repeats

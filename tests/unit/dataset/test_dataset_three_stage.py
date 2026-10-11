@@ -215,8 +215,8 @@ class ChunkedIdeasTests(unittest.TestCase):
         sent = [row["creative_direction"] for context in (first, second) for row in context["assignments"]]
         seeded = {row["index"] for context in (first, second) for row in context["assignments"] if row.get("event_seed")}
         expected = [{axis: value for axis, value in directions[index].items()
-                     if index not in seeded or axis not in ("moment", "interaction")} for index in range(1, 8)]
-        self.assertEqual(sent, expected, "A seeded image keeps framing, light, mood and setting, not a moment label.")
+                     if index not in seeded or axis not in ("moment", "interaction", "setting")} for index in range(1, 8)]
+        self.assertEqual(sent, expected, "A seeded image keeps framing, light and mood; its seed names the event and place.")
         self.assertTrue(seeded)
 
 
@@ -310,9 +310,12 @@ class GeometryTests(unittest.TestCase):
 
     def test_light_and_gaze_directions_are_not_mistaken_for_the_camera(self):
         for prompt in ("Soft light from above while she looks down at her phone; low-angle shot.",
-                       "Sunlight from below the clouds, eye-level medium shot.", "A high-angle view of a quiet street."):
+                       "Sunlight from below the clouds, eye-level medium shot.", "A high-angle view of a quiet street.",
+                       "The balcony is lit by the warm, low-angle light of the golden hour. High-angle shot, medium-full frame.",
+                       "Low-angle golden sunlight rakes the wall; high-angle shot.", "High-angle sun, low-angle shot."):
             with self.subTest(prompt=prompt):
                 self.assertIsNone(geometry_error(prompt))
+        self.assertIsNotNone(geometry_error("Low-angle shot under warm light; high-angle view of the street."))
 
     def test_creative_directions_never_ask_for_steep_angles(self):
         from goated_prompter.features.dataset.ideas import DIRECTION_AXES, GROUP_FRAMING
@@ -372,18 +375,18 @@ class PlausibilityTests(unittest.TestCase):
         girl = character(name="random girl", sex="female", origin="random", series="")
         data = valid_draft(amount=3, _confirmed_intent=dataset_understanding_fixture(characters=[NARUTO, girl]))
         looks = [item["random_character_looks"]["random girl"] for item in creative_directions(data, [1, 2, 3]).values()]
-        from goated_prompter.features.dataset.ideas import LOOK_AXES
-        self.assertFalse(any(age in look for look in looks for age in LOOK_AXES["age"]))
-        self.assertTrue(all(look.count(",") == 1 for look in looks), "Only hair and build are drawn.")
+        from goated_prompter.features.dataset.ideas import AGES
+        self.assertFalse(any(age in look for look in looks for age in AGES))
+        self.assertTrue(all(look.count(",") == 2 for look in looks), "Only hair, build and skin tone are drawn.")
         for stated in ({"name": "20 yo man"}, {"name": "man", "traits": "25 years old"}, {"name": "woman in her 30s"},
                        {"name": "a 40-year-old chef"}):
             person = {**COMPANION, "sex": "male", **stated}
             look = creative_directions(valid_draft(amount=1, _confirmed_intent=dataset_understanding_fixture(
                 characters=[person])), [1])[1]["random_character_looks"][person["name"]]
-            self.assertFalse(any(age in look for age in LOOK_AXES["age"]), (stated, look))
+            self.assertFalse(any(age in look for age in AGES), (stated, look))
         adult = creative_directions(valid_draft(amount=1, _confirmed_intent=dataset_understanding_fixture(
             characters=[COMPANION])), [1])[1]["random_character_looks"]["random companion"]
-        self.assertTrue(any(age in adult for age in LOOK_AXES["age"]))
+        self.assertTrue(any(age in adult for age in AGES))
 
 
 class RepeatedInventoryTests(unittest.TestCase):
@@ -476,10 +479,12 @@ class LabelAndTriggerTidyTests(unittest.TestCase):
         self.assertEqual(label_replacements([{**COMPANION, "name": "coworker #3"}, *self.PAIR, COMPANION])["coworker #3"],
                          "the third coworker")
         row = {"index": 1, "idea": "Friend 1 slips.", "scene": "Friend 1 slips beside Friend 2.", "idea_status": "valid"}
-        looks = {"Friend 1": "woman, mid twenties, long braids, slim", "Friend 2": "early thirties, a buzz cut, stocky"}
+        looks = {"Friend 1": "woman, mid twenties, waist-length braided auburn hair, slim, olive skin",
+                 "Friend 2": "early thirties, buzzed straight black hair, stocky, tan skin"}
         relabelled = _relabel(row, self.PAIR, looks)
-        self.assertEqual((relabelled["idea_status"], relabelled["idea"]), ("valid", "The woman with long braids slips."))
-        self.assertEqual(relabelled["scene"], "The woman with long braids slips beside the friend with a buzz cut.")
+        self.assertEqual((relabelled["idea_status"], relabelled["idea"]), ("valid", "The woman with waist-length braided auburn hair slips."))
+        self.assertEqual(relabelled["scene"], "The woman with waist-length braided auburn hair slips beside the friend with "
+                                              "buzzed straight black hair.")
         self.assertEqual(_relabel(row, self.PAIR, None)["scene"], "The first friend slips beside the second friend.")
 
     def test_a_prompt_that_still_uses_labels_is_relabelled_not_retried(self):
@@ -557,17 +562,17 @@ class IdeaQualityTests(unittest.TestCase):
         self.assertFalse(any("view" in setting for setting in DIRECTION_AXES["setting"]))
 
     def test_drawn_hair_and_build_fit_each_persons_sex_and_a_stated_age_is_kept(self):
-        from goated_prompter.features.dataset.ideas import LOOKS_BY_SEX, LOOK_AXES
+        from goated_prompter.features.dataset.ideas import AGES, LOOK_PARTS
         couple = [{**COMPANION, "name": "man", "sex": "male"}, {**COMPANION, "name": "wife", "sex": "female"}]
         data = valid_draft(amount=10, trigger_type="Multiple characters", subject="a man and his wife exploring japan",
                            trigger="40 yo man", _confirmed_intent=dataset_understanding_fixture(characters=couple))
         for item in creative_directions(data, range(1, 11)).values():
             man, wife = item["random_character_looks"]["man"], item["random_character_looks"]["wife"]
-            self.assertTrue(any(hair in man for hair in LOOKS_BY_SEX["man"]["hair"]), man)
-            self.assertFalse(any(hair in man for hair in ("pixie", "bob", "braids", "bun", "ponytail")), man)
-            self.assertTrue(any(hair in wife for hair in LOOKS_BY_SEX["woman"]["hair"]), wife)
-            self.assertFalse(any(hair in wife for hair in ("crew cut", "buzz cut", "shaved", "undercut")), wife)
-            self.assertFalse(any(age in look for look in (man, wife) for age in LOOK_AXES["age"]),
+            self.assertTrue(any(f"{style} " in man for style in LOOK_PARTS["man"]["style"]), man)
+            self.assertFalse(any(hair in man for hair in ("pixie", "braided", "tied-up", "waist-length")), man)
+            self.assertTrue(any(f"{style} " in wife for style in LOOK_PARTS["woman"]["style"]), wife)
+            self.assertFalse(any(hair in wife for hair in ("buzzed", "faded at the sides", "salt-and-pepper")), wife)
+            self.assertFalse(any(age in look for look in (man, wife) for age in AGES),
                              "The user gave an age, so the app draws none.")
 
 
@@ -797,3 +802,268 @@ class FixedShotDirectorTests(unittest.TestCase):
         from goated_prompter.features.dataset.quality import passive_request
         self.assertTrue(passive_request(self.selfie))
         self.assertFalse(passive_request(self.general))
+
+
+class SexualAnatomyTests(unittest.TestCase):
+    def setUp(self):
+        patcher = patch.dict(os.environ, {LIBRARY_DIR_ENV: tempfile.mkdtemp()})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        men = [{**COMPANION, "name": "man", "sex": "male"}, {**COMPANION, "name": "other man", "sex": "male"}]
+        self.data = valid_draft(amount=2, subject="two men having sex", trigger_type="Multiple characters",
+                                _confirmed_intent=dataset_understanding_fixture(characters=men))
+
+    def test_detached_or_merged_genitals_are_caught_but_ordinary_contact_is_not(self):
+        from goated_prompter.features.dataset.quality import broken_anatomy
+        for text in ("a detached penis lies on the bed", "she holds a severed cock", "their cocks pressed together",
+                     "his cock and the other man's cock touching", "one connected penis between both men"):
+            with self.subTest(text=text):
+                self.assertIsNotNone(broken_anatomy(text))
+        for text in ("she strokes his cock while he kisses her", "the taller man thrusts into him from behind",
+                     "her legs together on the sofa"):
+            with self.subTest(text=text):
+                self.assertIsNone(broken_anatomy(text))
+
+    def test_a_merged_anatomy_idea_is_queued_for_repair_only_in_sexual_batches(self):
+        from goated_prompter.features.dataset.ideas import DatasetIdeasService
+        rows = [{"index": 1, "idea": "The two men press their cocks together on the couch.", "scene": "Scene 1."},
+                {"index": 2, "idea": "The taller man pulls the other onto the bed.", "scene": "Scene 2."}]
+        session = Mock()
+        session.generate.return_value = json.dumps(rows)
+        result = DatasetIdeasService(lambda: None).run(session=session, data=self.data,
+            assignments=dataset_assignments(self.data), progress=lambda _message: None, allow_partial=True)
+        self.assertIn("stay attached to its owner", result[0]["failure_reason"])
+        self.assertNotEqual(result[1].get("idea_status"), "failed")
+
+    def test_the_rules_reach_the_ideas_and_the_writer(self):
+        from goated_prompter.features.dataset.prompting import dataset_instruction
+        ideas = " ".join(ideas_instruction(self.data, dataset_assignments(self.data)).system_message.split())
+        final = " ".join(dataset_instruction(GoatedPrompterRequest(idea=self.data["subject"], prompt_model="Custom"),
+                                             self.data, 1, plan_item=saved_scene(1)).system_message.split())
+        self.assertIn("stays attached to that person's body", ideas)
+        self.assertIn("keep two men's genitals apart", final)
+
+
+class SeedVarietyTests(unittest.TestCase):
+    def setUp(self):
+        patcher = patch.dict(os.environ, {LIBRARY_DIR_ENV: tempfile.mkdtemp()})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        couple = [{**COMPANION, "name": "woman", "sex": "female"}, {**COMPANION, "name": "man", "sex": "male"}]
+        self.data = valid_draft(amount=10, subject="a woman having sex with a man", trigger_type="Multiple characters",
+                                _confirmed_intent=dataset_understanding_fixture(characters=couple))
+
+    def test_new_seeds_draw_new_people_instead_of_reshuffling_one_list(self):
+        def women(salt):
+            return [row["random_character_looks"]["woman"] for row in creative_directions(self.data, range(1, 11), salt).values()]
+        first, second = women(1), women(2)
+        self.assertEqual(len(set(first)), 10)
+        self.assertLessEqual(len(set(first) & set(second)), 1, "Two batches share almost no looks.")
+
+    def test_the_brainstorm_invents_scenarios_with_their_own_places(self):
+        from goated_prompter.features.dataset.brainstorm import brainstorm_instruction
+        system = " ".join(brainstorm_instruction(self.data, 30).system_message.split())
+        self.assertIn("every event has its own place, and no two events share one", system)
+        self.assertIn("vary the whole situation around it", system)
+        self.assertNotIn("Vary only", system)
+
+    def test_impossible_positions_are_caught(self):
+        from goated_prompter.features.dataset.quality import broken_anatomy
+        self.assertIsNotNone(broken_anatomy("she receives ass-to-ass fucking"))
+
+
+class SexualVarietyTests(SeedVarietyTests):
+    def test_sexual_brainstorms_get_a_random_handful_of_positions_as_inspiration(self):
+        from goated_prompter.features.dataset.brainstorm import POSITION_IDEAS, brainstorm_events, sexual_positions
+        def ideas(seed):
+            session = Mock()
+            session.generate.return_value = "not json"
+            brainstorm_events(session, self.data, 10, random.Random(seed), progress=lambda _m: None, checkpoint=lambda: None)
+            return json.loads(session.generate.call_args.args[0].user_message)["position_ideas"]
+        first, second = ideas(1), ideas(2)
+        self.assertEqual(len(first), POSITION_IDEAS)
+        self.assertTrue(set(first) <= set(sexual_positions(self.data)))
+        self.assertNotEqual(first, second)
+        rows = creative_directions(self.data, range(1, 11), 3).values()
+        self.assertTrue(all("position" not in row for row in rows), "No position is forced on an image.")
+        system = " ".join(ideas_instruction(self.data, dataset_assignments(self.data)).system_message.split())
+        self.assertNotIn("position from creative_direction", system)
+
+    def test_short_hair_is_never_braided(self):
+        for salt in range(20):
+            for row in creative_directions(self.data, range(1, 11), salt).values():
+                woman = row["random_character_looks"]["woman"]
+                self.assertNotIn("pink", woman)
+                self.assertFalse(any(f"{short} {style}" in woman for short in ("pixie-length", "chin-length")
+                                     for style in ("braided", "tied-up")), woman)
+
+    def test_kink_requests_count_as_sexual_and_everyday_words_do_not(self):
+        from goated_prompter.features.dataset.quality import sexual_request
+        for subject in ("a collared slave kneels for his owner", "a yaoi couple", "a bdsm scene", "a footjob"):
+            with self.subTest(subject=subject):
+                self.assertTrue(sexual_request({**self.data, "subject": subject}))
+        neutral = {**self.data, "subject": "a dog breeding farm with a family-owned shop", "_confirmed_intent": {}}
+        self.assertFalse(sexual_request({**neutral, "subject": neutral["subject"] + ", a shirt collar, on her feet"}))
+
+    def test_sexual_batches_never_involve_animals(self):
+        from goated_prompter.features.dataset.quality import adults_only_error
+        dog = {**COMPANION, "name": "dog", "kind": "animal", "sex": "male"}
+        data = {**self.data, "_confirmed_intent": dataset_understanding_fixture(characters=[dog])}
+        self.assertIn("cannot involve animals", adults_only_error(data))
+        self.assertIsNone(adults_only_error({**data, "subject": "a dog playing fetch"}))
+
+    def test_the_new_rules_reach_ideas_and_the_writer(self):
+        from goated_prompter.features.dataset.prompting import dataset_instruction
+        ideas = " ".join(ideas_instruction(self.data, dataset_assignments(self.data)).system_message.split())
+        final = " ".join(dataset_instruction(GoatedPrompterRequest(idea=self.data["subject"], prompt_model="Custom"),
+                                             self.data, 1, plan_item=saved_scene(1)).system_message.split())
+        self.assertIn("show the ownership visually", ideas)
+        self.assertIn("each idea describes the act in its own words", ideas)
+        self.assertIn("keep every act between them", ideas)
+        self.assertNotIn("mouth on cock", ideas)
+        self.assertIn("name the anatomy that is part of the act or exposed", final)
+
+
+class VanillaDefaultTests(SeedVarietyTests):
+    def directions(self, subject):
+        act = {"scope": "all_outputs", "text": subject}
+        brief = {**self.data["_confirmed_intent"], "action_options": [act], "interactions": [act]}
+        return list(creative_directions({**self.data, "subject": subject, "_confirmed_intent": brief},
+                                        range(1, 11), 5).values())
+
+    def test_ordinary_sex_gets_no_kink_or_oral_directions_unless_asked(self):
+        from goated_prompter.features.dataset.ideas import KINK_DIRECTIONS
+        from goated_prompter.features.dataset.brainstorm import SEXUAL_POSITIONS
+        ORAL_POSITIONS = SEXUAL_POSITIONS["oral"]
+        kink_values = {*KINK_DIRECTIONS["mood"], *KINK_DIRECTIONS["interaction"], *SEXUAL_POSITIONS["kink"]}
+        for salt in range(10):
+            for row in creative_directions(self.data, range(1, 11), salt).values():
+                values = {value for value in row.values() if isinstance(value, str)}
+                self.assertFalse(values & (kink_values | set(ORAL_POSITIONS)), row)
+        kinky = self.directions("a collared man in bondage having sex with his mistress")
+        self.assertTrue(any({value for value in row.values() if isinstance(value, str)} & kink_values for row in kinky))
+        from goated_prompter.features.dataset.brainstorm import sexual_positions
+        oral = {**self.data, "subject": "a woman giving a man a blowjob"}
+        self.assertTrue(set(ORAL_POSITIONS) <= set(sexual_positions(oral)))
+
+    def test_a_supported_lift_is_allowed_in_sexual_images(self):
+        from goated_prompter.features.dataset.brainstorm import SEXUAL_POSITIONS
+        self.assertIn("lifted and held, back supported against the wall", SEXUAL_POSITIONS["couple"])
+        rules = " ".join(ideas_instruction(self.data, dataset_assignments(self.data)).system_message.split())
+        self.assertIn("A partner may lift and hold another during sex when the hold is clearly supported", rules)
+
+    def test_seeded_sexual_images_keep_a_place_and_looks_keep_build_and_skin_apart(self):
+        seeds = {index: f"Event {index} somewhere." for index in range(1, 11)}
+        context = json.loads(ideas_instruction(self.data, dataset_assignments(self.data), event_seeds=seeds).user_message)
+        self.assertTrue(all("setting" in row["creative_direction"] for row in context["assignments"]))
+        look = context["assignments"][0]["creative_direction"]["random_character_looks"]["woman"]
+        self.assertRegex(look, r" build, [a-z -]+ skin$")
+        rules = " ".join(ideas_instruction(self.data, dataset_assignments(self.data)).system_message.split())
+        self.assertIn("Ordinary consensual sex is the default", rules)
+
+
+class CastPositionTests(SeedVarietyTests):
+    def cast(self, *sexes, subject="having sex", **changes):
+        people = [{**COMPANION, "name": f"person {index}", "sex": sex} for index, sex in enumerate(sexes, 1)]
+        return {**self.data, "subject": subject, "trigger": "",
+                "_confirmed_intent": dataset_understanding_fixture(characters=people), **changes}
+
+    def test_positions_follow_the_cast(self):
+        from goated_prompter.features.dataset.brainstorm import SEXUAL_POSITIONS, sexual_positions
+        solo = set(sexual_positions(self.cast("female", subject="a woman masturbating")))
+        self.assertEqual(solo, set(SEXUAL_POSITIONS["solo"]))
+        men = set(sexual_positions(self.cast("male", "male", subject="two men having sex")))
+        self.assertTrue(set(SEXUAL_POSITIONS["two men"]) <= men)
+        self.assertFalse(men & set(SEXUAL_POSITIONS["man and woman"]))
+        women = set(sexual_positions(self.cast("female", "female", subject="two women having sex")))
+        self.assertTrue(set(SEXUAL_POSITIONS["two women"]) <= women)
+        self.assertFalse(women & set(SEXUAL_POSITIONS["couple"]))
+        three = set(sexual_positions(self.cast("female", "male", "male", subject="a threesome")))
+        self.assertTrue(set(SEXUAL_POSITIONS["three"]) <= three)
+        self.assertFalse(three & set(SEXUAL_POSITIONS["group"]))
+        group = set(sexual_positions(self.cast("female", "male", "male", "male", subject="a group having sex")))
+        self.assertTrue(set(SEXUAL_POSITIONS["group"]) <= group)
+
+    def test_oral_feet_kink_and_named_extras_only_when_asked(self):
+        from goated_prompter.features.dataset.brainstorm import SEXUAL_POSITIONS, sexual_positions
+        plain = set(sexual_positions(self.cast("female", "male")))
+        for kind in ("oral", "feet", "kink"):
+            self.assertFalse(plain & set(SEXUAL_POSITIONS[kind]), kind)
+        self.assertNotIn("blindfolded", plain)
+        asked = set(sexual_positions(self.cast("female", "male",
+            subject="a footjob and a blowjob in bondage while she is blindfolded")))
+        for kind in ("oral", "feet", "kink"):
+            self.assertTrue(set(SEXUAL_POSITIONS[kind]) <= asked, kind)
+        self.assertIn("blindfolded", asked)
+
+    def test_no_position_presses_genitals_together(self):
+        from goated_prompter.features.dataset.brainstorm import SEXUAL_POSITIONS
+        from goated_prompter.features.dataset.quality import broken_anatomy
+        for position in (item for pool in SEXUAL_POSITIONS.values() for item in pool):
+            with self.subTest(position=position):
+                self.assertIsNone(broken_anatomy(position))
+                self.assertNotIn("frot", position)
+
+
+class FinalTestFixesTests(unittest.TestCase):
+    def test_a_looping_brainstorm_or_ideas_call_never_stops_the_run(self):
+        from goated_prompter.backends.base import BackendRunawayError
+        from goated_prompter.features.dataset.ideas import DatasetIdeasService
+        data = valid_draft(amount=2, _confirmed_intent=dataset_understanding_fixture())
+        session = Mock()
+        session.generate.side_effect = BackendRunawayError("loop")
+        messages = []
+        self.assertEqual(brainstorm_events(session, data, 2, random.Random(1), progress=messages.append,
+                                           checkpoint=lambda: None), [])
+        self.assertIn("repeated itself", messages[-1])
+        session.generate.reset_mock()
+        rows = DatasetIdeasService(lambda: None).run(session=session, data=data, assignments=dataset_assignments(data),
+                                                     progress=lambda _message: None, allow_partial=True)
+        self.assertEqual(session.generate.call_count, 2, "One varied retry before the slots fail on their own.")
+        self.assertEqual([row["index"] for row in rows], [1, 2])
+        self.assertTrue(all("repeated itself" in row["failure_reason"] for row in rows))
+        with self.assertRaises(BackendRunawayError):
+            DatasetIdeasService(lambda: None).run(session=session, data=data, assignments=dataset_assignments(data),
+                                                  progress=lambda _message: None)
+
+    def test_near_repeat_events_still_fill_every_slot_with_the_least_obvious_leftovers(self):
+        data = valid_draft(amount=3, _confirmed_intent=dataset_understanding_fixture())
+        session = Mock()
+        session.generate.return_value = json.dumps([
+            {"event": "She juggles oranges on a bus.", "typicality": .9},
+            {"event": "She juggles oranges on a moving bus.", "typicality": .2},
+            {"event": "She juggles three oranges on the bus.", "typicality": .5}])
+        events = brainstorm_events(session, data, 3, random.Random(1), progress=lambda _message: None,
+                                   checkpoint=lambda: None)
+        self.assertEqual(len(events), 3)
+        self.assertEqual(len(set(events)), 3)
+
+    def test_only_a_request_or_a_bdsm_director_unlocks_kinks(self):
+        from goated_prompter.features.dataset.quality import kink_request
+        self.assertFalse(kink_request(valid_draft(subject="two men and a woman having sex",
+                                                  director_preset="NSFW Director")))
+        self.assertTrue(kink_request(valid_draft(subject="a woman in bondage")))
+        with patch("goated_prompter.features.dataset.quality.get_director_preset",
+                   return_value=Mock(instructions="Stage BDSM scenes with a collared partner.")):
+            self.assertTrue(kink_request(valid_draft(subject="two men and a woman having sex")))
+
+    def test_a_partial_cast_is_dropped_and_broken_traits_are_blanked(self):
+        from goated_prompter.features.dataset.understanding import validate_understanding
+        partial = dataset_understanding_fixture(character_count=8, characters=[character(name="A", traits=":[")])
+        self.assertEqual(validate_understanding(partial, SCOPES)["characters"], [])
+        whole = dataset_understanding_fixture(character_count=1, characters=[character(traits=":[")])
+        self.assertEqual(validate_understanding(whole, SCOPES)["characters"][0]["traits"], "")
+
+    def test_each_person_in_a_counted_random_cast_entry_gets_their_own_look(self):
+        men = {**COMPANION, "name": "man", "count": 2, "sex": "male"}
+        data = valid_draft(amount=1, trigger_type="Multiple characters",
+                           _confirmed_intent=dataset_understanding_fixture(character_count=2, characters=[men]))
+        look = creative_directions(data, [1], salt=3)[1]["random_character_looks"]["man"]
+        first, second = look.split("; ")
+        self.assertTrue(first.startswith("first: ") and second.startswith("second: "))
+
+    def test_trigger_expansion_is_the_default_and_the_writer_never_uses_letter_labels(self):
+        from goated_prompter.features.dataset.prompting import ENHANCE_SCENE_CONTRACT
+        from goated_prompter.features.dataset.service import default_dataset_draft
+        self.assertTrue(default_dataset_draft()["expand_trigger"])
+        self.assertIn("Never write the user's letter or number labels", ENHANCE_SCENE_CONTRACT)

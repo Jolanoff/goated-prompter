@@ -23,7 +23,8 @@ def brainstorm_fixture(count):
 
 
 def valid_draft(**changes):
-    return {**default_dataset_draft(), "trigger": "ohwx_person",
+    # Tests pin exact trigger wording unless they turn expansion on; the app's default is expansion.
+    return {**default_dataset_draft(), "trigger": "ohwx_person", "expand_trigger": False,
             "subject": "A woman with short black hair and a red jacket.", **changes}
 
 

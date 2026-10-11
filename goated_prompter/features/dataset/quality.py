@@ -93,7 +93,12 @@ def passive_idea(text):
 # rules, guided inputs, cast and selected Director all count, since any of them can make a batch sexual.
 _SEXUAL = re.compile(r"\b(?:sex|sexual\w*|nsfw|porn\w*|explicit|erotic\w*|nude|nudity|naked|fuck\w*|blowjob\w*|"
                      r"handjob\w*|oral(?! (?:presentations?|exams?|examinations?|hygiene|history|health|surgery|traditions?|reports?|arguments?))|anal|penetrat\w*|masturbat\w*|cum|cums|cumming|cumshot\w*|orgasm\w*|cocks?|"
-                     r"dicks?|pussy|pussies|boobs?|tits|nipples?|genitals?|horny|aroused)\b")
+                     r"dicks?|pussy|pussies|boobs?|tits|nipples?|genitals?|horny|aroused|"
+                     # Kink and genre words; ambiguous ones need their sexual form ("collared", not "collar").
+                     r"slaves?|sex slaves?|owned by|collared|leash(?:ed)?|pet play|bdsm|dominatrix|dom(?:/| and )sub|"
+                     r"submissive|bondage|yaoi|bara|male[- ]male|mm sex|footjob\w*|foot fetish|feet worship|"
+                     r"breeding (?:kink|her|him)|breed (?:her|him|me)|"
+                     r"presenting (?:herself|himself|themselves|her ass|his ass))\b")
 _SUGGESTIVE = re.compile(r"\b(?:lingerie|boudoir|seductive\w*|sensual\w*|undress\w*|striptease|strippers?|"
                          r"strip(?:s|ped|ping)? (?:off|down|naked|nude)|topless|bottomless)\b")
 _MINOR = re.compile(r"\b(?:child|children|childlike|kids?|minors?|underage\w*|teens?|teenage\w*|preteens?|"
@@ -126,9 +131,83 @@ def minor_reference(text):
     return match.group() if match else None
 
 
+NO_ANIMALS = "Sexual content cannot involve animals. Remove the animal from the cast or the sexual request."
+
+
 def adults_only_error(data):
-    """For a sexual or suggestive batch, the reason it cannot run when anyone in it is under 18."""
+    """For a sexual or suggestive batch, the reason it cannot run: someone under 18, or an animal."""
     text = _request_text(data)
-    if (_SEXUAL.search(text) or _SUGGESTIVE.search(text)) and (word := minor_reference(text)):
+    if not (_SEXUAL.search(text) or _SUGGESTIVE.search(text)):
+        return None
+    if word := minor_reference(text):
         return f'{ADULTS_ONLY} ("{word}")'
+    cast = (data.get("_confirmed_intent") or {}).get("characters") or ()
+    if data.get("trigger_type") == "Animal" or any(isinstance(item, dict) and item.get("kind") == "animal" for item in cast):
+        return NO_ANIMALS
     return None
+
+
+# Image models merge genitals described as touching, and detach body parts described on their
+# own, so sexual ideas and prompts that word them that way are redone.
+_PART = r"(?:penis(?:es)?|cocks?|dicks?|genitals?|breasts?|limbs?|arms?|legs?|hands?|heads?|body parts?)"
+_GENITAL = r"(?:penis(?:es)?|cocks?|dicks?|genitals?)"
+_BROKEN_ANATOMY = re.compile(
+    rf"\b(?:detached|severed|disembodied|floating|cut[- ]off|amputated|dismembered|separated)\W+(?:\w+\W+){{0,3}}{_PART}\b"
+    rf"|\b{_PART}\W+(?:\w+\W+){{0,3}}(?:detached|severed|disembodied|floating|cut off|amputated|separated from)\b"
+    rf"|\b{_GENITAL}\W+(?:\w+\W+){{0,3}}(?:shared|joined|connected|merged|fused)\b"
+    rf"|\b(?:shared|single|one|joined|connected|merged|fused)\W+(?:\w+\W+){{0,2}}{_GENITAL}\W+(?:\w+\W+){{0,4}}(?:between|both|two)\b"
+    rf"|\b(?:cocks|penises|dicks)\W+(?:\w+\W+){{0,3}}(?:touching|together|tip to tip|side by side)\b"
+    r"|\bass[- ]to[- ]ass\b"
+    rf"|\b{_GENITAL}\W+(?:\w+\W+){{0,6}}{_GENITAL}\W+(?:\w+\W+){{0,2}}(?:touching|pressed|rubbing|together)\b")
+BROKEN_ANATOMY = ("Every body part must stay attached to its owner: name each with its owner, keep visible genitals "
+                  "with their owner's hips and torso in frame, and never describe a part alone, detached, or shared, "
+                  "joined or touching between two people.")
+
+
+def broken_anatomy(text):
+    """The first wording that detaches or merges a body part in a sexual image, or None."""
+    match = _BROKEN_ANATOMY.search(str(text or "").casefold())
+    return match.group() if match else None
+
+
+# Ordinary sex is the default; domination, restraint and fetish dynamics only when asked for.
+_KINK = re.compile(r"\b(?:slaves?|owned by|collared|collars?|leash(?:ed)?|pet play|bdsm|dominatrix|dom(?:/| and )sub|"
+                   r"submissive|dominant|dominat\w*|bondage|restrain\w*|tied up|handcuff\w*|spank\w*|chok\w*|"
+                   r"footjob\w*|foot fetish|feet worship|breeding|degrad\w*|humiliat\w*|fetish\w*|kinky|kinks?|"
+                   r"latex|rough sex|(?:his|her|my|their) (?:master|mistress))\b")
+_ORAL = re.compile(r"\b(?:oral|blowjob\w*|suck\w*|deepthroat\w*|69|sixty-nine|face[- ]?sitting|cunnilingus|"
+                   r"eat(?:s|ing)? (?:her|him) out|lick\w*)\b")
+
+
+# The user's own words (concept, rules, trigger, guided input) and the Director, without the
+# brief the model wrote, so a word the model added never unlocks anything.
+def requested_text(data):
+    parts = [str(data.get(key) or "") for key in ("subject", "constraints", "inputs", "trigger")]
+    parts.append(get_director_preset(data.get("director_preset")).instructions)
+    return " ".join(parts).casefold()
+
+
+_FEET = re.compile(r"\b(?:feet|foot\w*|soles|toes)\b")
+
+
+def feet_request(data):
+    return bool(_FEET.search(requested_text(data)))
+
+
+# A Director only unlocks BDSM when it is built for it; a general NSFW Director that mentions
+# control or dominance in passing keeps sex ordinary.
+_KINK_DIRECTOR = re.compile(r"\b(?:bdsm|bondage|collar(?:ed|s)?|leash(?:ed)?|slaves?|restrain\w*|handcuff\w*|"
+                            r"spank\w*|dominatrix|fetish\w*|kinky)\b")
+_NEGATED = re.compile(r"\b(?:do not|don't|never|no|avoid|without|unrequested|unless)\b")
+
+
+def kink_request(data):
+    asked = " ".join(str(data.get(key) or "") for key in ("subject", "constraints", "inputs", "trigger")).casefold()
+    director = get_director_preset(data.get("director_preset")).instructions.casefold()
+    # "Do not invent unrequested fetish elements" forbids kinks; only sentences that ask for one count.
+    asking = (sentence for sentence in re.split(r"[.!?\n]+", director) if not _NEGATED.search(sentence))
+    return bool(_KINK.search(asked) or any(_KINK_DIRECTOR.search(sentence) for sentence in asking))
+
+
+def oral_request(data):
+    return bool(_ORAL.search(requested_text(data)))
