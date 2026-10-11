@@ -15,7 +15,7 @@ from ...strict_json import reject_duplicate_keys
 from .director import director_section
 from .private_vocabulary import load_vocabulary, private_rules
 from .quality import (MALE_PAIR, FEMALE_PAIR, POSITION_ACT_CATEGORIES, broken_anatomy, idea_concepts, minor_reference,
-                      passive_idea, passive_request, position_categories, position_presence_error,
+                      passive_idea, passive_request, position_categories, position_phrase_present,
                       requested_text, resolved_sex, sexual_request)
 from .understanding import understanding_instruction, unwrap_json_fence, validate_understanding
 
@@ -167,7 +167,7 @@ def position_groups(data):
     extras = tuple(entry for pattern, entry in vocabulary.get("requested", ()) if pattern.search(asked) and compatible(entry))
     if extras:
         groups.append(extras)
-    named = [tuple(entry for entry in entries if not position_presence_error(asked, entry)) for entries in groups]
+    named = [tuple(entry for entry in entries if position_phrase_present(asked, entry)) for entries in groups]
     if any(named):
         return [entries for entries in named if entries]
     return groups
@@ -176,14 +176,6 @@ def position_groups(data):
 def sexual_positions(data):
     """Every eligible position, without duplicates."""
     return tuple(dict.fromkeys(entry for entries in position_groups(data) for entry in entries))
-
-
-def scene_position(data, scene):
-    """Recover the selected phrase from an accepted scene without changing its saved shape."""
-    if not sexual_request(data):
-        return None
-    return next((entry for entry in sorted(sexual_positions(data), key=len, reverse=True)
-                 if not position_presence_error(scene, entry)), None)
 
 
 def pick_position_ideas(groups, rng, count):

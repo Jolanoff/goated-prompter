@@ -14,9 +14,8 @@ from ...options.styles import STYLE_NAMES
 from ...options.targets import TARGET_MODEL_NAMES, canonical_target
 from ...workflow_output import WorkflowFormatError, normalize_workflow_output, sanitize_prompt_text, requested_visible_text
 from .assignments import dataset_assignments
-from .brainstorm import scene_position
 from .quality import (ADULTS_ONLY, BROKEN_ANATOMY, adults_only_error, analyze_idea_diversity, broken_anatomy,
-                      minor_reference, position_presence_error, sexual_request)
+                      minor_reference, sexual_request)
 from .triggers import (trigger_presence_error, trigger_terms, fixed_anima_prefix, restore_numeric_trigger_spelling,
                        tidy_expanded_trigger)
 from .understanding import label_replacements, replace_labels
@@ -171,7 +170,6 @@ class DatasetService:
 
     def _generate(self, session, instruction, data, index, progress, plan_item, *, retries=DATASET_MAX_RETRIES):
         expected_text = requested_visible_text(plan_item["scene"])
-        position = scene_position(data, plan_item["scene"])
         original = instruction
         def validate(raw):
             prompt = normalize_workflow_output(raw, data["target"], mode="Enhance", expected_visible_text=expected_text)
@@ -222,8 +220,6 @@ class DatasetService:
                 raise WorkflowFormatError("The prompt copied wording from a library reference prompt. Write new wording "
                                           "for this scene; use the references only for style and quality.")
             prompt = validate_positive_content(validate_trigger_contract(prompt, data, progress), data)
-            if missing_position := position_presence_error(prompt, position):
-                raise WorkflowFormatError(missing_position)
             return prompt
         for attempt in range(retries + 1):
             self.checkpoint()

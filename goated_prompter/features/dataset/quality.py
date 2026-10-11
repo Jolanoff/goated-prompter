@@ -321,11 +321,9 @@ def position_categories(data, *, include_director=True):
     return (asked or defaults) - forbidden, forbidden
 
 
-def position_presence_error(text, position):
-    """The selected phrase is a preservation contract, not a semantic pose classifier."""
+def position_phrase_present(text, position):
+    """Match an explicitly requested vocabulary phrase, not a generated body's geometry."""
     def words(value):
         return " ".join(re.findall(r"\w+", str(value or "").casefold()))
     expected = words(position)
-    if expected and f" {expected} " not in f" {words(text)} ":
-        return "Preserve the selected position wording in the scene description: " + position
-    return None
+    return bool(expected) and f" {expected} " in f" {words(text)} "

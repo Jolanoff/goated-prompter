@@ -104,8 +104,10 @@ from roles or unambiguous pairings and keeps the drawn looks consistent. Generic
 category; a specific act narrows the pool to its category and compatible cast entries. Category
 round-robin selection prevents long lists from dominating. `creative_directions` assigns positions
 per image, including scoped guided inputs and batches without a usable brainstorm. The selected
-phrase must appear in the scene; `scene_position` recovers it for Builder, and final validation
-requires it to survive output cleanup. These are wording checks, not semantic geometry verification.
+choice is stored as `selected_position` on the scene plan and passed directly to Builder,
+including when a saved scene is reused or a prompt is regenerated. Scenes and final prompts
+may describe the arrangement naturally; copying the vocabulary label is not required.
+The contract preserves the instruction, not independent proof of model geometry.
 The selected sexual position and setting take precedence over a generic event seed or Director
 default; explicit user requirements remain authoritative. A vocabulary digest invalidates saved
 adult plans after usable entries change. The file's `requested` entries join when their patterns

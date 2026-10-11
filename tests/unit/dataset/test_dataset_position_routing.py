@@ -6,15 +6,14 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
-from goated_prompter.backends.base import BackendGenerationError
 from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.dataset.assignments import dataset_assignments
 from goated_prompter.features.dataset.brainstorm import sexual_positions
 from goated_prompter.features.dataset.ideas import DatasetIdeasService, creative_directions, ideas_instruction
 from goated_prompter.features.dataset.private_vocabulary import VOCABULARY_FILE_ENV, parse_vocabulary
-from goated_prompter.features.dataset.plan import scene_plan_signature
+from goated_prompter.features.dataset.plan import ScenePlanner, reusable_scene_plan, scene_plan_signature, validate_saved_scene_plan
 from goated_prompter.features.dataset.prompting import dataset_instruction
-from goated_prompter.features.dataset.service import DatasetService
+from goated_prompter.features.dataset.service import DatasetService, saved_dataset_draft
 from tests.helpers import dataset_understanding_fixture
 from tests.support.dataset import CaptureBackend, saved_scene, valid_draft
 
@@ -166,7 +165,7 @@ class PositionRoutingTests(unittest.TestCase):
         self.assertTrue(all(direction.get("position") for direction in directions))
         self.assertEqual(len({direction["position"] for direction in directions}), 3)
 
-    def test_model_omitting_the_assigned_position_cannot_produce_a_valid_scene(self):
+    def test_natural_scene_wording_retains_the_app_assigned_position_as_plan_data(self):
         data = self.draft("two adult males having anal sex", "male", "male")
         session = Mock()
         session.generate.return_value = json.dumps([
@@ -174,8 +173,59 @@ class PositionRoutingTests(unittest.TestCase):
              "scene": f"The two adults sit together at station {index}."} for index in range(1, 4)])
         rows = DatasetIdeasService(lambda: None).run(session=session, data=data,
             assignments=dataset_assignments(data), direction_salt=1, progress=lambda _: None, allow_partial=True)
-        self.assertTrue(all(row.get("idea_status") == "failed" for row in rows))
-        self.assertTrue(all("position" in row["failure_reason"].casefold() for row in rows))
+        self.assertTrue(all(row.get("idea_status") != "failed" for row in rows))
+        self.assertEqual(len({row["selected_position"] for row in rows}), 3)
+        assignments = json.loads(session.generate.call_args.args[0].user_message)["assignments"]
+        self.assertEqual([row["selected_position"] for row in rows],
+                         [row["creative_direction"]["position"] for row in assignments])
+
+    def test_selected_position_survives_saved_scene_validation(self):
+        scene = saved_scene(selected_position="supported seated pose", scene="Two adults sit facing away.")
+        self.assertEqual(validate_saved_scene_plan([scene])[0]["selected_position"], "supported seated pose")
+
+    def test_selected_position_survives_composition_and_serialized_draft_loading(self):
+        scene = saved_scene(selected_position="supported seated pose", scene="Two adults sit facing away.")
+        composed = ScenePlanner.compose([scene])
+        loaded = saved_dataset_draft(json.loads(json.dumps(valid_draft(scene_plan=composed))))
+        self.assertEqual(loaded["scene_plan"][0]["selected_position"], "supported seated pose")
+        self.assertEqual(loaded["scene_plan"][0]["self_check"], "PASS")
+
+    def test_old_verbatim_gate_plans_require_fresh_scenes(self):
+        data = self.draft("two adult men having anal sex", "male", "male", amount=1,
+                          scene_plan=[saved_scene(scene="Two adults sit together.")])
+        assignments = dataset_assignments(data)
+        with patch("goated_prompter.features.dataset.plan.SCENE_PLAN_VERSION", 9):
+            data["scene_plan_signature"] = scene_plan_signature(data, assignments)
+        self.assertIsNone(reusable_scene_plan(data, assignments))
+
+    def test_no_usable_vocabulary_leaves_scene_position_model_generated(self):
+        self.path.write_text("[setting]\nsynthetic room\n", encoding="utf-8")
+        data = self.draft("two adult men having anal sex", "male", "male", amount=1)
+        session = Mock()
+        session.generate.return_value = json.dumps([{"index": 1, "idea": "Two adults interact.",
+                                                    "scene": "Two adults sit facing one another."}])
+        rows = DatasetIdeasService(lambda: None).run(session=session, data=data,
+            assignments=dataset_assignments(data), progress=lambda _: None)
+        self.assertNotIn("selected_position", rows[0])
+        instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1,
+                                          plan_item=saved_scene(**rows[0]))
+        self.assertNotIn("SELECTED POSITION", instruction.system_message)
+
+    def test_natural_position_wording_does_not_bypass_existing_anatomy_checks(self):
+        data = self.draft("two adult men having anal sex", "male", "male", amount=1)
+        session = Mock()
+        session.generate.return_value = json.dumps([{"index": 1, "idea": "Two adults interact.",
+            "scene": "Two adults sit together with a detached arm beside them."}])
+        rows = DatasetIdeasService(lambda: None).run(session=session, data=data,
+            assignments=dataset_assignments(data), progress=lambda _: None, allow_partial=True)
+        self.assertEqual(rows[0]["idea_status"], "failed")
+        self.assertIn("selected_position", rows[0])
+        self.assertIn("attached", rows[0]["failure_reason"])
+
+    def test_invalid_selected_position_metadata_is_rejected(self):
+        for position in (None, 7, [], "", " " * 3, "x" * 10001):
+            with self.subTest(position_type=type(position).__name__), self.assertRaises(ValueError):
+                validate_saved_scene_plan([saved_scene(selected_position=position)])
 
     def test_kink_request_does_not_turn_into_oral_or_vaginal(self):
         positions = set(sexual_positions(self.draft("two adult males in bondage", "male", "male")))
@@ -318,19 +368,40 @@ class PositionRoutingTests(unittest.TestCase):
 
     def test_final_writer_is_given_the_selected_position_contract(self):
         data = self.draft("two adult men having anal sex", "male", "male")
-        scene = saved_scene(scene="Two adult men use anal supported pose alpha in a room.")
+        scene = saved_scene(selected_position="anal supported pose alpha",
+                            scene="Two adult men sit together in a room.")
         instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=scene)
         self.assertIn("SELECTED POSITION", instruction.system_message)
         self.assertIn("anal supported pose alpha", instruction.system_message)
 
-    def test_final_output_that_drops_the_position_is_rejected(self):
+    def test_saved_plans_and_prompt_regeneration_pass_the_explicit_position_to_the_writer(self):
+        data = self.draft("two adult men having anal sex", "male", "male", amount=1, trigger="ohwx_person",
+            scene_plan=[saved_scene(selected_position="anal supported pose alpha",
+                                    scene="Two adult men sit facing away in a room.")])
+        data["scene_plan_signature"] = scene_plan_signature(data, dataset_assignments(data))
+        for action in (None, ("regenerate_prompt", 1)):
+            with self.subTest(action=action):
+                backend = CaptureBackend()
+                with patch("goated_prompter.features.dataset.service.create_backend", return_value=backend):
+                    result = DatasetService({"backend": "mock"}, lambda: None).run(
+                        GoatedPrompterRequest(idea=data["subject"], prompt_model="Custom"), data,
+                        lambda _: None, lambda _: None, scene_action=action)
+                self.assertEqual(result["completed"], 1)
+                self.assertEqual(result["scene_plan"][0]["selected_position"], "anal supported pose alpha")
+                self.assertEqual(len(backend.calls), 1)
+                self.assertIn("SELECTED POSITION", backend.calls[0].system_message)
+                self.assertIn("anal supported pose alpha", backend.calls[0].system_message)
+
+    def test_final_output_can_describe_the_position_without_copying_its_label(self):
         data = self.draft("two adult men having anal sex", "male", "male", trigger="ohwx_person")
-        scene = saved_scene(scene="Two adult men use anal supported pose alpha in a room.")
+        scene = saved_scene(selected_position="anal supported pose alpha",
+                            scene="Two adult men use anal supported pose alpha in a room.")
         instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=scene)
         session = Mock()
-        session.generate.return_value = "Two adult men, including ohwx_person, interact in a room under warm lamplight."
-        with self.assertRaisesRegex(BackendGenerationError, "position"):
-            DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None, scene, retries=0)
+        session.generate.return_value = "Two adult men, including ohwx_person, sit close together with their feet grounded under warm lamplight."
+        output = DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None, scene, retries=0)
+        self.assertEqual(output, session.generate.return_value)
+        session.generate.assert_called_once()
 
     def test_vocabulary_edits_invalidate_a_saved_scene_plan(self):
         data = self.draft("two adult men having anal sex", "male", "male")
@@ -352,7 +423,8 @@ class PositionRoutingTests(unittest.TestCase):
 
     def test_final_preservation_accepts_capitalization_and_punctuation_changes(self):
         data = self.draft("two adult men having anal sex", "male", "male", trigger="ohwx_person")
-        scene = saved_scene(scene="Two adult men use anal supported pose alpha in a room.")
+        scene = saved_scene(selected_position="anal supported pose alpha",
+                            scene="Two adult men use anal supported pose alpha in a room.")
         instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=scene)
         session = Mock()
         session.generate.return_value = "Two adult men, including ohwx_person, use ANAL supported pose alpha in a room."
@@ -360,18 +432,17 @@ class PositionRoutingTests(unittest.TestCase):
         self.assertIn("ANAL supported pose alpha", output)
         session.generate.assert_called_once()
 
-    def test_an_omitted_final_position_uses_the_existing_bounded_output_retry(self):
+    def test_final_writer_does_not_retry_only_because_a_position_label_is_absent(self):
         data = self.draft("two adult men having anal sex", "male", "male", trigger="ohwx_person")
-        scene = saved_scene(scene="Two adult men use anal supported pose alpha in a room.")
+        scene = saved_scene(selected_position="anal supported pose alpha",
+                            scene="Two adult men use anal supported pose alpha in a room.")
         instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=scene)
         session = Mock()
         session.generate.side_effect = ["Two adult men, including ohwx_person, interact in a room.",
                                        "Two adult men, including ohwx_person, use anal supported pose alpha in a room."]
         output = DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None, scene, retries=1)
-        self.assertIn("anal supported pose alpha", output)
-        self.assertEqual(session.generate.call_count, 2)
-        correction = session.generate.call_args.args[0].system_message
-        self.assertIn("Preserve the selected position wording", correction)
+        self.assertNotIn("anal supported pose alpha", output)
+        session.generate.assert_called_once()
 
     def test_an_unusable_brainstorm_does_not_lose_positions_on_the_way_to_final_prompts(self):
         data = self.draft("2 adult males having anal sex", "male", "male", trigger="ohwx_person")
@@ -394,10 +465,11 @@ class PositionRoutingTests(unittest.TestCase):
                 GoatedPrompterRequest(idea=data["subject"], prompt_model="Custom"), data, lambda _: None, lambda _: None)
         self.assertEqual(result["completed"], 3)
         eligible = set(sexual_positions(data))
-        positions = []
-        for row in result["prompts"]:
-            matches = [position for position in eligible if position in row["scene"]]
-            self.assertEqual(len(matches), 1)
-            self.assertIn(matches[0], row["prompt"])
-            positions.extend(matches)
+        positions = [row["selected_position"] for row in result["scene_plan"]]
+        self.assertTrue(set(positions) <= eligible)
+        writers = [call for call in backend.calls if call.diagnostic_stage in {"dataset:1", "dataset:2", "dataset:3"}]
+        self.assertEqual(len(writers), 3)
+        for position, instruction in zip(positions, writers):
+            self.assertIn("SELECTED POSITION", instruction.system_message)
+            self.assertIn(position, instruction.system_message)
         self.assertEqual(len(set(positions)), 3)

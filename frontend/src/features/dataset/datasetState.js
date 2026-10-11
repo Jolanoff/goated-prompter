@@ -163,6 +163,7 @@ export function datasetSceneSignature(row) {
   // The server saves scenes with whitespace collapsed, so compare them the same way.
   return JSON.stringify(canonicalValue({ index: row.index, input: row.input || "",
     idea: row.idea, scene: (row.scene || "").trim().split(/\s+/).join(" "),
+    selected_position: row.selected_position,
     scene_status: row.scene_status || "valid", self_check: row.self_check }));
 }
 

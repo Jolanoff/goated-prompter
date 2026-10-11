@@ -43,6 +43,26 @@ test("scene signatures ignore the whitespace the server collapses when saving", 
   assert.equal(datasetSceneSignature({ ...saved, scene: "  A duck\nreads a map   on a bench.  " }), datasetSceneSignature(saved));
 });
 
+test("scene signatures include the selected position even when the scene prose is unchanged", () => {
+  const row = { ...draft.scene_plan[0], selected_position: "supported seated pose" };
+  const record = { draft: { scene_plan: [row] }, scene_eligibility: { 1: { usable: true } } };
+  assert.equal(isDatasetSceneCurrent({ ...row }, record), true);
+  for (const selected_position of [undefined, "supported standing pose"]) {
+    const revised = { ...row, selected_position };
+    assert.notEqual(datasetSceneSignature(row), datasetSceneSignature(revised));
+    assert.equal(isDatasetSceneCurrent(revised, record), false);
+  }
+});
+
+test("scene edits and writer setting changes retain the selected position contract", () => {
+  const selected = { ...draft, scene_plan: [{ ...draft.scene_plan[0], selected_position: "supported seated pose" }] };
+  for (const updated of [editDatasetPlan(selected, 1, "scene", "A new natural description."),
+    invalidateDatasetPrompts(selected, { target: "Anima" })]) {
+    assert.equal(updated.scene_plan[0].selected_position, "supported seated pose");
+    assert.equal(updated.scene_plan[0].prompt_status, "not_generated");
+  }
+});
+
 test("scene signatures invalidate source, idea, prose, self-check and scene-state changes", () => {
   const row = draft.scene_plan[0];
   for (const change of [{ input: "new source" }, { idea: "new event" }, { scene: "new scene" },

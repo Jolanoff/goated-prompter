@@ -14,7 +14,7 @@ from .director import director_fixes_shot, director_section
 from .private_vocabulary import load_vocabulary, private_rules
 from .quality import (ADULTS_ONLY, BROKEN_ANATOMY, analyze_idea_diversity, broken_anatomy, kink_request,
                       minor_reference, ownership_request, passive_idea, passive_request, pet_request,
-                      position_presence_error, resolved_sex, sexual_request)
+                      resolved_sex, sexual_request)
 from .understanding import (label_replacements, numbered_labels, replace_labels, understanding_instruction,
                             unwrap_json_fence, validate_understanding)
 from ...strict_json import reject_duplicate_keys
@@ -111,7 +111,7 @@ The idea line states that act, position and place in its own words. Change only 
 
 SELECTED POSITIONS
 For a sexual assignment, creative_direction.position is the position selected by the app,
-not an optional suggestion. Keep that position wording once in the scene and describe how
+not an optional suggestion. Describe that arrangement in natural prose, including how
 each adult's body is arranged and supported. It and creative_direction.setting take precedence
 over a conflicting brainstorm seed or the Director's default pose; neither may change a user
 requirement. A selected act never becomes a different act. Do not substitute your favourite pose.
@@ -439,14 +439,6 @@ def _reject_sexual_content(row, data, allow_partial):
     return _failed_idea(row, row["index"], reason)
 
 
-def _reject_position(row, position, allow_partial):
-    if row.get("idea_status") == "failed" or not (reason := position_presence_error(row["scene"], position)):
-        return row
-    if not allow_partial:
-        raise ValueError(f"Idea {row['index']}: {reason}")
-    return _failed_idea(row, row["index"], reason)
-
-
 HISTORY_REPEAT = "The idea repeats a recently generated event. Choose a different permitted action or interaction."
 PASSIVE_REPEAT = ("Another idea in this batch already shows the cast just watching or looking at something; "
                   "give this one an activity they do themselves.")
@@ -560,7 +552,8 @@ class DatasetIdeasService:
                 rows = validate_ideas(raw, indexes, allow_partial=allow_partial)
             rows = [_reject_sexual_content(_reject_unrenderable_pose(row, data, allow_partial), data, allow_partial) for row in rows]
             positions = {entry["index"]: (entry.get("creative_direction") or {}).get("position") for entry in selected}
-            rows = [_reject_position(row, positions.get(row["index"]), allow_partial) for row in rows]
+            rows = [{**row, **({"selected_position": positions[row["index"]]} if positions.get(row["index"]) else {})}
+                    for row in rows]
             looks = {entry["index"]: (entry.get("creative_direction") or {}).get("random_character_looks")
                      for entry in selected}
             cast = (data.get("_confirmed_intent") or {}).get("characters")
@@ -598,12 +591,14 @@ class DatasetIdeasService:
                     raw = session.generate(retry)
                     self.checkpoint()
                     try:
-                        retried = [_reject_position(_reject_sexual_content(_reject_unrenderable_pose(row, data, False),
-                            data, False), positions.get(row["index"]), False) for row in validate_ideas(raw, indexes)]
+                        retried = [_reject_sexual_content(_reject_unrenderable_pose(row, data, False),
+                            data, False) for row in validate_ideas(raw, indexes)]
                     except ValueError:
                         retried = None
                     if retried:
-                        rows = [_relabel(row, cast, looks.get(row["index"])) for row in retried]
+                        rows = [{**_relabel(row, cast, looks.get(row["index"])),
+                            **({"selected_position": positions[row["index"]]} if positions.get(row["index"]) else {})}
+                            for row in retried]
             if allow_partial:
                 accepted = [{**row, "input": inputs[row["index"]]} for row in existing
                     if row["index"] not in indexes and row.get("idea_status") != "failed"]

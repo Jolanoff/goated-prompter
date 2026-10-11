@@ -13,7 +13,6 @@ from ...output_repetition import MAX_ANIMA_TAGS, anima_tag_count, anima_tag_key,
 from .understanding import CONTRACT_FIELDS
 from .eligibility import scene_eligibility
 from .private_vocabulary import private_rules
-from .brainstorm import scene_position
 from ...prompting.details import DATASET_OUTPUT_TOKEN_LIMITS
 from ...prompt_library import pick_references
 
@@ -260,8 +259,10 @@ def dataset_instruction(request, data, index, model_family="qwen", plan_item=Non
         requirements_message += "\n\nSAVED SCENE SOURCE REQUIREMENTS\n" + json.dumps({
             "subject": data["subject"], "constraints": data["constraints"],
             "guided_input": plan_item.get("input", "")}, ensure_ascii=False)
-    position = scene_position(data, plan_item["scene"])
-    position_contract = ("SELECTED POSITION\nKeep this wording once in the final scene description, with the bodies' arrangement: "
+    position = plan_item.get("selected_position")
+    position_contract = ("SELECTED POSITION\nTreat this as part of the accepted scene. Preserve this selected arrangement and act in natural prose, "
+                         "keeping each adult's role, body contacts and support. The label need not be copied literally. "
+                         "It takes precedence over a conflicting Director default, but never a user requirement: "
                          + position) if position else ""
     builder_request = replace(request, idea=plan_item["scene"], mode="Enhance", planning_mode="Direct",
         target_model=data["target"], prompt_length=data["length"], creativity=data["creativity"],
