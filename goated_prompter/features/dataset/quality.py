@@ -168,3 +168,30 @@ def broken_anatomy(text):
     """The first wording that detaches or merges a body part in a sexual image, or None."""
     match = _BROKEN_ANATOMY.search(str(text or "").casefold())
     return match.group() if match else None
+
+
+# Ordinary sex is the default; domination, restraint and fetish dynamics only when asked for.
+_KINK = re.compile(r"\b(?:slaves?|owned by|collared|collars?|leash(?:ed)?|pet play|bdsm|dominatrix|dom(?:/| and )sub|"
+                   r"submissive|dominant|dominat\w*|bondage|restrain\w*|tied up|handcuff\w*|spank\w*|chok\w*|"
+                   r"footjob\w*|foot fetish|feet worship|breeding|degrad\w*|humiliat\w*|fetish\w*|kinky|kinks?|"
+                   r"latex|rough sex|(?:his|her|my|their) (?:master|mistress))\b")
+_ORAL = re.compile(r"\b(?:oral|blowjob\w*|suck\w*|deepthroat\w*|69|sixty-nine|face[- ]?sitting|cunnilingus|"
+                   r"eat(?:s|ing)? (?:her|him) out|lick\w*)\b")
+# Image models cannot hold a body up in the air believably; sexual images keep every body supported.
+_SEXUAL_LIFT = re.compile(r"\b(?:lift(?:s|ed|ing)? (?:her|him|them|the \w+)|lifted|carr(?:y|ies|ied|ying) (?:her|him|them)|"
+                          r"held up (?:in|against)|suspended|picks? (?:her|him) up|picked up|holding (?:her|him) up)\b")
+SEXUAL_LIFT = "Every body stays supported by a bed, floor, furniture or wall; no one is lifted, carried or held up."
+
+
+def kink_request(data):
+    return bool(_KINK.search(_request_text(data)))
+
+
+def oral_request(data):
+    return bool(_ORAL.search(_request_text(data)))
+
+
+def sexual_lift(text):
+    """The first wording that holds a body up in the air in a sexual image, or None."""
+    match = _SEXUAL_LIFT.search(str(text or "").casefold())
+    return match.group() if match else None
