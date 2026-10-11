@@ -138,7 +138,9 @@ class ScenePlanner:
             # on the model's favourite ideas; recent and current ideas are avoided.
             avoid = [*(self.idea_history.recent(data) if self.idea_history is not None else []),
                      *(row["idea"] for row in existing if row.get("idea"))]
+            history = self.idea_history
             events = brainstorm_events(session, data, len(indexes), random.Random(seed), avoid=avoid,
+                                       seen=(lambda text: history.seen_before(data, text)) if history is not None else None,
                                        family=family, progress=progress, checkpoint=self.checkpoint)
             seeds = dict(zip(indexes, events))
         rows = []

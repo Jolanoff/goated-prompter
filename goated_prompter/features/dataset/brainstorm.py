@@ -266,7 +266,7 @@ def pick_events(candidates, count, rng, *, avoid=(), limit_passive=True):
     return chosen
 
 
-def brainstorm_events(session, data, count, rng, *, avoid=(), family="qwen", progress, checkpoint):
+def brainstorm_events(session, data, count, rng, *, avoid=(), seen=None, family="qwen", progress, checkpoint):
     """Return up to ``count`` event seeds, or none when the brainstorm is unusable."""
     checkpoint()
     # A different random handful each batch keeps the model inventing instead of copying a list.
@@ -290,6 +290,10 @@ def brainstorm_events(session, data, count, rng, *, avoid=(), family="qwen", pro
     if sexual_request(data):
         candidates = [candidate for candidate in candidates if not minor_reference(candidate[0])
                       and not broken_anatomy(candidate[0])]
+    if seen is not None:
+        # Candidates unlike recent runs (even before a restart) come first while enough remain.
+        fresh = [candidate for candidate in candidates if not seen(candidate[0])]
+        candidates = fresh if len(fresh) >= count else candidates
     chosen = pick_events(candidates, count, rng, avoid=avoid, limit_passive=not passive_request(data))
     # When near-repeats leave too few, the rest still get the least obvious leftover events: an image
     # without a seed falls back to its direction labels, which small models copy as a vague idea.

@@ -127,7 +127,9 @@ direction labels. Rule texts carry no worked examples, which small models copied
 verification. Globally malformed JSON or a wrong batch size gets one format correction
 and is otherwise rejected rather than guessing missing assignments.
 
-IDEAS owns recent-event memory and checks normalized exact repeats against it,
+Across restarts, `idea_history.py` keeps only keyed, 20-bit fingerprints of each idea's key words
+in `idea_fingerprints.json` (three-day expiry, no text); the brainstorm prefers candidates that
+match none of them. IDEAS owns recent-event memory and checks normalized exact repeats against it,
 including when only camera or context changed. Fresh accepted ideas are remembered;
 failed slots are not. A repair of a slot that failed as a history repeat is kept rather than rejected again.
 An explicit guided input matching the event can still repeat.
