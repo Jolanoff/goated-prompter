@@ -153,3 +153,20 @@ class IdeaFingerprintTests(unittest.TestCase):
         everything = brainstorm_events(session, data, 4, random.Random(1), seen=lambda _text: True,
                                        progress=lambda _m: None, checkpoint=lambda: None)
         self.assertEqual(len(everything), 4, "Too few fresh candidates never shrinks the batch.")
+
+
+class HistoryRepairTests(unittest.TestCase):
+    def test_a_repair_that_repeats_history_again_is_kept_instead_of_failing(self):
+        from goated_prompter.features.dataset.ideas import HISTORY_REPEAT
+        history, data = RecentIdeaHistory(), valid_draft(amount=1, _confirmed_intent=dataset_understanding_fixture())
+        old = dataset_idea_fixture(1, idea="The boxer tapes his hands.")
+        history.remember(data, [old])
+        session = Mock()
+        session.generate.return_value = json.dumps([old])
+        service = DatasetIdeasService(lambda: None, history)
+        first = service.run(session=session, data=data, assignments=dataset_assignments(data),
+                            progress=lambda _m: None, allow_partial=True)
+        self.assertEqual(first[0]["failure_reason"], HISTORY_REPEAT)
+        repaired = service.run(session=session, data=data, assignments=dataset_assignments(data), indexes=[1],
+                               existing=first, progress=lambda _m: None, allow_partial=True)
+        self.assertNotEqual(repaired[0].get("idea_status"), "failed")

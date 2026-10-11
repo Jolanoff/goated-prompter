@@ -243,7 +243,7 @@ class DatasetIdeasTests(unittest.TestCase):
         rules = " ".join(instruction.system_message.split())
         self.assertIn("Every proposed moment must visibly show the required interaction", rules)
         self.assertIn("hiding or peeking alone does not satisfy fighting", rules)
-        self.assertIn("retreating while the dinosaur attacks", rules)
+        self.assertIn("the same event at another time of day is the same idea", rules)
         self.assertNotIn("both subjects facing off before the next attack", instruction.system_message)
         self.assertEqual(json.loads(instruction.user_message)["confirmed_intent"]["hard"],
             self.data["_confirmed_intent"]["hard"])

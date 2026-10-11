@@ -9,6 +9,7 @@ a strong pull toward the rarest candidates selects stunts that cannot be rendere
 import json
 import re
 
+from ...backends.base import BackendRunawayError
 from ...contracts import PromptInstruction
 from ...strict_json import reject_duplicate_keys
 from .director import director_section
@@ -25,7 +26,7 @@ PLAUSIBLE_BODIES = """Every image must be physically possible for real bodies an
 body rests in an ordinary way: standing, walking, sitting, kneeling, crouching or lying on
 something, with its weight on feet, seat, knees or back. No one is airborne, mid-fall,
 mid-trip or mid-jump: for a slip, fall, jump or collision show the moment just before or
-just after it (about to step on the peel, sitting in the puddle). After a fall the body
+just after it. After a fall the body
 rests in one readable position, never a tangle of limbs or limbs at odd angles. No weight
 on hands or fingertips, no
 flips, cartwheels, floor spins, freezes, lifts (except a supported lift during sex, below),
@@ -35,23 +36,23 @@ the user asked for that exact move. Humor and surprise come from the situation, 
 timing and expressions, not from twisted anatomy.
 
 SEXUAL CONTENT
-When the request, confirmed_intent or Director is sexual (sex, fucking, oral, anal, penetration, mutual
-masturbation, slave, owned, collared, domination, bondage, yaoi and other explicit acts):
+When the request, confirmed_intent or Director is sexual:
 - The sex act or sexual use is the core event in every idea: visible and in progress or at a
   clearly readable peak, never implied.
-- Use concrete sexual language when the request is explicit. Name the anatomy that is part of
-  the act or exposed (penis, cock, balls, ass, hole, pussy, breasts, mouth on cock) and its state
-  (erect, hard, wet, stretched, dripping).
+- Use concrete sexual language when the request is explicit, and name the anatomy that is part
+  of the act or exposed, with its state, directly.
+- Sexual contact is between the people the request pairs: when it names who is with whom (two
+  men with a woman, say), keep every act between them; contact between the others only when the
+  request or Director asks for it.
 - Ordinary consensual sex is the default: no BDSM, domination, restraint, collars, leashes or fetishes
   unless the request or the Director asks for them.
-- For a requested sex slave, owned or collared role, show the ownership visually: a collar or leash,
-  posture, who controls whom, presenting, being used. Never rely on the word "slave" alone.
-- Never replace the act with kissing, cuddling, undressing only, "an intimate moment", looking at
-  each other or any non-sexual activity.
+- For a requested owned or slave role, show the ownership visually (what is worn, posture, who
+  controls whom), never by the word alone.
+- Never replace the act with a non-sexual activity or a vague moment.
 - Keep the act in every image and vary the whole situation around it: where it happens, what led to
   this moment, who starts it, the mood, the dynamic, the clothing state, the position and who is
-  active or receptive. No two images share both a place and a position, and no two ideas reuse the
-  same phrase (such as "deep penetration") for the act.
+  active or receptive. No two images share both a place and a position, and each idea describes the
+  act in its own words instead of repeating another idea's phrasing.
 - Clothing follows the request and the Director: partial clothing, open clothes and pulled-down
   garments are fine and often preferred; full nudity only when the user or Director asks for it.
 Supported poses (lying, kneeling, sitting, standing with weight on feet/seat/knees/back). A partner
@@ -59,7 +60,7 @@ may lift and hold another during sex when the hold is clearly supported: the lif
 the held partner's legs wrap the lifter's waist or rest on the arms, and the back rests against a
 wall or the arms hold the hips.
 Every body part belongs to exactly one person and stays attached to that person's body: name
-it with its owner ("his", "her", "the taller man's"), and never describe one on its own,
+it with its owner, and never describe one on its own,
 detached, held up alone, floating, or shared, joined or merged between two people. Visible
 genitals keep their owner's hips and torso in frame; no close-up crops the owner away. Show one
 clear point of genital contact per image; with two men, each man's penis stays on his own body
@@ -274,7 +275,12 @@ def brainstorm_events(session, data, count, rng, *, avoid=(), seen=None, family=
     instruction = brainstorm_instruction(data, candidate_count(count), avoid=avoid, family=family, position_ideas=ideas)
     progress("Brainstorming candidate events for this batch…")
     session.validate_instruction(instruction)
-    raw = session.generate(instruction)
+    try:
+        raw = session.generate(instruction)
+    except BackendRunawayError:
+        checkpoint()
+        progress("The brainstorm repeated itself; writing ideas without event seeds.")
+        return []
     checkpoint()
     try:
         candidates = validate_brainstorm(raw, candidate_count(count))
@@ -288,7 +294,11 @@ def brainstorm_events(session, data, count, rng, *, avoid=(), seen=None, family=
         # Candidates unlike recent runs (even before a restart) come first while enough remain.
         fresh = [candidate for candidate in candidates if not seen(candidate[0])]
         candidates = fresh if len(fresh) >= count else candidates
-    return pick_events(candidates, count, rng, avoid=avoid, limit_passive=not passive_request(data))
+    chosen = pick_events(candidates, count, rng, avoid=avoid, limit_passive=not passive_request(data))
+    # When near-repeats leave too few, the rest still get the least obvious leftover events: an image
+    # without a seed falls back to its direction labels, which small models copy as a vague idea.
+    leftovers = sorted((candidate for candidate in candidates if candidate[0] not in chosen), key=lambda item: item[1])
+    return chosen + [event for event, _typicality in leftovers[:count - len(chosen)]]
 
 
 def uses_event_seeds(data):

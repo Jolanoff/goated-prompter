@@ -341,7 +341,12 @@ def validate_understanding(value: dict, scopes: tuple[str, ...]) -> dict:
     if unresolved and not result["clarifications"]:
         raise ValueError("Unresolved physical conflicts require clarification.")
     if "characters" in value:
-        result["characters"] = validate_characters(value["characters"])
+        characters = validate_characters(value["characters"])
+        # A small model sometimes lists only part of a large cast; a partial cast would make the
+        # writer drop people, so the requirements alone describe them instead.
+        if type(count) is int and characters and sum(item["count"] for item in characters) < count:
+            characters = []
+        result["characters"] = characters
     return result
 
 
@@ -367,8 +372,10 @@ def validate_characters(items):
         for key in ("series", "traits"):
             if not isinstance(item[key], str) or len(item[key]) > MAX_CHARACTER_TEXT:
                 raise ValueError(f"Character {key} must be short text.")
-        characters.append({**item, "name": " ".join(name.split()),
-                           "series": " ".join(item["series"].split()), "traits": " ".join(item["traits"].split())})
+        # Traits without a letter or digit (":[") are broken output, not a description.
+        traits = " ".join(item["traits"].split())
+        characters.append({**item, "name": " ".join(name.split()), "series": " ".join(item["series"].split()),
+                           "traits": traits if any(character.isalnum() for character in traits) else ""})
     return characters
 
 
