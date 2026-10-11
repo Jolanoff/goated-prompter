@@ -25,6 +25,25 @@ Goated Prompter pairs a **React + Tailwind interface** with a **Python backend**
 > [!NOTE]
 > **This app writes prompts, not images or videos.** Copy the output into your preferred generation tool. Model weights are downloaded separately.
 
+## See it in action
+
+<!--
+Demo: drag a short MP4 (15–25 s: trigger and concept → Understanding → ideas → final prompts)
+into this file in the GitHub editor and GitHub inserts a playable video link here.
+A GIF also works: save it as docs/media/dataset-demo.gif and use
+<p align="center"><img src="docs/media/dataset-demo.gif" alt="Dataset tab turning one concept into a batch of prompts" width="900"></p>
+-->
+
+<!--
+Screenshots: save PNGs in docs/media/ with these names, then remove this comment's markers.
+
+| Prompt Builder | Dataset |
+| --- | --- |
+| <img src="docs/media/builder.png" alt="Prompt Builder" width="440"> | <img src="docs/media/dataset.png" alt="Dataset" width="440"> |
+| **Refine** | **Prompt Library** |
+| <img src="docs/media/refine.png" alt="Refine" width="440"> | <img src="docs/media/prompt-library.png" alt="Prompt Library" width="440"> |
+-->
+
 ## Features
 
 | Workflow | What you can do |
@@ -32,7 +51,7 @@ Goated Prompter pairs a **React + Tailwind interface** with a **Python backend**
 | **Prompt Builder** | Turn text and up to **four reference images** into target-aware prompts. Mix a face from one image, a pose from another, and lighting from a third. |
 | **Refine** | Paste a prompt or send one from Builder, request targeted edits, compare changes and undo a refinement. |
 | **MiniMax H3** | Write video prompts for **4–15-second clips**, with symbolic references, automatic role analysis, H3 schemas, and Director presets. |
-| **Dataset** | Create **1–25 prompts** from a shared concept, with trigger controls, scene planning, quality checks, and TXT/JSONL export. |
+| **Dataset** | Create **1–25 varied prompts** from one concept or just a trigger, for LoRA training sets. A Director stages every scene, your prompt library sets the writing style, a seed repeats or varies a batch, and recent ideas are avoided across runs. TXT/JSONL export. |
 | **Saved Prompts** | Add your own prompts directly, keep named outputs, and open saved text in Builder. |
 | **Prompt Library** | Add, edit and delete target-specific writing examples in a compact list. Stored in the same plain-text files. |
 
@@ -259,7 +278,7 @@ Slots keep their numbers when an image is removed. Removing a required image res
 - One generation runs at a time. Settings and preset editing are locked while a job is active.
 - **Save Prompt** adds named output text to the saved-prompt library. Instruction presets are a separate library.
 - In **Saved Prompts**, click **Add prompt** to paste or write your own text, name it and choose its target model. No Builder generation is needed. Failed saves keep the form available for retry.
-- **Per-target prompt library**: on first launch the app creates one text file per target model in `data/prompt_library/` (for example `krea-2.txt`). Use **Prompt Library** to select a target and add, edit or delete prompts in a compact list. You can also paste prompts into the text file, separated by a line containing only `---`. Whenever a target's file has prompts, they become templates for how a good prompt is built, not for how the image looks: the app measures their range of lengths, structure (labeled sections, prose or tags) and any shared trigger word, and shows the final writer two of them, drawn at random for each Dataset image. There are no built-in example prompts: an empty library means the writer follows only the target's rules (Qwen Image 2.1 editing keeps one worked edit example). Dataset ideas never see the library prompts themselves, so your saved prompts' places and situations do not turn up in every batch. Instead, once per library version the app asks the model for short craft notes on how your saved prompts are written (specific action, props, staging, light, detail), drops any note that repeats a word specific to your prompts, keeps them next to the library file in `.craft-notes/`, and gives only those notes to the idea step. Within a batch, at most one idea may show the cast just watching something (a view, a performer, a chef); extra ones are redone, and a single regenerated idea that breaks this gets one more try. Sexual requests (from the concept, rules, cast or Director) make the act the core of every idea and vary its mood and dynamic instead of everyday moods and interactions; everyone in a sexual or suggestive batch must be an adult, so a request that makes someone a child or teen is refused before generation, and ideas or prompts that do so are redone. Sexual batches (including slave, collared, BDSM, bondage, yaoi and similar requests) vary the whole situation around the act (place, what led there, who starts it, mood, dynamic, clothing) and the brainstorm gets a fresh random handful of supported positions that fit the cast (solo, couple, two men, two women, threesome, group) as inspiration, never forced; anatomy is named directly, and ownership roles are shown visually. Ordinary consensual sex is the default: BDSM, domination, restraint and fetish dynamics and positions appear only when the request or Director asks for them, and oral and feet positions only when those are requested. A partner may lift another during sex when the hold is clearly supported. A sexual batch can never involve an animal. Sexual prompts also keep every body part attached to its owner, keep visible genitals with their owner's body in frame and keep two men's genitals apart; wording that detaches or merges body parts is redone. Every sexual act stays between the people the request pairs (with two men and a woman, the men are each with her unless you ask otherwise). A partial cast from the understanding step is dropped in favour of the requirements, a cast entry with several random people gives each their own look, and prompts never print letter labels such as "C" for people. If the model loops while brainstorming or writing ideas, the batch continues and only the affected images are redone. The selected Director also shapes the brainstorm and stages every scene (framing, camera, light); a Director built around one kind of shot, such as Mirror Selfie, makes every image that shot, even when the concept is only your trigger. The idea step is also asked to vary places, props and activities beyond what your request names, but shared words never fail an idea. The writer copies their structure, order and level of detail, while the medium, style, palette and mood still come from your idea, the Style setting and the Director; length settings pick a point in your library's own range of lengths (Short near your shorter prompts, Maximum Detail near your longest); **Remix** (Builder) recasts a saved prompt with your characters.
+- **Per-target prompt library**: on first launch the app creates one text file per target model in `data/prompt_library/` (for example `krea-2.txt`). Use **Prompt Library** to select a target and add, edit or delete prompts in a compact list, or paste prompts into the text file separated by a line containing only `---`. Library prompts are templates for how a good prompt is *written*, not for what the image shows: see [Prompt library as a style template](#prompt-library-as-a-style-template). There are no built-in example prompts; an empty library means the writer follows only the target's rules (Qwen Image 2.1 editing keeps one worked edit example). **Remix** (Builder) recasts a saved prompt with your characters.
 
 The app writes prompts; the quality and faithfulness of the generated description depend on your chosen model and inputs. It does not generate images or videos itself.
 
@@ -306,14 +325,41 @@ Build a batch around one concept, keep shared details consistent, and vary the s
 4. Click **Generate prompts** or **Plan scenes first**, review Understanding, and confirm. Answer any clarification questions through reanalysis first.
 5. Inspect ideas, their scenes and final prompts. Edit any scene, regenerate an idea or prompt, and export **TXT**, **JSONL**, or **Scenes JSON**.
 
+#### How a batch stays varied
+
+- A brainstorm lists about three candidate events per image, and the app picks among them, gently favouring the less obvious ones and skipping near-repeats.
+- Each image gets its own creative direction (framing, light, mood, interaction, setting), and each randomly invented person gets their own hair, build, skin tone and adult age.
+- Recent ideas are avoided across runs, even after a restart (see [Checkpoint privacy and recovery](#checkpoint-privacy-and-recovery)).
+- **Seed** and **Seed control** under Advanced options work like ComfyUI: Fixed repeats a batch as closely as the engine allows, Increment and Randomize explore new ones.
+- If the model loops while brainstorming or writing ideas, the batch keeps going and only the affected images are redone.
+
+#### Directors
+
+The selected Director shapes the brainstorm and stages every scene (framing, camera, light). A Director built around one kind of shot, such as **Mirror Selfie**, makes every image that shot, even when the only input is your trigger.
+
+#### Prompt library as a style template
+
+When a target's library has prompts, the app measures their range of lengths, structure (labeled sections, prose or tags) and any shared trigger word, and shows the final writer two of them at random for each image. The writer copies their structure, order and level of detail; the medium, style, palette and mood still come from your idea, the Style setting and the Director. Length settings pick a point in your library's own range (Short near your shorter prompts, Maximum Detail near your longest).
+
+Ideas never see the library prompts themselves, so your saved prompts' places and situations do not turn up in every batch. Once per library version the app asks the model for short craft notes on how your prompts are written (specific action, props, staging, light, detail), drops any note that repeats a word specific to your prompts, keeps them in `.craft-notes/` next to the library file, and gives only those notes to the idea step.
+
+#### Adult content (Dataset only)
+
+Sexual requests are supported in the Dataset tab only, and everyone must be an adult: a request that makes someone a child or teen is refused before generation, and a sexual batch can never involve an animal.
+
+- The act is the core of every idea, and each idea varies the situation around it (place, what led there, who starts it, mood, clothing). The brainstorm gets a fresh random handful of supported positions that fit the cast as inspiration, never forced.
+- Ordinary consensual sex is the default. BDSM, domination, restraint and fetish dynamics appear only when your request or a Director asks for them; oral and feet positions only when requested.
+- Acts stay between the people your request pairs (with two men and a woman, each man is with her unless you ask otherwise).
+- Every body part stays attached to its owner, and two people's genitals never merge; wording that breaks this is redone.
+
 <details>
 <summary><strong>Dataset controls, scene planning, and validation details</strong></summary>
 
 Open **Dataset** and start with **Dataset idea**: describe the subject and what should happen, for example “a woman doing funny stuff.” Choose Subject type, Amount and Variety, then final visual treatment, target and prompt length. Character, multiple-character, animal, object/product, visual-style, location/environment, brand/logo, typography/text, concept and custom types receive appropriate planning guidance. Training trigger controls are separate and collapsible; opaque trigger tokens are not sent to Scene Planner as visual descriptions.
 
-**Require trigger at the beginning** strongly requests beginning placement when enabled; while off, the model is encouraged to write a natural visual introduction first. **Keep trigger text connected** requests the complete input as one phrase; turn it off to encourage comma-, line-, or `and`-separated terms in different meaningful positions, such as `woman, cake` or `1 man and 1 girl`. Placement and grouping remain warning-only preferences. **Allow the model to expand the trigger** is on by default and listed first; **Keep trigger text connected** is only shown when expansion is off, since an expanded trigger is grouped or distributed however reads most naturally. With expansion off, every trigger term must appear exactly as typed, including capitalization and word order. Missing exact wording retries only that final prompt, preserving its idea and scene. With expansion enabled, articles, capitalization and inserted descriptors may vary: `a banana` can become `A muscular anthropomorphic banana`, but both banana and apple must still be mentioned for `a banana, an apple`. Subject/attribute words are matched as whole words in order; unknown semantic paraphrases need manual review, and custom identifier tokens remain protected. When expansion is off, the model may still describe actions, poses, interactions, scene-relevant clothing or use, composition, and lighting, but it must not invent intrinsic identity, appearance, design, material, style, or location properties unless the concept, rules, guided input, or trigger explicitly supplies them.
+**Allow the model to expand the trigger** is on by default. **Require trigger at the beginning** strongly requests beginning placement when enabled; while off, the model is encouraged to write a natural visual introduction first. With expansion on, the trigger is kept together or spread near what it describes, whichever reads most naturally. With expansion off, **Keep trigger text connected** appears: it requests the complete input as one phrase; turn it off to encourage comma-, line-, or `and`-separated terms in different meaningful positions, such as `woman, cake` or `1 man and 1 girl`. Placement and grouping remain warning-only preferences. With expansion off, every trigger term must appear exactly as typed, including capitalization and word order. Missing exact wording retries only that final prompt, preserving its idea and scene. With expansion enabled, articles, capitalization and inserted descriptors may vary: `a banana` can become `A muscular anthropomorphic banana`, but both banana and apple must still be mentioned for `a banana, an apple`. Subject/attribute words are matched as whole words in order; unknown semantic paraphrases need manual review, and custom identifier tokens remain protected. When expansion is off, the model may still describe actions, poses, interactions, scene-relevant clothing or use, composition, and lighting, but it must not invent intrinsic identity, appearance, design, material, style, or location properties unless the concept, rules, guided input, or trigger explicitly supplies them.
 
-The **dataset concept** is the recurring activity, relationship, environment, or theme shared by the batch—for example, “their adventures together.” **Consistency and variation rules** state both fixed requirements (“the man is taller and has a beard”) and deliberate changes (“use a different adventure and outfit in every prompt”). Explicit rules are allowed even when trigger expansion is disabled. Under **Advanced options**, **Seed** and **Seed control** work like ComfyUI: the seed field shows the seed of the last batch, and each new batch keeps it (Fixed), adds one (Increment) or picks a new one (Randomize). The seed drives the app's random picks and is sent to the model, so a fixed seed with the same settings and model repeats a batch as closely as the engine allows; regenerating one image stays random.
+The **dataset concept** is the recurring activity, relationship, environment, or theme shared by the batch—for example, “their adventures together.” **Consistency and variation rules** state both fixed requirements (“the man is taller and has a beard”) and deliberate changes (“use a different adventure and outfit in every prompt”). Explicit rules are allowed even when trigger expansion is disabled. The seed field shows the seed of the last batch. The seed drives the app's random picks and is sent to the model, so a fixed seed with the same settings and model repeats a batch as closely as the engine allows; regenerating one image stays random.
 
 Choose 1–25 prompts, a realistic or non-realistic visual treatment, variety level, Director preset, target model and prompt length. **Let Scene Planner invent scenes** develops distinct visible events inside your concept and rules. **Provide my own scene ideas** uses one line per idea. Scene Planner improves each guided idea without replacing its central action or named objects; when lines cycle, only permitted context and presentation vary.
 
@@ -329,7 +375,7 @@ Structured runtime output validation dispatches from target capabilities. MiniMa
 
 **Plan scenes first** needs no trigger. Idea and scene edits keep each other and invalidate only that prompt; the edited scene is written as edited. Output settings reuse scenes. Concept, inputs, amount, type, variety, rules or visual-style changes invalidate the plan. Final results contain `{index, input, idea, scene, prompt}`. JSONL includes originating idea/scene; **Scenes JSON** exports the plan. TXT and Copy all are final-prompt-only. Wait for **Dataset settings: Saved** for edits. Old final prompts remain readable, but plans from the earlier frozen-idea contract require replanning; archives are not migrated or rewritten on load.
 
-**Guided inputs** accept full events or partial anchors. Details in a line apply only to its assignments. Shared identity does not automatically lock clothing. Lines cycle in order: six lines for ten images map to 1–6, then 1–4. Fixed actions stay fixed; permitted details may vary. Recent-idea memory supplies novelty guidance without overriding anchors. **Reset recent ideas** leaves current scenes and prompts unchanged.
+**Guided inputs** accept full events or partial anchors. Details in a line apply only to its assignments. Shared identity does not automatically lock clothing. Lines cycle in order: six lines for ten images map to 1–6, then 1–4. Fixed actions stay fixed; permitted details may vary. Recent-idea memory supplies novelty guidance without overriding anchors.
 
 The scene is Builder's entire creative input in **Enhance / Direct**, together with the approved cast and requirements. Builder's Director, creativity, style, target and detail controls enrich it without dropping characters or changing the action, camera or framing. For Anima, count tags (such as `1girl, 1boy`) come from the cast, followed by named characters' Danbooru and series tags. There is no separate Dataset final writer, fidelity reviewer or support audit. Shared Builder/MiniMax validation stays available.
 
