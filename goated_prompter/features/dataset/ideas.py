@@ -11,7 +11,8 @@ from ...backends.base import BackendGenerationError
 from ...contracts import PromptInstruction
 from .brainstorm import PLAUSIBLE_BODIES
 from .director import director_fixes_shot, director_section
-from .quality import ADULTS_ONLY, BROKEN_ANATOMY, SEXUAL_LIFT, analyze_idea_diversity, broken_anatomy, kink_request, minor_reference, oral_request, sexual_lift, passive_idea, passive_request, sexual_request
+from .quality import (ADULTS_ONLY, BROKEN_ANATOMY, SEXUAL_LIFT, analyze_idea_diversity, broken_anatomy,
+                      kink_request, minor_reference, passive_idea, passive_request, sexual_lift, sexual_request)
 from .understanding import (label_replacements, numbered_labels, replace_labels, understanding_instruction,
                             unwrap_json_fence, validate_understanding)
 from ...strict_json import reject_duplicate_keys
@@ -104,15 +105,14 @@ EVENT SEEDS
 An assignment may carry event_seed: the core event and place the app picked for this image
 from a wide brainstorm, so batches do not repeat the same favourite ideas. Build the idea
 around that event, set it in that place and stage it fully. In a sexual batch take the
-situation and place from the seed (creative_direction.setting when the seed names no place) and
-the position from creative_direction; when that position cannot fit the seed's act, keep the act
-and choose a position that fits it. The idea line then states that act, position and place, in
-words different from the other ideas. Change only a part that conflicts with HARD.
+act, position, situation and place from the seed (creative_direction.setting when the seed names
+no place). The idea line then states that act, position and place, in words different from the
+other ideas. Change only a part that conflicts with HARD.
 
 CREATIVE DIRECTION
 Each assignment carries a creative_direction chosen by the app to spread the batch
-across moments, moods, framing, settings and light, for several characters how they
-interact, and in a sexual batch the position. Start that image's idea from it; with an event_seed, the seed decides what
+across moments, moods, framing, settings and light, and for several characters how they
+interact. Start that image's idea from it; with an event_seed, the seed decides what
 happens and the direction how it is shown. When a DIRECTOR block is present it has
 priority: the direction only fills what the Director leaves open. Never let a moment, mood,
 setting or interaction label dilute, replace or soften a required act (a sexual act
@@ -197,36 +197,22 @@ SEXUAL_DIRECTIONS = {
                 "a living space with furniture to lean on", "a kitchen or dining area", "a secluded outdoor spot",
                 "a parked car or other private vehicle", "a workplace after hours"),
 }
+# Dynamics that need three or more people.
+GROUP_INTERACTIONS = ("shared between the partners", "the center of attention in the group")
 # Domination, restraint and fetish dynamics only when the request or Director asks for them;
 # ordinary sex is the default.
 KINK_DIRECTIONS = {
     "mood": ("dominant", "submissive", "possessive", "defiant", "worshipful", "rough"),
     "interaction": ("one is clearly in control of the other", "one pins the other down", "one obeys the other's orders",
-                    "one presents for the other", "one worships the other's body", "rough and urgent"),
+                    "one presents for the other", "one worships the other's body", "rough and urgent",
+                    "owned and being used", "presenting for use", "a teasing power exchange"),
 }
-# With two or more people each sexual image also gets a position, so a batch spreads over many
-# instead of the model's favourite few. Every one keeps bodies supported (no lifts or inversions)
-# and suits penetration; oral positions only join when the request asks for oral.
-SEXUAL_POSITIONS = (
-    "missionary, legs wrapped around the partner", "missionary, legs over the partner's shoulders",
-    "on all fours, taken from behind", "lying flat on the stomach, partner on top from behind",
-    "riding on top, facing the partner", "riding on top, facing away", "spooning on their sides",
-    "standing, bent over a table or counter, from behind", "standing face to face, one leg raised on a support",
-    "sitting on the partner's lap, facing them", "sitting on the partner's lap, facing away",
-    "lying at the edge of a bed or table, partner standing between the legs",
-    "lotus, seated and wrapped around each other", "kneeling upright, taken from behind",
-    "lying back with knees pulled to the chest", "seated on a chair, partner straddling it",
-    "side by side, one leg raised over the partner's hip",
-)
-ORAL_POSITIONS = ("kneeling oral, partner standing", "lying back, receiving oral", "sixty-nine, lying on their sides",
-                  "sitting on the partner's face", "kneeling between the partner's legs, mouth on them")
-KINK_POSITIONS = ("face down with hips raised, wrists held", "on the knees, presenting from behind")
 # A required action must be visible in every image. Manual runs showed moment,
 # mood and setting directions (rest, water break, climbing a ladder) replacing it,
 # so those items only vary how the image is shot.
 ACTION_SAFE_AXES = ("framing", "light")
-# In a sexual batch the act is the required action; its mood, dynamic, place and position support it.
-SEXUAL_ACTION_SAFE_AXES = ("framing", "light", "mood", "interaction", "setting", "position")
+# In a sexual batch the act is the required action; its mood, dynamic and place support it.
+SEXUAL_ACTION_SAFE_AXES = ("framing", "light", "mood", "interaction", "setting")
 # Steep top-down and worm's-eye angles foreshorten full bodies into broken anatomy,
 # so no direction asks for them; the user can still request one explicitly.
 # Close-ups and over-the-shoulder views crop or hide a participant, so datasets
@@ -298,14 +284,11 @@ def creative_directions(data, indexes, salt=0):
         values = GROUP_FRAMING if group and axis == "framing" else SEXUAL_DIRECTIONS.get(axis, values) if sexual else values
         if sexual and axis in KINK_DIRECTIONS and kink:
             values = values + KINK_DIRECTIONS[axis]
+        if sexual and axis == "interaction" and type(brief_count) is int and brief_count >= 3:
+            values = values + GROUP_INTERACTIONS
         order = list(values)
         random.Random(seed + position).shuffle(order)
         orders[axis] = order
-    if sexual:
-        order = list(SEXUAL_POSITIONS + (ORAL_POSITIONS if oral_request(data) else ())
-                     + (KINK_POSITIONS if kink_request(data) else ()))
-        random.Random(seed + len(DIRECTION_AXES)).shuffle(order)
-        orders["position"] = order
     # A single random person whose sex the user left open gets one drawn here, so prompts never
     # fall back to "a person" or a bare role label. An age the user already gave anywhere (a role,
     # a trait, the concept or the trigger: "40 yo man", "his teenage son") is never replaced.
@@ -341,7 +324,7 @@ def creative_directions(data, indexes, salt=0):
         required_action = bool(action_scopes & scopes)
         directions[index] = {axis: order[(index - 1) % len(order)] for axis, order in orders.items()
                              if (axis in safe_axes if required_action else not ((guided or sexual) and axis == "moment"))
-                             and (group or axis not in ("interaction", "position"))}
+                             and (group or axis != "interaction")}
         if random_cast:
             looks = {}
             for slot, (name, sex, open_sex, aged) in enumerate(random_cast):
