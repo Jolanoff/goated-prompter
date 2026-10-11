@@ -13,8 +13,10 @@ from ...backends.base import BackendRunawayError
 from ...contracts import PromptInstruction
 from ...strict_json import reject_duplicate_keys
 from .director import director_section
-from .quality import (broken_anatomy, feet_request, idea_concepts, kink_request, minor_reference, oral_request,
-                      passive_idea, passive_request, requested_text, sexual_request)
+from .private_vocabulary import load_vocabulary, private_rules
+from .quality import (aftercare_request, broken_anatomy, feet_request, furniture_request, idea_concepts, kink_request,
+                      minor_reference, oral_request, ownership_request, passive_idea, passive_request, pet_request,
+                      requested_text, sexual_request)
 from .understanding import understanding_instruction, unwrap_json_fence, validate_understanding
 
 
@@ -46,6 +48,8 @@ When the request, confirmed_intent or Director is sexual:
   request or Director asks for it.
 - Ordinary consensual sex is the default: no BDSM, domination, restraint, collars, leashes or fetishes
   unless the request or the Director asks for them.
+- When the request or Director asks for an ownership, slave or power-exchange dynamic, it is expected
+  in every image, not optional: show its restraint, props and poses clearly, between consenting adults.
 - For a requested owned or slave role, show the ownership visually (what is worn, posture, who
   controls whom), never by the word alone.
 - Never replace the act with a non-sexual activity or a vague moment.
@@ -70,103 +74,56 @@ Everyone in a sexual or suggestive image is an adult, clearly grown-up in face a
 them as women and men. Never make anyone in it a child or teen, never mention school, a
 young age or a childlike body, even for anime characters."""
 
-# Positions the brainstorm may draw on for sexual batches: a random handful per batch, as
-# inspiration next to its own ideas, never one forced per image. The pool follows the cast (solo,
-# couple, two men, two women, three, a group) and only adds oral, feet or BDSM positions when the
-# request or Director asks for them. Lifts are shown with clear support; no genitals are pressed
-# together (image models merge them).
-SEXUAL_POSITIONS = {
-    "solo": ("masturbating on her or his back", "masturbating kneeling", "masturbating sitting at the edge of a bed",
-             "using a toy on all fours", "using a toy on the back with legs open"),
-    "couple": ("missionary", "missionary, legs up", "missionary, legs on the partner's shoulders", "mating press",
-               "doggy style on all fours", "doggy style, chest down and hips up", "prone bone, flat on the stomach",
-               "cowgirl, facing the partner", "reverse cowgirl, facing away", "spooning from behind",
-               "side by side, facing each other", "standing, from behind", "standing face to face, one leg raised",
-               "against the wall, from behind", "against the wall, face to face", "sitting on the lap, facing the partner",
-               "sitting on the lap, facing away", "at the edge of the bed, partner standing between the legs",
-               "bent over furniture", "at the edge of a table or counter", "straddling a chair, facing the partner",
-               "straddling a chair, facing away", "lotus, sitting face to face", "butterfly, hips at the edge, legs open",
-               "anvil, hips raised and legs wide", "lifted and held, back supported against the wall",
-               "standing, lifted with legs wrapped around the partner's waist"),
-    "oral": ("kneeling oral", "sitting oral at the edge of the bed", "standing oral, partner kneeling",
-             "oral with the receiver on the back", "sixty-nine, stacked", "sixty-nine, side by side", "face sitting",
-             "oral from behind, bent over", "deepthroat, kneeling", "face fucking, kneeling"),
-    "two men": ("anal doggy style", "anal prone bone", "anal missionary, legs up", "anal mating press", "anal spooning",
-                "anal, sitting on the lap facing away", "anal, sitting on the lap facing the partner",
-                "anal, standing bent over", "anal, against the wall", "intercrural, between the thighs",
-                "cock warming, sitting in the lap"),
-    "man and woman": ("vaginal missionary", "vaginal doggy style", "vaginal cowgirl", "vaginal reverse cowgirl",
-                      "vaginal spooning", "cunnilingus between the legs", "cunnilingus, face sitting"),
-    "two women": ("strap-on doggy style", "strap-on missionary", "strap-on cowgirl", "tribbing face to face",
-                  "scissoring, legs clearly overlapping", "cunnilingus between the legs", "cunnilingus, face sitting",
-                  "sixty-nine, side by side"),
-    "feet": ("footjob, soles together", "footjob with one foot", "feet on the chest during missionary",
-             "soles presented toward the partner", "licking feet while the partner sits",
-             "foot on the face, light pressure, while riding", "ankles held during penetration",
-             "soles visible in the foreground during doggy style"),
-    "kink": ("collared, on all fours, presenting", "collared, kneeling oral", "cuffed wrists in front, missionary",
-             "cuffed wrists behind, doggy style", "ankles tied, legs open, on the back",
-             "restrained on the stomach, hogtie style, body supported", "bound to a chair, straddled",
-             "leash held while mounted from behind", "leash held during kneeling oral", "arms held above the head against a wall",
-             "wrists pinned above the head, missionary", "hair held gently from behind", "chin guided during oral",
-             "presenting with a collar and open legs", "kneeling display pose before use",
-             "over-the-knee spanking setup, no impact marks", "rope harness visible while riding",
-             "spreader bar, legs open on the back", "owned pose, collar and leash, waiting",
-             "being used doggy style, held by the hips", "lap as a seat, facing away, controlled pace",
-             "presenting on all fours, looking back", "on the back, legs spread, offering", "kneeling, mouth open, offering",
-             "bent over, presenting", "held open by the partner's hands on the thighs", "mounted and claimed from behind",
-             "used against a wall, controlled", "at the edge of the bed, submitted, legs open"),
-    "three": ("spit roast, oral and penetration", "double team doggy style, one oral, one behind",
-              "sandwich standing, one in front and one behind", "one receives oral while penetrating another",
-              "train, one behind another on all fours", "two on one, missionary plus oral",
-              "two on one, cowgirl plus oral from the second", "two receivers side by side, one partner alternating",
-              "triangle oral between three people", "one straddles a face while another penetrates",
-              "sitting on a lap while the third gives oral", "two kneeling for oral on one standing",
-              "one held between two partners, standing and supported", "rotating spit roast, clear roles"),
-    "group": ("center receiver on all fours, several partners", "center receiver on the back, legs open, several partners",
-              "center receiver kneeling, oral in a circle", "center receiver, spit roast at both ends",
-              "center receiver standing, supported by two", "queue: one active doggy style, the others waiting in view",
-              "triple attention: oral plus two hands, clear contact", "the center partner passed between partners",
-              "center receiver at a table edge, several partners standing"),
-}
-# Positions that only appear when the request names them.
-REQUESTED_POSITIONS = {
-    r"gag": "ball gag in place", r"blindfold": "blindfolded",
-    r"double penetration|\bdp\b": "double penetration, bodies supported", r"bukkake": "bukkake-style finish",
-    r"film(?:ing|ed)?|camera": "one partner filming while the others are engaged",
-}
-
-
+# Positions come from the private vocabulary file (private_vocabulary.py): a random handful per
+# batch, as inspiration next to the model's own ideas, never one forced per image. The pool follows
+# the cast (solo, couple, two men, two women, three, a group) and only adds oral, feet, kink, pet,
+# furniture or aftercare positions when the request or Director asks for them.
 def sexual_positions(data):
     """The positions that fit this batch's cast and what the request asks for."""
+    vocabulary = load_vocabulary()
+
+    def take(name):
+        return list(vocabulary.get(f"{name} positions", ()))
+
     cast = [item for item in (data.get("_confirmed_intent") or {}).get("characters") or () if isinstance(item, dict)]
     people = sum(item.get("count") or 1 for item in cast) or (data.get("_confirmed_intent") or {}).get("character_count") or 1
     men = sum(item.get("count") or 1 for item in cast if item.get("sex") == "male")
     women = sum(item.get("count") or 1 for item in cast if item.get("sex") == "female")
+    owned = people > 1 and ownership_request(data)
     pool = []
     if people <= 1:
-        pool += SEXUAL_POSITIONS["solo"]
+        pool += take("solo")
+    elif owned and people == 2:
+        # A requested ownership dynamic replaces ordinary couple positions with power-exchange ones.
+        pass
     elif women >= 2 and not men:
-        pool += SEXUAL_POSITIONS["two women"]
+        pool += take("two women")
     else:
-        pool += SEXUAL_POSITIONS["couple"]
+        pool += take("couple")
         if men >= 2 and not women:
-            pool += SEXUAL_POSITIONS["two men"]
+            pool += take("two men")
         elif men and women:
-            pool += SEXUAL_POSITIONS["man and woman"]
+            pool += take("man and woman")
         if people == 3:
-            pool += SEXUAL_POSITIONS["three"]
+            pool += take("three")
         elif people >= 4:
-            pool += SEXUAL_POSITIONS["group"]
+            pool += take("group")
     if people > 1 and oral_request(data):
-        pool += SEXUAL_POSITIONS["oral"]
+        pool += take("oral")
     if feet_request(data):
-        pool += SEXUAL_POSITIONS["feet"]
+        pool += take("feet")
     if people > 1 and kink_request(data):
-        pool += SEXUAL_POSITIONS["kink"]
+        pool += take("kink")
+    if people > 1 and pet_request(data):
+        pool += take("pet")
+    if people > 1 and (owned or furniture_request(data)):
+        pool += take("furniture")
+    if aftercare_request(data):
+        pool += take("aftercare")
     asked = requested_text(data)
-    pool += [position for pattern, position in REQUESTED_POSITIONS.items() if re.search(pattern, asked)]
+    pool += [entry for pattern, entry in vocabulary.get("requested", ()) if pattern.search(asked)]
     return tuple(dict.fromkeys(pool))
+
 
 POSITION_IDEAS = 12
 
@@ -212,7 +169,7 @@ def brainstorm_instruction(data, count, *, avoid=(), family="qwen", position_ide
             "properties": {"event": {"type": "string", "minLength": 1, "maxLength": MAX_EVENT_CHARACTERS},
                            "typicality": {"type": "number"}}}
     budget = 256 + count * 64
-    return PromptInstruction(system_message=director_section(data) + BRAINSTORM_SYSTEM,
+    return PromptInstruction(system_message=director_section(data) + BRAINSTORM_SYSTEM + private_rules(data),
         user_message=json.dumps(context, ensure_ascii=False, separators=(",", ":")),
         model_family=family, diagnostic_stage="dataset:ideas:brainstorm", max_tokens=budget,
         hard_max_tokens=budget, unlimited_tokens=False, temperature=1.0, top_p=.95, json_output=True,

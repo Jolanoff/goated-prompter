@@ -347,10 +347,27 @@ Ideas never see the library prompts themselves, so your saved prompts' places an
 
 Sexual requests are supported in the Dataset tab only, and everyone must be an adult: a request that makes someone a child or teen is refused before generation, and a sexual batch can never involve an animal.
 
-- The act is the core of every idea, and each idea varies the situation around it (place, what led there, who starts it, mood, clothing). The brainstorm gets a fresh random handful of supported positions that fit the cast as inspiration, never forced.
+- The act is the core of every idea, and each idea varies the situation around it (place, what led there, who starts it, mood, clothing). The brainstorm gets a fresh random handful of positions that fit the cast as inspiration, never forced.
 - Ordinary consensual sex is the default. BDSM, domination, restraint and fetish dynamics appear only when your request or a Director asks for them; oral and feet positions only when requested.
+- Ownership language in the request or Director (slave, owned, master or mistress, human pet) makes the power exchange part of every image: only power-exchange moods, dynamics and clothing, a prop in each image, and power-exchange positions instead of ordinary ones.
 - Acts stay between the people your request pairs (with two men and a woman, each man is with her unless you ask otherwise).
 - Every body part stays attached to its owner, and two people's genitals never merge; wording that breaks this is redone.
+
+**Your private vocabulary.** The moods, dynamics, places, clothing, props and positions for adult batches are not part of the project. They live in your own plain-text file, **`data/vocabulary/sexual.txt`**, which the app creates empty on first launch (listing every section) and which is never committed. Edit it in any text editor: one entry per line under a `[section]` heading, `#` for comments. Changes apply to the next batch without a restart. Without the file, adult batches still work and the model invents those details itself within the rules.
+
+| Section | Used |
+| --- | --- |
+| `[rules]` | Extra rule lines for every adult batch |
+| `[ownership rules]` | Extra rule lines when the request or Director uses ownership language |
+| `[mood]` `[interaction]` `[setting]` `[clothing]` | Every adult batch |
+| `[group interaction]` | Three or more people |
+| `[kink mood]` `[kink interaction]` `[kink setting]` `[kink clothing]` `[props]` | When kink or ownership is requested |
+| `[pet mood]` `[pet interaction]` | When pet play is requested |
+| `[solo positions]` `[couple positions]` `[two men positions]` `[two women positions]` `[man and woman positions]` `[three positions]` `[group positions]` | By cast |
+| `[oral positions]` `[feet positions]` `[kink positions]` `[pet positions]` `[furniture positions]` `[aftercare positions]` | When requested (furniture also with ownership) |
+| `[requested]` | `pattern => entry`: the entry joins the positions when your request matches the pattern |
+
+Entries that involve minors, non-consent or incapacitation, death, family members, animals, school, breath restriction or injury, or that detach or merge body parts, are skipped, whatever the file says.
 
 <details>
 <summary><strong>Dataset controls, scene planning, and validation details</strong></summary>
@@ -438,6 +455,7 @@ goated-prompter/
 │   ├── prompts.json            # Saved prompt collection
 │   ├── workspace.json          # Versions and undo/redo history
 │   ├── workflow_settings.json  # Workflow drafts and custom instructions
+│   ├── vocabulary/sexual.txt   # Your private adult Dataset vocabulary (optional)
 │   └── directors/              # Custom instruction presets
 │       └── .overrides/         # Edits to built-in instruction presets
 └── tests/                      # Python, frontend, and browser workflow tests

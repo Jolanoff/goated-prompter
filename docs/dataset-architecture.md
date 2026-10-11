@@ -95,12 +95,18 @@ applies to the target) go to IDEAS too, so it decides each scene's framing, came
 the writer then keeps them. The brainstorm gets the same Director section (`director.py`). A
 Director built around one kind of shot (selfie, mirror, first person) also replaces each image's
 framing direction, lifts the mirror and posing bans, and is not limited as a watching idea. A sexual request (`quality.sexual_request`, which also reads
-the cast, the brief and the Director) swaps mood and interaction for the larger `SEXUAL_DIRECTIONS`,
-gives the brainstorm a random handful of `position_ideas` as inspiration (from
-`brainstorm.SEXUAL_POSITIONS`, chosen by cast: solo, couple, two men, two women, three, a group; oral,
-feet and `KINK` positions and named extras only when the request or Director asks), adds
-`KINK_DIRECTIONS` moods and dynamics only when `kink_request` finds BDSM or fetish wording in the
-request, or a Director sentence that asks for them (a sentence that forbids them does not count), keeps
+the cast, the brief and the Director) takes its mood, interaction, setting and clothing directions,
+and a random handful of `position_ideas` for the brainstorm, from the user's private vocabulary file
+(`private_vocabulary.py`, `data/vocabulary/sexual.txt`, never committed; without it those axes stay open
+and the model invents them within the rules). Positions follow the cast (solo, couple, two men, two
+women, three, a group); oral, feet, kink, pet, furniture and aftercare positions and the file's
+`requested` entries join only when the request or Director asks. Kink moods, dynamics, clothing and a
+prop per image join only when `kink_request` finds BDSM or fetish wording in the request, or a Director
+clause that asks for it (a clause that forbids it does not count). An `ownership_request` (slave, owned,
+master or mistress, human pet) uses only the kink moods, dynamics and clothing, replaces ordinary couple
+positions with power-exchange ones, and adds the file's ownership rules. Every file entry passes the
+adults-only and anatomy checks plus consent, incapacitation, death, family, animal, school and
+breath-restriction checks before use. The stage also keeps
 every sexual act between the people the request pairs, allows a partner-supported lift during sex, keeps the place and
 position next to a required act, drops the moment axis, and draws an adult age for random characters; `adults_only_error` refuses a
 sexual or suggestive batch that names someone under 18 or involves an animal before any model call, and brainstorm
