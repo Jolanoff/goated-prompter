@@ -87,10 +87,12 @@ def anima_count_tags(characters):
 
 
 # Camera words only: "light from above" or a character "looking down" are not viewpoints.
-_HIGH_VIEW = re.compile(r"\bhigh[- ]angle\b|\btop[- ]down\b|\bbird'?s[- ]eye\b|\boverhead (?:view|shot|angle)\b"
+# "Low-angle light" or "high-angle sun" describes where the light comes from, not the camera.
+_LIGHT = r"(?![- ]?(?:\w+ )?(?:light\w*|sun\w*|glow\w*|rays?|beams?))"
+_HIGH_VIEW = re.compile(r"\bhigh[- ]angle\b" + _LIGHT + r"|\btop[- ]down\b|\bbird'?s[- ]eye\b|\boverhead (?:view|shot|angle)\b"
                         r"|\b(?:shot|seen|viewed|filmed|photographed|camera(?: looking)?) (?:from )?(?:directly )?above\b"
                         r"|\bcamera looks? down\b")
-_LOW_VIEW = re.compile(r"\blow[- ]angle\b|\bworm'?s[- ]eye\b|\bfrom ground level\b"
+_LOW_VIEW = re.compile(r"\blow[- ]angle\b" + _LIGHT + r"|\bworm'?s[- ]eye\b|\bfrom ground level\b"
                        r"|\b(?:shot|seen|viewed|filmed|photographed|camera(?: looking)?) (?:from )?(?:directly )?below\b"
                        r"|\bcamera looks? up\b")
 
