@@ -318,7 +318,7 @@ class GeometryTests(unittest.TestCase):
         self.assertIsNotNone(geometry_error("Low-angle shot under warm light; high-angle view of the street."))
 
     def test_creative_directions_never_ask_for_steep_angles(self):
-        from goated_prompter.features.dataset.ideas import DIRECTION_AXES, GROUP_FRAMING
+        from goated_prompter.features.dataset.vocabulary import DIRECTION_AXES, GROUP_FRAMING
         steep = ("high-angle", "low-angle", "from above", "top-down", "bird", "worm")
         for framing in (*DIRECTION_AXES["framing"], *GROUP_FRAMING):
             self.assertFalse(any(word in framing for word in steep), framing)
@@ -375,7 +375,7 @@ class PlausibilityTests(unittest.TestCase):
         girl = character(name="random girl", sex="female", origin="random", series="")
         data = valid_draft(amount=3, _confirmed_intent=dataset_understanding_fixture(characters=[NARUTO, girl]))
         looks = [item["random_character_looks"]["random girl"] for item in creative_directions(data, [1, 2, 3]).values()]
-        from goated_prompter.features.dataset.ideas import AGES
+        from goated_prompter.features.dataset.vocabulary import AGES
         self.assertFalse(any(age in look for look in looks for age in AGES))
         self.assertTrue(all(look.count(",") == 2 for look in looks), "Only hair, build and skin tone are drawn.")
         for stated in ({"name": "20 yo man"}, {"name": "man", "traits": "25 years old"}, {"name": "woman in her 30s"},
@@ -553,7 +553,7 @@ class IdeaQualityTests(unittest.TestCase):
                       " ".join(BRAINSTORM_SYSTEM.split()))
 
     def test_several_characters_get_an_interaction_and_settings_skip_scenic_views(self):
-        from goated_prompter.features.dataset.ideas import DIRECTION_AXES
+        from goated_prompter.features.dataset.vocabulary import DIRECTION_AXES
         couple = [{**COMPANION, "name": "man", "sex": "male"}, {**COMPANION, "name": "wife", "sex": "female"}]
         data = valid_draft(amount=8, trigger_type="Multiple characters",
                            _confirmed_intent=dataset_understanding_fixture(characters=couple))
@@ -562,7 +562,7 @@ class IdeaQualityTests(unittest.TestCase):
         self.assertFalse(any("view" in setting for setting in DIRECTION_AXES["setting"]))
 
     def test_drawn_hair_and_build_fit_each_persons_sex_and_a_stated_age_is_kept(self):
-        from goated_prompter.features.dataset.ideas import AGES, LOOK_PARTS
+        from goated_prompter.features.dataset.vocabulary import AGES, LOOK_PARTS
         couple = [{**COMPANION, "name": "man", "sex": "male"}, {**COMPANION, "name": "wife", "sex": "female"}]
         data = valid_draft(amount=10, trigger_type="Multiple characters", subject="a man and his wife exploring japan",
                            trigger="40 yo man", _confirmed_intent=dataset_understanding_fixture(characters=couple))
@@ -721,7 +721,8 @@ class SexualContentTests(unittest.TestCase):
                               "_confirmed_intent": self.brief, **changes})
 
     def test_only_sexual_batches_get_sexual_moods_and_dynamics(self):
-        from goated_prompter.features.dataset.ideas import DIRECTION_AXES, SEXUAL_DIRECTIONS
+        from goated_prompter.features.dataset.ideas import SEXUAL_DIRECTIONS
+        from goated_prompter.features.dataset.vocabulary import DIRECTION_AXES
         normal = creative_directions(self.draft("a couple exploring japan"), range(1, 9))
         sexual = creative_directions(self.draft("a couple having sex"), range(1, 9))
         self.assertTrue(all(row["interaction"] in DIRECTION_AXES["interaction"] for row in normal.values()))

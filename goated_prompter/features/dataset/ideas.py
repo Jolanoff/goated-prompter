@@ -16,6 +16,8 @@ from .quality import (ADULTS_ONLY, BROKEN_ANATOMY, analyze_idea_diversity, broke
 from .understanding import (label_replacements, numbered_labels, replace_labels, understanding_instruction,
                             unwrap_json_fence, validate_understanding)
 from ...strict_json import reject_duplicate_keys
+from .vocabulary import (DIRECTION_AXES, ACTION_SAFE_AXES, SEXUAL_ACTION_SAFE_AXES, GROUP_FRAMING, AGES, LOOK_PARTS,
+                         ORDINALS, SHORT_HAIR, LONG_HAIR_STYLES, SKIN_TONES, LOOK_KINDS, SEX_LOOKS)
 
 
 IDEA_FIELDS = ("idea", "scene")
@@ -155,28 +157,6 @@ never return a bare object or an object containing an ideas array.
 """
 
 
-# Spread the batch in code instead of asking one call to invent and police variety.
-# Values are generic so they fit any subject; the prompt lets HARD, guided input,
-# expansion limits and batch-shared choices override any part of a direction.
-DIRECTION_AXES = {
-    "moment": ("the build-up just before the main action", "the peak of the action",
-               "the aftermath or reaction", "a small mishap in the middle of it", "an unguarded candid moment",
-               "a playful or unexpected twist on the subject"),
-    "mood": ("joyful", "tense", "calm", "mischievous", "determined", "flustered", "tender", "chaotic"),
-    "framing": ("close-up", "medium shot", "full-body shot", "wide shot where the place tells the story",
-                "three-quarter view at eye level", "slightly raised eye-level view", "over-the-shoulder view"),
-    "setting": ("the most familiar spot in the subject's world", "a less obvious corner of the subject's world",
-                "a busy place full of other people", "a small shop, stall, workshop or kitchen",
-                "a home, room or other private space", "a vehicle, station or other place in transit",
-                "an outdoor spot shaped by the weather"),
-    "light": ("soft morning light", "harsh midday sun", "golden hour", "dusk or blue hour",
-              "night lit by practical lights", "dramatic single-source light", "overcast diffuse light",
-              "warm lamplight from windows or lanterns"),
-    # Only images with several characters get one; it decides how they relate in this moment.
-    "interaction": ("one teaches or shows the other something", "a playful disagreement", "a shared mishap",
-                    "one surprises the other", "working together on a fiddly task", "one helps the other out of a problem",
-                    "a small competition between them", "one teases the other"),
-}
 # Sexual batches vary the mood and dynamic of the act instead; their moment axis (build-up,
 # aftermath, mishap) would move the image away from the act, so they get none.
 SEXUAL_DIRECTIONS = {
@@ -203,42 +183,6 @@ KINK_DIRECTIONS = {
                     "one presents for the other", "one worships the other's body", "rough and urgent",
                     "owned and being used", "presenting for use", "a teasing power exchange"),
 }
-# A required action must be visible in every image. Manual runs showed moment,
-# mood and setting directions (rest, water break, climbing a ladder) replacing it,
-# so those items only vary how the image is shot.
-ACTION_SAFE_AXES = ("framing", "light")
-# In a sexual batch the act is the required action; its mood, dynamic and place support it.
-SEXUAL_ACTION_SAFE_AXES = ("framing", "light", "mood", "interaction", "setting")
-# Steep top-down and worm's-eye angles foreshorten full bodies into broken anatomy,
-# so no direction asks for them; the user can still request one explicitly.
-# Close-ups and over-the-shoulder views crop or hide a participant, so datasets
-# with several characters draw framing from shots that keep everyone in frame.
-GROUP_FRAMING = ("medium shot with everyone in frame", "full-body shot", "wide shot where the place tells the story",
-                 "three-quarter view at eye level with everyone in frame", "slightly raised eye-level view with everyone in frame")
-# Random characters otherwise collapse to the model's default person, so the app draws
-# each image's look for them (AttrPrompt: random attribute combinations beat fixed ones).
-# Looks are built from independent parts, so a batch of ten draws ten of hundreds of
-# combinations instead of walking through one short list that every batch repeats.
-AGES = ("early twenties", "mid twenties", "late twenties", "early thirties", "late thirties", "forties")
-# Hair and build are drawn per sex, so a man does not get a pixie cut or a woman a crew cut by chance;
-# people whose sex is open draw from both.
-LOOK_PARTS = {
-    "woman": {"length": ("pixie-length", "chin-length", "shoulder-length", "mid-back-length", "waist-length"),
-              "style": ("straight", "wavy", "curly", "braided", "tied-up", "messy", "sleek"),
-              "color": ("black", "dark brown", "chestnut", "auburn", "copper-red", "honey-blonde", "platinum-blonde",
-                        "ash-brown", "silver-grey", "dark blonde"),
-              "build": ("slim", "athletic", "curvy", "petite", "tall and slender", "full-figured", "toned",
-                        "soft and round", "heavyset", "willowy")},
-    "man": {"length": ("buzzed", "short", "cropped", "medium-length", "shoulder-length"),
-            "style": ("straight", "wavy", "curly", "slicked-back", "tousled", "faded at the sides"),
-            "color": ("black", "dark brown", "light brown", "sandy-blond", "ginger", "grey", "salt-and-pepper"),
-            "build": ("slim", "athletic", "stocky", "broad-shouldered", "tall and lean", "heavyset", "muscular",
-                      "wiry", "soft-bellied", "barrel-chested")},
-}
-ORDINALS = ("first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth")
-SHORT_HAIR = {"pixie-length", "chin-length", "buzzed", "short", "cropped"}
-LONG_HAIR_STYLES = {"braided", "tied-up", "slicked-back"}
-SKIN_TONES = ("fair", "freckled fair", "light", "olive", "tan", "golden-brown", "brown", "deep brown")
 _SEX_WORDS = {"female": "woman", "male": "man"}
 # A role or trait that already gives an age ("girl", "old man", "20 yo man", "in her 30s") keeps it; the
 # scene picks outfits to fit the setting.
@@ -246,8 +190,6 @@ _NUMERIC_AGE = r"\b\d{1,3}\s*(?:yo|y/o|yrs?|years?)\b|\b\d{1,3}-year\b|\b\d0'?s\
 _AGED_ROLE = re.compile(r"\b(?:girl|boy|kid|child|teen\w*|old|elderly|grand\w*|senior|young|baby|toddler)s?\b|" + _NUMERIC_AGE, re.I)
 # In a sexual batch "girl" or "young" is not an age: only a stated number keeps the drawn adult age away.
 _STATED_NUMERIC_AGE = re.compile(_NUMERIC_AGE, re.I)
-LOOK_KINDS = {"human", "humanoid"}
-SEX_LOOKS = ("woman", "man")
 _DIRECTION_SOURCE = ("subject", "trigger", "trigger_type", "custom_type", "constraints", "inputs", "source_mode")
 
 
