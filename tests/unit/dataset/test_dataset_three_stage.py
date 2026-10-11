@@ -310,9 +310,12 @@ class GeometryTests(unittest.TestCase):
 
     def test_light_and_gaze_directions_are_not_mistaken_for_the_camera(self):
         for prompt in ("Soft light from above while she looks down at her phone; low-angle shot.",
-                       "Sunlight from below the clouds, eye-level medium shot.", "A high-angle view of a quiet street."):
+                       "Sunlight from below the clouds, eye-level medium shot.", "A high-angle view of a quiet street.",
+                       "The balcony is lit by the warm, low-angle light of the golden hour. High-angle shot, medium-full frame.",
+                       "Low-angle golden sunlight rakes the wall; high-angle shot.", "High-angle sun, low-angle shot."):
             with self.subTest(prompt=prompt):
                 self.assertIsNone(geometry_error(prompt))
+        self.assertIsNotNone(geometry_error("Low-angle shot under warm light; high-angle view of the street."))
 
     def test_creative_directions_never_ask_for_steep_angles(self):
         from goated_prompter.features.dataset.ideas import DIRECTION_AXES, GROUP_FRAMING
