@@ -1,117 +1,236 @@
 # Dataset architecture
 
-Dataset produces prompts, not images. The dependency chain is:
+Dataset produces prompts, not images. There is one pipeline:
 
 ```text
 concept + rules + local guided input
-  → idea → scene + applicable geometry → target-specific prompt
-       Fast: combined chunks             Dataset final writer
-       Quality: batch ideas, then chunks
+  → UNDERSTAND (characters + hard / soft / free) → human approval
+  → BRAINSTORM candidate events (random batches) → app picks each image's event
+  → IDEAS, five per call, each an idea with its finished scene
+  → Builder ENHANCE / Direct with the approved cast → FINAL PROMPT
 ```
 
 ## Owners
 
 | Responsibility | Owner |
 | --- | --- |
-| Assignment indexes and cycling guided lines | `goated_prompter/dataset_assignments.py` |
-| Fast/Idea/Composer instruction contracts | `goated_prompter/prompting/scene_planner.py` |
-| Chunking, strict JSON, stage retries and local repairs | `goated_prompter/scene_planner.py` |
-| Field registry, live capabilities, aliases, migration and staging rules | `goated_prompter/dataset_staging/` |
-| Scene usability shared by writing, actions and API projections | `goated_prompter/scene_eligibility.py` |
-| Dataset writer composition | `goated_prompter/prompting/dataset.py` |
-| Sequential writing, bounded recovery, trigger/content validation | `goated_prompter/dataset.py` |
-| Target syntax and output normalization | `goated_prompter/prompting/target_models.py`, `goated_prompter/workflow_output.py` |
-| Editable workflow state and durable generated progress | `goated_prompter/workflow_settings.py`, `goated_prompter/dataset_checkpoints.py` |
-| Dataset requests, job projection, quality analysis and readiness | `frontend/src/workflows/useDatasetWorkflow.js` |
-| Serialized autosave, revisions and stale-refresh guards | `frontend/src/workflows/useWorkflowSettings.js` |
-| UI, dialogs, elapsed time and downloads | `frontend/src/workflows/DatasetTab.jsx` |
-| Pure edit/invalidation and canonical scene comparison | `frontend/src/workflows/datasetState.js` |
+| Scoped understanding, character list and richer brief validation | `goated_prompter/features/dataset/understanding.py` |
+| Source-bound, expiring approval tickets | `goated_prompter/features/dataset/intent.py` |
+| Guided assignment indexes and cycling | `goated_prompter/features/dataset/assignments.py` |
+| Ideas with finished scenes and lexical duplicate hints | `goated_prompter/features/dataset/ideas.py`, `quality.py` |
+| Recent-event RAM history, read and written only by Ideas | `goated_prompter/features/dataset/ideas.py`, `idea_history.py` |
+| Chunked idea orchestration and versioned saved-plan validation | `goated_prompter/features/dataset/plan.py` |
+| Writer eligibility, shared by API and enhancement | `goated_prompter/features/dataset/eligibility.py` |
+| Builder handoff, cast section, Anima cast tags, cast check and trigger controls | `goated_prompter/features/dataset/prompting.py` |
+| Batch/actions and bounded final-output recovery | `goated_prompter/features/dataset/service.py` |
+| Target syntax and output normalization | `goated_prompter/prompting/target_models.py`, `workflow_output.py` |
+| Editable drafts and durable generated progress | `goated_prompter/workflow_settings.py`, `goated_prompter/features/dataset/checkpoints.py` |
+| API admission | `goated_prompter/features/dataset/routes.py` |
+| Workflow execution | `goated_prompter/features/dataset/runner.py` (dispatched by `goated_prompter/workflow_runners.py`) |
+| Confirmation and job synchronization | `frontend/src/features/dataset/useDatasetConfirmation.js`, `useDatasetWorkflow.js` |
+| Autosave, revisions and refresh guards | `frontend/src/shared/workflow/useWorkflowSettings.js` |
+| Cards, edits, character review and exports | `frontend/src/features/dataset/DatasetTab.jsx`, `DatasetConfirmationModal.jsx`, `datasetState.js` |
 
-## Authority and stage contracts
+## Authority and stages
 
-Explicit concept, consistency rules and each assignment's local guided input outrank planner
-inference. An idea fixes the event; the scene and supplied geometry describe its spatial realization.
-The writer enriches compatible treatment inside those decisions. Director, target and length
-controls do not authorize a different action, support arrangement or crop.
+UNDERSTAND interprets the user's request without generating scenes. Its brief lists the
+characters in every image (name, count, sex, kind such as human, anthro, monster, alien
+or robot, origin as an existing, described or randomly invented character, series and
+supplied traits) and records character count, identity policy, scoped requirements, action alternatives, permitted
+expansion, visible evidence, interactions, natural occlusions and physical conflicts.
+`all_outputs` applies to every image, `dataset` to the set, and `guided:N` only to that
+line's assignments. Clarifications prevent approval. Added instructions require
+reanalysis; the approval ticket is bound to source settings and saved scene edits.
 
-Fast creates ideas and scenes together. Its output contract does not ask it to echo ideas that were
-never supplied. Quality's Idea Planner owns invention and diversity; the fixed-idea Composer
-echoes those ideas without receiving novelty history or batch-variety instructions. Both composition
-paths use chunks of four, the same selected staging profile and strict JSON validation. Idea output
-is bounded at 30 words / 240 characters; model scenes at 240 words / 2,000 characters. Original-input
-recovery and saved legacy content have separate storage limits; live validators are not weakened
-to accept them as newly generated model output.
+The brief also exposes three small scoped lists for approval: **hard** obligations,
+**soft** preferences that may yield to hard requirements, and **free** creative
+choices within the user's expansion limits. Only approved hard requirements are
+immutable. The richer interpretation explains this contract; downstream stages do
+not infer extra locks from it or promote their own inventions into requirements.
+UNDERSTAND generates each scoped fact once in a hard, soft, free or explanatory
+context bucket, tagged with the review sections it belongs to. The generation schema
+reserves one HARD slot for the app-retained character trigger when needed, without
+reducing the other buckets' capacities. The app expands these facts into the same public
+brief, supplies output-setting prose from the request, and retains the supplied
+character trigger before approval. Existing full briefs remain valid; saved reviews,
+approval tickets, IDEAS and the writer still consume the unchanged public contract.
+Generation uses bucket-specific review-tag schemas: HARD excludes `may_vary`, FREE
+allows only `may_vary`, SOFT has no review tags, and CONTEXT requires exactly
+`natural_occlusions`. Required overlaps may still be HARD. This prevents constrained
+decoding from producing cross-authority tags that the projection would reject;
+nonconforming responses remain rejected, without moving or dropping their facts.
+The generation instructions request minified, single-line JSON, preserving whitespace
+inside string values. This is model guidance, not a JSON-schema whitespace guarantee;
+valid pretty-printed responses remain accepted without a formatting retry.
+UNDERSTAND also requests semantic brevity: no synonymous restatements or separate
+facts already contained in another same-scope, same-authority fact. Ordinary
+unspecified freedoms are grouped categorically by scope and policy rather than
+enumerating every possible trait. Explicit restrictions, owners and choose-once
+versus per-image policies remain distinct. Array limits are ceilings, not targets;
+complex requests retain their full existing capacity. This is model guidance, not
+automatic semantic deduplication or truncation of a generated brief.
+The review summary lists mandatory variation once instead of repeating it among
+image/scoped requirements. Within the optional details view, exact scoped facts
+with the same authority appear once, with their additional review categories shown
+as annotations. Different wording, literal case/spacing, scopes or authorities
+remain separate, and conflict resolutions remain inspectable. The original brief,
+approval and downstream inputs are not rewritten by these display changes.
+Explicit user counts, actions, contacts, exclusions and required visual evidence
+belong in hard, retaining their scope and qualifiers. A semantic trait does not
+automatically require exposure. Unresolved user conflicts block approval.
 
-The Dataset writer shares target adapters, target-resolved length guidance, Director instructions
-and output contracts. It does **not** assemble a Builder prompt and then remove conflicting rules
-by string substitution. Dataset Creativity changes descriptive enrichment only. Builder and MiniMax
-keep their existing orchestration; no global workflow-controller abstraction is introduced.
+For random batches, a brainstorm call (`brainstorm.py`) first lists about three candidate
+scenarios per image (what happens and where, each in its own place) with a typicality score.
+The app drops events similar to recent runs or current siblings and samples the batch gently
+weighted toward unusual events, then passes each image its `event_seed`, which replaces that
+image's moment, interaction and setting directions. Randomly invented human characters also
+get a look per image built from independent parts (`LOOK_PARTS`: hair length, style and colour,
+build, skin tone, plus an age from `AGES` unless one is stated), so each seed draws new people
+from hundreds of combinations instead of reshuffling one short list. An unusable brainstorm is reported
+and ideas continue without seeds; guided batches skip it.
+IDEAS writes five images per call: each record is a one-line idea (the core event) and
+its scene, a complete three-to-five-sentence picture with the whole cast in frame,
+placement, action, setting, light and camera. The selected Director's instructions (when it
+applies to the target) go to IDEAS too, so it decides each scene's framing, camera and light;
+the writer then keeps them. The brainstorm gets the same Director section (`director.py`). A
+Director built around one kind of shot (selfie, mirror, first person) also replaces each image's
+framing direction, lifts the mirror and posing bans, and is not limited as a watching idea. A sexual request (`quality.sexual_request`, which also reads
+the cast, the brief and the Director) swaps mood and interaction for the larger `SEXUAL_DIRECTIONS`,
+gives the brainstorm a random handful of `position_ideas` as inspiration (from
+`brainstorm.SEXUAL_POSITIONS`, chosen by cast: solo, couple, two men, two women, three, a group; oral,
+feet and `KINK` positions and named extras only when the request or Director asks), adds
+`KINK_DIRECTIONS` moods and dynamics only when `kink_request` finds BDSM or fetish wording in the
+request, or a Director sentence that asks for them (a sentence that forbids them does not count), keeps
+every sexual act between the people the request pairs, allows a partner-supported lift during sex, keeps the place and
+position next to a required act, drops the moment axis, and draws an adult age for random characters; `adults_only_error` refuses a
+sexual or suggestive batch that names someone under 18 or involves an animal before any model call, and brainstorm
+events, ideas and final prompts that do so are dropped, repaired or retried. The same stages tie every body part to
+its owner and keep visible genitals with their owner's hips and torso in frame; `broken_anatomy`
+drops, repairs or retries wording that detaches a body part or merges two people's genitals. Later calls receive the earlier ideas as
+existing ideas and share one creative-direction salt, so the
+batch stays spread without one long list. Ideas never see the prompt library's prompts;
+they get craft notes (`craft_notes.py`) distilled from it once per library version, and any
+note that repeats a word specific to the saved prompts is dropped. An
+explicit replacement requests only its index. History and diversity hints never
+override a guided action or approved hard requirement. There is no Fast/Quality
+dispatch, automatic substitute idea or fallback plan.
+During a fresh batch, exact normalized duplicates retain the first valid idea and mark
+only later repeats for repair; permitted guided repeats remain accepted. Invalid
+individual rows also become explicit failed slots without dropping valid siblings.
+Valid prompts finish first, then one replacement call requests only failed idea
+indexes, followed by their writer calls. Replacement validation still rejects unchanged
+or repeated ideas; unsuccessful repairs leave an inspectable partial batch, not an
+unbounded retry loop. A brainstorm that loops continues without event seeds; an ideas call that
+loops gets one varied retry and then fails only its slots for repair. When near-repeat filtering leaves
+too few events, the least typical leftovers fill the remaining slots, so no image falls back to bare
+direction labels. Rule texts carry no worked examples, which small models copied into every idea. Lexical similarity remains a nonblocking hint, not semantic
+verification. Globally malformed JSON or a wrong batch size gets one format correction
+and is otherwise rejected rather than guessing missing assignments.
 
-## Staging and framing
+Across restarts, `idea_history.py` keeps only keyed, 20-bit fingerprints of each idea's key words
+in `idea_fingerprints.json` (three-day expiry, no text); the brainstorm prefers candidates that
+match none of them. IDEAS owns recent-event memory and checks normalized exact repeats against it,
+including when only camera or context changed. Fresh accepted ideas are remembered;
+failed slots are not. A repair of a slot that failed as a history repeat is kept rather than rejected again.
+An explicit guided input matching the event can still repeat.
+History stays bounded in RAM per concept and expires automatically. There is no
+manual reset control or endpoint. The writer does not read this history or change an
+accepted event for novelty. Semantic variation beyond exact repeats
+remains model-guided, not independently verified.
 
-The global vocabulary includes historical values for loading saved data. Live `StagingProfile`
-value overrides expose ordinary capabilities, including ordinary camera/contact values for
-non-human profiles. Prompt schemas and validators consume the same profile restrictions.
-Specialized user mechanics remain representable through applicable free text; Character
-`pose_type=custom` still requires specific `pose_detail`. Unknown fields, invalid values and missing
-required fields remain errors.
+There is no separate scene-building call. Each idea's scene, or the user's edit of it,
+is accepted for the writer as written. A `REPAIR:` note saved by the former scene check
+still blocks its writer until the idea is regenerated.
 
-Saved specialized enum facts migrate into pose/expression/view details. Safe whole-subject framing
-labels map to their profile equivalents. Ambiguous facts or overflowing details flag only their row
-for repair; scene prose and valid siblings survive. Overflowing migrated details remain bounded,
-with an explicit warning rather than being silently discarded. This is a compatibility migration,
-not a way for new model output to bypass the live schema.
-
-`FramingIntent` is a narrow immutable projection of crop, source (`user`, `guided`, `planner`) and
-conflicts. It is not a second general scene representation. Shared checks use it for scene
-eligibility, local repair locks, deterministic recovery and final prompt validation. Conflicting
-explicit source crops are errors rather than permission to fall back to planner framing.
-
-Crop recognition is lexical and conservative: quoted image text, camera distance and visible anatomy
-are not crop instructions. Folded or foreshortened feet can appear inside a tight Character composition;
-their visibility never automatically widens it. A locked user crop cannot be widened to solve a
-whole-product requirement either: an actual conflict needs repair or user clarification. Lexical
-checks cannot prove arbitrary paraphrased composition or the anatomy of a future image.
+Scenes state exactly one camera angle and shot size and one head-to-feet pose per character;
+the app's creative directions never ask for top-down or worm's-eye views, and the writer may not
+add a second viewpoint or extra pose detail. A deterministic check rejects final prompts that
+describe the camera from above and from below at once, because contradictory viewpoints are a
+common cause of folded anatomy. When the target's library has prompts, the writer gets a
+measured prompt format (range of lengths, structure, section labels, shared trigger; the selected
+length picks a point in that range) and two library prompts as templates for how the
+prompt is built, drawn at random from the whole library for each image (fixed per scene, so
+rewriting one prompt keeps its templates). The target adapter and the Director stay in full: the
+look (medium, style, palette, mood) comes from the request, the Style setting and the Director,
+never from the templates.
+Scene prose is Builder's entire creative input. `dataset_instruction` calls the
+existing `assemble_instruction` with **Enhance / Direct**, adds the approved cast and
+the applicable hard/soft/free contract. Director, creativity, style, length and target
+controls enrich open detail, not a different event, cast or crop. For Anima, count tags
+derived from the cast lead the tag block, followed by named characters' Danbooru and
+series tags. A deterministic check retries the writer when cast-derived count tags or a
+named character's name are missing from the prompt.
+Dataset has no separate final writer or semantic/support reviewer. Shared Builder
+and MiniMax planning/validation remain independent and available.
 
 ## Recovery and text preservation
 
-`PlannerCallState` separates output correction from transport retry. A connection failure repeats
-the same stage request, preserving any existing correction and last completed candidate. It does
-not feed a socket/provider error to the model as a prompt defect. Retry limits and checkpoints
-remain bounded.
+Normal **Generate prompts** always runs ideas → prompts after the first
+UNDERSTAND approval, regardless of the legacy `plan_scenes_first` saved flag.
+**Generate scenes only** is an explicit separate action for manual scene review;
+Continue reuses the accepted plan and writes only its missing prompts.
 
-Scene repair preserves the fixed idea, source mechanics and nondefective geometry. Exhaustion
-marks that row failed; it does not replace its event with an easier idea. Writer recovery keeps its
-own target-format, trigger, positive-content and runaway-output policies. The Planner and writer
-loops remain separate because their recovery units and validators differ.
+Final enhancement retains up to three bounded retries for transport errors, malformed
+target output, missing protected triggers, positive-content leakage and runaway
+generation, and for a dropped cast member. These retries never replan the scene. Transport retries repeat
+the instruction; output correction stays within the accepted scene and target format.
+Runaway retries reduce the output allowance. A sentence-complete prefix may be
+accepted only after normal output validation.
 
-Generic `sanitize_prompt_text` trims outer whitespace only. It does not remove parentheses,
-replace semicolons, collapse deliberate spacing or strip metadata-like visible content. Target
-adapters still own transformations such as structured-output extraction. Dataset's separate
-positive-content sanitizer and strict validator remain in force, including literal/trigger protection.
+With trigger expansion disabled, Dataset restores a missing literal numeric count
+from its equivalent English number-word phrase (1–20) before strict validation,
+for example `two men` → `2 men`. This changes spelling only: it does not add subjects,
+rewrite synonyms, infer counts or change the accepted scene. Quoted lettering,
+identifier boundaries, compound numbers and already-present exact terms are left
+alone. Ideogram restoration is limited to `high_level_description`. The correction
+is reported in progress/activity; missing triggers still use the bounded writer retries.
 
-## Frontend freshness and persistence
+Generic text cleanup trims outer whitespace only. Dataset's conservative sanitizer
+removes complete standalone exclusion/meta clauses, not useful mixed prose, quoted
+image text or protected triggers. Ideogram cleanup touches descriptive strings, never
+rendered `elements[].text` or required schema fields. Anima's supported standalone
+positive quality tags remain allowed. These are narrow checks, not a semantic fidelity
+score or universal ban on words such as “no.”
 
-The server owns scene eligibility. The client accepts that decision only when its editable scene
-still matches the saved scene's semantic projection: index, input, presence/value of idea, prose,
-geometry and scene status. Geometry object keys are recursively sorted; arrays and literal prose
-retain their ordering/text. Prompt status and writer failure bookkeeping do not change scene identity.
-An unsaved idea/scene/geometry edit cannot reuse old eligibility.
+## Edits, freshness and persistence
 
-The hook preserves submission exclusion, quality-attempt disposal, job ID/revision deduplication,
-flush-before-generation and the existing revision snapshot. `useWorkflowSettings` owns autosave
-ordering and guards late refreshes against newer edits. Exports release only disposable completed
-job diagnostics after flushing; editable plans, durable checkpoints and history are not erased.
+Idea and scene edits keep each other and invalidate only that prompt; an edited scene
+is written as edited. Output-setting changes reuse scenes; concept, guided input, amount, type or rules
+changes invalidate the plan. Server eligibility is accepted only while the client's
+scene matches its saved dependency projection; key order and prompt bookkeeping do
+not affect identity.
+Plans created before ideas carried their own scenes also need replanning; their
+saved text and final prompts are not deleted or migrated.
+
+The draft's `seed` and `seed_mode` (randomize, fixed, increment) work like ComfyUI's seed
+control. The frontend picks each new batch's seed and sends it with the request without
+saving it first; admission saves the request with the other settings, so a rejected run
+changes nothing and an admitted one keeps the seed it used. Continue and per-image actions
+keep the current seed. A batch run
+seeds the app's picks (brainstorm sampling, creative directions, drawn looks) and sends the
+seed with every model request; per-image regeneration stays random. With a fixed seed,
+recent-idea history is neither read nor written, so a repeated batch is not rejected. The
+seed is not part of the plan or intent signatures, so changing it invalidates nothing.
+
+The backend atomically checkpoints generated progress before publishing it. Workflow
+revision and input signatures prevent stale jobs from replacing newer edits. Restart
+marks running work interrupted without resuming inference. Generation does not clear
+the prior edited batch before admission; a lost admission response cannot roll back
+accepted work. Exports and Clear release completed job diagnostics, not durable scenes.
+Clear explicitly removes the current final prompts.
+
+Final results contain `index`, `input`, `idea`, `scene`, `prompt`. Saved final prompts
+from older versions remain readable through a nonmutating projection. Obsolete plans
+are excluded from executable draft projections and require replanning; archived
+checkpoint snapshots remain intact. No legacy staging migration is executed.
 
 ## Evidence boundary
 
-`tests/eval/runner.py` keeps frozen replay and an opt-in writer mode. Its optional Dataset pipeline
-mode calls the actual production planner and writer. It records scope, raw calls, stage parameters,
-completion reasons and latency. Reports separate output repairs, transport retries, trigger checks,
-scene usability, duplicate diagnostics and model cost.
+CPU tests use mocked models and synthetic temporary storage. Browser checks cover
+approval, persistence, admission races, edits, per-scene actions and export. They do
+not prove real-model creativity or visual correctness.
 
-Production model self-review is diagnostic, not independent ground truth. Semantic regression
-gates require complete explicitly human/independent annotations. Frozen fixtures retain observed
-historical failures; mock regressions prove deterministic contracts and orchestration, not current
-LLM creativity, fidelity or latency. See [evaluation instructions](../tests/eval/README.md) and the
-[remediation report](remediation-report.md).
+`tests/eval/runner.py` uses the production Dataset pipeline with an interactive
+Understanding approval gate for live evaluation. Frozen replay remains historical
+evidence, not proof of current model quality. Semantic claims require independent
+review; see [the evaluation guide](../tests/eval/README.md).

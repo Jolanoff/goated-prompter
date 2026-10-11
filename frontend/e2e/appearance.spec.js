@@ -12,7 +12,7 @@ for (const width of [1600, 1448, 1100, 900, 720, 390, 360]) {
     await page.evaluate(() => document.fonts.ready);
     await expect(page.getByRole("heading", { name: "Describe your idea" })).toBeVisible();
     await expect(page.getByLabel("Prompt engine")).toBeDisabled();
-    await expect(page.getByLabel("Prompt engine")).toHaveCSS("background-color", "rgb(25, 41, 56)");
+    await expect(page.getByLabel("Prompt engine")).toHaveCSS("background-color", "rgb(28, 28, 26)");
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
     await page.screenshot({ path: `test-results/appearance-${process.env.APPEARANCE_PHASE || "after"}-${width}.png`, fullPage: true });
     const generate = page.getByRole("button", { name: /Generate prompt/ });
@@ -39,7 +39,7 @@ for (const width of [1448, 390]) {
     for (const colorScheme of ["light", "dark"]) {
       await page.emulateMedia({ colorScheme });
       await expect(page.locator("html")).toHaveCSS("color-scheme", "dark");
-      await expect(page.locator("html")).toHaveCSS("background-color", "rgb(14, 23, 33)");
+      await expect(page.locator("html")).toHaveCSS("background-color", "rgb(18, 18, 17)");
     }
     const end = page.getByRole("button", { name: /End generation/ });
     await expect(end).toBeDisabled();
@@ -48,17 +48,17 @@ for (const width of [1448, 390]) {
 
     const output = page.getByLabel("Generated prompt", { exact: true });
     await output.fill("A cinematic forest with warm evening light.");
-    await expect(output).toHaveCSS("color", "rgb(230, 237, 245)");
-    await expect(output).toHaveCSS("border-color", "rgb(141, 184, 255)");
+    await expect(output).toHaveCSS("color", "rgb(242, 240, 234)");
+    await expect(output).toHaveCSS("border-color", "rgb(212, 255, 58)");
 
     const save = page.getByRole("button", { name: "Save Prompt", exact: true });
     await save.hover();
     await expect(save).toHaveCSS("background-image", "none");
-    await expect(save).toHaveCSS("background-color", "rgb(36, 58, 82)");
+    await expect(save).toHaveCSS("background-color", "rgb(38, 42, 23)");
     await save.click();
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible();
-    await expect(dialog).toHaveCSS("border-radius", "14px");
+    await expect(dialog).toHaveCSS("border-radius", "20px");
     const bounds = await dialog.boundingBox();
     expect(bounds.x).toBeGreaterThanOrEqual(16);
     expect(bounds.x + bounds.width).toBeLessThanOrEqual(width - 16);
@@ -71,14 +71,14 @@ for (const width of [1448, 390]) {
     await expect(confirm).toBeEnabled();
     await page.mouse.move(0, 0);
     await expect(confirm).toHaveCSS("background-image", "none");
-    await expect(confirm).toHaveCSS("background-color", "rgb(40, 96, 213)");
+    await expect(confirm).toHaveCSS("background-color", "rgb(212, 255, 58)");
     await page.screenshot({ path: `test-results/dialog-${width}.png` });
     await page.keyboard.press("Escape");
     await expect(dialog).not.toBeVisible();
 
     const upload = page.getByLabel("Upload image 1");
     await upload.focus();
-    await expect(upload.locator("..")).toHaveCSS("outline-color", "rgb(141, 184, 255)");
+    await expect(upload.locator("..")).toHaveCSS("outline-color", "rgb(212, 255, 58)");
     await upload.setInputFiles({
       name: "reference.png",
       mimeType: "image/png",
@@ -89,12 +89,12 @@ for (const width of [1448, 390]) {
     await expect(preview).toHaveCSS("object-fit", "cover");
     await preview.hover();
     await expect(preview.locator("..")).toHaveCSS("border-style", "solid");
-    await expect(preview.locator("..")).toHaveCSS("border-color", "rgb(141, 184, 255)");
+    await expect(preview.locator("..")).toHaveCSS("border-color", "rgb(212, 255, 58)");
     await expect(page.getByLabel("Subject source")).toHaveCSS("opacity", "1");
     await page.getByRole("button", { name: "Remove image 1" }).click();
     await expect(upload).toBeAttached();
     await expect(page.getByLabel("Subject source")).toBeDisabled();
-    await expect(page.getByLabel("Subject source")).toHaveCSS("background-color", "rgb(25, 41, 56)");
+    await expect(page.getByLabel("Subject source")).toHaveCSS("background-color", "rgb(28, 28, 26)");
     await expect(page.getByRole("button", { name: /Generate prompt/ })).toBeInViewport();
 
     await page.emulateMedia({ reducedMotion: "reduce" });

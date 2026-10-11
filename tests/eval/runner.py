@@ -1,132 +1,50 @@
 """Reusable frozen/live workflow evaluation. Live inference is explicit and opt-in."""
 
 import argparse
-from datetime import datetime, timezone
 import json
 import hashlib
 from pathlib import Path
-import subprocess
 import time
+from contextlib import nullcontext
 
 from .metrics import annotation_template
+from tests.gpu.common import capture, run_case, run_metadata  # noqa: F401  (existing import path)
+from tests.gpu.cases import fixture_digest, random_cases
+from tests.gpu.workflows.dataset import approve_dataset
+from tests.support.artifacts import new_output, task_paths
+from tests.support.safety import synthetic_storage
+from tests.support.scenarios import select_cases
 
 CORPUS = Path(__file__).parent / "cases" / "corpus.json"
 
 
-def capture(calls, event):
-    kind = event.get("type")
-    if kind == "request":
-        calls.append({"stage": event.get("stage"), "parameters": event.get("parameters"),
-                      "messages": event.get("messages"), "raw": "", "finish_reason": None,
-                      "started_at": time.perf_counter()})
-    elif calls and kind == "response_delta":
-        calls[-1]["raw"] += str(event.get("text") or "")
-    elif calls and kind == "response_complete":
-        calls[-1].update(finish_reason=event.get("finish_reason"), completion_state=event.get("completion_state", "completed"))
-        calls[-1]["latency_seconds"] = time.perf_counter() - calls[-1]["started_at"]
-    elif calls and kind == "error":
-        calls[-1].update(error=event.get("message"), completion_state=event.get("completion_state", "provider_error"))
-        calls[-1]["latency_seconds"] = time.perf_counter() - calls[-1]["started_at"]
-    elif calls and kind in {"semantic_review", "validation"}:
-        calls[-1].setdefault("validation_events", []).append(event)
-
-
 def live_case(case, workflow, config, args, run=1):
-    from goated_prompter.core import GoatedPrompterRequest, GoatedPrompterService
-    from goated_prompter.backends.factory import create_backend
-    from goated_prompter.dataset import DatasetService, default_dataset_draft
-    from goated_prompter.prompting.dataset import dataset_instruction, STYLE_RULES
-    from goated_prompter.minimax import MiniMaxService
-    from goated_prompter.planning.constraints import compile_request
-    calls = []
-    config = {**config, "_activity_callback": lambda event: capture(calls, event)}
-    length = case.get("length", args.length)
-    compiled_source = compile_request(case["request"])
-    rules = case.get("rules", "")
-    if compiled_source.forbidden:
-        rules += "\n" + "; ".join("no " + fact for fact in compiled_source.forbidden)
-    # Match Dataset's explicit trigger/identity restriction in Builder parity;
-    # it is evaluation scaffolding, not a new production planning step.
-    source = case["request"] if workflow == "minimax" else "eval_subject represents " + case["request"]
-    common_rules = STYLE_RULES[args.style] + "\n" + rules
-    if workflow != "minimax":
-        common_rules += "\nInclude the exact subject identifier eval_subject. Do not invent stable identity traits or gender; compatible temporary clothing and scene detail are allowed."
-    request = GoatedPrompterRequest(idea=source, target_model=args.target, prompt_length=length,
-        director_preset=args.director, creativity=args.creativity, planning_mode=args.planning,
-        custom_instructions=common_rules)
-    sample_id = "|".join(str(value) for value in (case["id"], workflow, args.target, length, args.director,
-                                               args.style, args.creativity, args.planning, run))
-    dataset_mode = getattr(args, "dataset_mode", "writer")
-    if workflow == "dataset" and dataset_mode == "pipeline":
-        sample_id += "|pipeline|" + getattr(args, "dataset_planning", "Fast")
-    row = {"sample_id": sample_id, "case_id": case["id"], "workflow": workflow,
-           "run": run, "request": case["request"], "anchors": case["anchors"], "rules": rules,
-           "target": "MiniMax H3" if workflow == "minimax" else args.target, "length": length, "director": args.director,
-           "style": args.style, "creativity": args.creativity, "planning": args.planning,
-            "effective_request": source, "calls": calls}
-    if workflow != "minimax":
-        row.update(trigger="eval_subject", expand_trigger=False)
-    start = time.perf_counter()
-    try:
-        if workflow == "builder":
-            row["prompt"] = GoatedPrompterService(config=config).generate(request).prompt
-        elif workflow == "minimax":
-            result = MiniMaxService(config, lambda: None).run(request,
-                {"user_request": case["request"], "planning_mode": args.planning,
-                 "duration_seconds": 10, "references": case.get("references", []), "director_preset": args.director}, lambda _message: None)
-            row["prompt"] = result["prompt"]
-        else:
-            row["evaluation_scope"] = dataset_mode
-            data = {**default_dataset_draft(), "subject": case["request"], "trigger": "eval_subject",
-                    "trigger_type": case.get("dataset_type", "Character"),
-                    "amount": 1, "target": args.target, "length": length, "director_preset": args.director,
-                    "visual_style": args.style, "creativity": args.creativity, "constraints": rules}
-            if dataset_mode == "pipeline":
-                data.update(source_mode="guided", inputs=case["request"].replace("\n", " "),
-                            planning_mode=getattr(args, "dataset_planning", "Fast"))
-                result = DatasetService(config, lambda: None).run(request, data, lambda _message: None, lambda _partial: None)
-                row.update(scene_plan=result["scene_plan"], dataset_type=data["trigger_type"],
-                           completed_results=result["completed"], prompts=result["prompts"],
-                           prompt=result["prompts"][0]["prompt"] if result["prompts"] else "")
-                if not result["completed"]:
-                    row.update(error="Dataset pipeline produced no valid prompt.", completion_state="validation_failed")
-            else:
-                plan = {"index": 1, "input": case["request"], "idea": compiled_source.positive_request,
-                        "scene": compiled_source.positive_request, "geometry": {}}
-                backend = create_backend(config)
-                with backend.generation_session() as session:
-                    instruction = dataset_instruction(request, data, 1, plan_item=plan)
-                    row["prompt"] = DatasetService(config, lambda: None)._generate(session, instruction, data, 1,
-                        lambda _message: None, plan)
-        row.setdefault("completion_state", "completed")
-    except Exception as exc:
-        row.update(error=str(exc), completion_state=getattr(exc, "completion_state", "provider_error"),
-                   partial_text=getattr(exc, "partial_text", ""))
-    row.update(latency_seconds=time.perf_counter() - start,
-               finish_reason=calls[-1].get("finish_reason") if calls else None)
-    return row
+    # approve_dataset is resolved here so callers and tests can replace it.
+    return run_case(case, workflow, config, args, run, approve=approve_dataset)
 
 
 def novelty_cases(spec, config, args):
-    from goated_prompter.core import GoatedPrompterRequest
-    from goated_prompter.dataset import DatasetService, default_dataset_draft
-    from goated_prompter.dataset_idea_history import RecentIdeaHistory
+    from goated_prompter.contracts import GoatedPrompterRequest
+    from goated_prompter.features.dataset.service import DatasetService, default_dataset_draft
+    from goated_prompter.features.dataset.idea_history import RecentIdeaHistory
     history = RecentIdeaHistory() if args.history == "on" else None
     rows = []
     for run in range(1, spec["runs"] + 1):
         calls = []
         data = {**default_dataset_draft(), "subject": spec["concept"], "amount": spec["amount"],
-                "variety": args.variety, "trigger": "eval_subject", "planning_mode": "Quality",
+                 "trigger": "eval_subject",
                 "target": args.target, "length": args.length, "director_preset": args.director,
-                "visual_style": args.style, "creativity": args.creativity}
+                 "creativity": args.creativity}
         start = time.perf_counter()
         row = {"sample_id": f"novelty:{spec['id']}|dataset|{run}", "workflow": "dataset",
                "case_id": spec["id"], "concept": spec["concept"], "run": run,
                "anchors": {}, "calls": calls, "target": args.target, "output_kind": "ideas",
                "dataset_type": data["trigger_type"], "history": args.history}
         try:
-            result = DatasetService({**config, "_activity_callback": lambda event: capture(calls, event)},
-                lambda: None, idea_history=history).run(GoatedPrompterRequest(idea=spec["concept"]),
+            effective = {**config, "_activity_callback": lambda event: capture(calls, event)}
+            request = GoatedPrompterRequest(idea=spec["concept"])
+            data = approve_dataset(effective, request, data)
+            result = DatasetService(effective, lambda: None, idea_history=history).run(request,
                     data, lambda _message: None, lambda _partial: None, scenes_only=True)
             row.update(ideas=[item["idea"] for item in result["scene_plan"]], scene_plan=result["scene_plan"],
                        completion_state="completed")
@@ -147,7 +65,7 @@ def load_replay(path):
     for source in paths:
         run = json.loads(source.read_text(encoding="utf-8"))
         records = run.get("records") if isinstance(run, dict) else None
-        # Raw scene/geometry/audit responses have their own regression tests;
+        # Historical raw supporting responses are not workflow runs;
         # they must not be reported as workflow samples or invented successes.
         if directory and isinstance(run, dict):
             if records is None and "run_id" not in run:
@@ -177,7 +95,7 @@ def load_replay(path):
             "records": [row for run in runs for row in run["records"]]}
 
 
-def main():
+def main(argv=None, gpu=False):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--corpus", type=Path, default=CORPUS)
     parser.add_argument("--replay", type=Path)
@@ -191,21 +109,54 @@ def main():
     parser.add_argument("--target", default="Generic")
     parser.add_argument("--length", default="Detailed")
     parser.add_argument("--director", default="general_director")
-    parser.add_argument("--style", default="Photorealistic")
     parser.add_argument("--creativity", default="Balanced")
     parser.add_argument("--planning", choices=["Direct", "Auto", "Always"], default="Direct")
-    parser.add_argument("--dataset-mode", choices=["writer", "pipeline"], default="writer")
-    parser.add_argument("--dataset-planning", choices=["Fast", "Quality"], default="Fast")
-    parser.add_argument("--variety", choices=["Focused", "Balanced", "Wide"], default="Balanced")
     parser.add_argument("--novelty", action="store_true")
     parser.add_argument("--history", choices=["on", "off"], default="on")
     parser.add_argument("--repeats", type=int, choices=range(1, 6), default=1)
-    args = parser.parse_args()
+    parser.add_argument("--seed", type=int, help="Seed fixed-case selection/order or random cases, not model output")
+    parser.add_argument("--random", type=int, metavar="N",
+                        help="Generate N seeded random cases for --workflow instead of fixed corpus cases")
+    parser.add_argument("--limit", type=int, default=1 if gpu else None, help="Maximum selected cases")
+    parser.add_argument("--task-key", help="Task key for isolated real-engine execution")
+    parser.add_argument("--max-runs", type=int, help="Approved maximum workflow runs, not model calls")
+    args = parser.parse_args(argv)
+    if gpu and (args.replay or args.novelty):
+        parser.error("Use tests.eval.runner for replay or novelty evaluation.")
+    if gpu and not args.workflow:
+        parser.error("Real-engine execution requires one explicit --workflow.")
     corpus = json.loads(args.corpus.read_text(encoding="utf-8"))
-    cases = [case for case in corpus["cases"] if not args.case or case["id"] in args.case]
+    random_selection = None
+    try:
+        if args.random is not None:
+            if not args.workflow or args.case or args.replay or args.novelty:
+                raise ValueError("--random needs one --workflow and no --case, --replay or --novelty.")
+            cases = random_cases(args.workflow, args.seed, args.random)
+            random_selection = {"workflow": args.workflow, "seed": args.seed, "count": args.random,
+                                "fixture_digest": fixture_digest(args.workflow)}
+        else:
+            cases = select_cases(corpus["cases"], args.case, args.workflow, args.seed, args.limit)
+    except ValueError as exc:
+        parser.error(str(exc))
     if args.dry_run:
-        print(json.dumps({"cases": cases, "novelty": corpus["novelty"], "inference": False}, indent=2))
+        print(json.dumps({"cases": cases, "novelty": [] if gpu or random_selection else corpus["novelty"],
+                          "scenario_seed": args.seed, "random_cases": random_selection, "inference": False}, indent=2))
         return
+    scratch = None
+    if gpu:
+        if not args.allow_live or not args.config or not args.task_key or args.max_runs is None:
+            parser.error("Real-engine execution requires --allow-live, --config, --task-key and --max-runs after owner approval.")
+        if args.max_runs < 1 or len(cases) * args.repeats > args.max_runs:
+            parser.error("Selected workflow runs exceed --max-runs; narrow --case/--limit/--repeats.")
+        try:
+            results, scratch = task_paths(args.task_key, "gpu")
+            args.output = new_output(args.output or results / "results.json", args.task_key, "gpu")
+            if args.template:
+                args.template = new_output(args.template, args.task_key, "gpu")
+                if args.template == args.output:
+                    raise ValueError("Result and annotation outputs must be different paths.")
+        except ValueError as exc:
+            parser.error(str(exc))
     if args.replay:
         try:
             result = load_replay(args.replay)
@@ -218,35 +169,44 @@ def main():
         if config.get("backend") != "openai_compatible":
             parser.error("Use an explicitly configured existing OpenAI-compatible endpoint; no process ownership changes.")
         args.output.parent.mkdir(parents=True, exist_ok=True)
-        revision = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-        source_root = Path(__file__).resolve().parents[2] / "goated_prompter"
-        code = hashlib.sha256()
-        for path in sorted(source_root.rglob("*.py")):
-            code.update(str(path.relative_to(source_root)).replace("\\", "/").encode())
-            code.update(path.read_bytes())
-        result = {"run_id": datetime.now(timezone.utc).isoformat(), "revision": revision,
-                  "code_digest": code.hexdigest(), "corpus_digest": hashlib.sha256(args.corpus.read_bytes()).hexdigest(),
-                  "dirty": bool(subprocess.check_output(["git", "status", "--porcelain"], text=True)),
-                  "engine": {key: config.get("openai_compatible", {}).get(key) for key in ("model", "context_size")}, "records": []}
-        for trial in range(1, args.repeats + 1):
-            for case in cases:
-                for workflow in (case["workflows"] if trial % 2 else list(reversed(case["workflows"]))):
-                    if args.workflow and args.workflow != workflow:
-                        continue
-                    row = live_case(case, workflow, config, args, run=trial)
-                    result["records"].append(row)
-                    args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
-                    if row.get("error") and "Could not reach" in row["error"]:
-                        return
-        if args.novelty:
-            for spec in corpus["novelty"]:
-                result["records"].extend(novelty_cases(spec, config, args))
+        result = {**run_metadata(config, hashlib.sha256(args.corpus.read_bytes()).hexdigest()),
+                   "scenario_seed": args.seed, "selected_case_ids": [case["id"] for case in cases],
+                   **({"random_cases": {**random_selection, "cases": cases}} if random_selection else {}),
+                   "records": []}
+        if gpu:
+            try:
+                with args.output.open("x", encoding="utf-8") as output:
+                    output.write(json.dumps(result, ensure_ascii=False, indent=2))
+            except FileExistsError:
+                parser.error("Output appeared during setup; retained evidence was not overwritten.")
+        with synthetic_storage(scratch) if gpu else nullcontext():
+            for trial in range(1, args.repeats + 1):
+                for case in cases:
+                    workflows = [args.workflow] if args.workflow else case["workflows"]
+                    for workflow in (workflows if trial % 2 else list(reversed(workflows))):
+                        row = live_case(case, workflow, config, args, run=trial)
+                        result["records"].append(row)
+                        args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+                        if gpu:
+                            print(json.dumps(row, ensure_ascii=False, indent=2))
+                            if row.get("error"):
+                                return 1
+                            if len(result["records"]) < len(cases) * args.repeats:
+                                if input("Inspect this result before continuing. Type yes: ").strip() != "yes":
+                                    return
+                        elif row.get("error") and "Could not reach" in row["error"]:
+                            return
+            if args.novelty:
+                for spec in corpus["novelty"]:
+                    result["records"].extend(novelty_cases(spec, config, args))
     if args.template:
-        args.template.write_text(json.dumps(annotation_template(result["records"]), indent=2), encoding="utf-8")
+        args.template.parent.mkdir(parents=True, exist_ok=True)
+        with args.template.open("x" if gpu else "w", encoding="utf-8") as template:
+            template.write(json.dumps(annotation_template(result["records"]), indent=2))
     if args.output:
         args.output.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"{result['run_id']}: {len(result['records'])} samples")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

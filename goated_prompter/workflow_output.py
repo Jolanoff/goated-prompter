@@ -3,8 +3,11 @@
 import json
 import re
 
-from .prompting.target_models import canonical_target, get_target_capabilities
+from .prompting.target_models import get_target_capabilities
+from .options.targets import canonical_target
 from .minimax_format import normalize_h3_sections
+from .output_repetition import MAX_ANIMA_TAGS, anima_tag_count
+from .strict_json import reject_duplicate_keys
 
 
 class WorkflowFormatError(ValueError):
@@ -72,13 +75,7 @@ def _ideogram_caption(value):
     return True
 
 
-def _unique_object(pairs):
-    result = {}
-    for key, value in pairs:
-        if key in result:
-            raise WorkflowFormatError("Duplicate JSON keys are not allowed.")
-        result[key] = value
-    return result
+_unique_object = reject_duplicate_keys("Duplicate JSON keys are not allowed.", WorkflowFormatError)
 
 
 def requested_visible_text(text):
@@ -116,6 +113,9 @@ def normalize_workflow_output(raw, target, *, expected_visible_text=(), mode=Non
             # Catch incomplete wrappers and JSON preceded by a model-written heading.
             if value.startswith("{") or re.search(r'(?m)^\s*[\[{]\s*(?:["{\[]|$)', value) or "```" in value:
                 raise WorkflowFormatError("This target requires prompt text, but structured or incomplete output was returned.")
+            if target == "Anima" and anima_tag_count(value) > MAX_ANIMA_TAGS:
+                raise WorkflowFormatError("Anima allows at most 100 tags, including supplied tags. Keep the fixed prefix, "
+                                          "reduce added tags and then describe the scene normally; do not truncate the scene.")
             return value
         if structured:
             if not _ideogram_caption(decoded):

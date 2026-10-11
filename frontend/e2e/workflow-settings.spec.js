@@ -25,22 +25,21 @@ async function seedVersion(request, prompt = "A traveler in a blue coat.") {
   expect(response.ok()).toBe(true);
 }
 
-test("Refine saves requested changes, explicit locks and a manual edit draft", async ({ page, request }) => {
+test("Refine saves requested changes, explicit locks and the editable prompt draft", async ({ page, request }) => {
   await seedVersion(request);
   await page.goto("/");
   await page.getByRole("button", { name: "Refine", exact: true }).click();
   await page.getByLabel("Refinement instructions").fill("Keep the coat and soften the lighting.");
   await page.getByLabel("Refine lock Identity / subject", { exact: true }).uncheck();
   await page.getByLabel("Refine lock Outfit", { exact: true }).check();
-  await page.getByRole("button", { name: "Edit text", exact: true }).click();
-  await page.getByLabel("Manual prompt edit").fill("An unfinished manual edit I want to keep.");
+  await page.getByLabel("Refinement prompt", { exact: true }).fill("An unfinished manual edit I want to keep.");
   await expect(page.getByLabel("Refine settings save status")).toHaveText("Refine settings: Saved");
   await page.reload();
   await page.getByRole("button", { name: "Refine", exact: true }).click();
   await expect(page.getByLabel("Refinement instructions")).toHaveValue("Keep the coat and soften the lighting.");
   await expect(page.getByLabel("Refine lock Identity / subject", { exact: true })).not.toBeChecked();
   await expect(page.getByLabel("Refine lock Outfit", { exact: true })).toBeChecked();
-  await expect(page.getByLabel("Manual prompt edit")).toHaveValue("An unfinished manual edit I want to keep.");
+  await expect(page.getByLabel("Refinement prompt", { exact: true })).toHaveValue("An unfinished manual edit I want to keep.");
 });
 
 test("advanced Refine instructions save and reset independently", async ({ page, request }) => {
@@ -75,9 +74,9 @@ test("failed Refine autosave retains input and retries", async ({ page }) => {
   await page.getByRole("button", { name: "Refine", exact: true }).click();
   await page.route("**/api/workspace/settings/refine", (route) => route.request().method() === "PUT"
     ? route.fulfill({ status: 503, json: { error: "Disk offline" } }) : route.continue());
-  await page.getByLabel("Starting prompt", { exact: true }).fill("Keep my draft after a failed write.");
+  await page.getByLabel("Refinement prompt", { exact: true }).fill("Keep my draft after a failed write.");
   await expect(page.getByRole("alert")).toContainText("Disk offline");
-  await expect(page.getByLabel("Starting prompt", { exact: true })).toHaveValue("Keep my draft after a failed write.");
+  await expect(page.getByLabel("Refinement prompt", { exact: true })).toHaveValue("Keep my draft after a failed write.");
   await page.unroute("**/api/workspace/settings/refine");
   await page.getByRole("button", { name: "Retry Refine save", exact: true }).click();
   await expect(page.getByLabel("Refine settings save status")).toHaveText("Refine settings: Saved");

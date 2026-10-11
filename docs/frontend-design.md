@@ -4,65 +4,76 @@ Goated Prompter is a local writing tool for image and video creators, not an
 image-generation service. The interface should give the idea, editable prompt,
 and creative choices room to breathe without hiding power-user functionality.
 
-## Tokens
+## Tokens: "Signal"
 
-- Canvas `#0e1721`: deep-blue workspace background.
-- Surface `#152230`: raised editing surfaces, without gradient washes.
-- Ink `#e6edf5`: high-contrast writing and interface text.
-- Steel `#a3b4c6`: readable secondary text.
-- Cobalt `#2860d5`: solid primary actions with white text.
-- Ice `#8db8ff`: selection accents and keyboard focus.
+A warm graphite studio with one electric-lime signal colour. Lime means "go",
+"live" and "selected"; everything else stays quiet so the writing leads.
+
+- Rail `#0c0c0b`: navigation, dark in both themes.
+- Canvas `#121211` → Surface `#1a1a18` → Raised `#232321`: layered warm
+  graphite, no gradients and no blue cast.
+- Ink `#f2f0ea`: writing and interface text. Muted `#a8a59c`: secondary text.
+- Signal `#d4ff3a`: the primary action (with `#151a00` text), focus ring,
+  selection and live status. Use it sparingly: one signal action per region.
+- Light theme keeps the hierarchy on warm paper (`#f4f3ef` / `#ffffff`); the
+  primary action flips to ink `#1a1a17` with lime text and accent text becomes
+  olive `#4a6400` so it stays readable.
 
 Dark mode is the explicit product default, even when the OS prefers light.
-The optional light palette uses cool whites and the same hierarchy; an explicit
-theme choice is saved only in browser storage, separate from workspace settings.
+An explicit theme choice is saved only in browser storage, separate from
+workspace settings.
 
-Manrope is the geometric heading/brand face; DM Sans is the readable interface
-and prompt-writing face. Monospace is reserved for actual request logs and
-instruction code, not every generated prompt. Body text starts at 14px,
-controls at 13px (16px on mobile to avoid input zoom), supporting text at 12px.
-Long descriptions stay under 75ch.
+Bricolage Grotesque is the display face (page titles, panel headings, the
+wordmark); Instrument Sans is the interface and prompt-writing face. Both load
+from `@fontsource-variable`. Monospace is reserved for request logs and
+instruction code. Body text starts at 14px, controls at 13–14px (16px on
+mobile to avoid input zoom), supporting text at 12–13px. Shapes are soft:
+12px controls, 18px panels, pills for chips and selectors.
 
 ## Layout
 
 Left-aligned, persistent navigation frames a generous working canvas. Builder
-puts the idea and controls beside the editable result, with references beneath
-the result. The action dock is compact, not a second hero.
+is a composer beside a document: the idea, its controls (as pill selectors)
+and the rules live in one composer card with Generate at its foot; the
+result reads like a document with its tools underneath. References sit below
+the result as a filmstrip. On mobile the Builder actions pin to a full-width
+bar at the bottom of the viewport.
 
 ```text
 Desktop
 ┌──────────────┬───────────────────────────────────────┐
-│ Brand        │ Workspace / current workflow          │
-│              ├───────────────────────────────────────┤
-│ Create       │ Title + short task guidance           │
-│ Refine       │                                       │
-│ Video        │ Idea                Editable result   │
-│ Dataset      │ Controls            References        │
-│              │ Rules               Reference mapping │
-│ Library      │                                       │
-│ Setup        ├───────────────────────────────────────┤
-│ Local status │ Generate                  Cancel      │
-└──────────────┴───────────────────────────────────────┘
+│ Brand        │ Breadcrumb            Theme · Status  │
+│              │ Title                                 │
+│ Builder      ├───────────────────┬───────────────────┤
+│ Refine       │ Idea              │ Generated prompt  │
+│ MiniMax      │ Pill controls     │ (document)        │
+│ Dataset      │ Rules             │ Copy Save Refine  │
+│ ──────────── │ Preview · Generate├───────────────────┤
+│ Library      │                   │ Reference strip   │
+│ Presets      │                   │ Keep from refs    │
+│ Settings     │                   │                   │
+│ View log     │                   │                   │
+└──────────────┴───────────────────┴───────────────────┘
 
 Mobile
 ┌─────────────────────────────┐
 │ Brand                       │
 │ Scrollable workflow tabs    │
 ├─────────────────────────────┤
-│ Current workflow            │
 │ Title                       │
-│ Idea / result / controls    │
-│ References / rules          │
+│ Idea / controls / rules     │
+│ Result                      │
+│ References                  │
 ├─────────────────────────────┤
-│ Generate          Cancel    │
+│ Stop   Generate prompt      │
 └─────────────────────────────┘
 ```
 
 ## Review before implementation
 
-The user's requested default is dark. Keep a layered blue studio rather than the
-original purple-gradient dashboard: clear separation between the canvas, editing
-surfaces, controls, and solid cobalt actions. A light editing palette remains an
+The user's requested default is dark. Keep a layered graphite studio with one
+signal colour: clear separation between the canvas, editing surfaces,
+controls, and solid lime actions. A light editing palette remains an
 optional preference, not the default. Remove decorative mountains,
 gradient panel fills, repeated slogans, uppercase eyebrows, and miniature type.
 Use borders for grouping and selection, not decoration; vary hierarchy instead

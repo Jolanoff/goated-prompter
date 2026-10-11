@@ -1,9 +1,8 @@
 {
-  "amount": 10,
-  "variety": "Balanced",
+  "amount": 1,
   "criteria": [
     "Concept adherence", "Semantic diversity", "Visual depictability", "One primary event",
-    "Scene clarity", "Identity stability", "Constraint adherence", "Coverage adherence",
+    "Scene clarity", "Identity stability", "Constraint adherence",
     "Idea scope and distinctness", "Camera body head gaze coherence", "Framing visibility",
     "Action mechanics and prop reach", "Idea and scene to final prompt fidelity"
   ],

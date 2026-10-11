@@ -3,10 +3,10 @@
 from collections import defaultdict
 import re
 
-from goated_prompter.dataset_constraints import compile_constraints
+from goated_prompter.planning.rule_compiler import compile_rules
 from goated_prompter.workflow_output import normalize_workflow_output
 from goated_prompter.planning.constraint_validation import output_constraint_issues
-from goated_prompter.dataset_triggers import trigger_presence_error
+from goated_prompter.features.dataset.triggers import trigger_presence_error
 
 FIDELITY = ("scene", "action", "pose", "constraint")
 REVIEW_FIELDS = ("semantic_repetition", "domain_action_relevance", "generic_pose", "pose_simplified",
@@ -38,8 +38,8 @@ def measure(row, review=None):
     semantic = [event for event in events if event.get("type") == "semantic_review"]
     try:
         if row.get("output_kind") == "ideas":
-            from goated_prompter.scene_planner import validate_saved_scene_plan
-            validate_saved_scene_plan(row.get("scene_plan", []), dataset_type=row.get("dataset_type", "Character"))
+            from goated_prompter.features.dataset.plan import validate_saved_scene_plan
+            validate_saved_scene_plan(row.get("scene_plan", []))
             valid = bool(row.get("scene_plan"))
         else:
             normalize_workflow_output(prompt, row.get("target", "Generic"), mode="Video" if row["workflow"] == "minimax" else "Enhance")
@@ -47,7 +47,7 @@ def measure(row, review=None):
     except (ValueError, TypeError, KeyError):
         valid = False
     try:
-        issues = output_constraint_issues(prompt, row.get("target", "Generic"), compile_constraints(row.get("rules", "")))
+        issues = output_constraint_issues(prompt, row.get("target", "Generic"), compile_rules(row.get("rules", "")))
     except (ValueError, TypeError, KeyError):
         issues = []
     accepted = valid and not row.get("error") and completion == "completed"
@@ -99,7 +99,7 @@ def measure(row, review=None):
         result["model_review_" + category] = statuses[-1] if statuses else None
     result["known_failure"] = row.get("known_failure")
     if row.get("scene_plan"):
-        from goated_prompter.scene_eligibility import scene_eligibility
+        from goated_prompter.features.dataset.eligibility import scene_eligibility
         scenes = row["scene_plan"]
         result["scene_validity"] = sum(scene_eligibility(scene, {"trigger_type": row.get("dataset_type", "Character")}).usable for scene in scenes) / len(scenes)
     if review is None:

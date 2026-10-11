@@ -19,4 +19,4 @@ include = ["goated_prompter*"]
 exclude = ["tests*", "docs*", "assets*"]
 
 [tool.setuptools.package-data]
-goated_prompter = ["minimax_knowledge/*.md"]
+goated_prompter = ["features/minimax/knowledge/*.md"]

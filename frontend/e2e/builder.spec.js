@@ -42,28 +42,6 @@ test("configured remote bootstrap enables generation without local profiles", as
   await expect(page.getByLabel("Generated prompt", { exact: true })).toHaveValue(/remote-backend request/);
 });
 
-test("planning mode autosaves, submits and reports supporting planning without exposing geometry", async ({ page, request }) => {
-  await page.goto("/");
-  const planning = page.getByLabel("Builder planning");
-  await expect(planning).toHaveValue("Auto");
-  await planning.selectOption("Always");
-  await expect(page.getByLabel("Builder save status")).toHaveText("Saved");
-  expect((await (await request.get("/api/settings")).json()).builder.planning_mode).toBe("Always");
-  await page.reload();
-  await expect(planning).toHaveValue("Always");
-  await page.getByLabel("Describe your idea", { exact: true }).fill("red apple on a wooden table");
-  const generation = page.waitForRequest("**/api/generate");
-  await page.getByRole("button", { name: /^Generate prompt/ }).click();
-  expect((await generation).postDataJSON().settings.planning_mode).toBe("Always");
-  await expect(page.getByLabel("Generated prompt", { exact: true })).toHaveValue(/red apple/);
-  await expect(page.getByText("Supporting scene planning used for the latest generation.")).toBeVisible();
-  await planning.selectOption("Direct");
-  await expect(page.getByLabel("Builder save status")).toHaveText("Saved");
-  await page.getByRole("button", { name: /^Generate prompt/ }).click();
-  await expect(page.getByText("Supporting scene planning used for the latest generation.")).not.toBeVisible();
-  await expect(page.getByLabel("Generated prompt", { exact: true })).toHaveValue(/red apple/);
-});
-
 test("task and instruction preset lead the controls on desktop and mobile", async ({ page }) => {
   await page.goto("/");
   const controls = page.locator(".panel").filter({
@@ -75,7 +53,7 @@ test("task and instruction preset lead the controls on desktop and mobile", asyn
     expect(await controls.locator("select").evaluateAll((items) =>
       items.map((item) => item.getAttribute("aria-label")),
     )).toEqual([
-      "Prompt task", "Instruction preset", "Target model", "Builder planning", "Creativity",
+      "Prompt task", "Instruction preset", "Target model", "Creativity", "Style",
       "Prompt length", "Prompt engine",
     ]);
     const task = await page.getByLabel("Prompt task", { exact: true }).boundingBox();
@@ -84,6 +62,10 @@ test("task and instruction preset lead the controls on desktop and mobile", asyn
     if (task.y === preset.y) expect(task.x).toBeLessThan(preset.x);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   }
+  await expect(page.getByLabel("Style", { exact: true })).toHaveValue("Auto");
+  await expect(page.getByLabel("Style", { exact: true }).locator("option")).toHaveText([
+    "Auto", "Anime", "Realistic", "Illustration", "3D render", "Product", "Painting",
+  ]);
   await expect(page.getByLabel("Prompt task").locator("option:checked")).toHaveText("Improve a prompt");
   await page.getByLabel("Prompt task").selectOption({ label: "Architecture & interiors" });
   await expect(page.getByLabel("Prompt task")).toHaveValue("Archviz");
@@ -142,6 +124,7 @@ test("builder JSON restores text fields and resets unavailable reference sources
     .selectOption({ label: "Photography Director" });
   await page.getByLabel("Prompt task", { exact: true }).selectOption("Photography");
   await page.getByLabel("Prompt length", { exact: true }).selectOption("Maximum Detail");
+  await page.getByLabel("Style", { exact: true }).selectOption("Anime");
   await page.getByLabel("Workflow rules").fill("Keep these rules");
   await page
     .getByLabel("Generated prompt", { exact: true })
@@ -171,7 +154,8 @@ test("builder JSON restores text fields and resets unavailable reference sources
   const saved = await (await request.get("/api/settings")).json();
   expect(saved.builder.idea).toBe("Persistent idea");
   expect(saved.builder.prompt_length).toBe("Maximum Detail");
-  expect(Object.keys(saved.builder)).toHaveLength(20);
+  expect(Object.keys(saved.builder)).toHaveLength(21);
+  expect(saved.builder.style).toBe("Anime");
   expect(saved.builder).not.toHaveProperty("lock_generated_prompt");
   expect(saved.builder.mode).toBe("Photography");
   for (const [index, key] of referenceAttributes.entries())
@@ -200,6 +184,7 @@ test("builder JSON restores text fields and resets unavailable reference sources
   await expect(page.getByLabel("Creativity", { exact: true })).toHaveValue(
     saved.builder.creativity,
   );
+  await expect(page.getByLabel("Style", { exact: true })).toHaveValue("Anime");
   await expect(page.getByLabel("Instruction preset", { exact: true })).toHaveValue(
     saved.builder.director_preset,
   );
@@ -216,7 +201,9 @@ test("builder JSON restores text fields and resets unavailable reference sources
   await expect(
     page.getByRole("button", { name: /^Generate prompt/ }),
   ).toBeEnabled();
+  const generation = page.waitForRequest("**/api/generate");
   await page.getByRole("button", { name: /^Generate prompt/ }).click();
+  expect((await generation).postDataJSON().settings.style).toBe("Anime");
   await expect(
     page.getByLabel("Generated prompt", { exact: true }),
   ).toHaveValue(/Persistent idea/);

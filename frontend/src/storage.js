@@ -26,6 +26,7 @@ const builderKeys = [
   "mode",
   "target_model",
   "creativity",
+  "style",
   "planning_mode",
   "prompt_length",
   "director_preset",
@@ -40,16 +41,18 @@ export function builderSnapshot(settings) {
       .filter((key) => Object.hasOwn(settings, key))
       .map((key) => [
         key,
-        key === "prompt_length" && settings[key] === "Maximum"
-          ? "Maximum Detail"
-          : settings[key],
+        key === "planning_mode"
+          ? "Direct"
+          : key === "prompt_length" && settings[key] === "Maximum"
+            ? "Maximum Detail"
+            : settings[key],
       ]),
   );
 }
 
 export function hydrateBuilder(inputs, saved = {}, library) {
   const result = builderSnapshot({
-    planning_mode: "Auto",
+    planning_mode: "Direct",
     ...inputDefaults(inputs),
     ...Object.fromEntries(
       referenceAttributes.map((key) => [`reference_${key}_source`, "Off"]),

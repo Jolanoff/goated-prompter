@@ -34,10 +34,10 @@ GPU benchmarks, new dependencies, or deployment flags are needed.
   and toggle. Keep existing UI classes and accessible labels stable.
 
 At this checkpoint shared state remained in the coordinator. Dataset now delegates
-workflow API requests, job synchronization and quality analysis to
+workflow API requests and job synchronization to
 `frontend/src/workflows/useDatasetWorkflow.js`; `useWorkflowSettings.js` retains
 serialized autosave and revision guards. The view retains presentation, elapsed
-time, geometry dialogs and downloads. Avoid a generic context containing all state.
+time, compact idea/self-check cards and downloads. Avoid a generic context containing all state.
 
 ### Backend
 
@@ -92,8 +92,8 @@ and sanitized frozen regression fixtures. Keep these local-only:
 - `config/config.json`, `.env*` (except examples), and application `data/`;
 - environments, dependencies, compiled assets, caches, logs, and test reports;
 - models, runtime binaries, and `quality-artifacts/`;
-- top-level `tests/eval/` result JSON and Markdown notes (except `README.md`),
-  and `tests/evaluation/*RESULTS*.md`.
+- top-level `tests/eval/` result JSON and Markdown notes (except `README.md`).
+  Put newly generated evaluation artifacts under `quality-artifacts/test/`.
 
 Removing a tracked file with `git rm --cached` preserves its local copy. Ignore
 rules do not remove previous commits. Published private artifacts require a

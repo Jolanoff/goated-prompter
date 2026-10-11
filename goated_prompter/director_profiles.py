@@ -8,8 +8,7 @@ import threading
 
 from .backends.base import BackendConfigurationError
 from .backends.factory import canonical_backend_name
-from .prompting.directors import (
-    DIRECTOR_AI_NAMES,
+from .options.prompt_models import (
     PROMPT_MODEL_GEMMA,
     PROMPT_MODEL_NAMES,
     PROMPT_MODEL_QWEN,

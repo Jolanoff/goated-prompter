@@ -4,125 +4,52 @@ import argparse
 import asyncio
 from contextlib import closing
 from collections import OrderedDict
-from dataclasses import replace
 import logging
 import json
 import hashlib
 from pathlib import Path
-import time
 
 from aiohttp import web
 
+from goated_prompter.prompt_library import ensure_library_files
+from goated_prompter.api import workflow_settings_routes
+from goated_prompter.api.common import STATE
 from goated_prompter.backends.base import GoatedPrompterError
-from goated_prompter.backends.factory import canonical_backend_name
-from goated_prompter.job_lifecycle import release_completed_checkpoints, daemon_work
-from goated_prompter.local_jobs import Job, JobCancelled, TERMINAL
-from goated_prompter.json_store import atomic_json, read_store
-from goated_prompter.uploaded_images import decode_image
-from goated_prompter.dataset_idea_history import RecentIdeaHistory
-from goated_prompter.dataset_checkpoints import DatasetCheckpointStore
 from goated_prompter.backends.llama_cpp_process import get_process_manager, _resolve_server_executable
 from goated_prompter.config import load_config
-from goated_prompter.core import GoatedPrompterRequest, GoatedPrompterService, _as_bool
+from goated_prompter.contracts import as_bool
 from goated_prompter.director_profiles import discover_director_profiles, resolve_director_config
-from goated_prompter.input_schema import builder_input_schema
-from goated_prompter.reference_map import REFERENCE_ATTRIBUTES
-from goated_prompter.workspace_store import WorkspaceStore, WorkspaceConflict
-from goated_prompter.workspace_api import register_workspace_routes, execute_workflow
-from goated_prompter.workflow_settings import WorkflowSettingsStore
+from goated_prompter.features.builder import routes as builder_routes
+from goated_prompter.features.builder.input_schema import builder_input_schema
+from goated_prompter.options.references import REFERENCE_SOURCES
+from goated_prompter.features.builder.service import GoatedPrompterService
+from goated_prompter.features.dataset import routes as dataset_routes
+from goated_prompter.features.dataset.checkpoints import DatasetCheckpointStore
+from goated_prompter.features.dataset.idea_history import RecentIdeaHistory
+from goated_prompter.features.dataset.intent import DatasetIntentTickets
+from goated_prompter.features.minimax import routes as minimax_routes
+from goated_prompter.features.presets import routes as presets_routes
+from goated_prompter.features.prompt_library import routes as prompt_library_routes
+from goated_prompter.features.presets.routes import presets_payload
+from goated_prompter.features.refine import routes as refine_routes
+from goated_prompter.features.saved_prompts import routes as saved_prompts_routes
+from goated_prompter.features.saved_prompts.store import validate_prompts
+from goated_prompter.features.settings import routes as settings_routes
+from goated_prompter.features.settings.routes import models_payload
+from goated_prompter.features.settings.validation import validate_local_paths, validate_settings
+from goated_prompter.job_lifecycle import DATASET_CHECKPOINT_KINDS, release_completed_checkpoints, daemon_work
+from goated_prompter.json_store import atomic_json, read_store
+from goated_prompter.local_jobs import Job, JobCancelled, TERMINAL
 from goated_prompter.presets import (
-    DEFAULT_DIRECTOR_PRESET, MODE_DIRECTOR_RECOMMENDATIONS, DirectorLibraryError, delete_user_director,
-    list_director_presets, resolve_user_director_directory, save_user_director,
-    get_director_preset, recommended_director_for_mode, update_director, reset_director,
+    DEFAULT_DIRECTOR_PRESET, DirectorLibraryError, get_director_preset, recommended_director_for_mode,
+    save_user_director,
 )
+from goated_prompter.options.references import REFERENCE_ATTRIBUTES
+from goated_prompter.workflow_runners import execute_workflow
+from goated_prompter.workflow_settings import WorkflowSettingsStore
+from goated_prompter.workspace_store import WorkspaceStore, WorkspaceConflict
 
 COMPLETED_LIMIT = 32
-STATE = web.AppKey("local_state", object)
-MAX_PROMPTS = 10000
-REFERENCE_SOURCES = ("Off", "Image 1", "Image 2", "Image 3", "Image 4", "Blend")
-
-
-def validate_settings(payload):
-    if not isinstance(payload, dict):
-        raise ValueError("Settings must be an object.")
-    unknown = payload.keys() - {"models_directory", "keep_model_loaded", "selected_profile", "builder"}
-    if unknown:
-        raise ValueError("Unknown settings: " + ", ".join(sorted(unknown)))
-    if "models_directory" in payload:
-        value = payload["models_directory"]
-        if not isinstance(value, str) or not value.strip():
-            raise ValueError("models_directory must be a nonempty local directory path.")
-        validate_local_paths({"models_dir": value})
-    if "keep_model_loaded" in payload and not isinstance(payload["keep_model_loaded"], bool):
-        raise ValueError("keep_model_loaded must be a boolean.")
-    if "selected_profile" in payload and not isinstance(payload["selected_profile"], str):
-        raise ValueError("selected_profile must be a string.")
-    result = dict(payload)
-    if "builder" in payload:
-        builder = payload["builder"]
-        strings = {"idea", "system_prompt_override", "custom_instructions", "generated_prompt", "director_preset"}
-        combos = {"mode", "target_model", "creativity", "prompt_length", "planning_mode"}
-        sources = {f"reference_{key}_source" for key, _ in REFERENCE_ATTRIBUTES}
-        if not isinstance(builder, dict):
-            raise ValueError("builder must be an object.")
-        builder = dict(builder)
-        builder.pop("lock_generated_prompt", None)
-        builder.pop("resolution", None)  # Remove legacy data from pre-removal settings.
-        unknown = builder.keys() - strings - combos - sources
-        if unknown:
-            raise ValueError("Unknown builder settings: " + ", ".join(sorted(unknown)))
-        schema = builder_input_schema()
-        for key, value in builder.items():
-            if not isinstance(value, str) or len(value) > 100000:
-                raise ValueError(f"builder {key} must be a string of at most 100000 characters.")
-            elif key in sources and value not in REFERENCE_SOURCES:
-                raise ValueError(f"Invalid reference source for {key}.")
-            elif key in combos:
-                if key == "planning_mode":
-                    from goated_prompter.planning import planning_mode
-                    planning_mode(value)
-                    continue
-                if key == "prompt_length" and value == "Maximum":
-                    value = builder[key] = "Maximum Detail"
-                if value not in schema[key][0]:
-                    raise ValueError(f"Invalid builder {key}.")
-        result["builder"] = builder
-    return result
-
-
-def validate_prompts(payload):
-    if not isinstance(payload, dict) or set(payload) != {"prompts"} or not isinstance(payload["prompts"], list):
-        raise ValueError("Expected an object containing only a prompts array.")
-    if len(payload["prompts"]) > MAX_PROMPTS:
-        raise ValueError("At most 10000 saved prompts are supported.")
-    records = {}
-    for record in payload["prompts"]:
-        required = {"id", "title", "prompt", "createdAt"}
-        if not isinstance(record, dict) or not required <= record.keys() or record.keys() - required - {"target", "resolution"}:
-            raise ValueError("Each prompt requires id, title, prompt, createdAt, and optionally target only.")
-        record = {key: value for key, value in record.items() if key != "resolution"}
-        for key, limit in (("id", 128), ("title", 80), ("prompt", 100000), ("createdAt", 64), ("target", 256)):
-            if key not in record:
-                continue
-            value = record[key]
-            if not isinstance(value, str) or len(value) > limit or (key != "target" and not value.strip()):
-                raise ValueError(f"Prompt {key} must be a {'nonempty ' if key != 'target' else ''}string of at most {limit} characters.")
-        if any(ord(char) < 33 or char in '/\\?#' for char in record["id"]):
-            raise ValueError("Prompt id must not contain whitespace, controls, or URL path separators.")
-        if record["id"] in records and records[record["id"]] != record:
-            raise ValueError(f"Conflicting saved prompt id: {record['id']}")
-        records[record["id"]] = dict(record)
-    return {"prompts": list(records.values())}
-
-
-def validate_local_paths(values):
-    for key in ("model_path", "mmproj_path", "llama_server", "models_dir", "discovery_root", "runtime_root",
-                "director_model_path", "director_mmproj_path", "director_llama_server"):
-        value = str(values.get(key) or "").strip()
-        if value and (value.startswith(("\\\\", "//")) or "://" in value):
-            raise ValueError(f"{key} must be a local filesystem path, not a URL or network share.")
-        if value and str(Path(value).expanduser().resolve()).startswith(("\\\\", "//")):
-            raise ValueError(f"{key} must resolve to a local filesystem path.")
 
 
 class LocalState:
@@ -154,7 +81,12 @@ class LocalState:
         self.dataset_checkpoints.recover()
         self.workflow_settings.dataset_checkpoints = self.dataset_checkpoints
         self.jobs = OrderedDict()
-        self.idea_history = RecentIdeaHistory()
+        fingerprint_path = self.settings_path.parent / "idea_fingerprints.json"
+        if fingerprint_path in {self.settings_path, self.prompts_path}:
+            raise ValueError("Idea fingerprints require a separate JSON path.")
+        self.idea_history = RecentIdeaHistory(fingerprint_path=fingerprint_path,
+                                              read=lambda path: read_store(path, {}, dict), write=atomic_json)
+        self.dataset_intents = DatasetIntentTickets()
         self.tasks = set()
         self.admission = asyncio.Lock()
         self.storage_lock = asyncio.Lock()
@@ -224,7 +156,7 @@ class LocalState:
     def settings(self):
         local = self.config().get("local_llama_cpp", {})
         return {"models_directory": str(discover_director_profiles(local).llm_root),
-                "keep_model_loaded": _as_bool(local.get("keep_model_loaded", False)),
+                "keep_model_loaded": as_bool(local.get("keep_model_loaded", False)),
                 "selected_profile": self.saved_settings.get("selected_profile", ""),
                 "builder": self.saved_settings.get("builder", {"director_preset": "general_director"})}
 
@@ -258,7 +190,7 @@ class LocalState:
         """Called under admission; all routes share task registration/lifecycle."""
         job = job_factory()
         job.kind = kind
-        if kind in {"dataset", "dataset_scenes", "dataset_review"}:
+        if kind in DATASET_CHECKPOINT_KINDS:
             self.workflow_settings.begin_dataset(job, workflow["input"], workflow.get("workflow_revision"))
         self.jobs[job.id] = job
         task = asyncio.create_task(self.run(job, request, config, text_only, workflow))
@@ -281,65 +213,30 @@ class LocalState:
                 # This app owns the active llama.cpp process, so ending its
                 # job can interrupt the blocking inference request.
                 job.set_interrupt(get_process_manager().interrupt_active)
-            if workflow is not None:
-                execute_workflow(self, job, director_request, config, workflow)
-                return
-            job.set_progress(
-                "Running the Builder model workflow. The engine may be loading, analyzing references, or writing the final prompt."
-            )
-            service = self.service_factory(config=config, checkpoint=job.checkpoint)
-            generated = (service.generate_text_only if text_only else service.generate)(director_request)
-            result = {"ok": True, "prompt": generated.prompt, "backend": generated.backend_name,
-                      "director_profile": generated.director_profile,
-                      "prompt_model": generated.prompt_model, "director_preset": generated.director_preset}
-            result["planning_status"] = getattr(generated, "planning_status", "direct")
-            def save_result():
-                try:
-                    snapshot = self.workspace.add_version(generated.prompt, director_request.target_model, "Builder generation")
-                    result["version_id"] = snapshot["current_id"]
-                except (ValueError, OSError) as exc:
-                    result["history_error"] = f"Prompt generated, but version history could not be saved: {exc}"
-                return result
-            job.commit(save_result, finish=True)
+            execute_workflow(self, job, director_request, config,
+                             workflow if workflow is not None else {"operation": "builder", "text_only": text_only})
         except JobCancelled:
             with job.lock:
                 if job.released:
                     return
-                job.status = "cancelled"
-                job.completion_state = "cancelled"
-                job.status_reason = "Generation stopped because cancellation was requested."
-                job._append_event(job.status_reason, "cancel")
-                job.finished_at = time.time()
-                job.revision += 1
+                job.mark_cancelled()
         except Exception as exc:
             with job.lock:
                 if job.released:
                     return
                 cancelled = job.cancel_requested
                 if cancelled:
-                    job.status = "cancelled"
-                    job.completion_state = "cancelled"
-                    job.status_reason = "Generation stopped because cancellation was requested."
-                    job._append_event(job.status_reason, "cancel")
+                    job.mark_cancelled()
                 elif job.stopping:
-                    job.status = "interrupted"
-                    job.completion_state = "interrupted"
-                    job.error = "Server stopped. Completed Dataset checkpoints remain recoverable."
-                    job.status_reason = job.error
-                    job._append_event(job.error, "error")
+                    job.mark_failed("Server stopped. Completed Dataset checkpoints remain recoverable.", "interrupted")
                 else:
-                    job.error = str(exc) if isinstance(exc, (ValueError, GoatedPrompterError)) else (
-                        "Generation failed unexpectedly. Check the server console and model configuration, then retry.")
-                    job.completion_state = getattr(exc, "completion_state", "provider_error")
-                    job.status = "interrupted" if job.completion_state == "interrupted" else "failed"
-                    job.status_reason = job.error
-                    job._append_event(job.error, "error")
-                job.finished_at = time.time()
-                job.revision += 1
+                    job.mark_failed(str(exc) if isinstance(exc, (ValueError, GoatedPrompterError)) else (
+                        "Generation failed unexpectedly. Check the server console and model configuration, then retry."),
+                        getattr(exc, "completion_state", "provider_error"))
             if not cancelled:
                 logging.exception("Local generation failed")
         finally:
-            if not job.released and job.kind in {"dataset", "dataset_scenes", "dataset_review"}:
+            if not job.released and job.kind in DATASET_CHECKPOINT_KINDS:
                 try:
                     self.workflow_settings.checkpoint_dataset(job)
                 except (ValueError, OSError):
@@ -352,30 +249,10 @@ class LocalState:
             self.jobs.pop(key).clear_private_data()
 
 
-async def json_object(request):
-    try:
-        payload = await request.json()
-    except (ValueError, UnicodeError) as exc:
-        raise ValueError("Request body must be valid JSON.") from exc
-    if not isinstance(payload, dict):
-        raise ValueError("Request body must be a JSON object.")
-    return payload
 
 
-async def models_payload(state, refresh=False):
-    config = state.config()
-    discovered = await asyncio.to_thread(discover_director_profiles, config.get("local_llama_cpp", {}), refresh)
-    return {**discovered.to_public_mapping(), "ok": True,
-            "backend": canonical_backend_name(config.get("backend")) or "auto"}
 
 
-async def presets_payload():
-    presets, warnings = await asyncio.to_thread(list_director_presets)
-    preset_ids = {preset["label"]: preset["id"] for preset in presets}
-    return {"ok": True, "default": DEFAULT_DIRECTOR_PRESET, "presets": presets,
-            "mode_directors": {mode: preset_ids[label]
-                               for mode, label in MODE_DIRECTOR_RECOMMENDATIONS.items()},
-            "warnings": warnings, "storage": str(resolve_user_director_directory())}
 
 
 async def bootstrap(request):
@@ -395,41 +272,6 @@ async def bootstrap(request):
                               "active_job": state.active_job()})
 
 
-async def generate(request):
-    state = request.app[STATE]
-    payload = await json_object(request)
-    settings = payload.get("settings", {})
-    images = payload.get("images", [])
-    text_only = payload.get("text_only", False)
-    if not isinstance(settings, dict) or not isinstance(images, list) or len(images) > 4:
-        raise ValueError("settings must be an object; images must be an array with at most four entries.")
-    if not isinstance(text_only, bool):
-        raise ValueError("text_only must be a boolean.")
-    async with state.admission:
-        active_job = state.active_job()
-        if active_job is not None:
-            return web.json_response({"ok": False,
-                                      "error": "A job is active. Resume it or wait for completion before generating again.",
-                                      "active_job": active_job}, status=409)
-        director = get_director_preset(settings.get("director_preset", DEFAULT_DIRECTOR_PRESET), strict=True)
-        settings = {**settings, "director_preset": director.id,
-                    "mode": settings.get("mode") or director.recommended_mode or "Custom",
-                    "system_prompt_override": ""}
-        validate_local_paths(settings)
-        config = state.config()
-        director_request = replace(GoatedPrompterRequest.from_mapping(settings),
-                                   linked_references=_as_bool(settings.get("linked_references", False)))
-        if "keep_model_loaded" in state.saved_settings:
-            director_request = replace(director_request,
-                                       director_keep_model_loaded=state.saved_settings["keep_model_loaded"])
-        if not text_only:
-            vision = config.get("vision", {})
-            dimension = vision.get("max_image_dimension", 1344) if isinstance(vision, dict) else 1344
-            slots = images + [None] * (4 - len(images))
-            encoded = await asyncio.to_thread(lambda: [decode_image(value, dimension) for value in slots])
-            director_request = replace(director_request, image=encoded[0], image_2=encoded[1],
-                                       image_3=encoded[2], image_4=encoded[3])
-        return web.json_response(state.start_job("builder", director_request, config, text_only), status=202)
 
 
 async def job_endpoint(request):
@@ -456,20 +298,9 @@ async def job_endpoint(request):
             if job.status in TERMINAL:
                 raise web.HTTPConflict(reason="This job has already finished.")
             if request.match_info["action"] == "pause":
-                job.gate.clear()
-                if job.status != "paused":
-                    job.status = "pause_requested"
-                    job.status_reason = (
-                        "Pause requested. Live response text may continue to appear, but the active model call must "
-                        "end before the job can pause at its next safe checkpoint."
-                    )
-                    job._append_event(job.status_reason, "pause")
+                job.request_pause()
             else:
-                job.status = "running"
-                job.gate.set()
-                job.status_reason = "Generation resumed and is continuing from the last safe checkpoint."
-                job._append_event(job.status_reason, "status")
-            job.revision += 1
+                job.resume()
         return web.json_response(job.snapshot())
 
 
@@ -483,84 +314,14 @@ async def release_job_checkpoints(request):
     return web.json_response({"ok": True, "released": released})
 
 
-async def models(request):
-    refresh = request.query.get("refresh", "").strip().lower() in {"1", "true", "yes"}
-    return web.json_response(await models_payload(request.app[STATE], refresh))
 
 
-async def settings_endpoint(request):
-    state = request.app[STATE]
-    if request.method == "PUT":
-        payload = await json_object(request)
-        async with state.admission:
-            active = state.active_job()
-            if active is not None and set(payload) != {"builder"}:
-                return web.json_response({"ok": False, "error": "Settings cannot change while a job is active.",
-                                          "active_job": active}, status=409)
-            async with state.storage_lock:
-                state.save_settings(payload)
-    return web.json_response(await asyncio.to_thread(state.settings))
 
 
-async def prompts_endpoint(request):
-    state = request.app[STATE]
-    incoming = None
-    if request.method == "POST":
-        payload = await json_object(request)
-        if request.path != "/api/prompts/import":
-            payload = {"prompts": [payload]}
-        # Conflicting IDs within an import are conflicts, not partial successes.
-        try:
-            incoming = validate_prompts(payload)["prompts"]
-        except ValueError as exc:
-            if str(exc).startswith("Conflicting saved prompt id:"):
-                raise web.HTTPConflict(reason=str(exc)) from exc
-            raise
-    async with state.storage_lock:
-        current = read_store(state.prompts_path, {"prompts": []}, validate_prompts)
-        records = {record["id"]: record for record in current["prompts"]}
-        if incoming is not None:
-            for record in incoming:
-                if record["id"] in records and records[record["id"]] != record:
-                    raise web.HTTPConflict(reason=f"Conflicting saved prompt id: {record['id']}")
-                records[record["id"]] = record
-        elif request.method == "DELETE":
-            records.pop(request.match_info["id"], None)
-        snapshot = validate_prompts({"prompts": list(records.values())})
-        if snapshot != current:
-            atomic_json(state.prompts_path, snapshot)
-        return web.json_response(snapshot)
 
 
-async def presets(request):
-    if request.method == "GET":
-        return web.json_response(await presets_payload())
-    payload = await json_object(request)
-    state = request.app[STATE]
-    async with state.admission:
-        active = state.active_job()
-        if active is not None:
-            return web.json_response({"ok": False, "error": "Directors cannot change while a job is active.",
-                                      "active_job": active}, status=409)
-        async with state.storage_lock:
-            if request.path == "/api/presets/reset":
-                director, path = reset_director(payload.get("id"))
-            elif request.method == "PUT":
-                director, path = update_director(payload.get("id"), payload.get("name"), payload.get("instructions"))
-            elif request.method == "POST":
-                director, path = save_user_director(payload.get("name"), payload.get("instructions"),
-                                                    payload.get("recommended_mode", "Custom"))
-            else:
-                director, path = delete_user_director(payload.get("id") or payload.get("name"))
-    return web.json_response({"ok": True, "director": director.to_public_mapping(), "file": path.name})
 
 
-async def unload(request):
-    status = await asyncio.to_thread(get_process_manager().request_unload)
-    messages = {"idle": "No Goated Prompter model is currently loaded.",
-                "pending": "Unload queued until the active Goated Prompter operation finishes.",
-                "unloaded": "Goated Prompter model unloaded."}
-    return web.json_response({"ok": True, "status": status, "message": messages[status]})
 
 
 def create_app(*, port=8190, dist=None, config_loader=load_config, service_factory=GoatedPrompterService,
@@ -596,18 +357,12 @@ def create_app(*, port=8190, dist=None, config_loader=load_config, service_facto
     app[STATE] = LocalState(config_loader, service_factory,
                             settings_path if settings_path is not None else Path(__file__).parent / "data" / "settings.json",
                             prompts_path)
-    app.add_routes([web.get("/api/bootstrap", bootstrap), web.post("/api/generate", generate),
-                     web.delete("/api/jobs", release_job_checkpoints),
+    app.add_routes([web.get("/api/bootstrap", bootstrap), web.delete("/api/jobs", release_job_checkpoints),
                     web.get("/api/jobs/{id}", job_endpoint),
-                    web.post("/api/jobs/{id}/{action:pause|resume|cancel}", job_endpoint),
-                    web.get("/api/models", models), web.get("/api/presets", presets),
-                    web.get("/api/settings", settings_endpoint), web.put("/api/settings", settings_endpoint),
-                    web.get("/api/prompts", prompts_endpoint), web.post("/api/prompts", prompts_endpoint),
-                    web.post("/api/prompts/import", prompts_endpoint), web.delete("/api/prompts/{id}", prompts_endpoint),
-                    web.post("/api/presets", presets), web.delete("/api/presets", presets),
-                    web.put("/api/presets", presets), web.post("/api/presets/reset", presets),
-                     web.post("/api/unload", unload)])
-    register_workspace_routes(app, STATE, Job, json_object)
+                    web.post("/api/jobs/{id}/{action:pause|resume|cancel}", job_endpoint)])
+    for routes in (builder_routes, settings_routes, presets_routes, saved_prompts_routes, prompt_library_routes,
+                   minimax_routes, dataset_routes, workflow_settings_routes, refine_routes):
+        routes.register(app)
     root = Path(dist or Path(__file__).parent / "frontend" / "dist").resolve()
 
     async def assets(request):
@@ -642,13 +397,8 @@ def create_app(*, port=8190, dist=None, config_loader=load_config, service_facto
                 if not task.cancelled() and task.exception():
                     logging.error("Shutdown cancellation failed: %s", task.exception())
             for job in state.jobs.values():
-                with job.lock:
-                    if job.status not in TERMINAL:
-                        job.status = "interrupted"
-                        job.completion_state = "interrupted"
-                        job.error = "Shutdown timeout. Completed checkpoints remain recoverable."
-                        job.finished_at = time.time()
-                if job.kind in {"dataset", "dataset_scenes", "dataset_review"}:
+                job.mark_abandoned("Shutdown timeout. Completed checkpoints remain recoverable.")
+                if job.kind in DATASET_CHECKPOINT_KINDS:
                     await asyncio.to_thread(state.workflow_settings.checkpoint_dataset, job)
         unload_task = asyncio.create_task(daemon_work(get_process_manager().request_unload))
         _done, pending = await asyncio.wait({unload_task}, timeout=1)
@@ -666,4 +416,5 @@ if __name__ == "__main__":
     parser.add_argument("--host", choices=("127.0.0.1", "localhost"), default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8190)
     args = parser.parse_args()
+    ensure_library_files()  # First launch creates one empty, untracked prompt library per target.
     web.run_app(create_app(port=args.port), host=args.host, port=args.port)

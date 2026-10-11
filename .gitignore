@@ -58,7 +58,7 @@ coverage/
 Thumbs.db
 Desktop.ini
 
-# Local AI-agent skills (not needed to run the app)
+# Local AI-agent state and generated plans
 /.agents/skills/
-/.opencode/skills/
+/.opencode/plans/
 /skills-lock.json

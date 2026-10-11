@@ -94,7 +94,7 @@ test("dark mode is the default and explicit theme choices survive reload", async
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 });
 
-test("Builder keeps the idea beside the result, and the dock clear of the navigation rail", async ({ page }) => {
+test("Builder keeps the idea beside the result, and the action bar clear of the navigation rail", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
   const idea = await page.getByLabel("Describe your idea", { exact: true }).boundingBox();
@@ -104,9 +104,18 @@ test("Builder keeps the idea beside the result, and the dock clear of the naviga
   for (const width of [1440, 1100, 960, 390]) {
     await page.setViewportSize({ width, height: 900 });
     const rail = await page.locator("aside").boundingBox();
-    const dock = await page.locator(".generation-bar").boundingBox();
-    expect(dock.x).toBe(width <= 720 ? 0 : rail.width);
-    expect(Math.round(dock.x + dock.width)).toBe(width);
+    const actions = await page.locator(".composer-actions").boundingBox();
+    if (width <= 720) {
+      // Mobile pins the Builder actions to a full-width bar at the bottom of the viewport.
+      expect(actions.x).toBe(0);
+      expect(Math.round(actions.width)).toBe(width);
+      expect(Math.round(actions.y + actions.height)).toBe(900);
+    } else {
+      // Desktop keeps Generate inside the idea composer, clear of the rail.
+      expect(actions.x).toBeGreaterThan(rail.width);
+      expect(actions.x + actions.width).toBeLessThanOrEqual(width);
+    }
+    await expect(page.getByRole("button", { name: /^Generate prompt/ })).toBeInViewport();
   }
 });
 
@@ -141,18 +150,24 @@ for (const theme of ["dark", "light"]) {
     await page.getByLabel("Dataset idea", { exact: true }).fill("A traveler in a blue coat.");
     await page.getByLabel("Trigger text or terms").fill("ohwx_traveler");
     await page.getByLabel("Number of prompts").selectOption("2");
+    await page.getByText("Advanced options", { exact: true }).click();
     await page.getByText("Training trigger & controls", { exact: true }).click();
     await page.getByLabel(/Provide my own scene ideas/).check();
     await page.getByLabel("Guided dataset inputs").fill("standing on a platform\nreading a map");
-    await page.getByRole("button", { name: "Generate 2 prompts", exact: true }).click();
+    await generateDataset(page);
     await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/ohwx_traveler/);
-    const quality = page.getByRole("region", { name: "Dataset quality report" });
-    await expect(quality.getByText("Overall", { exact: true })).toBeVisible();
-    await quality.getByText(/Prompt checks/).click();
+    await expect(page.getByRole("region", { name: "Dataset quality report" })).toHaveCount(0);
+    await openDatasetPage(page, "Scenes");
+    for (const index of [1, 2]) {
+      await expect(page.getByLabel(`Scene ${index} self-check`, { exact: true })).toHaveCount(0);
+      await expect(page.getByRole("article", { name: `Scene ${index} card`, exact: true })
+        .getByLabel("Scene: success", { exact: true })).toBeVisible();
+    }
+    await openDatasetPage(page, "Dataset");
     // A contrast audit during the cards' entrance fade measures transient
     // opacity, not the settled theme. Wait for finite animations/transitions.
     await page.evaluate(() => Promise.all(document.getAnimations()
-      .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
+      .filter((animation) => animation.effect?.target?.checkVisibility() && animation.effect.getComputedTiming().iterations !== Infinity)
       .map((animation) => animation.finished.catch(() => {}))));
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze();
@@ -161,7 +176,7 @@ for (const theme of ["dark", "light"]) {
   });
 }
 
-test("populated Refine history, instruction editor and activity log remain accessible", async ({ page, request }, testInfo) => {
+test("Refine prompt, undo, instruction editor and activity log remain accessible", async ({ page, request }, testInfo) => {
   let workspace = await (await request.get("/api/workspace")).json();
   await request.post("/api/workspace", { data: { revision: workspace.revision, action: "add", prompt: "A traveler in a blue coat.", target: "Generic" } });
   workspace = await (await request.get("/api/workspace")).json();
@@ -171,7 +186,8 @@ test("populated Refine history, instruction editor and activity log remain acces
   await page.getByRole("button", { name: "Refine", exact: true }).click();
   await page.getByText("What changed", { exact: true }).click();
   await page.getByText("Refine advanced settings", { exact: true }).click();
-  await page.getByRole("button", { name: "Edit text", exact: true }).click();
+  await expect(page.getByLabel("Refinement prompt", { exact: true })).toBeEditable();
+  await expect(page.getByRole("button", { name: "Undo", exact: true })).toBeEnabled();
   expect((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze()).violations).toEqual([]);
   await page.getByRole("button", { name: "Prompt Builder", exact: true }).click();
   await page.getByLabel("Describe your idea", { exact: true }).fill("A ceramic vase on a sunlit workbench.");
@@ -184,3 +200,4 @@ test("populated Refine history, instruction editor and activity log remain acces
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("activity-log-mobile.png") });
 });
+import { generateDataset, openDatasetPage } from "./datasetHelpers.js";

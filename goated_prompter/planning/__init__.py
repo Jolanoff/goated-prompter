@@ -1,6 +1,6 @@
 """Single-pass supporting planning, independent of Dataset batch workflows."""
 
-PLANNING_MODES = ("Auto", "Direct", "Always")
+from ..options.planning import PLANNING_MODES
 
 
 def planning_mode(value):
