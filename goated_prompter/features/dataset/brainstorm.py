@@ -13,7 +13,7 @@ from ...contracts import PromptInstruction
 from ...strict_json import reject_duplicate_keys
 from .director import director_section
 from .quality import (broken_anatomy, feet_request, idea_concepts, kink_request, minor_reference, oral_request,
-                      passive_idea, passive_request, requested_text, sexual_lift, sexual_request)
+                      passive_idea, passive_request, requested_text, sexual_request)
 from .understanding import understanding_instruction, unwrap_json_fence, validate_understanding
 
 
@@ -28,7 +28,8 @@ mid-trip or mid-jump: for a slip, fall, jump or collision show the moment just b
 just after it (about to step on the peel, sitting in the puddle). After a fall the body
 rests in one readable position, never a tangle of limbs or limbs at odd angles. No weight
 on hands or fingertips, no
-flips, cartwheels, floor spins, freezes, lifts, handstands or contortions, no one upside
+flips, cartwheels, floor spins, freezes, lifts (except a supported lift during sex, below),
+handstands or contortions, no one upside
 down or held parallel to the ground, and no body parts inside or through objects, unless
 the user asked for that exact move. Humor and surprise come from the situation, props,
 timing and expressions, not from twisted anatomy.
@@ -53,8 +54,10 @@ masturbation, slave, owned, collared, domination, bondage, yaoi and other explic
   same phrase (such as "deep penetration") for the act.
 - Clothing follows the request and the Director: partial clothing, open clothes and pulled-down
   garments are fine and often preferred; full nudity only when the user or Director asks for it.
-Supported poses only (lying, kneeling, sitting, standing with weight on feet/seat/knees/back): no one
-is lifted, carried or held up in the air.
+Supported poses (lying, kneeling, sitting, standing with weight on feet/seat/knees/back). A partner
+may lift and hold another during sex when the hold is clearly supported: the lifter stands firmly,
+the held partner's legs wrap the lifter's waist or rest on the arms, and the back rests against a
+wall or the arms hold the hips.
 Every body part belongs to exactly one person and stays attached to that person's body: name
 it with its owner ("his", "her", "the taller man's"), and never describe one on its own,
 detached, held up alone, floating, or shared, joined or merged between two people. Visible
@@ -69,7 +72,7 @@ young age or a childlike body, even for anime characters."""
 # Positions the brainstorm may draw on for sexual batches: a random handful per batch, as
 # inspiration next to its own ideas, never one forced per image. The pool follows the cast (solo,
 # couple, two men, two women, three, a group) and only adds oral, feet or BDSM positions when the
-# request or Director asks for them. Bodies stay supported: no lifts, and no genitals pressed
+# request or Director asks for them. Lifts are shown with clear support; no genitals are pressed
 # together (image models merge them).
 SEXUAL_POSITIONS = {
     "solo": ("masturbating on her or his back", "masturbating kneeling", "masturbating sitting at the edge of a bed",
@@ -82,7 +85,8 @@ SEXUAL_POSITIONS = {
                "sitting on the lap, facing away", "at the edge of the bed, partner standing between the legs",
                "bent over furniture", "at the edge of a table or counter", "straddling a chair, facing the partner",
                "straddling a chair, facing away", "lotus, sitting face to face", "butterfly, hips at the edge, legs open",
-               "anvil, hips raised and legs wide"),
+               "anvil, hips raised and legs wide", "lifted and held, back supported against the wall",
+               "standing, lifted with legs wrapped around the partner's waist"),
     "oral": ("kneeling oral", "sitting oral at the edge of the bed", "standing oral, partner kneeling",
              "oral with the receiver on the back", "sixty-nine, stacked", "sixty-nine, side by side", "face sitting",
              "oral from behind, bent over", "deepthroat, kneeling", "face fucking, kneeling"),
@@ -279,7 +283,7 @@ def brainstorm_events(session, data, count, rng, *, avoid=(), seen=None, family=
         return []
     if sexual_request(data):
         candidates = [candidate for candidate in candidates if not minor_reference(candidate[0])
-                      and not broken_anatomy(candidate[0]) and not sexual_lift(candidate[0])]
+                      and not broken_anatomy(candidate[0])]
     if seen is not None:
         # Candidates unlike recent runs (even before a restart) come first while enough remain.
         fresh = [candidate for candidate in candidates if not seen(candidate[0])]

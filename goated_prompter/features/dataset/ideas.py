@@ -11,8 +11,8 @@ from ...backends.base import BackendGenerationError
 from ...contracts import PromptInstruction
 from .brainstorm import PLAUSIBLE_BODIES
 from .director import director_fixes_shot, director_section
-from .quality import (ADULTS_ONLY, BROKEN_ANATOMY, SEXUAL_LIFT, analyze_idea_diversity, broken_anatomy,
-                      kink_request, minor_reference, passive_idea, passive_request, sexual_lift, sexual_request)
+from .quality import (ADULTS_ONLY, BROKEN_ANATOMY, analyze_idea_diversity, broken_anatomy, kink_request,
+                      minor_reference, passive_idea, passive_request, sexual_request)
 from .understanding import (label_replacements, numbered_labels, replace_labels, understanding_instruction,
                             unwrap_json_fence, validate_understanding)
 from ...strict_json import reject_duplicate_keys
@@ -474,8 +474,6 @@ def _reject_sexual_content(row, data, allow_partial):
         reason = f'{ADULTS_ONLY} ("{word}")'
     elif word := broken_anatomy(text):
         reason = f'{BROKEN_ANATOMY} ("{word}")'
-    elif word := sexual_lift(text):
-        reason = f'{SEXUAL_LIFT} ("{word}")'
     else:
         return row
     if not allow_partial:
