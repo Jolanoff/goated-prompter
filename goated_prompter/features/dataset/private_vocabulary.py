@@ -1,12 +1,14 @@
 """Adult Dataset vocabulary, read from a private plain-text file the user keeps in data/.
 
 The file is never shipped or committed: without it, sexual batches still run on the rules
-alone and the model invents its own moods, places and positions. Entries are inspiration for
-the model, drawn at random, never forced. Every entry passes the same adults-only and anatomy
+alone and the model invents its own moods, places and positions. Position entries are selected
+per image and preserved in its scene and final prompt. Every entry passes the same adults-only and anatomy
 checks as generated text, plus checks for consent, death, family, animals and breathing, so a
 line added to the file can never bring that content back.
 """
 
+import hashlib
+import json
 import os
 from pathlib import Path
 import re
@@ -39,16 +41,17 @@ SECTIONS = {
     "man and woman positions": "a man and a woman",
     "three positions": "three people",
     "group positions": "four or more people",
-    "oral positions": "two or more people",
-    "anal positions": "two or more people",
-    "feet positions": "when feet are requested",
-    "toys": "toys and how they are used, for every sexual batch",
-    "finish positions": "climax and finish moments for every sexual batch",
-    "kink positions": "two or more people, when kink or ownership is requested",
-    "solo kink positions": "one person, when kink is requested",
-    "pet positions": "when pet play is requested",
-    "furniture positions": "when human furniture or ownership is requested",
-    "aftercare positions": "when aftercare is requested",
+    "oral positions": "oral positions compatible with the cast",
+    "anal positions": "anal positions compatible with the cast",
+    "vaginal positions": "vaginal positions when the cast includes a woman",
+    "feet positions": "feet positions compatible with the cast",
+    "toys": "toy positions compatible with the cast",
+    "finish positions": "climax and finish moments compatible with the cast",
+    "kink positions": "kink positions for multiple people",
+    "solo kink positions": "kink positions for one person",
+    "pet positions": "human pet-play positions for multiple people",
+    "furniture positions": "human-furniture positions for multiple people",
+    "aftercare positions": "aftercare positions compatible with the cast",
     "requested": "lines 'pattern => entry': the entry joins the positions when the request matches the pattern",
 }
 
@@ -75,8 +78,9 @@ def vocabulary_path():
 
 TEMPLATE_HEADER = """# Private adult vocabulary for the Dataset tab. It stays on this computer and is never committed.
 # Add one entry per line under a [section] heading; lines starting with # are comments.
-# Changes apply to the next batch without a restart. Entries are inspiration drawn at random,
-# never forced on an image. Entries about minors, non-consent, death, family members, animals,
+# Changes apply to the next batch without a restart. Positions are selected per image;
+# explicit acts narrow the pool, while general sex uses every cast-compatible category.
+# Entries about minors, non-consent, death, family members, animals,
 # school, breath restriction or injury, or that detach or merge body parts, are skipped.
 """
 
@@ -149,6 +153,13 @@ def load_vocabulary(path=None):
         return {}
     _cache[path] = (stamp, sections)
     return sections
+
+
+def vocabulary_signature():
+    """Only the digest leaves storage; editing usable vocabulary invalidates old plans."""
+    sections = {name: [(pattern.pattern, pattern.flags, entry) for pattern, entry in entries]
+                if name == "requested" else entries for name, entries in load_vocabulary().items()}
+    return hashlib.sha256(json.dumps(sections, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
 def private_rules(data):

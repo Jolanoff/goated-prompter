@@ -14,8 +14,8 @@ from ...contracts import PromptInstruction
 from ...strict_json import reject_duplicate_keys
 from .director import director_section
 from .private_vocabulary import load_vocabulary, private_rules
-from .quality import (MALE_PAIR, FEMALE_PAIR, aftercare_request, broken_anatomy, feet_request, furniture_request, idea_concepts, kink_request,
-                      minor_reference, ownership_request, passive_idea, passive_request, pet_request,
+from .quality import (MALE_PAIR, FEMALE_PAIR, POSITION_ACT_CATEGORIES, broken_anatomy, idea_concepts, minor_reference,
+                      passive_idea, passive_request, position_categories, position_presence_error,
                       requested_text, resolved_sex, sexual_request)
 from .understanding import understanding_instruction, unwrap_json_fence, validate_understanding
 
@@ -46,8 +46,8 @@ When the request, confirmed_intent or Director is sexual:
 - Sexual contact is between the people the request pairs: when it names who is with whom (two
   men with a woman, say), keep every act between them; contact between the others only when the
   request or Director asks for it.
-- Ordinary consensual sex is the default: no BDSM, domination, restraint, collars, leashes or fetishes
-  unless the request or the Director asks for them.
+- Explicitly requested acts narrow the position choices. A general sex request may draw from any
+  cast-compatible category; never replace a requested act with a different one.
 - When the request or Director asks for an ownership, slave or power-exchange dynamic, it is expected
   in every image, not optional: show its restraint, props and poses clearly, between consenting adults.
 - For a requested owned or slave role, show the ownership visually (what is worn, posture, who
@@ -75,86 +75,117 @@ Everyone in a sexual or suggestive image is an adult, clearly grown-up in face a
 them as women and men. Never make anyone in it a child or teen, never mention school, a
 young age or a childlike body, even for anime characters."""
 
-# Positions come from the private vocabulary file (private_vocabulary.py), in groups: the cast's
-# own positions, toys and finishes, oral and anal for two or more people, then whatever the request
-# adds (kink, pet, furniture, feet, aftercare, named extras). Every group that applies stays in; the brainstorm gets a few from each,
-# so a long kink or feet list never drowns the cast's positions.
+_FEMALE_POSITION = re.compile(r"\b(?:women|woman|girls?|female|she|her|vagin\w*|puss(?:y|ies)|clitor\w*|cunniling\w*)\b", re.I)
+_MALE_POSITION = re.compile(r"\b(?:men|man|boys?|male|he|his|penis\w*|cocks?|dicks?|blowjobs?|fellatio)\b", re.I)
+_MALE_PERSON = re.compile(r"\b(?:men|man|boys?|male|he|his)\b", re.I)
+_PARTNER_POSITION = re.compile(r"\b(?:partners?|couple|(?:another|the other) (?:person|adult|man|woman)|"
+                               r"(?:both|two|three|group of) (?:people|adults|men|women|bodies))\b", re.I)
+
+
 def position_groups(data):
-    """(weight, positions) groups that fit this batch's cast and what the request asks for."""
+    """Eligible groups, with requested acts first and incompatible anatomy filtered out."""
     vocabulary = load_vocabulary()
-
-    def take(name):
-        return tuple(vocabulary.get(f"{name} positions", ()))
-
     brief = data.get("_confirmed_intent") or {}
     cast = [item for item in brief.get("characters") or () if isinstance(item, dict)]
     people = sum(item.get("count") or 1 for item in cast) or brief.get("character_count") or 1
-    # An open sex is filled from the request's words ("master", "his male partner", "lesbian").
     men = sum(item.get("count") or 1 for item in cast if resolved_sex(item, data) == "male")
     women = sum(item.get("count") or 1 for item in cast if resolved_sex(item, data) == "female")
     asked = requested_text(data)
     if not cast:
-        user = " ".join(str(data.get(key) or "") for key in ("subject", "constraints", "inputs", "trigger")).casefold()
-        men, women = (2, 0) if MALE_PAIR.search(user) else (0, 2) if FEMALE_PAIR.search(user) else (0, 0)
-        people = max(people, men + women)
-    kink = kink_request(data)
-    owned = ownership_request(data)
-    # Every batch: the cast's own positions, toys and finishes; two or more people also get oral and
-    # anal. Kink, pet, furniture, feet and aftercare join only when asked for. The man-and-woman,
-    # two-men and two-women groups stay apart so no position puts a penis where only a vagina fits.
-    groups = []
+        user = " ".join(str(data.get(key) or "") for key in ("subject", "constraints", "inputs", "trigger"))
+        if MALE_PAIR.search(user.casefold()) or FEMALE_PAIR.search(user.casefold()):
+            people = max(people, 2)
+        count = re.search(r"\b(\d+|two|three|four|five|six) (?:adult )?(?:men|males|women|females)\b", user, re.I)
+        if count:
+            number = count[1].casefold()
+            people = max(people, int(number) if number.isdecimal() else
+                         {"two": 2, "three": 3, "four": 4, "five": 5, "six": 6}[number])
+        sex = resolved_sex({"name": user}, data)
+        men, women = (people, 0) if sex == "male" else (0, people) if sex == "female" else (0, 0)
+    requested, forbidden = position_categories(data)
+    requested.discard("solo")
+    if requested == {"vaginal"} and not women:
+        return []
+    available = ("solo", "oral", "anal", "vaginal", "feet", "toys", "finish", "kink", "aftercare") if people <= 1 else (
+        "oral", "anal", "vaginal", "feet", "toys", "finish", "kink", "pet", "furniture", "aftercare")
+    categories = [name for name in available if name not in forbidden and (not requested or name in requested)
+                  and (name != "vaginal" or women)]
+    category_names = [("solo kink" if name == "kink" and people <= 1 else name) for name in categories]
+    cast_names = []
     if people <= 1:
-        groups.append((3, take("solo")))
+        cast_names.append("solo")
     else:
         if men >= 2 and not women:
-            groups.append((3, take("two men")))
+            cast_names.append("two men")
         elif women >= 2 and not men:
-            groups.append((3, take("two women")))
+            cast_names.append("two women")
         elif men and women:
-            groups.append((3, take("man and woman")))
+            cast_names.append("man and woman")
         if people == 3:
-            groups.append((3, take("three")))
+            cast_names.append("three")
         elif people >= 4:
-            groups.append((3, take("group")))
-        if not (women >= 2 and not men):
-            groups.append((1, take("couple")))
-        groups += [(2, take("oral")), (2, take("anal"))]
-    groups += [(1, tuple(vocabulary.get("toys", ()))), (2, take("finish"))]
-    if kink:
-        groups.append((3 if owned else 2, take("solo kink" if people <= 1 else "kink")))
-    if people > 1 and pet_request(data):
-        groups.append((2, take("pet")))
-    if people > 1 and (owned or furniture_request(data)):
-        groups.append((1, take("furniture")))
-    if feet_request(data):
-        groups.append((2, take("feet")))
-    if aftercare_request(data):
-        groups.append((1, take("aftercare")))
-    groups.append((2, tuple(entry for pattern, entry in vocabulary.get("requested", ()) if pattern.search(asked))))
-    return [(weight, entries) for weight, entries in groups if entries]
+            cast_names.append("group")
+        cast_names.append("couple")
+    names = category_names + cast_names if requested else cast_names + category_names
+
+    def compatible(entry):
+        if men == people and _FEMALE_POSITION.search(entry):
+            return False
+        if women == people:
+            if _MALE_PERSON.search(entry):
+                return False
+            if _MALE_POSITION.search(entry) and not re.search(r"strap[- ]?on", entry, re.I):
+                return False
+        if people <= 1 and _PARTNER_POSITION.search(entry):
+            return False
+        entry_categories, _ = position_categories({"subject": entry}, include_director=False)
+        entry_categories.discard("solo")
+        acts = requested & POSITION_ACT_CATEGORIES
+        if acts and (entry_categories & POSITION_ACT_CATEGORIES) - acts:
+            return False
+        return not (entry_categories & forbidden) and (not requested or not entry_categories or bool(entry_categories & requested))
+
+    groups = []
+    for name in dict.fromkeys(names):
+        entries = vocabulary.get(name if name == "toys" else f"{name} positions", ())
+        entries = tuple(entry for entry in entries if compatible(entry))
+        if entries:
+            groups.append(entries)
+    extras = tuple(entry for pattern, entry in vocabulary.get("requested", ()) if pattern.search(asked) and compatible(entry))
+    if extras:
+        groups.append(extras)
+    named = [tuple(entry for entry in entries if not position_presence_error(asked, entry)) for entries in groups]
+    if any(named):
+        return [entries for entries in named if entries]
+    return groups
 
 
 def sexual_positions(data):
-    """Every position that fits this batch, in group order."""
-    return tuple(dict.fromkeys(entry for _weight, entries in position_groups(data) for entry in entries))
+    """Every eligible position, without duplicates."""
+    return tuple(dict.fromkeys(entry for entries in position_groups(data) for entry in entries))
+
+
+def scene_position(data, scene):
+    """Recover the selected phrase from an accepted scene without changing its saved shape."""
+    if not sexual_request(data):
+        return None
+    return next((entry for entry in sorted(sexual_positions(data), key=len, reverse=True)
+                 if not position_presence_error(scene, entry)), None)
 
 
 def pick_position_ideas(groups, rng, count):
-    """Draw up to ``count`` positions round-robin over the groups, more from heavier ones."""
-    pools = []
-    for weight, entries in groups:
-        pool = list(entries)
+    """Deal across categories before revisiting one, so a long list cannot dominate a batch."""
+    pools = [list(entries) for entries in groups]
+    for pool in pools:
         rng.shuffle(pool)
-        pools.append((weight, pool))
     picked = []
-    while len(picked) < count and any(pool for _weight, pool in pools):
-        for weight, pool in pools:
-            for _turn in range(weight):
-                while pool and len(picked) < count:
-                    entry = pool.pop()
-                    if entry not in picked:
-                        picked.append(entry)
-                        break
+    while len(picked) < count and any(pools):
+        for pool in pools:
+            while pool and len(picked) < count:
+                entry = pool.pop()
+                if entry not in picked:
+                    picked.append(entry)
+                    break
     return picked
 
 

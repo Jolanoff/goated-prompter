@@ -5,13 +5,15 @@ import re
 from ...presets import get_director_preset
 
 DIRECTOR_STAGING = """This Director is the user's own direction for the whole batch and has priority over creative_direction.
+An app-selected sexual position and setting are the exception: keep them instead of a
+Director's default pose or location, while preserving the user's explicit requirements.
 Follow it in every event, idea and scene. Keep the approved requirements and the cast.
 Use any words, vocabulary, tone or style it asks for.
 It decides framing, camera, light, sexual tone, clothing state, expression and implied action.
 When it fixes a kind of shot (a mirror selfie, a selfie, first person), every image is that
 shot and the event is what the person does within it; rules that ban mirrors, phones, posing
 or looking at the camera do not apply to what the Director asks for.
-creative_direction values are only suggestions that fill gaps the Director left open;
+Other creative_direction values are only suggestions that fill gaps the Director left open;
 never let them override or dilute the Director.
 """
 

@@ -6,13 +6,15 @@ import secrets
 
 import random
 
-from .brainstorm import brainstorm_events, uses_event_seeds
+from .brainstorm import brainstorm_events, sexual_positions, uses_event_seeds
 from .craft_notes import library_craft_notes
 from .ideas import DatasetIdeasService
 from .eligibility import scene_eligibility, validate_self_check
+from .private_vocabulary import vocabulary_signature
+from .quality import sexual_request
 
 
-SCENE_PLAN_VERSION = 8
+SCENE_PLAN_VERSION = 9
 # Small local models write better ideas a few at a time than as one long list.
 IDEAS_PER_CALL = 5
 MAX_STORED_SCENE_CHARACTERS = 10000
@@ -31,6 +33,9 @@ def scene_plan_signature(data, assignments):
         "subject", "amount", "source_mode", "inputs", "trigger_type", "custom_type",
         "constraints")}
     semantic.update(version=SCENE_PLAN_VERSION, assignments=assignments)
+    if sexual_request(data):
+        semantic["vocabulary"] = vocabulary_signature()
+        semantic["positions"] = sexual_positions(data)
     return hashlib.sha256(json.dumps(semantic, ensure_ascii=False, sort_keys=True,
                                     separators=(",", ":")).encode("utf-8")).hexdigest()[:20]
 

@@ -96,7 +96,7 @@ _SEXUAL = re.compile(r"\b(?:sex|sexual\w*|nsfw|porn\w*|explicit|erotic\w*|nude|n
                      r"dicks?|pussy|pussies|boobs?|tits|nipples?|genitals?|horny|aroused|"
                      # Kink and genre words; ambiguous ones need their sexual form ("collared", not "collar").
                      r"slaves?|sex slaves?|owned by|collared|leash(?:ed)?|pet play|bdsm|dominatrix|dom(?:/| and )sub|"
-                     r"submissive|bondage|yaoi|bara|male[- ]male|mm sex|footjob\w*|foot fetish|feet worship|"
+                     r"submissive|bondage|kinky|kinks?|yaoi|bara|male[- ]male|mm sex|footjob\w*|foot fetish|feet worship|"
                      r"breeding (?:kink|her|him)|breed (?:her|him|me)|"
                      r"presenting (?:herself|himself|themselves|her ass|his ass))\b")
 _SUGGESTIVE = re.compile(r"\b(?:lingerie|boudoir|seductive\w*|sensual\w*|undress\w*|striptease|strippers?|"
@@ -172,9 +172,11 @@ def broken_anatomy(text):
 
 # Ordinary sex is the default; domination, restraint and fetish dynamics only when asked for.
 _KINK = re.compile(r"\b(?:slaves?|owned by|collared|collars?|leash(?:ed)?|pet play|bdsm|dominatrix|dom(?:/| and )sub|"
-                   r"submissive|dominant|dominat\w*|bondage|restrain\w*|tied up|handcuff\w*|spank\w*|chok\w*|"
-                   r"footjob\w*|foot fetish|feet worship|breeding|degrad\w*|humiliat\w*|fetish\w*|kinky|kinks?|"
+                   r"submissive|dominant|dominat\w*|bondage|bound|restrain\w*|tied up|handcuff\w*|spank\w*|chok\w*|"
+                   r"foot fetish|feet worship|breeding|degrad\w*|humiliat\w*|fetish\w*|kinky|kinks?|"
                    r"latex|rough sex|(?:his|her|my|their) (?:master|mistress))\b")
+_ORAL = re.compile(r"\b(?:oral|blowjob\w*|suck\w*|deepthroat\w*|69|sixty-nine|face[- ]?sitting|cunnilingus|"
+                   r"eat(?:s|ing)? (?:her|him) out|lick\w*)\b")
 
 
 # The user's own words (concept, rules, trigger, guided input) and the Director, without the
@@ -200,24 +202,35 @@ _NEGATED = re.compile(r"\b(?:do not|don't|never|no|not|avoid|without|unrequested
 _NOT_A_PERSON = r"(?! (?:bedroom|bath\w*|suite|key|plan|class|chef|piece|copy|cylinder|degree))"
 # Ownership and slave roles ask for the power exchange in every image, not as one option among many.
 _OWNERSHIP = re.compile(r"\b(?:slaves?|(?<!-)owned|ownership|property|dominated|human pets?|pet play|petplay|"
-                        r"collared|leashed|master and (?:slave|pet)|(?:his|her|my|their|the|a) (?:master|mistress)"
+                        r"collared|leashed|(?:master|mistress)"
                         + _NOT_A_PERSON + r")\b")
 _PET = re.compile(r"\b(?:pet play|petplay|human pets?|puppy play|kitten play|puppy|kitten|pets?)\b")
 _FURNITURE = re.compile(r"\b(?:human furniture|furniture|footrest|human (?:table|chair|stool)|objectif\w*)\b")
 _AFTERCARE = re.compile(r"\b(?:aftercare|aftermath)\b")
+_GROUNDED_FEET = re.compile(r"^\s+(?:(?:are|stay|rest)\s+)?(?:planted|flat|firmly|on (?:the )?(?:floor|ground|mat))\b")
+
+
+def _mentions(text, pattern, *, ignore_conditional=False):
+    asked, forbidden = False, False
+    for match in pattern.finditer(text):
+        if pattern is _FEET and match.group() == "feet" and _GROUNDED_FEET.search(text[match.end():]):
+            continue
+        clause = re.split(r"[.,;:!?\n]|\b(?:but|however|instead)\b", text[:match.start()])[-1]
+        if _NEGATED.search(clause):
+            if not (ignore_conditional and re.search(r"\b(?:unrequested|unless)\b", clause)):
+                forbidden = True
+        else:
+            asked = True
+    return asked, forbidden
 
 
 def _asked(text, pattern):
-    """True when the pattern appears in a clause that does not forbid it ("do not add fetish elements")."""
-    for match in pattern.finditer(text):
-        clause = re.split(r"[.,;:!?\n]", text[:match.start()])[-1]
-        if not _NEGATED.search(clause):
-            return True
-    return False
+    """True when the pattern appears in a clause that does not forbid it."""
+    return _mentions(text, pattern)[0]
 
 
 def _user_text(data):
-    return " ".join(str(data.get(key) or "") for key in ("subject", "constraints", "inputs", "trigger")).casefold()
+    return "\n".join(str(data.get(key) or "") for key in ("subject", "constraints", "inputs", "trigger")).casefold()
 
 
 def _director_text(data):
@@ -245,26 +258,71 @@ def aftercare_request(data):
     return _asked(_user_text(data) + "\n" + _director_text(data), _AFTERCARE)
 
 
-# A cast member the understanding left without a sex still has one when the request says so: a
-# sexed role ("master", "wife") or a same-sex pairing ("two men", "his male partner", "lesbian").
-_MAN_ROLE = re.compile(r"\b(?:master|sir|king|prince|husband|boyfriend|daddy|groom)\b")
-_WOMAN_ROLE = re.compile(r"\b(?:mistress|queen|princess|wife|girlfriend|dominatrix|goddess|bride)\b")
-MALE_PAIR = re.compile(r"\b(?:two|2|three|3|several) (?:men|males|guys)\b|\bgay\b|\byaoi\b|\bbara\b|\bmale[- ]male\b|"
+_POSITION_CATEGORIES = {
+    "anal": re.compile(r"\b(?:anal|sodomy|sodomiz\w*)\b"),
+    "vaginal": re.compile(r"\b(?:vaginal|vagina|pussy)\b"),
+    "oral": _ORAL,
+    "feet": _FEET,
+    "kink": _KINK,
+    "pet": _PET,
+    "furniture": _FURNITURE,
+    "aftercare": _AFTERCARE,
+    "solo": re.compile(r"\b(?:masturbat\w*|solo|self[- ]pleasure)\b"),
+    "toys": re.compile(r"\b(?:toys?|dildos?|vibrators?|plugs?)\b"),
+    "finish": re.compile(r"\b(?:climax\w*|finish\w*|orgasm\w*|cum(?:s|ming|shots?)?)\b"),
+}
+POSITION_ACT_CATEGORIES = frozenset(("anal", "vaginal", "oral", "feet"))
+_MAN_ROLE = re.compile(r"\b(?:master|sir|king|prince|husband|boyfriend|daddy|groom|man|men|males?)\b")
+_WOMAN_ROLE = re.compile(r"\b(?:mistress|queen|princess|wife|girlfriend|dominatrix|goddess|bride|woman|women|females?)\b")
+MALE_PAIR = re.compile(r"\b(?:two|2|three|3|several) (?:men|males|guys)\b|\b(?:gay|yaoi|bara|male[- ]male)\b|"
                        r"\bmm\b|\bmale (?:partner|slave|sub|lover|pet|friend)s?\b")
-FEMALE_PAIR = re.compile(r"\b(?:two|2|three|3|several) (?:women|females)\b|\blesbian\w*\b|\byuri\b|"
-                         r"\bfemale[- ]female\b|\bfemale (?:partner|slave|sub|lover|pet|friend)s?\b")
+FEMALE_PAIR = re.compile(r"\b(?:two|2|three|3|several) (?:women|females)\b|\b(?:lesbian\w*|yuri|female[- ]female)\b|"
+                         r"\bfemale (?:partner|slave|sub|lover|pet|friend)s?\b")
 
 
 def resolved_sex(item, data):
-    """"male", "female" or None for one cast entry, filling an open sex from the request's words."""
-    sex = item.get("sex")
-    if sex in ("male", "female"):
-        return sex
+    """Keep a stated sex, or fill an open one from a role or an unambiguous pairing."""
+    if item.get("sex") in ("male", "female"):
+        return item["sex"]
     role = f"{item.get('name') or ''} {item.get('traits') or ''}".casefold()
-    if _MAN_ROLE.search(role):
-        return "male"
-    if _WOMAN_ROLE.search(role):
-        return "female"
-    asked = _user_text(data)
-    male, female = bool(MALE_PAIR.search(asked)), bool(FEMALE_PAIR.search(asked))
-    return "male" if male and not female else "female" if female and not male else None
+    male, female = bool(_MAN_ROLE.search(role)), bool(_WOMAN_ROLE.search(role))
+    if male != female:
+        return "male" if male else "female"
+    text = _user_text(data)
+    male, female = bool(MALE_PAIR.search(text)), bool(FEMALE_PAIR.search(text))
+    return ("male" if male else "female") if male != female else None
+
+
+def position_categories(data, *, include_director=True):
+    """Requested acts and exclusions; explicit user acts take precedence over Director defaults."""
+    user = _user_text(data)
+    director = _director_text(data) if include_director else ""
+    asked, defaults, forbidden = set(), set(), set()
+    for name, pattern in _POSITION_CATEGORIES.items():
+        user_asked, user_forbids = _mentions(user, pattern)
+        director_asked, director_forbids = _mentions(director, pattern, ignore_conditional=True)
+        if user_asked:
+            asked.add(name)
+        if director_asked:
+            defaults.add(name)
+        if user_forbids or (director_forbids and not user_asked):
+            forbidden.add(name)
+    for text, positive in ((user, asked), (director, defaults)):
+        if "feet" in positive and not any(not match.group().startswith(("lick", "suck"))
+                                          for match in _ORAL.finditer(text)):
+            positive.discard("oral")
+    if _asked(user, _OWNERSHIP):
+        asked.add("kink")
+    elif _asked(director, _OWNERSHIP):
+        defaults.add("kink")
+    return (asked or defaults) - forbidden, forbidden
+
+
+def position_presence_error(text, position):
+    """The selected phrase is a preservation contract, not a semantic pose classifier."""
+    def words(value):
+        return " ".join(re.findall(r"\w+", str(value or "").casefold()))
+    expected = words(position)
+    if expected and f" {expected} " not in f" {words(text)} ":
+        return "Preserve the selected position wording in the scene description: " + position
+    return None

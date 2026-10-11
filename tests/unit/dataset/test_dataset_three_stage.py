@@ -754,11 +754,13 @@ class SexualContentTests(unittest.TestCase):
         from goated_prompter.features.dataset.ideas import DatasetIdeasService
         data = self.draft("a couple having sex", amount=2)
         session = Mock()
+        directions = creative_directions(data, [1, 2], 1)
         session.generate.return_value = json.dumps([
             {"index": 1, "idea": "A schoolgirl and a man in a classroom.", "scene": "Scene 1."},
-            {"index": 2, "idea": "A woman in her thirties pulls the man onto the bed.", "scene": "Scene 2."}])
+            {"index": 2, "idea": "A woman in her thirties pulls the man onto the bed.",
+             "scene": "Scene 2: " + directions[2]["position"]}])
         rows = DatasetIdeasService(lambda: None).run(session=session, data=data, assignments=dataset_assignments(data),
-                                                     progress=lambda _message: None, allow_partial=True)
+                                                     progress=lambda _message: None, allow_partial=True, direction_salt=1)
         self.assertIn("only show adults", rows[0]["failure_reason"])
         self.assertNotEqual(rows[1].get("idea_status"), "failed")
 
@@ -832,9 +834,10 @@ class SexualAnatomyTests(unittest.TestCase):
         rows = [{"index": 1, "idea": "The two men press their cocks together on the couch.", "scene": "Scene 1."},
                 {"index": 2, "idea": "The taller man pulls the other onto the bed.", "scene": "Scene 2."}]
         session = Mock()
+        rows[1]["scene"] += " " + creative_directions(self.data, [2], 1)[2]["position"]
         session.generate.return_value = json.dumps(rows)
         result = DatasetIdeasService(lambda: None).run(session=session, data=self.data,
-            assignments=dataset_assignments(self.data), progress=lambda _message: None, allow_partial=True)
+            assignments=dataset_assignments(self.data), progress=lambda _message: None, allow_partial=True, direction_salt=1)
         self.assertIn("stay attached to its owner", result[0]["failure_reason"])
         self.assertNotEqual(result[1].get("idea_status"), "failed")
 
@@ -888,9 +891,10 @@ class SexualVarietyTests(SeedVarietyTests):
         self.assertTrue(set(first) <= set(sexual_positions(self.data)))
         self.assertNotEqual(first, second)
         rows = creative_directions(self.data, range(1, 11), 3).values()
-        self.assertTrue(all("position" not in row for row in rows), "No position is forced on an image.")
+        positions = [row["position"] for row in rows]
+        self.assertEqual(len(set(positions)), 10, "The app assigns distinct positions before repeating.")
         system = " ".join(ideas_instruction(self.data, dataset_assignments(self.data)).system_message.split())
-        self.assertNotIn("position from creative_direction", system)
+        self.assertIn("creative_direction.position is the position selected by the app", system)
 
     def test_short_hair_is_never_braided(self):
         for salt in range(20):
@@ -934,16 +938,16 @@ class VanillaDefaultTests(SeedVarietyTests):
         return list(creative_directions({**self.data, "subject": subject, "_confirmed_intent": brief},
                                         range(1, 11), 5).values())
 
-    def test_ordinary_sex_gets_no_kink_or_oral_directions_unless_asked(self):
+    def test_general_sex_uses_all_positions_but_kink_styling_only_when_asked(self):
         from goated_prompter.features.dataset.private_vocabulary import load_vocabulary
         private = load_vocabulary()
         ORAL_POSITIONS = private["oral positions"]
-        kink_values = {*private["kink mood"], *private["kink interaction"], *private["kink positions"], *private["props"],
+        kink_values = {*private["kink mood"], *private["kink interaction"], *private["props"],
                        *private["kink clothing"]}
         for salt in range(10):
             for row in creative_directions(self.data, range(1, 11), salt).values():
-                values = {value for value in row.values() if isinstance(value, str)}
-                self.assertFalse(values & (kink_values | set(ORAL_POSITIONS)), row)
+                styling = {value for key, value in row.items() if key != "position" and isinstance(value, str)}
+                self.assertFalse(styling & kink_values, row)
         kinky = self.directions("a collared man in bondage having sex with his mistress")
         self.assertTrue(any({value for value in row.values() if isinstance(value, str)} & kink_values for row in kinky))
         from goated_prompter.features.dataset.brainstorm import sexual_positions
@@ -961,7 +965,7 @@ class VanillaDefaultTests(SeedVarietyTests):
         look = context["assignments"][0]["creative_direction"]["random_character_looks"]["woman"]
         self.assertRegex(look, r" build, [a-z -]+ skin$")
         rules = " ".join(ideas_instruction(self.data, dataset_assignments(self.data)).system_message.split())
-        self.assertIn("Ordinary consensual sex is the default", rules)
+        self.assertIn("A general sex request may draw from any cast-compatible category", rules)
 
 
 class CastPositionTests(SeedVarietyTests):
@@ -974,33 +978,36 @@ class CastPositionTests(SeedVarietyTests):
         from goated_prompter.features.dataset.brainstorm import sexual_positions
         from goated_prompter.features.dataset.private_vocabulary import load_vocabulary
         pools = {name.removesuffix(" positions"): set(entries) for name, entries in load_vocabulary().items()}
-        every = pools["toys"] | pools["finish"]
-        pair = every | pools["oral"] | pools["anal"]
+        every = pools["toys"] | pools["finish"] | pools["feet"] | pools["aftercare"]
+        pair = every | pools["oral"] | pools["anal"] | pools["kink"] | pools["pet"] | pools["furniture"]
         solo = set(sexual_positions(self.cast("female", subject="a woman masturbating")))
-        self.assertEqual(solo, pools["solo"] | every)
+        self.assertEqual(solo, pools["solo"] | every | pools["oral"] | pools["anal"] | pools["solo kink"])
+        self.assertFalse(solo & pools["couple"])
         men = set(sexual_positions(self.cast("male", "male", subject="two men having sex")))
         self.assertEqual(men, pools["two men"] | pools["couple"] | pair)
         women = set(sexual_positions(self.cast("female", "female", subject="two women having sex")))
-        self.assertEqual(women, pools["two women"] | pair)
+        self.assertEqual(women, pools["two women"] | pools["couple"] | pair)
         mixed = set(sexual_positions(self.cast("female", "male", subject="a couple having sex")))
         self.assertEqual(mixed, pools["man and woman"] | pools["couple"] | pair)
+        self.assertFalse(women & pools["man and woman"])
         three = set(sexual_positions(self.cast("female", "male", "male", subject="a threesome")))
         self.assertTrue(pools["three"] | pools["man and woman"] | pair <= three)
         self.assertFalse(three & (pools["group"] | pools["two men"]))
         group = set(sexual_positions(self.cast("female", "male", "male", "male", subject="a group having sex")))
         self.assertTrue(pools["group"] | pair <= group)
 
-    def test_kink_feet_pet_and_named_extras_join_only_when_asked_and_add_to_the_rest(self):
+    def test_general_sex_uses_all_categories_and_named_extras_only_when_asked(self):
         from goated_prompter.features.dataset.brainstorm import sexual_positions
         from goated_prompter.features.dataset.private_vocabulary import load_vocabulary
         pools = {name.removesuffix(" positions"): set(entries) for name, entries in load_vocabulary().items()}
-        asked_only = pools["kink"] | pools["solo kink"] | pools["feet"] | pools["pet"] | pools["furniture"] | pools["aftercare"]
         plain = set(sexual_positions(self.cast("female", "male")))
-        self.assertFalse(plain & asked_only)
+        for kind in ("oral", "feet", "kink"):
+            self.assertTrue(pools[kind] <= plain, kind)
         self.assertNotIn("fixture blindfold position", plain)
         asked = set(sexual_positions(self.cast("male", "male",
             subject="two men, a footjob in bondage while one is blindfolded")))
-        self.assertTrue(pools["two men"] | pools["oral"] | pools["anal"] | pools["kink"] | pools["feet"] <= asked)
+        self.assertTrue(pools["two men"] | pools["kink"] | pools["feet"] <= asked)
+        self.assertFalse(asked & (pools["oral"] | pools["anal"]))
         self.assertIn("fixture blindfold position", asked)
         solo = set(sexual_positions(self.cast("female", subject="a woman masturbating in bondage, showing her feet")))
         self.assertTrue(pools["solo"] | pools["solo kink"] | pools["feet"] <= solo)
@@ -1102,8 +1109,9 @@ class PrivateVocabularyTests(unittest.TestCase):
             self.assertIn(row["clothing"], private["kink clothing"])
             self.assertIn(row["prop"], private["props"])
         positions = set(sexual_positions(owned))
-        self.assertTrue(set(private["kink positions"]) | set(private["furniture positions"]) <= positions)
+        self.assertTrue(set(private["kink positions"]) <= positions)
         self.assertTrue(set(private["man and woman positions"]) <= positions, "Ownership adds to the cast's positions.")
+        self.assertFalse(positions & set(private["oral positions"]))
         kinky = {**self.data, "subject": "a couple having sex in bondage"}
         moods = {row["mood"] for row in creative_directions(kinky, range(1, 9), 2).values()}
         self.assertTrue(moods & set(private["mood"]), "A kink request without ownership keeps ordinary moods too.")
@@ -1170,7 +1178,7 @@ class PrivateVocabularyTests(unittest.TestCase):
         ensure_vocabulary_file(path)
         self.assertEqual(path.read_text(encoding="utf-8"), "[mood]\nmine\n")
 
-    def test_cast_positions_survive_kink_feet_and_open_sexes_and_finishes_always_join(self):
+    def test_cast_positions_survive_kink_feet_and_open_sexes_without_unrequested_acts(self):
         from goated_prompter.features.dataset.brainstorm import (POSITION_IDEAS, pick_position_ideas, position_groups,
                                                                  sexual_positions)
         from goated_prompter.features.dataset.private_vocabulary import load_vocabulary
@@ -1185,8 +1193,11 @@ class PrivateVocabularyTests(unittest.TestCase):
                 self.assertTrue(men <= set(sexual_positions(data)))
                 picks = [pick_position_ideas(position_groups(data), random.Random(seed), POSITION_IDEAS)
                          for seed in range(30)]
-                self.assertTrue(all(len(set(pick) & men) >= 3 for pick in picks), "A long kink list never drowns them.")
-                self.assertTrue(all(set(pick) & set(private["finish positions"]) for pick in picks))
+                self.assertTrue(all(set(pick) & men for pick in picks), "A long kink list never drowns them.")
+                if subject == "two men having sex":
+                    self.assertTrue(all(set(pick) & set(private["finish positions"]) for pick in picks))
+                else:
+                    self.assertFalse(set(sexual_positions(data)) & set(private["finish positions"]))
                 self.assertFalse(set(sexual_positions(data)) & set(private["man and woman positions"]))
 
     def test_a_master_and_his_male_slave_get_two_men_positions_and_two_male_looks(self):
@@ -1199,8 +1210,9 @@ class PrivateVocabularyTests(unittest.TestCase):
         data = {**self.data, "subject": "master fucking his tightly bound slave male partner",
                 "_confirmed_intent": dataset_understanding_fixture(characters=[master, slave], character_count=2)}
         positions = set(sexual_positions(data))
-        self.assertTrue(set(private["two men positions"]) | set(private["anal positions"]) | set(private["kink positions"])
+        self.assertTrue(set(private["two men positions"]) | set(private["kink positions"])
                         <= positions)
+        self.assertFalse(positions & set(private["oral positions"]))
         self.assertFalse(positions & set(private["man and woman positions"]))
         for row in creative_directions(data, range(1, 9), 4).values():
             self.assertNotIn("woman", row["random_character_looks"]["master"])

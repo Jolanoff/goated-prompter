@@ -9,12 +9,12 @@ import secrets
 
 from ...backends.base import BackendGenerationError, BackendRunawayError
 from ...contracts import PromptInstruction
-from .brainstorm import PLAUSIBLE_BODIES
+from .brainstorm import PLAUSIBLE_BODIES, pick_position_ideas, position_groups
 from .director import director_fixes_shot, director_section
 from .private_vocabulary import load_vocabulary, private_rules
 from .quality import (ADULTS_ONLY, BROKEN_ANATOMY, analyze_idea_diversity, broken_anatomy, kink_request,
-                      minor_reference, ownership_request, passive_idea, passive_request, pet_request, resolved_sex,
-                      sexual_request)
+                      minor_reference, ownership_request, passive_idea, passive_request, pet_request,
+                      position_presence_error, resolved_sex, sexual_request)
 from .understanding import (label_replacements, numbered_labels, replace_labels, understanding_instruction,
                             unwrap_json_fence, validate_understanding)
 from ...strict_json import reject_duplicate_keys
@@ -106,24 +106,31 @@ EVENT SEEDS
 An assignment may carry event_seed: the core event and place the app picked for this image
 from a wide brainstorm, so batches do not repeat the same favourite ideas. Build the idea
 around that event, set it in that place and stage it fully. In a sexual batch take the
-act, position, situation and place from the seed (creative_direction.setting when the seed names
-no place). The idea line then states that act, position and place, in words different from the
-other ideas. Change only a part that conflicts with HARD.
+act and situation from the seed, keeping the app's selected position and setting when supplied.
+The idea line states that act, position and place in its own words. Change only a part that conflicts with HARD.
+
+SELECTED POSITIONS
+For a sexual assignment, creative_direction.position is the position selected by the app,
+not an optional suggestion. Keep that position wording once in the scene and describe how
+each adult's body is arranged and supported. It and creative_direction.setting take precedence
+over a conflicting brainstorm seed or the Director's default pose; neither may change a user
+requirement. A selected act never becomes a different act. Do not substitute your favourite pose.
 
 CREATIVE DIRECTION
 Each assignment carries a creative_direction chosen by the app to spread the batch
 across moments, moods, framing, settings and light, and for several characters how they
 interact; a sexual image may also get a clothing state and a prop, which its scene shows. Start that image's idea from it; with an event_seed, the seed decides what
-happens and the direction how it is shown. Direction values are ingredients, not the idea:
+happens and the direction how it is shown, except for the selected sexual position and setting.
+Direction values are ingredients, not the idea:
 never write a mood, dynamic or place label as the idea itself; the idea is always a concrete event. When a DIRECTOR block is present it has
-priority: the direction only fills what the Director leaves open. Never let a moment, mood,
+priority over stylistic directions, not over the selected sexual position. Never let a moment, mood,
 setting or interaction label dilute, replace or soften a required act (a sexual act
 included) or the Director's tone.
 random_character_looks, when present, gives this image's sex (when the cast leaves it
 open), age, hair and build for each randomly invented character; use it so random
 characters differ between images. It never overrides what the character's name, the
 concept or the setting implies; choose clothing that fits the scene and its medium.
-HARD requirements, the guided input, the Director and batch-shared choices always win:
+HARD requirements, the guided input and batch-shared choices always win:
 drop only the conflicting part of a direction, never the requirement.
 
 CRAFT NOTES
@@ -221,6 +228,13 @@ def creative_directions(data, indexes, salt=0):
         order = list(values)
         random.Random(seed + position).shuffle(order)
         orders[axis] = order
+    position_orders = {}
+    if sexual:
+        scoped_data = {scope: {**data, "inputs": line} for scope, line in enumerate(lines)} if guided else {0: data}
+        for scope, scoped in scoped_data.items():
+            groups = position_groups(scoped)
+            count = len({entry for entries in groups for entry in entries})
+            position_orders[scope] = pick_position_ideas(groups, random.Random(seed + scope), count)
     # A single random person whose sex the user left open gets one drawn here, so prompts never
     # fall back to "a person" or a bare role label. An age the user already gave anywhere (a role,
     # a trait, the concept or the trigger: "40 yo man", "his teenage son") is never replaced.
@@ -257,8 +271,13 @@ def creative_directions(data, indexes, salt=0):
         scopes = {"all_outputs", *([f"guided:{(index - 1) % len(lines) + 1}"] if guided else [])}
         required_action = bool(action_scopes & scopes)
         directions[index] = {axis: order[(index - 1) % len(order)] for axis, order in orders.items()
-                             if (axis in safe_axes if required_action else not ((guided or sexual) and axis == "moment"))
-                             and (group or axis != "interaction")}
+                              if (axis in safe_axes if required_action else not ((guided or sexual) and axis == "moment"))
+                              and (group or axis != "interaction")}
+        scope = (index - 1) % len(lines) if guided else 0
+        positions = position_orders.get(scope, ())
+        if positions:
+            offset = (index - 1) // len(lines) if guided else index - 1
+            directions[index]["position"] = positions[offset % len(positions)]
         if random_cast:
             looks = {}
             for slot, (name, sex, open_sex, aged, count) in enumerate(random_cast):
@@ -312,7 +331,7 @@ def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existin
             entry["event_seed"] = event_seeds[index]
             # The seed already decides what happens and where; a moment, interaction or setting label
             # on top of it gets copied into the idea as vague words ("a shared mishap occurs").
-            # A sexual image keeps its setting as a fallback for a seed that names no place.
+            # The selected sexual position and setting stay authoritative over a generic seed.
             dropped = ("moment", "interaction") if sexual else ("moment", "interaction", "setting")
             direction = {axis: value for axis, value in direction.items() if axis not in dropped}
         entry["creative_direction"] = direction
@@ -414,6 +433,14 @@ def _reject_sexual_content(row, data, allow_partial):
     elif word := broken_anatomy(text):
         reason = f'{BROKEN_ANATOMY} ("{word}")'
     else:
+        return row
+    if not allow_partial:
+        raise ValueError(f"Idea {row['index']}: {reason}")
+    return _failed_idea(row, row["index"], reason)
+
+
+def _reject_position(row, position, allow_partial):
+    if row.get("idea_status") == "failed" or not (reason := position_presence_error(row["scene"], position)):
         return row
     if not allow_partial:
         raise ValueError(f"Idea {row['index']}: {reason}")
@@ -532,6 +559,8 @@ class DatasetIdeasService:
                 self.checkpoint()
                 rows = validate_ideas(raw, indexes, allow_partial=allow_partial)
             rows = [_reject_sexual_content(_reject_unrenderable_pose(row, data, allow_partial), data, allow_partial) for row in rows]
+            positions = {entry["index"]: (entry.get("creative_direction") or {}).get("position") for entry in selected}
+            rows = [_reject_position(row, positions.get(row["index"]), allow_partial) for row in rows]
             looks = {entry["index"]: (entry.get("creative_direction") or {}).get("random_character_looks")
                      for entry in selected}
             cast = (data.get("_confirmed_intent") or {}).get("characters")
@@ -569,7 +598,8 @@ class DatasetIdeasService:
                     raw = session.generate(retry)
                     self.checkpoint()
                     try:
-                        retried = [_reject_unrenderable_pose(row, data, False) for row in validate_ideas(raw, indexes)]
+                        retried = [_reject_position(_reject_sexual_content(_reject_unrenderable_pose(row, data, False),
+                            data, False), positions.get(row["index"]), False) for row in validate_ideas(raw, indexes)]
                     except ValueError:
                         retried = None
                     if retried:

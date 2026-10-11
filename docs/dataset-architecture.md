@@ -98,17 +98,22 @@ framing direction, lifts the mirror and posing bans, and is not limited as a wat
 the cast, the brief and the Director) takes its mood, interaction, setting and clothing directions,
 and a random handful of `position_ideas` for the brainstorm, from the user's private vocabulary file
 (`private_vocabulary.py`, `data/vocabulary/sexual.txt`, never committed; without it those axes stay open
-and the model invents them within the rules). `position_groups` builds weighted groups: the cast's own
-positions (solo, two men, two women, man and woman, three, a group; `quality.resolved_sex` fills a sex the brief
-leaves open from a role ("master") or a pairing ("his male partner"), which also keeps the drawn look), toys and finishes for every batch, couple, oral and anal for
-two or more people, and kink (solo kink for one person), pet, furniture, feet, aftercare and `requested`
-groups only when the request or Director asks. Groups add to each other; `pick_position_ideas` draws
-round-robin over them, so a long kink or feet list never drowns the
-cast's positions, and the brainstorm builds most events around them. Kink moods, dynamics, clothing and a
+and the model invents them within the rules). `brainstorm.position_groups` filters positions by
+count, resolved cast sexes and explicit acts or exclusions. `quality.resolved_sex` fills open sexes
+from roles or unambiguous pairings and keeps the drawn looks consistent. Generic sex permits every compatible
+category; a specific act narrows the pool to its category and compatible cast entries. Category
+round-robin selection prevents long lists from dominating. `creative_directions` assigns positions
+per image, including scoped guided inputs and batches without a usable brainstorm. The selected
+phrase must appear in the scene; `scene_position` recovers it for Builder, and final validation
+requires it to survive output cleanup. These are wording checks, not semantic geometry verification.
+The selected sexual position and setting take precedence over a generic event seed or Director
+default; explicit user requirements remain authoritative. A vocabulary digest invalidates saved
+adult plans after usable entries change. The file's `requested` entries join when their patterns
+match, subject to the same compatibility filters. Kink moods, dynamics, clothing and a
 prop per image join only when `kink_request` finds BDSM or fetish wording in the request, or a Director
 clause that asks for it (a clause that forbids it does not count). An `ownership_request` (slave, owned,
-master or mistress, human pet) uses only the kink moods, dynamics and clothing, weights kink positions
-higher next to the cast's own, and adds the file's ownership rules. Every file entry passes the
+master or mistress, human pet) uses only the kink moods, dynamics and clothing
+and adds the file's ownership rules. Every file entry passes the
 adults-only and anatomy checks plus consent, incapacitation, death, family, animal, school and
 breath-restriction checks before use. The stage also keeps
 every sexual act between the people the request pairs, allows a partner-supported lift during sex, keeps the place and
