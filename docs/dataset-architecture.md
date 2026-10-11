@@ -80,10 +80,13 @@ belong in hard, retaining their scope and qualifiers. A semantic trait does not
 automatically require exposure. Unresolved user conflicts block approval.
 
 For random batches, a brainstorm call (`brainstorm.py`) first lists about three candidate
-events per image with a typicality score. The app drops events similar to recent runs or
-current siblings and samples the batch gently weighted toward unusual events, then passes each
-image its `event_seed`. Randomly invented human characters also get a code-drawn age, hair,
-build and outfit per image in their creative direction. An unusable brainstorm is reported
+scenarios per image (what happens and where, each in its own place) with a typicality score.
+The app drops events similar to recent runs or current siblings and samples the batch gently
+weighted toward unusual events, then passes each image its `event_seed`, which replaces that
+image's moment, interaction and setting directions. Randomly invented human characters also
+get a look per image built from independent parts (`LOOK_PARTS`: hair length, style and colour,
+build, skin tone, plus an age from `AGES` unless one is stated), so each seed draws new people
+from hundreds of combinations instead of reshuffling one short list. An unusable brainstorm is reported
 and ideas continue without seeds; guided batches skip it.
 IDEAS writes five images per call: each record is a one-line idea (the core event) and
 its scene, a complete three-to-five-sentence picture with the whole cast in frame,

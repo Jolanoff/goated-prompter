@@ -101,9 +101,9 @@ replacing the choice. If its value is still unspecified, choose it once for the 
 keep it consistent across all proposed ideas, not independently per image.
 
 EVENT SEEDS
-An assignment may carry event_seed: the core event the app picked for this image from a
-wide brainstorm, so batches do not repeat the same favourite ideas. Build the idea around
-that event and stage it fully. Change only a part that conflicts with HARD.
+An assignment may carry event_seed: the core event and place the app picked for this image
+from a wide brainstorm, so batches do not repeat the same favourite ideas. Build the idea
+around that event, set it in that place and stage it fully. Change only a part that conflicts with HARD.
 
 CREATIVE DIRECTION
 Each assignment carries a creative_direction chosen by the app to spread the batch
@@ -200,25 +200,25 @@ GROUP_FRAMING = ("medium shot with everyone in frame", "full-body shot", "wide s
                  "three-quarter view at eye level with everyone in frame", "slightly raised eye-level view with everyone in frame")
 # Random characters otherwise collapse to the model's default person, so the app draws
 # each image's look for them (AttrPrompt: random attribute combinations beat fixed ones).
-LOOK_AXES = {
-    "age": ("early twenties", "mid twenties", "late twenties", "early thirties", "late thirties", "forties"),
-    "hair": ("short curly black hair", "long straight auburn hair", "a buzz cut", "a silver bob", "long braids",
-             "wavy shoulder-length blonde hair", "a shaved head", "a messy brown ponytail", "short spiky dyed hair",
-             "thick dark waves", "a grey crew cut", "red pixie-cut hair"),
-    "build": ("slim", "athletic", "stocky", "tall and lanky", "curvy", "broad-shouldered", "petite", "heavyset"),
+# Looks are built from independent parts, so a batch of ten draws ten of hundreds of
+# combinations instead of walking through one short list that every batch repeats.
+AGES = ("early twenties", "mid twenties", "late twenties", "early thirties", "late thirties", "forties")
+# Hair and build are drawn per sex, so a man does not get a pixie cut or a woman a crew cut by chance;
+# people whose sex is open draw from both.
+LOOK_PARTS = {
+    "woman": {"length": ("pixie-length", "chin-length", "shoulder-length", "mid-back-length", "waist-length"),
+              "style": ("straight", "wavy", "curly", "braided", "tied-up", "messy", "sleek"),
+              "color": ("black", "dark brown", "chestnut", "auburn", "copper-red", "honey-blonde", "platinum-blonde",
+                        "ash-brown", "silver-grey", "dyed pastel pink"),
+              "build": ("slim", "athletic", "curvy", "petite", "tall and slender", "full-figured", "toned",
+                        "soft and round", "heavyset", "willowy")},
+    "man": {"length": ("buzzed", "short", "cropped", "medium-length", "shoulder-length"),
+            "style": ("straight", "wavy", "curly", "slicked-back", "tousled", "faded at the sides"),
+            "color": ("black", "dark brown", "light brown", "sandy-blond", "ginger", "grey", "salt-and-pepper"),
+            "build": ("slim", "athletic", "stocky", "broad-shouldered", "tall and lean", "heavyset", "muscular",
+                      "wiry", "soft-bellied", "barrel-chested")},
 }
-# Hair and build drawn per sex, so a man does not get a pixie cut and a petite frame by chance
-# while a woman gets a grey crew cut. LOOK_AXES stays the pool for people whose sex is open.
-LOOKS_BY_SEX = {
-    "woman": {"hair": ("long straight auburn hair", "wavy shoulder-length blonde hair", "a messy brown ponytail",
-                       "a sleek black bob", "long braids", "thick dark waves", "a high bun", "red pixie-cut hair",
-                       "short curly black hair", "a silver bob"),
-              "build": ("slim", "athletic", "curvy", "petite", "tall and lanky", "heavyset")},
-    "man": {"hair": ("short curly black hair", "a buzz cut", "a grey crew cut", "short spiky dyed hair",
-                     "slicked-back dark hair", "a messy brown undercut", "shoulder-length wavy hair", "a shaved head",
-                     "a tousled sandy mop", "a neat side part"),
-            "build": ("slim", "athletic", "stocky", "broad-shouldered", "tall and lanky", "heavyset")},
-}
+SKIN_TONES = ("fair", "freckled fair", "light", "olive", "tan", "golden-brown", "brown", "deep brown")
 _SEX_WORDS = {"female": "woman", "male": "man"}
 # A role or trait that already gives an age ("girl", "old man", "20 yo man", "in her 30s") keeps it; the
 # scene picks outfits to fit the setting.
@@ -272,14 +272,20 @@ def creative_directions(data, indexes, salt=0):
                    for item in brief.get("characters") or ()
                    if item.get("origin") == "random" and item.get("kind") in LOOK_KINDS]
 
-    def shuffled(values, position):
-        order = list(values)
-        random.Random(seed + position).shuffle(order)
-        return order
+    used_looks = set()
 
-    pools = {sex: {axis: shuffled((LOOKS_BY_SEX.get(sex) or {}).get(axis, values), position)
-                   for position, (axis, values) in enumerate(LOOK_AXES.items(), len(DIRECTION_AXES))}
-             for sex in (None, *SEX_LOOKS)}
+    def draw_look(index, slot, sex, aged):
+        """One random look from independent parts; the same draft and salt draw the same look."""
+        rng = random.Random(f"{seed}|look|{index}|{slot}")
+        for _attempt in range(20):
+            parts = LOOK_PARTS[sex or rng.choice(SEX_LOOKS)]
+            hair = f"{rng.choice(parts['length'])} {rng.choice(parts['style'])} {rng.choice(parts['color'])} hair"
+            look = ([] if aged else [rng.choice(AGES)]) + [hair, rng.choice(parts["build"]), f"{rng.choice(SKIN_TONES)} skin"]
+            if hair not in used_looks:
+                break
+        used_looks.add(hair)
+        return look
+
     directions = {}
     for index in indexes:
         scopes = {"all_outputs", *([f"guided:{(index - 1) % len(lines) + 1}"] if guided else [])}
@@ -291,10 +297,7 @@ def creative_directions(data, indexes, salt=0):
             looks = {}
             for slot, (name, sex, open_sex, aged) in enumerate(random_cast):
                 sex = random.Random(f"{seed}|{index}|{slot}").choice(SEX_LOOKS) if open_sex else sex
-                pool = pools[sex]
-                looks[name] = ", ".join(([sex] if open_sex else [])
-                                        + [pool[axis][(index - 1 + 3 * slot) % len(pool[axis])] for axis in LOOK_AXES
-                                           if not (axis == "age" and aged)])
+                looks[name] = ", ".join(([sex] if open_sex else []) + draw_look(index, slot, sex, aged))
             directions[index]["random_character_looks"] = looks
     return directions
 
@@ -335,10 +338,10 @@ def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existin
             direction = {axis: value for axis, value in direction.items() if axis != "framing"}
         if (event_seeds or {}).get(index):
             entry["event_seed"] = event_seeds[index]
-            # The seed already decides what happens; a moment or interaction label on top of it
-            # gets copied into the idea as vague words ("a shared mishap occurs") by small models.
+            # The seed already decides what happens and where; a moment, interaction or setting label
+            # on top of it gets copied into the idea as vague words ("a shared mishap occurs").
             direction = {axis: value for axis, value in direction.items()
-                         if axis not in ("moment", "interaction")}
+                         if axis not in ("moment", "interaction", "setting")}
         entry["creative_direction"] = direction
         selected.append(entry)
     context = {"source": source_context["source"], "confirmed_intent": brief,
@@ -400,7 +403,7 @@ def _looks_described(looks):
     described = {}
     for name, look in (looks or {}).items():
         parts = [part.strip() for part in look.split(",")]
-        hair = next((part for part in parts if part in LOOK_AXES["hair"]), "")
+        hair = next((part for part in parts if part.endswith(" hair")), "")
         noun = parts[0] if parts and parts[0] in SEX_LOOKS else " ".join(re.sub(r"[#\d]+", " ", name).split()).casefold() or "person"
         if hair:
             described[name] = f"the {noun} with {hair}"

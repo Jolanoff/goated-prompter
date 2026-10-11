@@ -144,6 +144,7 @@ _BROKEN_ANATOMY = re.compile(
     rf"|\b{_GENITAL}\W+(?:\w+\W+){{0,3}}(?:shared|joined|connected|merged|fused)\b"
     rf"|\b(?:shared|single|one|joined|connected|merged|fused)\W+(?:\w+\W+){{0,2}}{_GENITAL}\W+(?:\w+\W+){{0,4}}(?:between|both|two)\b"
     rf"|\b(?:cocks|penises|dicks)\W+(?:\w+\W+){{0,3}}(?:touching|together|tip to tip|side by side)\b"
+    r"|\bass[- ]to[- ]ass\b"
     rf"|\b{_GENITAL}\W+(?:\w+\W+){{0,6}}{_GENITAL}\W+(?:\w+\W+){{0,2}}(?:touching|pressed|rubbing|together)\b")
 BROKEN_ANATOMY = ("Every body part must stay attached to its owner: name each with its owner, keep visible genitals "
                   "with their owner's hips and torso in frame, and never describe a part alone, detached, or shared, "

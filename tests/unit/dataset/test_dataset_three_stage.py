@@ -215,8 +215,8 @@ class ChunkedIdeasTests(unittest.TestCase):
         sent = [row["creative_direction"] for context in (first, second) for row in context["assignments"]]
         seeded = {row["index"] for context in (first, second) for row in context["assignments"] if row.get("event_seed")}
         expected = [{axis: value for axis, value in directions[index].items()
-                     if index not in seeded or axis not in ("moment", "interaction")} for index in range(1, 8)]
-        self.assertEqual(sent, expected, "A seeded image keeps framing, light, mood and setting, not a moment label.")
+                     if index not in seeded or axis not in ("moment", "interaction", "setting")} for index in range(1, 8)]
+        self.assertEqual(sent, expected, "A seeded image keeps framing, light and mood; its seed names the event and place.")
         self.assertTrue(seeded)
 
 
@@ -372,18 +372,18 @@ class PlausibilityTests(unittest.TestCase):
         girl = character(name="random girl", sex="female", origin="random", series="")
         data = valid_draft(amount=3, _confirmed_intent=dataset_understanding_fixture(characters=[NARUTO, girl]))
         looks = [item["random_character_looks"]["random girl"] for item in creative_directions(data, [1, 2, 3]).values()]
-        from goated_prompter.features.dataset.ideas import LOOK_AXES
-        self.assertFalse(any(age in look for look in looks for age in LOOK_AXES["age"]))
-        self.assertTrue(all(look.count(",") == 1 for look in looks), "Only hair and build are drawn.")
+        from goated_prompter.features.dataset.ideas import AGES
+        self.assertFalse(any(age in look for look in looks for age in AGES))
+        self.assertTrue(all(look.count(",") == 2 for look in looks), "Only hair, build and skin tone are drawn.")
         for stated in ({"name": "20 yo man"}, {"name": "man", "traits": "25 years old"}, {"name": "woman in her 30s"},
                        {"name": "a 40-year-old chef"}):
             person = {**COMPANION, "sex": "male", **stated}
             look = creative_directions(valid_draft(amount=1, _confirmed_intent=dataset_understanding_fixture(
                 characters=[person])), [1])[1]["random_character_looks"][person["name"]]
-            self.assertFalse(any(age in look for age in LOOK_AXES["age"]), (stated, look))
+            self.assertFalse(any(age in look for age in AGES), (stated, look))
         adult = creative_directions(valid_draft(amount=1, _confirmed_intent=dataset_understanding_fixture(
             characters=[COMPANION])), [1])[1]["random_character_looks"]["random companion"]
-        self.assertTrue(any(age in adult for age in LOOK_AXES["age"]))
+        self.assertTrue(any(age in adult for age in AGES))
 
 
 class RepeatedInventoryTests(unittest.TestCase):
@@ -476,10 +476,12 @@ class LabelAndTriggerTidyTests(unittest.TestCase):
         self.assertEqual(label_replacements([{**COMPANION, "name": "coworker #3"}, *self.PAIR, COMPANION])["coworker #3"],
                          "the third coworker")
         row = {"index": 1, "idea": "Friend 1 slips.", "scene": "Friend 1 slips beside Friend 2.", "idea_status": "valid"}
-        looks = {"Friend 1": "woman, mid twenties, long braids, slim", "Friend 2": "early thirties, a buzz cut, stocky"}
+        looks = {"Friend 1": "woman, mid twenties, waist-length braided auburn hair, slim, olive skin",
+                 "Friend 2": "early thirties, buzzed straight black hair, stocky, tan skin"}
         relabelled = _relabel(row, self.PAIR, looks)
-        self.assertEqual((relabelled["idea_status"], relabelled["idea"]), ("valid", "The woman with long braids slips."))
-        self.assertEqual(relabelled["scene"], "The woman with long braids slips beside the friend with a buzz cut.")
+        self.assertEqual((relabelled["idea_status"], relabelled["idea"]), ("valid", "The woman with waist-length braided auburn hair slips."))
+        self.assertEqual(relabelled["scene"], "The woman with waist-length braided auburn hair slips beside the friend with "
+                                              "buzzed straight black hair.")
         self.assertEqual(_relabel(row, self.PAIR, None)["scene"], "The first friend slips beside the second friend.")
 
     def test_a_prompt_that_still_uses_labels_is_relabelled_not_retried(self):
@@ -557,17 +559,17 @@ class IdeaQualityTests(unittest.TestCase):
         self.assertFalse(any("view" in setting for setting in DIRECTION_AXES["setting"]))
 
     def test_drawn_hair_and_build_fit_each_persons_sex_and_a_stated_age_is_kept(self):
-        from goated_prompter.features.dataset.ideas import LOOKS_BY_SEX, LOOK_AXES
+        from goated_prompter.features.dataset.ideas import AGES, LOOK_PARTS
         couple = [{**COMPANION, "name": "man", "sex": "male"}, {**COMPANION, "name": "wife", "sex": "female"}]
         data = valid_draft(amount=10, trigger_type="Multiple characters", subject="a man and his wife exploring japan",
                            trigger="40 yo man", _confirmed_intent=dataset_understanding_fixture(characters=couple))
         for item in creative_directions(data, range(1, 11)).values():
             man, wife = item["random_character_looks"]["man"], item["random_character_looks"]["wife"]
-            self.assertTrue(any(hair in man for hair in LOOKS_BY_SEX["man"]["hair"]), man)
-            self.assertFalse(any(hair in man for hair in ("pixie", "bob", "braids", "bun", "ponytail")), man)
-            self.assertTrue(any(hair in wife for hair in LOOKS_BY_SEX["woman"]["hair"]), wife)
-            self.assertFalse(any(hair in wife for hair in ("crew cut", "buzz cut", "shaved", "undercut")), wife)
-            self.assertFalse(any(age in look for look in (man, wife) for age in LOOK_AXES["age"]),
+            self.assertTrue(any(f"{style} " in man for style in LOOK_PARTS["man"]["style"]), man)
+            self.assertFalse(any(hair in man for hair in ("pixie", "braided", "tied-up", "waist-length")), man)
+            self.assertTrue(any(f"{style} " in wife for style in LOOK_PARTS["woman"]["style"]), wife)
+            self.assertFalse(any(hair in wife for hair in ("buzzed", "faded at the sides", "salt-and-pepper")), wife)
+            self.assertFalse(any(age in look for look in (man, wife) for age in AGES),
                              "The user gave an age, so the app draws none.")
 
 
@@ -837,3 +839,31 @@ class SexualAnatomyTests(unittest.TestCase):
                                              self.data, 1, plan_item=saved_scene(1)).system_message.split())
         self.assertIn("stays attached to that person's body", ideas)
         self.assertIn("keep two men's genitals apart", final)
+
+
+class SeedVarietyTests(unittest.TestCase):
+    def setUp(self):
+        patcher = patch.dict(os.environ, {LIBRARY_DIR_ENV: tempfile.mkdtemp()})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        couple = [{**COMPANION, "name": "woman", "sex": "female"}, {**COMPANION, "name": "man", "sex": "male"}]
+        self.data = valid_draft(amount=10, subject="a woman having sex with a man", trigger_type="Multiple characters",
+                                _confirmed_intent=dataset_understanding_fixture(characters=couple))
+
+    def test_new_seeds_draw_new_people_instead_of_reshuffling_one_list(self):
+        def women(salt):
+            return [row["random_character_looks"]["woman"] for row in creative_directions(self.data, range(1, 11), salt).values()]
+        first, second = women(1), women(2)
+        self.assertEqual(len(set(first)), 10)
+        self.assertLessEqual(len(set(first) & set(second)), 1, "Two batches share almost no looks.")
+
+    def test_the_brainstorm_invents_scenarios_with_their_own_places(self):
+        from goated_prompter.features.dataset.brainstorm import brainstorm_instruction
+        system = " ".join(brainstorm_instruction(self.data, 30).system_message.split())
+        self.assertIn("every event has its own place, and no two events share one", system)
+        self.assertIn("vary the whole situation around it", system)
+        self.assertNotIn("Vary only", system)
+
+    def test_impossible_positions_are_caught(self):
+        from goated_prompter.features.dataset.quality import broken_anatomy
+        self.assertIsNotNone(broken_anatomy("she receives ass-to-ass fucking"))

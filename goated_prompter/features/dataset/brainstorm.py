@@ -35,7 +35,9 @@ SEXUAL CONTENT
 When the request or confirmed_intent is sexual (sex, fucking, oral, anal, penetration, mutual masturbation, etc.), the sex act itself is the required core event in every idea.
 Every idea must show the sex in progress or at a clearly readable sexual peak.
 Use concrete sexual language when the request is explicit (fucking, sucking, cock, ass, cum, etc.).
-Vary only the exact acts, positions, who is active/receptive, expressions, arousal cues and immediate physical contact.
+Keep the act in every image and vary the whole situation around it: where it happens, what led to this
+moment, who starts it, the mood, the clothing state, the position and who is active or receptive.
+No two images share both a place and a position.
 Never replace the sex with “intimate moment”, “kissing”, “cuddling”, “looking at each other”, or any non-sexual activity.
 Clothing state follows the Director and the request: never force full nudity unless the user or Director asks for it; partial clothing, open clothes, pulled-down garments are fine and often preferred.
 Supported poses only (lying, kneeling, sitting, standing with weight on feet/seat/knees/back).
@@ -56,8 +58,10 @@ picks a few of them for this batch, so cover the whole range of what the concept
 common, unusual and rare events, different actions, roles, reactions and outcomes.
 Every event must satisfy the hard list in confirmed_intent and keep the confirmed cast;
 a required action stays in every event and you vary what happens around it.
-Name the action, not the camera, light, outfit or location: a new place alone is not a new
-event. Every event has something happening: an activity with a goal, a problem, a mishap or
+Each event is a short scenario: what happens and where it happens. A new place alone is not
+a new event, but every event has its own place, and no two events share one: spread them
+over clearly different places and situations that fit the concept. Name no camera, light or
+outfit. Every event has something happening: an activity with a goal, a problem, a mishap or
 a reaction, and with several characters, something they do to or with each other. At most
 one event may be people simply watching, admiring or walking past something, including
 watching someone else perform, cook or play, and apart from what the request itself asks
