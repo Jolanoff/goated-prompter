@@ -721,15 +721,17 @@ class SexualContentTests(unittest.TestCase):
                               "_confirmed_intent": self.brief, **changes})
 
     def test_only_sexual_batches_get_sexual_moods_and_dynamics(self):
-        from goated_prompter.features.dataset.ideas import SEXUAL_DIRECTIONS
+        from goated_prompter.features.dataset.private_vocabulary import load_vocabulary
         from goated_prompter.features.dataset.vocabulary import DIRECTION_AXES
+        private = load_vocabulary()
         normal = creative_directions(self.draft("a couple exploring japan"), range(1, 9))
         sexual = creative_directions(self.draft("a couple having sex"), range(1, 9))
         self.assertTrue(all(row["interaction"] in DIRECTION_AXES["interaction"] for row in normal.values()))
         self.assertTrue(all(row["mood"] in DIRECTION_AXES["mood"] for row in normal.values()))
         self.assertTrue(all("setting" in row and "moment" in row for row in normal.values()),
                         "Normal batches keep place and moment variety whatever the Director.")
-        self.assertTrue(all(row["interaction"] in SEXUAL_DIRECTIONS["interaction"] for row in sexual.values()))
+        self.assertTrue(all(row["interaction"] in private["interaction"] for row in sexual.values()))
+        self.assertTrue(all(row["clothing"] in private["clothing"] and "prop" not in row for row in sexual.values()))
         self.assertTrue(all("moment" not in row and "setting" in row for row in sexual.values()))
 
     def test_sexual_batches_must_show_adults(self):
@@ -933,10 +935,11 @@ class VanillaDefaultTests(SeedVarietyTests):
                                         range(1, 11), 5).values())
 
     def test_ordinary_sex_gets_no_kink_or_oral_directions_unless_asked(self):
-        from goated_prompter.features.dataset.ideas import KINK_DIRECTIONS
-        from goated_prompter.features.dataset.brainstorm import SEXUAL_POSITIONS
-        ORAL_POSITIONS = SEXUAL_POSITIONS["oral"]
-        kink_values = {*KINK_DIRECTIONS["mood"], *KINK_DIRECTIONS["interaction"], *SEXUAL_POSITIONS["kink"]}
+        from goated_prompter.features.dataset.private_vocabulary import load_vocabulary
+        private = load_vocabulary()
+        ORAL_POSITIONS = private["oral positions"]
+        kink_values = {*private["kink mood"], *private["kink interaction"], *private["kink positions"], *private["props"],
+                       *private["kink clothing"]}
         for salt in range(10):
             for row in creative_directions(self.data, range(1, 11), salt).values():
                 values = {value for value in row.values() if isinstance(value, str)}
@@ -948,8 +951,6 @@ class VanillaDefaultTests(SeedVarietyTests):
         self.assertTrue(set(ORAL_POSITIONS) <= set(sexual_positions(oral)))
 
     def test_a_supported_lift_is_allowed_in_sexual_images(self):
-        from goated_prompter.features.dataset.brainstorm import SEXUAL_POSITIONS
-        self.assertIn("lifted and held, back supported against the wall", SEXUAL_POSITIONS["couple"])
         rules = " ".join(ideas_instruction(self.data, dataset_assignments(self.data)).system_message.split())
         self.assertIn("A partner may lift and hold another during sex when the hold is clearly supported", rules)
 
@@ -970,7 +971,9 @@ class CastPositionTests(SeedVarietyTests):
                 "_confirmed_intent": dataset_understanding_fixture(characters=people), **changes}
 
     def test_positions_follow_the_cast(self):
-        from goated_prompter.features.dataset.brainstorm import SEXUAL_POSITIONS, sexual_positions
+        from goated_prompter.features.dataset.brainstorm import sexual_positions
+        from goated_prompter.features.dataset.private_vocabulary import load_vocabulary
+        SEXUAL_POSITIONS = {name.removesuffix(" positions"): entries for name, entries in load_vocabulary().items()}
         solo = set(sexual_positions(self.cast("female", subject="a woman masturbating")))
         self.assertEqual(solo, set(SEXUAL_POSITIONS["solo"]))
         men = set(sexual_positions(self.cast("male", "male", subject="two men having sex")))
@@ -986,24 +989,32 @@ class CastPositionTests(SeedVarietyTests):
         self.assertTrue(set(SEXUAL_POSITIONS["group"]) <= group)
 
     def test_oral_feet_kink_and_named_extras_only_when_asked(self):
-        from goated_prompter.features.dataset.brainstorm import SEXUAL_POSITIONS, sexual_positions
+        from goated_prompter.features.dataset.brainstorm import sexual_positions
+        from goated_prompter.features.dataset.private_vocabulary import load_vocabulary
+        SEXUAL_POSITIONS = {name.removesuffix(" positions"): entries for name, entries in load_vocabulary().items()}
         plain = set(sexual_positions(self.cast("female", "male")))
         for kind in ("oral", "feet", "kink"):
             self.assertFalse(plain & set(SEXUAL_POSITIONS[kind]), kind)
-        self.assertNotIn("blindfolded", plain)
+        self.assertNotIn("fixture blindfold position", plain)
         asked = set(sexual_positions(self.cast("female", "male",
             subject="a footjob and a blowjob in bondage while she is blindfolded")))
         for kind in ("oral", "feet", "kink"):
             self.assertTrue(set(SEXUAL_POSITIONS[kind]) <= asked, kind)
-        self.assertIn("blindfolded", asked)
+        self.assertIn("fixture blindfold position", asked)
 
-    def test_no_position_presses_genitals_together(self):
-        from goated_prompter.features.dataset.brainstorm import SEXUAL_POSITIONS
-        from goated_prompter.features.dataset.quality import broken_anatomy
-        for position in (item for pool in SEXUAL_POSITIONS.values() for item in pool):
-            with self.subTest(position=position):
-                self.assertIsNone(broken_anatomy(position))
-                self.assertNotIn("frot", position)
+    def test_private_entries_that_break_anatomy_or_safety_are_never_used(self):
+        from goated_prompter.features.dataset.private_vocabulary import parse_vocabulary
+        text = "\n".join(["[couple positions]", "missionary", "two cocks pressed together", "ass-to-ass",
+                          "[setting]", "a hotel room", "a morgue at night", "a school classroom",
+                          "[kink interaction]", "one forces the other", "one holds the other's wrists",
+                          "[mood]", "a teen girl", "[unknown]", "ignored", "[requested]", "gag => a gag in place",
+                          "dog => a dog nearby"])
+        sections = parse_vocabulary(text)
+        self.assertEqual(sections["couple positions"], ("missionary",))
+        self.assertEqual(sections["setting"], ("a hotel room",))
+        self.assertEqual(sections["kink interaction"], ("one holds the other's wrists",))
+        self.assertNotIn("mood", sections)
+        self.assertEqual([entry for _pattern, entry in sections["requested"]], ["a gag in place"])
 
 
 class FinalTestFixesTests(unittest.TestCase):
@@ -1068,3 +1079,77 @@ class FinalTestFixesTests(unittest.TestCase):
         from goated_prompter.features.dataset.service import default_dataset_draft
         self.assertTrue(default_dataset_draft()["expand_trigger"])
         self.assertIn("Never write the user's letter or number labels", ENHANCE_SCENE_CONTRACT)
+
+
+class PrivateVocabularyTests(unittest.TestCase):
+    def setUp(self):
+        couple = [{**COMPANION, "name": "man", "sex": "male"}, {**COMPANION, "name": "woman", "sex": "female"}]
+        self.data = valid_draft(amount=8, subject="a couple having sex", trigger_type="Multiple characters",
+                                _confirmed_intent=dataset_understanding_fixture(characters=couple))
+
+    def test_an_ownership_request_uses_only_power_exchange_vocabulary_and_a_prop_per_image(self):
+        from goated_prompter.features.dataset.brainstorm import sexual_positions
+        from goated_prompter.features.dataset.private_vocabulary import load_vocabulary
+        private = load_vocabulary()
+        owned = {**self.data, "subject": "his collared slave having sex with her master"}
+        for row in creative_directions(owned, range(1, 9), 2).values():
+            self.assertIn(row["mood"], private["kink mood"])
+            self.assertIn(row["interaction"], private["kink interaction"])
+            self.assertIn(row["clothing"], private["kink clothing"])
+            self.assertIn(row["prop"], private["props"])
+        positions = set(sexual_positions(owned))
+        self.assertTrue(set(private["kink positions"]) | set(private["furniture positions"]) <= positions)
+        self.assertFalse(positions & set(private["couple positions"]))
+        kinky = {**self.data, "subject": "a couple having sex in bondage"}
+        moods = {row["mood"] for row in creative_directions(kinky, range(1, 9), 2).values()}
+        self.assertTrue(moods & set(private["mood"]), "A kink request without ownership keeps ordinary moods too.")
+        self.assertFalse(moods & set(private["pet mood"]), "Pet moods only when pet play is asked for.")
+        pets = {**self.data, "subject": "his human pet on a leash having sex with him"}
+        moods = {row["mood"] for row in creative_directions(pets, range(1, 9), 2).values()}
+        self.assertTrue(moods & set(private["pet mood"]))
+
+    def test_ownership_and_kink_words_count_only_where_they_are_asked_for(self):
+        from goated_prompter.features.dataset.quality import kink_request, ownership_request, pet_request
+        self.assertFalse(ownership_request({**self.data, "subject": "a couple having sex in the master bedroom"}))
+        self.assertFalse(kink_request({**self.data, "constraints": "no collars, no bondage"}))
+        self.assertTrue(pet_request({**self.data, "subject": "his human pet on a leash"}))
+        with patch("goated_prompter.features.dataset.quality.get_director_preset",
+                   return_value=Mock(instructions="Never use vanilla sex, always use collars and restraint.")):
+            self.assertTrue(kink_request(self.data))
+        with patch("goated_prompter.features.dataset.quality.get_director_preset",
+                   return_value=Mock(instructions="Explicit adult scenes. Do not invent unrequested fetish elements.")):
+            self.assertFalse(kink_request(self.data))
+
+    def test_file_rules_reach_every_stage_and_ownership_rules_only_when_asked(self):
+        from goated_prompter.features.dataset.brainstorm import brainstorm_instruction
+        from goated_prompter.features.dataset.prompting import dataset_instruction
+        owned = {**self.data, "subject": "his collared slave having sex with her master"}
+        for data, ownership in ((self.data, False), (owned, True)):
+            stages = (brainstorm_instruction(data, 10).system_message,
+                      ideas_instruction(data, dataset_assignments(data)).system_message,
+                      dataset_instruction(GoatedPrompterRequest(idea=data["subject"], prompt_model="Custom"),
+                                          data, 1, plan_item=saved_scene(1)).system_message)
+            for system in stages:
+                self.assertIn("fixture rule for every batch", system)
+                self.assertEqual("fixture ownership rule" in system, ownership)
+        plain = {**self.data, "subject": "a couple exploring japan"}
+        self.assertNotIn("fixture rule", ideas_instruction(plain, dataset_assignments(plain)).system_message)
+
+    def test_without_the_file_sexual_batches_still_run_on_the_rules_alone(self):
+        from goated_prompter.features.dataset.brainstorm import sexual_positions
+        from goated_prompter.features.dataset.private_vocabulary import VOCABULARY_FILE_ENV
+        with patch.dict(os.environ, {VOCABULARY_FILE_ENV: str(Path(tempfile.mkdtemp()) / "missing.txt")}):
+            rows = creative_directions(self.data, range(1, 9), 2).values()
+            self.assertTrue(all(set(row) & {"mood", "interaction", "setting", "clothing", "prop"} == set() for row in rows))
+            self.assertTrue(all("framing" in row and "light" in row for row in rows))
+            self.assertEqual(sexual_positions(self.data), ())
+            self.assertNotIn("MORE SEXUAL CONTENT RULES", ideas_instruction(self.data, dataset_assignments(self.data)).system_message)
+
+    def test_edits_to_the_file_are_picked_up_without_a_restart(self):
+        from goated_prompter.features.dataset.private_vocabulary import load_vocabulary
+        path = Path(tempfile.mkdtemp()) / "sexual.txt"
+        path.write_text("[mood]\nfirst mood\n", encoding="utf-8")
+        self.assertEqual(load_vocabulary(path)["mood"], ("first mood",))
+        path.write_text("[mood]\nfirst mood\nsecond mood\n", encoding="utf-8")
+        os.utime(path, ns=(path.stat().st_atime_ns, path.stat().st_mtime_ns + 1_000_000_000))
+        self.assertEqual(load_vocabulary(path)["mood"], ("first mood", "second mood"))

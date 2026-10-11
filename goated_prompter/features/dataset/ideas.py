@@ -11,8 +11,9 @@ from ...backends.base import BackendGenerationError, BackendRunawayError
 from ...contracts import PromptInstruction
 from .brainstorm import PLAUSIBLE_BODIES
 from .director import director_fixes_shot, director_section
+from .private_vocabulary import load_vocabulary, private_rules
 from .quality import (ADULTS_ONLY, BROKEN_ANATOMY, analyze_idea_diversity, broken_anatomy, kink_request,
-                      minor_reference, passive_idea, passive_request, sexual_request)
+                      minor_reference, ownership_request, passive_idea, passive_request, pet_request, sexual_request)
 from .understanding import (label_replacements, numbered_labels, replace_labels, understanding_instruction,
                             unwrap_json_fence, validate_understanding)
 from ...strict_json import reject_duplicate_keys
@@ -111,7 +112,7 @@ other ideas. Change only a part that conflicts with HARD.
 CREATIVE DIRECTION
 Each assignment carries a creative_direction chosen by the app to spread the batch
 across moments, moods, framing, settings and light, and for several characters how they
-interact. Start that image's idea from it; with an event_seed, the seed decides what
+interact; a sexual image may also get a clothing state and a prop, which its scene shows. Start that image's idea from it; with an event_seed, the seed decides what
 happens and the direction how it is shown. Direction values are ingredients, not the idea:
 never write a mood, dynamic or place label as the idea itself; the idea is always a concrete event. When a DIRECTOR block is present it has
 priority: the direction only fills what the Director leaves open. Never let a moment, mood,
@@ -157,32 +158,6 @@ never return a bare object or an object containing an ideas array.
 """
 
 
-# Sexual batches vary the mood and dynamic of the act instead; their moment axis (build-up,
-# aftermath, mishap) would move the image away from the act, so they get none.
-SEXUAL_DIRECTIONS = {
-    "mood": ("aroused", "hungry", "desperate", "overwhelmed", "tender", "playful", "teasing", "needy",
-             "slow and sensual", "breathless", "passionate", "giggly and relaxed", "urgent", "intimate and focused"),
-    "interaction": ("mutual and equal physical engagement", "one gives while the other receives",
-                    "a teasing, playful mood between them", "intense focused contact between them",
-                    "one reacts strongly to what the other is doing", "they move together in sync",
-                    "one holds or guides the other's body", "one teases and makes the other wait",
-                    "urgent and hungry for each other", "slow and loving", "one guides the other's hands",
-                    "one takes the lead, the other eagerly follows"),
-    # Private kinds of place, not named rooms, so the model picks one that fits the batch.
-    "setting": ("a home, away from the bed", "a hotel or rented room", "a bathroom or shower",
-                "a living space with furniture to lean on", "a kitchen or dining area", "a secluded outdoor spot",
-                "a parked car or other private vehicle", "a workplace after hours"),
-}
-# Dynamics that need three or more people.
-GROUP_INTERACTIONS = ("shared between the partners", "the center of attention in the group")
-# Domination, restraint and fetish dynamics only when the request or Director asks for them;
-# ordinary sex is the default.
-KINK_DIRECTIONS = {
-    "mood": ("dominant", "submissive", "possessive", "defiant", "worshipful", "rough"),
-    "interaction": ("one is clearly in control of the other", "one pins the other down", "one obeys the other's orders",
-                    "one presents for the other", "one worships the other's body", "rough and urgent",
-                    "owned and being used", "presenting for use", "a teasing power exchange"),
-}
 _SEX_WORDS = {"female": "woman", "male": "man"}
 # A role or trait that already gives an age ("girl", "old man", "20 yo man", "in her 30s") keeps it; the
 # scene picks outfits to fit the setting.
@@ -202,8 +177,9 @@ def creative_directions(data, indexes, salt=0):
     Guided inputs already fix the event, so they get no moment. When the approved
     brief requires an action for an image, that image only gets framing and light,
     because moment, mood and setting directions otherwise replace the required action.
-    Sexual batches draw mood and interaction from SEXUAL_DIRECTIONS, get no moment, and
-    keep mood and interaction alongside a required act. Every random character in them
+    Sexual batches draw mood, interaction, setting, clothing and (when kink is asked) a prop
+    from the private vocabulary file, get no moment, and keep them alongside a required act;
+    an ownership request uses only the file's kink moods, dynamics and clothing. Every random character in them
     gets a drawn adult age unless a numeric adult age is stated.
     """
     source = json.dumps({key: data.get(key) for key in _DIRECTION_SOURCE}, sort_keys=True, ensure_ascii=False)
@@ -217,14 +193,30 @@ def creative_directions(data, indexes, salt=0):
     group = data.get("trigger_type") == "Multiple characters" or (type(brief_count) is int and brief_count > 1)
     sexual = sexual_request(data)
     kink = sexual and kink_request(data)
+    owned = sexual and ownership_request(data)
+    pet = sexual and pet_request(data)
+    vocabulary = load_vocabulary() if sexual else {}
     safe_axes = SEXUAL_ACTION_SAFE_AXES if sexual else ACTION_SAFE_AXES
+    axes = list(DIRECTION_AXES.items())
+    if sexual:
+        # The private file's clothing states and props; an ownership request keeps only its kink ones.
+        kink_clothing = vocabulary.get("kink clothing", ()) if kink else ()
+        clothing = kink_clothing if owned and kink_clothing else vocabulary.get("clothing", ()) + kink_clothing
+        axes += [("clothing", clothing), ("prop", vocabulary.get("props", ()) if kink else ())]
     orders = {}
-    for position, (axis, values) in enumerate(DIRECTION_AXES.items()):
-        values = GROUP_FRAMING if group and axis == "framing" else SEXUAL_DIRECTIONS.get(axis, values) if sexual else values
-        if sexual and axis in KINK_DIRECTIONS and kink:
-            values = values + KINK_DIRECTIONS[axis]
-        if sexual and axis == "interaction" and type(brief_count) is int and brief_count >= 3:
-            values = values + GROUP_INTERACTIONS
+    for position, (axis, values) in enumerate(axes):
+        if group and axis == "framing":
+            values = GROUP_FRAMING
+        elif sexual and axis in ("mood", "interaction", "setting"):
+            # Without the private file these axes stay open and the model invents them within the rules.
+            values = vocabulary.get(axis, ())
+            extra = vocabulary.get(f"kink {axis}", ()) if kink else ()
+            extra = extra + (vocabulary.get(f"pet {axis}", ()) if pet else ())
+            values = extra if owned and extra else values + extra
+            if axis == "interaction" and type(brief_count) is int and brief_count >= 3:
+                values = values + vocabulary.get("group interaction", ())
+        if not values:
+            continue
         order = list(values)
         random.Random(seed + position).shuffle(order)
         orders[axis] = order
@@ -330,7 +322,7 @@ def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existin
         "recently_used_ideas": list(recent)[:40],
         **({"craft_notes": list(craft_notes)} if craft_notes else {})}
     budget = 512 + len(indexes) * 512
-    return PromptInstruction(system_message=director_section(data) + IDEAS_SYSTEM, user_message=json.dumps(context,
+    return PromptInstruction(system_message=director_section(data) + IDEAS_SYSTEM + private_rules(data), user_message=json.dumps(context,
         ensure_ascii=False, separators=(",", ":")),
         model_family=family, diagnostic_stage="dataset:ideas", max_tokens=budget,
         hard_max_tokens=budget, unlimited_tokens=False, temperature=.7, top_p=.92,

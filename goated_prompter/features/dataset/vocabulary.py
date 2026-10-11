@@ -26,8 +26,8 @@ DIRECTION_AXES = {
 # mood and setting directions (rest, water break, climbing a ladder) replacing it,
 # so those items only vary how the image is shot.
 ACTION_SAFE_AXES = ("framing", "light")
-# In a sexual batch the act is the required action; its mood, dynamic and place support it.
-SEXUAL_ACTION_SAFE_AXES = ("framing", "light", "mood", "interaction", "setting")
+# In a sexual batch the act is the required action; its mood, dynamic, place, clothing and prop support it.
+SEXUAL_ACTION_SAFE_AXES = ("framing", "light", "mood", "interaction", "setting", "clothing", "prop")
 # Steep top-down and worm's-eye angles foreshorten full bodies into broken anatomy,
 # so no direction asks for them; the user can still request one explicitly.
 # Close-ups and over-the-shoulder views crop or hide a participant, so datasets

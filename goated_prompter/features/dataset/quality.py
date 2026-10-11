@@ -197,16 +197,54 @@ def feet_request(data):
 # A Director only unlocks BDSM when it is built for it; a general NSFW Director that mentions
 # control or dominance in passing keeps sex ordinary.
 _KINK_DIRECTOR = re.compile(r"\b(?:bdsm|bondage|collar(?:ed|s)?|leash(?:ed)?|slaves?|restrain\w*|handcuff\w*|"
-                            r"spank\w*|dominatrix|fetish\w*|kinky)\b")
-_NEGATED = re.compile(r"\b(?:do not|don't|never|no|avoid|without|unrequested|unless)\b")
+                            r"spank\w*|dominatrix|fetish\w*|kinky|submissives?|domination|power exchange)\b")
+_NEGATED = re.compile(r"\b(?:do not|don't|never|no|not|avoid|without|unrequested|unless)\b")
+_NOT_A_PERSON = r"(?! (?:bedroom|bath\w*|suite|key|plan|class|chef|piece|copy|cylinder|degree))"
+# Ownership and slave roles ask for the power exchange in every image, not as one option among many.
+_OWNERSHIP = re.compile(r"\b(?:slaves?|(?<!-)owned|ownership|property|dominated|human pets?|pet play|petplay|"
+                        r"collared|leashed|master and (?:slave|pet)|(?:his|her|my|their|the|a) (?:master|mistress)"
+                        + _NOT_A_PERSON + r")\b")
+_PET = re.compile(r"\b(?:pet play|petplay|human pets?|puppy play|kitten play|puppy|kitten|pets?)\b")
+_FURNITURE = re.compile(r"\b(?:human furniture|furniture|footrest|human (?:table|chair|stool)|objectif\w*)\b")
+_AFTERCARE = re.compile(r"\b(?:aftercare|aftermath)\b")
+
+
+def _asked(text, pattern):
+    """True when the pattern appears in a clause that does not forbid it ("do not add fetish elements")."""
+    for match in pattern.finditer(text):
+        clause = re.split(r"[.,;:!?\n]", text[:match.start()])[-1]
+        if not _NEGATED.search(clause):
+            return True
+    return False
+
+
+def _user_text(data):
+    return " ".join(str(data.get(key) or "") for key in ("subject", "constraints", "inputs", "trigger")).casefold()
+
+
+def _director_text(data):
+    return get_director_preset(data.get("director_preset")).instructions.casefold()
+
+
+def ownership_request(data):
+    return _asked(_user_text(data) + "\n" + _director_text(data), _OWNERSHIP)
 
 
 def kink_request(data):
-    asked = " ".join(str(data.get(key) or "") for key in ("subject", "constraints", "inputs", "trigger")).casefold()
-    director = get_director_preset(data.get("director_preset")).instructions.casefold()
-    # "Do not invent unrequested fetish elements" forbids kinks; only sentences that ask for one count.
-    asking = (sentence for sentence in re.split(r"[.!?\n]+", director) if not _NEGATED.search(sentence))
-    return bool(_KINK.search(asked) or any(_KINK_DIRECTOR.search(sentence) for sentence in asking))
+    return (_asked(_user_text(data), _KINK) or _asked(_director_text(data), _KINK_DIRECTOR)
+            or ownership_request(data))
+
+
+def pet_request(data):
+    return _asked(_user_text(data) + "\n" + _director_text(data), _PET)
+
+
+def furniture_request(data):
+    return _asked(_user_text(data) + "\n" + _director_text(data), _FURNITURE)
+
+
+def aftercare_request(data):
+    return _asked(_user_text(data) + "\n" + _director_text(data), _AFTERCARE)
 
 
 def oral_request(data):

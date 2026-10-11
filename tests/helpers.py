@@ -1,6 +1,14 @@
 """Test lifecycle helpers compatible with the project's Python 3.10 minimum."""
 
 from contextlib import ExitStack
+import os
+from pathlib import Path
+
+from goated_prompter.features.dataset.private_vocabulary import VOCABULARY_FILE_ENV
+
+# Tests never read the user's private vocabulary file; they use neutral placeholders instead.
+PRIVATE_VOCABULARY_FIXTURE = Path(__file__).resolve().parent / "fixtures" / "private_vocabulary.txt"
+os.environ[VOCABULARY_FILE_ENV] = str(PRIVATE_VOCABULARY_FIXTURE)
 
 
 def enter_context(test_case, context):
