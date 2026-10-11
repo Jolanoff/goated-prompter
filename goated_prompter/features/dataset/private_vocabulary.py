@@ -69,6 +69,24 @@ def vocabulary_path():
     return Path(configured).expanduser() if configured else PROJECT_ROOT / "data" / "vocabulary" / "sexual.txt"
 
 
+TEMPLATE_HEADER = """# Private adult vocabulary for the Dataset tab. It stays on this computer and is never committed.
+# Add one entry per line under a [section] heading; lines starting with # are comments.
+# Changes apply to the next batch without a restart. Entries are inspiration drawn at random,
+# never forced on an image. Entries about minors, non-consent, death, family members, animals,
+# school, breath restriction or injury, or that detach or merge body parts, are skipped.
+"""
+
+
+def ensure_vocabulary_file(path=None):
+    """On first launch, create an empty file listing every section, so the user can fill it in."""
+    path = Path(path) if path is not None else vocabulary_path()
+    if path.exists():
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    sections = "".join(f"\n[{name}]\n# {description}\n" for name, description in SECTIONS.items())
+    path.write_text(TEMPLATE_HEADER + sections, encoding="utf-8")
+
+
 def blocked_entry(text):
     """Why an entry can never be used, or None."""
     lowered = str(text).casefold()

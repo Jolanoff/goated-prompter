@@ -1153,3 +1153,15 @@ class PrivateVocabularyTests(unittest.TestCase):
         path.write_text("[mood]\nfirst mood\nsecond mood\n", encoding="utf-8")
         os.utime(path, ns=(path.stat().st_atime_ns, path.stat().st_mtime_ns + 1_000_000_000))
         self.assertEqual(load_vocabulary(path)["mood"], ("first mood", "second mood"))
+
+    def test_first_launch_creates_an_empty_file_with_every_section_and_keeps_an_existing_one(self):
+        from goated_prompter.features.dataset.private_vocabulary import (SECTIONS, ensure_vocabulary_file,
+                                                                          parse_vocabulary)
+        path = Path(tempfile.mkdtemp()) / "vocabulary" / "sexual.txt"
+        ensure_vocabulary_file(path)
+        text = path.read_text(encoding="utf-8")
+        self.assertTrue(all(f"[{name}]" in text for name in SECTIONS))
+        self.assertEqual(parse_vocabulary(text), {})
+        path.write_text("[mood]\nmine\n", encoding="utf-8")
+        ensure_vocabulary_file(path)
+        self.assertEqual(path.read_text(encoding="utf-8"), "[mood]\nmine\n")

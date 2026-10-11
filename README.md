@@ -353,7 +353,7 @@ Sexual requests are supported in the Dataset tab only, and everyone must be an a
 - Acts stay between the people your request pairs (with two men and a woman, each man is with her unless you ask otherwise).
 - Every body part stays attached to its owner, and two people's genitals never merge; wording that breaks this is redone.
 
-**Your private vocabulary.** The moods, dynamics, places, clothing, props and positions for adult batches are not part of the project. They live in your own plain-text file, **`data/vocabulary/sexual.txt`**, which is never committed. Edit it in any text editor: one entry per line under a `[section]` heading, `#` for comments. Changes apply to the next batch without a restart. Without the file, adult batches still work and the model invents those details itself within the rules.
+**Your private vocabulary.** The moods, dynamics, places, clothing, props and positions for adult batches are not part of the project. They live in your own plain-text file, **`data/vocabulary/sexual.txt`**, which the app creates empty on first launch (listing every section) and which is never committed. Edit it in any text editor: one entry per line under a `[section]` heading, `#` for comments. Changes apply to the next batch without a restart. Without the file, adult batches still work and the model invents those details itself within the rules.
 
 | Section | Used |
 | --- | --- |
