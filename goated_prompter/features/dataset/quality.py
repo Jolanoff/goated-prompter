@@ -175,8 +175,6 @@ _KINK = re.compile(r"\b(?:slaves?|owned by|collared|collars?|leash(?:ed)?|pet pl
                    r"submissive|dominant|dominat\w*|bondage|restrain\w*|tied up|handcuff\w*|spank\w*|chok\w*|"
                    r"footjob\w*|foot fetish|feet worship|breeding|degrad\w*|humiliat\w*|fetish\w*|kinky|kinks?|"
                    r"latex|rough sex|(?:his|her|my|their) (?:master|mistress))\b")
-_ORAL = re.compile(r"\b(?:oral|blowjob\w*|suck\w*|deepthroat\w*|69|sixty-nine|face[- ]?sitting|cunnilingus|"
-                   r"eat(?:s|ing)? (?:her|him) out|lick\w*)\b")
 
 
 # The user's own words (concept, rules, trigger, guided input) and the Director, without the
@@ -245,7 +243,3 @@ def furniture_request(data):
 
 def aftercare_request(data):
     return _asked(_user_text(data) + "\n" + _director_text(data), _AFTERCARE)
-
-
-def oral_request(data):
-    return bool(_ORAL.search(requested_text(data)))

@@ -100,9 +100,10 @@ and a random handful of `position_ideas` for the brainstorm, from the user's pri
 (`private_vocabulary.py`, `data/vocabulary/sexual.txt`, never committed; without it those axes stay open
 and the model invents them within the rules). `position_groups` builds weighted groups: the cast's own
 positions (solo, two men, two women, man and woman, three, a group; when the brief leaves sexes open,
-request words such as "two men" decide), couple and finish positions, and the oral, feet, kink, pet,
-furniture, aftercare and `requested` groups only when the request or Director asks. Groups add to each
-other; `pick_position_ideas` draws round-robin over them, so a long kink or feet list never drowns the
+request words such as "two men" decide), toys and finishes for every batch, couple, oral and anal for
+two or more people, and kink (solo kink for one person), pet, furniture, feet, aftercare and `requested`
+groups only when the request or Director asks. Groups add to each other; `pick_position_ideas` draws
+round-robin over them, so a long kink or feet list never drowns the
 cast's positions, and the brainstorm builds most events around them. Kink moods, dynamics, clothing and a
 prop per image join only when `kink_request` finds BDSM or fetish wording in the request, or a Director
 clause that asks for it (a clause that forbids it does not count). An `ownership_request` (slave, owned,

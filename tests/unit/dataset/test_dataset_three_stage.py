@@ -973,34 +973,38 @@ class CastPositionTests(SeedVarietyTests):
     def test_positions_follow_the_cast(self):
         from goated_prompter.features.dataset.brainstorm import sexual_positions
         from goated_prompter.features.dataset.private_vocabulary import load_vocabulary
-        SEXUAL_POSITIONS = {name.removesuffix(" positions"): entries for name, entries in load_vocabulary().items()}
+        pools = {name.removesuffix(" positions"): set(entries) for name, entries in load_vocabulary().items()}
+        every = pools["toys"] | pools["finish"]
+        pair = every | pools["oral"] | pools["anal"]
         solo = set(sexual_positions(self.cast("female", subject="a woman masturbating")))
-        self.assertEqual(solo, set(SEXUAL_POSITIONS["solo"]) | set(SEXUAL_POSITIONS["finish"]))
+        self.assertEqual(solo, pools["solo"] | every)
         men = set(sexual_positions(self.cast("male", "male", subject="two men having sex")))
-        self.assertTrue(set(SEXUAL_POSITIONS["two men"]) <= men)
-        self.assertFalse(men & set(SEXUAL_POSITIONS["man and woman"]))
+        self.assertEqual(men, pools["two men"] | pools["couple"] | pair)
         women = set(sexual_positions(self.cast("female", "female", subject="two women having sex")))
-        self.assertTrue(set(SEXUAL_POSITIONS["two women"]) <= women)
-        self.assertFalse(women & set(SEXUAL_POSITIONS["couple"]))
+        self.assertEqual(women, pools["two women"] | pair)
+        mixed = set(sexual_positions(self.cast("female", "male", subject="a couple having sex")))
+        self.assertEqual(mixed, pools["man and woman"] | pools["couple"] | pair)
         three = set(sexual_positions(self.cast("female", "male", "male", subject="a threesome")))
-        self.assertTrue(set(SEXUAL_POSITIONS["three"]) <= three)
-        self.assertFalse(three & set(SEXUAL_POSITIONS["group"]))
+        self.assertTrue(pools["three"] | pools["man and woman"] | pair <= three)
+        self.assertFalse(three & (pools["group"] | pools["two men"]))
         group = set(sexual_positions(self.cast("female", "male", "male", "male", subject="a group having sex")))
-        self.assertTrue(set(SEXUAL_POSITIONS["group"]) <= group)
+        self.assertTrue(pools["group"] | pair <= group)
 
-    def test_oral_feet_kink_and_named_extras_only_when_asked(self):
+    def test_kink_feet_pet_and_named_extras_join_only_when_asked_and_add_to_the_rest(self):
         from goated_prompter.features.dataset.brainstorm import sexual_positions
         from goated_prompter.features.dataset.private_vocabulary import load_vocabulary
-        SEXUAL_POSITIONS = {name.removesuffix(" positions"): entries for name, entries in load_vocabulary().items()}
+        pools = {name.removesuffix(" positions"): set(entries) for name, entries in load_vocabulary().items()}
+        asked_only = pools["kink"] | pools["solo kink"] | pools["feet"] | pools["pet"] | pools["furniture"] | pools["aftercare"]
         plain = set(sexual_positions(self.cast("female", "male")))
-        for kind in ("oral", "feet", "kink"):
-            self.assertFalse(plain & set(SEXUAL_POSITIONS[kind]), kind)
+        self.assertFalse(plain & asked_only)
         self.assertNotIn("fixture blindfold position", plain)
-        asked = set(sexual_positions(self.cast("female", "male",
-            subject="a footjob and a blowjob in bondage while she is blindfolded")))
-        for kind in ("oral", "feet", "kink"):
-            self.assertTrue(set(SEXUAL_POSITIONS[kind]) <= asked, kind)
+        asked = set(sexual_positions(self.cast("male", "male",
+            subject="two men, a footjob in bondage while one is blindfolded")))
+        self.assertTrue(pools["two men"] | pools["oral"] | pools["anal"] | pools["kink"] | pools["feet"] <= asked)
         self.assertIn("fixture blindfold position", asked)
+        solo = set(sexual_positions(self.cast("female", subject="a woman masturbating in bondage, showing her feet")))
+        self.assertTrue(pools["solo"] | pools["solo kink"] | pools["feet"] <= solo)
+        self.assertFalse(solo & (pools["kink"] | pools["oral"] | pools["anal"]))
 
     def test_private_entries_that_break_anatomy_or_safety_are_never_used(self):
         from goated_prompter.features.dataset.private_vocabulary import parse_vocabulary

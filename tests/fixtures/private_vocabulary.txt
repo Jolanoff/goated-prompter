@@ -190,6 +190,18 @@ fixture feet position 38
 fixture feet position 39
 fixture feet position 40
 
+[anal positions]
+fixture anal position 1
+fixture anal position 2
+
+[toys]
+fixture toy 1
+fixture toy 2
+
+[solo kink positions]
+fixture solo kink position 1
+fixture solo kink position 2
+
 [finish positions]
 fixture finish position 1
 fixture finish position 2

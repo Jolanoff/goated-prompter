@@ -348,7 +348,7 @@ Ideas never see the library prompts themselves, so your saved prompts' places an
 Sexual requests are supported in the Dataset tab only, and everyone must be an adult: a request that makes someone a child or teen is refused before generation, and a sexual batch can never involve an animal.
 
 - The act is the core of every idea, and each idea varies the situation around it (place, what led there, who starts it, mood, clothing). The brainstorm gets a fresh handful of positions each batch, a few from every group that applies (the cast's own, finishes, and anything you asked for), and builds most events around them.
-- Ordinary consensual sex is the default. BDSM, domination, restraint and fetish dynamics appear only when your request or a Director asks for them; oral and feet positions only when requested.
+- Ordinary consensual sex is the default. BDSM, domination, restraint and fetish dynamics appear only when your request or a Director asks for them, and so do feet positions.
 - Ownership language in the request or Director (slave, owned, master or mistress, human pet) makes the power exchange part of every image: only power-exchange moods, dynamics and clothing, a prop in each image, and more power-exchange positions, next to the cast's own.
 - Acts stay between the people your request pairs (with two men and a woman, each man is with her unless you ask otherwise).
 - Every body part stays attached to its owner, and two people's genitals never merge; wording that breaks this is redone.
@@ -364,8 +364,11 @@ Sexual requests are supported in the Dataset tab only, and everyone must be an a
 | `[kink mood]` `[kink interaction]` `[kink setting]` `[kink clothing]` `[props]` | When kink or ownership is requested |
 | `[pet mood]` `[pet interaction]` | When pet play is requested |
 | `[solo positions]` `[couple positions]` `[two men positions]` `[two women positions]` `[man and woman positions]` `[three positions]` `[group positions]` | By cast; when the understanding leaves sexes open, your words decide ("two men", "lesbian") |
-| `[finish positions]` | Climax and finish moments, every adult batch |
-| `[oral positions]` `[feet positions]` `[kink positions]` `[pet positions]` `[furniture positions]` `[aftercare positions]` | When requested (furniture also with ownership). These add to the cast's positions, never replace them |
+| `[toys]` `[finish positions]` | Every adult batch |
+| `[oral positions]` `[anal positions]` | Two or more people |
+| `[kink positions]` (two or more) `[solo kink positions]` (one) `[feet positions]` `[pet positions]` `[furniture positions]` `[aftercare positions]` | When requested (furniture also with ownership) |
+
+Every group that applies is used together: a batch of two men who asked for bondage and feet gets the two-men positions plus couple, oral, anal, toys, finishes, kink and feet, a few from each. The man-and-woman, two-men and two-women sections stay apart so no position puts a penis where only a vagina fits.
 | `[requested]` | `pattern => entry`: the entry joins the positions when your request matches the pattern |
 
 Entries that involve minors, non-consent or incapacitation, death, family members, animals, school, breath restriction or injury, or that detach or merge body parts, are skipped, whatever the file says.

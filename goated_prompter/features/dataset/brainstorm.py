@@ -15,7 +15,7 @@ from ...strict_json import reject_duplicate_keys
 from .director import director_section
 from .private_vocabulary import load_vocabulary, private_rules
 from .quality import (aftercare_request, broken_anatomy, feet_request, furniture_request, idea_concepts, kink_request,
-                      minor_reference, oral_request, ownership_request, passive_idea, passive_request, pet_request,
+                      minor_reference, ownership_request, passive_idea, passive_request, pet_request,
                       requested_text, sexual_request)
 from .understanding import understanding_instruction, unwrap_json_fence, validate_understanding
 
@@ -75,8 +75,8 @@ them as women and men. Never make anyone in it a child or teen, never mention sc
 young age or a childlike body, even for anime characters."""
 
 # Positions come from the private vocabulary file (private_vocabulary.py), in groups: the cast's
-# own positions, the finish, then whatever the request adds (kink, pet, furniture, oral, feet,
-# aftercare, named extras). Every group that applies stays in; the brainstorm gets a few from each,
+# own positions, toys and finishes, oral and anal for two or more people, then whatever the request
+# adds (kink, pet, furniture, feet, aftercare, named extras). Every group that applies stays in; the brainstorm gets a few from each,
 # so a long kink or feet list never drowns the cast's positions.
 _MALE_PAIR = re.compile(r"\b(?:two|2) (?:men|males|guys|boys)\b|\bgay\b|\byaoi\b|\bbara\b|\bmale[- ]male\b|\bmm\b")
 _FEMALE_PAIR = re.compile(r"\b(?:two|2) (?:women|females|girls)\b|\blesbian\w*\b|\byuri\b|\bfemale[- ]female\b")
@@ -99,7 +99,11 @@ def position_groups(data):
         # The understanding left the sexes open: the request's own words ("two men", "lesbian") decide.
         men, women = (2, 0) if _MALE_PAIR.search(asked) else (0, 2) if _FEMALE_PAIR.search(asked) else (0, 0)
         people = max(people, men + women)
-    kink = people > 1 and kink_request(data)
+    kink = kink_request(data)
+    owned = ownership_request(data)
+    # Every batch: the cast's own positions, toys and finishes; two or more people also get oral and
+    # anal. Kink, pet, furniture, feet and aftercare join only when asked for. The man-and-woman,
+    # two-men and two-women groups stay apart so no position puts a penis where only a vagina fits.
     groups = []
     if people <= 1:
         groups.append((3, take("solo")))
@@ -116,15 +120,14 @@ def position_groups(data):
             groups.append((3, take("group")))
         if not (women >= 2 and not men):
             groups.append((1, take("couple")))
-    groups.append((1, take("finish")))
+        groups += [(2, take("oral")), (2, take("anal"))]
+    groups += [(1, tuple(vocabulary.get("toys", ()))), (2, take("finish"))]
     if kink:
-        groups.append((3 if ownership_request(data) else 2, take("kink")))
+        groups.append((3 if owned else 2, take("solo kink" if people <= 1 else "kink")))
     if people > 1 and pet_request(data):
         groups.append((2, take("pet")))
-    if people > 1 and (ownership_request(data) or furniture_request(data)):
+    if people > 1 and (owned or furniture_request(data)):
         groups.append((1, take("furniture")))
-    if people > 1 and oral_request(data):
-        groups.append((2, take("oral")))
     if feet_request(data):
         groups.append((2, take("feet")))
     if aftercare_request(data):
