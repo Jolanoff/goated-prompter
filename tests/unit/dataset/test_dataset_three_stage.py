@@ -941,11 +941,11 @@ class VanillaDefaultTests(SeedVarietyTests):
         oral = {**self.data, "subject": "a woman giving a man a blowjob"}
         self.assertTrue(set(ORAL_POSITIONS) <= set(sexual_positions(oral)))
 
-    def test_lifted_bodies_are_redone_in_sexual_images(self):
-        from goated_prompter.features.dataset.quality import sexual_lift
-        self.assertIsNotNone(sexual_lift("she is being lifted against a large window"))
-        self.assertIsNotNone(sexual_lift("he carries her to the bed while inside her"))
-        self.assertIsNone(sexual_lift("she lies on the bed with her hips raised on a pillow"))
+    def test_a_supported_lift_is_allowed_in_sexual_images(self):
+        from goated_prompter.features.dataset.brainstorm import SEXUAL_POSITIONS
+        self.assertIn("lifted and held, back supported against the wall", SEXUAL_POSITIONS["couple"])
+        rules = " ".join(ideas_instruction(self.data, dataset_assignments(self.data)).system_message.split())
+        self.assertIn("A partner may lift and hold another during sex when the hold is clearly supported", rules)
 
     def test_seeded_sexual_images_keep_a_place_and_looks_keep_build_and_skin_apart(self):
         seeds = {index: f"Event {index} somewhere." for index in range(1, 11)}
@@ -955,7 +955,6 @@ class VanillaDefaultTests(SeedVarietyTests):
         self.assertRegex(look, r" build, [a-z -]+ skin$")
         rules = " ".join(ideas_instruction(self.data, dataset_assignments(self.data)).system_message.split())
         self.assertIn("Ordinary consensual sex is the default", rules)
-        self.assertIn("no one is lifted, carried or held up in the air", rules)
 
 
 class CastPositionTests(SeedVarietyTests):
@@ -992,11 +991,10 @@ class CastPositionTests(SeedVarietyTests):
             self.assertTrue(set(SEXUAL_POSITIONS[kind]) <= asked, kind)
         self.assertIn("blindfolded", asked)
 
-    def test_no_position_lifts_a_body_or_presses_genitals_together(self):
+    def test_no_position_presses_genitals_together(self):
         from goated_prompter.features.dataset.brainstorm import SEXUAL_POSITIONS
-        from goated_prompter.features.dataset.quality import broken_anatomy, sexual_lift
+        from goated_prompter.features.dataset.quality import broken_anatomy
         for position in (item for pool in SEXUAL_POSITIONS.values() for item in pool):
             with self.subTest(position=position):
-                self.assertIsNone(sexual_lift(position))
                 self.assertIsNone(broken_anatomy(position))
                 self.assertNotIn("frot", position)

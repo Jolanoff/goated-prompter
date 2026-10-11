@@ -99,7 +99,7 @@ the cast, the brief and the Director) swaps mood and interaction for the larger 
 gives the brainstorm a random handful of `position_ideas` as inspiration (from
 `brainstorm.SEXUAL_POSITIONS`, chosen by cast: solo, couple, two men, two women, three, a group; oral,
 feet and `KINK` positions and named extras only when the request or Director asks), adds
-`KINK_DIRECTIONS` moods and dynamics only when `kink_request` finds BDSM or fetish wording, catches lifted or carried bodies (`sexual_lift`), keeps the place and
+`KINK_DIRECTIONS` moods and dynamics only when `kink_request` finds BDSM or fetish wording, allows a partner-supported lift during sex, keeps the place and
 position next to a required act, drops the moment axis, and draws an adult age for random characters; `adults_only_error` refuses a
 sexual or suggestive batch that names someone under 18 or involves an animal before any model call, and brainstorm
 events, ideas and final prompts that do so are dropped, repaired or retried. The same stages tie every body part to
