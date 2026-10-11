@@ -132,3 +132,25 @@ def adults_only_error(data):
     if (_SEXUAL.search(text) or _SUGGESTIVE.search(text)) and (word := minor_reference(text)):
         return f'{ADULTS_ONLY} ("{word}")'
     return None
+
+
+# Image models merge genitals described as touching, and detach body parts described on their
+# own, so sexual ideas and prompts that word them that way are redone.
+_PART = r"(?:penis(?:es)?|cocks?|dicks?|genitals?|breasts?|limbs?|arms?|legs?|hands?|heads?|body parts?)"
+_GENITAL = r"(?:penis(?:es)?|cocks?|dicks?|genitals?)"
+_BROKEN_ANATOMY = re.compile(
+    rf"\b(?:detached|severed|disembodied|floating|cut[- ]off|amputated|dismembered|separated)\W+(?:\w+\W+){{0,3}}{_PART}\b"
+    rf"|\b{_PART}\W+(?:\w+\W+){{0,3}}(?:detached|severed|disembodied|floating|cut off|amputated|separated from)\b"
+    rf"|\b{_GENITAL}\W+(?:\w+\W+){{0,3}}(?:shared|joined|connected|merged|fused)\b"
+    rf"|\b(?:shared|single|one|joined|connected|merged|fused)\W+(?:\w+\W+){{0,2}}{_GENITAL}\W+(?:\w+\W+){{0,4}}(?:between|both|two)\b"
+    rf"|\b(?:cocks|penises|dicks)\W+(?:\w+\W+){{0,3}}(?:touching|together|tip to tip|side by side)\b"
+    rf"|\b{_GENITAL}\W+(?:\w+\W+){{0,6}}{_GENITAL}\W+(?:\w+\W+){{0,2}}(?:touching|pressed|rubbing|together)\b")
+BROKEN_ANATOMY = ("Every body part must stay attached to its owner: name each with its owner, keep visible genitals "
+                  "with their owner's hips and torso in frame, and never describe a part alone, detached, or shared, "
+                  "joined or touching between two people.")
+
+
+def broken_anatomy(text):
+    """The first wording that detaches or merges a body part in a sexual image, or None."""
+    match = _BROKEN_ANATOMY.search(str(text or "").casefold())
+    return match.group() if match else None

@@ -95,7 +95,9 @@ framing direction, lifts the mirror and posing bans, and is not limited as a wat
 the cast, the brief and the Director) swaps mood and interaction for `SEXUAL_DIRECTIONS`, drops
 the moment axis, and draws an adult age for random characters; `adults_only_error` refuses a
 sexual or suggestive batch that names someone under 18 before any model call, and brainstorm
-events, ideas and final prompts that do so are dropped, repaired or retried. Later calls receive the earlier ideas as
+events, ideas and final prompts that do so are dropped, repaired or retried. The same stages tie every body part to
+its owner and keep visible genitals with their owner's hips and torso in frame; `broken_anatomy`
+drops, repairs or retries wording that detaches a body part or merges two people's genitals. Later calls receive the earlier ideas as
 existing ideas and share one creative-direction salt, so the
 batch stays spread without one long list. Ideas never see the prompt library's prompts;
 they get craft notes (`craft_notes.py`) distilled from it once per library version, and any

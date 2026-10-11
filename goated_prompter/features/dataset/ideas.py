@@ -11,7 +11,7 @@ from ...backends.base import BackendGenerationError
 from ...contracts import PromptInstruction
 from .brainstorm import PLAUSIBLE_BODIES
 from .director import director_fixes_shot, director_section
-from .quality import ADULTS_ONLY, analyze_idea_diversity, minor_reference, passive_idea, passive_request, sexual_request
+from .quality import ADULTS_ONLY, BROKEN_ANATOMY, analyze_idea_diversity, broken_anatomy, minor_reference, passive_idea, passive_request, sexual_request
 from .understanding import (label_replacements, numbered_labels, replace_labels, understanding_instruction,
                             unwrap_json_fence, validate_understanding)
 from ...strict_json import reject_duplicate_keys
@@ -428,13 +428,17 @@ def _reject_unrenderable_pose(row, data, allow_partial):
     return _failed_idea(row, row["index"], reason)
 
 
-def _reject_minor(row, data, allow_partial):
-    """In a sexual batch, an idea or scene that makes anyone a child or teen fails."""
+def _reject_sexual_content(row, data, allow_partial):
+    """In a sexual batch, an idea or scene that makes anyone a child or teen, or detaches or merges a body part, fails."""
     if row.get("idea_status") == "failed" or not sexual_request(data):
         return row
-    if not (word := minor_reference(f"{row['idea']} {row['scene']}")):
+    text = f"{row['idea']} {row['scene']}"
+    if word := minor_reference(text):
+        reason = f'{ADULTS_ONLY} ("{word}")'
+    elif word := broken_anatomy(text):
+        reason = f'{BROKEN_ANATOMY} ("{word}")'
+    else:
         return row
-    reason = f'{ADULTS_ONLY} ("{word}")'
     if not allow_partial:
         raise ValueError(f"Idea {row['index']}: {reason}")
     return _failed_idea(row, row["index"], reason)
@@ -529,7 +533,7 @@ class DatasetIdeasService:
                 raw = session.generate(retry)
                 self.checkpoint()
                 rows = validate_ideas(raw, indexes, allow_partial=allow_partial)
-            rows = [_reject_minor(_reject_unrenderable_pose(row, data, allow_partial), data, allow_partial) for row in rows]
+            rows = [_reject_sexual_content(_reject_unrenderable_pose(row, data, allow_partial), data, allow_partial) for row in rows]
             looks = {entry["index"]: (entry.get("creative_direction") or {}).get("random_character_looks")
                      for entry in selected}
             cast = (data.get("_confirmed_intent") or {}).get("characters")

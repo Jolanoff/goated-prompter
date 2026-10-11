@@ -797,3 +797,43 @@ class FixedShotDirectorTests(unittest.TestCase):
         from goated_prompter.features.dataset.quality import passive_request
         self.assertTrue(passive_request(self.selfie))
         self.assertFalse(passive_request(self.general))
+
+
+class SexualAnatomyTests(unittest.TestCase):
+    def setUp(self):
+        patcher = patch.dict(os.environ, {LIBRARY_DIR_ENV: tempfile.mkdtemp()})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        men = [{**COMPANION, "name": "man", "sex": "male"}, {**COMPANION, "name": "other man", "sex": "male"}]
+        self.data = valid_draft(amount=2, subject="two men having sex", trigger_type="Multiple characters",
+                                _confirmed_intent=dataset_understanding_fixture(characters=men))
+
+    def test_detached_or_merged_genitals_are_caught_but_ordinary_contact_is_not(self):
+        from goated_prompter.features.dataset.quality import broken_anatomy
+        for text in ("a detached penis lies on the bed", "she holds a severed cock", "their cocks pressed together",
+                     "his cock and the other man's cock touching", "one connected penis between both men"):
+            with self.subTest(text=text):
+                self.assertIsNotNone(broken_anatomy(text))
+        for text in ("she strokes his cock while he kisses her", "the taller man thrusts into him from behind",
+                     "her legs together on the sofa"):
+            with self.subTest(text=text):
+                self.assertIsNone(broken_anatomy(text))
+
+    def test_a_merged_anatomy_idea_is_queued_for_repair_only_in_sexual_batches(self):
+        from goated_prompter.features.dataset.ideas import DatasetIdeasService
+        rows = [{"index": 1, "idea": "The two men press their cocks together on the couch.", "scene": "Scene 1."},
+                {"index": 2, "idea": "The taller man pulls the other onto the bed.", "scene": "Scene 2."}]
+        session = Mock()
+        session.generate.return_value = json.dumps(rows)
+        result = DatasetIdeasService(lambda: None).run(session=session, data=self.data,
+            assignments=dataset_assignments(self.data), progress=lambda _message: None, allow_partial=True)
+        self.assertIn("stay attached to its owner", result[0]["failure_reason"])
+        self.assertNotEqual(result[1].get("idea_status"), "failed")
+
+    def test_the_rules_reach_the_ideas_and_the_writer(self):
+        from goated_prompter.features.dataset.prompting import dataset_instruction
+        ideas = " ".join(ideas_instruction(self.data, dataset_assignments(self.data)).system_message.split())
+        final = " ".join(dataset_instruction(GoatedPrompterRequest(idea=self.data["subject"], prompt_model="Custom"),
+                                             self.data, 1, plan_item=saved_scene(1)).system_message.split())
+        self.assertIn("stays attached to that person's body", ideas)
+        self.assertIn("keep two men's genitals apart", final)

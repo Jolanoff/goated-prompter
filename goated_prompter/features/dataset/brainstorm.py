@@ -11,7 +11,7 @@ import json
 from ...contracts import PromptInstruction
 from ...strict_json import reject_duplicate_keys
 from .director import director_section
-from .quality import idea_concepts, minor_reference, passive_idea, passive_request, sexual_request
+from .quality import broken_anatomy, idea_concepts, minor_reference, passive_idea, passive_request, sexual_request
 from .understanding import understanding_instruction, unwrap_json_fence, validate_understanding
 
 
@@ -39,6 +39,13 @@ Vary only the exact acts, positions, who is active/receptive, expressions, arous
 Never replace the sex with “intimate moment”, “kissing”, “cuddling”, “looking at each other”, or any non-sexual activity.
 Clothing state follows the Director and the request: never force full nudity unless the user or Director asks for it; partial clothing, open clothes, pulled-down garments are fine and often preferred.
 Supported poses only (lying, kneeling, sitting, standing with weight on feet/seat/knees/back).
+Every body part belongs to exactly one person and stays attached to that person's body: name
+it with its owner ("his", "her", "the taller man's"), and never describe one on its own,
+detached, held up alone, floating, or shared, joined or merged between two people. Visible
+genitals keep their owner's hips and torso in frame; no close-up crops the owner away. Show one
+clear point of genital contact per image; with two men, each man's penis stays on his own body
+and apart from the other's, never touching or pressed together. A hand on someone's genitals
+says whose hand it is and whose body it touches.
 Everyone in a sexual or suggestive image is an adult, clearly grown-up in face and body; write
 them as women and men. Never make anyone in it a child or teen, never mention school, a
 young age or a childlike body, even for anime characters."""
@@ -146,7 +153,8 @@ def brainstorm_events(session, data, count, rng, *, avoid=(), family="qwen", pro
         progress("The brainstorm came back unusable; writing ideas without event seeds.")
         return []
     if sexual_request(data):
-        candidates = [candidate for candidate in candidates if not minor_reference(candidate[0])]
+        candidates = [candidate for candidate in candidates
+                      if not minor_reference(candidate[0]) and not broken_anatomy(candidate[0])]
     return pick_events(candidates, count, rng, avoid=avoid, limit_passive=not passive_request(data))
 
 
