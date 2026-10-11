@@ -65,6 +65,10 @@ class RuntimeDataAccessTests(unittest.TestCase):
         state.workflow_settings.checkpoint_dataset(job)
         restarted = self.app_state()
         self.assertEqual(restarted.dataset_checkpoints.path, self.root / "data" / "dataset_checkpoints.json")
+        restarted.idea_history.remember(data, [scene])
+        self.assertTrue(self.app_state().idea_history.seen_before(data, scene["idea"]),
+                        "Idea fingerprints are kept next to the other app data across restarts.")
+        self.assertTrue((self.root / "data" / "idea_fingerprints.json").exists())
         draft = restarted.workflow_settings.snapshot("dataset")["draft"]
         self.assertEqual(draft["scene_plan"][0]["scene"], scene["scene"])
         instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), draft, 1,

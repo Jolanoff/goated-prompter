@@ -1,4 +1,4 @@
-"""RAM-only recent ideas: bounded, scoped, expiring and used by current ideation."""
+"""Recent ideas: text bounded in RAM, private fingerprints across restarts, used by current ideation."""
 
 import json
 import unittest
@@ -103,3 +103,53 @@ class DatasetIdeaHistoryTests(unittest.TestCase):
                 patch.object(history, "remember", side_effect=AssertionError("Only Ideas writes recent history")):
             rows = ScenePlanner(lambda: None, history).compose([idea])
         self.assertEqual((rows[0]["scene"], rows[0]["self_check"], rows[0]["scene_status"]), (idea["scene"], "PASS", "valid"))
+
+
+class IdeaFingerprintTests(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        from pathlib import Path
+        from goated_prompter.json_store import atomic_json, read_store
+        self.path = Path(tempfile.mkdtemp()) / "idea_fingerprints.json"
+        self.make = lambda: RecentIdeaHistory(fingerprint_path=self.path, read=lambda path: read_store(path, {}, dict),
+                                              write=atomic_json)
+        self.data = valid_draft()
+
+    def test_fingerprints_survive_a_restart_without_storing_any_idea_text(self):
+        self.make().remember(self.data, [{"idea": "The boxer repairs a torn punching bag with duct tape."}])
+        raw = self.path.read_text(encoding="utf-8").casefold()
+        for word in ("boxer", "repairs", "punching", "duct", "tape"):
+            self.assertNotIn(word, raw)
+        restarted = self.make()
+        self.assertEqual(restarted.recent(self.data), [], "Idea text stays in memory only.")
+        self.assertTrue(restarted.seen_before(self.data, "A boxer repairs the torn punching bag with duct tape."))
+        self.assertFalse(restarted.seen_before(self.data, "The boxer skips rope on a rooftop at dawn."))
+        self.assertFalse(restarted.seen_before({**self.data, "subject": "A chef cooking."},
+                                               "The boxer repairs a torn punching bag with duct tape."))
+
+    def test_old_fingerprints_expire_and_a_broken_store_starts_fresh(self):
+        from goated_prompter.features.dataset import idea_history
+        history = self.make()
+        history.remember(self.data, [{"idea": "The boxer repairs a torn punching bag."}])
+        with patch.object(idea_history.time, "time", return_value=idea_history.time.time() + idea_history.FINGERPRINT_TTL + 60):
+            self.assertFalse(self.make().seen_before(self.data, "The boxer repairs a torn punching bag."))
+        self.path.write_text("not json", encoding="utf-8")
+        self.assertFalse(self.make().seen_before(self.data, "The boxer repairs a torn punching bag."))
+        self.make().remember(self.data, [{"idea": "The boxer wraps his hands."}])
+        self.assertTrue(self.make().seen_before(self.data, "The boxer wraps his hands."))
+
+    def test_the_brainstorm_prefers_candidates_unlike_recent_runs(self):
+        import random
+        from goated_prompter.features.dataset.brainstorm import brainstorm_events
+        events = [{"event": f"The boxer {action}.", "typicality": .5} for action in
+                  ("repairs a torn bag", "skips rope on a roof", "spars with a robot", "shadowboxes in rain")]
+        session = Mock()
+        session.generate.return_value = json.dumps(events)
+        data = valid_draft(amount=2, _confirmed_intent=dataset_understanding_fixture())
+        seen = lambda text: "repairs" in text or "robot" in text
+        picked = brainstorm_events(session, data, 2, random.Random(1), seen=seen, progress=lambda _m: None,
+                                   checkpoint=lambda: None)
+        self.assertEqual(set(picked), {"The boxer skips rope on a roof.", "The boxer shadowboxes in rain."})
+        everything = brainstorm_events(session, data, 4, random.Random(1), seen=lambda _text: True,
+                                       progress=lambda _m: None, checkpoint=lambda: None)
+        self.assertEqual(len(everything), 4, "Too few fresh candidates never shrinks the batch.")

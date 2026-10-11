@@ -152,7 +152,7 @@ def pick_events(candidates, count, rng, *, avoid=(), limit_passive=True):
     return chosen
 
 
-def brainstorm_events(session, data, count, rng, *, avoid=(), family="qwen", progress, checkpoint):
+def brainstorm_events(session, data, count, rng, *, avoid=(), seen=None, family="qwen", progress, checkpoint):
     """Return up to ``count`` event seeds, or none when the brainstorm is unusable."""
     checkpoint()
     instruction = brainstorm_instruction(data, candidate_count(count), avoid=avoid, family=family)
@@ -168,6 +168,10 @@ def brainstorm_events(session, data, count, rng, *, avoid=(), family="qwen", pro
     if sexual_request(data):
         candidates = [candidate for candidate in candidates
                       if not minor_reference(candidate[0]) and not broken_anatomy(candidate[0])]
+    if seen is not None:
+        # Candidates unlike recent runs (even before a restart) come first while enough remain.
+        fresh = [candidate for candidate in candidates if not seen(candidate[0])]
+        candidates = fresh if len(fresh) >= count else candidates
     return pick_events(candidates, count, rng, avoid=avoid, limit_passive=not passive_request(data))
 
 

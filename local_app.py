@@ -81,7 +81,11 @@ class LocalState:
         self.dataset_checkpoints.recover()
         self.workflow_settings.dataset_checkpoints = self.dataset_checkpoints
         self.jobs = OrderedDict()
-        self.idea_history = RecentIdeaHistory()
+        fingerprint_path = self.settings_path.parent / "idea_fingerprints.json"
+        if fingerprint_path in {self.settings_path, self.prompts_path}:
+            raise ValueError("Idea fingerprints require a separate JSON path.")
+        self.idea_history = RecentIdeaHistory(fingerprint_path=fingerprint_path,
+                                              read=lambda path: read_store(path, {}, dict), write=atomic_json)
         self.dataset_intents = DatasetIntentTickets()
         self.tasks = set()
         self.admission = asyncio.Lock()
