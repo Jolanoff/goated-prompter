@@ -132,10 +132,14 @@ def reference_warnings(data):
 
 
 def validate_analysis(raw, data):
+    if isinstance(raw, str):
+        fenced = re.fullmatch(r"\s*```(?:json)?[ \t]*\r?\n(.*?)\r?\n```\s*", raw, re.S | re.I)
+        if fenced:
+            raw = fenced[1]
     try:
         plan = json.loads(raw)
     except (ValueError, TypeError) as exc:
-        raise ValueError("Reference analysis must be a JSON object without fences.") from exc
+        raise ValueError("Reference analysis must be a valid JSON object.") from exc
     if not isinstance(plan, dict) or set(plan) != {"references", "first_frame", "last_frame"} or not isinstance(plan["references"], list):
         raise ValueError("Reference analysis has missing fields.")
     by_token = {}

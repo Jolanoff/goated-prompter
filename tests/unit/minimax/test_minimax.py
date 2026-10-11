@@ -2,8 +2,9 @@
 
 import json
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from goated_prompter.backends.base import GoatedPrompterBackend, BackendGenerationError
+from goated_prompter.backends.openai_compatible import OpenAICompatibleBackend
 from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.minimax.service import MiniMaxService, analysis_instruction, generation_instruction, parse_shot_outline, reference_warnings, validate_analysis, validate_minimax_draft, validate_output
 from goated_prompter.features.minimax.contract import default_minimax_draft, frame_instruction, parse_reference_tokens, requested_spoken_lines
@@ -158,6 +159,71 @@ class MiniMaxContractTests(unittest.TestCase):
                     plan_json(role("image1", "invented role"), role("video1", "motion"))):
             with self.subTest(raw=raw), self.assertRaises(ValueError):
                 validate_analysis(raw, dance_input())
+
+    def test_analysis_accepts_complete_json_code_blocks_without_repairs(self):
+        cases = [(dance_input(), DANCE_PLAN, REF),
+                 (dance_input(mode="I2VA", references=["image7"], user_request="Start from <image7>."),
+                  plan_json(role("image7", "first frame"), first="image7"),
+                  frame_instruction("I2VA", 15) + "\n\n" + BASE)]
+        for data, raw, prompt in cases:
+            for language in ("json", "JSON", ""):
+                with self.subTest(mode=data["mode"], language=language):
+                    backend = ScriptedBackend(f" \n```{language}\n{raw}\n```\n ", prompt, prompt)
+                    with patch("goated_prompter.features.minimax.service.create_backend", return_value=backend):
+                        result = MiniMaxService({"backend": "mock"}, lambda: None).run(
+                            GoatedPrompterRequest(idea=data["user_request"]), data, lambda _: None)
+                    self.assertEqual(result["prompt"], prompt)
+                    self.assertEqual(len(backend.calls), 2)
+
+    def test_analysis_rejects_malformed_wrappers_and_still_validates_references(self):
+        invalid = ("Here is the analysis:\n```json\n" + DANCE_PLAN + "\n```",
+                   "```json\n" + DANCE_PLAN + "\n```\nExtra explanation",
+                   "```json\n" + DANCE_PLAN,
+                   "```json\n" + DANCE_PLAN[:-1] + "\n```",
+                   "```json\n[]\n```",
+                   "```json\n" + plan_json(role("image1", "identity")) + "\n```",
+                   "```json\n" + plan_json(role("image1", "identity"), role("video2", "motion")) + "\n```")
+        for raw in invalid:
+            with self.subTest(raw=raw), self.assertRaises(ValueError):
+                validate_analysis(raw, dance_input())
+
+    def test_analysis_and_repairs_request_json_but_final_writer_does_not(self):
+        backend = ScriptedBackend("invalid JSON", DANCE_PLAN, REF)
+        with patch("goated_prompter.features.minimax.service.create_backend", return_value=backend):
+            result = MiniMaxService({"backend": "mock"}, lambda: None).run(
+                GoatedPrompterRequest(idea=REQUEST), dance_input(), lambda _: None)
+        self.assertEqual(result["prompt"], REF)
+        self.assertEqual(len(backend.calls), 3)
+        for call in backend.calls[:2]:
+            self.assertTrue(call.json_output)
+            self.assertNotIn("no preface, markdown fences, JSON wrapper", call.system_message)
+        self.assertIn("Return only the corrected JSON object", backend.calls[1].user_message)
+        self.assertNotIn("including definitions, summary and retention analysis", backend.calls[1].user_message)
+        self.assertFalse(backend.calls[2].json_output)
+        self.assertIn("no preface, markdown fences, JSON wrapper", backend.calls[2].system_message)
+
+    def test_json_response_format_is_sent_only_for_local_analysis_and_repairs(self):
+        for local in (True, False):
+            with self.subTest(local=local):
+                backend = OpenAICompatibleBackend({"base_url": "http://127.0.0.1:8189/v1",
+                    "model": "test", "_is_llama_cpp": local})
+                response = MagicMock()
+                response.__enter__.return_value.read.side_effect = [json.dumps({"choices": [
+                    {"message": {"content": raw}, "finish_reason": "stop"}]}).encode()
+                    for raw in ("invalid JSON", DANCE_PLAN, REF)]
+                with patch("goated_prompter.features.minimax.service.create_backend", return_value=backend), \
+                     patch("goated_prompter.backends.openai_compatible.urlopen", return_value=response) as transport:
+                    result = MiniMaxService({"backend": "mock"}, lambda: None).run(
+                        GoatedPrompterRequest(idea=REQUEST), dance_input(), lambda _: None)
+                self.assertEqual(result["prompt"], REF)
+                payloads = [json.loads(call.args[0].data) for call in transport.call_args_list]
+                self.assertEqual(len(payloads), 3)
+                for payload in payloads[:2]:
+                    if local:
+                        self.assertEqual(payload["response_format"], {"type": "json_object"})
+                    else:
+                        self.assertNotIn("response_format", payload)
+                self.assertNotIn("response_format", payloads[2])
 
     def test_frame_order_mapping_and_exact_final_shot_alignment(self):
         for mode, refs, first, last in (("I2VA", ["image7"], "image7", None),

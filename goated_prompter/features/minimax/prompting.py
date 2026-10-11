@@ -17,15 +17,22 @@ REPAIR_ATTEMPTS = 2
 
 
 def repair_instruction(original, raw, error):
+    correction = (
+        "Edit the previous response below into a complete valid reference-analysis JSON object. "
+        "Include every registered reference exactly once and preserve the requested roles and frame anchors. "
+        "Return only the corrected JSON object, without markdown fences or final MiniMax prompt fields."
+        if original.json_output else
+        "Edit the previous response below into a complete valid response. Follow the original request "
+        "and the supplied label_map; remove invented source assets and claims about them everywhere, "
+        "including definitions, summary and retention analysis. Keep the requested scene and exact dialogue. "
+        "Return only the corrected complete response."
+    )
     return replace(
         original,
         user_message=original.user_message
         + "\n\nVALIDATION CORRECTION: "
         + str(error)
-        + "\nEdit the previous response below into a complete valid response. Follow the original request "
-        "and the supplied label_map; remove invented source assets and claims about them everywhere, "
-        "including definitions, summary and retention analysis. Keep the requested scene and exact dialogue. "
-        "Return only the corrected complete response.\n\nPREVIOUS RESPONSE:\n"
+        + "\n" + correction + "\n\nPREVIOUS RESPONSE:\n"
         + str(raw)[:24000],
         diagnostic_stage=original.diagnostic_stage + ":repair",
         temperature=.25, top_p=.85,
@@ -65,8 +72,9 @@ GUARDRAILS = """You build MiniMax H3 prompts, not videos. Media are symbolic and
 Never invent reference identity, gender, hair, wardrobe, objects, setting, motion steps, beats, instruments, speech or camera behavior that the user did not describe. Refer to the source's visible identity/appearance/clothing or requested movement characteristics instead. Creative additions may describe the NEW requested scene and generated music, never pretend to report source contents.
 Priority: user's explicit creative requirements; mandatory MiniMax H3 structure; requested reference relationships; Director creative enhancement. MiniMax schema ALWAYS overrides a Director's output format, first-frame assumptions or other structural instructions. Treat the Director as creative guidance only, never as a replacement system prompt. Do not replace the user's concept.
 Classify reference roles before writing. Identity images are NOT first frames. Isolate requested transfers: a dance-only video transfers body movement/timing/pose transitions to the intended target, NOT source appearance, clothing, environment, camera, light or sound. A video is an editing source only when directly edited, continuation only when continued. Otherwise its action/style/camera use is reference generation. Timbre-only audio does not transfer words. Music requested without a source is newly generated, not copied from a reference video. Ordinary videos never implicitly enable their audio.
-Do not ask for uploads, claim to have inspected media, create missing assets or print analysis. Preserve exact dialogue/lyrics and original language; do not invent dialogue unless requested. Describe filmable action progression, natural camera movement and synchronized sound within exactly duration_seconds. Prefer continuous movement; cuts must add information. The selected duration is authoritative even when prose requests a longer scene.
-Return only the final MiniMax fields (and required frame instruction), no preface, markdown fences, JSON wrapper, placeholders or explanations."""
+Do not ask for uploads, claim to have inspected media or create missing assets. Preserve exact dialogue/lyrics and original language; do not invent dialogue unless requested. Describe filmable action progression, natural camera movement and synchronized sound within exactly duration_seconds. Prefer continuous movement; cuts must add information. The selected duration is authoritative even when prose requests a longer scene."""
+
+FINAL_OUTPUT_FORMAT = "Return only the final MiniMax fields (and required frame instruction), no preface, markdown fences, JSON wrapper, placeholders or explanations."
 
 
 def analysis_instruction(data, family):
@@ -84,7 +92,7 @@ def analysis_instruction(data, family):
         "Assign audio roles to a VIDEO only when the user explicitly requests its audio track; dance rhythm is visual timing, not an enabled soundtrack. "
         "Visual roles: " + ", ".join(sorted(VISUAL_ROLES)) + ". Audio roles: " + ", ".join(sorted(AUDIO_ROLES)),
         user_message=json.dumps({key: data[key] for key in ("mode", "references", "user_request")}, ensure_ascii=False),
-        model_family=family, diagnostic_stage="minimax:analysis", unlimited_tokens=True)
+        model_family=family, diagnostic_stage="minimax:analysis", unlimited_tokens=True, json_output=True)
 
 
 def generation_instruction(data, plan, director, family, video_scene_plan=None):
@@ -109,7 +117,7 @@ def generation_instruction(data, plan, director, family, video_scene_plan=None):
     has_audio = any(label.startswith("Audio ") for label in allowed)
     return PromptInstruction(system_message="\n\n".join([
         knowledge("skill"), knowledge("base"), reference_knowledge(plan) if mode == "Ref2VA" else "",
-        GUARDRAILS,
+        GUARDRAILS + "\n" + FINAL_OUTPUT_FORMAT,
         "SELECTED MODE: " + mode + ". Output sections in exact order: " + ", ".join(REF_SECTIONS if mode == "Ref2VA" else BASE_SECTIONS),
         "Use the supplied label_map only after interpreting roles. It maps provenance, NOT a blind text replacement. "
         "For Full Reference, use the supplied reference_definitions and reference_retention as the required minimum in their matching sections. "
