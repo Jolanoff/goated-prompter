@@ -104,6 +104,15 @@ def position_groups(data):
         men, women = (people, 0) if sex == "male" else (0, people) if sex == "female" else (0, 0)
     requested, forbidden = position_categories(data)
     requested.discard("solo")
+    if "penetration" in requested:
+        requested.discard("penetration")
+        if not requested & POSITION_ACT_CATEGORIES:
+            requested.add("anal")
+            if women:
+                requested.add("vaginal")
+    if "penetration" in forbidden:
+        forbidden.update(("anal", "vaginal"))
+        requested.difference_update(forbidden)
     if requested == {"vaginal"} and not women:
         return []
     available = ("solo", "oral", "anal", "vaginal", "feet", "toys", "finish", "kink", "aftercare") if people <= 1 else (
@@ -143,6 +152,10 @@ def position_groups(data):
         acts = requested & POSITION_ACT_CATEGORIES
         if acts and (entry_categories & POSITION_ACT_CATEGORIES) - acts:
             return False
+        if "penetration" in entry_categories:
+            entry_categories.discard("penetration")
+            if not entry_categories & POSITION_ACT_CATEGORIES:
+                entry_categories.update(acts or ({"anal", "vaginal"} if women else {"anal"}))
         return not (entry_categories & forbidden) and (not requested or not entry_categories or bool(entry_categories & requested))
 
     groups = []

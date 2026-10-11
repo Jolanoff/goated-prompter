@@ -92,6 +92,72 @@ class PositionRoutingTests(unittest.TestCase):
                          "kink supported pose", "feet supported pose"} <= positions)
         self.assertFalse(positions & {"vaginal supported pose", "female pair seated pose", "mixed pair seated pose"})
 
+    def test_penetration_requests_with_men_do_not_use_unrelated_act_categories(self):
+        for subject in ("2 males fucking", "two adult men in intercourse", "one adult man penetrates another adult man"):
+            with self.subTest(subject=subject):
+                positions = set(sexual_positions(self.draft(subject, "male", "male")))
+                self.assertTrue({"anal supported pose alpha", "male pair seated pose"} <= positions)
+                self.assertFalse(positions & {"oral supported pose", "feet supported pose", "kink supported pose",
+                                             "solo toy pose", "finish supported pose", "vaginal supported pose"})
+
+    def test_user_penetration_request_takes_precedence_over_a_kink_director(self):
+        data = self.draft("two adult males fucking", "male", "male")
+        with patch("goated_prompter.features.dataset.quality.get_director_preset",
+                   return_value=Mock(instructions="Use BDSM positions.")):
+            positions = sexual_positions(data)
+        self.assertIn("anal supported pose alpha", positions)
+        self.assertNotIn("kink supported pose", positions)
+
+    def test_explicit_oral_penetration_is_not_mistaken_for_anal(self):
+        positions = sexual_positions(self.draft("two adult men face-fucking", "male", "male"))
+        self.assertIn("oral supported pose", positions)
+        self.assertNotIn("anal supported pose alpha", positions)
+
+    def test_mixed_cast_penetration_can_use_anal_or_vaginal_but_not_other_acts(self):
+        positions = sexual_positions(self.draft("two adults having intercourse", "male", "female"))
+        self.assertIn("anal supported pose alpha", positions)
+        self.assertIn("vaginal supported pose", positions)
+        self.assertNotIn("oral supported pose", positions)
+        self.assertNotIn("kink supported pose", positions)
+
+    def test_negated_penetration_does_not_add_it_to_an_oral_request(self):
+        positions = sexual_positions(self.draft("two adult men, no fucking, only oral sex", "male", "male"))
+        self.assertIn("oral supported pose", positions)
+        self.assertNotIn("anal supported pose alpha", positions)
+
+    def test_explicit_kink_can_modify_penetration_without_substituting_other_acts(self):
+        self.path.write_text("[anal positions]\nanal supported pose\n[kink positions]\n"
+                             "bondage anal pose\nbondage oral pose\n", encoding="utf-8")
+        positions = sexual_positions(self.draft("two adult men fucking in bondage", "male", "male"))
+        self.assertIn("anal supported pose", positions)
+        self.assertIn("bondage anal pose", positions)
+        self.assertNotIn("bondage oral pose", positions)
+
+    def test_penetrative_wording_reaches_ideas_as_compatible_assignments(self):
+        for mode in ("random", "guided"):
+            with self.subTest(mode=mode):
+                data = self.draft("2 males fucking", "unspecified", "unspecified", source_mode=mode,
+                                  inputs="Same adult cast having intercourse")
+                context = json.loads(ideas_instruction(data, dataset_assignments(data), direction_salt=1,
+                    event_seeds={1: "An unrelated generic scenario."}).user_message)
+                allowed = {"male pair seated pose", "anal supported pose alpha",
+                           "anal supported pose beta", "anal supported pose gamma"}
+                positions = [row["creative_direction"]["position"] for row in context["assignments"]]
+                self.assertTrue(set(positions) <= allowed)
+                self.assertEqual(len(set(positions)), 3)
+
+    def test_a_generic_penetration_entry_is_compatible_with_an_explicit_act(self):
+        self.path.write_text("[two men positions]\npenetration while seated\n", encoding="utf-8")
+        positions = sexual_positions(self.draft("two adult men having anal sex", "male", "male"))
+        self.assertEqual(positions, ("penetration while seated",))
+
+    def test_an_explicit_user_act_overrides_a_directors_default_penetration_ban(self):
+        data = self.draft("two adult men having anal sex", "male", "male")
+        with patch("goated_prompter.features.dataset.quality.get_director_preset",
+                   return_value=Mock(instructions="Avoid penetration.")):
+            positions = sexual_positions(data)
+        self.assertIn("anal supported pose alpha", positions)
+
     def test_every_assignment_carries_a_position_even_with_event_seeds(self):
         data = self.draft("two adult males having anal sex", "male", "male")
         context = json.loads(ideas_instruction(data, dataset_assignments(data), direction_salt=1,

@@ -349,6 +349,7 @@ Sexual requests are supported in the Dataset tab only, and everyone must be an a
 
 - The act is the core of every idea. The app selects a compatible position for each image, dealing across eligible categories before repeating entries. Its wording must survive into the scene and final prompt; omission fails the scene or retries the final writer. Settings are also spread before repeating available entries.
 - Explicit acts narrow the pool: anal with two men uses anal and compatible male-cast positions; kink uses kink and compatible cast positions. A general sex request can use every compatible category. All-male casts exclude vaginal and woman-specific entries; solo batches exclude positions that require partners. User exclusions still apply, and guided acts are routed per line.
+- Penetrative wording such as “fucking” or “intercourse” narrows the pool too: two men use anal-compatible positions, not unrelated oral, feet or pet activities. An explicitly named act such as oral still wins, and requested kink can modify the act without replacing it.
 - Ownership language in the request or Director (slave, owned, master or mistress, human pet) makes the power exchange part of every image: power-exchange moods, dynamics and clothing, a prop in each image, and the file's ownership rules.
 - Acts stay between the people your request pairs (with two men and a woman, each man is with her unless you ask otherwise).
 - Every body part stays attached to its owner, and two people's genitals never merge; wording that breaks this is redone.

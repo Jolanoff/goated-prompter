@@ -91,7 +91,7 @@ def passive_idea(text):
 
 # Sexual requests get act-focused directions, and everyone in them must be an adult. The request,
 # rules, guided inputs, cast and selected Director all count, since any of them can make a batch sexual.
-_SEXUAL = re.compile(r"\b(?:sex|sexual\w*|nsfw|porn\w*|explicit|erotic\w*|nude|nudity|naked|fuck\w*|blowjob\w*|"
+_SEXUAL = re.compile(r"\b(?:sex|sexual\w*|intercourse|nsfw|porn\w*|explicit|erotic\w*|nude|nudity|naked|fuck\w*|blowjob\w*|"
                      r"handjob\w*|oral(?! (?:presentations?|exams?|examinations?|hygiene|history|health|surgery|traditions?|reports?|arguments?))|anal|penetrat\w*|masturbat\w*|cum|cums|cumming|cumshot\w*|orgasm\w*|cocks?|"
                      r"dicks?|pussy|pussies|boobs?|tits|nipples?|genitals?|horny|aroused|"
                      # Kink and genre words; ambiguous ones need their sexual form ("collared", not "collar").
@@ -176,7 +176,7 @@ _KINK = re.compile(r"\b(?:slaves?|owned by|collared|collars?|leash(?:ed)?|pet pl
                    r"foot fetish|feet worship|breeding|degrad\w*|humiliat\w*|fetish\w*|kinky|kinks?|"
                    r"latex|rough sex|(?:his|her|my|their) (?:master|mistress))\b")
 _ORAL = re.compile(r"\b(?:oral|blowjob\w*|suck\w*|deepthroat\w*|69|sixty-nine|face[- ]?sitting|cunnilingus|"
-                   r"eat(?:s|ing)? (?:her|him) out|lick\w*)\b")
+                   r"face[- ]?fuck\w*|mouth[- ]?fuck\w*|eat(?:s|ing)? (?:her|him) out|lick\w*)\b")
 
 
 # The user's own words (concept, rules, trigger, guided input) and the Director, without the
@@ -259,6 +259,7 @@ def aftercare_request(data):
 
 
 _POSITION_CATEGORIES = {
+    "penetration": re.compile(r"\b(?:fuck(?:s|ed|ing)?|intercourse|penetrat\w*)\b"),
     "anal": re.compile(r"\b(?:anal|sodomy|sodomiz\w*)\b"),
     "vaginal": re.compile(r"\b(?:vaginal|vagina|pussy)\b"),
     "oral": _ORAL,
@@ -297,6 +298,7 @@ def position_categories(data, *, include_director=True):
     """Requested acts and exclusions; explicit user acts take precedence over Director defaults."""
     user = _user_text(data)
     director = _director_text(data) if include_director else ""
+    user_penetration = any(_asked(user, _POSITION_CATEGORIES[name]) for name in ("penetration", "anal", "vaginal"))
     asked, defaults, forbidden = set(), set(), set()
     for name, pattern in _POSITION_CATEGORIES.items():
         user_asked, user_forbids = _mentions(user, pattern)
@@ -305,7 +307,8 @@ def position_categories(data, *, include_director=True):
             asked.add(name)
         if director_asked:
             defaults.add(name)
-        if user_forbids or (director_forbids and not user_asked):
+        user_overrides = user_asked or (name == "penetration" and user_penetration)
+        if user_forbids or (director_forbids and not user_overrides):
             forbidden.add(name)
     for text, positive in ((user, asked), (director, defaults)):
         if "feet" in positive and not any(not match.group().startswith(("lick", "suck"))
