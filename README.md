@@ -367,7 +367,7 @@ Sexual requests are supported in the Dataset tab only, and everyone must be an a
 | `[oral positions]` `[feet positions]` `[kink positions]` `[pet positions]` `[furniture positions]` `[aftercare positions]` | When requested (furniture also with ownership) |
 | `[requested]` | `pattern => entry`: the entry joins the positions when your request matches the pattern |
 
-Entries that involve minors, non-consent or incapacitation, death, family members, animals, school, breath restriction or injury, or that detach or merge body parts, are skipped, whatever the file says.
+Freaky stuff are ignored. Generating freaky stuff is at your own risk. I'm not responsible of any prompt you generate.
 
 <details>
 <summary><strong>Dataset controls, scene planning, and validation details</strong></summary>
