@@ -33,6 +33,8 @@ from .plan import (ScenePlanner, MAX_STORED_SCENE_CHARACTERS, MAX_STORED_IDEA_CH
 
 
 DATASET_MAX_RETRIES = 3
+FINAL_BATCH_FAILURE = ("Final prompts did not satisfy the approved dataset-wide requirements. "
+                       "Review coverage and retry the affected prompts.")
 
 
 class SeededSession:
@@ -462,10 +464,25 @@ class DatasetService:
                 write_prompts(selected)
                 write_prompts(repair_pending_ideas())
                 if results and batch_requirements(data):
-                    check_batch(results, field="prompt")
+                    batch_valid = check_batch(results, field="prompt")
+                    generated = {item["index"] for item in results}
+                    if not batch_valid:
+                        for row in scenes:
+                            if row["index"] in generated:
+                                row.update(prompt_status="failed", failure_stage="prompt",
+                                    failure_reason=FINAL_BATCH_FAILURE)
+                    else:
+                        for row in scenes:
+                            if (row["index"] in generated and row.get("failure_stage") == "prompt"
+                                    and row.get("failure_reason") == FINAL_BATCH_FAILURE):
+                                for field in FAILURE_METADATA:
+                                    row.pop(field, None)
+                                row["prompt_status"] = "valid"
             publish()
-        return {"ok": bool(results), "kind": "dataset", "prompts": results,
+        return {"ok": bool(results) and batch_valid, "kind": "dataset", "prompts": results,
                 "failed": sum(not scene_is_usable(row, data) or row.get("prompt_status") == "failed" for row in scenes),
                 "completed": len(results), "total": data["amount"], "target": data["target"],
                 "scene_plan": scenes, "scene_plan_signature": signature, "backend": backend.name,
-                **({} if results else {"error": "No usable Dataset prompts were generated. Review the failed or unresolved scene slots and retry."})}
+                **({} if results and batch_valid else {"error":
+                    FINAL_BATCH_FAILURE
+                    if results else "No usable Dataset prompts were generated. Review the failed or unresolved scene slots and retry."})}

@@ -93,6 +93,47 @@ def subject_draft(subjects, **changes):
 
 
 class UniversalPipelineTests(unittest.TestCase):
+    def test_failed_final_prompt_coverage_retains_outputs_but_returns_failure_and_retryable_slots(self):
+        from goated_prompter.features.dataset.service import DatasetService
+        from goated_prompter.contracts import GoatedPrompterRequest
+        data = subject_draft([("kettle", "product", 1, "red finish")], amount=2)
+        data["_confirmed_intent"]["hard"] = [{"scope": "dataset", "text": "At least one gallery scene."}]
+        class CoverageBackend(UniversalBackend):
+            reject_final = True
+            def generate(self, instruction):
+                if instruction.diagnostic_stage.startswith("dataset:validation:batch:"):
+                    self.calls.append(instruction)
+                    context = json.loads(instruction.user_message)
+                    final = instruction.diagnostic_stage.endswith(":prompt") and self.reject_final
+                    return json.dumps([{"id": "batch:0", "status": "fail" if final else "pass",
+                        "evidence": [{"index": 1, "quote": context["descriptions"][0]["text"]}]}])
+                return super().generate(instruction)
+        backend, snapshots = CoverageBackend(), []
+        with patch("goated_prompter.features.dataset.service.create_backend", return_value=backend):
+            result = DatasetService({"backend": "mock"}, lambda: None).run(
+                GoatedPrompterRequest(idea=data["subject"], prompt_model="Custom"), data, lambda _: None, snapshots.append)
+        self.assertFalse(result["ok"])
+        self.assertEqual(len(result["prompts"]), 2)
+        self.assertIn("dataset-wide", result["error"])
+        self.assertEqual(result["failed"], 2)
+        self.assertTrue(all(row["prompt_status"] == "failed" and row["failure_stage"] == "prompt"
+                            and row["scene_status"] == "valid" for row in result["scene_plan"]))
+        self.assertTrue(all(row["batch_validation"]["valid"] is False for row in result["scene_plan"]))
+        self.assertEqual(snapshots[-1]["prompts"], result["prompts"])
+        data.update(scene_plan=result["scene_plan"], scene_plan_signature=result["scene_plan_signature"],
+                    results=result["prompts"])
+        backend.reject_final = False
+        backend.calls.clear()
+        with patch("goated_prompter.features.dataset.service.create_backend", return_value=backend):
+            repaired = DatasetService({"backend": "mock"}, lambda: None).run(
+                GoatedPrompterRequest(idea=data["subject"], prompt_model="Custom"), data,
+                lambda _: None, lambda _: None, scene_action=("regenerate_prompt", 1))
+        self.assertTrue(repaired["ok"])
+        self.assertEqual(repaired["failed"], 0)
+        self.assertEqual(len(repaired["prompts"]), 2)
+        self.assertFalse(any(call.diagnostic_stage in {"dataset:ideas", "dataset:planning", "dataset:2"}
+                             for call in backend.calls))
+
     def test_no_usable_scenes_or_prompts_returns_failure_with_retained_slot_diagnostics(self):
         from goated_prompter.features.dataset.service import DatasetService
         from goated_prompter.contracts import GoatedPrompterRequest
