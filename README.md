@@ -102,7 +102,7 @@ Auto distinguishes identity/motion/style references from explicit first/last-fra
 - Settings, references, request, and edited output autosave independently in `workflow_settings.json`. Shared job controls support cancellation.
 - Local prompting knowledge and source links live in [`goated_prompter/features/minimax/knowledge`](goated_prompter/features/minimax/knowledge/SOURCES.md). No documentation fetch is needed during generation.
 - Output validation checks H3 section order, exact frame alignment, shot timing, reference IDs, retention markers and dialogue syntax before delivery. Invalid output gets one repair attempt; a failed attempt leaves your previous output intact.
-- MiniMax reference analysis, prompt writing, and repair requests have no application output-token cap. Optional supporting video planning has a small bounded response budget. Engine context capacity and provider-side limits still apply.
+- MiniMax reference analysis, prompt writing, and repair requests have no application output-token cap. There is no separate scene-planning pass. Engine context capacity and provider-side limits still apply.
 
 This page writes **prompt text only**. It does not upload/analyze media, render videos, or call MiniMax's video-generation API. It requires a configured language-model prompt engine; the generic mock backend is for plumbing tests and does not perform H3 semantic rewriting.
 
@@ -252,9 +252,9 @@ Dropdown menus follow the app theme in browsers that support customizable native
 
 ### Optional scene planning
 
-Builder and MiniMax have independent **Auto / Direct / Always** selectors. Direct adds no planning calls or contracts. Simple Auto requests (an apple on a table, a car driving down a street) normally follow Direct. Complex contact, unusual poses, interacting subjects and video sequences can receive **one** compact semantic/staging pass—not a new idea or batch workflow.
+Builder has an **Auto / Direct / Always** selector. Direct adds no planning calls or contracts. Simple Auto requests (an apple on a table, a car driving down a street) normally follow Direct. Complex contact, unusual poses and interacting subjects can receive **one** compact semantic/staging pass—not a new idea or batch workflow.
 
-Builder plans **after selected reference evidence** and before the unchanged final compiler's target, Director, Creativity and Length controls. MiniMax plans **after its existing symbolic-reference analysis** and before its H3 writer, normalization and repair. Supplied shot order/timing and exact dialogue stay authoritative. Without supplied shots, planning describes continuous progression, not additional cuts.
+Builder plans **after selected reference evidence** and before the unchanged final compiler's target, Director, Creativity and Length controls. MiniMax goes directly from symbolic-reference analysis to its H3 writer, normalization and repair. Supplied shot order/timing and exact dialogue stay authoritative.
 
 High-confidence standalone exclusions are compiled internally and applied silently; quoted text, names and ambiguous rules remain intact. Auto logs planning failures and uses the original direct workflow; Always reports a planning failure rather than pretending it succeeded. A small status marks generations that used planning. Internal plans have no separate saved workflow or default geometry UI; the existing live request inspector can show planning activity. Model inference can still misinterpret mechanics or unseen references—planning is supporting guidance, not a semantic guarantee.
 
@@ -372,7 +372,7 @@ SceneSpecs record owned contacts and weight-bearing support relationships. Struc
 | `[oral positions]` `[anal positions]` `[vaginal positions]` `[feet positions]` `[kink positions]` `[solo kink positions]` `[pet positions]` `[furniture positions]` `[aftercare positions]` `[finish positions]` `[toys]` | Explicit requests select their categories; general sex uses all cast-compatible categories |
 | `[requested]` | `pattern => entry`: the entry joins the positions when your request matches the pattern |
 
-Entries that involve minors, non-consent or incapacitation, death, family members, animals, school, breath restriction or injury, or that detach or merge body parts, are skipped, whatever the file says.
+Freaky stuff are ignored. Generating freaky stuff is at your own risk. I'm not responsible of any prompt you generate.
 
 <details>
 <summary><strong>Dataset controls, scene planning, and validation details</strong></summary>

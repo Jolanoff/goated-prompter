@@ -205,7 +205,8 @@ Required contacts have individual locks, so added creative contacts are not prom
 to requirements. Evidence quotations support the result; missing or paraphrased evidence
 produces an unverified warning, not a false hard rejection. A known failed requirement
 still blocks, even if other validator fields are malformed. Optional checks do not require
-another validation call. Shared Builder and MiniMax validation remain independent.
+another validation call. Shared Builder and MiniMax reference/timeline validation remain
+independent and available.
 
 ## Recovery and text preservation
 

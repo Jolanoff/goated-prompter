@@ -47,7 +47,6 @@ DANCE_PLAN = plan_json(role("image1", "identity", "appearance"), role("video1", 
 
 def dance_input(**overrides):
     return validate_minimax_draft({"references": ["image1", "video1"], "duration_seconds": 15,
-                                  "planning_mode": "Direct",  # Freeze the pre-planning writer/repair contract.
                                   "user_request": REQUEST, **overrides}, generation=True)
 
 

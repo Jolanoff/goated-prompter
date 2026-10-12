@@ -9,7 +9,7 @@ def execute(row, context):
     from goated_prompter.features.minimax.service import MiniMaxService
     case, args = context.case, context.args
     result = MiniMaxService(context.config, lambda: None).run(context.request,
-        {"user_request": case["request"], "planning_mode": args.planning,
+        {"user_request": case["request"],
          "duration_seconds": 10, "references": case.get("references", []), "director_preset": args.director},
         lambda _message: None)
     row["prompt"] = result["prompt"]

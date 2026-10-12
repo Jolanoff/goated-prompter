@@ -62,18 +62,12 @@ class MiniMaxService:
                 plan = self._call(session, analysis_instruction(data, family), lambda raw: validate_analysis(raw, data), progress, retry_budget)
             else:
                 plan = validate_analysis('{"references": [], "first_frame": null, "last_frame": null}', data)
-            video_scene_plan, planning_status = None, "direct"
             from ...planning.semantic_validation import enabled, constraints_enabled, invariant_contract, review_candidate
             from ...planning.constraints import compile_request
             validate_semantics = enabled(effective)
-            if data["planning_mode"] != "Direct":
-                from ...planning.video_planner import plan_video_scene
-                video_scene_plan, planning_status = plan_video_scene(session, data, plan,
-                    family=family, checkpoint=self.checkpoint, progress=progress,
-                    **({"semantic_validation": True} if validate_semantics else {}))
             compiled = compile_request(data["user_request"], has_context=bool(plan["references"]))
             audit_constraints = bool(compiled.forbidden) and constraints_enabled(effective)
-            contract = invariant_contract(data["user_request"], planned=video_scene_plan.details if video_scene_plan else None,
+            contract = invariant_contract(data["user_request"],
                 constraints=compiled.workflow_data(), literal_text=exact_dialogue(data["user_request"]),
                 target="MiniMax H3", temporal=parse_shot_outline(data["user_request"], data["duration_seconds"]))
             contract["reference_roles"] = plan
@@ -94,7 +88,7 @@ class MiniMaxService:
                         raise
                 return candidate
             progress("Writing MiniMax H3 prompt")
-            prompt = self._call(session, generation_instruction(data, plan, director, family,
-                **({"video_scene_plan": video_scene_plan} if video_scene_plan is not None else {})), validate_final, progress, retry_budget, contract)
+            prompt = self._call(session, generation_instruction(data, plan, director, family),
+                validate_final, progress, retry_budget, contract)
         return {"ok": True, "kind": "minimax", "prompt": prompt, "mode": plan["mode"],
-                "warnings": reference_warnings(data), "backend": backend.name, "planning_status": planning_status}
+                "warnings": reference_warnings(data), "backend": backend.name}

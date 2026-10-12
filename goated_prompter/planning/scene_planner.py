@@ -66,14 +66,14 @@ def scene_planning_instruction(request, compiled, *, resolved_scene=None, family
         stream_character_limit=7000, temperature=.25, top_p=.85)
 
 
-def supporting_pass(session, mode, text, build, validate, *, checkpoint=None, progress=None, video=False):
+def supporting_pass(session, mode, text, build, validate, *, checkpoint=None, progress=None):
     mode = planning_mode(mode)
-    if mode == "Direct" or mode == "Auto" and not needs_planning(text, video=video):
+    if mode == "Direct" or mode == "Auto" and not needs_planning(text):
         return PlanningResult(True, status="direct", fallback_allowed=mode != "Always")
     if checkpoint:
         checkpoint()
     if progress:
-        progress("Planning video action and continuity…" if video else "Planning scene action and relationships…")
+        progress("Planning scene action and relationships…")
     try:
         instruction = build()
         session.validate_instruction(instruction)
@@ -87,8 +87,7 @@ def supporting_pass(session, mode, text, build, validate, *, checkpoint=None, pr
             checkpoint()
         if mode == "Always":
             raise BackendGenerationError("Required scene planning failed. Retry or choose Direct.") from exc
-        logger.warning("Optional %s planning failed (%s); using the original direct workflow.",
-                       "video" if video else "scene", type(exc).__name__)
+        logger.warning("Optional scene planning failed (%s); using the original direct workflow.", type(exc).__name__)
         if progress:
             progress("Planning unavailable; using the original direct workflow.")
         session.emit_activity("planning", message="Optional planning failed; direct fallback retained the original request.",

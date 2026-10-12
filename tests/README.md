@@ -121,9 +121,10 @@ show each result and require confirmation before continuing; errors stop the
 command. The opt-in flag does not replace owner authorization.
 
 The supporting-planning probe uses the same entry point with
-`--probe supporting-planning`; each selected case has separate Direct and Auto
-runs. Its request scaffolding and original review checklist remain distinct from
-the workflow corpus. The legacy `tests/evaluation/run_supporting_planning.py`
+`--probe supporting-planning`; each selected Builder case has separate Direct and
+Auto runs, while MiniMax cases run once without scene planning. Its request
+scaffolding and original review checklist remain distinct from the workflow
+corpus. The legacy `tests/evaluation/run_supporting_planning.py`
 command remains available, including its existing owned-process lifecycle when
 explicitly configured for a local backend; that path needs separate startup,
 shutdown and exit-verification approval.
