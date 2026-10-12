@@ -44,6 +44,16 @@ reanalysis; the approval ticket is bound to source settings and saved scene edit
 Each character entry's count applies only to that entry. Counts exceeding the declared
 per-image total fail validation before approval; a partial list still falls back to the
 scoped requirements. A null total stays open for locally varying counts.
+Historical checkpoints may retain an older over-counted cast without blocking startup
+or rewriting the archive. Continuation and new saves still require valid counts;
+an invalid historical approval needs fresh analysis and confirmation.
+
+The understanding response also exposes `routing`, separate from the approval brief.
+It reuses the position selector's cast, effective categories, exclusions and eligible
+vocabulary pools, and separates user categories from unconditional Director defaults.
+Guided acts retain their line scopes; NSFW detection and styling flags apply to the
+batch, like creative-direction selection. Review displays these decisions, and scene
+cards display their `selected_position`. Neither is a semantic pose-adherence check.
 
 The brief also exposes three small scoped lists for approval: **hard** obligations,
 **soft** preferences that may yield to hard requirements, and **free** creative

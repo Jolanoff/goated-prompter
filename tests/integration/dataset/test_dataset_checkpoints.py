@@ -11,6 +11,7 @@ from goated_prompter.features.dataset.checkpoints import generation_signature
 from goated_prompter.workflow_runners import execute_workflow
 from goated_prompter.workspace_store import WorkspaceConflict
 from goated_prompter.json_store import atomic_json
+from tests.helpers import dataset_understanding_fixture
 
 
 class DatasetCheckpointTests(unittest.TestCase):
@@ -76,6 +77,49 @@ class DatasetCheckpointTests(unittest.TestCase):
         projected = restarted.workflow_settings.snapshot("dataset")["draft"]
         self.assertEqual(projected["scene_plan"], [])
         self.assertEqual(projected["results"], self.result()["prompts"])
+
+    def test_over_counted_historical_approval_loads_without_rewriting_or_allowing_continuation(self):
+        job = self.begin()
+        job.result, job.status = self.result(), "succeeded"
+        self.state.workflow_settings.checkpoint_dataset(job)
+        store = self.state.dataset_checkpoints.snapshot()
+        cast = [{"name": f"participant {index}", "count": 2, "sex": "male", "kind": "human",
+                 "origin": "random", "series": "", "traits": ""} for index in (1, 2)]
+        brief = dataset_understanding_fixture(character_count=2, characters=cast)
+        store["jobs"][0]["approved_intent"] = brief
+        atomic_json(self.state.dataset_checkpoints.path, store)
+        before = self.state.dataset_checkpoints.path.read_bytes()
+        restarted = local.create_app(config_loader=lambda: {"backend": "mock"}, settings_path=self.path)[local.STATE]
+        self.assertEqual(restarted.dataset_checkpoints.path.read_bytes(), before)
+        self.assertEqual(restarted.dataset_checkpoints.snapshot()["jobs"][0]["approved_intent"], brief)
+        self.assertEqual(restarted.dataset_checkpoints.find(job.id)["result"], job.result)
+        self.assertIsNone(restarted.dataset_checkpoints.continuation_intent(self.data))
+
+    def test_running_over_counted_historical_approval_recovers_only_as_interrupted_history(self):
+        job = self.begin()
+        job.result, job.status = self.result(), "running"
+        self.state.workflow_settings.checkpoint_dataset(job)
+        store = self.state.dataset_checkpoints.snapshot()
+        cast = [{"name": "participants", "count": 4, "sex": "male", "kind": "human",
+                 "origin": "random", "series": "", "traits": ""}]
+        brief = dataset_understanding_fixture(character_count=2, characters=cast)
+        store["jobs"][0]["approved_intent"] = brief
+        atomic_json(self.state.dataset_checkpoints.path, store)
+        restarted = self.make_state()
+        self.assertEqual(restarted.dataset_checkpoints.find(job.id)["status"], "interrupted")
+        self.assertEqual(restarted.dataset_checkpoints.find(job.id)["result"], job.result)
+        self.assertEqual(restarted.dataset_checkpoints.snapshot()["jobs"][0]["approved_intent"], brief)
+        self.assertIsNone(restarted.dataset_checkpoints.continuation_intent(self.data))
+
+    def test_new_checkpoint_saves_still_reject_over_counted_approvals_without_overwriting(self):
+        job = self.begin()
+        before = self.state.dataset_checkpoints.path.read_bytes()
+        cast = [{"name": "participants", "count": 4, "sex": "male", "kind": "human",
+                 "origin": "random", "series": "", "traits": ""}]
+        with self.assertRaisesRegex(ValueError, "character count"):
+            self.state.workflow_settings.checkpoint_dataset(job,
+                approved_intent=dataset_understanding_fixture(character_count=2, characters=cast))
+        self.assertEqual(self.state.dataset_checkpoints.path.read_bytes(), before)
 
     def test_legacy_scene_metadata_in_checkpoint_input_and_result_survives_startup_and_new_saves(self):
         job = local.Job()

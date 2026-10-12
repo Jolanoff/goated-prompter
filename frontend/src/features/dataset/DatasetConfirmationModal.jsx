@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, Download, LoaderCircle, X } from "lucide-react";
 import { ui } from "../../ui.js";
-import { canConfirmDatasetReview, datasetCharacterLines, datasetReviewQuestions, datasetUnderstandingSections, datasetUnderstandingSummary } from "./datasetState.js";
+import { canConfirmDatasetReview, datasetCharacterLines, datasetReviewQuestions, datasetRoutingSections, datasetUnderstandingSections, datasetUnderstandingSummary } from "./datasetState.js";
 import { identityLabels } from "./options.js";
 
 function SummaryList({ label, items, annotations }) {
@@ -50,6 +50,12 @@ export default function DatasetConfirmationModal({ review, busy, onRevise, onCon
         <p className="dataset-review-identity">{brief.character_count != null && `${brief.character_count} characters per image. `}{identityLabels[brief.identity_policy]}</p>
         <SummaryList label="Characters" items={datasetCharacterLines(brief)} />
       </section>
+      {!!review.routing?.length && <section className="dataset-review-requirements" aria-label="Request routing">
+        <h3>Request routing</h3>
+        <p className="dataset-review-note">Detected categories guide selection, not a check of the generated image. Eligible pools are choices, not detected acts. Conditional Director advice does not activate a category.</p>
+        {datasetRoutingSections(review.routing).map(({ label, items }, index) =>
+          <SummaryList key={index} label={label} items={items} />)}
+      </section>}
       <div className="dataset-review-grid">
         <section aria-label="What stays consistent">
           <h3>What stays consistent</h3>

@@ -16,7 +16,7 @@ from .director import director_section
 from .private_vocabulary import load_vocabulary, private_rules
 from .quality import (MALE_PAIR, FEMALE_PAIR, POSITION_ACT_CATEGORIES, broken_anatomy, idea_concepts, minor_reference,
                       passive_idea, passive_request, position_categories, position_phrase_present,
-                      requested_text, resolved_sex, sexual_request)
+                      requested_text, resolved_sex, sexual_request, kink_request, ownership_request)
 from .understanding import understanding_instruction, unwrap_json_fence, validate_understanding
 
 
@@ -82,9 +82,9 @@ _PARTNER_POSITION = re.compile(r"\b(?:partners?|couple|(?:another|the other) (?:
                                r"(?:both|two|three|group of) (?:people|adults|men|women|bodies))\b", re.I)
 
 
-def position_groups(data):
-    """Eligible groups, with requested acts first and incompatible anatomy filtered out."""
-    vocabulary = load_vocabulary()
+def _position_routing(data, *, vocabulary=None):
+    """One routing decision shared by position selection and the understanding preview."""
+    vocabulary = load_vocabulary() if vocabulary is None else vocabulary
     brief = data.get("_confirmed_intent") or {}
     cast = [item for item in brief.get("characters") or () if isinstance(item, dict)]
     people = sum(item.get("count") or 1 for item in cast) or brief.get("character_count") or 1
@@ -113,8 +113,7 @@ def position_groups(data):
     if "penetration" in forbidden:
         forbidden.update(("anal", "vaginal"))
         requested.difference_update(forbidden)
-    if requested == {"vaginal"} and not women:
-        return []
+    incompatible = requested == {"vaginal"} and not women
     available = ("solo", "oral", "anal", "vaginal", "feet", "toys", "finish", "kink", "aftercare") if people <= 1 else (
         "oral", "anal", "vaginal", "feet", "toys", "finish", "kink", "pet", "furniture", "aftercare")
     categories = [name for name in available if name not in forbidden and (not requested or name in requested)
@@ -159,18 +158,53 @@ def position_groups(data):
         return not (entry_categories & forbidden) and (not requested or not entry_categories or bool(entry_categories & requested))
 
     groups = []
+    pools = []
     for name in dict.fromkeys(names):
         entries = vocabulary.get(name if name == "toys" else f"{name} positions", ())
         entries = tuple(entry for entry in entries if compatible(entry))
-        if entries:
+        if entries and not incompatible:
             groups.append(entries)
+            pools.append(name)
     extras = tuple(entry for pattern, entry in vocabulary.get("requested", ()) if pattern.search(asked) and compatible(entry))
-    if extras:
+    if extras and not incompatible:
         groups.append(extras)
+        pools.append("requested")
     named = [tuple(entry for entry in entries if position_phrase_present(asked, entry)) for entries in groups]
     if any(named):
-        return [entries for entries in named if entries]
-    return groups
+        pools = [name for name, entries in zip(pools, named) if entries]
+        groups = [entries for entries in named if entries]
+    return {"groups": groups,
+            "cast": {"count": people, "male": men, "female": women,
+                     "unspecified": max(0, people - men - women),
+                     "mode": "solo" if people <= 1 else "pair" if people == 2 else "group",
+                     "source": "approved_cast" if cast else "request_fallback"},
+            "effective_categories": sorted(requested), "excluded_categories": sorted(forbidden),
+            "position_pools": pools, "private_position_count": len({entry for entries in groups for entry in entries})}
+
+
+def position_groups(data):
+    """Eligible groups, with requested acts first and incompatible anatomy filtered out."""
+    return _position_routing(data)["groups"]
+
+
+def dataset_routing(data):
+    """Preview the batch's routing, with guided acts scoped exactly as position selection."""
+    lines = ([line.strip() for line in str(data.get("inputs") or "").splitlines() if line.strip()][:data["amount"]]
+             if data.get("source_mode") == "guided" else [""])
+    nsfw = sexual_request(data)
+    kink = nsfw and kink_request(data)
+    owned = nsfw and ownership_request(data)
+    routes = []
+    for index, line in enumerate(lines, 1):
+        scoped = {**data, "inputs": line} if data.get("source_mode") == "guided" else data
+        route = _position_routing(scoped, vocabulary=None if nsfw else {})
+        route.pop("groups")
+        user_categories, _ = position_categories(scoped, include_director=False)
+        director_categories, _ = position_categories({"director_preset": data.get("director_preset")})
+        routes.append({**route, "scope": f"guided:{index}" if data.get("source_mode") == "guided" else "all_outputs",
+                       "user_categories": sorted(user_categories), "director_categories": sorted(director_categories),
+                       "nsfw": nsfw, "kink_styling": kink, "ownership_styling": owned})
+    return routes
 
 
 def sexual_positions(data):

@@ -300,8 +300,8 @@ def _brief_json(raw):
     return json.loads(text, object_pairs_hook=_unique_object)
 
 
-def validate_understanding(value: dict, scopes: tuple[str, ...]) -> dict:
-    """Validate the brief's shape and scopes, not the model's semantic judgment."""
+def validate_understanding(value: dict, scopes: tuple[str, ...], *, historical=False) -> dict:
+    """Validate shape and scopes; historical reads alone may retain an over-counted cast."""
     fields = {*SUMMARY_FIELDS, *REQUIREMENT_FIELDS, *CONTRACT_FIELDS, *DETAIL_FIELDS, "physical_conflicts", "clarifications"}
     if not isinstance(value, dict) or set(value) - {"characters"} != fields:
         raise ValueError("Understanding must contain exactly the required brief fields.")
@@ -346,7 +346,7 @@ def validate_understanding(value: dict, scopes: tuple[str, ...]) -> dict:
     if "characters" in value:
         characters = validate_characters(value["characters"])
         listed_count = sum(item["count"] for item in characters)
-        if type(count) is int and listed_count > count:
+        if not historical and type(count) is int and listed_count > count:
             raise ValueError("Character entries exceed the declared character count. Each entry's count applies only "
                              "to that entry, not the whole cast. Review the understanding again.")
         # A small model sometimes lists only part of a large cast; a partial cast would make the

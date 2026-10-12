@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { transformWithEsbuild } from "vite";
-import { canConfirmDatasetReview, datasetRequestSignature, datasetUnderstandingSections, datasetUnderstandingSummary,
+import { canConfirmDatasetReview, datasetRequestSignature, datasetRoutingSections, datasetUnderstandingSections, datasetUnderstandingSummary,
   reviseDatasetRequest } from "./datasetState.js";
 
 async function loadReviewModal() {
@@ -15,6 +15,54 @@ async function loadReviewModal() {
     `from ${JSON.stringify(specifier.startsWith(".") ? new URL(specifier, sourceUrl).href : import.meta.resolve(specifier))}`);
   return (await import(`data:text/javascript;base64,${Buffer.from(linked).toString("base64")}`)).default;
 }
+
+const broadMaleRoute = { scope: "all_outputs", nsfw: true,
+  cast: { mode: "pair", count: 2, male: 2, female: 0, unspecified: 0, source: "approved_cast" },
+  user_categories: [], director_categories: [], effective_categories: [], excluded_categories: [],
+  position_pools: ["two men", "anal", "oral", "feet", "kink"], private_position_count: 12,
+  kink_styling: false, ownership_styling: false };
+
+test("routing display distinguishes broad requests, eligible pools and activated styling", () => {
+  const [{ label, items }] = datasetRoutingSections([broadMaleRoute]);
+  assert.equal(label, "Every image");
+  assert.ok(items.includes("NSFW detected"));
+  assert.ok(items.includes("pair: 2 males (reviewed cast)"));
+  assert.ok(items.includes("Requested categories: Broad sexual request; no specific act detected"));
+  assert.ok(items.includes("Effective categories: Broad; all compatible categories eligible"));
+  assert.ok(items.includes("Eligible vocabulary pools: two men, anal, oral, feet, kink"));
+  assert.ok(items.includes("Kink styling: not activated; ownership rules: not activated"));
+  assert.deepEqual(datasetRoutingSections(null), []);
+});
+
+test("routing display reports guided acts, exclusions, director defaults and unresolved cast", () => {
+  const [{ label, items }] = datasetRoutingSections([{ ...broadMaleRoute, scope: "guided:2",
+    user_categories: ["penetration"], director_categories: ["oral"], effective_categories: ["anal"],
+    excluded_categories: ["oral"], cast: { mode: "group", male: 2, female: 1, unspecified: 1, source: "approved_cast" } }]);
+  assert.equal(label, "Guided input 2");
+  assert.ok(items.includes("group: 2 males + 1 female + 1 unspecified (reviewed cast)"));
+  assert.ok(items.includes("Requested categories: penetration"));
+  assert.ok(items.includes("Director defaults: oral"));
+  assert.ok(items.includes("Effective categories: anal"));
+  assert.ok(items.includes("Excluded categories: oral"));
+});
+
+test("nonsexual routing display does not suggest active sexual pools", () => {
+  const [{ items }] = datasetRoutingSections([{ ...broadMaleRoute, nsfw: false,
+    cast: { mode: "solo", male: 1, source: "request_fallback" } }]);
+  assert.deepEqual(items, ["No NSFW detected"]);
+});
+
+test("review modal renders server routing rather than detecting acts from the concept", async () => {
+  const Modal = await loadReviewModal();
+  const markup = renderToStaticMarkup(createElement(Modal, { review: { status: "ready", input: {},
+    brief: { requested_generation: "Concept does not contain the server routing", identity_policy: "fixed" },
+    routing: [broadMaleRoute] } }));
+  assert.match(markup, /aria-label="Request routing"/);
+  assert.match(markup, /NSFW detected/);
+  assert.match(markup, /pair: 2 males/);
+  assert.match(markup, /Eligible vocabulary pools: two men, anal, oral, feet, kink/);
+  assert.match(markup, /choices, not detected acts/);
+});
 
 test("approval shows hard obligations, soft preferences and free choices before rich interpretation", () => {
   const sections = datasetUnderstandingSections({ requested_generation: "One red ceramic cup",

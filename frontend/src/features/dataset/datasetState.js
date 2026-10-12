@@ -42,6 +42,30 @@ export function datasetReviewQuestions(brief) {
   return brief?.clarifications || [];
 }
 
+export function datasetRoutingSections(routing) {
+  const categories = (values) => (values || []).join(", ");
+  return (routing || []).map((route) => {
+    const cast = route.cast || {};
+    const people = [[cast.male, "male", "males"], [cast.female, "female", "females"],
+      [cast.unspecified, "unspecified", "unspecified"]]
+      .filter(([count]) => count > 0).map(([count, one, many]) => `${count} ${count === 1 ? one : many}`).join(" + ");
+    const items = [route.nsfw ? "NSFW detected" : "No NSFW detected"];
+    if (people && (route.nsfw || cast.source === "approved_cast")) {
+      items.push(`${cast.mode}: ${people}${cast.source === "request_fallback" ? " (request fallback)" : " (reviewed cast)"}`);
+    }
+    if (route.nsfw) {
+      items.push(`Requested categories: ${categories(route.user_categories) || "Broad sexual request; no specific act detected"}`);
+      items.push(`Director defaults: ${categories(route.director_categories) || "No specific category"}`);
+      items.push(`Effective categories: ${categories(route.effective_categories) || "Broad; all compatible categories eligible"}`);
+      if (route.excluded_categories?.length) items.push(`Excluded categories: ${categories(route.excluded_categories)}`);
+      items.push(`Eligible vocabulary pools: ${categories(route.position_pools) || "None available"}`);
+      items.push(`${route.private_position_count || 0} compatible private positions`);
+      items.push(`Kink styling: ${route.kink_styling ? "active" : "not activated"}; ownership rules: ${route.ownership_styling ? "active" : "not activated"}`);
+    }
+    return { label: route.scope === "all_outputs" ? "Every image" : `Guided input ${route.scope?.split(":")[1]}`, items };
+  });
+}
+
 export function canConfirmDatasetReview(review, busy, additions = "") {
   return review?.status === "ready" && !!review.confirmation_token && !busy &&
     !additions.trim() && !datasetReviewQuestions(review.brief).length;

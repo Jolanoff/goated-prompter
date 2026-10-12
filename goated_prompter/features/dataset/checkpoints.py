@@ -52,7 +52,7 @@ def validate_checkpoints(value):
         data = _checkpoint_input(row["input"])
         if row.get("approved_intent") is not None:
             scopes = tuple(json.loads(understanding_instruction(data).user_message)["scopes"])
-            brief = validate_understanding(row["approved_intent"], scopes)
+            brief = validate_understanding(row["approved_intent"], scopes, historical=True)
             if brief["clarifications"]:
                 raise ValueError("Dataset checkpoint contains an unapproved request.")
         snapshot = row["snapshot"]
@@ -109,6 +109,11 @@ class DatasetCheckpointStore:
             row = next((row for row in store["jobs"] if row["job_id"] == job.id), None)
             if row is None:
                 return
+            if approved_intent is not None:
+                scopes = tuple(json.loads(understanding_instruction(_checkpoint_input(row["input"])).user_message)["scopes"])
+                brief = validate_understanding(approved_intent, scopes)
+                if brief["clarifications"]:
+                    raise ValueError("Dataset checkpoint contains an unapproved request.")
             row["stale"] = (current["revision"] != row["workflow_revision"] or
                             generation_signature(current["draft"]) != row["input_signature"])
             # Live transport messages/reasoning remain RAM-only, not checkpoint data.
@@ -128,7 +133,12 @@ class DatasetCheckpointStore:
             if not result.get("scene_plan") or intent_source_signature(_checkpoint_input(row["input"])) != source:
                 continue
             if row.get("approved_intent") is not None:
-                return deepcopy(row["approved_intent"])
+                scopes = tuple(json.loads(understanding_instruction(data).user_message)["scopes"])
+                try:
+                    brief = validate_understanding(row["approved_intent"], scopes)
+                except ValueError:
+                    return None  # Historical results stay readable, but invalid approval needs a fresh review.
+                return deepcopy(brief)
             generated = {**_checkpoint_input(row["input"]), **_result_fields(result, row["input"])}
             if intent_signature(generated) == intent_signature(data):
                 return {}  # Older checkpoints have checked scenes, but no retained review.

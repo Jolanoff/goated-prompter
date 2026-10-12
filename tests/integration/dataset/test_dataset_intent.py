@@ -103,6 +103,27 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("visible_evidence", result["brief"])
         self.assertIn("physical_conflicts", result["brief"])
         self.assertNotIn("goal", result["brief"])
+        self.assertEqual(result["routing"][0]["scope"], "all_outputs")
+        self.assertFalse(result["routing"][0]["nsfw"])
+        self.assertEqual(result["routing"][0]["position_pools"], [])
+        self.assertEqual(len(self.backend.calls), 1)
+
+    async def test_analysis_returns_actual_cast_and_act_routing_without_new_model_calls(self):
+        cast = [{"name": f"participant {index}", "count": 1, "sex": "male", "kind": "human",
+                 "origin": "random", "series": "", "traits": ""} for index in (1, 2)]
+        self.backend.summary = dataset_understanding_fixture(character_count=2, characters=cast)
+        result = await self.analyze(valid_draft(subject="Two adult males having anal sex.",
+            trigger_type="Multiple characters", amount=1))
+        route = result["routing"][0]
+        self.assertTrue(route["nsfw"])
+        self.assertEqual(route["cast"]["male"], 2)
+        self.assertEqual(route["cast"]["mode"], "pair")
+        self.assertEqual(route["user_categories"], ["anal"])
+        self.assertEqual(route["effective_categories"], ["anal"])
+        self.assertNotIn("routing", result["brief"])
+        self.assertEqual(self.app[local.STATE].dataset_intents.approve(result["confirmation_token"],
+            valid_draft(subject="Two adult males having anal sex.", trigger_type="Multiple characters", amount=1)),
+            result["brief"])
         self.assertEqual(len(self.backend.calls), 1)
 
     async def test_fenced_understanding_brief_reaches_approval_without_retry_or_downstream_work(self):

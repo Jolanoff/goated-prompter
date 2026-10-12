@@ -230,6 +230,64 @@ class PositionRoutingTests(unittest.TestCase):
                 self.assertTrue(set(positions) <= allowed)
                 self.assertEqual(len(set(positions)), 3)
 
+    def test_routing_preview_reports_resolved_cast_and_penetrative_act(self):
+        from goated_prompter.features.dataset.brainstorm import dataset_routing
+        route = dataset_routing(self.draft("2 males fucking", "male", "male"))[0]
+        self.assertTrue(route["nsfw"])
+        self.assertEqual(route["scope"], "all_outputs")
+        self.assertEqual(route["cast"], {"count": 2, "male": 2, "female": 0, "unspecified": 0,
+                                        "mode": "pair", "source": "approved_cast"})
+        self.assertEqual(route["user_categories"], ["penetration"])
+        self.assertEqual(route["effective_categories"], ["anal"])
+        self.assertIn("anal", route["position_pools"])
+        self.assertNotIn("group", route["position_pools"])
+        self.assertEqual(route["private_position_count"], 4)
+
+    def test_routing_preview_keeps_broad_requests_distinct_from_eligible_categories(self):
+        from goated_prompter.features.dataset.brainstorm import dataset_routing
+        data = self.draft("two adult men having sex", "male", "male")
+        with patch("goated_prompter.features.dataset.quality.get_director_preset",
+                   return_value=Mock(instructions="For ownership requests, use collars and restraint.")):
+            route = dataset_routing(data)[0]
+        self.assertEqual(route["user_categories"], [])
+        self.assertEqual(route["director_categories"], [])
+        self.assertEqual(route["effective_categories"], [])
+        self.assertIn("oral", route["position_pools"])
+        self.assertIn("kink", route["position_pools"])
+        self.assertFalse(route["kink_styling"])
+        self.assertFalse(route["ownership_styling"])
+
+    def test_routing_preview_reports_solo_group_exclusions_and_director_defaults(self):
+        from goated_prompter.features.dataset.brainstorm import dataset_routing
+        solo = dataset_routing(self.draft("one adult male masturbating", "male"))[0]
+        self.assertEqual(solo["cast"]["mode"], "solo")
+        group = dataset_routing(self.draft("four adult males having sex", "male", "male", "male", "male"))[0]
+        self.assertEqual(group["cast"]["mode"], "group")
+        self.assertEqual(group["cast"]["male"], 4)
+        self.assertIn("group", group["position_pools"])
+        data = self.draft("two adult men having sex", "male", "male", constraints="No oral.")
+        with patch("goated_prompter.features.dataset.quality.get_director_preset",
+                   return_value=Mock(instructions="Use anal positions.")):
+            directed = dataset_routing(data)[0]
+        self.assertEqual(directed["director_categories"], ["anal"])
+        self.assertIn("oral", directed["excluded_categories"])
+        self.assertNotIn("oral", directed["position_pools"])
+
+    def test_routing_preview_preserves_guided_line_scope(self):
+        from goated_prompter.features.dataset.brainstorm import dataset_routing
+        data = self.draft("two adult men having sex", "male", "male", source_mode="guided",
+                          inputs="anal sex\noral sex\nfoot worship", amount=2)
+        routes = dataset_routing(data)
+        self.assertEqual([route["scope"] for route in routes], ["guided:1", "guided:2"])
+        self.assertEqual([route["effective_categories"] for route in routes], [["anal"], ["oral"]])
+
+    def test_nonsexual_routing_preview_does_not_claim_active_sexual_pools(self):
+        from goated_prompter.features.dataset.brainstorm import dataset_routing
+        route = dataset_routing(self.draft("two adult men reading", "male", "male"))[0]
+        self.assertFalse(route["nsfw"])
+        self.assertEqual(route["position_pools"], [])
+        self.assertEqual(route["private_position_count"], 0)
+
     def test_a_generic_penetration_entry_is_compatible_with_an_explicit_act(self):
         self.path.write_text("[two men positions]\npenetration while seated\n", encoding="utf-8")
         positions = sexual_positions(self.draft("two adult men having anal sex", "male", "male"))

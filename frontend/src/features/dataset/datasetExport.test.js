@@ -53,6 +53,7 @@ test("generation log is an indented snapshot of settings, review, progress and f
         failure_reason: "Timeout", retry_count: 2 }], results: [{ index: 2, prompt: "duck_token confronts a dinosaur" }] },
     review: { operation: "dataset", status: "ready", jobId: "understanding-1",
       input: { subject: "Duck confronting a dinosaur", constraints: "Both visible" },
+      routing: [{ scope: "all_outputs", nsfw: false, position_pools: [], private_position_count: 0 }],
       brief: { requested_generation: "A confrontation", rules: [{ scope: "all_outputs", text: "Both visible" }] } },
     job: { id: "dataset-1", kind: "dataset", status: "failed", error: "Timeout", revision: 3,
       result: { failed: 1, completed: 1, attempts: 3 }, events: [{ type: "error", message: "Timeout" }],
@@ -71,6 +72,7 @@ test("generation log is an indented snapshot of settings, review, progress and f
   assert.deepEqual(log.scene_plan, context.draft.scene_plan);
   assert.deepEqual(log.generated_prompts, context.draft.results);
   assert.deepEqual(log.understanding.brief, context.review.brief);
+  assert.deepEqual(log.understanding.routing, context.review.routing);
   assert.deepEqual(log.job.partial_responses, context.job.partial_responses);
   assert.equal(log.job.result.attempts, 3);
   assert.equal(log.metadata.revision, 7);
