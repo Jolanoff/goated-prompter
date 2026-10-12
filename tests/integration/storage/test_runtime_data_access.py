@@ -14,7 +14,8 @@ from goated_prompter.features.builder.service import GoatedPrompterService
 from goated_prompter.features.dataset.service import DatasetService, default_dataset_draft
 from goated_prompter.json_store import atomic_json
 from goated_prompter.features.dataset.prompting import dataset_instruction
-from tests.helpers import dataset_idea_fixture, enter_context
+from tests.helpers import enter_context
+from tests.support.dataset import checked_writer_responses, saved_scene
 
 
 class RuntimeDataAccessTests(unittest.TestCase):
@@ -54,9 +55,8 @@ class RuntimeDataAccessTests(unittest.TestCase):
     def test_saved_pass_scene_from_default_data_checkpoint_reaches_enhance(self):
         state = self.app_state()
         data = {**default_dataset_draft(), "subject": "A craftsperson", "trigger": "craft_token", "amount": 1}
-        scene = {**dataset_idea_fixture(idea="Center clay"), "input": "",
-            "scene": "A craftsperson centers clay with both palms on a spinning wheel.",
-            "self_check": "PASS", "scene_status": "valid"}
+        scene = saved_scene(idea="Center clay",
+            scene="A craftsperson centers clay with both palms on a spinning wheel.")
         job = local.Job()
         job.kind = "dataset"
         state.workflow_settings.begin_dataset(job, data)
@@ -74,8 +74,9 @@ class RuntimeDataAccessTests(unittest.TestCase):
         instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), draft, 1,
             plan_item=draft["scene_plan"][0])
         session = Mock()
-        session.generate.return_value = "craft_token centers clay with both palms on a spinning wheel."
+        checked_writer_responses(session, ["craft_token centers clay with both palms on a spinning wheel."], [scene])
         DatasetService({"backend": "mock"}, lambda: None)._generate(session, instruction, draft, 1,
             lambda _message: None, draft["scene_plan"][0])
-        session.generate.assert_called_once()
-        self.assertEqual(session.generate.call_args.args[0].user_message, scene["scene"])
+        self.assertEqual(session.generate.call_count, 2)
+        self.assertEqual(session.generate.call_args_list[0].args[0].user_message, scene["scene"])
+        self.assertEqual(session.generate.call_args.args[0].diagnostic_stage, "dataset:validation:prompt")

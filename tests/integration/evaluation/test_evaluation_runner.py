@@ -8,6 +8,8 @@ from tests.eval.runner import live_case, novelty_cases
 from tests.eval.metrics import measure
 from tests.support.minimax import BASE
 from tests.helpers import dataset_understanding_fixture, dataset_idea_fixture
+from tests.support.dataset import scene_observation
+from goated_prompter.features.dataset.scene_spec import SceneSpec
 
 
 class EvaluationRunnerTests(unittest.TestCase):
@@ -16,15 +18,29 @@ class EvaluationRunnerTests(unittest.TestCase):
             creativity="Balanced", planning="Direct", history="on")
 
     def test_real_workflow_entrypoints_use_frozen_responses_without_inference(self):
-        calls = []
+        calls, specs = [], {}
+        scene = "eval_subject is a chipped blue ceramic cup on a table."
         def generate(backend, instruction):
             calls.append(instruction)
             if instruction.diagnostic_stage == "dataset:understanding":
-                text = json.dumps(dataset_understanding_fixture())
+                text = json.dumps(dataset_understanding_fixture(requested_generation="A chipped blue ceramic cup on a table.",
+                    identity_policy="not_applicable", characters=[], subjects=[{"scope": "all_outputs", "name": "cup",
+                    "kind": "product", "count": 1, "sex": "none", "traits": "chipped blue ceramic"}]))
+            elif instruction.diagnostic_stage == "dataset:planning":
+                assignments = json.loads(instruction.user_message)["assignments"]
+                text = json.dumps([{key: item[key] if key != "participants" else [
+                    {field: participant[field] for field in ("id", "role", "pose", "location", "support")}
+                    for participant in item["participants"]] for key in ("index", "action", "setting", "participants", "contacts")}
+                    for item in assignments])
             elif instruction.diagnostic_stage == "dataset:ideas":
-                text = json.dumps([dataset_idea_fixture()])
+                specs.update((item["index"], SceneSpec.from_dict(item["scene_spec"]))
+                             for item in json.loads(instruction.user_message)["assignments"])
+                text = json.dumps([dataset_idea_fixture(idea="A chipped blue cup on a table.", scene=scene)])
+            elif instruction.diagnostic_stage.startswith("dataset:validation:"):
+                text = json.dumps([scene_observation(specs[item["index"]], item["description"])
+                                   for item in json.loads(instruction.user_message)])
             else:
-                text = BASE if instruction.diagnostic_stage.startswith("minimax") else "eval_subject is a chipped blue ceramic cup on a table."
+                text = BASE if instruction.diagnostic_stage.startswith("minimax") else scene
             backend.emit_activity("request", stage=instruction.diagnostic_stage, parameters={"temperature": instruction.temperature}, messages=instruction.to_messages())
             backend.emit_activity("response_delta", text=text)
             backend.emit_activity("response_complete", finish_reason="stop")
@@ -32,7 +48,10 @@ class EvaluationRunnerTests(unittest.TestCase):
         case = {"id": "cup", "request": "A chipped blue ceramic cup on a table.", "dataset_type": "Object / product", "anchors": {}}
         with patch.object(MockBackend, "generate", generate), patch("builtins.input", return_value="yes"):
             rows = [live_case(case, workflow, {"backend": "mock"}, self.args()) for workflow in ("builder", "dataset", "minimax")]
-        self.assertEqual(len(calls), 5)
+        self.assertEqual([call.diagnostic_stage for call in calls if call.diagnostic_stage.startswith("dataset:")],
+            ["dataset:understanding", "dataset:planning", "dataset:ideas", "dataset:validation:scene",
+             "dataset:1", "dataset:validation:prompt"])
+        self.assertEqual(len(calls), 8)
         for row in rows:
             self.assertNotIn("error", row)
             self.assertEqual(row["completion_state"], "completed")

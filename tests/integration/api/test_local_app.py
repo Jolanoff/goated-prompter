@@ -70,6 +70,7 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         self.release.set()
         await self.client.close()
+        self.assertTrue(self.client.server.closed, "The synthetic HTTP listener did not close.")
 
     async def start(self, **payload):
         response = await self.client.post("/api/generate", json={"settings": {"idea": "portrait"}, **payload})
@@ -737,20 +738,22 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_local_prompt_regeneration_requires_a_checked_scene(self):
         from tests.helpers import confirmed_dataset_payload
+        from tests.support.dataset import CaptureBackend, saved_scene
         from goated_prompter.features.dataset.service import default_dataset_draft
         from goated_prompter.features.dataset.assignments import dataset_assignments
         from goated_prompter.features.dataset.plan import scene_plan_signature
         data = {**default_dataset_draft(), "amount": 1, "subject": "A traveler", "trigger": "person_token"}
-        data["scene_plan"] = [{"index": 1, "input": "", "idea": "Reading on a bench",
-                               "scene": "She reads a book on a park bench.", "self_check": "PASS",
-                               "idea_status": "valid", "scene_status": "valid", "prompt_status": "not_generated"}]
+        data["scene_plan"] = [saved_scene(idea="Reading on a bench", scene="She reads a book on a park bench.")]
         data["scene_plan_signature"] = scene_plan_signature(data, dataset_assignments(data))
-        response = await self.client.post("/api/workspace/dataset/scene", json=confirmed_dataset_payload(
-            self.app[local.STATE], data, index=1, action="regenerate_prompt"))
-        self.assertEqual(response.status, 202, await response.text())
-        finished = await self.wait_status((await response.json())["id"], "succeeded")
+        backend = CaptureBackend(scenes=data["scene_plan"])
+        with patch("goated_prompter.features.dataset.service.create_backend", return_value=backend):
+            response = await self.client.post("/api/workspace/dataset/scene", json=confirmed_dataset_payload(
+                self.app[local.STATE], data, index=1, action="regenerate_prompt"))
+            self.assertEqual(response.status, 202, await response.text())
+            finished = await self.wait_status((await response.json())["id"], "succeeded")
         self.assertEqual(finished["result"]["scene_plan"][0]["scene"], data["scene_plan"][0]["scene"])
         self.assertEqual(finished["result"]["scene_plan"][0]["self_check"], "PASS")
+        self.assertEqual([call.diagnostic_stage for call in backend.calls], ["dataset:1", "dataset:validation:prompt"])
 
     async def test_retired_dataset_review_and_quality_routes_do_not_start_jobs(self):
         state = self.app[local.STATE]

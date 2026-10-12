@@ -189,7 +189,7 @@ class PromptLibraryTests(unittest.TestCase):
         self.write("Krea 2", *prompts)
         data = valid_draft(target="Krea 2", subject="a dorm room party")
         def templates(index, scene):
-            row = {**saved_scene(index), "scene": scene}
+            row = saved_scene(index, scene=scene)
             return dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, index, plan_item=row).reference_prompts
         first = templates(1, "A woman laughs at a dorm desk.")
         self.assertEqual(len(first), 2)

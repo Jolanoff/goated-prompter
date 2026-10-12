@@ -13,6 +13,7 @@ from goated_prompter.options.targets import TARGET_MODEL_NAMES
 from goated_prompter.features.refine.service import RefineService, refine_instruction
 from goated_prompter.workflow_output import WorkflowFormatError, normalize_workflow_output, requested_visible_text, sanitize_prompt_text
 from tests.support.backends import ScriptedBackend
+from tests.support.dataset import CheckedWriterBackend, saved_scene
 
 
 CAPTION = {
@@ -169,12 +170,13 @@ class FormatRepairTests(unittest.TestCase):
         with patch("goated_prompter.features.builder.service.create_backend", return_value=backend):
             self.assertEqual(GoatedPrompterService(config={"backend": "mock"}).generate(request).prompt, text)
         data = {**default_dataset_draft(), "subject": text, "trigger": "mira(token)", "amount": 1}
-        backend = ScriptedBackend([text])
-        scene = {"scene": text, "self_check": "PASS"}
+        scene = saved_scene(scene=text)
+        backend = CheckedWriterBackend([text], [scene])
         instruction = dataset_instruction(request, data, 1, plan_item=scene)
         self.assertEqual(DatasetService({"backend": "mock"}, lambda: None)._generate(
             backend, instruction, data, 1, lambda _message: None, scene), text)
-        self.assertEqual(len(backend.calls), 1)
+        self.assertEqual(len(backend.writes), 1)
+        self.assertEqual(backend.calls[-1].diagnostic_stage, "dataset:validation:prompt")
 
     def test_refinement_preserves_punctuation_and_visible_lettering_without_retry(self):
         text = 'Mira (in profile) stands by a sign reading "OPEN (LATE);  A + B".'
