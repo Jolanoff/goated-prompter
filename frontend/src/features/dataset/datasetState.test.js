@@ -54,20 +54,40 @@ test("scene signatures include the selected position even when the scene prose i
   }
 });
 
-test("scene edits and writer setting changes retain the selected position contract", () => {
+test("scene edits clear stale selection metadata while writer settings preserve it", () => {
   const selected = { ...draft, scene_plan: [{ ...draft.scene_plan[0], selected_position: "supported seated pose" }] };
-  for (const updated of [editDatasetPlan(selected, 1, "scene", "A new natural description."),
-    invalidateDatasetPrompts(selected, { target: "Anima" })]) {
-    assert.equal(updated.scene_plan[0].selected_position, "supported seated pose");
-    assert.equal(updated.scene_plan[0].prompt_status, "not_generated");
-  }
+  assert.equal(editDatasetPlan(selected, 1, "scene", "A new natural description.").scene_plan[0].selected_position, undefined);
+  assert.equal(invalidateDatasetPrompts(selected, { target: "Anima" }).scene_plan[0].selected_position, "supported seated pose");
 });
 
-test("selected settings participate in scene signatures and survive scene edits", () => {
+test("selected settings participate in scene signatures but do not override scene edits", () => {
   const row = { ...draft.scene_plan[0], selected_setting: "synthetic room alpha" };
   assert.notEqual(datasetSceneSignature(row), datasetSceneSignature({ ...row, selected_setting: "synthetic room beta" }));
   const edited = editDatasetPlan({ ...draft, scene_plan: [row] }, 1, "scene", "Updated prose.");
-  assert.equal(edited.scene_plan[0].selected_setting, "synthetic room alpha");
+  assert.equal(edited.scene_plan[0].selected_setting, undefined);
+});
+
+test("edits retain SceneSpec for reconciliation but clear old verification", () => {
+  const row = { ...draft.scene_plan[0], scene_spec: { action: "greeting" }, scene_validation: { checked: true } };
+  const edited = editDatasetPlan({ ...draft, scene_plan: [row] }, 1, "scene", "A supported new pose.").scene_plan[0];
+  assert.equal(edited.scene_spec, row.scene_spec);
+  assert.equal(edited.scene_validation, undefined);
+  assert.equal(edited.edited_stage, "scene");
+  assert.notEqual(datasetSceneSignature(row), datasetSceneSignature(edited));
+});
+
+test("a scene edit invalidates batch coverage without discarding a sibling's individual evidence", () => {
+  const current = { ...draft, scene_plan: draft.scene_plan.map((row) => ({ ...row,
+    scene_validation: { text_signature: `checked-${row.index}` },
+    batch_validation: { valid: true, signature: "batch-checked", errors: [] } })) };
+  const before = structuredClone(current);
+  const edited = editDatasetPlan(current, 1, "scene", "New scene");
+  assert.equal(edited.scene_plan[0].scene_validation, undefined);
+  assert.equal(edited.scene_plan[1].scene_validation, current.scene_plan[1].scene_validation);
+  assert.equal(edited.scene_plan[1].scene, current.scene_plan[1].scene);
+  assert.ok(edited.scene_plan.every((row) => row.batch_validation.valid === false));
+  assert.notEqual(datasetSceneSignature(current.scene_plan[1]), datasetSceneSignature(edited.scene_plan[1]));
+  assert.deepEqual(current, before);
 });
 
 test("scene signatures invalidate source, idea, prose, self-check and scene-state changes", () => {

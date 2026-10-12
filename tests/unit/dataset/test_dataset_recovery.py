@@ -20,7 +20,7 @@ class RecoveryTests(unittest.TestCase):
         self.data = valid_draft(amount=2, _confirmed_intent=dataset_understanding_fixture(),
             scene_plan=[saved_scene(1), saved_scene(2)], results=[{"index": 2, "input": "", "prompt": "Saved sibling prompt"}])
         self.data["scene_plan_signature"] = scene_plan_signature(self.data, dataset_assignments(self.data))
-        self.backend = CaptureBackend()
+        self.backend = CaptureBackend(scenes=self.data["scene_plan"])
         self.snapshots = []
 
     def run_service(self, **options):
@@ -31,7 +31,7 @@ class RecoveryTests(unittest.TestCase):
     def test_new_idea_is_one_targeted_call_whose_scene_is_written_directly(self):
         result = self.run_service(scene_action=("regenerate_idea", 1))
         self.assertEqual([call.diagnostic_stage for call in self.backend.calls],
-            ["dataset:ideas:brainstorm", "dataset:ideas", "dataset:1"])
+            ["dataset:ideas", "dataset:validation:scene", "dataset:1", "dataset:validation:prompt"])
         self.assertEqual(result["scene_plan"][0]["scene"], dataset_idea_fixture(1)["scene"])
         self.assertEqual(self.backend.calls[2].user_message, dataset_idea_fixture(1)["scene"])
         self.assertEqual(result["scene_plan"][1], self.data["scene_plan"][1])
@@ -45,7 +45,7 @@ class RecoveryTests(unittest.TestCase):
     def test_repair_verdict_never_triggers_an_automatic_repair(self):
         self.data["scene_plan"][0].update(self_check="REPAIR:\nRequired glove hidden.\nMove the glove outward.", scene_status="repair_required")
         result = self.run_service()
-        self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:2"])
+        self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:2", "dataset:validation:prompt"])
         self.assertEqual([row["index"] for row in result["prompts"]], [2])
 
     def test_prompt_failure_skips_only_its_item_and_can_retry(self):
@@ -64,15 +64,19 @@ class RecoveryTests(unittest.TestCase):
         self.backend.calls.clear()
         self.data.update(scene_plan=result["scene_plan"], results=result["prompts"])
         result = self.run_service(scene_action=("regenerate_prompt", 1))
-        self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:1"])
+        self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:1", "dataset:validation:prompt"])
         self.assertEqual(result["completed"], 2)
 
-    def test_valid_only_writes_an_edited_scene_as_written_without_ideation(self):
-        self.data["scene_plan"][0].update(scene="An edited scene.", self_check="", scene_status="not_generated")
-        result = self.run_service(valid_only=True)
-        self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:1", "dataset:2"])
-        self.assertEqual(self.backend.calls[0].user_message, "An edited scene.")
+    def test_check_edit_retains_prose_and_checks_it_without_ideation_before_writing(self):
+        self.data["scene_plan"][0].update(scene="An edited scene.", self_check="", scene_status="not_generated", edited_stage="scene")
+        result = self.run_service(scene_action=("validate_scene", 1))
+        self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:validation:scene"])
+        self.assertEqual(json.loads(self.backend.calls[0].user_message)[0]["description"], "An edited scene.")
         self.assertEqual(result["scene_plan"][0]["self_check"], "PASS")
+        self.assertEqual(result["scene_plan"][0]["scene"], "An edited scene.")
+        self.data.update(scene_plan=result["scene_plan"])
+        self.backend = CaptureBackend(scenes=self.data["scene_plan"])
+        result = self.run_service(valid_only=True)
         self.assertEqual(result["completed"], 2)
 
     def test_interrupted_writer_leaves_every_idea_and_scene_durable(self):
@@ -99,8 +103,7 @@ class RecoveryTests(unittest.TestCase):
                 context = json.loads(instruction.user_message)
                 indexes = [row["index"] for row in context["assignments"]]
                 if len(indexes) == 3:
-                    self.backend.calls.append(instruction)
-                    rows = [dataset_idea_fixture(index) for index in indexes]
+                    rows = json.loads(original(instruction))
                     if malformed:
                         rows[1]["scene"] = ""
                     else:
@@ -117,9 +120,10 @@ class RecoveryTests(unittest.TestCase):
         result = self.run_service()
         self.assertEqual(result["completed"], 3)
         self.assertEqual([row["index"] for row in result["prompts"]], [1, 2, 3])
-        self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:ideas:brainstorm",
-            "dataset:ideas", "dataset:1", "dataset:3", "dataset:ideas:brainstorm", "dataset:ideas", "dataset:2"])
-        repairs = json.loads(self.backend.calls[5].user_message)
+        self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:ideas:brainstorm", "dataset:planning",
+            "dataset:ideas", "dataset:validation:scene", "dataset:1", "dataset:validation:prompt", "dataset:3", "dataset:validation:prompt",
+            "dataset:ideas", "dataset:validation:scene", "dataset:2", "dataset:validation:prompt"])
+        repairs = json.loads(next(call for call in reversed(self.backend.calls) if call.diagnostic_stage == "dataset:ideas").user_message)
         self.assertEqual(repairs["output_contract"]["indexes"], [2])
         self.assertTrue(any([row["index"] for row in snapshot["prompts"]] == [1, 3] for snapshot in self.snapshots))
         for snapshot in self.snapshots:
@@ -157,8 +161,7 @@ class RecoveryTests(unittest.TestCase):
                 indexes = context["output_contract"]["indexes"]
                 chunks.append(indexes)
                 if len(chunks) <= 4:
-                    self.backend.calls.append(instruction)
-                    rows = [dataset_idea_fixture(index) for index in indexes]
+                    rows = json.loads(original(instruction))
                     for row in rows:
                         if row["index"] in (7, 19):
                             row["idea"] = dataset_idea_fixture(1)["idea"]
@@ -186,4 +189,5 @@ class RecoveryTests(unittest.TestCase):
         result = self.run_service()
         self.assertEqual([row["index"] for row in result["prompts"]], [1, 3])
         self.assertEqual(result["failed"], 1)
-        self.assertIn("Idea repair failed", result["scene_plan"][1]["failure_reason"])
+        self.assertEqual(result["scene_plan"][1]["failure_reason"], "Synthetic connection closed during replacement.")
+        self.assertEqual(result["scene_plan"][1]["failure_stage"], "idea")

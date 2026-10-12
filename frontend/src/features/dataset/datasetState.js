@@ -66,6 +66,19 @@ export function datasetRoutingSections(routing) {
   });
 }
 
+export function datasetVocabularySections(routing) {
+  return (routing || []).filter((route) => route.vocabulary).map((route) => ({
+    label: route.scope === "all_outputs" ? "Every image" : `Guided input ${route.scope?.split(":")[1]}`,
+    items: [
+      `${route.vocabulary.loaded} loaded entries · ${route.vocabulary.eligible} eligible arrangements · ${route.vocabulary.rejected} rejected entries`,
+      ...(route.vocabulary.filtering_rules || []).map((rule) => `Filter: ${rule}`),
+      ...(route.vocabulary.unresolved_constraints || []).map((constraint) => `Unresolved: ${constraint}`),
+      ...(route.vocabulary.diagnostics || []).map((item) =>
+        `${item.record ? `Arrangement ${item.record}` : "Vocabulary file"}${item.line ? ` (line ${item.line})` : ""}: ${item.reason} [${item.rule}]`),
+    ],
+  }));
+}
+
 export function canConfirmDatasetReview(review, busy, additions = "") {
   return review?.status === "ready" && !!review.confirmation_token && !busy &&
     !additions.trim() && !datasetReviewQuestions(review.brief).length;
@@ -173,12 +186,26 @@ const characterOrigin = { named: "existing character", described: "as described"
 
 /** One readable line per approved character, e.g. "Naruto Uzumaki · male human · from Naruto". */
 export function datasetCharacterLines(brief) {
-  return (brief?.characters || []).map((item) => [
+  return (brief?.subjects?.length ? brief.subjects : brief?.characters || []).map((item) => [
+    item.scope && item.scope !== "all_outputs" ? `Guided input ${item.scope.split(":")[1]}` : "",
     `${item.count > 1 ? `${item.count} × ` : ""}${item.name}`,
     `${characterSex[item.sex] || item.sex} ${item.kind}`,
     item.series ? `from ${item.series}` : characterOrigin[item.origin] || item.origin,
     item.traits,
   ].filter(Boolean).join(" · "));
+}
+
+export function datasetPlanningLines(brief) {
+  return (brief?.planning_constraints || []).flatMap((constraint) => {
+    const scope = constraint.scope === "all_outputs" ? "Every image" : constraint.scope;
+    return [
+      ...(constraint.action ? [`${scope}: action — ${constraint.action}`] : []),
+      ...(constraint.setting ? [`${scope}: setting — ${constraint.setting}`] : []),
+      ...constraint.participants.map((participant) => `${scope}: ${participant.id} — ${[participant.role, participant.pose,
+        participant.location, participant.support?.replaceAll("_", " ")].filter(Boolean).join(" · ") || "open mechanics"}`),
+      ...constraint.contacts.map((contact) => `${scope}: ${contact.source} → ${contact.target}`),
+    ];
+  });
 }
 
 export function datasetSceneSignature(row) {
@@ -189,6 +216,7 @@ export function datasetSceneSignature(row) {
     idea: row.idea, scene: (row.scene || "").trim().split(/\s+/).join(" "),
     selected_position: row.selected_position,
     selected_setting: row.selected_setting,
+    scene_spec: row.scene_spec, scene_validation: row.scene_validation, batch_validation: row.batch_validation, edited_stage: row.edited_stage,
     scene_status: row.scene_status || "valid", self_check: row.self_check }));
 }
 
@@ -206,10 +234,13 @@ export function datasetRetryStage(row, eligibility) {
 export function editDatasetPlan(draft, index, stage, text) {
   return { results: draft.results.filter((row) => row.index !== index),
     scene_plan: draft.scene_plan.map((row) => {
-      if (row.index !== index) return row;
-      const { failure_reason, failure_stage, ...scene } = row;
+      if (row.index !== index) return row.batch_validation ? { ...row, batch_validation: {
+        ...row.batch_validation, valid: false, errors: ["Dataset-wide validation is pending after a scene edit."] } } : row;
+      const { failure_reason, failure_stage, selected_position, selected_setting, scene_validation, ...scene } = row;
       // The idea is a label for its scene, so editing either keeps the other.
-      return { ...scene, [stage]: text, self_check: "",
+      return { ...scene, [stage]: text, self_check: "", edited_stage: stage,
+        ...(row.batch_validation ? { batch_validation: { ...row.batch_validation, valid: false,
+          errors: ["Dataset-wide validation is pending after a scene edit."] } } : {}),
         ...(stage === "idea" ? { idea_status: "valid" } : {}),
         scene_status: "not_generated", prompt_status: "not_generated" };
     }) };

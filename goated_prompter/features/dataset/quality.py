@@ -129,15 +129,17 @@ _SEXUAL_ACTION = re.compile(r"\b(?:sex|intercourse|nsfw|porn\w*|erotic\w*|fuck\w
     r"presenting (?:herself|himself|themselves|her ass|his ass)|sexual (?:acts?|scenes?|content|activity))\b")
 
 
-def sexual_request(data):
+def sexual_request(data, *, include_director=True):
     """Authorize act-focused routing from requested activity, not anatomy or model-added facts."""
-    return _asked(_user_text(data), _SEXUAL_ACTION) or _asked(_director_text(data), _SEXUAL_ACTION)
+    patterns = (_SEXUAL_ACTION, _ACT_EVIDENCE["feet"])
+    return (any(_asked(_user_text(data), pattern) for pattern in patterns)
+            or include_director and any(_asked(_director_text(data), pattern) for pattern in patterns))
 
 
-def adult_content_request(data):
+def adult_content_request(data, *, include_director=True):
     """Keep anatomy, nudity and suggestive styling subject to the existing safety checks."""
-    text = _request_text(data)
-    return bool(_SEXUAL.search(text) or _SUGGESTIVE.search(text))
+    text = _request_text(data) if include_director else _user_text(data)
+    return bool(_SEXUAL.search(text) or _SUGGESTIVE.search(text) or _asked(text, _ACT_EVIDENCE["feet"]))
 
 
 def minor_reference(text):
@@ -149,11 +151,11 @@ def minor_reference(text):
 NO_ANIMALS = "Sexual content cannot involve animals. Remove the animal from the cast or the sexual request."
 
 
-def adults_only_error(data):
+def adults_only_error(data, *, include_director=True):
     """For a sexual or suggestive batch, the reason it cannot run: someone under 18, or an animal."""
-    if not adult_content_request(data):
+    if not adult_content_request(data, include_director=include_director):
         return None
-    text = _request_text(data)
+    text = _request_text(data) if include_director else _user_text(data)
     if word := minor_reference(text):
         return f'{ADULTS_ONLY} ("{word}")'
     cast = (data.get("_confirmed_intent") or {}).get("characters") or ()
@@ -257,9 +259,9 @@ def _director_text(data):
                      if not _DIRECTOR_CONDITION.search(sentence))
 
 
-def ownership_request(data):
+def ownership_request(data, *, include_director=True):
     return (_asked(_user_text(data), _OWNERSHIP)
-            or _asked(_director_text(data), _OWNERSHIP, ignore_conditional=True))
+            or include_director and _asked(_director_text(data), _OWNERSHIP, ignore_conditional=True))
 
 
 def kink_request(data):
@@ -312,7 +314,11 @@ def resolved_sex(item, data):
         return "male" if male else "female"
     text = _user_text(data)
     male, female = bool(MALE_PAIR.search(text)), bool(FEMALE_PAIR.search(text))
-    return ("male" if male else "female") if male != female else None
+    if male and not _WOMAN_ROLE.search(text):
+        return "male"
+    if female and not _MAN_ROLE.search(text):
+        return "female"
+    return None
 
 
 def position_categories(data, *, include_director=True):

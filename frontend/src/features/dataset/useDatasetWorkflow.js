@@ -57,7 +57,7 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, d
   }
 
   function sceneAction(index, action) {
-    if (disabled || staleScenePlan || !canWrite || submission.current) return;
+    if (disabled || staleScenePlan || !(action === "validate_scene" ? canPlanScenes : canWrite) || submission.current) return;
     void admitConfirmed({ operation: "dataset/scene", input: draft, options: { index, action } })
       .catch((err) => setError(err.message));
   }

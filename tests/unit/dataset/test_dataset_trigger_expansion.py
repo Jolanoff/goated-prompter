@@ -9,22 +9,22 @@ from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.dataset.service import DatasetService, validate_trigger_contract
 from goated_prompter.features.dataset.triggers import trigger_presence_error, trigger_contract_error, restore_numeric_trigger_spelling
 from goated_prompter.features.dataset.prompting import dataset_instruction
-from tests.support.dataset import valid_draft
+from tests.support.dataset import checked_writer_responses, saved_scene, valid_draft
 
 
 class TriggerExpansionTests(unittest.TestCase):
     def test_number_word_trigger_spelling_keeps_the_scene_and_avoids_a_writer_retry(self):
         data = valid_draft(amount=1, trigger="duck, 2 men", trigger_type="Multiple characters")
         scene = "At a mountain trailhead, one red duck stands between two men, one checking a map."
-        row = {"idea": "Travel together", "scene": scene, "self_check": "PASS"}
+        row = saved_scene(idea="Travel together", scene=scene)
         instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=row)
         session = Mock()
-        session.generate.return_value = scene
+        checked_writer_responses(session, [scene], [row])
         result = DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None, row)
         self.assertEqual(result, scene.replace("two men", "2 men"))
         self.assertEqual(row["scene"], scene)
         self.assertEqual(instruction.user_message, scene)
-        session.generate.assert_called_once()
+        self.assertEqual(session.generate.call_count, 2)
         self.assertIsNone(trigger_presence_error(result, data["trigger"], data["target"]))
 
     def test_numeric_spelling_preserves_qualifiers_counts_and_literal_boundaries(self):
@@ -65,13 +65,13 @@ class TriggerExpansionTests(unittest.TestCase):
     def test_expanded_numeric_trigger_keeps_generated_spelling(self):
         data = valid_draft(amount=1, trigger="duck, 2 men", expand_trigger=True)
         scene = "One red duck and two men travel together."
-        row = {"scene": scene, "self_check": "PASS"}
+        row = saved_scene(scene=scene)
         instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=row)
         session = Mock()
-        session.generate.return_value = scene
+        checked_writer_responses(session, [scene], [row])
         result = DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None, row)
         self.assertEqual(result, scene)
-        session.generate.assert_called_once()
+        self.assertEqual(session.generate.call_count, 2)
 
     def test_numeric_spelling_changes_only_the_ideogram_description_not_text_elements(self):
         caption = {"high_level_description": 'Two men hold a sign reading "two men" beside a red duck.',
@@ -100,13 +100,13 @@ class TriggerExpansionTests(unittest.TestCase):
 
     def test_a_missing_or_different_count_still_requires_writer_correction(self):
         data = valid_draft(amount=1, trigger="duck, 2 men")
-        row = {"scene": "One red duck and two men travel.", "self_check": "PASS"}
+        row = saved_scene(scene="One red duck and two men travel.")
         instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=row)
         session = Mock()
-        session.generate.side_effect = ["One red duck and three men travel.", "One red duck and two men travel."]
+        checked_writer_responses(session, ["One red duck and three men travel.", "One red duck and two men travel."], [row])
         output = DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None, row)
         self.assertEqual(output, "One red duck and 2 men travel.")
-        self.assertEqual(session.generate.call_count, 2)
+        self.assertEqual(session.generate.call_count, 3)
 
     def data(self, **changes):
         return valid_draft(amount=1, trigger="a banana, an apple", trigger_connected=False,
@@ -176,15 +176,15 @@ class TriggerExpansionTests(unittest.TestCase):
 
     def test_writer_retries_only_final_wording_when_expansion_is_disabled(self):
         data = {**self.data(), "expand_trigger": False}
-        row = {"idea": "Banana punches apple", "scene": "A banana punches an apple on a wooden mat.", "self_check": "PASS"}
+        row = saved_scene(idea="Banana punches apple", scene="A banana punches an apple on a wooden mat.")
         original = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=row)
         session = Mock()
-        session.generate.side_effect = ["A muscular banana punches the apple character on a wooden mat.",
-                                       "On a wooden mat, a banana punches an apple."]
+        checked_writer_responses(session, ["A muscular banana punches the apple character on a wooden mat.",
+                                       "On a wooden mat, a banana punches an apple."], [row])
         output = DatasetService({}, lambda: None)._generate(session, original, data, 1, lambda _: None, row)
         self.assertEqual(output, "On a wooden mat, a banana punches an apple.")
-        self.assertEqual(session.generate.call_count, 2)
-        retry = session.generate.call_args.args[0]
+        self.assertEqual(session.generate.call_count, 3)
+        retry = session.generate.call_args_list[1].args[0]
         self.assertTrue(retry.user_message.startswith(original.user_message))
         self.assertEqual(retry.user_message, original.user_message)
         self.assertEqual(retry.hard_max_tokens, original.hard_max_tokens)
@@ -193,7 +193,7 @@ class TriggerExpansionTests(unittest.TestCase):
 
     def test_strict_retries_are_bounded_and_runaway_prefix_is_not_exempt(self):
         data = {**self.data(), "expand_trigger": False}
-        row = {"scene": "A banana punches an apple on a mat.", "self_check": "PASS"}
+        row = saved_scene(scene="A banana punches an apple on a mat.")
         instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=row)
         session = Mock()
         session.generate.return_value = "The banana punches the apple on a mat."
@@ -202,21 +202,21 @@ class TriggerExpansionTests(unittest.TestCase):
         self.assertEqual(session.generate.call_count, 4)
         prefix = "The banana punches the apple on a wooden mat in a dojo. " + "Their clothes ripple with the force of the impact. " * 3
         session = Mock()
-        session.generate.side_effect = [BackendRunawayError("loop", recoverable_text=prefix), "On a mat, a banana punches an apple."]
+        checked_writer_responses(session, [BackendRunawayError("loop", recoverable_text=prefix), "On a mat, a banana punches an apple."], [row])
         output = DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None, row)
         self.assertIn("a banana", output)
-        self.assertEqual(session.generate.call_count, 2)
+        self.assertEqual(session.generate.call_count, 3)
 
     def test_expanded_output_does_not_retry(self):
         data = self.data()
         prompt = "A muscular banana punches the apple character on a wooden dojo mat."
-        row = {"scene": "A banana punches an apple on a mat.", "self_check": "PASS"}
+        row = saved_scene(scene="A banana punches an apple on a mat.")
         instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=row)
         session = Mock()
-        session.generate.return_value = prompt
+        checked_writer_responses(session, [prompt], [row])
         messages = []
         self.assertEqual(DatasetService({}, lambda: None)._generate(session, instruction, data, 1, messages.append, row), prompt)
-        self.assertEqual(session.generate.call_count, 1)
+        self.assertEqual(session.generate.call_count, 2)
         self.assertFalse(any("Trigger warning" in message for message in messages))
         self.assertNotIn("exact uninterrupted text", instruction.system_message)
         self.assertIn("Required subjects/attributes", instruction.system_message)

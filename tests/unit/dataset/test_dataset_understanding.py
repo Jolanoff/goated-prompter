@@ -16,13 +16,13 @@ from goated_prompter.backends.local_llama_cpp import LocalLlamaCppBackend
 from goated_prompter.backends.openai_compatible import OpenAICompatibleBackend
 from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.dataset.assignments import dataset_assignments
-from goated_prompter.features.dataset.ideas import ideas_instruction
 from goated_prompter.features.dataset.intent import DatasetIntentTickets
 from goated_prompter.features.dataset.understanding import (UNDERSTANDING_SYSTEM, DatasetUnderstandingService,
     understanding_instruction, validate_understanding)
 from goated_prompter.features.dataset.prompting import dataset_instruction
 from tests.helpers import dataset_understanding_fixture
-from tests.support.dataset import saved_scene, valid_draft
+from tests.support.dataset import frozen_ideas_instruction as ideas_instruction
+from tests.support.dataset import planned_scene, saved_scene, valid_draft
 
 
 class DatasetUnderstandingTests(unittest.TestCase):
@@ -196,6 +196,32 @@ class DatasetUnderstandingTests(unittest.TestCase):
         with self.assertRaisesRegex(BackendGenerationError, "character count.*No generation started"):
             self.run_response(json.dumps(compact), valid_draft(subject="Two adult men talking.",
                                                                trigger_type="Multiple characters"))
+
+    def test_batch_size_is_separate_from_the_per_image_source_facts(self):
+        data = valid_draft(subject="One adult man in an NSFW dataset.", amount=12)
+        context = json.loads(understanding_instruction(data).user_message)
+        self.assertNotIn("amount", context["source"])
+        self.assertEqual(context["batch"], {"requested_outputs": 12})
+        self.assertEqual(context["source"]["subject"], data["subject"])
+
+    def test_under_counted_model_cast_cannot_silently_become_a_larger_group(self):
+        for declared, listed in ((12, 1), (7, 3), (2, 0)):
+            characters = [{"name": f"adult participant {index}", "count": 1, "sex": "male", "kind": "human",
+                           "origin": "random", "series": "", "traits": ""} for index in range(listed)]
+            compact = self.compact_brief(character_count=declared, characters=characters)
+            with self.subTest(declared=declared, listed=listed), self.assertRaisesRegex(
+                    BackendGenerationError, "per-image character count.*No generation started"):
+                self.run_response(json.dumps(compact), valid_draft(amount=12))
+
+    def test_valid_per_image_cast_is_not_expanded_to_the_batch_size(self):
+        for count in (1, 2, 3):
+            characters = [{"name": f"adult participant {index}", "count": 1, "sex": "male", "kind": "human",
+                           "origin": "random", "series": "", "traits": ""} for index in range(count)]
+            with self.subTest(count=count):
+                brief = self.run_response(json.dumps(self.compact_brief(character_count=count, characters=characters)),
+                                          valid_draft(amount=12))
+                self.assertEqual(brief["character_count"], count)
+                self.assertEqual(brief["characters"], characters)
 
     def test_understanding_requests_minified_generation_without_shortening_facts_or_literals(self):
         trigger = 'Mira: blue hair\nHana: crystal wings'
@@ -444,7 +470,7 @@ class DatasetUnderstandingTests(unittest.TestCase):
         approved = {**data, "_confirmed_intent": tickets.approve(token, data)}
         equivalent = {**data, "_confirmed_intent": expected}
         assignment = dataset_assignments(approved)[0]
-        row = saved_scene(input=assignment["input"])
+        row = planned_scene(approved, input=assignment["input"])
         request = GoatedPrompterRequest(idea=data["subject"])
         self.assertEqual(ideas_instruction(approved, dataset_assignments(approved)),
             ideas_instruction(equivalent, dataset_assignments(equivalent)))
@@ -526,7 +552,7 @@ class DatasetUnderstandingTests(unittest.TestCase):
                 token = tickets.register(data, brief)["confirmation_token"]
                 approved = {**data, "_confirmed_intent": tickets.approve(token, data)}
                 assignment = dataset_assignments(approved)[0]
-                row = saved_scene(input=assignment["input"])
+                row = planned_scene(approved, input=assignment["input"])
                 instruction = ideas_instruction(approved, dataset_assignments(approved))
                 self.assertIn(visibility, json.loads(instruction.user_message)["confirmed_intent"]["hard"])
                 for target in ("Generic", "Anima", "Ideogram4"):
@@ -869,7 +895,7 @@ class DatasetUnderstandingTests(unittest.TestCase):
                 self.assertIsNotNone(schema)
                 self.assertEqual(schema["type"], "object")
                 self.assertIs(schema["additionalProperties"], False)
-                fields = set(self.compact_brief()) | {"characters"}
+                fields = set(self.compact_brief()) | {"characters", "subjects", "planning_constraints"}
                 self.assertEqual(set(schema["required"]), fields)
                 self.assertEqual(set(schema["properties"]), fields)
                 props = schema["properties"]

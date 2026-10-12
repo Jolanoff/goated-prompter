@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from .base import BackendConfigurationError, BackendGenerationError, BackendRunawayError, GoatedPrompterBackend
-from ..diagnostics import debug_prompts_enabled, log_request, log_response, payload_without_binary_images
+from ..diagnostics import debug_prompts_enabled, diagnostic_finish_reason, log_request, log_response, payload_without_binary_images
 from ..output_repetition import repeated_tag
 from .interruptible_http import interruptible_urlopen
 
@@ -186,6 +186,17 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
             raise BackendConfigurationError("OpenAI-compatible temperature, timeout, or max_tokens is invalid.") from exc
 
     def generate(self, instruction):
+        context = getattr(instruction, "diagnostic_context", None)
+        private_content = isinstance(context, dict) and context.get("private_content") is True
+        try:
+            return self._generate(instruction, private_content=private_content)
+        except BackendGenerationError as exc:
+            if private_content:
+                exc.args = ("The prompt engine did not complete the private-content request; raw engine diagnostics were omitted.",)
+                exc.finish_reason = diagnostic_finish_reason(exc.finish_reason, private_content=True)
+            raise
+
+    def _generate(self, instruction, *, private_content=False):
         self.validate_instruction(instruction)
         payload = {
             "model": self.model,
@@ -266,9 +277,10 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
         if streaming:
             payload["stream"] = True
         log_request(self, instruction, payload)
-        _log_multimodal_messages(payload["messages"])
+        if not private_content:
+            _log_multimodal_messages(payload["messages"])
         if streaming:
-            safe = payload_without_binary_images(payload)
+            safe = payload_without_binary_images(payload, private_content=private_content)
             self.emit_activity(
                 "request",
                 stage=getattr(instruction, "diagnostic_stage", "final"),
@@ -276,6 +288,7 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
                 messages=safe.get("messages", []),
                 parameters={key: value for key, value in safe.items() if key not in {"messages", "model"}},
                 timeout_seconds=self.timeout,
+                **({"private_content": True} if private_content else {}),
             )
         headers = {
             "Content-Type": "application/json",

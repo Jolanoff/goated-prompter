@@ -64,6 +64,35 @@ class JobTransitionTests(unittest.TestCase):
         self.assertEqual(job.snapshot()["status"], "running")
         self.assertEqual(job.snapshot()["events"][-1]["type"], "status")
 
+    def test_private_transport_activity_omits_raw_text_but_retains_status_counts_and_parameters(self):
+        job = Job()
+        secret = "SYNTHETIC_PRIVATE_ENTRY"
+        job.record_llm_activity({"type": "request", "private_content": True, "stage": "dataset:ideas", "model": "test",
+            "messages": [{"role": "system", "content": secret}], "parameters": {"temperature": 0.7}})
+        for event_type in ("response_delta", "reasoning_delta"):
+            job.record_llm_activity({"type": event_type, "text": secret[:8]})
+            job.record_llm_activity({"type": event_type, "text": secret[8:]})
+        job.record_llm_activity({"type": "error", "message": secret, "partial_text": secret,
+                                 "completion_state": "interrupted", "finish_reason": secret})
+        snapshot = job.snapshot()
+        self.assertNotIn(secret, json.dumps(snapshot))
+        trace = snapshot["llm_trace"]
+        self.assertTrue(trace["private_content"])
+        self.assertEqual(trace["status"], "error")
+        self.assertEqual(trace["finish_reason"], "other")
+        self.assertEqual(trace["parameters"], {"temperature": 0.7})
+        self.assertEqual(trace["output_chars"], len(secret))
+        self.assertEqual(trace["reasoning_chars"], len(secret))
+        self.assertEqual(trace["output"], "")
+        self.assertEqual(trace["reasoning"], "")
+        self.assertTrue(snapshot["partial_responses"])
+        self.assertTrue(snapshot["partial_responses"][0]["private_content"])
+        job.record_llm_activity({"type": "request", "stage": "final", "model": "test", "messages": [], "parameters": {}})
+        job.record_llm_activity({"type": "response_delta", "text": "Ordinary public response"})
+        job.record_llm_activity({"type": "response_complete", "finish_reason": "stop"})
+        self.assertEqual(job.snapshot()["llm_trace"]["output"], "Ordinary public response")
+        self.assertEqual(job.snapshot()["llm_trace"]["status"], "complete")
+
 
 class JobConstantTests(unittest.TestCase):
     def test_constants_have_one_definition(self):

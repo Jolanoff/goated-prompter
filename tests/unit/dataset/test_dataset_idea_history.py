@@ -10,7 +10,7 @@ from goated_prompter.features.dataset.assignments import dataset_assignments
 from goated_prompter.features.dataset.ideas import MAX_IDEA_CHARACTERS, DatasetIdeasService
 from goated_prompter.features.dataset.plan import ScenePlanner
 from tests.helpers import dataset_idea_fixture, dataset_understanding_fixture
-from tests.support.dataset import CaptureBackend, valid_draft
+from tests.support.dataset import CaptureBackend, frozen_specs, saved_scene, specified_ideas, valid_draft
 
 
 class DatasetIdeaHistoryTests(unittest.TestCase):
@@ -62,7 +62,7 @@ class DatasetIdeaHistoryTests(unittest.TestCase):
             "scene": "The same punch from a new camera angle in a different location."}])
         with self.assertRaisesRegex(BackendGenerationError, "recently generated event") as caught:
             DatasetIdeasService(lambda: None, history).run(session=session, data=data,
-                assignments=dataset_assignments(data), progress=lambda _: None)
+                assignments=dataset_assignments(data), progress=lambda _: None, scene_specs=frozen_specs(data))
         self.assertNotIn(previous["idea"], str(caught.exception))
         session.generate.assert_called_once()
         self.assertEqual(history.recent(data), [previous["idea"]])
@@ -75,10 +75,10 @@ class DatasetIdeaHistoryTests(unittest.TestCase):
         history.remember(data, [previous])
         session.generate.return_value = json.dumps([previous, fresh])
         rows = DatasetIdeasService(lambda: None, history).run(session=session, data=data,
-            assignments=dataset_assignments(data), progress=lambda _: None, allow_partial=True)
+            assignments=dataset_assignments(data), progress=lambda _: None, allow_partial=True, scene_specs=frozen_specs(data))
         self.assertEqual(rows[0]["idea_status"], "failed")
         self.assertEqual(rows[0]["failure_stage"], "idea")
-        self.assertEqual(rows[1], fresh)
+        self.assertEqual(rows[1], specified_ideas([fresh], data)[0])
         self.assertEqual(history.recent(data), [previous["idea"], fresh["idea"]])
         session.generate.assert_called_once()
 
@@ -90,14 +90,14 @@ class DatasetIdeaHistoryTests(unittest.TestCase):
         history.remember(data, [previous])
         session.generate.return_value = json.dumps([previous])
         rows = DatasetIdeasService(lambda: None, history).run(session=session, data=data,
-            assignments=dataset_assignments(data), progress=lambda _: None)
-        self.assertEqual(rows, [previous])
+            assignments=dataset_assignments(data), progress=lambda _: None, scene_specs=frozen_specs(data))
+        self.assertEqual(rows, specified_ideas([previous], data))
         self.assertEqual(history.recent(data), [previous["idea"]])
 
     def test_accepting_scenes_neither_reads_history_nor_calls_the_model(self):
         data = valid_draft(amount=1, _confirmed_intent=dataset_understanding_fixture())
         history = RecentIdeaHistory()
-        idea = dataset_idea_fixture()
+        idea = saved_scene()
         history.remember(data, [idea])
         with patch.object(history, "recent", side_effect=AssertionError("Only Ideas reads recent history")), \
                 patch.object(history, "remember", side_effect=AssertionError("Only Ideas writes recent history")):
@@ -165,8 +165,8 @@ class HistoryRepairTests(unittest.TestCase):
         session.generate.return_value = json.dumps([old])
         service = DatasetIdeasService(lambda: None, history)
         first = service.run(session=session, data=data, assignments=dataset_assignments(data),
-                            progress=lambda _m: None, allow_partial=True)
+                             progress=lambda _m: None, allow_partial=True, scene_specs=frozen_specs(data))
         self.assertEqual(first[0]["failure_reason"], HISTORY_REPEAT)
         repaired = service.run(session=session, data=data, assignments=dataset_assignments(data), indexes=[1],
-                               existing=first, progress=lambda _m: None, allow_partial=True)
+                                existing=first, progress=lambda _m: None, allow_partial=True, scene_specs=frozen_specs(data))
         self.assertNotEqual(repaired[0].get("idea_status"), "failed")

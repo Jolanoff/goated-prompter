@@ -16,14 +16,14 @@ from goated_prompter.prompting.details import DATASET_OUTPUT_TOKEN_LIMITS
 from goated_prompter.prompting.target_models import get_model_adapter, resolve_target_length
 from goated_prompter.presets import get_director_preset
 from tests.helpers import dataset_idea_fixture, dataset_understanding_fixture
-from tests.support.dataset import REPAIR, SCENE, valid_draft
+from tests.support.dataset import REPAIR, SCENE, saved_scene, scene_observation, valid_draft
+from goated_prompter.features.dataset.scene_spec import SceneSpec
 
 
 class DatasetEnhanceTests(unittest.TestCase):
     def setUp(self):
         self.data = valid_draft(amount=1, _confirmed_intent=dataset_understanding_fixture())
-        self.scene = {**dataset_idea_fixture(), "input": "", "scene": SCENE,
-            "self_check": "PASS", "scene_status": "valid"}
+        self.scene = saved_scene(scene=SCENE)
         self.request = GoatedPrompterRequest(idea="Original raw concept must not be the final Builder input.", mode="Custom")
 
     def assemble(self, **changes):
@@ -79,6 +79,7 @@ class DatasetEnhanceTests(unittest.TestCase):
     def test_repaired_scene_is_authoritative_not_old_idea_camera_or_layout(self):
         self.scene.update(camera="OBSOLETE CAMERA FROM IDEA", placement="OBSOLETE LAYOUT FROM IDEA",
             scene="The left leg extends outward clear of the partner while the same body-lock contact and full-body three-quarter camera are preserved.")
+        self.scene.update(saved_scene(scene=self.scene["scene"]))
         instruction = self.assemble()
         self.assertEqual(instruction.user_message, self.scene["scene"])
         self.assertNotIn("OBSOLETE", instruction.user_message + instruction.system_message)
@@ -91,6 +92,7 @@ class DatasetEnhanceTests(unittest.TestCase):
         free = [{"scope": "guided:1", "text": "Background."}]
         self.scene.update(scene="One red ceramic cup rests on a table; a wider crop shows its base in contact with the tabletop.",
             framing="Tight upper-half crop from IDEAS.")
+        self.scene.update(saved_scene(scene=self.scene["scene"]))
         brief = dataset_understanding_fixture(hard=hard, soft=soft, free=free,
             rules=[{"scope": "all_outputs", "text": "Explanatory legacy section must not become another lock."}])
         instruction = self.assemble(source_mode="guided", inputs="First cup\nSecond cup", _confirmed_intent=brief)
@@ -107,7 +109,7 @@ class DatasetEnhanceTests(unittest.TestCase):
             {"scope": "dataset", "text": "Varied compatible lighting"}])
         instruction = self.assemble(source_mode="guided", inputs="First drill\nSecond drill", _confirmed_intent=brief)
         requirements, _ = json.JSONDecoder().raw_decode(instruction.system_message.split("SCOPED APPROVED REQUIREMENTS\n", 1)[1])
-        self.assertEqual(requirements["hard"], [brief["hard"][0], *brief["hard"][2:]])
+        self.assertEqual(requirements["hard"], [brief["hard"][0], brief["hard"][2]])
         self.assertNotIn("Red gloves", instruction.system_message)
 
     def test_approved_and_absent_briefs_preserve_scene_and_rendering_handoff(self):
@@ -126,13 +128,15 @@ class DatasetEnhanceTests(unittest.TestCase):
                 self.assertEqual(requirements["hard"], brief["hard"] if approved else [])
                 self.assertEqual((data, self.scene), before)
 
-    def test_final_generation_keeps_one_enhancement_call_without_old_scene_or_semantic_evaluators(self):
+    def test_final_generation_uses_one_enhancement_and_a_scenespec_check_not_old_evaluators(self):
         session = Mock()
-        session.generate.return_value = "A boxer with ohwx_person extends a glove into the bag in a full-body arena image."
+        prompt = "A boxer with ohwx_person extends a glove into the bag in a full-body arena image."
+        session.generate.side_effect = [prompt, json.dumps([scene_observation(SceneSpec.from_dict(self.scene["scene_spec"]), prompt)])]
         instruction = self.assemble()
         config = {"backend": "mock", "semantic_validation": True, "support_validation": True, "semantic_constraints": True}
         with patch("goated_prompter.planning.semantic_validation.review_candidate", side_effect=AssertionError("Unexpected evaluator")):
             result = DatasetService(config, lambda: None)._generate(session, instruction, self.data, 1,
                 lambda _message: None, self.scene)
         self.assertIn("ohwx_person", result)
-        session.generate.assert_called_once()
+        self.assertEqual(session.generate.call_count, 2)
+        self.assertEqual(session.generate.call_args.args[0].diagnostic_stage, "dataset:validation:prompt")

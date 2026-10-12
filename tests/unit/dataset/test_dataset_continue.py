@@ -21,7 +21,7 @@ class DatasetContinueTests(unittest.TestCase):
                       "prompt": "ohwx_person: my exact edited prompt.\n  Keep spacing."}
         self.data["results"] = [self.saved]
         self.data["scene_plan_signature"] = scene_plan_signature(self.data, dataset_assignments(self.data))
-        self.backend = CaptureBackend()
+        self.backend = CaptureBackend(scenes=self.data["scene_plan"])
         self.snapshots = []
 
     def run_service(self, **options):
@@ -33,7 +33,7 @@ class DatasetContinueTests(unittest.TestCase):
     def test_continue_only_generates_missing_prompt_and_preserves_saved_text(self):
         before = deepcopy(self.data)
         result = self.run_service(valid_only=True, resume=True)
-        self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:2"])
+        self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:2", "dataset:validation:prompt"])
         self.assertEqual(result["prompts"][0], self.saved)
         self.assertEqual(result["completed"], 2)
         self.assertTrue(all(item["prompts"][0] == self.saved for item in self.snapshots))
@@ -45,7 +45,7 @@ class DatasetContinueTests(unittest.TestCase):
                 self.saved[field] = "Stale source text"
                 self.backend.calls.clear()
                 result = self.run_service(valid_only=True, resume=True)
-                self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:1", "dataset:2"])
+                self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:1", "dataset:validation:prompt", "dataset:2", "dataset:validation:prompt"])
                 self.assertNotEqual(result["prompts"][0], self.saved)
                 self.saved[field] = self.data["scene_plan"][0][field]
 
@@ -55,14 +55,14 @@ class DatasetContinueTests(unittest.TestCase):
                 self.data["scene_plan"][0]["prompt_status"] = status
                 self.backend.calls.clear()
                 result = self.run_service(valid_only=True, resume=True)
-                self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:1", "dataset:2"])
+                self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:1", "dataset:validation:prompt", "dataset:2", "dataset:validation:prompt"])
                 self.assertNotEqual(result["prompts"][0], self.saved)
 
     def test_continue_excludes_results_for_scenes_that_need_repair(self):
         self.data["scene_plan"][0].update(self_check="REPAIR:\nRequired glove hidden.\nMove it into view.",
                                          scene_status="repair_required")
         result = self.run_service(valid_only=True, resume=True)
-        self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:2"])
+        self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:2", "dataset:validation:prompt"])
         self.assertEqual([row["index"] for row in result["prompts"]], [2])
 
     def test_continue_completed_batch_has_no_prompt_calls(self):

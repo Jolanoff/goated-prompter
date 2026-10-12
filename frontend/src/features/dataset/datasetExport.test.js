@@ -139,3 +139,36 @@ test("generation log preserves ordinary basic clothing and a literal token trigg
   assert.equal(log.generated_prompts[0].prompt, prompt);
   assert.ok(!log.job.error.includes("abc-secret"));
 });
+
+test("diagnostic export omits private vocabulary sources across nested snapshots", () => {
+  const context = { draft: { scene_plan: [{ index: 1, scene_spec: { private_vocabulary: true,
+    catalog_id: "PRIVATE_ID", action: "Approved action", participants: [] }, selected_position: "PRIVATE_LABEL" }] },
+    review: { routing: [{ vocabulary: { loaded: 2, rejected: 1, diagnostics: [
+      { entry: "PRIVATE_ENTRY", rule: "unresolved_structure", reason: "Requires structured mechanics." }],
+    filtering_rules: ["Approved cast"] } }] },
+    job: { kind: "dataset", error: "Failed PRIVATE_ENTRY at PRIVATE_ID", llm_trace: { output: "PRIVATE_RAW_ENTRY" },
+      result: { vocabulary: { entries: ["PRIVATE_RAW_ENTRY"] } } } };
+  const before = structuredClone(context);
+  const json = datasetGenerationLog(context);
+  assert.ok(!json.includes("PRIVATE_"));
+  const log = JSON.parse(json);
+  assert.equal(log.understanding.routing[0].vocabulary.loaded, 2);
+  assert.equal(log.understanding.routing[0].vocabulary.diagnostics[0].rule, "unresolved_structure");
+  assert.deepEqual(context, before);
+});
+
+test("diagnostic export cannot expose private rule lines from raw transport traces", () => {
+  const context = { draft: { subject: "Approved premise", results: [{ index: 1, prompt: "Approved final prompt" }] },
+    job: { kind: "dataset", llm_trace: { stage: "dataset:ideas", messages: [{ role: "system",
+      content: "Scene instructions\n\nMORE SEXUAL CONTENT RULES\n- SYNTHETIC_PRIVATE_RULE_LINE" }],
+      output: "SYNTHETIC_PRIVATE_RULE_LINE", reasoning: "SYNTHETIC_PRIVATE_RULE_LINE",
+      finish_reason: "SYNTHETIC_PRIVATE_RULE_LINE", parameters: { temperature: 0.7,
+        response_format: { type: "json_schema", json_schema: { schema: { const: "SYNTHETIC_PRIVATE_RULE_LINE" } } } } },
+    partial_responses: [{ stage: "dataset:ideas", partial_text: "SYNTHETIC_PRIVATE_RULE_LINE" }] } };
+  const before = structuredClone(context);
+  const json = datasetGenerationLog(context);
+  assert.ok(!json.includes("SYNTHETIC_PRIVATE_RULE_LINE"));
+  assert.equal(JSON.parse(json).generated_prompts[0].prompt, "Approved final prompt");
+  assert.equal(JSON.parse(json).job.llm_trace.parameters.temperature, 0.7);
+  assert.deepEqual(context, before);
+});

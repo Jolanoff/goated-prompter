@@ -8,6 +8,7 @@ import copy
 import threading
 import time
 import uuid
+from .diagnostics import diagnostic_finish_reason
 
 TERMINAL = {"succeeded", "failed", "cancelled", "interrupted"}
 
@@ -70,7 +71,7 @@ class Job:
             self.revision += 1
 
     def record_llm_activity(self, event):
-        """Capture the exact text exposed by the model transport for the live inspector."""
+        """Record transport status; private-content requests retain metadata, never raw text."""
         if not isinstance(event, dict):
             return
         event_type = event.get("type")
@@ -79,13 +80,16 @@ class Job:
                 return
             now = time.time()
             if event_type == "request":
+                private_content = event.get("private_content") is True
                 self._llm_request_sequence += 1
                 self.llm_trace = {
                     "request_number": self._llm_request_sequence,
                     "status": "waiting_first_token",
                     "model": str(event.get("model") or "unknown"),
                     "stage": event.get("stage"),
-                    "messages": copy.deepcopy(event.get("messages") or []),
+                    "messages": [{key: message[key] for key in ("role", "content_sha256", "content_chars") if key in message}
+                                 for message in (event.get("messages") or []) if isinstance(message, dict)] if private_content
+                                else copy.deepcopy(event.get("messages") or []),
                     "parameters": copy.deepcopy(event.get("parameters") or {}),
                     "timeout_seconds": event.get("timeout_seconds"),
                     "output": "",
@@ -97,6 +101,8 @@ class Job:
                     "finished_at": None,
                     "finish_reason": None,
                 }
+                if private_content:
+                    self.llm_trace.update(private_content=True, output_chars=0, reasoning_chars=0)
                 self._append_event(
                     f"LLM request {self._llm_request_sequence} sent; waiting for the first response text.",
                     "request",
@@ -106,7 +112,10 @@ class Job:
                 text = str(event.get("text") or "")
                 if text:
                     first = self.llm_trace["first_token_at"] is None
-                    self.llm_trace[field] += text
+                    if self.llm_trace.get("private_content"):
+                        self.llm_trace[field + "_chars"] += len(text)
+                    else:
+                        self.llm_trace[field] += text
                     self.llm_trace["status"] = "receiving"
                     self.llm_trace["first_token_at"] = self.llm_trace["first_token_at"] or now
                     self.llm_trace["updated_at"] = now
@@ -116,14 +125,15 @@ class Job:
                             "response",
                         )
             elif self.llm_trace is not None and event_type == "response_complete":
-                self.llm_trace["status"] = "complete" if event.get("finish_reason") == "stop" else "interrupted"
-                self.llm_trace["completion_state"] = "completed" if event.get("finish_reason") == "stop" else "interrupted"
-                self.llm_trace["finish_reason"] = event.get("finish_reason")
+                finish_reason = diagnostic_finish_reason(event.get("finish_reason"), private_content=self.llm_trace.get("private_content"))
+                self.llm_trace["status"] = "complete" if finish_reason == "stop" else "interrupted"
+                self.llm_trace["completion_state"] = "completed" if finish_reason == "stop" else "interrupted"
+                self.llm_trace["finish_reason"] = finish_reason
                 self.llm_trace["updated_at"] = now
                 self.llm_trace["finished_at"] = now
                 self._append_event(
                     f"LLM request {self.llm_trace['request_number']} completed with finish reason "
-                    f"'{self.llm_trace['finish_reason']}'.",
+                    f"'{finish_reason}'.",
                     "response",
                 )
             elif event_type == "planning":
@@ -132,17 +142,22 @@ class Job:
                 self._append_event(self.progress, "planning")
             elif event_type == "error":
                 message = str(event.get("message") or "The model transport failed.")
+                private_content = self.llm_trace is not None and self.llm_trace.get("private_content") is True
+                if private_content:
+                    message = "The private-content request failed; raw engine diagnostics were omitted."
                 if self.llm_trace is not None:
                     self.llm_trace["status"] = "error"
                     self.llm_trace["completion_state"] = event.get("completion_state", "provider_error")
-                    self.llm_trace["partial_text"] = event.get("partial_text", self.llm_trace["output"])
-                    self.llm_trace["finish_reason"] = event.get("finish_reason")
+                    self.llm_trace["partial_text"] = "[PRIVATE CONTENT OMITTED]" if private_content else event.get("partial_text", self.llm_trace["output"])
+                    self.llm_trace["finish_reason"] = diagnostic_finish_reason(event.get("finish_reason"), private_content=private_content)
                     self.llm_trace["issue"] = message
                     self.llm_trace["updated_at"] = now
                     self.llm_trace["finished_at"] = now
                     if self.llm_trace["partial_text"]:
                         diagnostic = {key: self.llm_trace.get(key) for key in
                             ("request_number", "stage", "completion_state", "finish_reason", "partial_text", "issue")}
+                        if private_content:
+                            diagnostic.update(private_content=True, output_chars=self.llm_trace["output_chars"])
                         self.partial_responses = [row for row in self.partial_responses if row["request_number"] != diagnostic["request_number"]]
                         self.partial_responses.append(diagnostic)
                         del self.partial_responses[:-5]

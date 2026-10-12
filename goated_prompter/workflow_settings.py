@@ -9,7 +9,7 @@ from .workspace_store import WorkspaceConflict, locks, text
 from .features.minimax.contract import default_minimax_draft, validate_minimax_draft
 from .features.dataset.service import default_dataset_draft, validate_dataset_draft, saved_dataset_draft
 from .features.dataset.assignments import dataset_assignments
-from .features.dataset.plan import reusable_scene_plan, FAILURE_METADATA
+from .features.dataset.plan import invalidate_scene_edit, reusable_scene_plan
 from .features.dataset.eligibility import scene_eligibility
 from .features.dataset.ideas import MAX_IDEA_CHARACTERS, MAX_SCENE_CHARACTERS
 
@@ -144,13 +144,12 @@ class WorkflowSettingsStore:
                     by_index = {row["index"]: row for row in previous["scene_plan"]}
                     invalidated = set()
                     dependencies = ("input", "idea", "scene")
-                    for row in updated["scene_plan"]:
+                    for slot, row in enumerate(updated["scene_plan"]):
                         old = by_index.get(row["index"])
                         if old and (any(row.get(field) != old.get(field) for field in dependencies)
                                     or row["self_check"] == "PASS" and old["self_check"] != "PASS"):
-                            row.update(self_check="", scene_status="not_generated", prompt_status="not_generated")
-                            for field in FAILURE_METADATA:
-                                row.pop(field, None)
+                            stage = "idea" if row.get("idea") != old.get("idea") else "scene"
+                            updated["scene_plan"][slot] = invalidate_scene_edit(row, stage)
                             invalidated.add(row["index"])
                     updated["results"] = [item for item in updated["results"] if item["index"] not in invalidated]
                 record["draft"] = updated

@@ -12,7 +12,8 @@ from goated_prompter.features.dataset.assignments import dataset_assignments
 from goated_prompter.features.dataset.prompting import dataset_instruction
 from goated_prompter.features.dataset.plan import scene_plan_signature
 from tests.helpers import dataset_idea_fixture, dataset_understanding_fixture
-from tests.support.dataset import CaptureBackend, saved_scene, valid_draft
+from tests.support.dataset import CaptureBackend, saved_scene, scene_observation, valid_draft
+from goated_prompter.features.dataset.scene_spec import SceneSpec
 
 
 class DatasetUnitTests(unittest.TestCase):
@@ -23,7 +24,16 @@ class DatasetUnitTests(unittest.TestCase):
 
     def generate(self, responses):
         session = Mock()
-        session.generate.side_effect = responses
+        outputs = iter(responses)
+        def generate(instruction):
+            if instruction.diagnostic_stage.startswith("dataset:validation:"):
+                context = json.loads(instruction.user_message)
+                return json.dumps([scene_observation(SceneSpec.from_dict(self.row["scene_spec"]), row["description"]) for row in context])
+            response = next(outputs)
+            if isinstance(response, Exception):
+                raise response
+            return response
+        session.generate.side_effect = generate
         result = DatasetService({}, lambda: None)._generate(session, self.instruction, self.data, 1, lambda _: None, self.row)
         return result, session
 
@@ -64,22 +74,23 @@ class DatasetUnitTests(unittest.TestCase):
         self.assertEqual(cleaned["scene_plan"], [])
         self.assertEqual(old, before)
 
-    def test_transport_retry_does_not_add_semantic_review_or_change_scene(self):
+    def test_transport_retry_keeps_scene_and_checks_only_the_completed_prompt(self):
         result, session = self.generate([BackendGenerationError("disconnect"), "ohwx_person punches the training bag."])
         self.assertIn("ohwx_person", result)
-        self.assertEqual(session.generate.call_count, 2)
-        self.assertEqual(session.generate.call_args.args[0].user_message, self.row["scene"])
+        self.assertEqual(session.generate.call_count, 3)
+        self.assertEqual(session.generate.call_args_list[1].args[0].user_message, self.row["scene"])
+        self.assertEqual(session.generate.call_args.args[0].diagnostic_stage, "dataset:validation:prompt")
 
     def test_complete_preloop_output_is_validated_without_retry(self):
         prefix = "ohwx_person punches a training bag. " + "Cloth tension and diffuse lighting clarify the frozen impact. " * 4
         result, session = self.generate([BackendRunawayError("loop", recoverable_text=prefix)])
         self.assertEqual(result, prefix.strip())
-        session.generate.assert_called_once()
+        self.assertEqual(session.generate.call_count, 2)
 
     def test_output_recovery_keeps_scene_and_reduced_budget(self):
         result, session = self.generate([BackendRunawayError("loop"), "missing trigger", "ohwx_person punches a bag."])
         self.assertIn("ohwx_person", result)
-        calls = [call.args[0] for call in session.generate.call_args_list]
+        calls = [call.args[0] for call in session.generate.call_args_list if not call.args[0].diagnostic_stage.startswith("dataset:validation:")]
         self.assertLess(calls[1].hard_max_tokens, calls[0].hard_max_tokens)
         self.assertEqual(calls[2].hard_max_tokens, calls[1].hard_max_tokens)
         self.assertTrue(all(call.user_message == self.row["scene"] for call in calls))
@@ -95,7 +106,8 @@ class DatasetUnitTests(unittest.TestCase):
         snapshots = []
         with patch("goated_prompter.features.dataset.service.create_backend", return_value=backend):
             result = DatasetService({"backend": "mock"}, lambda: None).run(GoatedPrompterRequest(idea=self.data["subject"], prompt_model="Custom"), self.data, lambda _: None, snapshots.append)
-        self.assertEqual([call.diagnostic_stage for call in backend.calls], ["dataset:ideas:brainstorm", "dataset:ideas", "dataset:1"])
+        self.assertEqual([call.diagnostic_stage for call in backend.calls], ["dataset:ideas:brainstorm", "dataset:planning",
+            "dataset:ideas", "dataset:validation:scene", "dataset:1", "dataset:validation:prompt"])
         self.assertEqual(backend.sessions, 1)
         self.assertEqual(result["completed"], 1)
         self.assertNotIn("quality_report", result)

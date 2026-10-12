@@ -28,7 +28,8 @@ async def dataset_endpoint(request):
         raise ValueError("Continue must be a boolean for batch prompt generation.")
     if resume and not valid_only:
         raise ValueError("Continue requires valid-scenes-only generation from the saved plan.")
-    data = validate_dataset_draft(payload.get("input"), generation=True, planning=scenes_only or understanding)
+    data = validate_dataset_draft(payload.get("input"), generation=True,
+        planning=scenes_only or understanding or local_scene and payload.get("action") == "validate_scene")
     if valid_only:
         rows = reusable_scene_plan(data, dataset_assignments(data), require_scenes=False, allow_pending=True)
         if rows is None or not any(scene_is_usable(row, data) for row in rows):
@@ -36,9 +37,9 @@ async def dataset_endpoint(request):
     scene_action = None
     if local_scene:
         action, index = payload.get("action"), payload.get("index")
-        if (not isinstance(action, str) or action not in {"regenerate_idea", "regenerate_prompt"}
+        if (not isinstance(action, str) or action not in {"regenerate_idea", "regenerate_prompt", "validate_scene"}
                 or type(index) is not int or not 1 <= index <= data["amount"]):
-            raise ValueError("Choose a valid scene index and regenerate_idea or regenerate_prompt.")
+            raise ValueError("Choose a valid scene index and regenerate_idea, validate_scene or regenerate_prompt.")
         rows = reusable_scene_plan(data, dataset_assignments(data), require_scenes=False, allow_pending=True)
         if rows is None:
             raise ValueError("Per-scene actions require a current saved idea plan.")

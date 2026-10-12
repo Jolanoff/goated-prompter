@@ -1,20 +1,24 @@
 """Adult Dataset vocabulary, read from a private plain-text file the user keeps in data/.
 
-The file is never shipped or committed: without it, sexual batches still run on the rules
-alone and the model invents its own moods, places and positions. Position entries are selected
-per image and preserved in its scene and final prompt. Every entry passes the same adults-only and anatomy
+The file is never shipped or committed. Position records compile to owned, supported
+arrangements before generation; unreadable files and unresolved prose are reported rather
+than handing arrangement selection to the scene writer. Every entry passes the same adults-only and anatomy
 checks as generated text, plus checks for consent, death, family, animals and breathing, so a
 line added to the file can never bring that content back.
 """
 
 import hashlib
 import json
+from dataclasses import dataclass, replace
 import os
 from pathlib import Path
 import re
 
 from ...config import PROJECT_ROOT
 from .quality import broken_anatomy, minor_reference, ownership_request, sexual_request
+from .routing import assignment_scope, scoped_request
+from .scene_spec import BODY_PARTS, Contact, LOCATIONS, Participant, POSE_SUPPORTS, SceneSpec, PLANNING_CATEGORIES
+from ...strict_json import reject_duplicate_keys
 
 VOCABULARY_FILE_ENV = "GOATED_PROMPTER_VOCABULARY_FILE"
 
@@ -82,6 +86,10 @@ TEMPLATE_HEADER = """# Private adult vocabulary for the Dataset tab. It stays on
 # explicit acts narrow the pool, while general sex uses every cast-compatible category.
 # Entries about minors, non-consent, death, family members, animals,
 # school, breath restriction or injury, or that detach or merge body parts, are skipped.
+# Positions need structured records: one JSON object per line with id, category,
+# participantCount, participants (pose/location/role), contacts (from/to) and
+# physicalConstraints (one explicit support per participant). Ambiguous prose is
+# reported in Dataset understanding, not used as an authoritative arrangement.
 """
 
 
@@ -106,23 +114,131 @@ def blocked_entry(text):
     return match.group() if match else None
 
 
+@dataclass(frozen=True)
+class Arrangement:
+    id: str
+    category: str
+    participants: tuple[Participant, ...]
+    contacts: tuple[Contact, ...]
+    label: str
+    section: str
+
+
+class Vocabulary(dict):
+    """Styling sections plus compiled planning records and load/rejection diagnostics."""
+
+    def __init__(self, sections=(), *, records=(), diagnostics=(), loaded=0):
+        super().__init__(sections)
+        self.records = tuple(records)
+        self.diagnostics = tuple(diagnostics)
+        self.loaded = loaded
+
+
+def compile_arrangement(value, section):
+    fields = {"id", "category", "participantCount", "participants", "contacts", "physicalConstraints"}
+    if not isinstance(value, dict) or not fields <= value.keys() or value.keys() - fields - {"label"}:
+        raise ValueError("Position records need id, category, participantCount, participants, contacts and physicalConstraints.")
+    if blocked_entry(json.dumps(value, ensure_ascii=False)):
+        raise ValueError("Decoded record contains blocked content.")
+    count, participants, supports = value["participantCount"], value["participants"], value["physicalConstraints"]
+    if (type(count) is not int or not 1 <= count <= 100 or not isinstance(participants, dict)
+            or len(participants) != count or not isinstance(supports, dict) or set(supports) != set(participants)):
+        raise ValueError("Participant count, owners and physical supports must agree.")
+    category = value["category"]
+    if not isinstance(category, str) or category not in PLANNING_CATEGORIES - {"general"}:
+        raise ValueError("Unknown position category.")
+    cast = []
+    for owner, item in participants.items():
+        if not isinstance(item, dict) or not {"pose", "location"} <= item.keys() or item.keys() - {"pose", "location", "role", "sex", "traits"}:
+            raise ValueError("Each owner needs pose and location, with optional role, sex and traits.")
+        if not item["pose"] or not item["location"] or not supports[owner]:
+            raise ValueError("Vocabulary geometry requires resolved poses, locations and support.")
+        if (not isinstance(item["pose"], str) or item["pose"] not in POSE_SUPPORTS
+                or not isinstance(item["location"], str) or item["location"] not in LOCATIONS
+                or not isinstance(supports[owner], str) or supports[owner] not in POSE_SUPPORTS[item["pose"]]
+                or not isinstance(item.get("role", "participant"), str)
+                or item.get("role", "participant") not in {"participant", "performer", "receiver"}):
+            raise ValueError("Vocabulary mechanics require normalized owned roles, poses, locations and supports.")
+        cast.append({"id": owner, "name": owner, "role": item.get("role", "participant"),
+                     "pose": item["pose"], "location": item["location"], "support": supports[owner],
+                     "sex": item.get("sex", "unspecified"), "traits": item.get("traits", "")})
+    if not isinstance(value["contacts"], list) or any(not isinstance(item, dict) or set(item) != {"from", "to"}
+                                                   for item in value["contacts"]):
+        raise ValueError("Contacts need from/to owned body-part endpoints.")
+    template = SceneSpec.from_dict({"index": 1, "route": "adult", "action": category,
+        "participants": cast, "contacts": [{"source": item["from"], "target": item["to"]} for item in value["contacts"]],
+        "setting": "", "hard": [], "choices": {}, "catalog_id": value["id"],
+        "locked": ["action", "participants", "contacts", "hard"], "version": 1, "category": category})
+    if any(endpoint.split(".")[1] not in BODY_PARTS for contact in template.contacts
+           for endpoint in (contact.source, contact.target)):
+        raise ValueError("Specialized vocabulary needs normalized body-part endpoints.")
+    act_parts = {"oral": ({"mouth"}, {"penis", "vagina", "genitals", "anus"}),
+                 "anal": ({"penis", "genitals"}, {"anus"}), "vaginal": ({"penis", "genitals"}, {"vagina"}),
+                 "feet": ({"mouth", "feet"}, {"feet", "penis", "genitals"})}
+    if category in act_parts:
+        sources, targets = act_parts[category]
+        if not any(item.source.split(".")[1] in sources and item.target.split(".")[1] in targets
+                   for item in template.contacts):
+            raise ValueError("The category needs explicit owned contact defining its interaction.")
+        defining = next(item for item in template.contacts if item.source.split(".")[1] in sources
+                        and item.target.split(".")[1] in targets)
+        performer, receiver = defining.source.split(".")[0], defining.target.split(".")[0]
+        template = replace(template, participants=tuple(replace(item, role=("performer" if item.id == performer
+            else "receiver" if item.id == receiver else "participant")) if item.role == "participant" else item
+            for item in template.participants))
+    if not isinstance(value["id"], str) or not value["id"] or len(value["id"]) > 240:
+        raise ValueError("Position records need a compact stable id.")
+    label = value.get("label", value["id"])
+    if not isinstance(label, str) or not label.strip() or len(label) > 240:
+        raise ValueError("Position labels must be compact text.")
+    return Arrangement(value["id"], category, template.participants, template.contacts,
+                        label, section)
+
+
 def parse_vocabulary(text):
     """Sections of usable entries; requested entries are (pattern, entry) pairs."""
-    sections, current = {}, None
-    for raw in str(text).splitlines():
+    sections, current, records, diagnostics, loaded = {}, None, [], [], 0
+    def reject(number, entry, rule, reason):
+        diagnostics.append({"line": number, "rule": rule, "reason": reason})
+    for number, raw in enumerate(str(text).splitlines(), 1):
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
         if line.startswith("[") and line.endswith("]"):
             name = " ".join(line[1:-1].casefold().split())
             current = name if name in SECTIONS else None
+            if current is None:
+                reject(number, name, "unknown_section", "Unknown vocabulary section.")
             continue
+        loaded += 1
         if current is None:
+            reject(number, line, "missing_section", "Entry has no recognized section.")
             continue
+        if blocked_entry(line):
+            reject(number, line, "blocked_content", "Entry contains blocked content.")
+            continue
+        position_section = current.endswith("positions") or current in {"toys", "requested"}
+        if position_section and line.startswith("{"):
+            try:
+                if current == "requested":
+                    raise ValueError("Structured records need a category section, not an unrestricted requested pattern.")
+                record = compile_arrangement(json.loads(line, object_pairs_hook=reject_duplicate_keys(
+                    "Vocabulary record contains duplicate fields.")), current)
+                if any(existing.id == record.id for existing in records):
+                    raise ValueError("Position id is already defined.")
+            except (ValueError, TypeError, KeyError) as exc:
+                reject(number, line, "invalid_record", str(exc))
+                continue
+            records.append(record)
+            sections.setdefault(current, []).append(record.label)
+            continue
+        if position_section:
+            reject(number, line, "unresolved_structure", "Plain position prose does not establish participant roles, contacts and support. Add a structured record.")
         if current == "requested":
             pattern, separator, entry = line.partition("=>")
             pattern, entry = pattern.strip(), entry.strip()
             if not separator or not pattern or not entry or blocked_entry(entry):
+                reject(number, line, "invalid_requested", "Requested entries require pattern => entry.")
                 continue
             try:
                 compiled = re.compile(pattern, re.I)
@@ -131,7 +247,8 @@ def parse_vocabulary(text):
             sections.setdefault(current, []).append((compiled, entry))
         elif not blocked_entry(line):
             sections.setdefault(current, []).append(line)
-    return {name: tuple(dict.fromkeys(entries)) for name, entries in sections.items()}
+    return Vocabulary({name: tuple(dict.fromkeys(entries)) for name, entries in sections.items()},
+                      records=records, diagnostics=diagnostics, loaded=loaded)
 
 
 _cache = {}
@@ -143,30 +260,47 @@ def load_vocabulary(path=None):
     try:
         stamp = path.stat().st_mtime_ns
     except OSError:
-        return {}
+        return Vocabulary(diagnostics=({"rule": "unavailable", "reason": "Vocabulary file is missing or inaccessible."},))
     cached = _cache.get(path)
     if cached and cached[0] == stamp:
         return cached[1]
     try:
         sections = parse_vocabulary(path.read_text(encoding="utf-8-sig"))
     except (OSError, UnicodeDecodeError):
-        return {}
+        return Vocabulary(diagnostics=({"rule": "unreadable", "reason": "Vocabulary file could not be read as UTF-8."},))
     _cache[path] = (stamp, sections)
     return sections
 
 
 def vocabulary_signature():
     """Only the digest leaves storage; editing usable vocabulary invalidates old plans."""
+    vocabulary = load_vocabulary()
     sections = {name: [(pattern.pattern, pattern.flags, entry) for pattern, entry in entries]
-                if name == "requested" else entries for name, entries in load_vocabulary().items()}
-    return hashlib.sha256(json.dumps(sections, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+                if name == "requested" else entries for name, entries in vocabulary.items()}
+    records = [{"id": record.id, "category": record.category, "participants": [vars(item) for item in record.participants],
+                "contacts": [vars(item) for item in record.contacts]} for record in vocabulary.records]
+    return hashlib.sha256(json.dumps({"sections": sections, "records": records}, sort_keys=True,
+                                    ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
-def private_rules(data):
-    """The file's extra rule lines for this batch, as a prompt section, or an empty string."""
-    if not sexual_request(data):
+def private_rules(data, *, indexes=None):
+    """Optional rule guidance, explicitly limited to the applicable supplied assignments."""
+    indexes = range(1, data.get("amount", 1) + 1) if indexes is None else indexes
+    applicable = [(index, scoped_request(data, assignment_scope(data, index))) for index in indexes]
+    applicable = [(index, request) for index, request in applicable if sexual_request(request, include_director=False)]
+    if not applicable:
         return ""
     vocabulary = load_vocabulary()
-    lines = list(vocabulary.get("rules", ())) + (list(vocabulary.get("ownership rules", ()))
-                                                  if ownership_request(data) else [])
-    return ("\n\nMORE SEXUAL CONTENT RULES\n" + "\n".join(f"- {line}" for line in lines)) if lines else ""
+    sections = []
+    for name, label, selected in (
+            ("rules", "General", [index for index, _ in applicable]),
+            ("ownership rules", "Ownership", [index for index, request in applicable
+                                               if ownership_request(request, include_director=False)])):
+        lines = vocabulary.get(name, ())
+        if selected and lines:
+            sections.append(f"{label} guidance for assignment indexes: {', '.join(map(str, selected))}.\n"
+                            + "\n".join(f"- {line}" for line in lines))
+    return ("\n\nMORE SEXUAL CONTENT RULES\n"
+             "Optional vocabulary guidance for applicable adult assignments only. Approved hard requirements,\n"
+             "SceneSpec, compatible soft preferences and Director defaults take precedence. Never add an unrequested act.\n"
+            + "\n".join(sections)) if sections else ""

@@ -1,6 +1,7 @@
 """Three-stage Dataset: character definitions, ideas that carry finished scenes, and the cast-aware writer."""
 
 import json
+from dataclasses import replace
 import os
 from pathlib import Path
 import random
@@ -10,7 +11,7 @@ from unittest.mock import Mock, patch
 
 from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.dataset.assignments import dataset_assignments
-from goated_prompter.features.dataset.ideas import creative_directions, ideas_instruction
+from goated_prompter.features.dataset.ideas import creative_directions
 from goated_prompter.features.dataset.plan import ScenePlanner
 from goated_prompter.features.dataset.prompting import anima_count_tags, cast_error, dataset_instruction, geometry_error
 from goated_prompter.features.dataset.understanding import (_expand_understanding, understanding_instruction,
@@ -19,7 +20,10 @@ from goated_prompter.prompt_library import LIBRARY_DIR_ENV, library_path
 from tests.helpers import dataset_idea_fixture, dataset_understanding_fixture
 from goated_prompter.features.dataset.brainstorm import (brainstorm_events, candidate_count, pick_events,
     validate_brainstorm)
-from tests.support.dataset import CaptureBackend, brainstorm_fixture, saved_scene, valid_draft
+from tests.support.dataset import frozen_ideas_instruction as ideas_instruction
+from tests.support.dataset import (CaptureBackend, brainstorm_fixture, checked_writer_responses, frozen_specs,
+    planned_scene, saved_scene, valid_draft, vocabulary_record)
+from tests.support.dataset import vocabulary_text
 
 SCOPES = ("all_outputs", "dataset")
 NARUTO = {"name": "Naruto Uzumaki", "count": 1, "sex": "male", "kind": "human", "origin": "named",
@@ -123,18 +127,18 @@ class IdeaSceneTests(unittest.TestCase):
 
     def test_ideas_prompt_asks_for_finished_scenes_with_the_whole_cast_in_frame(self):
         rules = " ".join(ideas_instruction(self.data, dataset_assignments(self.data)).system_message.split())
-        self.assertIn("idea, the core event in one sentence of at most 30 words, and scene", rules)
-        self.assertIn("Put exactly that cast in every scene", rules)
-        self.assertIn("keeps every character clearly in frame", rules)
+        self.assertIn("idea (nonempty, at most 240 characters) and scene", rules)
+        self.assertIn("Use exactly that cast in every scene", rules)
+        self.assertIn("keeping every character clearly in frame", rules)
 
     def test_the_director_stages_every_scene(self):
         selfie = {**self.data, "director_preset": "Arm's-Length Selfie"}
         rules = ideas_instruction(selfie, dataset_assignments(selfie)).system_message
-        self.assertIn("DIRECTOR (MANDATORY) — Arm's-Length Selfie", rules)
+        self.assertIn("DIRECTOR DEFAULTS — Arm's-Length Selfie", rules)
         self.assertIn("arm's-length front-camera selfie", rules)
-        self.assertIn("It decides framing, camera, light", rules)
+        self.assertIn("Approved hard requirements and SceneSpec take precedence", rules)
         krea_only = {**self.data, "director_preset": "Krea 2 Pose Lock", "target": "Anima"}
-        self.assertNotIn("DIRECTOR —", ideas_instruction(krea_only, dataset_assignments(krea_only)).system_message)
+        self.assertNotIn("DIRECTOR DEFAULTS", ideas_instruction(krea_only, dataset_assignments(krea_only)).system_message)
 
     def test_a_saved_director_is_mandatory_in_ideas_and_final_prompts(self):
         from goated_prompter.features.dataset.prompting import dataset_instruction
@@ -147,22 +151,24 @@ class IdeaSceneTests(unittest.TestCase):
                                                  data, 1, plan_item=saved_scene(1)).system_message.split())
         for message in (ideas, final):
             self.assertIn("velvet, ember and hush", message)
-        self.assertIn("Use any words, vocabulary, tone or style it asks for", ideas)
-        self.assertIn("mandatory here, not optional enrichment", final)
+        self.assertIn("Use its words, tone, style, framing and light only where the specification leaves room", ideas)
+        self.assertIn("SceneSpec and approved requirements take precedence", final)
 
 
 class CastWriterTests(unittest.TestCase):
     def writer(self, characters, **changes):
         data = valid_draft(amount=1, **changes,
                            _confirmed_intent=dataset_understanding_fixture(characters=characters))
-        return dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=saved_scene())
+        return dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=planned_scene(data))
 
     def test_writer_lists_the_approved_cast(self):
         system = self.writer([NARUTO, character(name="guards", count=2, sex="female", kind="robot",
                                                 origin="described", series="", traits="chrome armor")]).system_message
-        self.assertIn("CAST (every image shows exactly these characters", system)
-        self.assertIn("- Naruto Uzumaki: male human, existing character from Naruto", system)
-        self.assertIn("- 2 x guards: female robot, as the user described; traits: chrome armor", system)
+        spec, _ = json.JSONDecoder().raw_decode(system.split("FROZEN SCENE SPEC\n", 1)[1])
+        self.assertEqual([item["name"] for item in spec["participants"]],
+                         ["Naruto Uzumaki", "guards (participant 2)", "guards (participant 3)"])
+        self.assertEqual([item["sex"] for item in spec["participants"]], ["male", "female", "female"])
+        self.assertTrue(all(item["kind"] == "robot" and item["traits"] == "chrome armor" for item in spec["participants"][1:]))
 
     def test_anima_count_tags_follow_the_cast(self):
         self.assertEqual(anima_count_tags([NARUTO, character(sex="female")]), ["1girl", "1boy"])
@@ -192,7 +198,7 @@ class CastWriterTests(unittest.TestCase):
 
     def test_other_targets_and_briefs_without_characters_get_no_tag_section(self):
         self.assertNotIn("ANIMA CAST TAGS", self.writer([NARUTO]).system_message)
-        self.assertNotIn("CAST (", self.writer([]).system_message)
+        self.assertNotIn("Danbooru character tag and series tag", self.writer([]).system_message)
 
 
 class CastCheckTests(unittest.TestCase):
@@ -230,19 +236,19 @@ class ChunkedIdeasTests(unittest.TestCase):
                 assignments=dataset_assignments(data), progress=lambda _message: None, allow_partial=True)
         self.assertEqual([row["index"] for row in rows], list(range(1, 8)))
         self.assertEqual([call.diagnostic_stage for call in backend.calls],
-                         ["dataset:ideas:brainstorm", "dataset:ideas", "dataset:ideas"])
-        first, second = [json.loads(call.user_message) for call in backend.calls[1:]]
+                         ["dataset:ideas:brainstorm", "dataset:planning", "dataset:planning", "dataset:ideas", "dataset:ideas"])
+        first, second = [json.loads(call.user_message) for call in backend.calls if call.diagnostic_stage == "dataset:ideas"]
         self.assertEqual(first["output_contract"]["indexes"], [1, 2, 3, 4, 5])
         self.assertEqual(second["output_contract"]["indexes"], [6, 7])
         self.assertEqual([row["index"] for row in second["existing_ideas"]], [1, 2, 3, 4, 5])
         # One salt for the whole batch keeps the creative directions spread across every chunk.
-        directions = creative_directions(data, list(range(1, 8)), 11)
         sent = [row["creative_direction"] for context in (first, second) for row in context["assignments"]]
-        seeded = {row["index"] for context in (first, second) for row in context["assignments"] if row.get("event_seed")}
-        expected = [{axis: value for axis, value in directions[index].items()
-                     if index not in seeded or axis not in ("moment", "interaction", "setting")} for index in range(1, 8)]
-        self.assertEqual(sent, expected, "A seeded image keeps framing, light and mood; its seed names the event and place.")
-        self.assertTrue(seeded)
+        specs = [row["scene_spec"] for context in (first, second) for row in context["assignments"]]
+        self.assertEqual(sent, [spec["choices"] for spec in specs])
+        self.assertTrue(all(spec["state"] == "frozen" for spec in specs))
+        planning = [json.loads(call.user_message) for call in backend.calls if call.diagnostic_stage == "dataset:planning"]
+        self.assertEqual(sum(len(context["event_suggestions"]) for context in planning), 7)
+        self.assertTrue(all("event_seed" not in row for context in (first, second) for row in context["assignments"]))
 
 
 class BrainstormTests(unittest.TestCase):
@@ -277,10 +283,10 @@ class BrainstormTests(unittest.TestCase):
         backend = CaptureBackend()
         ScenePlanner(lambda: None).plan_ideas(session=backend, data=data, assignments=dataset_assignments(data),
                                               progress=lambda _message: None, allow_partial=True)
-        brainstorm, ideas = backend.calls
+        brainstorm, planning, ideas = backend.calls
         self.assertEqual(json.loads(brainstorm.user_message)["requested_events"], candidate_count(3))
         self.assertGreaterEqual(brainstorm.temperature, 1.0)
-        seeds = [row["event_seed"] for row in json.loads(ideas.user_message)["assignments"]]
+        seeds = list(json.loads(planning.user_message)["event_suggestions"].values())
         self.assertEqual(len(set(seeds)), 3)
         messages = []
         session = Mock()
@@ -295,7 +301,7 @@ class BrainstormTests(unittest.TestCase):
             backend = CaptureBackend()
             ScenePlanner(lambda: None).plan_ideas(session=backend, data=data, assignments=dataset_assignments(data),
                                                   progress=lambda _message: None, allow_partial=True)
-            self.assertEqual([call.diagnostic_stage for call in backend.calls], ["dataset:ideas"])
+            self.assertEqual([call.diagnostic_stage for call in backend.calls], ["dataset:planning", "dataset:ideas"])
 
     def test_recent_ideas_and_current_siblings_are_avoided(self):
         from goated_prompter.features.dataset.idea_history import RecentIdeaHistory
@@ -352,7 +358,7 @@ class GeometryTests(unittest.TestCase):
         data = valid_draft(amount=1, _confirmed_intent=dataset_understanding_fixture())
         ideas = " ".join(ideas_instruction(data, dataset_assignments(data)).system_message.split())
         self.assertIn("exactly one camera angle and one shot size", ideas)
-        self.assertIn("one simple, readable pose, described once from head to feet", ideas)
+        self.assertIn("readable, species-appropriate pose when specified", ideas)
         writer = " ".join(dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1,
                                               plan_item=saved_scene()).system_message.split())
         self.assertIn("never add a second angle, viewpoint or lens perspective", writer)
@@ -365,13 +371,10 @@ class PlausibilityTests(unittest.TestCase):
         from goated_prompter.features.dataset.brainstorm import BRAINSTORM_SYSTEM
         data = valid_draft(amount=1, _confirmed_intent=dataset_understanding_fixture())
         ideas = " ".join(ideas_instruction(data, dataset_assignments(data)).system_message.split())
-        for rules in (" ".join(BRAINSTORM_SYSTEM.split()), ideas):
-            self.assertIn("physically possible for real bodies", rules)
-            self.assertIn("No one is airborne, mid-fall, mid-trip or mid-jump", rules)
-            self.assertIn("never a tangle of limbs or limbs at odd angles", rules)
-            self.assertIn("show the moment just before or just after it", rules)
-            self.assertIn("No weight on hands or fingertips, no flips, cartwheels", rules)
-            self.assertIn("not from twisted anatomy", rules)
+        self.assertIn("physically possible for real bodies", " ".join(BRAINSTORM_SYSTEM.split()))
+        self.assertIn("describe the specified pose, frame location and support", ideas)
+        self.assertIn("Show the selected action, not merely a before/after moment", ideas)
+        self.assertIn("species-appropriate pose", ideas)
 
     def test_random_people_with_an_open_sex_get_one_drawn_and_are_never_named_by_their_label(self):
         pair = [{**COMPANION, "name": "friend 1"}, {**COMPANION, "name": "friend 2"}]
@@ -391,7 +394,8 @@ class PlausibilityTests(unittest.TestCase):
         self.assertFalse(any(look.split(", ")[0] in ("woman", "man")
                              for item in looks.values() for look in item["random_character_looks"].values()))
         ideas = " ".join(ideas_instruction(data, dataset_assignments(data)).system_message.split())
-        self.assertIn("A random character's name is only a role label (friend 1, the woman): never write it", ideas)
+        self.assertIn("Every principal subject needs a readable description faithful to its supplied attributes", ideas)
+        self.assertTrue(all("friend 1" not in item.name for spec in frozen_specs(data).values() for item in spec.participants))
         from goated_prompter.features.dataset.prompting import cast_section
         self.assertIn("friend 1: sex open human, invented for this image; the name is only a label, so never write it",
                       cast_section(pair))
@@ -420,11 +424,11 @@ class RepeatedInventoryTests(unittest.TestCase):
         from goated_prompter.features.dataset.service import DatasetService
         data = valid_draft(amount=1, target="Anima", trigger="naruto", trigger_type="Character", expand_trigger=True,
                            _confirmed_intent=dataset_understanding_fixture(characters=[NARUTO]))
-        row = saved_scene()
+        row = planned_scene(data)
         instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=row)
         tags = "1boy, uzumaki naruto, naruto (series), snow, courtyard, evening"
         session = Mock()
-        session.generate.return_value = f"{tags}, {tags}\n\nUzumaki Naruto packs snow onto a snowman in a quiet courtyard."
+        checked_writer_responses(session, [f"{tags}, {tags}\n\nUzumaki Naruto packs snow onto a snowman in a quiet courtyard."], [row])
         result = DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None, row)
         self.assertEqual(result.split("\n\n")[0], tags)
 
@@ -435,11 +439,11 @@ class RepeatedInventoryTests(unittest.TestCase):
                 character(name="little robot", sex="none", kind="robot", origin="random", series="")]
         data = valid_draft(amount=1, target="Anima", trigger="knight girl, robot", trigger_type="Multiple characters",
                            expand_trigger=True, _confirmed_intent=dataset_understanding_fixture(characters=cast))
-        row = saved_scene()
+        row = planned_scene(data)
         instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=row)
         session = Mock()
-        session.generate.return_value = ("1girl, 1other, solo, knight, robot, campfire\n\n"
-                                         "A knight girl warms her hands while a little robot sits by the fire.")
+        checked_writer_responses(session, ["1girl, 1other, solo, knight, robot, campfire\n\n"
+                                          "A knight girl warms her hands while a little robot sits by the fire."], [row])
         result = DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None, row)
         self.assertEqual(result.split("\n\n")[0], "1girl, 1other, knight, robot, campfire")
 
@@ -517,14 +521,14 @@ class LabelAndTriggerTidyTests(unittest.TestCase):
         from goated_prompter.features.dataset.service import DatasetService
         data = valid_draft(amount=1, target="Krea 2", trigger="two friends", trigger_type="Multiple characters",
                            expand_trigger=True, _confirmed_intent=dataset_understanding_fixture(characters=self.PAIR))
-        row = saved_scene()
+        row = planned_scene(data)
         instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=row)
         session = Mock()
-        session.generate.return_value = "Two friends at a festival: Friend 1 dances while Friend 2 claps under string lights."
+        checked_writer_responses(session, ["Two friends at a festival: Friend 1 dances while Friend 2 claps under string lights."], [row])
         result = DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None, row)
         self.assertEqual(result, "Two friends at a festival: the first friend dances while the second friend claps "
                                  "under string lights.")
-        session.generate.assert_called_once()
+        self.assertEqual(session.generate.call_count, 2)
 
     def test_an_expanded_trigger_is_never_quoted_or_left_alone_at_the_end(self):
         from goated_prompter.features.dataset.triggers import tidy_expanded_trigger
@@ -572,7 +576,7 @@ class IdeaQualityTests(unittest.TestCase):
         from goated_prompter.features.dataset.brainstorm import BRAINSTORM_SYSTEM
         data = valid_draft(amount=1, _confirmed_intent=dataset_understanding_fixture())
         ideas = " ".join(ideas_instruction(data, dataset_assignments(data)).system_message.split())
-        self.assertIn("Each idea is a moment where something is happening", ideas)
+        self.assertIn("Show the selected action", ideas)
         self.assertIn("Never fall back on sightseeing or stock poses", ideas)
         self.assertIn("At most one event may be people simply watching, admiring or walking past something",
                       " ".join(BRAINSTORM_SYSTEM.split()))
@@ -638,7 +642,7 @@ class BatchVarietyTests(unittest.TestCase):
         session.generate.return_value = json.dumps([{"index": index, "idea": idea, "scene": f"Scene {index}: {idea}"}
                                                     for index, idea in enumerate(ideas, 1)])
         rows = DatasetIdeasService(lambda: None).run(session=session, data=data, assignments=dataset_assignments(data),
-                                                     progress=lambda _message: None, allow_partial=True)
+                                                      progress=lambda _message: None, allow_partial=True, scene_specs=frozen_specs(data))
         reasons = {row["index"]: row.get("failure_reason") for row in rows}
         self.assertEqual(reasons[2], PASSIVE_REPEAT)
         self.assertEqual([index for index, reason in reasons.items() if reason], [2])
@@ -779,13 +783,12 @@ class SexualContentTests(unittest.TestCase):
         from goated_prompter.features.dataset.ideas import DatasetIdeasService
         data = self.draft("a couple having sex", amount=2)
         session = Mock()
-        directions = creative_directions(data, [1, 2], 1)
         session.generate.return_value = json.dumps([
             {"index": 1, "idea": "A schoolgirl and a man in a classroom.", "scene": "Scene 1."},
             {"index": 2, "idea": "A woman in her thirties pulls the man onto the bed.",
-             "scene": "Scene 2: " + directions[2]["position"]}])
+              "scene": "Scene 2: The adults sit together on the bed."}])
         rows = DatasetIdeasService(lambda: None).run(session=session, data=data, assignments=dataset_assignments(data),
-                                                     progress=lambda _message: None, allow_partial=True, direction_salt=1)
+                                                      progress=lambda _message: None, allow_partial=True, direction_salt=1, scene_specs=frozen_specs(data))
         self.assertIn("only show adults", rows[0]["failure_reason"])
         self.assertNotEqual(rows[1].get("idea_status"), "failed")
 
@@ -813,8 +816,8 @@ class FixedShotDirectorTests(unittest.TestCase):
     def test_a_shot_fixing_director_reaches_the_brainstorm(self):
         from goated_prompter.features.dataset.brainstorm import brainstorm_instruction
         system = brainstorm_instruction(self.selfie, 9).system_message
-        self.assertIn("DIRECTOR (MANDATORY) — Mirror Selfie", system)
-        self.assertIn("every image is that shot", " ".join(system.split()))
+        self.assertIn("DIRECTOR DEFAULTS — Mirror Selfie", system)
+        self.assertIn("unless a higher-priority requirement conflicts", " ".join(system.split()))
 
     def test_the_directors_shot_replaces_framing_and_lifts_the_mirror_and_posing_bans(self):
         from goated_prompter.features.dataset.director import director_fixes_shot
@@ -825,8 +828,8 @@ class FixedShotDirectorTests(unittest.TestCase):
         self.assertTrue(all("framing" not in row["creative_direction"] for row in json.loads(selfie.user_message)["assignments"]))
         self.assertTrue(all("framing" in row["creative_direction"] for row in json.loads(general.user_message)["assignments"]))
         rules = " ".join(selfie.system_message.split())
-        self.assertIn("no mirrors unless the Director's shot uses one", rules)
-        self.assertIn("unless the user or the Director asked for that", rules)
+        self.assertIn("Mirrors, phones, posing and looking at the camera are permitted", rules)
+        self.assertIn("Approved hard requirements and SceneSpec take precedence", rules)
 
     def test_posed_shots_are_not_limited_as_watching(self):
         from goated_prompter.features.dataset.quality import passive_request
@@ -859,10 +862,10 @@ class SexualAnatomyTests(unittest.TestCase):
         rows = [{"index": 1, "idea": "The two men press their cocks together on the couch.", "scene": "Scene 1."},
                 {"index": 2, "idea": "The taller man pulls the other onto the bed.", "scene": "Scene 2."}]
         session = Mock()
-        rows[1]["scene"] += " " + creative_directions(self.data, [2], 1)[2]["position"]
         session.generate.return_value = json.dumps(rows)
         result = DatasetIdeasService(lambda: None).run(session=session, data=self.data,
-            assignments=dataset_assignments(self.data), progress=lambda _message: None, allow_partial=True, direction_salt=1)
+            assignments=dataset_assignments(self.data), progress=lambda _message: None, allow_partial=True, direction_salt=1,
+            scene_specs=frozen_specs(self.data))
         self.assertIn("stay attached to its owner", result[0]["failure_reason"])
         self.assertNotEqual(result[1].get("idea_status"), "failed")
 
@@ -871,7 +874,7 @@ class SexualAnatomyTests(unittest.TestCase):
         ideas = " ".join(ideas_instruction(self.data, dataset_assignments(self.data)).system_message.split())
         final = " ".join(dataset_instruction(GoatedPrompterRequest(idea=self.data["subject"], prompt_model="Custom"),
                                              self.data, 1, plan_item=saved_scene(1)).system_message.split())
-        self.assertIn("stays attached to that person's body", ideas)
+        self.assertIn("Each selected contact names both owners", ideas)
         self.assertIn("keep two men's genitals apart", final)
 
 
@@ -904,22 +907,19 @@ class SeedVarietyTests(unittest.TestCase):
 
 
 class SexualVarietyTests(SeedVarietyTests):
-    def test_sexual_brainstorms_get_a_random_handful_of_positions_as_inspiration(self):
-        from goated_prompter.features.dataset.brainstorm import POSITION_IDEAS, brainstorm_events, sexual_positions
-        def ideas(seed):
-            session = Mock()
-            session.generate.return_value = "not json"
-            brainstorm_events(session, self.data, 10, random.Random(seed), progress=lambda _m: None, checkpoint=lambda: None)
-            return json.loads(session.generate.call_args.args[0].user_message)["position_ideas"]
-        first, second = ideas(1), ideas(2)
-        self.assertEqual(len(first), POSITION_IDEAS)
-        self.assertTrue(set(first) <= set(sexual_positions(self.data)))
-        self.assertNotEqual(first, second)
-        rows = creative_directions(self.data, range(1, 11), 3).values()
-        positions = [row["position"] for row in rows]
-        self.assertEqual(len(set(positions)), 10, "The app assigns distinct positions before repeating.")
-        system = " ".join(ideas_instruction(self.data, dataset_assignments(self.data)).system_message.split())
-        self.assertIn("creative_direction.position is the position selected by the app", system)
+    def test_sexual_brainstorms_receive_provisional_specs_instead_of_a_free_position_pool(self):
+        from goated_prompter.features.dataset.brainstorm import brainstorm_events
+        specs = {index: replace(spec, state="provisional") for index, spec in frozen_specs(self.data).items()}
+        before = {index: spec.to_dict() for index, spec in specs.items()}
+        session = Mock()
+        session.generate.return_value = "not json"
+        self.assertEqual(brainstorm_events(session, self.data, 10, random.Random(1), progress=lambda _: None,
+            checkpoint=lambda: None, scene_specs=specs), {})
+        sent = json.loads(session.generate.call_args.args[0].user_message)
+        self.assertNotIn("position_ideas", sent)
+        self.assertEqual(sent["planning_state"], "provisional")
+        self.assertEqual(sent["scene_specs"], list(before.values()))
+        self.assertEqual({index: spec.to_dict() for index, spec in specs.items()}, before)
 
     def test_short_hair_is_never_braided(self):
         for salt in range(20):
@@ -949,9 +949,9 @@ class SexualVarietyTests(SeedVarietyTests):
         ideas = " ".join(ideas_instruction(self.data, dataset_assignments(self.data)).system_message.split())
         final = " ".join(dataset_instruction(GoatedPrompterRequest(idea=self.data["subject"], prompt_model="Custom"),
                                              self.data, 1, plan_item=saved_scene(1)).system_message.split())
-        self.assertIn("show the ownership visually", ideas)
-        self.assertIn("each idea describes the act in its own words", ideas)
-        self.assertIn("keep every act between them", ideas)
+        self.assertIn("Keep approved hard requirements and the selected action visible", ideas)
+        self.assertIn("Each selected contact names both owners", ideas)
+        self.assertIn("Styling does not authorize a new act", ideas)
         self.assertNotIn("mouth on cock", ideas)
         self.assertIn("name the anatomy that is part of the act or exposed", final)
 
@@ -966,7 +966,6 @@ class VanillaDefaultTests(SeedVarietyTests):
     def test_general_sex_uses_all_positions_but_kink_styling_only_when_asked(self):
         from goated_prompter.features.dataset.private_vocabulary import load_vocabulary
         private = load_vocabulary()
-        ORAL_POSITIONS = private["oral positions"]
         kink_values = {*private["kink mood"], *private["kink interaction"], *private["props"],
                        *private["kink clothing"]}
         for salt in range(10):
@@ -977,23 +976,57 @@ class VanillaDefaultTests(SeedVarietyTests):
         self.assertTrue(any({value for value in row.values() if isinstance(value, str)} & kink_values for row in kinky))
         from goated_prompter.features.dataset.brainstorm import sexual_positions
         oral = {**self.data, "subject": "a woman giving a man a blowjob"}
-        self.assertTrue(set(ORAL_POSITIONS) <= set(sexual_positions(oral)))
+        from goated_prompter.features.dataset.private_vocabulary import parse_vocabulary
+        catalog = parse_vocabulary(vocabulary_text(("oral positions", vocabulary_record("oral template", "oral")),
+            ("anal positions", vocabulary_record("anal template", "anal"))))
+        with patch("goated_prompter.features.dataset.brainstorm.load_vocabulary", return_value=catalog):
+            self.assertEqual(sexual_positions(oral), ("oral template",))
 
     def test_a_supported_lift_is_allowed_in_sexual_images(self):
+        self.data["_confirmed_intent"]["planning_constraints"] = [{"scope": "all_outputs", "action": None, "setting": None,
+            "participants": [{"id": "P1", "role": None, "pose": "standing", "location": "left", "support": "feet_on_floor"},
+                             {"id": "P2", "role": None, "pose": "supported_lift", "location": "right", "support": "supported_at_hips_by_P1"}],
+            "contacts": []}]
         rules = " ".join(ideas_instruction(self.data, dataset_assignments(self.data)).system_message.split())
-        self.assertIn("A partner may lift and hold another during sex when the hold is clearly supported", rules)
+        self.assertIn("describe the specified pose, frame location and support", rules)
+        spec = frozen_specs(self.data)[1]
+        self.assertEqual(spec.participants[1].pose, "supported_lift")
+        self.assertEqual(spec.participants[1].support, "supported_at_hips_by_P1")
 
     def test_seeded_sexual_images_keep_a_place_and_looks_keep_build_and_skin_apart(self):
         seeds = {index: f"Event {index} somewhere." for index in range(1, 11)}
         context = json.loads(ideas_instruction(self.data, dataset_assignments(self.data), event_seeds=seeds).user_message)
-        self.assertTrue(all("setting" in row["creative_direction"] for row in context["assignments"]))
-        look = context["assignments"][0]["creative_direction"]["random_character_looks"]["woman"]
+        self.assertTrue(all("setting" not in row["creative_direction"] for row in context["assignments"]))
+        self.assertTrue(all("setting" in row["scene_spec"] for row in context["assignments"]))
+        look = creative_directions(self.data, [1])[1]["random_character_looks"]["woman"]
         self.assertRegex(look, r" build, [a-z -]+ skin$")
         rules = " ".join(ideas_instruction(self.data, dataset_assignments(self.data)).system_message.split())
-        self.assertIn("A general sex request may draw from any cast-compatible category", rules)
+        self.assertIn("do not choose an alternative arrangement", rules)
 
 
 class CastPositionTests(SeedVarietyTests):
+    def setUp(self):
+        super().setUp()
+        from goated_prompter.features.dataset.private_vocabulary import VOCABULARY_FILE_ENV
+        path = Path(tempfile.mkdtemp()) / "vocabulary.txt"
+        entries = [
+            ("solo positions", vocabulary_record("solo template", "solo", sexes=("unspecified",))),
+            ("two men positions", vocabulary_record("men template", "anal", sexes=("male", "male"))),
+            ("two women positions", vocabulary_record("women template", "paired_pose", sexes=("female", "female"))),
+            ("man and woman positions", vocabulary_record("mixed template", "vaginal", sexes=("male", "female"))),
+            ("three positions", vocabulary_record("trio template", "group_pose", sexes=("unspecified",) * 3)),
+            ("group positions", vocabulary_record("group template", "group_pose", sexes=("unspecified",) * 4)),
+            *((section, vocabulary_record(label, category)) for section, label, category in (
+                ("oral positions", "oral template", "oral"), ("anal positions", "anal template", "anal"),
+                ("feet positions", "feet template", "feet"), ("kink positions", "kink template", "kink"),
+                ("finish positions", "finish template", "finish"), ("aftercare positions", "aftercare template", "aftercare"))),
+            ("toys", vocabulary_record("toy template", "toys", sexes=("unspecified",))),
+            ("solo kink positions", vocabulary_record("solo kink template", "kink", sexes=("unspecified",)))]
+        path.write_text(vocabulary_text(*entries) + "[requested]\nblindfold => fixture blindfold position\n", encoding="utf-8")
+        patcher = patch.dict(os.environ, {VOCABULARY_FILE_ENV: str(path)})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def cast(self, *sexes, subject="having sex", **changes):
         people = [{**COMPANION, "name": f"person {index}", "sex": sex} for index, sex in enumerate(sexes, 1)]
         return {**self.data, "subject": subject, "trigger": "",
@@ -1003,23 +1036,23 @@ class CastPositionTests(SeedVarietyTests):
         from goated_prompter.features.dataset.brainstorm import sexual_positions
         from goated_prompter.features.dataset.private_vocabulary import load_vocabulary
         pools = {name.removesuffix(" positions"): set(entries) for name, entries in load_vocabulary().items()}
-        every = pools["toys"] | pools["finish"] | pools["feet"] | pools["aftercare"]
-        pair = every | pools["oral"] | pools["anal"] | pools["kink"] | pools["pet"] | pools["furniture"]
+        pair = pools["finish"] | pools["feet"] | pools["aftercare"] | pools["oral"] | pools["anal"] | pools["kink"]
         solo = set(sexual_positions(self.cast("female", subject="a woman masturbating")))
-        self.assertEqual(solo, pools["solo"] | every | pools["oral"] | pools["anal"] | pools["solo kink"])
-        self.assertFalse(solo & pools["couple"])
+        self.assertEqual(solo, pools["solo"])
+        self.assertFalse(solo & pools["oral"])
+        self.assertFalse(solo & pools["two men"])
         men = set(sexual_positions(self.cast("male", "male", subject="two men having sex")))
-        self.assertEqual(men, pools["two men"] | pools["couple"] | pair)
+        self.assertEqual(men, pools["two men"] | pair)
         women = set(sexual_positions(self.cast("female", "female", subject="two women having sex")))
-        self.assertEqual(women, pools["two women"] | pools["couple"] | pair)
+        self.assertEqual(women, pools["two women"] | pair)
         mixed = set(sexual_positions(self.cast("female", "male", subject="a couple having sex")))
-        self.assertEqual(mixed, pools["man and woman"] | pools["couple"] | pair)
+        self.assertEqual(mixed, pools["man and woman"] | pair)
         self.assertFalse(women & pools["man and woman"])
-        three = set(sexual_positions(self.cast("female", "male", "male", subject="a threesome")))
-        self.assertTrue(pools["three"] | pools["man and woman"] | pair <= three)
+        three = set(sexual_positions(self.cast("female", "male", "male", subject="three adults having sex")))
+        self.assertEqual(three, pools["three"])
         self.assertFalse(three & (pools["group"] | pools["two men"]))
         group = set(sexual_positions(self.cast("female", "male", "male", "male", subject="a group having sex")))
-        self.assertTrue(pools["group"] | pair <= group)
+        self.assertEqual(group, pools["group"])
 
     def test_general_sex_uses_all_categories_and_named_extras_only_when_asked(self):
         from goated_prompter.features.dataset.brainstorm import sexual_positions
@@ -1031,11 +1064,11 @@ class CastPositionTests(SeedVarietyTests):
         self.assertNotIn("fixture blindfold position", plain)
         asked = set(sexual_positions(self.cast("male", "male",
             subject="two men, a footjob in bondage while one is blindfolded")))
-        self.assertTrue(pools["two men"] | pools["kink"] | pools["feet"] <= asked)
+        self.assertEqual(asked, pools["feet"])
         self.assertFalse(asked & (pools["oral"] | pools["anal"]))
-        self.assertIn("fixture blindfold position", asked)
+        self.assertNotIn("fixture blindfold position", asked, "An unstructured requested extra cannot define mechanics.")
         solo = set(sexual_positions(self.cast("female", subject="a woman masturbating in bondage, showing her feet")))
-        self.assertTrue(pools["solo"] | pools["solo kink"] | pools["feet"] <= solo)
+        self.assertEqual(solo, set(), "There is no one-subject foot arrangement; planning remains LLM-assisted.")
         self.assertFalse(solo & (pools["kink"] | pools["oral"] | pools["anal"]))
 
     def test_private_entries_that_break_anatomy_or_safety_are_never_used(self):
@@ -1066,13 +1099,13 @@ class FinalTestFixesTests(unittest.TestCase):
         self.assertIn("repeated itself", messages[-1])
         session.generate.reset_mock()
         rows = DatasetIdeasService(lambda: None).run(session=session, data=data, assignments=dataset_assignments(data),
-                                                     progress=lambda _message: None, allow_partial=True)
+                                                      progress=lambda _message: None, allow_partial=True, scene_specs=frozen_specs(data))
         self.assertEqual(session.generate.call_count, 2, "One varied retry before the slots fail on their own.")
         self.assertEqual([row["index"] for row in rows], [1, 2])
         self.assertTrue(all("repeated itself" in row["failure_reason"] for row in rows))
         with self.assertRaises(BackendRunawayError):
             DatasetIdeasService(lambda: None).run(session=session, data=data, assignments=dataset_assignments(data),
-                                                  progress=lambda _message: None)
+                                                   progress=lambda _message: None, scene_specs=frozen_specs(data))
 
     def test_near_repeat_events_still_fill_every_slot_with_the_least_obvious_leftovers(self):
         data = valid_draft(amount=3, _confirmed_intent=dataset_understanding_fixture())
@@ -1134,8 +1167,8 @@ class PrivateVocabularyTests(unittest.TestCase):
             self.assertIn(row["clothing"], private["kink clothing"])
             self.assertIn(row["prop"], private["props"])
         positions = set(sexual_positions(owned))
-        self.assertTrue(set(private["kink positions"]) <= positions)
-        self.assertTrue(set(private["man and woman positions"]) <= positions, "Ownership adds to the cast's positions.")
+        self.assertEqual(positions, set(), "Legacy prose-only fixtures must not become frozen geometry.")
+        self.assertTrue(any(item["rule"] == "unresolved_structure" for item in private.diagnostics))
         self.assertFalse(positions & set(private["oral positions"]))
         kinky = {**self.data, "subject": "a couple having sex in bondage"}
         moods = {row["mood"] for row in creative_directions(kinky, range(1, 9), 2).values()}
@@ -1164,8 +1197,8 @@ class PrivateVocabularyTests(unittest.TestCase):
         for data, ownership in ((self.data, False), (owned, True)):
             stages = (brainstorm_instruction(data, 10).system_message,
                       ideas_instruction(data, dataset_assignments(data)).system_message,
-                      dataset_instruction(GoatedPrompterRequest(idea=data["subject"], prompt_model="Custom"),
-                                          data, 1, plan_item=saved_scene(1)).system_message)
+                       dataset_instruction(GoatedPrompterRequest(idea=data["subject"], prompt_model="Custom"),
+                                           data, 1, plan_item=planned_scene(data)).system_message)
             for system in stages:
                 self.assertIn("fixture rule for every batch", system)
                 self.assertEqual("fixture ownership rule" in system, ownership)
@@ -1208,21 +1241,22 @@ class PrivateVocabularyTests(unittest.TestCase):
                                                                  sexual_positions)
         from goated_prompter.features.dataset.private_vocabulary import load_vocabulary
         private = load_vocabulary()
-        men = set(private["two men positions"])
+        from goated_prompter.features.dataset.private_vocabulary import parse_vocabulary
+        catalog = parse_vocabulary(vocabulary_text(("two men positions", vocabulary_record("men", "anal", sexes=("male", "male"))),
+            ("feet positions", vocabulary_record("feet", "feet")), ("kink positions", vocabulary_record("kink", "kink")),
+            ("finish positions", vocabulary_record("finish", "finish"))))
         two_men = [{**COMPANION, "name": "man", "count": 2, "sex": "male"}]
         for subject, cast in (("two men having sex, one collared and bound, with a footjob", two_men),
                               ("two men having sex", []), ("his slave and his master, two men having sex", [])):
             data = {**self.data, "subject": subject,
                     "_confirmed_intent": dataset_understanding_fixture(characters=cast, character_count=2)}
             with self.subTest(subject=subject, cast=bool(cast)):
-                self.assertTrue(men <= set(sexual_positions(data)))
-                picks = [pick_position_ideas(position_groups(data), random.Random(seed), POSITION_IDEAS)
-                         for seed in range(30)]
-                self.assertTrue(all(set(pick) & men for pick in picks), "A long kink list never drowns them.")
-                if subject == "two men having sex":
-                    self.assertTrue(all(set(pick) & set(private["finish positions"]) for pick in picks))
-                else:
-                    self.assertFalse(set(sexual_positions(data)) & set(private["finish positions"]))
+                with patch("goated_prompter.features.dataset.brainstorm.load_vocabulary", return_value=catalog):
+                    positions = set(sexual_positions(data))
+                    expected = {"feet"} if "footjob" in subject else {"kink"} if "slave" in subject else {"men", "feet", "kink", "finish"}
+                    self.assertEqual(positions, expected)
+                    picks = [pick_position_ideas(position_groups(data), random.Random(seed), POSITION_IDEAS) for seed in range(30)]
+                    self.assertTrue(all(set(pick) == expected for pick in picks))
                 self.assertFalse(set(sexual_positions(data)) & set(private["man and woman positions"]))
 
     def test_a_master_and_his_male_slave_get_two_men_positions_and_two_male_looks(self):
@@ -1234,9 +1268,13 @@ class PrivateVocabularyTests(unittest.TestCase):
         slave = {**COMPANION, "name": "slave", "sex": "male"}
         data = {**self.data, "subject": "master fucking his tightly bound slave male partner",
                 "_confirmed_intent": dataset_understanding_fixture(characters=[master, slave], character_count=2)}
-        positions = set(sexual_positions(data))
-        self.assertTrue(set(private["two men positions"]) | set(private["kink positions"])
-                        <= positions)
+        from goated_prompter.features.dataset.private_vocabulary import parse_vocabulary
+        catalog = parse_vocabulary(vocabulary_text(("two men positions", vocabulary_record("men", "anal", sexes=("male", "male"))),
+            ("kink positions", vocabulary_record("bound men", "anal", sexes=("male", "male"))),
+            ("oral positions", vocabulary_record("oral", "oral"))))
+        with patch("goated_prompter.features.dataset.brainstorm.load_vocabulary", return_value=catalog):
+            positions = set(sexual_positions(data))
+        self.assertEqual(positions, {"men", "bound men"})
         self.assertFalse(positions & set(private["oral positions"]))
         self.assertFalse(positions & set(private["man and woman positions"]))
         for row in creative_directions(data, range(1, 9), 4).values():

@@ -1,5 +1,6 @@
 """Dataset job execution: understanding, and scene/prompt batches with durable checkpoints."""
 
+from ...backends.base import BackendGenerationError
 from .service import DatasetService
 from .understanding import DatasetUnderstandingService
 from .brainstorm import dataset_routing
@@ -43,7 +44,9 @@ def run_dataset(state, job, request, config, workflow):
                     (f"Dataset prompt {result['completed']}/{result['total']} completed and is available."
                      if result["completed"] else "Dataset planning stages saved; final prompts have not started."
                      if any(row.get("scene_status") == "not_generated" for row in result["scene_plan"])
-                     else "Dataset scene plan is ready and available before prompt writing."),
+                     else "Dataset scene plan is ready and available before prompt writing."
+                     if any(row.get("scene_status") == "valid" for row in result["scene_plan"])
+                     else "Dataset planning failures saved; review the failed or unresolved scene slots."),
                     "result",
                 )
         job.commit(publish)
@@ -51,4 +54,7 @@ def run_dataset(state, job, request, config, workflow):
         request, {**workflow["input"], "_confirmed_intent": workflow.get("intent")}, job.set_progress, partial,
         scenes_only=workflow["operation"] == "dataset_scenes", scene_action=workflow.get("scene_action"),
         valid_only=workflow.get("valid_only", False), resume=workflow.get("resume", False))
+    if result.get("ok") is False:
+        job.commit(lambda: durable_result(result))
+        raise BackendGenerationError(result["error"])
     job.commit(lambda: durable_result(result), finish=True)

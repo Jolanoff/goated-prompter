@@ -1,6 +1,7 @@
 """Final Anima writer regressions using synthetic checked scenes and responses."""
 
 from copy import deepcopy
+from dataclasses import replace
 import json
 import unittest
 from unittest.mock import patch
@@ -14,8 +15,9 @@ from goated_prompter.features.dataset.visible_content import positive_prompt_err
 from goated_prompter.features.dataset.plan import scene_plan_signature
 from goated_prompter.workflow_output import WorkflowFormatError, normalize_workflow_output
 from tests.helpers import dataset_understanding_fixture
-from tests.support.dataset import saved_scene, valid_draft
-from tests.support.backends import ScriptedBackend
+from tests.support.dataset import CheckedWriterBackend, checked_scene, saved_scene, valid_draft
+from goated_prompter.features.dataset.routing import image_hard_requirements
+from goated_prompter.features.dataset.scene_spec import SceneSpec
 
 
 SCENE = ("Mira stands on the left in a blue jacket, offering a red ceramic cup with her right hand to "
@@ -69,10 +71,13 @@ class DatasetAnimaTests(unittest.TestCase):
         self.request = GoatedPrompterRequest(idea=self.data["subject"], prompt_model="Custom")
 
     def run_writer(self, outputs):
-        backend = ScriptedBackend(outputs)
+        data = deepcopy(self.data)
+        data["scene_plan"] = [checked_scene(row, spec=replace(SceneSpec.from_dict(row["scene_spec"]),
+            hard=image_hard_requirements(data, "all_outputs"))) for row in data["scene_plan"]]
+        backend = CheckedWriterBackend(outputs, data["scene_plan"])
         with patch("goated_prompter.features.dataset.service.create_backend", return_value=backend):
             result = DatasetService({"backend": "mock"}, lambda: None).run(
-                self.request, self.data, lambda _message: None, lambda _result: None)
+                self.request, data, lambda _message: None, lambda _result: None)
         return result, backend
 
     def test_looping_tags_retry_only_writer_and_preserve_the_checked_scene(self):
@@ -80,14 +85,15 @@ class DatasetAnimaTests(unittest.TestCase):
         self.assertGreater(len(looping), 6000)
         before = deepcopy(self.data)
         result, backend = self.run_writer([looping, PROMPT])
-        self.assertEqual(len(backend.calls), 2, "Repeated Anima tags were accepted without a writer correction.")
+        self.assertEqual(len(backend.writes), 2, "Repeated Anima tags were accepted without a writer correction.")
         self.assertEqual(result["prompts"][0]["prompt"], PROMPT)
         self.assertEqual(result["completed"], 1)
         self.assertEqual(result["scene_plan"][0]["scene"], SCENE)
         self.assertEqual(result["scene_plan"][0]["self_check"], "PASS")
-        self.assertTrue(all(call.diagnostic_stage.startswith("dataset:1") for call in backend.calls))
-        self.assertTrue(all(call.user_message == SCENE for call in backend.calls))
+        self.assertTrue(all(call.diagnostic_stage.startswith("dataset:1") for call in backend.writes))
+        self.assertTrue(all(call.user_message == SCENE for call in backend.writes))
         self.assertEqual(self.data, before)
+        self.assertEqual(len(backend.calls), len(backend.writes) + 1)
 
     def test_streaming_tag_loop_stops_early_and_closes_the_response(self):
         looping = "2girls, anime\nMira: " + TAG_CYCLE * 41
@@ -104,17 +110,17 @@ class DatasetAnimaTests(unittest.TestCase):
 
     def test_style_setting_echo_is_corrected_without_replanning_or_losing_the_medium(self):
         result, backend = self.run_writer([PROMPT + "\nThe style is anime/manga.", PROMPT])
-        self.assertEqual(len(backend.calls), 2, "Style-setting commentary was accepted as Anima scene content.")
+        self.assertEqual(len(backend.writes), 2, "Style-setting commentary was accepted as Anima scene content.")
         self.assertEqual(result["prompts"][0]["prompt"], PROMPT)
         self.assertIn("anime/manga", self.data["_confirmed_intent"]["hard"][0]["text"])
-        self.assertTrue(all(call.user_message == SCENE for call in backend.calls))
-        self.assertIn("anime/manga", backend.calls[-1].system_message)
+        self.assertTrue(all(call.user_message == SCENE for call in backend.writes))
+        self.assertIn("anime/manga", backend.writes[-1].system_message)
 
     def test_comma_wrapped_tag_loops_still_require_a_writer_correction(self):
         looping = "2girls, anime\nMira:\n" + TAG_CYCLE.replace(", ", ",\n") * 41
         looping += "\nHana: 1girl, green_jacket\nMira offers a cup to Hana."
         result, backend = self.run_writer([looping, PROMPT])
-        self.assertEqual(len(backend.calls), 2, "Newlines hid a repeating tag list from the output guard.")
+        self.assertEqual(len(backend.writes), 2, "Newlines hid a repeating tag list from the output guard.")
         self.assertEqual(result["prompts"][0]["prompt"], PROMPT)
 
     def test_flat_character_trigger_uses_existing_anima_adapter_without_extra_blocks(self):
@@ -122,7 +128,9 @@ class DatasetAnimaTests(unittest.TestCase):
             _confirmed_intent=dataset_understanding_fixture(hard=[
                 {"scope": "all_outputs", "text": "Remilia Scarlet and Flandre Scarlet in anime/manga style."}]))
         self.scene["scene"] = ("Remilia Scarlet on the left offers a red ceramic cup to Flandre Scarlet on the right "
-                               "in a dimly lit bedroom. A medium two-shot keeps their hand contact visible.")
+                                "in a dimly lit bedroom. A medium two-shot keeps their hand contact visible.")
+        self.scene.update(checked_scene(self.scene, spec=replace(SceneSpec.from_dict(self.scene["scene_spec"]),
+            hard=image_hard_requirements(self.data, "all_outputs"))))
         self.data["scene_plan_signature"] = scene_plan_signature(self.data, dataset_assignments(self.data))
         instruction = dataset_instruction(self.request, self.data, 1, plan_item=self.scene)
         message = instruction.system_message
@@ -137,7 +145,7 @@ class DatasetAnimaTests(unittest.TestCase):
         self.assertEqual(instruction.user_message, self.scene["scene"])
         prompt = CHARACTER_TRIGGER + ", bedroom, ceramic_cup, " + self.scene["scene"]
         result, backend = self.run_writer([prompt])
-        self.assertEqual(len(backend.calls), 1)
+        self.assertEqual(len(backend.writes), 1)
         self.assertEqual(result["prompts"][0]["prompt"], prompt)
         self.assertTrue(prompt.startswith(CHARACTER_TRIGGER))
         self.assertEqual(prompt.count(CHARACTER_TRIGGER), 1)
@@ -154,10 +162,10 @@ class DatasetAnimaTests(unittest.TestCase):
                 self.scene["scene"] = SCENE + " In the background is a dimly lit bedroom. " + commentary
                 self.data["scene_plan_signature"] = scene_plan_signature(self.data, dataset_assignments(self.data))
                 result, backend = self.run_writer([prompt + " " + commentary, prompt])
-                self.assertEqual(len(backend.calls), 2, "Anima medium commentary bypassed final validation.")
+                self.assertEqual(len(backend.writes), 2, "Anima medium commentary bypassed final validation.")
                 self.assertEqual(result["prompts"][0]["prompt"], prompt)
-                self.assertTrue(all(call.user_message == self.scene["scene"] for call in backend.calls))
-                self.assertIn("Style-setting commentary", backend.calls[-1].system_message)
+                self.assertTrue(all(call.user_message == self.scene["scene"] for call in backend.writes))
+                self.assertIn("Style-setting commentary", backend.writes[-1].system_message)
 
     def test_shared_tags_in_distinct_character_blocks_are_not_global_duplicates(self):
         shared = ("1girl, long_hair, smile, standing, blue_jacket, green_eyes, white_shirt, "
@@ -175,7 +183,7 @@ class DatasetAnimaTests(unittest.TestCase):
                 self.data["length"] = length
                 self.data["scene_plan_signature"] = scene_plan_signature(self.data, dataset_assignments(self.data))
                 result, backend = self.run_writer([prompt] * 4)
-                self.assertEqual(len(backend.calls), 1)
+                self.assertEqual(len(backend.writes), 1)
                 self.assertEqual(result["prompts"][0]["prompt"], prompt)
                 self.assertEqual(result["scene_plan"][0]["scene"], SCENE)
 
@@ -192,7 +200,7 @@ class DatasetAnimaTests(unittest.TestCase):
                     prompt = PROMPT + "\n" + self.data["trigger"] + "."
                 self.data["scene_plan_signature"] = scene_plan_signature(self.data, dataset_assignments(self.data))
                 result, backend = self.run_writer([prompt] * 4)
-                self.assertEqual(len(backend.calls), 1)
+                self.assertEqual(len(backend.writes), 1)
                 self.assertEqual(result["prompts"][0]["prompt"], prompt)
 
     def test_streaming_preserves_an_exact_1000_character_trigger_even_when_it_contains_repeated_tags(self):
@@ -214,7 +222,7 @@ class DatasetAnimaTests(unittest.TestCase):
         looping = "Mira: " + TAG_CYCLE * 41 + "\nHana waits."
         before = deepcopy(self.data)
         result, backend = self.run_writer([looping] * 4)
-        self.assertEqual(len(backend.calls), 4)
+        self.assertEqual(len(backend.writes), 4)
         self.assertEqual(result["completed"], 0)
         self.assertEqual(result["failed"], 1)
         self.assertEqual(result["prompts"], [])
@@ -222,13 +230,13 @@ class DatasetAnimaTests(unittest.TestCase):
         self.assertEqual(result["scene_plan"][0]["self_check"], "PASS")
         self.assertEqual(result["scene_plan"][0]["scene_status"], "valid")
         self.assertEqual(result["scene_plan"][0]["failure_stage"], "prompt")
-        self.assertTrue(all(call.diagnostic_stage.startswith("dataset:1") for call in backend.calls))
+        self.assertTrue(all(call.diagnostic_stage.startswith("dataset:1") for call in backend.writes))
         self.assertEqual(self.data, before)
 
     def test_a_prompt_wrapper_cannot_hide_looping_tags_from_final_validation(self):
         looping = "Mira: " + TAG_CYCLE * 41 + "\nHana waits."
         result, backend = self.run_writer([json.dumps({"prompt": looping}), PROMPT])
-        self.assertEqual(len(backend.calls), 2)
+        self.assertEqual(len(backend.writes), 2)
         self.assertEqual(result["prompts"][0]["prompt"], PROMPT)
 
     def test_structured_planning_source_is_not_subject_to_anima_tag_block_rules(self):
@@ -264,20 +272,20 @@ class DatasetAnimaTests(unittest.TestCase):
         before = deepcopy(self.data)
         body = "bedroom, ceramic_cup, " + self.scene["scene"]
         result, backend = self.run_writer([body] * 4)
-        self.assertEqual(len(backend.calls), 1, "The model should not need to reproduce a locked prefix.")
+        self.assertEqual(len(backend.writes), 1, "The model should not need to reproduce a locked prefix.")
         self.assertEqual(result["prompts"][0]["prompt"], CHARACTER_TRIGGER + ", " + body)
-        self.assertIn("The application inserts the locked trigger", backend.calls[0].system_message)
-        self.assertIn("Do not output or repeat it", backend.calls[0].system_message)
+        self.assertIn("The application inserts the locked trigger", backend.writes[0].system_message)
+        self.assertIn("Do not output or repeat it", backend.writes[0].system_message)
         self.assertEqual(self.data, before)
 
     def test_tag_limit_includes_app_inserted_prefix_and_correction_only_retries_writer(self):
         self.data.update(trigger=", ".join(f"t{index}" for index in range(99)), trigger_at_start=True)
         self.data["scene_plan_signature"] = scene_plan_signature(self.data, dataset_assignments(self.data))
         result, backend = self.run_writer(["ceramic_cup, warm_light, " + SCENE, "ceramic_cup, " + SCENE] * 2)
-        self.assertEqual(len(backend.calls), 2)
+        self.assertEqual(len(backend.writes), 2)
         self.assertEqual(result["prompts"][0]["prompt"], self.data["trigger"] + ", ceramic_cup, " + SCENE)
-        self.assertIn("100 tags", backend.calls[-1].system_message)
-        self.assertTrue(all(call.user_message == SCENE for call in backend.calls))
+        self.assertIn("100 tags", backend.writes[-1].system_message)
+        self.assertTrue(all(call.user_message == SCENE for call in backend.writes))
 
     def test_oversized_anima_source_tags_are_rejected_before_generation_without_changing_saved_text(self):
         data = {**self.data, "trigger": ", ".join(f"t{index}" for index in range(101)), "trigger_at_start": True}
@@ -294,14 +302,14 @@ class DatasetAnimaTests(unittest.TestCase):
             self.assertIn("Two adult women in anime/manga style.", instruction.system_message)
         leaked = PROMPT + " The scene is rendered in a detailed anime style."
         result, backend = self.run_writer([leaked, PROMPT])
-        self.assertEqual(len(backend.calls), 2)
+        self.assertEqual(len(backend.writes), 2)
         self.assertEqual(result["prompts"][0]["prompt"], PROMPT)
 
     def test_locked_single_name_remains_available_for_natural_scene_prose(self):
         self.data.update(trigger="Mira", trigger_at_start=True)
         self.data["scene_plan_signature"] = scene_plan_signature(self.data, dataset_assignments(self.data))
         result, backend = self.run_writer([SCENE] * 4)
-        self.assertEqual(len(backend.calls), 1)
+        self.assertEqual(len(backend.writes), 1)
         self.assertEqual(result["prompts"][0]["prompt"], "Mira, " + SCENE)
 
     def test_locked_tag_words_inside_requested_lettering_are_preserved_as_literal_text(self):
@@ -309,7 +317,7 @@ class DatasetAnimaTests(unittest.TestCase):
         self.scene["scene"] = SCENE + ' A sign reads "Mira, Hana".'
         self.data["scene_plan_signature"] = scene_plan_signature(self.data, dataset_assignments(self.data))
         result, backend = self.run_writer([self.scene["scene"]] * 4)
-        self.assertEqual(len(backend.calls), 1)
+        self.assertEqual(len(backend.writes), 1)
         self.assertEqual(result["prompts"][0]["prompt"], 'Mira, Hana, ' + self.scene["scene"])
 
     def test_nonlocked_anima_settings_still_leave_trigger_placement_to_the_writer(self):
@@ -320,7 +328,7 @@ class DatasetAnimaTests(unittest.TestCase):
                 self.data["scene_plan_signature"] = scene_plan_signature(self.data, dataset_assignments(self.data))
                 result, backend = self.run_writer([PROMPT])
                 self.assertEqual(result["prompts"][0]["prompt"], PROMPT)
-                self.assertNotIn("The application inserts the locked trigger", backend.calls[0].system_message)
+                self.assertNotIn("The application inserts the locked trigger", backend.writes[0].system_message)
 
     def test_locked_inventory_echo_after_scene_tags_is_dropped_without_a_retry(self):
         # Reported run: 9/10 Anima prompts failed because restated character tags
@@ -331,14 +339,14 @@ class DatasetAnimaTests(unittest.TestCase):
         for echo in (CHARACTER_TRIGGER, ", ".join(CHARACTER_TRIGGER.split(", ")[1:]), respelled):
             with self.subTest(echo=echo):
                 result, backend = self.run_writer(["bedroom, " + echo + "\n\n" + SCENE])
-                self.assertEqual(len(backend.calls), 1)
+                self.assertEqual(len(backend.writes), 1)
                 self.assertEqual(result["prompts"][0]["prompt"], CHARACTER_TRIGGER + ", bedroom\n\n" + SCENE)
 
     def test_live_negative_constraint_tags_require_correction_even_without_a_loop(self):
         for tag in ("no cropping", "no camera movement", "no action beyond reading", "no changed wings"):
             with self.subTest(tag=tag):
                 result, backend = self.run_writer(["ceramic cup, " + tag + "\n\n" + SCENE, PROMPT])
-                self.assertEqual(len(backend.calls), 2)
+                self.assertEqual(len(backend.writes), 2)
                 self.assertEqual(result["prompts"][0]["prompt"], PROMPT)
         self.assertIsNone(positive_prompt_error('no bra\n\nMira wears a jacket.', "Anima"))
         self.assertIsNone(positive_prompt_error('no cropping\n\nMira waits.', "Anima", ("no cropping",)))
@@ -373,12 +381,12 @@ class DatasetAnimaTests(unittest.TestCase):
         self.data["scene_plan_signature"] = scene_plan_signature(self.data, dataset_assignments(self.data))
         body = "Mira, seated on the left, offers the cup to Hana on the right beside the table."
         result, backend = self.run_writer([body] * 4)
-        self.assertEqual(len(backend.calls), 1)
+        self.assertEqual(len(backend.writes), 1)
         self.assertEqual(result["prompts"][0]["prompt"], "Mira, Hana, " + body)
 
     def test_visual_confusion_instruction_is_not_a_positive_scene_tag(self):
         result, backend = self.run_writer(["reading, no visual confusion\n\n" + SCENE, PROMPT])
-        self.assertEqual(len(backend.calls), 2)
+        self.assertEqual(len(backend.writes), 2)
         self.assertEqual(result["prompts"][0]["prompt"], PROMPT)
 
     def test_locked_inventory_is_not_recreated_as_appearance_prose(self):
@@ -388,9 +396,9 @@ class DatasetAnimaTests(unittest.TestCase):
                            "Flandre Scarlet on the right has red eyes, short blonde hair in a side ponytail, a mob cap and crystal wings. ")
         body = "reading, open book\n\nRemilia Scarlet on the left reads with Flandre Scarlet on the right at a wooden table."
         result, backend = self.run_writer(["reading, open book\n\n" + inventory_prose + SCENE, body])
-        self.assertEqual(len(backend.calls), 2)
+        self.assertEqual(len(backend.writes), 2)
         self.assertEqual(result["prompts"][0]["prompt"], CHARACTER_TRIGGER + ", " + body)
-        self.assertIn("appearance inventory", backend.calls[-1].system_message)
+        self.assertIn("appearance inventory", backend.writes[-1].system_message)
 
     def test_locked_appearance_facts_in_requested_lettering_remain_literal(self):
         self.data.update(trigger=CHARACTER_TRIGGER, trigger_at_start=True)
@@ -399,7 +407,7 @@ class DatasetAnimaTests(unittest.TestCase):
         self.data["scene_plan_signature"] = scene_plan_signature(self.data, dataset_assignments(self.data))
         body = "reading, open book\n\n" + self.scene["scene"]
         result, backend = self.run_writer([body] * 4)
-        self.assertEqual(len(backend.calls), 1)
+        self.assertEqual(len(backend.writes), 1)
         self.assertEqual(result["prompts"][0]["prompt"], CHARACTER_TRIGGER + ", " + body)
 
     def test_locked_traits_with_actual_scene_roles_are_not_an_appearance_list(self):
@@ -410,5 +418,5 @@ class DatasetAnimaTests(unittest.TestCase):
         self.data["scene_plan_signature"] = scene_plan_signature(self.data, dataset_assignments(self.data))
         body = "reading, open book\n\n" + scene
         result, backend = self.run_writer([body] * 4)
-        self.assertEqual(len(backend.calls), 1)
+        self.assertEqual(len(backend.writes), 1)
         self.assertEqual(result["prompts"][0]["prompt"], CHARACTER_TRIGGER + ", " + body)

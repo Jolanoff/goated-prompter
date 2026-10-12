@@ -26,7 +26,8 @@ function pick(value, fields) {
 function sensitiveKey(key) {
   const normalized = key.replace(/[^a-z0-9]/gi, "").toLowerCase();
   return /(?:apikey|privatekey|signingkey|secret|password|passwd|credential|authorization|cookie|headers|accesstoken|refreshtoken|authtoken|sessiontoken|confirmationtoken|connectionstring)/.test(normalized) ||
-    ["token", "tokens", "auth", "config", "configuration", "environment", "env", "baseurl", "endpoint", "modelpath", "executable"].includes(normalized);
+    ["token", "tokens", "auth", "config", "configuration", "environment", "env", "baseurl", "endpoint", "modelpath", "executable",
+      "catalogid", "selectedposition", "selectedsetting", "privatevocabulary", "vocabularyentries", "vocabularysource"].includes(normalized);
 }
 
 function redactUrl(text) {
@@ -40,10 +41,15 @@ function redactUrl(text) {
   } catch { return "[REDACTED URL]"; }
 }
 
-function secretValues(value, sensitive = false) {
+const vocabularyDiagnosticFields = ["loaded", "eligible", "rejected", "diagnostics", "unresolved_constraints", "filtering_rules"];
+
+function secretValues(value, sensitive = false, field = "") {
   if (typeof value === "string") return sensitive && value.length >= 4 ? [value] : [];
   if (!value || typeof value !== "object") return [];
-  return Object.entries(value).flatMap(([key, child]) => secretValues(child, sensitive || sensitiveKey(key)));
+  if (Array.isArray(value)) return value.flatMap((item) => secretValues(item, sensitive, field));
+  return Object.entries(value).flatMap(([key, child]) => secretValues(child, sensitive || sensitiveKey(key)
+    || (field === "vocabulary" && !vocabularyDiagnosticFields.includes(key))
+    || (field === "diagnostics" && key === "entry"), key));
 }
 
 const contentFields = new Set(["subject", "trigger", "inputs", "constraints", "input", "idea", "scene", "prompt",
@@ -60,12 +66,28 @@ function redactText(text, secrets, detectCredentials) {
     .replace(/\beyJ[a-z0-9_-]+\.[a-z0-9_-]+\.[a-z0-9_-]+\b/gi, "[REDACTED]");
 }
 
-function sanitize(value, secrets, field = "") {
-  if (typeof value === "string") return redactText(value, secrets, !contentFields.has(field));
-  if (Array.isArray(value)) return value.map((item) => sanitize(item, secrets, field));
+const rawDiagnosticFields = new Set(["content", "output", "reasoning", "partial_text", "issue", "message", "error"]);
+
+function sanitize(value, secrets, field = "", privateDiagnostics = false) {
+  if (privateDiagnostics && ["messages", "response_format"].includes(field)) return "[PRIVATE CONTENT OMITTED]";
+  if (privateDiagnostics && field === "finish_reason" && value !== null &&
+    !/^(stop|length|content_filter|tool_calls|function_call|other)$/.test(value)) return "other";
+  if (typeof value === "string") return privateDiagnostics && rawDiagnosticFields.has(field)
+    ? "[PRIVATE CONTENT OMITTED]" : redactText(value, secrets, !contentFields.has(field));
+  if (Array.isArray(value)) return value.map((item) => sanitize(item, secrets, field, privateDiagnostics));
   if (value && typeof value === "object") return Object.fromEntries(Object.entries(value)
-    .filter(([key]) => !sensitiveKey(key)).map(([key, child]) => [key, sanitize(child, secrets, key)]));
+    .filter(([key]) => !sensitiveKey(key) && !(field === "vocabulary" && !vocabularyDiagnosticFields.includes(key))
+      && !(field === "diagnostics" && !["line", "record", "rule", "reason"].includes(key)))
+    .map(([key, child]) => [key, sanitize(child, secrets, key, privateDiagnostics)]));
   return value;
+}
+
+function hasPrivateDiagnostics(draft, job) {
+  const rows = [...(draft?.scene_plan || []), ...(job?.result?.scene_plan || [])];
+  return rows.some((row) => row.scene_spec?.private_vocabulary)
+    || job?.llm_trace?.private_content === true
+    || job?.partial_responses?.some((row) => row.private_content === true)
+    || JSON.stringify(job?.llm_trace?.messages || []).includes("MORE SEXUAL CONTENT RULES");
 }
 
 /** A click-time projection of current state, never a write or a checkpoint release. */
@@ -88,5 +110,5 @@ export function datasetGenerationLog({ draft, review, job, record, state } = {},
   };
   // Also remove credentials repeated in free-form errors or transport messages.
   const secrets = [...new Set(secretValues({ draft, review, job: datasetJob, record }))].sort((a, b) => b.length - a.length);
-  return JSON.stringify(sanitize(snapshot, secrets), null, 2);
+  return JSON.stringify(sanitize(snapshot, secrets, "", hasPrivateDiagnostics(draft, datasetJob)), null, 2);
 }

@@ -5,7 +5,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { transformWithEsbuild } from "vite";
 import { canConfirmDatasetReview, datasetRequestSignature, datasetRoutingSections, datasetUnderstandingSections, datasetUnderstandingSummary,
-  reviseDatasetRequest } from "./datasetState.js";
+  datasetVocabularySections, datasetPlanningLines, reviseDatasetRequest } from "./datasetState.js";
 
 async function loadReviewModal() {
   const sourceUrl = new URL("./DatasetConfirmationModal.jsx", import.meta.url);
@@ -15,6 +15,25 @@ async function loadReviewModal() {
     `from ${JSON.stringify(specifier.startsWith(".") ? new URL(specifier, sourceUrl).href : import.meta.resolve(specifier))}`);
   return (await import(`data:text/javascript;base64,${Buffer.from(linked).toString("base64")}`)).default;
 }
+
+test("vocabulary review reports counts, per-entry rules and unresolved constraints", () => {
+  const routing = [{ scope: "guided:2", vocabulary: { loaded: 7, eligible: 2, rejected: 3,
+    diagnostics: [{ entry: "ambiguous pair", line: 8, reason: "Support unresolved", rule: "unresolved_structure" }],
+    unresolved_constraints: ["Missing owned support"], filtering_rules: ["Participant count"] } }];
+  const sections = datasetVocabularySections(routing);
+  assert.equal(sections[0].label, "Guided input 2");
+  assert.deepEqual(sections[0].items, ["7 loaded entries · 2 eligible arrangements · 3 rejected entries",
+    "Filter: Participant count", "Unresolved: Missing owned support",
+    "Vocabulary file (line 8): Support unresolved [unresolved_structure]"]);
+});
+
+test("supplied mechanics display participant ownership and contacts before approval", () => {
+  const lines = datasetPlanningLines({ planning_constraints: [{ scope: "all_outputs", action: "Greeting", setting: "Studio",
+    participants: [{ id: "P1", role: "guide", pose: "seated", location: "left", support: "supported_by_chair" }],
+    contacts: [{ source: "P1.left_hand", target: "P2.shoulder" }] }] });
+  assert.deepEqual(lines, ["Every image: action — Greeting", "Every image: setting — Studio",
+    "Every image: P1 — guide · seated · left · supported by chair", "Every image: P1.left_hand → P2.shoulder"]);
+});
 
 const broadMaleRoute = { scope: "all_outputs", nsfw: true,
   cast: { mode: "pair", count: 2, male: 2, female: 0, unspecified: 0, source: "approved_cast" },

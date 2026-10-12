@@ -10,6 +10,13 @@ def sha256_text(value):
     return hashlib.sha256(str(value or "").encode("utf-8")).hexdigest()
 
 
+def diagnostic_finish_reason(value, *, private_content=False):
+    if private_content and value is not None and (not isinstance(value, str)
+            or value not in {"stop", "length", "content_filter", "tool_calls", "function_call", "other"}):
+        return "other"
+    return value
+
+
 def debug_prompts_enabled():
     return str(os.environ.get("GOATED_PROMPTER_DEBUG_PROMPTS") or "").strip().casefold() in {
         "1", "true", "yes", "on",
@@ -63,12 +70,16 @@ def _redacted_image_url(url):
     }
 
 
-def payload_without_binary_images(payload):
+def payload_without_binary_images(payload, *, private_content=False):
     redacted = dict(payload or {})
     messages = []
     for message in redacted.get("messages", ()):
         safe_message = dict(message)
         content = safe_message.get("content")
+        if private_content:
+            messages.append({"role": safe_message.get("role"), "content_sha256": sha256_json(content),
+                             "content_chars": len(content) if isinstance(content, str) else 0})
+            continue
         if isinstance(content, list):
             safe_parts = []
             for part in content:
@@ -83,6 +94,8 @@ def payload_without_binary_images(payload):
             safe_message["content"] = safe_parts
         messages.append(safe_message)
     redacted["messages"] = messages
+    if private_content and "response_format" in redacted:
+        redacted["response_format"] = {"sha256": sha256_json(redacted["response_format"]), "private_content": True}
     return redacted
 
 

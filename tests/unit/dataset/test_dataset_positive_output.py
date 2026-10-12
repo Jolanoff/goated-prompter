@@ -10,7 +10,7 @@ from goated_prompter.features.dataset.visible_content import (
 )
 from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.dataset.prompting import dataset_instruction
-from tests.support.dataset import valid_draft, saved_scene
+from tests.support.dataset import checked_writer_responses, valid_draft, saved_scene
 
 
 class DatasetPositiveOutputTests(unittest.TestCase):
@@ -71,18 +71,18 @@ class DatasetPositiveOutputTests(unittest.TestCase):
         data, scene = valid_draft(amount=1), saved_scene()
         instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=scene)
         session = Mock()
-        session.generate.return_value = "ohwx_person punches a bag; no extra people."
+        checked_writer_responses(session, ["ohwx_person punches a bag; no extra people."], [scene])
         result = DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None, scene)
         self.assertEqual(result, "ohwx_person punches a bag.")
-        session.generate.assert_called_once()
+        self.assertEqual(session.generate.call_count, 2)
 
     def test_remaining_leakage_retries_final_output_without_changing_scene(self):
         data, scene = valid_draft(amount=1), saved_scene()
         instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=scene)
         session = Mock()
-        session.generate.side_effect = ["ohwx_person punches a bag without extra people beside it.",
-            "ohwx_person punches a bag beside the empty wall."]
+        checked_writer_responses(session, ["ohwx_person punches a bag without extra people beside it.",
+            "ohwx_person punches a bag beside the empty wall."], [scene])
         result = DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None, scene)
         self.assertEqual(result, "ohwx_person punches a bag beside the empty wall.")
-        self.assertEqual(session.generate.call_count, 2)
-        self.assertTrue(all(call.args[0].user_message == scene["scene"] for call in session.generate.call_args_list))
+        self.assertEqual(session.generate.call_count, 3)
+        self.assertTrue(all(call.args[0].user_message == scene["scene"] for call in session.generate.call_args_list[:2]))

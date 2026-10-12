@@ -36,6 +36,9 @@ function HelpDetails({ children }) {
 }
 
 function FailureReason({ item }) {
+  if (item.batch_validation?.valid === false) return <p className={`${ui.warningNote} mt-2`} role="note">
+    <strong>Dataset constraints unresolved: </strong>{item.batch_validation.errors.join(" ")}
+  </p>;
   if (!item.failure_reason && item.scene_status !== "failed" && item.prompt_status !== "failed") return null;
   return <p className={`${ui.warningNote} mt-2`} role="note" aria-label={`Prompt ${item.index} failure reason`}>
     <strong>{item.failure_stage === "prompt" ? "Prompt failed: " : "Scene planning failed: "}</strong>{item.failure_reason || "No failure details were recorded. Retry this item to get a fresh result."}
@@ -389,6 +392,22 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
             {item.selected_position && <p className="dataset-scene-source"><strong>Selected position:</strong> {item.selected_position}
               <span className="block">Assigned instruction; generated pose adherence is not verified.</span></p>}
             {item.selected_setting && <p className="dataset-scene-source"><strong>Selected setting:</strong> {item.selected_setting}</p>}
+            {item.scene_spec && <details className="dataset-details">
+              <summary>SceneSpec · {item.scene_spec.state === "provisional" ? "provisional" : "frozen"}</summary>
+              <p className="dataset-scene-source"><strong>Action:</strong> {item.scene_spec.action}</p>
+              {item.scene_spec.participants.map((participant) => <p key={participant.id} className="dataset-scene-source">
+                <strong>{participant.name} ({participant.id} · {participant.kind || "human"}):</strong> {[participant.role, participant.pose, participant.location,
+                  participant.support.replaceAll("_", " ")].filter(Boolean).join(" · ") || "Open mechanics"}
+              </p>)}
+              {item.scene_spec.contacts.map((contact) => <p key={`${contact.source}:${contact.target}`} className="dataset-scene-source">
+                <strong>Contact:</strong> {contact.source.replaceAll("_", " ")} → {contact.target.replaceAll("_", " ")}
+              </p>)}
+              {item.scene_spec.setting && <p className="dataset-scene-source"><strong>Setting:</strong> {item.scene_spec.setting}</p>}
+              {item.scene_spec.hard.map((requirement) => <p key={requirement} className="dataset-scene-source">
+                <strong>Required:</strong> {requirement}
+              </p>)}
+            </details>}
+            {item.edited_stage && <p className={ui.subtleNote}>This edit needs a SceneSpec check before prompt writing. Conflicting requirements will be shown, not restored into your text.</p>}
             <div className="dataset-scene-editor dataset-scene-idea">
               <div className="dataset-scene-editor-heading"><label htmlFor={`dataset-idea-${item.index}`}><Lightbulb size={15} aria-hidden="true" />Idea {item.index}</label></div>
               <textarea className={ui.notesInput} aria-label={`Planned idea ${item.index}`} value={item.idea || ""}
@@ -406,6 +425,8 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
             </div>
             </div>
             <footer className="dataset-scene-actions">
+              {item.scene_spec && !sceneUsable(item) && <button className={ui.button} disabled={!canPlanScenes || staleScenePlan}
+                onClick={() => sceneAction(item.index, "validate_scene")}>Check scene</button>}
               <button className={ui.button} title="Regenerate idea" aria-label="Regenerate idea" disabled={!canWrite || staleScenePlan}
                 onClick={() => sceneAction(item.index, "regenerate_idea")}><RefreshCw size={14} aria-hidden="true" />Regenerate idea</button>
               <button className={`${ui.button} dataset-scene-write`} title="Regenerate prompt" aria-label="Regenerate prompt" disabled={!canWrite || staleScenePlan || !sceneUsable(item)}

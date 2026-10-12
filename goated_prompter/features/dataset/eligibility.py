@@ -1,6 +1,7 @@
-"""Authoritative Dataset writer gate: a nonempty scene that has not failed."""
+"""Dataset writer gate: a scene with affirmative evidence for its frozen specification."""
 
 from dataclasses import asdict, dataclass
+from .validation import validation_errors
 
 
 MAX_CHECK_CHARACTERS = 1200
@@ -30,13 +31,19 @@ class SceneEligibility:
         return asdict(self)
 
 
-def scene_eligibility(row, data):
-    if row.get("scene_status") == "failed":
+def scene_eligibility(row, data, *, include_batch=True):
+    if include_batch and row.get("batch_validation", {}).get("valid") is False:
+        return SceneEligibility(False, reason=" ".join(row["batch_validation"]["errors"]) or "Dataset-wide constraints remain unresolved.")
+    if row.get("scene_status") in {"failed", "repair_required"} or row.get("idea_status") == "failed":
         return SceneEligibility(False, reason=row.get("failure_reason") or "Scene generation failed.")
     if not row.get("scene", "").strip():
         return SceneEligibility(False, reason="Generate an idea for this image before writing its prompt.")
-    # Ideas arrive as finished scenes and edits are used as written; only a
-    # REPAIR note saved by the former scene check still blocks the writer.
+    if not row.get("scene_spec"):
+        return SceneEligibility(False, reason="This scene has no verified SceneSpec. Generate a new scene plan.")
+    if row["scene_spec"].get("state", "frozen") != "frozen":
+        return SceneEligibility(False, reason="This is a provisional plan, not a frozen SceneSpec.")
+    if errors := validation_errors(row):
+        return SceneEligibility(False, reason=" ".join(errors)[:2000])
     try:
         check = validate_self_check(row.get("self_check", ""), allow_pending=True)
     except ValueError as exc:

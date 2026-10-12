@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 
 from goated_prompter.features.dataset.assignments import dataset_assignments
 from goated_prompter.features.dataset.craft_notes import filter_notes, leaked_words, library_craft_notes
-from goated_prompter.features.dataset.ideas import ideas_instruction
+from tests.support.dataset import frozen_ideas_instruction as ideas_instruction
 from goated_prompter.prompt_library import LIBRARY_DIR_ENV, library_path
 from tests.helpers import dataset_understanding_fixture
 from tests.support.dataset import valid_draft

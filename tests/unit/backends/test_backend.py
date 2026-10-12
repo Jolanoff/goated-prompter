@@ -313,6 +313,60 @@ class OpenAITimeoutTests(unittest.TestCase):
         self.assertEqual(next(event["text"] for event in events if event["type"] == "reasoning_delta"), "visible analysis")
         self.assertEqual(events[-1], {"type": "response_complete", "finish_reason": "stop"})
 
+    def test_private_request_keeps_model_payload_but_suppresses_raw_diagnostic_messages_and_schema(self):
+        events = []
+        backend = openai.OpenAICompatibleBackend({
+            "base_url": "http://127.0.0.1:8189/v1", "model": "test", "_activity_callback": events.append,
+            "_is_llama_cpp": True,
+        })
+        instruction = contracts.PromptInstruction(system_message="SYNTHETIC_PRIVATE_RULE", user_message="Approved scene",
+            diagnostic_context={"private_content": True}, diagnostic_stage="dataset:ideas", json_output=True,
+            json_schema={"type": "string", "const": "SYNTHETIC_PRIVATE_SCHEMA"})
+        response = MagicMock()
+        response.__enter__.return_value.headers = {"Content-Type": "application/json"}
+        response.__enter__.return_value.read.return_value = b'{"choices":[{"message":{"content":"Original model result"},"finish_reason":"stop"}]}'
+        with patch.object(openai, "urlopen", return_value=response) as send, \
+             patch.object(openai, "log_request"), patch.object(openai, "log_response"), \
+             patch.object(openai, "_log_multimodal_messages") as debug:
+            self.assertEqual(backend.generate(instruction), "Original model result")
+        outgoing = json.loads(send.call_args.args[0].data)
+        self.assertEqual(outgoing["messages"], instruction.to_messages())
+        self.assertEqual(outgoing["response_format"]["json_schema"]["schema"], instruction.json_schema)
+        request = next(event for event in events if event["type"] == "request")
+        self.assertTrue(request["private_content"])
+        self.assertNotIn("SYNTHETIC_PRIVATE", json.dumps(request))
+        self.assertEqual(request["parameters"]["temperature"], outgoing["temperature"])
+        debug.assert_not_called()
+
+    def test_private_transport_error_does_not_publish_echoed_source_but_retains_partial_text_for_recovery(self):
+        class FailedStream:
+            headers = {"Content-Type": "text/event-stream"}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def __iter__(self):
+                chunks = [{"choices": [{"delta": {"content": "Original partial scene"}, "finish_reason": None}]},
+                          {"error": {"message": "SYNTHETIC_PRIVATE_RULE"}}]
+                return iter(f"data: {json.dumps(chunk)}\n\n".encode() for chunk in chunks)
+        from goated_prompter.local_jobs import Job
+        job = Job()
+        backend = openai.OpenAICompatibleBackend({"base_url": "http://127.0.0.1:8189/v1", "model": "test",
+            "_activity_callback": job.record_llm_activity})
+        instruction = contracts.PromptInstruction(system_message="SYNTHETIC_PRIVATE_RULE", user_message="Approved scene",
+            diagnostic_context={"private_content": True}, diagnostic_stage="dataset:ideas")
+        with patch.object(openai, "urlopen", return_value=FailedStream()), \
+             patch.object(openai, "log_request"), patch.object(openai, "log_response"), \
+             self.assertRaises(openai.BackendGenerationError) as error:
+            backend.generate(instruction)
+        self.assertNotIn("SYNTHETIC_PRIVATE_RULE", str(error.exception))
+        self.assertEqual(error.exception.partial_text, "Original partial scene")
+        self.assertNotIn("SYNTHETIC_PRIVATE_RULE", json.dumps(job.snapshot()))
+        self.assertNotIn("Original partial scene", json.dumps(job.snapshot()))
+
     def test_streaming_repetition_loop_is_stopped_early(self):
         class RepeatingResponse:
             def __iter__(self):
