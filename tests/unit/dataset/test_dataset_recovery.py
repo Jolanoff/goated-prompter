@@ -10,6 +10,7 @@ from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.dataset.service import DatasetService
 from goated_prompter.features.dataset.assignments import dataset_assignments
 from goated_prompter.features.dataset.plan import scene_plan_signature
+from goated_prompter.features.dataset.idea_history import RecentIdeaHistory
 from tests.helpers import dataset_understanding_fixture
 from tests.helpers import dataset_idea_fixture
 from tests.support.dataset import CaptureBackend, saved_scene, valid_draft
@@ -23,10 +24,40 @@ class RecoveryTests(unittest.TestCase):
         self.backend = CaptureBackend(scenes=self.data["scene_plan"])
         self.snapshots = []
 
-    def run_service(self, **options):
+    def run_service(self, *, idea_history=None, **options):
         with patch("goated_prompter.features.dataset.service.create_backend", return_value=self.backend):
-            return DatasetService({"backend": "mock"}, lambda: None).run(GoatedPrompterRequest(idea=self.data["subject"], prompt_model="Custom"), self.data,
+            return DatasetService({"backend": "mock"}, lambda: None, idea_history=idea_history).run(GoatedPrompterRequest(idea=self.data["subject"], prompt_model="Custom"), self.data,
                 lambda _: None, lambda row: self.snapshots.append(deepcopy(row)), **options)
+
+    def test_scene_repair_does_not_treat_its_own_event_as_a_recent_run(self):
+        self.data.update(amount=1, scene_plan=[], scene_plan_signature="", results=[])
+        history = RecentIdeaHistory()
+        original = self.backend.generate
+        idea_calls, validation_calls = [], []
+        def generate(instruction):
+            raw = original(instruction)
+            if instruction.diagnostic_stage == "dataset:ideas":
+                rows = json.loads(raw)
+                idea_calls.append(rows[0]["idea"])
+                if len(idea_calls) == 2:
+                    rows[0]["scene"] += " Both gloves and the planted feet remain clearly visible."
+                    self.backend.scenes[1] = rows[0]["scene"]
+                return json.dumps(rows)
+            if instruction.diagnostic_stage == "dataset:validation:scene":
+                observations = json.loads(raw)
+                validation_calls.append(observations)
+                if len(validation_calls) == 1:
+                    observations[0]["conflicts"] = ["The supporting feet are obscured."]
+                return json.dumps(observations)
+            return raw
+        self.backend.generate = generate
+        result = self.run_service(idea_history=history)
+        self.assertEqual(idea_calls, [dataset_idea_fixture(1)["idea"]] * 2)
+        self.assertEqual(result["completed"], 1, result["scene_plan"][0].get("failure_reason"))
+        self.assertEqual(result["failed"], 0)
+        self.assertEqual(len(validation_calls), 2)
+        self.assertEqual(result["scene_plan"][0]["prompt_status"], "valid")
+        self.assertEqual(history.recent(self.data), [idea_calls[0]])
 
     def test_new_idea_is_one_targeted_call_whose_scene_is_written_directly(self):
         result = self.run_service(scene_action=("regenerate_idea", 1))
