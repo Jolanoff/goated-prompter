@@ -152,6 +152,78 @@ class Contact:
     target: str
 
 
+def resolve_supports(participants, relationships=(), *, require_resolved=False):
+    """Resolve load-bearing ownership and cycles; this is not a geometry simulator."""
+    owners = {item.id: item for item in participants}
+    result = list(relationships)
+    if len(result) > 100 or any(not isinstance(edge.source, str) or not isinstance(edge.target, str) for edge in result):
+        raise ValueError("Support endpoints require bounded owned identifiers.")
+    for item in participants:
+        if not item.bodied or not item.pose and not item.support:
+            continue
+        existing = [edge for edge in result if edge.source.split(".")[0] == item.id]
+        normalized = {"feet_on_floor": ("feet", "floor"), "knees_on_floor": ("knees", "floor"),
+                      "supported_by_chair": ("body", "chair"), "supported_by_bed": ("body", "bed"),
+                      "supported_by_floor": ("body", "floor"), "ground": ("body", "ground"),
+                      "four_paws_on_ground": ("paws", "ground"), "three_paws_on_ground": ("paws", "ground")}
+        if item.support in normalized:
+            part, surface = normalized[item.support]
+            target = "setting." + surface
+        elif re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*\.[a-z]+(?:_[a-z]+)*", item.support):
+            part, target = "body", item.support
+        elif match := re.fullmatch(r"supported_at_([a-z_]+)_by_([A-Za-z][A-Za-z0-9_-]*)", item.support):
+            part, target = match[1], match[2] + ".body"
+        elif existing:
+            if not item.support:
+                raise ValueError("A support relationship needs an explicit participant support label.")
+            continue
+        else:
+            if require_resolved:
+                raise ValueError("Selected bodily mechanics need resolved owned support, not unspecified surface prose.")
+            continue
+        if existing:
+            if any(edge.target != target for edge in existing):
+                raise ValueError("Owned support contradicts the participant support label.")
+        else:
+            result.append(Contact(item.id + "." + part, target))
+    if len(result) > 100 or len(set(result)) != len(result):
+        raise ValueError("Support relationships must be bounded and distinct.")
+    graph = {}
+    for edge in result:
+        if not isinstance(edge.source, str) or not isinstance(edge.target, str):
+            raise ValueError("Support endpoints require owned identifiers.")
+        source, _, part = edge.source.partition(".")
+        target, _, surface = edge.target.partition(".")
+        if source not in owners or not valid_part_id(part) or not valid_part_id(surface):
+            raise ValueError("Support references an unresolved owner or surface.")
+        if target != "setting" and target not in owners:
+            raise ValueError("Support references an unknown supporting owner.")
+        if source == target:
+            raise ValueError("A subject cannot provide its own weight-bearing support.")
+        if owners[source].kind in {"style", "text", "concept"} or target in owners and owners[target].kind in {"style", "text", "concept"}:
+            raise ValueError("Nonphysical subjects cannot bear physical support relationships.")
+        if owners[source].kind == "human" and part in {"paw", "paws", "tail", "wing"}:
+            raise ValueError("Human support references nonhuman anatomy.")
+        if target == "setting" and surface in BODY_PARTS | {"body", "head", "foot", "knees"}:
+            raise ValueError("Background support must identify a physical surface, not unowned anatomy.")
+        if (owners[source].kind == "human" and owners[source].pose == "standing"
+                and part not in {"body", "feet", "foot", "left_foot", "right_foot"}):
+            raise ValueError("Standing human support must bear weight through the feet.")
+        graph.setdefault(source, set()).add(target)
+    visited = set()
+    def visit(owner, path):
+        if owner in path:
+            raise ValueError("Supporting owners form an unresolved load-bearing cycle.")
+        if owner in visited:
+            return
+        for target in graph.get(owner, ()):
+            visit(target, path | {owner})
+        visited.add(owner)
+    for owner in graph:
+        visit(owner, set())
+    return tuple(result)
+
+
 @dataclass(frozen=True)
 class SceneSpec:
     index: int
@@ -169,11 +241,13 @@ class SceneSpec:
     state: str = "frozen"
     private_vocabulary: bool = False
     concept: str = ""
+    supports: tuple[Contact, ...] = ()
 
     def to_dict(self):
         return {**asdict(self), "participants": [asdict(item) for item in self.participants],
                 "contacts": [asdict(item) for item in self.contacts], "hard": list(self.hard),
-                "choices": dict(self.choices), "locked": list(self.locked)}
+                "choices": dict(self.choices), "locked": list(self.locked),
+                "supports": [asdict(item) for item in resolve_supports(self.participants, self.supports)]}
 
     @property
     def signature(self):
@@ -182,7 +256,7 @@ class SceneSpec:
 
     @classmethod
     def from_dict(cls, value):
-        optional = {"state", "private_vocabulary", "concept"}
+        optional = {"state", "private_vocabulary", "concept", "supports"}
         if not isinstance(value, dict) or set(value) - optional != set(cls.__dataclass_fields__) - optional:
             raise ValueError("SceneSpec requires exactly its versioned planning fields.")
         if (type(value["index"]) is not int or not 1 <= value["index"] <= 25
@@ -220,6 +294,21 @@ class SceneSpec:
             contacts.append(Contact(**item))
         if len(set(contacts)) != len(contacts):
             raise ValueError("SceneSpec contacts must be distinct.")
+        for contact in contacts:
+            if contact.source == contact.target:
+                raise ValueError("A contact cannot connect an endpoint to itself.")
+            for endpoint in (contact.source, contact.target):
+                owner, part = endpoint.split(".")
+                subject = next(item for item in participants if item.id == owner)
+                if subject.kind in {"style", "text", "concept"}:
+                    raise ValueError("Nonphysical subjects cannot own physical contacts.")
+                if subject.kind == "human" and part in {"paw", "paws", "wing", "tail"}:
+                    raise ValueError("Human contact references nonhuman anatomy.")
+        supports = value.get("supports", [])
+        if not isinstance(supports, list) or any(not isinstance(item, dict) or set(item) != {"source", "target"} for item in supports):
+            raise ValueError("Support relationships require owned source and target endpoints.")
+        supports = tuple(Contact(**item) for item in supports)
+        supports = resolve_supports(participants, supports, require_resolved=value.get("state", "frozen") == "frozen")
         for field in ("setting", "catalog_id"):
             if not isinstance(value[field], str) or len(value[field]) > 1000:
                 raise ValueError(f"Invalid SceneSpec {field}.")
@@ -242,4 +331,4 @@ class SceneSpec:
             raise ValueError("Invalid SceneSpec requirement locks.")
         return cls(value["index"], value["route"], value["action"], participants, tuple(contacts), value["setting"],
                    hard, tuple(choices.items()), value["catalog_id"], tuple(locked), value["version"], value["category"],
-                   value.get("state", "frozen"), value.get("private_vocabulary", False), value.get("concept", ""))
+                    value.get("state", "frozen"), value.get("private_vocabulary", False), value.get("concept", ""), supports)

@@ -181,16 +181,21 @@ test("an edited scene is written as edited under the initial Understanding appro
   await confirmDatasetReview(page);
   await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/duck_token/);
   await openDatasetPage(page, "Scenes");
-  await page.getByLabel("Planned scene 1").fill("  A duck\nreads a map on a bench.  ");
+  await page.getByLabel("Planned scene 1").fill("  At the center, a duck sits on a bench, supported by the bench, and\nreads a map.  ");
   await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Repair scene", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Regenerate prompt", exact: true }).first()).toBeDisabled();
+  const check = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset/scene") && response.status() === 202);
+  await page.getByRole("button", { name: "Check scene", exact: true }).first().click();
+  expect((await check).request().postDataJSON().action).toBe("validate_scene");
+  await expect(page.getByRole("button", { name: "Regenerate prompt", exact: true }).first()).toBeEnabled();
   const submission = page.waitForRequest((event) => event.method() === "POST" &&
     new URL(event.url()).pathname.startsWith("/api/workspace/dataset"));
   await page.getByRole("button", { name: "Regenerate prompt", exact: true }).first().click();
   expect(new URL((await submission).url()).pathname).toBe("/api/workspace/dataset/scene");
   await openDatasetPage(page, "Dataset");
   await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(/duck_token:.*reads a map/);
-  expect(posts).toEqual(["/api/workspace/dataset/understand", "/api/workspace/dataset", "/api/workspace/dataset/scene"]);
+  expect(posts).toEqual(["/api/workspace/dataset/understand", "/api/workspace/dataset", "/api/workspace/dataset/scene", "/api/workspace/dataset/scene"]);
 });
 
 test("revised source rules preserve automatic generation instead of introducing a scene-only pause", async ({ page }) => {
@@ -279,7 +284,7 @@ test("Anima inserts locked multiple-character tags unchanged before a scene-only
   const finished = await (await request.get(`/api/jobs/${id}`)).json();
   expect(finished.llm_trace.messages[0].content).toContain("The application inserts the locked trigger");
   expect(finished.llm_trace.messages[0].content).not.toContain("Render the scene as anime/manga rather than realistic photography.");
-  expect(finished.llm_trace.request_number).toBe(3); // Brainstorm, IDEAS and one body-only writer call.
+  expect(finished.llm_trace.request_number).toBe(6); // Brainstorm, planning, Ideas, scene check, writer, final check.
   const saved = await (await request.get("/api/workspace/settings/dataset")).json();
   expect(saved.draft.trigger).toBe(trigger);
   expect(saved.draft.results[0].prompt).toBe(expected);

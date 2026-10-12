@@ -3,6 +3,7 @@
 from dataclasses import replace
 import hashlib
 import json
+import re
 
 from ...backends.base import BackendGenerationError
 from ...contracts import PromptInstruction
@@ -27,6 +28,11 @@ Use unknown for anything absent or ambiguous. Report extra or missing participan
 contradictory poses, impossible reach/support and role/trait ownership conflicts in conflicts.
 Extract every described contact as source/target owned body-part ids (for example A.hand).
 Evidence must be an exact nonempty quote from the description, never the check or a paraphrase.
+Select evidence from evidence_quotes, using the complete relevant sentence when needed.
+An available quote is not proof: return unknown or fail if it does not evidence the fact.
+Use supplied contact endpoint labels only when the same owned surface relationship is
+actually described. Put additional or contradictory contacts in conflicts; do not rename
+an endpoint after a prose synonym. Do not infer missing physical support or frame placement.
 Return every supplied check exactly once in supplied order, including action and concept.
 Each requirement check gets pass only when its full meaning and qualifiers are evidenced;
 missing evidence is unknown and contradiction is fail. Negative requirements are checked
@@ -69,18 +75,22 @@ def text_signature(text):
 
 
 def specification_checks(spec):
+    spec = SceneSpec.from_dict(spec.to_dict())
     return [{"id": "action", "text": spec.action},
             *([{"id": "concept", "text": spec.concept}] if spec.concept else []),
             *[{"id": f"subject:{item.id}", "text": f"The {item.kind} subject {item.name} retains its identity and supplied attributes: {item.traits}. Sex: {item.sex}."}
               for item in spec.participants],
             *([{"id": "category", "text": f"The selected {spec.category} interaction is depicted, not merely named."}]
               if spec.route == "adult" and spec.category in {"oral", "anal", "vaginal", "feet"} else []),
+            *[{"id": f"support:{edge.source}->{edge.target}", "text": f"Weight-bearing support explicitly connects {edge.source} to {edge.target}."}
+              for edge in spec.supports if "participants" in spec.locked
+              or f"participant:{edge.source.split('.')[0]}:support" in spec.locked],
             *[{"id": f"hard:{index}", "text": text} for index, text in enumerate(spec.hard)]]
 
 
 def scene_spec_errors(text, value, observation=None, *, evidence_spec=None):
     try:
-        spec = value if isinstance(value, SceneSpec) else SceneSpec.from_dict(value)
+        spec = SceneSpec.from_dict(value.to_dict() if isinstance(value, SceneSpec) else value)
     except (ValueError, TypeError, KeyError) as exc:
         return [str(exc)]
     if spec.state != "frozen":
@@ -223,7 +233,11 @@ def reconcile_scene_spec(value, observation):
         category = spec.category
     changed = (revised != spec.participants or contacts != spec.contacts or action != spec.action
                or setting != spec.setting or category != spec.category)
+    changed_supports = {new.id for old, new in zip(spec.participants, revised)
+                       if (old.pose, old.support) != (new.pose, new.support)}
+    supports = tuple(edge for edge in spec.supports if edge.source.split(".")[0] not in changed_supports)
     candidate = replace(spec, participants=revised, setting=setting, action=action, contacts=contacts, category=category,
+                        supports=supports,
                         choices=(), catalog_id="" if changed else spec.catalog_id,
                         private_vocabulary=False if changed else spec.private_vocabulary)
     try:
@@ -239,9 +253,27 @@ def validation_instruction(rows, *, family="qwen", kind="scene"):
         return {"type": "object", "additionalProperties": False, "required": list(properties), "properties": properties}
     def indexed_array(items):
         return {"type": "array", "minItems": len(items), "maxItems": len(items), "prefixItems": items}
-    contact = record({key: string for key in ("source", "target", "evidence")})
     for row in rows:
         spec = SceneSpec.from_dict(row["scene_spec"])
+        quotes = []
+        for sentence in re.split(r"(?<=[.!?])\s+|\n+", row["scene"]):
+            words = list(re.finditer(r"\S+", sentence))
+            start = 0
+            while start < len(words):
+                end = start + 1
+                while end < len(words) and words[end].end() - words[start].start() <= 240:
+                    end += 1
+                quotes.append(sentence[words[start].start():words[end - 1].end()])
+                if end == len(words):
+                    break
+                start += max(1, (end - start) // 2)
+        quotes = list(dict.fromkeys(quotes))
+        evidence = {"type": "string", "enum": ["", *quotes]}
+        editable_contacts = bool(row.get("edited_stage")) and kind == "scene" and "contacts" not in spec.locked
+        contact = record({"source": string if editable_contacts else {
+            "type": "string", "enum": sorted({item.source for item in spec.contacts} | {"unknown"})},
+            "target": string if editable_contacts else {
+            "type": "string", "enum": sorted({item.target for item in spec.contacts} | {"unknown"})}, "evidence": evidence})
         cast, participants = [], []
         for subject in spec.participants:
             editable = _editable_mechanics(spec, subject) if row.get("edited_stage") and kind == "scene" else set()
@@ -259,10 +291,13 @@ def validation_instruction(rows, *, family="qwen", kind="scene"):
                     fields[field] = {"type": "string", "enum": ["", *sorted(LOCATIONS), "unknown", "conflict"]}
                 else:
                     fields[field] = string
-            participants.append(record({**fields, "evidence": string}))
+            participants.append(record({**fields, "evidence": evidence}))
         checks = specification_checks(spec)
         context.append({"index": spec.index, "description": row["scene"],
             "cast": cast,
+            "evidence_quotes": quotes,
+            "contact_labels": [{"source": item.source, "target": item.target} for item in spec.contacts],
+            "support_relationships": [vars(item) for item in spec.supports],
             "applicable_validators": validation_strategies(spec),
             "editable_action": bool(row.get("edited_stage")) and "action" not in spec.locked,
             "checks": checks,
@@ -272,8 +307,8 @@ def validation_instruction(rows, *, family="qwen", kind="scene"):
             "participants": indexed_array(participants),
             "contacts": {"type": "array", "maxItems": 101, "items": contact},
             "requirements": indexed_array([record({"id": {"type": "string", "const": check["id"]},
-                "status": {"type": "string", "enum": ["pass", "fail", "unknown"]}, "evidence": string}) for check in checks]),
-            "setting": string, "setting_evidence": string, "action": string, "action_evidence": string,
+                "status": {"type": "string", "enum": ["pass", "fail", "unknown"]}, "evidence": evidence}) for check in checks]),
+            "setting": string, "setting_evidence": evidence, "action": string, "action_evidence": evidence,
             "category": {"type": "string", "enum": sorted(PLANNING_CATEGORIES | {"unknown"})},
             "conflicts": {"type": "array", "maxItems": 24, "items": {"type": "string", "maxLength": 1000}}}))
     budget = 512 + 1024 * len(rows)

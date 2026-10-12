@@ -36,6 +36,9 @@ Every principal subject needs a readable description faithful to its supplied at
 For every subject, describe its specified role and frame location, including environments
 and objects. For bodily subjects, describe the specified pose, frame location and support. For objects,
 products, environments and other non-bodied subjects, do not invent human anatomy or poses.
+Write the physical facts before styling: explicitly state each subject's frame placement,
+and each bodily subject's weight-bearing support. A close-up does not erase support: explain
+what supports the body even when that surface lies outside the crop. Do not merely imply it.
 Each selected contact names both owners and their appropriate body parts or object surfaces.
 Use natural synonyms for poses; catalog ids and original vocabulary labels need not appear.
 Keep approved hard requirements and the selected action visible in the same frozen moment.
@@ -491,6 +494,10 @@ class DatasetIdeasService:
             limit_passive = not passive_request(data)
 
             def variety_issue(row, others):
+                spec = SceneSpec.from_dict(specifications[row["index"]])
+                if passive_idea(spec.action) or any(re.search(r"\b(?:walk\w*|stroll\w*|wander\w*)\b",
+                        participant.pose.replace("_", " "), re.I) for participant in spec.participants):
+                    return None
                 if limit_passive and passive_idea(row["idea"]) and any(passive_idea(other) for other in others):
                     return PASSIVE_REPEAT
                 return None

@@ -29,6 +29,29 @@ from tests.support.dataset import saved_scene, valid_draft
 
 
 class SceneSpecGateTests(unittest.TestCase):
+    def test_validation_evidence_is_constrained_to_description_quotes_and_owned_contact_labels(self):
+        spec = self.paired_spec()
+        scene = "Alice sits on a chair on the left and greets Bob. Bob stands on the right with feet on the floor. Alice's left hand rests on Bob's shoulder."
+        instruction = validation_instruction([saved_scene(scene=scene, scene_spec=spec.to_dict())])
+        fields = instruction.json_schema["prefixItems"][0]["properties"]
+        evidence = fields["participants"]["prefixItems"][0]["properties"]["evidence"]
+        self.assertIn("enum", evidence)
+        self.assertTrue(all(not quote or quote in scene for quote in evidence["enum"]))
+        self.assertIn("Alice sits on a chair on the left and greets Bob.", evidence["enum"])
+        for field in ("setting_evidence", "action_evidence"):
+            self.assertEqual(fields[field], evidence)
+        contact = fields["contacts"]["items"]["properties"]
+        self.assertIn("A.left_hand", contact["source"]["enum"])
+        self.assertIn("B.shoulder", contact["target"]["enum"])
+        self.assertEqual(contact["evidence"], evidence)
+
+    def test_long_validation_quotes_are_bounded_exact_overlapping_excerpts(self):
+        scene = " ".join(f"word{index}" for index in range(250)) + "."
+        instruction = validation_instruction([saved_scene(scene=scene)])
+        quotes = json.loads(instruction.user_message)[0]["evidence_quotes"]
+        self.assertTrue(all(quote in scene and len(quote) <= 240 for quote in quotes))
+        self.assertTrue(all(any(f"word{index}" in quote.split() for quote in quotes) for index in range(249)))
+
     def test_forest_observation_with_place_names_missing_checks_and_invented_quotes_stays_blocked(self):
         from unittest.mock import Mock
         spec = SceneSpec(3, "general", "The explorer explores a mossy forest", (
@@ -99,7 +122,7 @@ class SceneSpecGateTests(unittest.TestCase):
         self.assertEqual(checks["minItems"], len(context["checks"]))
         self.assertEqual(checks["maxItems"], len(context["checks"]))
         self.assertEqual([item["properties"]["id"]["const"] for item in checks["prefixItems"]],
-            ["action", "concept", "subject:P1", "subject:P2", "hard:0"])
+            ["action", "concept", "subject:P1", "subject:P2", "support:P1.body->setting.ground", "hard:0"])
 
     def test_editable_mechanics_are_extracted_instead_of_constrained_to_the_old_labels(self):
         spec = replace(self.paired_spec(), locked=("hard",))
@@ -125,7 +148,7 @@ class SceneSpecGateTests(unittest.TestCase):
             {"id": "B", "role": "participant", "pose": "standing", "location": "right", "support": "feet_on_floor", "evidence": scene.split(".")[1].strip()}],
             "contacts": [{"source": "A.left_hand", "target": "B.shoulder", "evidence": scene.split(".")[2].strip()}],
             "requirements": [{"id": key, "status": "pass", "evidence": scene.split(".")[0]}
-                             for key in ("action", "subject:A", "subject:B")],
+                             for key in ("action", "subject:A", "subject:B", "support:A.body->setting.chair", "support:B.feet->setting.floor")],
             "setting": "unknown", "setting_evidence": "", "action": "Alice greets Bob",
             "action_evidence": scene.split(".")[0], "category": "general", "conflicts": []}
 
@@ -255,14 +278,17 @@ def greeting_scene(index, *, supported=True):
             + "Alice's left hand rests on Bob's shoulder.")
 
 
-def greeting_observation(index, scene, *, supported=True):
+def greeting_observation(index, scene, *, supported=True, spec=None):
     clauses = scene.split(".")
     return {"index": index, "participants": [
         {"id": "P1", "role": "participant", "pose": "seated", "location": "left", "support": "supported_by_chair", "evidence": clauses[0].strip()},
         {"id": "P2", "role": "participant", "pose": "standing", "location": "right", "support": "feet_on_floor" if supported else "unknown", "evidence": clauses[1].strip()}],
         "contacts": [{"source": "P1.left_hand", "target": "P2.shoulder", "evidence": clauses[2].strip()}],
         "requirements": [{"id": key, "status": "pass", "evidence": clauses[0].strip()}
-                         for key in ("action", "concept", "subject:P1", "subject:P2")],
+                         for key in ("action", "concept", "subject:P1", "subject:P2")]
+            + [{"id": f"support:{edge['source']}->{edge['target']}", "status": "pass" if supported or number == 0 else "unknown",
+                "evidence": clauses[min(number, 1)].strip()} for number, edge in enumerate((spec or {}).get("supports", []))
+                if "participants" in spec["locked"] or f"participant:{edge['source'].split('.')[0]}:support" in spec["locked"]],
         "setting": "studio", "setting_evidence": clauses[0].strip(), "action": "Alice greets Bob",
         "action_evidence": clauses[0].strip(), "category": "general", "conflicts": []}
 
@@ -308,7 +334,7 @@ class GreetingBackend:
             return json.dumps(rows)
         if instruction.diagnostic_stage.startswith("dataset:validation:"):
             return json.dumps([greeting_observation(item["index"], item["description"],
-                supported="feet on the floor" in item["description"]) for item in context])
+                supported="feet on the floor" in item["description"], spec=self.specs[item["index"]]) for item in context])
         index = int(instruction.diagnostic_stage.split(":")[1])
         return "ohwx_person " + greeting_scene(index)
 
@@ -354,7 +380,7 @@ class SceneSpecPipelineTests(unittest.TestCase):
         spec = replace(plan_scene_specs(data, dataset_assignments(data), directions={})[1], state="frozen")
         row = saved_scene(scene=greeting_scene(1), scene_spec=spec.to_dict())
         session = Mock()
-        observation = greeting_observation(1, row["scene"])
+        observation = greeting_observation(1, row["scene"], spec=row["scene_spec"])
         observation["requirements"][0]["status"] = "unknown"
         session.generate.return_value = json.dumps([observation])
         checked = verify_scenes(session, [row], lambda: None)[0]
@@ -367,7 +393,7 @@ class SceneSpecPipelineTests(unittest.TestCase):
         data = greeting_draft(1)
         spec = replace(plan_scene_specs(data, dataset_assignments(data), directions={})[1], state="frozen").to_dict()
         scene = greeting_scene(1).replace("Alice sits on a chair", "Alice kneels with knees on the floor")
-        observation = greeting_observation(1, scene)
+        observation = greeting_observation(1, scene, spec=spec)
         observation["participants"][0].update(pose="kneeling", support="knees_on_floor")
         session = Mock()
         session.generate.return_value = json.dumps([observation])
@@ -377,6 +403,8 @@ class SceneSpecPipelineTests(unittest.TestCase):
         self.assertEqual(locked["scene_spec"]["participants"][0]["pose"], "seated")
         self.assertEqual(locked["scene"], scene)
         spec["locked"] = [value for value in spec["locked"] if not value.startswith("participant:P1:")]
+        observation["requirements"] = [check for check in observation["requirements"] if check["id"] != "support:P1.body->setting.chair"]
+        session.generate.return_value = json.dumps([observation])
         opened = verify_scenes(session, [{**row, "scene_spec": spec}], lambda: None)[0]
         self.assertTrue(scene_eligibility(opened, data).usable)
         self.assertEqual(opened["scene_spec"]["participants"][0]["pose"], "kneeling")
@@ -640,7 +668,7 @@ class SceneSpecPipelineTests(unittest.TestCase):
         rows = [saved_scene(index, scene=greeting_scene(index), scene_spec=specs[index].to_dict(), edited_stage="scene")
                 for index in (1, 2)]
         session = Mock()
-        session.generate.return_value = json.dumps([{"index": 1, "participants": None}, greeting_observation(2, rows[1]["scene"])])
+        session.generate.return_value = json.dumps([{"index": 1, "participants": None}, greeting_observation(2, rows[1]["scene"], spec=rows[1]["scene_spec"])])
         result = verify_scenes(session, rows, lambda: None)
         self.assertFalse(scene_eligibility(result[0], data).usable)
         self.assertTrue(scene_eligibility(result[1], data).usable)
@@ -651,7 +679,7 @@ class SceneSpecPipelineTests(unittest.TestCase):
         specs = {index: replace(spec, state="frozen") for index, spec in plan_scene_specs(data, dataset_assignments(data), directions={}).items()}
         rows = [saved_scene(index, scene=greeting_scene(index), scene_spec=specs[index].to_dict()) for index in (1, 2)]
         session = Mock()
-        session.generate.return_value = json.dumps([greeting_observation(1, rows[0]["scene"])])
+        session.generate.return_value = json.dumps([greeting_observation(1, rows[0]["scene"], spec=rows[0]["scene_spec"])])
         result = verify_scenes(session, rows, lambda: None)
         self.assertTrue(scene_eligibility(result[0], data).usable)
         self.assertFalse(scene_eligibility(result[1], data).usable)

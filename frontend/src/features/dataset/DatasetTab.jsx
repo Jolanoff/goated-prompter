@@ -9,6 +9,7 @@ import { datasetCopyText, datasetJsonl, datasetGenerationLog } from "./datasetEx
 import { editDatasetPlan } from "./datasetState.js";
 import { useDatasetWorkflow } from "./useDatasetWorkflow.js";
 import DatasetConfirmationModal from "./DatasetConfirmationModal.jsx";
+import VocabularyPreparation from "./VocabularyPreparation.jsx";
 import { maxSeed, seedModes, triggerTypes } from "./options.js";
 import { styles } from "../../shared/workflow/options.js";
 
@@ -197,6 +198,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
     {draft && <>
       <div id="dataset-configure" role="tabpanel" aria-labelledby="dataset-tab-configure" tabIndex={0} hidden={page !== "configure"}>
       {page === "configure" && <section className="dataset-configuration" aria-label="Configure dataset">
+      <VocabularyPreparation busy={busy || active} noEngine={noEngine} onGenerate={onGenerate} />
       <div className="dataset-config-grid">
         <section className="dataset-config-column" aria-label="Dataset trigger and concept settings">
           <header className="dataset-config-heading">

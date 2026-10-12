@@ -5,6 +5,7 @@ from aiohttp import web
 from .service import validate_dataset_draft
 from .assignments import dataset_assignments
 from .intent import intent_signature
+from .vocabulary_conversion import VocabularyConversion
 from ...presets import get_director_preset
 from .plan import reusable_scene_plan, scene_is_usable, scene_unusable_reason
 from ...api.common import STATE, active_job_conflict, engine_request, json_object
@@ -79,8 +80,34 @@ async def dataset_endpoint(request):
              "workflow_revision": payload.get("workflow_revision")}), status=202)
 
 
+async def vocabulary_endpoint(request):
+    state = request.app[STATE]
+    tool = VocabularyConversion()
+    if request.method == "GET":
+        return web.json_response(tool.review(), headers={"Cache-Control": "no-store"})
+    payload = await json_object(request)
+    async with state.admission:
+        if (conflict := active_job_conflict(state, "Wait for the active job before preparing or approving vocabulary.")) is not None:
+            return conflict
+        if request.path.endswith("/prepare"):
+            settings = payload.get("settings", {})
+            if set(payload) - {"settings"} or not isinstance(settings, dict) or set(settings) - {"director_profile"}:
+                raise ValueError("Preparation uses the saved local model and vocabulary; no supplied paths or content are accepted.")
+            config = state.config()
+            engine = engine_request(state, config, settings, idea="Prepare private vocabulary for review", mode="Custom")
+            return web.json_response(state.start_job("dataset_vocabulary", engine, config, True,
+                {"operation": "dataset_vocabulary"}), status=202)
+        if set(payload) != {"token", "indexes"}:
+            raise ValueError("Review requires a token and explicitly selected record indexes.")
+        result = tool.reject(payload["token"]) if payload["indexes"] == [] else tool.approve(payload["token"], payload["indexes"])
+        return web.json_response(result, headers={"Cache-Control": "no-store"})
+
+
 def register(app):
     app.add_routes([web.post("/api/workspace/dataset", dataset_endpoint),
                     web.post("/api/workspace/dataset/understand", dataset_endpoint),
                     web.post("/api/workspace/dataset/scenes", dataset_endpoint),
-                    web.post("/api/workspace/dataset/scene", dataset_endpoint)])
+                    web.post("/api/workspace/dataset/scene", dataset_endpoint),
+                    web.post("/api/workspace/dataset/vocabulary/prepare", vocabulary_endpoint),
+                    web.get("/api/workspace/dataset/vocabulary/review", vocabulary_endpoint),
+                    web.post("/api/workspace/dataset/vocabulary/review", vocabulary_endpoint)])

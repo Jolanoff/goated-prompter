@@ -47,7 +47,7 @@ class WorkflowRunnerTests(unittest.TestCase):
 
     def test_every_admitted_operation_has_a_runner(self):
         self.assertEqual(set(WORKFLOW_RUNNERS), {"builder", "minimax", "dataset_understanding",
-                                                 "dataset", "dataset_scenes", "refine"})
+                                                 "dataset", "dataset_scenes", "dataset_vocabulary", "refine"})
         self.assertIs(WORKFLOW_RUNNERS["dataset"], WORKFLOW_RUNNERS["dataset_scenes"])
 
     def test_unknown_operation_is_rejected(self):

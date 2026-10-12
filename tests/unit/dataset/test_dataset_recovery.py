@@ -17,6 +17,28 @@ from tests.support.dataset import CaptureBackend, saved_scene, valid_draft
 
 
 class RecoveryTests(unittest.TestCase):
+    def test_frozen_walking_pose_is_not_rejected_by_a_later_passive_idea_hint(self):
+        from dataclasses import replace
+        from goated_prompter.features.dataset.plan import ScenePlanner
+        from tests.support.dataset import frozen_specs
+        data = valid_draft(amount=2, subject="exploring a mossy fantasy forest")
+        specs = frozen_specs(data)
+        specs[2] = replace(specs[2], participants=tuple(replace(item, pose="walking forward", support="ground")
+            if item.bodied else item for item in specs[2].participants))
+        existing = [saved_scene(1, idea="The explorer walks through a forest at dawn.", scene_spec=specs[1].to_dict())]
+        backend = CaptureBackend()
+        original = backend.generate
+        def generate(instruction):
+            if instruction.diagnostic_stage == "dataset:ideas":
+                backend.calls.append(instruction)
+                return json.dumps([dataset_idea_fixture(2, idea="The explorer walks through the forest at dusk.")])
+            return original(instruction)
+        backend.generate = generate
+        rows = ScenePlanner(lambda: None).plan_ideas(session=backend, data=data, assignments=dataset_assignments(data),
+            indexes=[2], existing=[*existing, saved_scene(2, scene_spec=specs[2].to_dict())],
+            progress=lambda _: None, allow_partial=True)
+        self.assertNotEqual(rows[0].get("idea_status"), "failed", rows[0].get("failure_reason"))
+
     def setUp(self):
         self.data = valid_draft(amount=2, _confirmed_intent=dataset_understanding_fixture(),
             scene_plan=[saved_scene(1), saved_scene(2)], results=[{"index": 2, "input": "", "prompt": "Saved sibling prompt"}])

@@ -47,7 +47,7 @@ for (const [theme, width] of [["dark", 1440], ["light", 1440], ["dark", 390], ["
   });
 }
 
-test("editing an idea keeps its scene usable and leaves siblings untouched", async ({ page }) => {
+test("editing an idea retains its scene but requires rechecking and leaves siblings untouched", async ({ page }) => {
   await planScenes(page);
   const card = page.getByRole("article", { name: "Scene 1 card", exact: true });
   const scene = await card.getByLabel("Planned scene 1").inputValue();
@@ -56,5 +56,6 @@ test("editing an idea keeps its scene usable and leaves siblings untouched", asy
   await expect(card.getByLabel("Planned scene 1")).toHaveValue(scene);
   await expect(page.getByLabel("Planned scene 2")).toHaveValue(sibling);
   await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
-  await expect(card.getByRole("button", { name: "Regenerate prompt", exact: true })).toBeEnabled();
+  await expect(card.getByRole("button", { name: "Regenerate prompt", exact: true })).toBeDisabled();
+  await expect(card.getByRole("button", { name: "Check scene", exact: true })).toBeEnabled();
 });

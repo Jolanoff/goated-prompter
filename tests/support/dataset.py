@@ -9,6 +9,7 @@ from goated_prompter.features.dataset.service import default_dataset_draft
 from tests.helpers import dataset_idea_fixture, dataset_understanding_fixture
 from goated_prompter.features.dataset.scene_spec import Participant, SceneSpec
 from goated_prompter.features.dataset.validation import text_signature
+from goated_prompter.features.dataset.validation import specification_checks
 from goated_prompter.features.dataset.assignments import dataset_assignments
 from goated_prompter.features.dataset.batch_planner import plan_scene_specs
 from goated_prompter.features.dataset.ideas import creative_directions, ideas_instruction
@@ -100,10 +101,7 @@ def scene_observation(spec, scene):
         **{key: getattr(item, key) for key in ("role", "pose", "location", "support")}, "evidence": scene}
         for item in spec.participants], "contacts": [{"source": item.source, "target": item.target, "evidence": scene}
         for item in spec.contacts], "setting": spec.setting or "unknown", "setting_evidence": scene if spec.setting else "",
-        "requirements": [{"id": key, "status": "pass", "evidence": scene} for key in (
-            "action", *(f"subject:{item.id}" for item in spec.participants), *(f"hard:{index}" for index in range(len(spec.hard))),
-            *(("concept",) if spec.concept else ()),
-            *(("category",) if spec.route == "adult" and spec.category in {"oral", "anal", "vaginal", "feet"} else ()))],
+        "requirements": [{"id": check["id"], "status": "pass", "evidence": scene} for check in specification_checks(spec)],
         "action": spec.action, "action_evidence": scene, "category": spec.category, "conflicts": []}
 
 

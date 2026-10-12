@@ -239,6 +239,8 @@ def dataset_instruction(request, data, index, model_family="qwen", plan_item=Non
     else:
         grouping = "Include exact case-sensitive trigger wording: " + json.dumps(terms, ensure_ascii=False)
         grouping += ". Keep it connected." if data["trigger_connected"] else ". Distribute terms naturally near the things they identify."
+        grouping += (" Preserve the supplied capitalization even after a visual introduction. If a term starts with "
+                     "an uppercase article, begin a new descriptive sentence with it rather than lowercasing it.")
     placement = (f"Place the first trigger term at the beginning of {target_field}." if data["trigger_at_start"] else
                  f"Prefer a natural visual introduction before placing the trigger later in {target_field}.")
     if prefix := fixed_anima_prefix(data):

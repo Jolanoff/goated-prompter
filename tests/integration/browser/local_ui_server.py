@@ -24,6 +24,55 @@ class DatasetUIMock(MockBackend):
         if stage == "dataset:ideas:brainstorm":
             from tests.support.dataset import brainstorm_fixture
             result = json.dumps(brainstorm_fixture(json.loads(instruction.user_message)["requested_events"]))
+        elif stage == "dataset:planning":
+            from goated_prompter.options.dataset import BODIED_KINDS
+            context = json.loads(instruction.user_message)
+            rows = []
+            for spec in context["assignments"]:
+                participants = []
+                for item in spec["participants"]:
+                    bodily = item["kind"] in BODIED_KINDS
+                    participants.append({"id": item["id"], "role": item["role"] or "subject",
+                        "pose": item["pose"] or ("resting" if item["kind"] == "animal" else "standing" if bodily else ""),
+                        "location": item["location"] or "center",
+                        "support": item["support"] or ("four_paws_on_ground" if item["kind"] == "animal" else "feet_on_floor" if bodily else "")})
+                rows.append({"index": spec["index"], "action": spec["action"], "setting": spec["setting"],
+                    "participants": participants, "contacts": spec["contacts"], "supports": spec.get("supports", [])})
+            result = json.dumps(rows)
+        elif stage.startswith("dataset:validation:"):
+            context = json.loads(instruction.user_message)
+            if ":batch:" in stage:
+                result = json.dumps([{"id": item["id"], "status": "pass", "evidence": [
+                    {"index": context["descriptions"][0]["index"], "quote": context["descriptions"][0]["text"]}]}
+                    for item in context["requirements"]])
+            else:
+                rows = []
+                for item in context:
+                    quote = item["evidence_quotes"][0]
+                    description = item["description"].casefold()
+                    def observed(subject):
+                        labels = dict(subject["normalization_labels"])
+                        if subject["kind"] not in {"object", "product", "environment", "style", "text", "concept", "other"}:
+                            if not labels["pose"]:
+                                labels["pose"] = ("seated" if re.search(r"\bsits?\b|\bseated\b", description) else
+                                    "standing" if "feet_on_floor" in description or "feet on the floor" in description else "unknown")
+                            if not labels["support"]:
+                                labels["support"] = ("setting.bench" if "bench" in description and labels["pose"] == "seated" else
+                                    "feet_on_floor" if "feet_on_floor" in description or "feet on the floor" in description else
+                                    "four_paws_on_ground" if "four_paws_on_ground" in description else "unknown")
+                        if not labels["location"]:
+                            labels["location"] = next((value for value in ("center", "left", "right", "foreground", "background")
+                                                       if value in description), "unknown")
+                        labels["role"] = labels["role"] or "subject"
+                        return {"id": subject["id"], **labels, "evidence": quote}
+                    rows.append({"index": item["index"], "participants": [observed(subject) for subject in item["cast"]],
+                        "contacts": [{**edge, "evidence": quote} for edge in item["contact_labels"]],
+                        "setting": item["setting_to_identify"] or "unknown", "setting_evidence": quote,
+                        "action": item["checks"][0]["text"], "action_evidence": quote,
+                        "category": next((check["text"].split()[2] for check in item["checks"] if check["id"] == "category"), "general"),
+                        "requirements": [{"id": check["id"], "status": "pass", "evidence": quote} for check in item["checks"]],
+                        "conflicts": []})
+                result = json.dumps(rows)
         elif stage == "dataset:ideas":
             from tests.helpers import dataset_idea_fixture
             context = json.loads(instruction.user_message)
@@ -36,7 +85,13 @@ class DatasetUIMock(MockBackend):
                     while " ".join(idea.casefold().split()) in used:
                         idea += " revised"
                 used.add(" ".join(idea.casefold().split()))
-                rows.append(dataset_idea_fixture(row["index"], idea=idea, scene=f"mock scene {row['index']}: {idea}"))
+                spec = row["scene_spec"]
+                mechanics = ". ".join(f"{item['name']} ({item['traits']}) is {item['pose'] or 'displayed'} "
+                    f"at {item['location']}, with support {item['support'] or 'not applicable'}" for item in spec["participants"])
+                contacts = ". ".join(f"{edge['source']} contacts {edge['target']}" for edge in spec["contacts"])
+                support = ". ".join(f"{edge['source']} is supported by {edge['target']}" for edge in spec.get("supports", []))
+                rows.append(dataset_idea_fixture(row["index"], idea=idea,
+                    scene=f"mock scene {row['index']}: {idea}. {spec['action']}. {mechanics}. {contacts}. {support}. {spec['setting']}"))
             result = json.dumps(rows)
         elif stage == "builder:scene_planning":
             context = json.loads(instruction.user_message)

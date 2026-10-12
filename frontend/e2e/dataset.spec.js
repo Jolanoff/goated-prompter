@@ -97,8 +97,9 @@ test("creativity persists and Builder receives the exact checked scene", async (
   const response = await submit(page, "Regenerate prompt", "/api/workspace/dataset/scene", true);
   expect(response.request().postDataJSON().input.creativity).toBe("Dice");
   const finished = await finish(request, (await response.json()).id);
-  expect(finished.llm_trace.request_number).toBe(1);
-  expect(finished.llm_trace.messages[1].content).toBe(before.scene_plan[0].scene);
+  expect(finished.llm_trace.request_number).toBe(2);
+  expect(response.request().postDataJSON().input.scene_plan[0].scene).toBe(before.scene_plan[0].scene);
+  expect(JSON.parse(finished.llm_trace.messages[1].content)[0].description).toBe(finished.result.prompts[0].prompt);
   expect(finished.result.scene_plan[0].self_check).toBe("PASS");
 });
 
@@ -114,7 +115,7 @@ test("prompt failure retries enhancement, not scene construction", async ({ page
   const response = await submit(page, "Retry failed prompt", "/api/workspace/dataset/scene");
   expect(response.request().postDataJSON().action).toBe("regenerate_prompt");
   const finished = await finish(request, (await response.json()).id);
-  expect(finished.llm_trace.request_number).toBe(1);
+  expect(finished.llm_trace.request_number).toBe(2);
   await openDatasetPage(page, "Dataset");
   await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(/saved_person/);
   expect(finished.result.prompts[1].prompt).toBe(draft.results[0].prompt);
@@ -222,11 +223,11 @@ test("accepted replacement survives a lost admission response", async ({ page, r
   await expect(page.getByLabel("Planned scene 1")).toHaveValue(recovered.scene_plan[0].scene);
 });
 
-test("ten finished scenes come from a brainstorm and two idea calls without per-scene calls", async ({ page, request }) => {
+test("ten scenes use bounded planning, Ideas and validation chunks without per-scene calls", async ({ page, request }) => {
   await openDataset(page, "10");
   const response = await submit(page, "Generate 10 scenes only", "/api/workspace/dataset/scenes");
   const finished = await finish(request, (await response.json()).id);
-  expect(finished.llm_trace.request_number).toBe(3);
+  expect(finished.llm_trace.request_number).toBe(7);
   expect(finished.result.scene_plan.map((row) => row.index)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   expect(finished.result.scene_plan.every((row) => row.self_check === "PASS" && row.scene && !("geometry" in row))).toBe(true);
   await expect(page.getByLabel("Dataset planning mode")).toHaveCount(0);
@@ -245,10 +246,10 @@ test("a saved REPAIR note blocks only its scene until a new idea replaces it", a
   await openDatasetPage(page, "Scenes");
   await expect(page.getByRole("button", { name: "Regenerate prompt", exact: true }).first()).toBeDisabled();
   const generated = await finish(request, (await (await submit(page, "Continue")).json()).id);
-  expect(generated.llm_trace.request_number).toBe(1);
+  expect(generated.llm_trace.request_number).toBe(2);
   expect(generated.result.prompts.map((row) => row.index)).toEqual([2]);
   const replaced = await finish(request, (await (await submit(page, "Regenerate idea", "/api/workspace/dataset/scene")).json()).id);
-  expect(replaced.llm_trace.request_number).toBe(3);
+  expect(replaced.llm_trace.request_number).toBe(4);
   expect(replaced.result.scene_plan[0].self_check).toBe("PASS");
   expect(replaced.result.prompts[1]).toEqual(generated.result.prompts[0]);
 });
@@ -293,15 +294,18 @@ test("manual scene edits are written as edited and Clear releases jobs, not scen
   await openDataset(page);
   await generateDataset(page);
   await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/saved_person/);
-  const manual = "She reads a book on a park bench.";
+  const manual = "At the center, she sits on a park bench, supported by the bench, and shapes a clay pot.";
   await openDatasetPage(page, "Scenes");
   await page.getByLabel("Planned scene 1").fill(manual);
   await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
   await openDatasetPage(page, "Dataset");
   await expect(page.getByLabel("Dataset prompt 1")).toHaveCount(0);
   await openDatasetPage(page, "Scenes");
+  const checked = await finish(request, (await (await submit(page, "Check scene", "/api/workspace/dataset/scene")).json()).id);
+  expect(checked.llm_trace.request_number).toBe(1);
+  expect(checked.result.scene_plan[0].scene).toBe(manual);
   const written = await finish(request, (await (await submit(page, "Regenerate prompt", "/api/workspace/dataset/scene")).json()).id);
-  expect(written.llm_trace.request_number).toBe(1);
+  expect(written.llm_trace.request_number).toBe(2);
   expect(written.result.scene_plan[0].scene).toBe(manual);
   await openDatasetPage(page, "Dataset");
   await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(/park bench/);
@@ -324,7 +328,7 @@ test("per-scene actions preserve siblings; idea edits keep the scene", async ({ 
   await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/saved_person/);
   await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
   const before = (await settings(request)).draft;
-  for (const [label, calls] of [["Regenerate prompt", 1], ["Regenerate idea", 3]]) {
+  for (const [label, calls] of [["Regenerate prompt", 2], ["Regenerate idea", 4]]) {
     const done = await finish(request, (await (await submit(page, label, "/api/workspace/dataset/scene")).json()).id);
     expect(done.llm_trace.request_number).toBe(calls);
     await expect.poll(async () => (await settings(request)).draft.scene_plan).toEqual(done.result.scene_plan);
@@ -339,6 +343,7 @@ test("per-scene actions preserve siblings; idea edits keep the scene", async ({ 
   await page.getByLabel("Planned idea 1").fill("Edited activity");
   await expect(page.getByLabel("Planned scene 1")).toHaveValue(scene);
   await expect.poll(async () => (await settings(request)).draft.scene_plan[0].idea).toBe("Edited activity");
+  await finish(request, (await (await submit(page, "Check scene", "/api/workspace/dataset/scene")).json()).id);
   const written = await finish(request, (await (await submit(page, "Regenerate prompt", "/api/workspace/dataset/scene")).json()).id);
   expect(written.result.prompts[0].prompt).toContain(scene);
   expect(written.result.prompts[1]).toEqual(before.results[1]);
@@ -358,12 +363,12 @@ test("target changes require fresh approval while reusing checked scenes for Bui
   await page.getByLabel("Dataset target model").selectOption("Anima");
   await expect.poll(async () => (await settings(request)).draft.target).toBe("Anima");
   const first = await finish(request, (await (await submit(page, "Regenerate prompt", "/api/workspace/dataset/scene", true)).json()).id);
-  expect(first.llm_trace.request_number).toBe(1);
+  expect(first.llm_trace.request_number).toBe(2);
   await openDatasetPage(page, "Scenes");
   const next = page.waitForResponse((response) => response.url().endsWith("/api/workspace/dataset/scene") && response.status() === 202);
   await page.getByRole("button", { name: "Regenerate prompt", exact: true }).nth(1).click();
   const done = await finish(request, (await (await next).json()).id);
-  expect(done.llm_trace.request_number).toBe(1);
+  expect(done.llm_trace.request_number).toBe(2);
   expect(done.result.scene_plan).toEqual(before.scene_plan);
   expect(done.result.prompts.map((row) => row.scene)).toEqual(before.results.map((row) => row.scene));
   expect(done.result.target).toBe("Anima");

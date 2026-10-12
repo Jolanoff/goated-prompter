@@ -116,7 +116,7 @@ test("Continue keeps the plan and completed prompt, generates only missing promp
   const accepted = await admission;
   expect(accepted.request().postDataJSON().resume).toBe(true);
   const completed = await finish(request, (await accepted.json()).id);
-  expect(completed.llm_trace.request_number).toBe(1);
+  expect(completed.llm_trace.request_number).toBe(2); // Writer and final SceneSpec validation.
   expect(completed.result.prompts[0]).toEqual(record.draft.results[0]);
   expect(completed.result.scene_plan.map((item) => item.scene)).toEqual(record.draft.scene_plan.map((item) => item.scene));
   expect(writes.filter((url) => url.endsWith("/api/workspace/dataset/understand"))).toEqual([]);
@@ -149,7 +149,7 @@ test("Configure Continue writes existing scenes with a legacy false plan setting
   const accepted = await admission;
   expect(accepted.request().postDataJSON().resume).toBe(true);
   const completed = await finish(request, (await accepted.json()).id);
-  expect(completed.llm_trace.request_number).toBe(2);
+  expect(completed.llm_trace.request_number).toBe(4); // Two writers and two final validations.
   expect(completed.result.scene_plan.map((row) => row.scene)).toEqual(record.draft.scene_plan.map((row) => row.scene));
   await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/duck_token/);
 });

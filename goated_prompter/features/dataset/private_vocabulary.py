@@ -19,6 +19,7 @@ from .quality import broken_anatomy, minor_reference, ownership_request, sexual_
 from .routing import assignment_scope, scoped_request
 from .scene_spec import BODY_PARTS, Contact, LOCATIONS, Participant, POSE_SUPPORTS, SceneSpec, PLANNING_CATEGORIES
 from ...strict_json import reject_duplicate_keys
+from ...json_store import MAX_STORE_BYTES, read_store
 
 VOCABULARY_FILE_ENV = "GOATED_PROMPTER_VOCABULARY_FILE"
 
@@ -80,6 +81,11 @@ def vocabulary_path():
     return Path(configured).expanduser() if configured else PROJECT_ROOT / "data" / "vocabulary" / "sexual.txt"
 
 
+def catalog_path(source):
+    source = Path(source)
+    return source.with_name(source.name + ".catalog.json")
+
+
 TEMPLATE_HEADER = """# Private adult vocabulary for the Dataset tab. It stays on this computer and is never committed.
 # Add one entry per line under a [section] heading; lines starting with # are comments.
 # Changes apply to the next batch without a restart. Positions are selected per image;
@@ -135,6 +141,8 @@ class Vocabulary(dict):
 
 
 def compile_arrangement(value, section):
+    if section not in SECTIONS or not (section.endswith("positions") or section == "toys"):
+        raise ValueError("Position records need a recognized position category section.")
     fields = {"id", "category", "participantCount", "participants", "contacts", "physicalConstraints"}
     if not isinstance(value, dict) or not fields <= value.keys() or value.keys() - fields - {"label"}:
         raise ValueError("Position records need id, category, participantCount, participants, contacts and physicalConstraints.")
@@ -144,6 +152,16 @@ def compile_arrangement(value, section):
     if (type(count) is not int or not 1 <= count <= 100 or not isinstance(participants, dict)
             or len(participants) != count or not isinstance(supports, dict) or set(supports) != set(participants)):
         raise ValueError("Participant count, owners and physical supports must agree.")
+    required_count = {"solo positions": 1, "solo kink positions": 1, "couple positions": 2,
+                      "two men positions": 2, "two women positions": 2, "man and woman positions": 2,
+                      "three positions": 3}.get(section)
+    if required_count is not None and count != required_count or section == "group positions" and count < 4:
+        raise ValueError("Participant count conflicts with the vocabulary section.")
+    sexes = [item.get("sex", "unspecified") for item in participants.values() if isinstance(item, dict)]
+    if (section == "two men positions" and any(sex not in {"male", "unspecified"} for sex in sexes)
+            or section == "two women positions" and any(sex not in {"female", "unspecified"} for sex in sexes)
+            or section == "man and woman positions" and "unspecified" not in sexes and sorted(sexes) != ["female", "male"]):
+        raise ValueError("Declared participant sexes conflict with the vocabulary section.")
     category = value["category"]
     if not isinstance(category, str) or category not in PLANNING_CATEGORIES - {"general"}:
         raise ValueError("Unknown position category.")
@@ -183,6 +201,9 @@ def compile_arrangement(value, section):
         defining = next(item for item in template.contacts if item.source.split(".")[1] in sources
                         and item.target.split(".")[1] in targets)
         performer, receiver = defining.source.split(".")[0], defining.target.split(".")[0]
+        if any(item.role not in {"participant", "performer" if item.id == performer else "receiver" if item.id == receiver else "participant"}
+               for item in template.participants):
+            raise ValueError("Participant roles contradict the owned defining contact.")
         template = replace(template, participants=tuple(replace(item, role=("performer" if item.id == performer
             else "receiver" if item.id == receiver else "participant")) if item.role == "participant" else item
             for item in template.participants))
@@ -261,13 +282,45 @@ def load_vocabulary(path=None):
         stamp = path.stat().st_mtime_ns
     except OSError:
         return Vocabulary(diagnostics=({"rule": "unavailable", "reason": "Vocabulary file is missing or inaccessible."},))
+    prepared_path = catalog_path(path)
+    try:
+        stamp = (stamp, prepared_path.stat().st_mtime_ns)
+    except OSError:
+        stamp = (stamp, None)
     cached = _cache.get(path)
     if cached and cached[0] == stamp:
         return cached[1]
     try:
-        sections = parse_vocabulary(path.read_text(encoding="utf-8-sig"))
+        with path.open("rb") as stream:
+            source = stream.read(MAX_STORE_BYTES + 1)
+        if len(source) > MAX_STORE_BYTES:
+            raise OSError("Vocabulary size limit exceeded.")
+        sections = parse_vocabulary(source.decode("utf-8-sig"))
     except (OSError, UnicodeDecodeError):
         return Vocabulary(diagnostics=({"rule": "unreadable", "reason": "Vocabulary file could not be read as UTF-8."},))
+    if stamp[1] is not None:
+        try:
+            prepared = read_store(prepared_path, None, lambda value: value)
+            if (not isinstance(prepared, dict) or prepared.get("version") != 1
+                    or prepared.get("source_digest") != hashlib.sha256(source).hexdigest()
+                    or not isinstance(prepared.get("records"), list)):
+                raise ValueError("Stale or invalid approved vocabulary catalog.")
+            records = list(sections.records)
+            converted_lines = set()
+            for entry in prepared["records"]:
+                record = compile_arrangement(entry["record"], entry["section"])
+                if any(item.id == record.id for item in records):
+                    raise ValueError("Duplicate approved position id.")
+                records.append(record)
+                if type(entry.get("line")) is int:
+                    converted_lines.add(entry["line"])
+            diagnostics = [item for item in sections.diagnostics
+                           if not (item["rule"] == "unresolved_structure" and item.get("line") in converted_lines)]
+            sections = Vocabulary(sections, records=records, diagnostics=diagnostics, loaded=sections.loaded)
+        except (OSError, ValueError, TypeError, KeyError):
+            sections = Vocabulary(sections, records=sections.records, loaded=sections.loaded,
+                diagnostics=(*sections.diagnostics, {"rule": "invalid_record",
+                    "reason": "Approved vocabulary catalog is stale or invalid; general planning remains available."}))
     _cache[path] = (stamp, sections)
     return sections
 
