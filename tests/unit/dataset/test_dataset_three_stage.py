@@ -53,6 +53,31 @@ class CharacterTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_understanding(dataset_understanding_fixture(characters=[NARUTO] * 13), SCOPES)
 
+    def test_character_entries_cannot_exceed_the_declared_per_image_total(self):
+        for count, cast in ((2, [character(count=2), {**COMPANION, "count": 2}]),
+                            (3, [character(count=2), {**COMPANION, "count": 2}])):
+            with self.subTest(count=count), self.assertRaisesRegex(ValueError, "character count"):
+                validate_understanding(dataset_understanding_fixture(character_count=count, characters=cast), SCOPES)
+
+    def test_over_counted_cast_cannot_receive_an_approval_ticket(self):
+        from goated_prompter.features.dataset.intent import DatasetIntentTickets
+        brief = dataset_understanding_fixture(character_count=2,
+            characters=[character(count=2), {**COMPANION, "count": 2}])
+        with self.assertRaisesRegex(ValueError, "character count"):
+            DatasetIntentTickets().register(valid_draft(), brief)
+
+    def test_matching_counted_groups_and_individual_characters_keep_their_counts(self):
+        for cast in ([character(count=2)], [character(), COMPANION]):
+            with self.subTest(cast=cast):
+                brief = validate_understanding(dataset_understanding_fixture(character_count=2, characters=cast), SCOPES)
+                self.assertEqual(brief["characters"], cast)
+
+    def test_locally_variable_character_counts_do_not_invent_a_global_total(self):
+        brief = validate_understanding(dataset_understanding_fixture(character_count=None,
+            characters=[character(count=2), {**COMPANION, "count": 2}]), SCOPES)
+        self.assertIsNone(brief["character_count"])
+        self.assertEqual(sum(item["count"] for item in brief["characters"]), 4)
+
     def test_compact_model_output_passes_characters_into_the_reviewed_brief(self):
         data = valid_draft()
         compact = {"requested_generation": "Naruto and a companion clown around.", "character_count": 2,

@@ -14,7 +14,7 @@ from .private_vocabulary import vocabulary_signature
 from .quality import sexual_request
 
 
-SCENE_PLAN_VERSION = 10
+SCENE_PLAN_VERSION = 11
 # Small local models write better ideas a few at a time than as one long list.
 IDEAS_PER_CALL = 5
 MAX_STORED_SCENE_CHARACTERS = 10000

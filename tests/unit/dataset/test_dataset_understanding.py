@@ -189,6 +189,14 @@ class DatasetUnderstandingTests(unittest.TestCase):
             "requirements": [], "expansion_freedom": "Expand only the scoped free choices.",
             "physical_conflicts": [], "clarifications": [], **changes}
 
+    def test_over_counted_model_cast_fails_understanding_before_it_can_be_approved(self):
+        characters = [{"name": f"participant {index}", "count": 2, "sex": "male", "kind": "human",
+                       "origin": "random", "series": "", "traits": ""} for index in (1, 2)]
+        compact = self.compact_brief(characters=characters)
+        with self.assertRaisesRegex(BackendGenerationError, "character count.*No generation started"):
+            self.run_response(json.dumps(compact), valid_draft(subject="Two adult men talking.",
+                                                               trigger_type="Multiple characters"))
+
     def test_understanding_requests_minified_generation_without_shortening_facts_or_literals(self):
         trigger = 'Mira: blue hair\nHana: crystal wings'
         subject = 'Two athletes hold a sign reading "NO  ENTRY".'

@@ -10,9 +10,10 @@ from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.dataset.assignments import dataset_assignments
 from goated_prompter.features.dataset.brainstorm import sexual_positions
 from goated_prompter.features.dataset.ideas import DatasetIdeasService, creative_directions, ideas_instruction
-from goated_prompter.features.dataset.private_vocabulary import VOCABULARY_FILE_ENV, parse_vocabulary
+from goated_prompter.features.dataset.private_vocabulary import VOCABULARY_FILE_ENV, parse_vocabulary, private_rules
 from goated_prompter.features.dataset.plan import ScenePlanner, reusable_scene_plan, scene_plan_signature, validate_saved_scene_plan
 from goated_prompter.features.dataset.prompting import dataset_instruction
+from goated_prompter.features.dataset.quality import kink_request, ownership_request, pet_request, position_categories
 from goated_prompter.features.dataset.service import DatasetService, saved_dataset_draft
 from tests.helpers import dataset_understanding_fixture
 from tests.support.dataset import CaptureBackend, saved_scene, valid_draft
@@ -90,6 +91,90 @@ class PositionRoutingTests(unittest.TestCase):
         self.assertTrue({"male pair seated pose", "anal supported pose alpha", "oral supported pose",
                          "kink supported pose", "feet supported pose"} <= positions)
         self.assertFalse(positions & {"vaginal supported pose", "female pair seated pose", "mixed pair seated pose"})
+
+    def test_conditional_director_guidance_does_not_activate_ownership_or_narrow_the_act(self):
+        director = ("Prefer partial clothing, collars, cuffs or light restraints when they fit the request. "
+                    "For domination or ownership requests, show control through posture, restraint and who guides whom. "
+                    "For feet or other specific focuses, only emphasize them when requested. "
+                    "Do not invent unrequested fetishes.")
+        data = self.draft("two adult men having sex", "male", "male")
+        with patch("goated_prompter.features.dataset.quality.get_director_preset", return_value=Mock(instructions=director)):
+            self.assertFalse(ownership_request(data))
+            self.assertFalse(kink_request(data))
+            self.assertEqual(position_categories(data), (set(), set()))
+
+    def test_conditional_director_keeps_general_vocabulary_and_omits_ownership_rules(self):
+        self.path.write_text("[rules]\nUse readable adult arrangements.\n[ownership rules]\nUse ownership dynamics.\n"
+                             "[mood]\nordinary mood\n[kink mood]\nkink mood\n[interaction]\nordinary interaction\n"
+                             "[kink interaction]\nkink interaction\n[setting]\nordinary room\n[kink setting]\nkink room\n"
+                             "[clothing]\nordinary clothing\n[kink clothing]\nkink clothing\n[props]\nsynthetic collar\n",
+                             encoding="utf-8")
+        data = self.draft("two adult men having sex", "male", "male")
+        with patch("goated_prompter.features.dataset.quality.get_director_preset",
+                   return_value=Mock(instructions="For domination or ownership requests, use collars and restraint.")):
+            rules = private_rules(data)
+            directions = creative_directions(data, [1, 2, 3], 1)
+        self.assertIn("Use readable adult arrangements.", rules)
+        self.assertNotIn("Use ownership dynamics.", rules)
+        for row in directions.values():
+            self.assertEqual(row["mood"], "ordinary mood")
+            self.assertEqual(row["interaction"], "ordinary interaction")
+            self.assertEqual(row["setting"], "ordinary room")
+            self.assertEqual(row["clothing"], "ordinary clothing")
+            self.assertNotIn("prop", row)
+
+    def test_director_conditions_apply_to_the_whole_sentence_including_comma_lists(self):
+        data = self.draft("two adult men having sex", "male", "male")
+        for instructions in ("If the user requests ownership, show collars, leashes and restraints.",
+                             "When pet play is requested, use collars, a leash, and a pet setting.",
+                             "Use collars, leashes and restraints only when requested.",
+                             "For ownership requests, show a collar, a leash and restraint."):
+            with self.subTest(instructions=instructions), patch(
+                "goated_prompter.features.dataset.quality.get_director_preset", return_value=Mock(instructions=instructions)):
+                self.assertFalse(ownership_request(data))
+                self.assertFalse(kink_request(data))
+                self.assertFalse(pet_request(data))
+                self.assertEqual(position_categories(data), (set(), set()))
+
+    def test_a_conditional_director_still_honors_explicit_user_requests(self):
+        director = "For ownership or pet play requests, show collars, leashes and restraint."
+        data = self.draft("an adult man with his collared adult human pet", "male", "male")
+        with patch("goated_prompter.features.dataset.quality.get_director_preset", return_value=Mock(instructions=director)):
+            self.assertTrue(ownership_request(data))
+            self.assertTrue(kink_request(data))
+            self.assertTrue(pet_request(data))
+
+    def test_an_unconditional_director_default_is_not_lost_next_to_conditional_guidance(self):
+        data = self.draft("two adult men having sex", "male", "male")
+        director = "Use BDSM in every scene. For ownership requests, show a collar and leash."
+        with patch("goated_prompter.features.dataset.quality.get_director_preset", return_value=Mock(instructions=director)):
+            self.assertTrue(kink_request(data))
+            self.assertFalse(ownership_request(data))
+            self.assertEqual(position_categories(data), ({"kink"}, set()))
+
+    def test_director_guidance_for_every_request_is_an_unconditional_default(self):
+        data = self.draft("two adult men having sex", "male", "male")
+        for instructions in ("For every request, use BDSM.", "For each request, use BDSM."):
+            with self.subTest(instructions=instructions), patch(
+                "goated_prompter.features.dataset.quality.get_director_preset", return_value=Mock(instructions=instructions)):
+                self.assertTrue(kink_request(data))
+                self.assertEqual(position_categories(data), ({"kink"}, set()))
+
+    def test_conditional_director_position_names_do_not_force_one_vocabulary_entry(self):
+        data = self.draft("two adult men having sex", "male", "male")
+        director = "For a requested anal scene, use anal supported pose beta."
+        with patch("goated_prompter.features.dataset.quality.get_director_preset", return_value=Mock(instructions=director)):
+            positions = sexual_positions(data)
+        self.assertIn("anal supported pose alpha", positions)
+        self.assertIn("anal supported pose beta", positions)
+        self.assertIn("male pair seated pose", positions)
+
+    def test_conditional_director_keywords_do_not_unlock_requested_vocabulary_extras(self):
+        self.path.write_text(VOCABULARY + "\n[requested]\nleash => requested supported pose\n", encoding="utf-8")
+        data = self.draft("two adult men having sex", "male", "male")
+        director = "For ownership requests, show a leash."
+        with patch("goated_prompter.features.dataset.quality.get_director_preset", return_value=Mock(instructions=director)):
+            self.assertNotIn("requested supported pose", sexual_positions(data))
 
     def test_penetration_requests_with_men_do_not_use_unrelated_act_categories(self):
         for subject in ("2 males fucking", "two adult men in intercourse", "one adult man penetrates another adult man"):

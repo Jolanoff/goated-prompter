@@ -188,7 +188,10 @@ characters: who appears in each image, one entry per distinct character or group
 identical extras, in the user's order. Later stages cast and tag images from this list.
   name: the character's name when the user gave one or named an existing character
   ("Naruto Uzumaki"), otherwise a short role label ("random companion", "the mother");
-  count: how many of this character appear in each image (1 unless the user said more);
+  count: how many of this character appear in each image (1 unless the user said more).
+  Two individually listed people each have count 1; one group of two has count 2 once.
+  When character_count is an integer, these counts must sum to it. Never repeat the
+  total on every individual entry;
   sex: female, male, mixed (a group with both), unspecified (left open: each image may
   choose) or none (no sex applies, such as a robot or object);
   kind: human, humanoid (elf, demon, vampire and other human-shaped fantasy beings),
@@ -342,9 +345,13 @@ def validate_understanding(value: dict, scopes: tuple[str, ...]) -> dict:
         raise ValueError("Unresolved physical conflicts require clarification.")
     if "characters" in value:
         characters = validate_characters(value["characters"])
+        listed_count = sum(item["count"] for item in characters)
+        if type(count) is int and listed_count > count:
+            raise ValueError("Character entries exceed the declared character count. Each entry's count applies only "
+                             "to that entry, not the whole cast. Review the understanding again.")
         # A small model sometimes lists only part of a large cast; a partial cast would make the
         # writer drop people, so the requirements alone describe them instead.
-        if type(count) is int and characters and sum(item["count"] for item in characters) < count:
+        if type(count) is int and characters and listed_count < count:
             characters = []
         result["characters"] = characters
     return result

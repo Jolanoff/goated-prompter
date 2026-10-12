@@ -41,6 +41,9 @@ expansion, visible evidence, interactions, natural occlusions and physical confl
 `all_outputs` applies to every image, `dataset` to the set, and `guided:N` only to that
 line's assignments. Clarifications prevent approval. Added instructions require
 reanalysis; the approval ticket is bound to source settings and saved scene edits.
+Each character entry's count applies only to that entry. Counts exceeding the declared
+per-image total fail validation before approval; a partial list still falls back to the
+scoped requirements. A null total stays open for locally varying counts.
 
 The brief also exposes three small scoped lists for approval: **hard** obligations,
 **soft** preferences that may yield to hard requirements, and **free** creative
@@ -52,7 +55,7 @@ context bucket, tagged with the review sections it belongs to. The generation sc
 reserves one HARD slot for the app-retained character trigger when needed, without
 reducing the other buckets' capacities. The app expands these facts into the same public
 brief, supplies output-setting prose from the request, and retains the supplied
-character trigger before approval. Existing full briefs remain valid; saved reviews,
+character trigger before approval. Valid existing full briefs remain supported; saved reviews,
 approval tickets, IDEAS and the writer still consume the unchanged public contract.
 Generation uses bucket-specific review-tag schemas: HARD excludes `may_vary`, FREE
 allows only `may_vary`, SOFT has no review tags, and CONTEXT requires exactly
@@ -113,7 +116,10 @@ default; explicit user requirements remain authoritative. A vocabulary digest in
 adult plans after usable entries change. The file's `requested` entries join when their patterns
 match, subject to the same compatibility filters. Kink moods, dynamics, clothing and a
 prop per image join only when `kink_request` finds BDSM or fetish wording in the request, or a Director
-clause that asks for it (a clause that forbids it does not count). An `ownership_request` (slave, owned,
+unconditional clause that asks for it (a clause that forbids it does not count). Conditional
+Director sentences such as “if requested”, “when requested” or “for ownership requests” do not
+activate categories, ownership rules or requested-vocabulary extras. The full Director still
+reaches the model unchanged. An `ownership_request` (slave, owned,
 master or mistress, human pet) uses only the kink moods, dynamics and clothing
 and adds the file's ownership rules. Every file entry passes the
 adults-only and anatomy checks plus consent, incapacitation, death, family, animal, school and

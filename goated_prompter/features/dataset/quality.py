@@ -183,7 +183,7 @@ _ORAL = re.compile(r"\b(?:oral|blowjob\w*|suck\w*|deepthroat\w*|69|sixty-nine|fa
 # brief the model wrote, so a word the model added never unlocks anything.
 def requested_text(data):
     parts = [str(data.get(key) or "") for key in ("subject", "constraints", "inputs", "trigger")]
-    parts.append(get_director_preset(data.get("director_preset")).instructions)
+    parts.append(_director_text(data))
     return " ".join(parts).casefold()
 
 
@@ -199,6 +199,8 @@ def feet_request(data):
 _KINK_DIRECTOR = re.compile(r"\b(?:bdsm|bondage|collar(?:ed|s)?|leash(?:ed)?|slaves?|restrain\w*|handcuff\w*|"
                             r"spank\w*|dominatrix|fetish\w*|kinky|submissives?|domination|power exchange)\b")
 _NEGATED = re.compile(r"\b(?:do not|don't|never|no|not|avoid|without|unrequested|unless)\b")
+_DIRECTOR_CONDITION = re.compile(r"\b(?:if|when|unless)\b|^\s*(?:[-*]\s*)?for\s+(?!every\b|each\b|all\b|any\b)"
+                                 r"[^.!?;\n]*\b(?:requests?|requested|focus(?:es)?)\b")
 _NOT_A_PERSON = r"(?! (?:bedroom|bath\w*|suite|key|plan|class|chef|piece|copy|cylinder|degree))"
 # Ownership and slave roles ask for the power exchange in every image, not as one option among many.
 _OWNERSHIP = re.compile(r"\b(?:slaves?|(?<!-)owned|ownership|property|dominated|human pets?|pet play|petplay|"
@@ -212,21 +214,22 @@ _GROUNDED_FEET = re.compile(r"^\s+(?:(?:are|stay|rest)\s+)?(?:planted|flat|firml
 
 def _mentions(text, pattern, *, ignore_conditional=False):
     asked, forbidden = False, False
-    for match in pattern.finditer(text):
-        if pattern is _FEET and match.group() == "feet" and _GROUNDED_FEET.search(text[match.end():]):
-            continue
-        clause = re.split(r"[.,;:!?\n]|\b(?:but|however|instead)\b", text[:match.start()])[-1]
-        if _NEGATED.search(clause):
-            if not (ignore_conditional and re.search(r"\b(?:unrequested|unless)\b", clause)):
-                forbidden = True
-        else:
-            asked = True
+    for sentence in re.split(r"[.!?;\n]", text):
+        for match in pattern.finditer(sentence):
+            if pattern is _FEET and match.group() == "feet" and _GROUNDED_FEET.search(sentence[match.end():]):
+                continue
+            clause = re.split(r"[,:]|\b(?:but|however|instead)\b", sentence[:match.start()])[-1]
+            if _NEGATED.search(clause):
+                if not (ignore_conditional and re.search(r"\bunrequested\b", clause)):
+                    forbidden = True
+            else:
+                asked = True
     return asked, forbidden
 
 
-def _asked(text, pattern):
+def _asked(text, pattern, *, ignore_conditional=False):
     """True when the pattern appears in a clause that does not forbid it."""
-    return _mentions(text, pattern)[0]
+    return _mentions(text, pattern, ignore_conditional=ignore_conditional)[0]
 
 
 def _user_text(data):
@@ -234,28 +237,32 @@ def _user_text(data):
 
 
 def _director_text(data):
-    return get_director_preset(data.get("director_preset")).instructions.casefold()
+    """Unconditional standing direction for routing; prompts still receive the full Director."""
+    text = get_director_preset(data.get("director_preset")).instructions.casefold()
+    return "\n".join(sentence for sentence in re.split(r"[.!?;\n]", text)
+                     if not _DIRECTOR_CONDITION.search(sentence))
 
 
 def ownership_request(data):
-    return _asked(_user_text(data) + "\n" + _director_text(data), _OWNERSHIP)
+    return (_asked(_user_text(data), _OWNERSHIP)
+            or _asked(_director_text(data), _OWNERSHIP, ignore_conditional=True))
 
 
 def kink_request(data):
-    return (_asked(_user_text(data), _KINK) or _asked(_director_text(data), _KINK_DIRECTOR)
+    return (_asked(_user_text(data), _KINK) or _asked(_director_text(data), _KINK_DIRECTOR, ignore_conditional=True)
             or ownership_request(data))
 
 
 def pet_request(data):
-    return _asked(_user_text(data) + "\n" + _director_text(data), _PET)
+    return (_asked(_user_text(data), _PET) or _asked(_director_text(data), _PET, ignore_conditional=True))
 
 
 def furniture_request(data):
-    return _asked(_user_text(data) + "\n" + _director_text(data), _FURNITURE)
+    return (_asked(_user_text(data), _FURNITURE) or _asked(_director_text(data), _FURNITURE, ignore_conditional=True))
 
 
 def aftercare_request(data):
-    return _asked(_user_text(data) + "\n" + _director_text(data), _AFTERCARE)
+    return (_asked(_user_text(data), _AFTERCARE) or _asked(_director_text(data), _AFTERCARE, ignore_conditional=True))
 
 
 _POSITION_CATEGORIES = {
@@ -316,7 +323,7 @@ def position_categories(data, *, include_director=True):
             positive.discard("oral")
     if _asked(user, _OWNERSHIP):
         asked.add("kink")
-    elif _asked(director, _OWNERSHIP):
+    elif _asked(director, _OWNERSHIP, ignore_conditional=True):
         defaults.add("kink")
     return (asked or defaults) - forbidden, forbidden
 
