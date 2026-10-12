@@ -44,7 +44,7 @@ class DatasetUIMock(MockBackend):
             if ":batch:" in stage:
                 result = json.dumps([{"id": item["id"], "status": "pass", "evidence": [
                     {"index": context["descriptions"][0]["index"], "quote": context["descriptions"][0]["text"]}]}
-                    for item in context["requirements"]])
+                    for item in context["checks"]])
             else:
                 rows = []
                 for item in context:
@@ -118,7 +118,7 @@ class DatasetUIMock(MockBackend):
         else:
             return super().generate(instruction)
         time.sleep(.02)  # Leaves a real disconnect window without using inference.
-        self.emit_activity("request", model="dataset-ui-mock", messages=instruction.to_messages(), parameters={})
+        self.emit_activity("request", stage=stage, model="dataset-ui-mock", messages=instruction.to_messages(), parameters={})
         self.emit_activity("response_delta", text=result)
         self.emit_activity("response_complete", finish_reason="stop")
         return result

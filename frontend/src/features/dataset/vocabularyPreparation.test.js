@@ -19,4 +19,11 @@ test("vocabulary preparation is an explicit separate action and does not convert
   assert.match(markup, /generation never runs conversion automatically/);
   assert.match(markup, /Open prepared records for review/);
   assert.doesNotMatch(markup, /Approve selected records/);
+  const pending = renderToStaticMarkup(createElement(Component,
+    { busy: true, noEngine: false, job: { kind: "dataset_vocabulary", status: "running" } }));
+  assert.match(pending, /Preparation pending/);
+  const completed = renderToStaticMarkup(createElement(Component,
+    { job: { kind: "dataset_vocabulary", status: "succeeded", result: { validated: 2, rejected: 1 } } }));
+  assert.match(completed, /2 valid records awaiting approval/);
+  assert.match(completed, /No catalog is saved until you approve/);
 });

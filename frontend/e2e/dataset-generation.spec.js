@@ -22,6 +22,76 @@ function datasetPosts(page) {
   return posts;
 }
 
+test("vocabulary preparation shows pending review and saved catalog without automatic approval", async ({ page }) => {
+  let finished = false;
+  let state = "not_prepared";
+  const decisions = [];
+  const catalog = "synthetic/sexual.txt.catalog.json";
+  const job = { id: "synthetic-vocabulary", kind: "dataset_vocabulary", revision: 1,
+    status: "running", progress: "Preparing synthetic vocabulary", events: [] };
+  await page.route("**/api/workspace/dataset/vocabulary/status", (route) => route.fulfill({ json: {
+    state, catalog_path: catalog, validated: state === "awaiting_review" ? 1 : 0,
+    rejected: state === "awaiting_review" ? 1 : 0, approved: state === "saved" ? 1 : 0,
+  } }));
+  await page.route("**/api/workspace/dataset/vocabulary/prepare", (route) => route.fulfill({ status: 202, json: job }));
+  await page.route("**/api/jobs/synthetic-vocabulary", (route) => {
+    if (finished) state = state === "not_prepared" ? "awaiting_review" : state;
+    return route.fulfill({ json: finished ? { ...job, revision: 2, status: "succeeded",
+      result: { validated: 1, rejected: 1 } } : job });
+  });
+  await page.route("**/api/workspace/dataset/vocabulary/review", async (route) => {
+    if (route.request().method() === "POST") {
+      decisions.push(route.request().postDataJSON());
+      state = "saved";
+      return route.fulfill({ json: { approved: 1 } });
+    }
+    return route.fulfill({ json: { token: "synthetic-review-token", rows: [
+      { line: 2, section: "couple positions", text: "Two clothed adults sit together.", reason: "",
+        record: { id: "synthetic-seated-pair", participantCount: 2 } },
+      { line: 3, section: "couple positions", text: "An unresolved synthetic pose.", reason: "Missing support.", record: null },
+    ] } });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  await page.getByText("Advanced options", { exact: true }).click();
+  await page.getByText("Prepare private vocabulary (optional)", { exact: true }).click();
+  await expect(page.getByText("No approved catalog or pending review.", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "Prepare with saved local model", exact: true }).click();
+  await expect(page.getByText("Preparation pending.", { exact: false })).toBeVisible();
+  expect(decisions).toEqual([]);
+  finished = true;
+  await expect(page.getByText("1 valid records awaiting approval", { exact: false })).toBeVisible();
+  await page.getByRole("button", { name: "Open prepared records for review", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Approve selected records", exact: true })).toBeDisabled();
+  await expect(page.getByRole("checkbox", { name: /Source line 3/ })).toBeDisabled();
+  await page.getByRole("checkbox", { name: /Source line 2/ }).check();
+  await page.getByRole("button", { name: "Approve selected records", exact: true }).click();
+  await expect(page.getByText("Catalog saved: 1 approved records.", { exact: false })).toBeVisible();
+  expect(decisions).toEqual([{ token: "synthetic-review-token", indexes: [0] }]);
+  await expect(page.getByText(catalog, { exact: true })).toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  await page.getByText("Advanced options", { exact: true }).click();
+  await page.getByText("Prepare private vocabulary (optional)", { exact: true }).click();
+  await expect(page.getByText("Catalog saved: 1 approved records.", { exact: false })).toBeVisible();
+});
+
+test("retained unverified prompts show their warning after reload without a success badge", async ({ page, request }) => {
+  const saved = await (await request.get("/api/workspace/settings/dataset")).json();
+  const scene = { index: 1, input: "", idea: "Reading", scene: "An adult reads a book.", self_check: "",
+    scene_status: "unverified", prompt_status: "unverified", quality_warnings: ["Essential identity evidence is uncertain."] };
+  expect((await request.put("/api/workspace/settings/dataset", { data: { revision: saved.revision,
+    draft: { ...saved.draft, amount: 1, scene_plan: [scene], results: [{ index: 1, input: "", idea: scene.idea,
+      scene: scene.scene, prompt: "An adult reads a book by a window." }] } } })).ok()).toBe(true);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Dataset", exact: true }).click();
+  await openDatasetPage(page, "Dataset");
+  await expect(page.getByLabel("Dataset prompt 1")).toHaveValue("An adult reads a book by a window.");
+  await expect(page.getByLabel("Generated: warning", { exact: true })).toHaveText("Generated · unverified");
+  await expect(page.getByLabel("Prompt 1 quality warnings", { exact: true })).toContainText("Essential identity evidence is uncertain.");
+  await expect(page.getByLabel("Generated: success", { exact: true })).toHaveCount(0);
+});
+
 test("reloading an automatic batch advances to Dataset without a Continue click or second submission", async ({ page, request }) => {
   let finishJob = false;
   const automatic = { id: "restored-auto-dataset", kind: "dataset", revision: 1,
@@ -282,9 +352,9 @@ test("Anima inserts locked multiple-character tags unchanged before a scene-only
   const expected = `${trigger}, ${result.scene_plan[0].scene}`;
   await expect(page.getByLabel("Dataset prompt 1")).toHaveValue(expected);
   const finished = await (await request.get(`/api/jobs/${id}`)).json();
-  expect(finished.llm_trace.messages[0].content).toContain("The application inserts the locked trigger");
-  expect(finished.llm_trace.messages[0].content).not.toContain("Render the scene as anime/manga rather than realistic photography.");
-  expect(finished.llm_trace.request_number).toBe(6); // Brainstorm, planning, Ideas, scene check, writer, final check.
+  expect(finished.llm_trace.stage).toBe("dataset:validation:prompt");
+  expect(JSON.parse(finished.llm_trace.messages[1].content)[0].description).toBe(expected);
+  expect(finished.llm_trace.request_number).toBe(5); // Brainstorm, planning, Ideas, writer, essential final check.
   const saved = await (await request.get("/api/workspace/settings/dataset")).json();
   expect(saved.draft.trigger).toBe(trigger);
   expect(saved.draft.results[0].prompt).toBe(expected);

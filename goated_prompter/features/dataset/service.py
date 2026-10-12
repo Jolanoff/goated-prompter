@@ -20,7 +20,7 @@ from .triggers import (trigger_presence_error, trigger_terms, fixed_anima_prefix
                        tidy_expanded_trigger)
 from .understanding import label_replacements, replace_labels
 from . import private_vocabulary
-from .validation import batch_requirements, validation_strategies, verify_batch_requirements, verify_scenes
+from .validation import batch_requirements, text_signature, validation_strategies, verify_batch_requirements, verify_scenes
 from .scene_spec import SceneSpec
 from .routing import assignment_scope, image_hard_requirements, resolve_routes, scoped_request
 from ...prompt_library import copied_reference
@@ -32,7 +32,7 @@ from .plan import (ScenePlanner, MAX_STORED_SCENE_CHARACTERS, MAX_STORED_IDEA_CH
                            failure_reason, failed_scene, scene_is_usable, FAILURE_METADATA, PLAN_FIELDS)
 
 
-DATASET_MAX_RETRIES = 3
+DATASET_MAX_RETRIES = 1
 FINAL_BATCH_FAILURE = ("Final prompts did not satisfy the approved dataset-wide requirements. "
                        "Review coverage and retry the affected prompts.")
 
@@ -184,7 +184,9 @@ class DatasetService:
         spec = SceneSpec.from_dict(plan_item["scene_spec"])
         strategies = validation_strategies(spec)
         original = instruction
-        def validate(raw):
+        rejected_texts = {}
+        def validate(raw, attempt):
+            warnings = []
             prompt = normalize_workflow_output(raw, data["target"], mode="Enhance", expected_visible_text=expected_text)
             if data["target"] == "Anima":
                 prompt = drop_wrong_count_tags(drop_repeated_tags(remove_contradictory_solo(prompt)), data)
@@ -220,6 +222,8 @@ class DatasetService:
                     prompt = corrected
             if conflicting_view := geometry_error(prompt):
                 raise WorkflowFormatError(conflicting_view)
+            if optional_view := geometry_error(prompt, plan_item["scene"]):
+                warnings.append(optional_view)
             if leak := instruction_leak_error(prompt, plan_item["scene"]):
                 raise WorkflowFormatError(leak)
             if spec.route == "adult" and strategies["anatomy_subjects"] and (word := minor_reference(prompt)):
@@ -234,9 +238,21 @@ class DatasetService:
             if plan_item.get("scene_spec"):
                 verified = verify_scenes(session, [{**plan_item, "scene": prompt}], self.checkpoint,
                                          family=original.model_family, kind="prompt")[0]
-                if verified.get("scene_status") != "valid":
-                    raise WorkflowFormatError("Final prompt differs from its SceneSpec: " + verified.get(
-                        "failure_reason", "Fidelity validation was unavailable."))
+                status = verified["scene_status"]
+                signature = text_signature(prompt)
+                if status == "failed":
+                    rejected_texts[signature] = verified["failure_reason"]
+                elif status != "valid" and signature in rejected_texts:
+                    raise WorkflowFormatError(rejected_texts[signature])
+                if status == "failed" or status == "repair_required" and attempt < retries:
+                    raise WorkflowFormatError("Repair only these final-prompt fidelity problems, preserving the other details: "
+                        + verified.get("failure_reason", "Essential fidelity conflict."))
+                warnings.extend(verified.get("quality_warnings", []))
+                if status == "repair_required":
+                    warnings.append("Unresolved after the bounded repair: " + verified["failure_reason"])
+                plan_item.update(prompt_status="valid" if status == "valid" and not warnings else "unverified", quality_warnings=warnings)
+                for warning in warnings:
+                    progress(f"Dataset prompt {index} unverified: {warning}")
             return prompt
         for attempt in range(retries + 1):
             self.checkpoint()
@@ -249,7 +265,7 @@ class DatasetService:
                 recovered = getattr(exc, "recoverable_text", "")
                 if recovered and len(recovered.split()) >= 30 and recovered.rstrip().endswith((".", "!", "?", "}")):
                     try:
-                        prompt = validate(recovered)
+                        prompt = validate(recovered, attempt)
                     except (ValueError, KeyError, TypeError):
                         pass
                     else:
@@ -271,11 +287,12 @@ class DatasetService:
                 continue
             self.checkpoint()
             try:
-                prompt = validate(raw)
+                prompt = validate(raw, attempt)
             except (WorkflowFormatError, ValueError, KeyError, TypeError) as exc:
                 session.emit_activity("validation", workflow="dataset", attempt=attempt, accepted=False, error=str(exc))
                 if attempt >= retries:
-                    raise BackendGenerationError(f"Dataset prompt {index} remained invalid after {retries} retries. {exc}") from exc
+                    label = "retry" if retries == 1 else "retries"
+                    raise BackendGenerationError(f"Dataset prompt {index} remained invalid after {retries} {label}. {exc}") from exc
                 instruction = replace(instruction,
                     system_message=original.system_message + "\nFINAL OUTPUT CORRECTION: " + str(exc),
                     diagnostic_stage=original.diagnostic_stage + f":output_retry_{attempt + 1}", temperature=.25, top_p=.85)
@@ -355,12 +372,12 @@ class DatasetService:
                         "prompt_status": row.get("prompt_status", "not_generated"), "idea_status": row.get("idea_status", "valid")}
                 valid = [row for row in repaired if row.get("idea_status") != "failed"]
                 planner.compose(valid, plan_update=save_composed, session=session,
-                                checkpoint=self.checkpoint, family=family)
+                                checkpoint=self.checkpoint, family=family, verify=scenes_only)
                 publish()
                 return [row["index"] for row in valid if scene_is_usable(scenes[row["index"] - 1], data)]
             if scenes is None:
                 planned = planner.plan_batch(session=session, data=data, assignments=assignments, family=family,
-                    progress=progress, plan_update=save_planning_stage, seed=seed)
+                    progress=progress, plan_update=save_planning_stage, seed=seed, verify=scenes_only)
                 save_planning_stage(planned)
             else:
                 scenes = [dict(row) for row in scenes]
@@ -370,9 +387,10 @@ class DatasetService:
                 for slot, row in enumerate(scenes):
                     spec = SceneSpec.from_dict(row["scene_spec"])
                     hard = image_hard_requirements(data, assignment_scope(data, row["index"]))
-                    if spec.hard != hard:
-                        updated = {**row, "scene_spec": replace(spec, hard=hard).to_dict(), "self_check": "",
-                            "scene_status": "not_generated", "prompt_status": "not_generated"}
+                    candidate = SceneSpec.from_dict(replace(spec, hard=hard).to_dict())
+                    if spec.signature != candidate.signature:
+                        updated = {**row, "scene_spec": candidate.to_dict(), "self_check": "",
+                            "scene_status": "unverified", "prompt_status": "not_generated"}
                         updated.pop("scene_validation", None)
                         scenes[slot] = updated
             completed = {}
@@ -380,7 +398,7 @@ class DatasetService:
                 by_index = {row["index"]: row for row in scenes}
                 for item in data["results"]:
                     row = by_index.get(item["index"])
-                    if (row and scene_is_usable(row, data) and row.get("prompt_status") == "valid"
+                    if (row and scene_is_usable(row, data) and row.get("prompt_status") in {"valid", "unverified"}
                             and item["prompt"].strip()
                             and all(item.get(field) == row.get(field, "") for field in ("input", "idea", "scene"))):
                         completed[item["index"]] = dict(item)
@@ -411,7 +429,8 @@ class DatasetService:
             pending = [scenes[index - 1] for index in selected if scenes[index - 1].get("scene_status") != "failed"
                        and scenes[index - 1].get("failure_stage") != "idea"
                        and scenes[index - 1]["scene"].strip() and (scenes[index - 1].get("edited_stage")
-                           or not scenes[index - 1].get("scene_validation") or scene_action and scene_action[0] == "validate_scene")]
+                            or not scenes[index - 1].get("scene_validation") and scenes[index - 1].get("scene_status") != "unverified"
+                            or scene_action and scene_action[0] == "validate_scene")]
             if pending:
                 planner.compose(pending, plan_update=save_composed, session=session,
                                 checkpoint=self.checkpoint, family=family)
@@ -431,7 +450,7 @@ class DatasetService:
                 return {"ok": usable, "kind": "dataset_scenes", "prompts": [], "scene_plan": scenes,
                           "scene_plan_signature": signature, "backend": backend.name,
                           **({} if usable else {"error": "No usable Dataset scenes were generated. Review the failed or unresolved scene slots and retry."})}
-            batch_valid = check_batch(scenes)
+            batch_valid = True
             if scene_action and scene_action[0] == "validate_scene":
                 publish()
                 return {"ok": True, "kind": "dataset_scenes", "prompts": results, "scene_plan": scenes,
@@ -455,29 +474,12 @@ class DatasetService:
                                     "scene": plan_item["scene"], "idea": plan_item["idea"]})
                     results.sort(key=lambda row: row["index"])
                     scenes[index - 1] = {key: value for key, value in scenes[index - 1].items() if key not in FAILURE_METADATA}
-                    scenes[index - 1]["prompt_status"] = "valid"
+                    scenes[index - 1].update(prompt_status=plan_item["prompt_status"], quality_warnings=plan_item["quality_warnings"])
                     publish()
-            if not batch_valid and batch_requirements(data):
-                if repair_pending_ideas():
-                    batch_valid = check_batch(scenes)
-            if batch_valid:
-                write_prompts(selected)
-                write_prompts(repair_pending_ideas())
-                if results and batch_requirements(data):
-                    batch_valid = check_batch(results, field="prompt")
-                    generated = {item["index"] for item in results}
-                    if not batch_valid:
-                        for row in scenes:
-                            if row["index"] in generated:
-                                row.update(prompt_status="failed", failure_stage="prompt",
-                                    failure_reason=FINAL_BATCH_FAILURE)
-                    else:
-                        for row in scenes:
-                            if (row["index"] in generated and row.get("failure_stage") == "prompt"
-                                    and row.get("failure_reason") == FINAL_BATCH_FAILURE):
-                                for field in FAILURE_METADATA:
-                                    row.pop(field, None)
-                                row["prompt_status"] = "valid"
+            write_prompts(selected)
+            write_prompts(repair_pending_ideas())
+            if results and batch_requirements(data):
+                batch_valid = check_batch(results, field="prompt")
             publish()
         return {"ok": bool(results) and batch_valid, "kind": "dataset", "prompts": results,
                 "failed": sum(not scene_is_usable(row, data) or row.get("prompt_status") == "failed" for row in scenes),

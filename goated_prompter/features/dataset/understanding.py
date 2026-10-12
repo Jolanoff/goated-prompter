@@ -17,7 +17,7 @@ from ...options.dataset import CHARACTER_KINDS, SUBJECT_KINDS
 
 SOURCE_FIELDS = (
     "subject", "trigger_type", "custom_type", "constraints", "amount",
-    "source_mode", "inputs", "trigger", "trigger_connected", "trigger_at_start",
+    "source_mode", "inputs", "trigger", "trigger_connected",
     "expand_trigger", "creativity", "style",
     "target", "length", "director_preset",
 )
@@ -189,6 +189,10 @@ feet_on_floor, knees_on_floor, supported_by_chair, supported_by_bed or supported
 Contacts have source and target owned body parts (P1.left_hand, P2.shoulder, etc.). Use
 an empty list when no mechanical constraint was supplied. Unsupported mechanics remain
 in hard requirements for validation; never turn them into a guessed supported pose.
+Setting is the environment, not an object's supporting surface. For a product on a table
+inside a room, retain the room as setting and the table relationship in hard requirements.
+Combine compatible nested place descriptions without dropping either. Products and
+objects do not receive human pose/support labels; their placement remains in requirements.
 
 Return ONLY one minified JSON object on a single line with exactly these fields.
 No indentation or optional whitespace outside string values. Preserve whitespace
@@ -202,7 +206,10 @@ identical extras, in the user's order. Later stages cast and tag images from thi
   name: the character's name when the user gave one or named an existing character
   ("Naruto Uzumaki"), otherwise a short role label ("random companion", "the mother");
   count: how many of this character appear in each image (1 unless the user said more).
-  Two individually listed people each have count 1; one group of two has count 2 once.
+  Two individually listed people each have count 1; one homogeneous group of two has count 2 once.
+  A heterogeneous group with different roles, species, sexes or supplied traits needs separate
+  entries, each with its own count, sex and traits. A collective trigger names the group; it
+  does not replace the separately specified identities or give every member the whole group's traits.
   When character_count is an integer, these counts must sum to it. Never repeat the
   total on every individual entry;
   sex: female, male, mixed (a group with both), unspecified (left open: each image may
@@ -224,6 +231,8 @@ sex is none when not applicable. Shared entries use all_outputs; guided entries 
 only to that line and are additional to shared entries. Do not duplicate shared subjects
 locally. Do not turn background props into principal subjects unless requested.
 Use this inventory for varying guided casts; the characters summary never globalizes them.
+Split explicitly distinct group members here too; bind each role and supplied attribute to
+its individual subject. Use count > 1 only for interchangeable members with shared facts.
 character_count: integer 1-100 for an explicit shared per-image count of people or
 animal characters, or null if unknown, not applicable, or differing by local input.
 Never use 0: for an object-only scene with no people or animal characters, use
@@ -322,6 +331,10 @@ def _brief_json(raw):
     return json.loads(text, object_pairs_hook=_unique_object)
 
 
+class CastCountError(ValueError):
+    """A generated inventory disagrees with its declared per-image count."""
+
+
 def validate_understanding(value: dict, scopes: tuple[str, ...], *, historical=False, require_complete_cast=False) -> dict:
     """Validate shape and scopes; fresh model responses require a complete supplied cast."""
     fields = {*SUMMARY_FIELDS, *REQUIREMENT_FIELDS, *CONTRACT_FIELDS, *DETAIL_FIELDS, "physical_conflicts", "clarifications"}
@@ -369,10 +382,10 @@ def validate_understanding(value: dict, scopes: tuple[str, ...], *, historical=F
         characters = validate_characters(value["characters"])
         listed_count = sum(item["count"] for item in characters)
         if not historical and type(count) is int and listed_count > count:
-            raise ValueError("Character entries exceed the declared character count. Each entry's count applies only "
+            raise CastCountError("Character entries exceed the declared character count. Each entry's count applies only "
                              "to that entry, not the whole cast. Review the understanding again.")
         if require_complete_cast and not historical and type(count) is int and listed_count < count:
-            raise ValueError("Character entries do not match the declared per-image character count. "
+            raise CastCountError("Character entries do not match the declared per-image character count. "
                              "The batch size is the number of images, not people in each image. Review the understanding again.")
         # A small model sometimes lists only part of a large cast; a partial cast would make the
         # writer drop people, so the requirements alone describe them instead.
@@ -613,7 +626,7 @@ def understanding_instruction(data: dict, family: str = "qwen") -> PromptInstruc
 
 
 class DatasetUnderstandingService:
-    """Interpret a request once; never start downstream work or automatically retry."""
+    """Interpret for review; allow one count correction, never start downstream work."""
 
     def __init__(self, config: dict, checkpoint: Callable[[], None]):
         self.config, self.checkpoint = config, checkpoint
@@ -629,38 +642,47 @@ class DatasetUnderstandingService:
         backend = create_backend(effective)
         progress("Understanding your Dataset request...")
         with backend.generation_session() as session:
-            self.checkpoint()
-            session.validate_instruction(instruction)
-            raw = session.generate(instruction)
-            self.checkpoint()
-        try:
-            brief = _brief_json(raw)
-            brief = _expand_understanding(brief, data, scopes)
-            # Object-only model responses may encode "not applicable" as zero.
-            # Canonicalize that representation here; keep the shared validator strict.
-            if (isinstance(brief, dict) and data.get("trigger_type") == "Object / product"
-                    and brief.get("identity_policy") == "not_applicable"
-                    and type(brief.get("character_count")) is int and brief["character_count"] == 0):
-                brief = {**brief, "character_count": None}
-            brief = validate_understanding(brief, scopes, require_complete_cast=True)
-            if data.get("trigger_type") == "Multiple characters":
-                # Retain source authority before approval, never retrofit saved reviews.
-                text = MULTIPLE_CHARACTER_VISIBILITY
-                if trigger := data.get("trigger", "").strip():
-                    text += (" Preserve explicitly supplied character facts and their ownership; identifiers alone invent neither appearance nor fixed identity. "
-                        "Unspecified identities remain free under the scoped contract. Supplied appearance alone is not a visibility requirement: "
-                        "traits may be naturally hidden unless the user requires visible evidence. "
-                        "Supplied character trigger (verbatim):\n" + trigger)
-                requirement = {"scope": "all_outputs", "text": text}
-                if requirement not in brief["hard"]:
-                    if len(brief["hard"]) >= MAX_ITEMS:
-                        raise ValueError("Multiple-character understanding must leave one HARD entry for visibility and supplied character facts.")
-                    brief["hard"].append(requirement)
-                brief = validate_understanding(brief, scopes)
-            return brief
-        except (ValueError, TypeError, RecursionError) as error:
-            raise BackendGenerationError("Dataset understanding returned an invalid brief: " + str(error)
-                                         + " No generation started.") from error
+            for attempt in range(2):
+                self.checkpoint()
+                session.validate_instruction(instruction)
+                raw = session.generate(instruction)
+                self.checkpoint()
+                try:
+                    brief = _brief_json(raw)
+                    brief = _expand_understanding(brief, data, scopes)
+                    # Object-only model responses may encode "not applicable" as zero.
+                    # Canonicalize that representation here; keep the shared validator strict.
+                    if (isinstance(brief, dict) and data.get("trigger_type") == "Object / product"
+                            and brief.get("identity_policy") == "not_applicable"
+                            and type(brief.get("character_count")) is int and brief["character_count"] == 0):
+                        brief = {**brief, "character_count": None}
+                    brief = validate_understanding(brief, scopes, require_complete_cast=True)
+                    if data.get("trigger_type") == "Multiple characters":
+                        # Retain source authority before approval, never retrofit saved reviews.
+                        text = MULTIPLE_CHARACTER_VISIBILITY
+                        if trigger := data.get("trigger", "").strip():
+                            text += (" Preserve explicitly supplied character facts and their ownership; identifiers alone invent neither appearance nor fixed identity. "
+                                "Unspecified identities remain free under the scoped contract. Supplied appearance alone is not a visibility requirement: "
+                                "traits may be naturally hidden unless the user requires visible evidence. "
+                                "Supplied character trigger (verbatim):\n" + trigger)
+                        requirement = {"scope": "all_outputs", "text": text}
+                        if requirement not in brief["hard"]:
+                            if len(brief["hard"]) >= MAX_ITEMS:
+                                raise ValueError("Multiple-character understanding must leave one HARD entry for visibility and supplied character facts.")
+                            brief["hard"].append(requirement)
+                        brief = validate_understanding(brief, scopes)
+                    return brief
+                except (ValueError, TypeError, RecursionError) as error:
+                    if isinstance(error, CastCountError) and attempt == 0:
+                        progress("Understanding returned inconsistent subject counts; requesting one corrected inventory...")
+                        instruction = replace(instruction, diagnostic_stage="dataset:understanding:cast_retry",
+                            system_message=instruction.system_message + "\nCAST COUNT CORRECTION\n" + str(error)
+                            + " Re-read the unchanged source and return the complete brief with consistent per-image counts. "
+                            "Do not drop a requested subject, invent a subject or change requirements to satisfy a count. "
+                            "Keep separately specified subjects and their traits in separate entries. The result still requires user review.")
+                        continue
+                    raise BackendGenerationError("Dataset understanding returned an invalid brief: " + str(error)
+                                                 + " No generation started.") from error
 
 
 

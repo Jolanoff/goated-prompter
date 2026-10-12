@@ -261,6 +261,11 @@ class SceneSpec:
     concept: str = ""
     supports: tuple[Contact, ...] = ()
 
+    @property
+    def required_contacts(self):
+        return tuple(contact for contact in self.contacts if "contacts" in self.locked
+                     or f"contact:{contact.source}->{contact.target}" in self.locked)
+
     def to_dict(self):
         return {**asdict(self), "participants": [asdict(item) for item in self.participants],
                 "contacts": [asdict(item) for item in self.contacts], "hard": list(self.hard),
@@ -334,6 +339,7 @@ class SceneSpec:
             compact_text(item, "Choice value", limit=1000)
         locked = value["locked"]
         allowed_locks = {"action", "participants", "contacts", "hard", "setting",
+                         *(f"contact:{contact.source}->{contact.target}" for contact in contacts),
                          *(f"participant:{owner}:{field}" for owner in ids for field in ("role", "pose", "location", "support"))}
         if (not isinstance(locked, list) or any(not isinstance(item, str) for item in locked) or set(locked) - allowed_locks
                 or "hard" not in locked):

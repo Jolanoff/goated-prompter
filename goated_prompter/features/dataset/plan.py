@@ -17,7 +17,7 @@ from .scene_spec import SceneSpec
 from .validation import verify_scenes
 
 
-SCENE_PLAN_VERSION = 15
+SCENE_PLAN_VERSION = 16
 # Small local models write better ideas a few at a time than as one long list.
 IDEAS_PER_CALL = 5
 MAX_STORED_SCENE_CHARACTERS = 10000
@@ -25,10 +25,10 @@ MAX_STORED_IDEA_CHARACTERS = 10000
 FAILURE_METADATA = {"failure_reason", "failure_stage"}
 PLAN_STATUS_VALUES = {
     "idea_status": {"valid", "not_generated", "duplicate_warning", "failed"},
-    "scene_status": {"valid", "not_generated", "repair_required", "failed"},
-    "prompt_status": {"valid", "not_generated", "failed"},
+    "scene_status": {"valid", "unverified", "not_generated", "repair_required", "failed"},
+    "prompt_status": {"valid", "unverified", "not_generated", "failed"},
 }
-PLAN_FIELDS = {"index", "input", "idea", "scene", "self_check", "selected_position", "selected_setting", "scene_spec", "scene_validation", "batch_validation", "edited_stage", *PLAN_STATUS_VALUES, *FAILURE_METADATA}
+PLAN_FIELDS = {"index", "input", "idea", "scene", "self_check", "selected_position", "selected_setting", "scene_spec", "scene_validation", "batch_validation", "quality_warnings", "edited_stage", *PLAN_STATUS_VALUES, *FAILURE_METADATA}
 
 
 def scene_plan_signature(data, assignments):
@@ -41,6 +41,9 @@ def scene_plan_signature(data, assignments):
 
 
 def validate_plan_metadata(row):
+    if "quality_warnings" in row and (not isinstance(row["quality_warnings"], list) or len(row["quality_warnings"]) > 100
+            or any(not isinstance(warning, str) or len(warning) > 2000 for warning in row["quality_warnings"])):
+        raise ValueError("Invalid Dataset quality warnings.")
     if "batch_validation" in row:
         proof = row["batch_validation"]
         if (not isinstance(proof, dict) or set(proof) != {"valid", "signature", "errors"}
@@ -75,7 +78,7 @@ def validate_plan_metadata(row):
 
 def invalidate_scene_edit(row, stage, *, clear_failure=True):
     """An edited description needs fresh evidence; retain its text and approved specification."""
-    stale = {"scene_validation", "selected_position", "selected_setting"}
+    stale = {"scene_validation", "selected_position", "selected_setting", "quality_warnings"}
     if clear_failure:
         stale.update(FAILURE_METADATA)
     return {**{key: value for key, value in row.items() if key not in stale},
@@ -148,7 +151,7 @@ class ScenePlanner:
     def __init__(self, checkpoint, idea_history=None):
         self.checkpoint, self.idea_history = checkpoint, idea_history
 
-    def plan_batch(self, *, session, data, assignments, family="qwen", progress, plan_update=None, seed=None):
+    def plan_batch(self, *, session, data, assignments, family="qwen", progress, plan_update=None, seed=None, verify=True):
         rows = []
         def save_specs(specs):
             rows[:] = [{**assignment, "scene_spec": specs[assignment["index"]].to_dict(),
@@ -167,7 +170,7 @@ class ScenePlanner:
         ideas = self.plan_ideas(session=session, data=data, assignments=assignments, family=family,
             progress=progress, allow_partial=True, seed=seed, spec_update=save_specs, ideas_update=update)
         self.compose([row for row in ideas if row.get("idea_status") != "failed"], plan_update=update,
-                     session=session, checkpoint=self.checkpoint, family=family)
+                      session=session, checkpoint=self.checkpoint, family=family, verify=verify)
         return rows
 
     def plan_ideas(self, *, session, data, assignments, family="qwen", progress, indexes=None, existing=(), allow_partial=False,
@@ -233,9 +236,9 @@ class ScenePlanner:
         return rows
 
     @staticmethod
-    def compose(ideas, plan_update=None, *, session=None, checkpoint=lambda: None, family="qwen"):
-        """Validate scenes before admitting them to Builder; reuse only current grounded evidence."""
-        if session is not None:
+    def compose(ideas, plan_update=None, *, session=None, checkpoint=lambda: None, family="qwen", verify=True):
+        """Scene review is explicit; direct generation defers fidelity checks to the final output."""
+        if session is not None and verify:
             rows = verify_scenes(session, ideas, checkpoint, family=family)
             if plan_update and rows:
                 plan_update(rows)
@@ -243,9 +246,12 @@ class ScenePlanner:
         rows = []
         for idea in ideas:
             row = {**idea, "scene": " ".join(idea.get("scene", "").split()), "prompt_status": "not_generated"}
+            if not verify:
+                row.update(self_check="", scene_status="unverified", quality_warnings=["Scene fidelity deferred to the final prompt check."])
             eligibility = scene_eligibility(row, {})
             if eligibility.usable:
-                row.update(self_check="PASS", scene_status="valid")
+                if verify and row.get("scene_status") != "unverified":
+                    row.update(self_check="PASS", scene_status="valid")
             else:
                 row.update(self_check="", scene_status="repair_required", failure_stage="scene",
                            failure_reason=eligibility.reason)

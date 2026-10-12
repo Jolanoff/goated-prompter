@@ -222,7 +222,7 @@ class DatasetAnimaTests(unittest.TestCase):
         looping = "Mira: " + TAG_CYCLE * 41 + "\nHana waits."
         before = deepcopy(self.data)
         result, backend = self.run_writer([looping] * 4)
-        self.assertEqual(len(backend.writes), 4)
+        self.assertEqual(len(backend.writes), 2)
         self.assertEqual(result["completed"], 0)
         self.assertEqual(result["failed"], 1)
         self.assertEqual(result["prompts"], [])

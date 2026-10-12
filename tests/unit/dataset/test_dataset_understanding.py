@@ -26,6 +26,20 @@ from tests.support.dataset import planned_scene, saved_scene, valid_draft
 
 
 class DatasetUnderstandingTests(unittest.TestCase):
+    def test_trigger_placement_stays_a_writer_option_not_an_understanding_lock(self):
+        for placement in (False, True):
+            with self.subTest(placement=placement):
+                data = valid_draft(trigger_at_start=placement)
+                before = deepcopy(data)
+                source = json.loads(understanding_instruction(data).user_message)["source"]
+                self.assertNotIn("trigger_at_start", source)
+                self.assertEqual(source["trigger"], data["trigger"])
+                writer = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1,
+                    plan_item=planned_scene(data))
+                self.assertIn("Place the first trigger term at the beginning" if placement else
+                    "Prefer a natural visual introduction", writer.system_message)
+                self.assertEqual(data, before)
+
     def test_repeated_facts_are_listed_once_with_merged_review_tags(self):
         # Reported brief: "two kids" appeared twice in HARD.
         compact = {"requested_generation": "Two kids build a treehouse.", "character_count": 2,
@@ -195,7 +209,7 @@ class DatasetUnderstandingTests(unittest.TestCase):
         compact = self.compact_brief(characters=characters)
         with self.assertRaisesRegex(BackendGenerationError, "character count.*No generation started"):
             self.run_response(json.dumps(compact), valid_draft(subject="Two adult men talking.",
-                                                               trigger_type="Multiple characters"))
+                                                               trigger_type="Multiple characters"), expected_calls=2)
 
     def test_batch_size_is_separate_from_the_per_image_source_facts(self):
         data = valid_draft(subject="One adult man in an NSFW dataset.", amount=12)
@@ -211,7 +225,7 @@ class DatasetUnderstandingTests(unittest.TestCase):
             compact = self.compact_brief(character_count=declared, characters=characters)
             with self.subTest(declared=declared, listed=listed), self.assertRaisesRegex(
                     BackendGenerationError, "per-image character count.*No generation started"):
-                self.run_response(json.dumps(compact), valid_draft(amount=12))
+                self.run_response(json.dumps(compact), valid_draft(amount=12), expected_calls=2)
 
     def test_valid_per_image_cast_is_not_expanded_to_the_batch_size(self):
         for count in (1, 2, 3):
@@ -719,7 +733,7 @@ class DatasetUnderstandingTests(unittest.TestCase):
         data = valid_draft(source_mode="guided", inputs="Eyes only, with shoes visible\nA cup")
         self.assertEqual(self.run_response(json.dumps(brief), data), brief)
 
-    def run_response(self, raw, data=None):
+    def run_response(self, raw, data=None, *, expected_calls=1):
         backend, session = Mock(), Mock()
         backend.generation_session.return_value = nullcontext(session)
         session.generate.return_value = raw
@@ -729,7 +743,39 @@ class DatasetUnderstandingTests(unittest.TestCase):
                 return service.run(GoatedPrompterRequest(idea="A synthetic cup"),
                                    valid_draft() if data is None else data, lambda _message: None)
             finally:
-                session.generate.assert_called_once()
+                self.assertEqual(session.generate.call_count, expected_calls)
+
+    def test_incomplete_cast_gets_one_source_preserving_correction_before_review(self):
+        complete = dataset_understanding_fixture(character_count=2, characters=[
+            {"name": name, "count": 1, "sex": "unspecified", "kind": "animal", "origin": "described", "series": "", "traits": ""}
+            for name in ("red fox", "raven")])
+        incomplete = {**complete, "characters": complete["characters"][:1]}
+        session, backend = Mock(), Mock()
+        session.generate.side_effect = [json.dumps(incomplete), json.dumps(complete)]
+        backend.generation_session.return_value = nullcontext(session)
+        data = valid_draft(subject="A red fox and a raven on a coastal tide line.", trigger_type="Animal")
+        with patch("goated_prompter.features.dataset.understanding.create_backend", return_value=backend):
+            result = DatasetUnderstandingService({"backend": "mock"}, lambda: None).run(
+                GoatedPrompterRequest(idea=data["subject"]), data, lambda _: None)
+        self.assertEqual(result, complete)
+        self.assertEqual(session.generate.call_count, 2)
+        first, retry = [call.args[0] for call in session.generate.call_args_list]
+        self.assertEqual(retry.user_message, first.user_message)
+        self.assertEqual(retry.json_schema, first.json_schema)
+        self.assertEqual(retry.diagnostic_stage, "dataset:understanding:cast_retry")
+        self.assertIn("Do not drop a requested subject", retry.system_message)
+
+    def test_repeated_cast_mismatch_remains_blocked_after_one_correction(self):
+        incomplete = dataset_understanding_fixture(character_count=2, characters=[
+            {"name": "fox", "count": 1, "sex": "unspecified", "kind": "animal", "origin": "described", "series": "", "traits": ""}])
+        session, backend = Mock(), Mock()
+        session.generate.return_value = json.dumps(incomplete)
+        backend.generation_session.return_value = nullcontext(session)
+        with patch("goated_prompter.features.dataset.understanding.create_backend", return_value=backend):
+            with self.assertRaisesRegex(BackendGenerationError, "No generation started"):
+                DatasetUnderstandingService({"backend": "mock"}, lambda: None).run(
+                    GoatedPrompterRequest(idea="Fox and raven"), valid_draft(), lambda _: None)
+        self.assertEqual(session.generate.call_count, 2)
 
     def test_valid_brief_accepts_one_json_fence_without_another_model_call(self):
         brief = dataset_understanding_fixture()

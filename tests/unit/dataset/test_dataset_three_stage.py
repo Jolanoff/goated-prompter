@@ -152,7 +152,7 @@ class IdeaSceneTests(unittest.TestCase):
         for message in (ideas, final):
             self.assertIn("velvet, ember and hush", message)
         self.assertIn("Use its words, tone, style, framing and light only where the specification leaves room", ideas)
-        self.assertIn("SceneSpec and approved requirements take precedence", final)
+        self.assertIn("SceneSpec's locked facts and approved requirements take precedence", final)
 
 
 class CastWriterTests(unittest.TestCase):
@@ -348,6 +348,13 @@ class GeometryTests(unittest.TestCase):
                 self.assertIsNone(geometry_error(prompt))
         self.assertIsNotNone(geometry_error("Low-angle shot under warm light; high-angle view of the street."))
 
+    def test_writer_cannot_add_a_high_or_low_viewpoint_to_the_accepted_scene(self):
+        scene = "A close-up shot shows a botanist recording a plant sample."
+        self.assertIsNotNone(geometry_error("A close-up shot from a low-angle camera shows the botanist.", scene))
+        self.assertIsNotNone(geometry_error("A high-angle view shows the botanist recording a sample.", scene))
+        self.assertIsNone(geometry_error("A close-up shot under low-angle light shows the botanist.", scene))
+        self.assertIsNone(geometry_error("A low-angle shot shows the botanist.", "A low-angle shot shows the botanist."))
+
     def test_creative_directions_never_ask_for_steep_angles(self):
         from goated_prompter.features.dataset.vocabulary import DIRECTION_AXES, GROUP_FRAMING
         steep = ("high-angle", "low-angle", "from above", "top-down", "bird", "worm")
@@ -361,9 +368,9 @@ class GeometryTests(unittest.TestCase):
         self.assertIn("readable, species-appropriate pose when specified", ideas)
         writer = " ".join(dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1,
                                               plan_item=saved_scene()).system_message.split())
-        self.assertIn("never add a second angle, viewpoint or lens perspective", writer)
-        self.assertIn("add no pose details beyond the scene's", writer)
-        self.assertIn("never on new limb positions, a new camera position", writer)
+        self.assertIn("Use one coherent camera angle and shot size", writer)
+        self.assertIn("Clarify incomplete poses, natural support and spatial relationships", writer)
+        self.assertIn("not invented viewpoints or repeated descriptions of lighting and pose", writer)
 
 
 class PlausibilityTests(unittest.TestCase):
@@ -449,6 +456,13 @@ class RepeatedInventoryTests(unittest.TestCase):
 
 
 class RenderabilityGateTests(unittest.TestCase):
+    def test_material_variation_words_are_visual_description_not_instruction_leakage(self):
+        from goated_prompter.features.dataset.prompting import instruction_leak_error
+        for text in ("A scientist studies mineral specimens with subtle color variations.",
+                     "The warm light reveals variation in the ceramic glaze."):
+            with self.subTest(text=text):
+                self.assertIsNone(instruction_leak_error(text, "A subject working in a studio."))
+
     def test_prompts_that_list_rules_or_settings_or_loop_are_rejected(self):
         from goated_prompter.features.dataset.prompting import instruction_leak_error
         scene = "A woman kneels on a wet sidewalk beside a torn grocery bag."

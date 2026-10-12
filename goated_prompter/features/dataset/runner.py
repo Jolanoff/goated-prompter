@@ -64,7 +64,7 @@ def run_dataset(state, job, request, config, workflow):
                      if result["completed"] else "Dataset planning stages saved; final prompts have not started."
                      if any(row.get("scene_status") == "not_generated" for row in result["scene_plan"])
                      else "Dataset scene plan is ready and available before prompt writing."
-                     if any(row.get("scene_status") == "valid" for row in result["scene_plan"])
+                     if any(row.get("scene_status") in {"valid", "unverified"} for row in result["scene_plan"])
                      else "Dataset planning failures saved; review the failed or unresolved scene slots."),
                     "result",
                 )

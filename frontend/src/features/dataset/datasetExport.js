@@ -4,11 +4,16 @@ export function datasetCopyText(draft) {
 }
 
 export function datasetJsonl(draft) {
-  return (draft?.results || []).map((item) => JSON.stringify({
-    index: item.index, input: item.input || "", idea: item.idea || null, scene: item.scene || null,
-    prompt: item.prompt, trigger: draft.trigger, target: draft.target,
-    source: item.input || null,
-  })).join("\n");
+  return (draft?.results || []).map((item) => {
+    const row = draft.scene_plan?.find((row) => row.index === item.index);
+    return JSON.stringify({
+      index: item.index, input: item.input || "", idea: item.idea || null, scene: item.scene || null,
+      prompt: item.prompt, trigger: draft.trigger, target: draft.target,
+      source: item.input || null,
+      ...(row ? { validation_status: row.prompt_status || "unverified", quality_warnings: row.quality_warnings || [],
+        ...(row.batch_validation ? { batch_validation: row.batch_validation } : {}) } : {}),
+    });
+  }).join("\n");
 }
 
 const settingFields = ["subject", "trigger_type", "custom_type", "constraints", "amount", "trigger",

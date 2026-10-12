@@ -73,7 +73,9 @@ class RecoveryTests(unittest.TestCase):
                 return json.dumps(observations)
             return raw
         self.backend.generate = generate
-        result = self.run_service(idea_history=history)
+        planned = self.run_service(idea_history=history, scenes_only=True)
+        self.data.update(scene_plan=planned["scene_plan"], scene_plan_signature=planned["scene_plan_signature"])
+        result = self.run_service(idea_history=history, valid_only=True)
         self.assertEqual(idea_calls, [dataset_idea_fixture(1)["idea"]] * 2)
         self.assertEqual(result["completed"], 1, result["scene_plan"][0].get("failure_reason"))
         self.assertEqual(result["failed"], 0)
@@ -81,13 +83,13 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(result["scene_plan"][0]["prompt_status"], "valid")
         self.assertEqual(history.recent(self.data), [idea_calls[0]])
 
-    def test_scene_repair_revalidates_unchanged_prose_with_failure_feedback(self):
+    def test_missing_validator_checks_retain_output_unverified_without_regenerating_ideas(self):
         self.data.update(amount=1, scene_plan=[], scene_plan_signature="", results=[])
         original = self.backend.generate
         validation_calls = []
         def generate(instruction):
             raw = original(instruction)
-            if instruction.diagnostic_stage == "dataset:validation:scene":
+            if instruction.diagnostic_stage == "dataset:validation:prompt":
                 observations = json.loads(raw)
                 validation_calls.append(observations)
                 if len(validation_calls) == 1:
@@ -97,21 +99,21 @@ class RecoveryTests(unittest.TestCase):
         self.backend.generate = generate
         result = self.run_service(idea_history=RecentIdeaHistory())
         self.assertEqual(result["completed"], 1, result["scene_plan"][0].get("failure_reason"))
-        self.assertEqual(len(validation_calls), 2)
+        self.assertEqual(len(validation_calls), 1)
         ideas = [call for call in self.backend.calls if call.diagnostic_stage == "dataset:ideas"]
-        feedback = json.loads(ideas[1].user_message)["existing_ideas"][0]
-        self.assertIn("Not every approved requirement was checked exactly once.", feedback["failure_reason"])
-        self.assertEqual(feedback["failure_stage"], "scene")
+        self.assertEqual(len(ideas), 1)
+        self.assertIn("Not every approved requirement was checked exactly once.", result["scene_plan"][0]["quality_warnings"])
+        self.assertEqual(result["scene_plan"][0]["prompt_status"], "unverified")
         self.assertEqual(result["scene_plan"][0]["scene"], dataset_idea_fixture(1)["scene"])
-        self.assertTrue(any(snapshot["scene_plan"][0].get("failure_stage") == "scene" for snapshot in self.snapshots))
+        self.assertNotIn("failure_stage", result["scene_plan"][0])
 
-    def test_unchanged_scene_repair_still_blocks_builder_when_support_is_unknown(self):
+    def test_unresolved_support_finding_retains_prompt_unverified_after_one_local_repair(self):
         self.data.update(amount=1, scene_plan=[], scene_plan_signature="", results=[])
         original = self.backend.generate
         validation_calls = []
         def generate(instruction):
             raw = original(instruction)
-            if instruction.diagnostic_stage == "dataset:validation:scene":
+            if instruction.diagnostic_stage == "dataset:validation:prompt":
                 observations = json.loads(raw)
                 observations[0]["conflicts"] = ["The physical support is unknown."]
                 validation_calls.append(observations)
@@ -120,12 +122,13 @@ class RecoveryTests(unittest.TestCase):
         self.backend.generate = generate
         result = self.run_service(idea_history=RecentIdeaHistory())
         self.assertEqual(len(validation_calls), 2)
-        self.assertFalse(result["ok"])
-        self.assertEqual(result["completed"], 0)
-        self.assertEqual(result["scene_plan"][0]["failure_stage"], "scene")
-        self.assertIn("support is unknown", result["scene_plan"][0]["failure_reason"])
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["completed"], 1)
+        self.assertEqual(result["scene_plan"][0]["prompt_status"], "unverified")
+        self.assertIn("support is unknown", " ".join(result["scene_plan"][0]["quality_warnings"]))
         self.assertEqual(result["scene_plan"][0]["scene"], dataset_idea_fixture(1)["scene"])
-        self.assertFalse(any(call.diagnostic_stage == "dataset:1" for call in self.backend.calls))
+        self.assertEqual(sum(call.diagnostic_stage.startswith("dataset:1") for call in self.backend.calls), 2)
+        self.assertEqual(sum(call.diagnostic_stage == "dataset:ideas" for call in self.backend.calls), 1)
 
     def test_new_idea_is_one_targeted_call_whose_scene_is_written_directly(self):
         result = self.run_service(scene_action=("regenerate_idea", 1))
@@ -189,7 +192,8 @@ class RecoveryTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "interrupted second prompt"):
             self.run_service()
         rows = self.snapshots[-1]["scene_plan"]
-        self.assertEqual([row["self_check"] for row in rows], ["PASS", "PASS"])
+        self.assertEqual([row["self_check"] for row in rows], ["", ""])
+        self.assertEqual([row["scene_status"] for row in rows], ["unverified", "unverified"])
         self.assertEqual([row["scene"] for row in rows], [dataset_idea_fixture(1)["scene"], dataset_idea_fixture(2)["scene"]])
         self.assertEqual([row["index"] for row in self.snapshots[-1]["prompts"]], [1])
 
@@ -220,8 +224,8 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(result["completed"], 3)
         self.assertEqual([row["index"] for row in result["prompts"]], [1, 2, 3])
         self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:ideas:brainstorm", "dataset:planning",
-            "dataset:ideas", "dataset:validation:scene", "dataset:1", "dataset:validation:prompt", "dataset:3", "dataset:validation:prompt",
-            "dataset:ideas", "dataset:validation:scene", "dataset:2", "dataset:validation:prompt"])
+            "dataset:ideas", "dataset:1", "dataset:validation:prompt", "dataset:3", "dataset:validation:prompt",
+            "dataset:ideas", "dataset:2", "dataset:validation:prompt"])
         repairs = json.loads(next(call for call in reversed(self.backend.calls) if call.diagnostic_stage == "dataset:ideas").user_message)
         self.assertEqual(repairs["output_contract"]["indexes"], [2])
         self.assertTrue(any([row["index"] for row in snapshot["prompts"]] == [1, 3] for snapshot in self.snapshots))

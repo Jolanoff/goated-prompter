@@ -16,7 +16,7 @@ def intent_signature(data):
                if key not in {"results", "result_job_id", "plan_scenes_first", "seed", "seed_mode"} and not key.startswith("_")}
     if "scene_plan" in source:
         source["scene_plan"] = [{key: value for key, value in row.items()
-            if key != "prompt_status" and not (row.get("failure_stage") == "prompt"
+            if key not in {"prompt_status", "quality_warnings"} and not (row.get("failure_stage") == "prompt"
                 and key in {"failure_stage", "failure_reason"})} for row in source["scene_plan"]]
     return hashlib.sha256(json.dumps(source, ensure_ascii=False, sort_keys=True,
                                     separators=(",", ":")).encode()).hexdigest()

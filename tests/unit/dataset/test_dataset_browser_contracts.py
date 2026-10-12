@@ -11,6 +11,19 @@ from tests.support.dataset import valid_draft
 
 
 class BrowserDatasetContractTests(unittest.TestCase):
+    def test_browser_mock_keeps_stage_and_batch_check_contract(self):
+        from goated_prompter.features.dataset.validation import verify_batch_requirements
+        data = valid_draft(amount=2)
+        data["_confirmed_intent"]["hard"].append({"scope": "dataset", "text": "Two distinct activities."})
+        events = []
+        backend = DatasetUIMock()
+        backend.activity_callback = events.append
+        rows = [{"index": 1, "scene": "A potter shapes a cup."}, {"index": 2, "scene": "A potter glazes a vase."}]
+        verified = verify_batch_requirements(backend, data, rows, lambda: None)
+        self.assertTrue(verified["valid"], verified)
+        requests = [event for event in events if event["type"] == "request"]
+        self.assertEqual(requests[0]["stage"], "dataset:validation:batch:scene")
+
     def test_browser_mock_handles_planning_scene_and_prompt_validation(self):
         data = valid_draft(amount=2)
         backend = DatasetUIMock()

@@ -476,7 +476,8 @@ class DatasetIdeasService:
             rows = [_relabel(row, cast, looks.get(row["index"])) for row in rows]
             previous = {row["index"]: row for row in existing if row["index"] in indexes}
             scene_repairs = {index for index, row in previous.items() if row.get("failure_stage") == "scene"
-                             and row.get("scene_spec") == specifications[index]}
+                              and SceneSpec.from_dict(row["scene_spec"]).signature
+                                  == SceneSpec.from_dict(specifications[index]).signature}
             inputs = {row["index"]: row["input"] for row in assignments}
             recent_events = {" ".join(idea.casefold().split()) for idea in recent}
 

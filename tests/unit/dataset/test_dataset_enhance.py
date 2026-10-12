@@ -42,7 +42,7 @@ class DatasetEnhanceTests(unittest.TestCase):
         self.assertEqual(instruction.user_message, SCENE)
         self.assertIn(CORE_SYSTEM_PROMPT, instruction.system_message)
         rules = " ".join(instruction.system_message.split())
-        self.assertIn("Keep everything the scene states", rules)
+        self.assertIn("preserving the central event, cast, identities and approved requirements", rules)
         self.assertIn("Never drop, add or merge characters", rules)
         self.assertNotIn(self.request.idea, instruction.user_message)
         self.assertEqual(self.scene, before)
@@ -60,6 +60,18 @@ class DatasetEnhanceTests(unittest.TestCase):
                         self.assertIn(get_director_preset(self.data["director_preset"]).instructions, instruction.system_message)
                         self.assertEqual(instruction.max_tokens, DATASET_OUTPUT_TOKEN_LIMITS[length])
                         self.assertEqual(instruction.hard_max_tokens, instruction.max_tokens)
+
+    def test_dataset_writer_preserves_required_support_but_can_clarify_open_details(self):
+        for target in ("Krea 2", "Anima"):
+            with self.subTest(target=target):
+                instruction = self.assemble(target=target)
+                rules = " ".join(instruction.system_message.split())
+                self.assertIn("Keep required roles, interactions, exclusions and locked mechanics", rules)
+                self.assertIn("creative guidance, not additional user requirements", rules)
+                self.assertIn("Ordinary standing and sitting need not inventory off-frame surfaces", rules)
+                self.assertIn("Use one coherent camera angle and shot size", rules)
+                self.assertIn("not a second pose inventory", rules)
+                self.assertEqual(instruction.user_message, SCENE)
 
     def test_edited_director_instructions_remain_active_but_cannot_unlock_staging(self):
         self.request = replace(self.request, system_prompt_override="Use restrained complementary colors and soft rim lighting.")
@@ -121,7 +133,7 @@ class DatasetEnhanceTests(unittest.TestCase):
                 instruction = dataset_instruction(self.request, data, 1, plan_item=self.scene)
                 self.assertEqual(instruction.user_message, self.scene["scene"])
                 rules = " ".join(instruction.system_message.split())
-                self.assertIn("the camera angle and shot size, the setting and the light", rules)
+                self.assertIn("Prefer the scene's framing, setting and light", rules)
                 self.assertIn("materials, texture, color", rules)
                 requirements, _ = json.JSONDecoder().raw_decode(
                     instruction.system_message.split("SCOPED APPROVED REQUIREMENTS\n", 1)[1])
@@ -140,3 +152,12 @@ class DatasetEnhanceTests(unittest.TestCase):
         self.assertIn("ohwx_person", result)
         self.assertEqual(session.generate.call_count, 2)
         self.assertEqual(session.generate.call_args.args[0].diagnostic_stage, "dataset:validation:prompt")
+
+    def test_scene_preservation_contract_follows_builder_examples_and_target_defaults(self):
+        instruction = self.assemble()
+        marker = "WRITE THE FINAL PROMPT FROM THE SCENE"
+        self.assertEqual(instruction.system_message.count(marker), 1)
+        self.assertGreater(instruction.system_message.index(marker),
+                           instruction.system_message.index("FROZEN SCENE SPEC"))
+        self.assertGreater(instruction.system_message.index(marker),
+                           instruction.system_message.index("Output contract: return exactly one final prompt"))

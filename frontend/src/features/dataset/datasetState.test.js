@@ -3,6 +3,14 @@ import assert from "node:assert/strict";
 import { editDatasetPlan, invalidateDatasetPrompts, isDatasetSceneUsable, datasetRetryStage, datasetSceneSignature, isDatasetSceneCurrent,
   freshDatasetRequest, hasCompletedDatasetPrompt, nextDatasetSeed } from "./datasetState.js";
 
+test("an unverified retained prompt is completed, not an automatic retry request", () => {
+  const row = { index: 1, input: "", idea: "Reading", scene: "An adult reads.", prompt_status: "unverified",
+    quality_warnings: ["Essential fidelity uncertain."] };
+  const results = [{ index: 1, input: "", idea: row.idea, scene: row.scene, prompt: "A complete reading prompt." }];
+  assert.equal(hasCompletedDatasetPrompt(row, results), true);
+  assert.equal(hasCompletedDatasetPrompt({ ...row, prompt_status: "failed" }, results), false);
+});
+
 const draft = { scene_plan: [1, 2].map((index) => ({ index, idea: `idea ${index}`, scene: `scene ${index}`,
   self_check: "PASS", idea_status: "valid", scene_status: "valid", prompt_status: "valid" })),
   results: [1, 2].map((index) => ({ index, prompt: `prompt ${index}` })) };

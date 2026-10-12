@@ -84,7 +84,8 @@ async def vocabulary_endpoint(request):
     state = request.app[STATE]
     tool = VocabularyConversion()
     if request.method == "GET":
-        return web.json_response(tool.review(), headers={"Cache-Control": "no-store"})
+        return web.json_response(tool.status() if request.path.endswith("/status") else tool.review(),
+                                 headers={"Cache-Control": "no-store"})
     payload = await json_object(request)
     async with state.admission:
         if (conflict := active_job_conflict(state, "Wait for the active job before preparing or approving vocabulary.")) is not None:
@@ -109,5 +110,6 @@ def register(app):
                     web.post("/api/workspace/dataset/scenes", dataset_endpoint),
                     web.post("/api/workspace/dataset/scene", dataset_endpoint),
                     web.post("/api/workspace/dataset/vocabulary/prepare", vocabulary_endpoint),
+                    web.get("/api/workspace/dataset/vocabulary/status", vocabulary_endpoint),
                     web.get("/api/workspace/dataset/vocabulary/review", vocabulary_endpoint),
                     web.post("/api/workspace/dataset/vocabulary/review", vocabulary_endpoint)])

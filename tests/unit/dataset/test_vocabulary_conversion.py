@@ -35,6 +35,23 @@ class VocabularyConversionTests(unittest.TestCase):
             self.assertEqual(len(catalog.records), 1)
             self.assertFalse(any(row["rule"] == "unresolved_structure" for row in catalog.diagnostics))
 
+    def test_status_tracks_review_and_saved_catalog_without_exposing_records(self):
+        self.assertEqual(self.tool.status()["state"], "not_prepared")
+        self.assertEqual(self.tool.status()["catalog_path"], str(self.source) + ".catalog.json")
+        record = vocabulary_record("synthetic-greeting", "paired_pose")
+        self.tool.prepare(lambda instruction: json.dumps([record]), lambda: None)
+        status = self.tool.status()
+        self.assertEqual(status["state"], "awaiting_review")
+        self.assertEqual(status["validated"], 1)
+        self.assertNotIn("rows", status)
+        self.assertNotIn("synthetic-greeting", json.dumps(status))
+        self.tool.approve(self.tool.review()["token"], [0])
+        self.assertEqual(self.tool.status()["state"], "saved")
+        self.assertEqual(self.tool.status()["approved"], 1)
+        self.assertEqual(self.source.read_bytes(), self.original)
+        self.source.write_bytes(self.original + b"# changed\n")
+        self.assertEqual(self.tool.status()["state"], "stale_catalog")
+
     def test_invalid_and_unresolved_records_cannot_be_approved(self):
         record = vocabulary_record("synthetic-greeting", "paired_pose")
         record["physicalConstraints"]["A"] = "unknown"
@@ -44,6 +61,17 @@ class VocabularyConversionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.tool.approve(review["token"], [0])
         self.assertFalse(self.tool.catalog_path.exists())
+
+    def test_invalid_catalog_and_changed_review_are_reported_without_private_content(self):
+        self.tool.catalog_path.write_text('{"version":1,"records":[]}', encoding="utf-8")
+        self.assertEqual(self.tool.status()["state"], "stale_catalog")
+        self.tool.prepare(lambda instruction: "not json", lambda: None)
+        status = self.tool.status()
+        self.assertEqual(status["state"], "awaiting_review")
+        self.assertEqual((status["validated"], status["rejected"]), (0, 1))
+        self.source.write_bytes(self.original + b"# changed\n")
+        self.assertEqual(self.tool.status()["state"], "stale_review")
+        self.assertNotIn("Two adults greet", json.dumps(self.tool.status()))
 
     def test_changed_source_and_stale_review_are_rejected(self):
         record = vocabulary_record("synthetic-greeting", "paired_pose")

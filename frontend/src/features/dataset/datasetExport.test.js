@@ -2,6 +2,17 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { datasetCopyText, datasetJsonl, datasetGenerationLog } from "./datasetExport.js";
 
+test("JSONL preserves unverified fidelity and unresolved batch coverage beside the prompt", () => {
+  const proof = { valid: false, signature: "synthetic", errors: ["Coverage is uncertain."] };
+  const draft = { results: [{ index: 1, prompt: "A complete prompt." }], scene_plan: [{ index: 1,
+    prompt_status: "unverified", quality_warnings: ["Identity evidence uncertain."], batch_validation: proof }] };
+  const row = JSON.parse(datasetJsonl(draft));
+  assert.equal(row.prompt, "A complete prompt.");
+  assert.equal(row.validation_status, "unverified");
+  assert.deepEqual(row.quality_warnings, ["Identity evidence uncertain."]);
+  assert.deepEqual(row.batch_validation, proof);
+});
+
 test("Copy all places each prompt on one line without blank separators", () => {
   const draft = { results: [{ prompt: "prompt1" }, { prompt: "prompt2" }] };
   assert.equal(datasetCopyText(draft), "prompt1\nprompt2");

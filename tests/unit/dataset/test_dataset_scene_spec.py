@@ -29,6 +29,172 @@ from tests.support.dataset import saved_scene, valid_draft
 
 
 class SceneSpecGateTests(unittest.TestCase):
+    def test_unavailable_recheck_does_not_clear_a_known_violation_in_unchanged_text(self):
+        from unittest.mock import Mock
+        from tests.support.dataset import scene_observation
+        spec = replace(self.paired_spec(), hard=("No additional people.",))
+        scene = "Alice greets Bob and an additional guest."
+        observation = scene_observation(spec, scene, essential=True)
+        next(check for check in observation["requirements"] if check["id"] == "hard:0")["status"] = "fail"
+        session = Mock()
+        session.generate.return_value = json.dumps([observation])
+        failed = verify_scenes(session, [saved_scene(scene=scene, scene_spec=spec.to_dict())], lambda: None)[0]
+        self.assertEqual(failed["scene_status"], "failed")
+        session.generate.side_effect = BackendGenerationError("Synthetic checker unavailable")
+        unavailable = verify_scenes(session, [failed], lambda: None)[0]
+        self.assertEqual(unavailable["scene_status"], "failed")
+        self.assertFalse(scene_eligibility(unavailable, {}).usable)
+
+    def test_optional_generated_mechanics_and_semantic_setting_wording_are_not_constraints(self):
+        from goated_prompter.features.dataset.validation import scene_spec_findings
+        from tests.support.dataset import scene_observation
+        spec = replace(self.paired_spec(), locked=("hard",), setting="old astronomical observatory")
+        scene = "Alice and Bob work in the historic observatory."
+        observation = scene_observation(spec, scene, essential=True)
+        observation["participants"][0].update(pose="standing", location="foreground", support="unknown")
+        observation["setting"] = "historic observatory interior"
+        observation["contacts"] = []
+        self.assertEqual(scene_spec_findings(scene, spec, observation, essential=True),
+                         {"hard": [], "repairable": [], "warnings": []})
+        observation["requirements"][0]["evidence"] = "A paraphrase, not an exact quotation."
+        findings = scene_spec_findings(scene, spec, observation, essential=True)
+        self.assertEqual(findings["hard"], [])
+        self.assertEqual(findings["repairable"], [])
+        self.assertTrue(findings["warnings"])
+
+    def test_partial_malformed_observation_cannot_hide_known_identity_route_or_exclusion_failure(self):
+        from goated_prompter.features.dataset.validation import scene_spec_findings
+        from tests.support.dataset import scene_observation
+        spec = replace(self.paired_spec(), hard=("Exclude hats.",))
+        for check_id in ("cast", "subject:A", "route", "hard:0"):
+            with self.subTest(check_id=check_id):
+                scene = "Alice greets Bob."
+                observation = scene_observation(spec, scene, essential=True)
+                next(check for check in observation["requirements"] if check["id"] == check_id)["status"] = "fail"
+                observation.pop("action_evidence")
+                findings = scene_spec_findings(scene, spec, observation, essential=True)
+                self.assertTrue(findings["hard"])
+                self.assertTrue(findings["warnings"])
+
+    def test_approved_contact_lock_does_not_promote_added_creative_contacts_to_requirements(self):
+        from goated_prompter.features.dataset.validation import scene_spec_findings, specification_checks
+        from tests.support.dataset import scene_observation
+        required = self.paired_spec().contacts[0]
+        optional = Contact("B.left_hand", "A.shoulder")
+        spec = replace(self.paired_spec(), contacts=(required, optional),
+                       locked=("hard", f"contact:{required.source}->{required.target}"))
+        scene = "Alice's left hand rests on Bob's shoulder as they greet each other."
+        observation = scene_observation(spec, scene, essential=True)
+        observation["contacts"] = observation["contacts"][:1]
+        self.assertEqual(spec.required_contacts, (required,))
+        self.assertEqual(scene_spec_findings(scene, spec, observation, essential=True)["hard"], [])
+        self.assertEqual(scene_spec_findings(scene, spec, observation, essential=True)["repairable"], [])
+        checks = [check["id"] for check in specification_checks(spec, essential=True)]
+        self.assertNotIn(f"contact:{optional.source}->{optional.target}", checks)
+        next(check for check in observation["requirements"] if check["id"].startswith("contact:"))["status"] = "fail"
+        self.assertTrue(scene_spec_findings(scene, spec, observation, essential=True)["hard"])
+
+    def test_essential_findings_distinguish_user_violations_repairs_and_uncertainty(self):
+        from goated_prompter.features.dataset.validation import scene_spec_findings
+        from tests.support.dataset import scene_observation
+        spec = replace(self.paired_spec(), locked=("hard",), hard=("Both adults remain visible.",))
+        scene = "Alice sits on the left and greets Bob in the studio. Both adults remain visible."
+        observed = scene_observation(spec, scene)
+        observed["setting"] = "the same studio interior"
+        observed["participants"][0]["support"] = "unknown"
+        observed["requirements"][-1]["evidence"] = "A paraphrase of the source."
+        findings = scene_spec_findings(scene, spec, observed)
+        self.assertEqual(findings["hard"], [])
+        self.assertTrue(findings["warnings"])
+        observed["participants"][0]["pose"] = "standing"
+        self.assertTrue(scene_spec_findings(scene, spec, observed)["repairable"])
+        observed["requirements"][-1]["status"] = "fail"
+        self.assertTrue(scene_spec_findings(scene, spec, observed)["hard"])
+        observed["requirements"][-1]["status"] = "pass"
+        observed["participants"].pop()
+        self.assertTrue(scene_spec_findings(scene, spec, observed)["hard"])
+
+    def test_unknown_validation_is_unverified_not_a_hard_failure_or_a_pass(self):
+        from unittest.mock import Mock
+        from tests.support.dataset import scene_observation
+        spec = self.paired_spec()
+        scene = "Alice greets Bob in the studio."
+        observation = scene_observation(spec, scene)
+        observation["requirements"][0]["status"] = "unknown"
+        session = Mock()
+        session.generate.return_value = json.dumps([observation])
+        row = verify_scenes(session, [saved_scene(scene=scene, scene_spec=spec.to_dict())], lambda: None)[0]
+        self.assertEqual(row["scene_status"], "unverified")
+        self.assertNotEqual(row["self_check"], "PASS")
+        self.assertTrue(row["quality_warnings"])
+        self.assertTrue(scene_eligibility(row, {}).usable)
+
+    def test_validation_budget_accounts_for_cast_contacts_and_required_evidence(self):
+        sparse = self.paired_spec()
+        complex_spec = replace(sparse, hard=tuple(f"Preserve distinct supplied fact {index}." for index in range(20)))
+        scene = "Alice greets Bob while both retain their supplied attributes."
+        simple = validation_instruction([saved_scene(scene=scene, scene_spec=sparse.to_dict())])
+        complex_instruction = validation_instruction([saved_scene(scene=scene, scene_spec=complex_spec.to_dict())])
+        self.assertGreater(complex_instruction.max_tokens, simple.max_tokens)
+        self.assertEqual(complex_instruction.hard_max_tokens, complex_instruction.max_tokens)
+        self.assertLessEqual(complex_instruction.max_tokens, 16384)
+        checks = json.loads(complex_instruction.user_message)[0]["checks"]
+        self.assertEqual(len(checks), 25)  # Action, two subjects, two locked supports and twenty hard facts.
+
+    def test_scene_repair_compares_canonical_specs_not_serialized_whitespace(self):
+        from unittest.mock import Mock
+        from goated_prompter.features.dataset.ideas import DatasetIdeasService
+        spec = replace(self.paired_spec(), index=1, hard=("Both adults remain visible.",))
+        raw = spec.to_dict()
+        raw["hard"] = ["Both adults\n remain visible."]
+        row = saved_scene(idea="Alice greets Bob.", scene="Alice greets Bob in the studio.",
+            scene_spec=raw, failure_stage="scene", failure_reason="Scene validation unavailable.",
+            scene_status="repair_required")
+        session = Mock()
+        session.generate.return_value = json.dumps([{key: row[key] for key in ("index", "idea", "scene")}])
+        repaired = DatasetIdeasService(lambda: None).run(session=session, data=valid_draft(amount=1),
+            assignments=dataset_assignments(valid_draft(amount=1)), progress=lambda _: None,
+            existing=[row], allow_partial=True, scene_specs={1: spec})
+        self.assertNotEqual(repaired[0].get("idea_status"), "failed", repaired[0].get("failure_reason"))
+        self.assertEqual(repaired[0]["scene"], row["scene"])
+        self.assertEqual(SceneSpec.from_dict(repaired[0]["scene_spec"]).signature, spec.signature)
+        changed = DatasetIdeasService(lambda: None).run(session=session, data=valid_draft(amount=1),
+            assignments=dataset_assignments(valid_draft(amount=1)), progress=lambda _: None,
+            existing=[row], allow_partial=True, scene_specs={1: replace(spec, setting="another studio")})
+        self.assertEqual(changed[0]["idea_status"], "failed")
+
+    def test_frozen_setting_uses_canonical_label_without_accepting_unknown_or_conflict(self):
+        from tests.support.dataset import scene_observation
+        for setting in ("mossy fantasy forest", "old astronomical observatory"):
+            with self.subTest(setting=setting):
+                spec = replace(self.paired_spec(), setting=setting)
+                scene = f"Alice greets Bob inside the {setting}."
+                row = saved_scene(scene=scene, scene_spec=spec.to_dict())
+                fields = validation_instruction([row]).json_schema["prefixItems"][0]["properties"]
+                self.assertEqual(set(fields["setting"]["enum"]), {setting, "unknown", "conflict"})
+                for value in ("unknown", "conflict"):
+                    observation = scene_observation(spec, scene)
+                    observation["setting"] = value
+                    self.assertIn("The described environment differs from the selected setting.",
+                                  scene_spec_errors(scene, spec, observation))
+                observation = scene_observation(spec, scene)
+                observation["setting_evidence"] = "Invented quotation."
+                self.assertIn("The planned setting has no grounded evidence.", scene_spec_errors(scene, spec, observation))
+
+    def test_only_explicit_scene_edits_can_extract_an_unlocked_setting(self):
+        spec = replace(self.paired_spec(), setting="observatory")
+        row = saved_scene(scene="Alice greets Bob on a beach.", scene_spec=spec.to_dict(), edited_stage="scene")
+        for kind, locked, normalized in (("scene", spec.locked, False),
+                                         ("prompt", spec.locked, True),
+                                         ("scene", (*spec.locked, "setting"), True)):
+            with self.subTest(kind=kind, locked=locked):
+                row["scene_spec"] = replace(spec, locked=locked).to_dict()
+                instruction = validation_instruction([row], kind=kind)
+                field = instruction.json_schema["prefixItems"][0]["properties"]["setting"]
+                self.assertEqual("enum" in field, normalized)
+                self.assertEqual(json.loads(instruction.user_message)[0]["setting_to_identify"],
+                                 "observatory" if normalized else "")
+
     def test_validation_evidence_is_constrained_to_description_quotes_and_owned_contact_labels(self):
         spec = self.paired_spec()
         scene = "Alice sits on a chair on the left and greets Bob. Bob stands on the right with feet on the floor. Alice's left hand rests on Bob's shoulder."
@@ -75,9 +241,9 @@ class SceneSpecGateTests(unittest.TestCase):
         checked = verify_scenes(session, [row], lambda: None)[0]
         self.assertFalse(scene_eligibility(checked, {}).usable)
         self.assertEqual(checked["scene"], scene)
-        for reason in ("described pose differs", "described location differs", "described support differs",
-                       "Not every approved requirement", "Requirement hard:0 is not evidenced"):
+        for reason in ("described pose differs", "described location differs"):
             self.assertIn(reason, checked["failure_reason"])
+        self.assertTrue(checked["quality_warnings"])
 
     def test_compound_forest_labels_require_grounded_qualifiers_and_complete_checks(self):
         from tests.support.dataset import scene_observation
@@ -191,7 +357,7 @@ class SceneSpecGateTests(unittest.TestCase):
         observation["participants"][0]["evidence"] = "This quote was not in the scene."
         self.assertTrue(scene_spec_errors(scene, self.paired_spec(), observation))
 
-    def test_missing_extracted_action_or_category_cannot_authorize_scene_or_prompt(self):
+    def test_missing_optional_extraction_keeps_scene_or_prompt_unverified(self):
         from unittest.mock import Mock
         from tests.support.dataset import scene_observation
         spec = self.paired_spec()
@@ -207,8 +373,9 @@ class SceneSpecGateTests(unittest.TestCase):
                     session.generate.return_value = json.dumps([observation])
                     row = saved_scene(scene=scene, scene_spec=spec.to_dict())
                     checked = verify_scenes(session, [row], lambda: None, kind=kind)[0]
-                    self.assertFalse(scene_eligibility(checked, {}).usable)
-                    self.assertEqual(checked["scene_status"], "repair_required")
+                    self.assertTrue(scene_eligibility(checked, {}).usable)
+                    self.assertEqual(checked["scene_status"], "unverified")
+                    self.assertNotEqual(checked["self_check"], "PASS")
 
     def test_unknown_extracted_action_cannot_authorize_an_otherwise_grounded_scene(self):
         from tests.support.dataset import scene_observation
@@ -330,11 +497,18 @@ class GreetingBackend:
                 self.idea_counts[index] = self.idea_counts.get(index, 0) + 1
                 supported = index != self.fail_slot or self.idea_counts[index] > 1
                 rows.append({"index": index, "idea": f"Alice greets Bob at station {index}.",
-                             "scene": greeting_scene(index, supported=supported)})
+                              "scene": greeting_scene(index) if supported else ""})
             return json.dumps(rows)
         if instruction.diagnostic_stage.startswith("dataset:validation:"):
-            return json.dumps([greeting_observation(item["index"], item["description"],
-                supported="feet on the floor" in item["description"], spec=self.specs[item["index"]]) for item in context])
+            observations = []
+            for item in context:
+                observation = greeting_observation(item["index"], item["description"],
+                    supported="feet on the floor" in item["description"], spec=self.specs[item["index"]])
+                observation["requirements"] = [{"id": check["id"],
+                    "status": "fail" if check["id"].startswith("support:P2.") and "feet on the floor" not in item["description"] else "pass",
+                    "evidence": item["description"]} for check in item["checks"]]
+                observations.append(observation)
+            return json.dumps(observations)
         index = int(instruction.diagnostic_stage.split(":")[1])
         return "ohwx_person " + greeting_scene(index)
 
@@ -374,7 +548,7 @@ class SceneSpecPipelineTests(unittest.TestCase):
         writes = [call.diagnostic_stage for call in backend.calls if call.diagnostic_stage in {"dataset:1", "dataset:2", "dataset:3"}]
         self.assertEqual(writes, ["dataset:1", "dataset:3", "dataset:2"])
 
-    def test_unknown_scene_validation_keeps_the_scene_but_blocks_builder(self):
+    def test_unknown_scene_validation_keeps_the_scene_eligible_but_unverified(self):
         from unittest.mock import Mock
         data = greeting_draft(1)
         spec = replace(plan_scene_specs(data, dataset_assignments(data), directions={})[1], state="frozen")
@@ -385,8 +559,9 @@ class SceneSpecPipelineTests(unittest.TestCase):
         session.generate.return_value = json.dumps([observation])
         checked = verify_scenes(session, [row], lambda: None)[0]
         self.assertEqual(checked["scene"], row["scene"])
-        self.assertFalse(scene_eligibility(checked, data).usable)
-        self.assertEqual(checked["scene_status"], "repair_required")
+        self.assertTrue(scene_eligibility(checked, data).usable)
+        self.assertEqual(checked["scene_status"], "unverified")
+        self.assertNotEqual(checked["self_check"], "PASS")
 
     def test_edit_to_an_open_pose_updates_the_spec_but_a_locked_pose_conflict_is_shown(self):
         from unittest.mock import Mock
@@ -442,9 +617,9 @@ class SceneSpecPipelineTests(unittest.TestCase):
                 self.assertEqual(checked["scene_spec"]["action"], action)
                 self.assertFalse(checked["scene_spec"]["private_vocabulary"])
                 self.assertEqual(checked["scene_spec"]["catalog_id"], "")
-                self.assertEqual(session.generate.call_count, 2)
+                self.assertEqual(session.generate.call_count, 1)
 
-    def test_an_added_interaction_remains_blocked_when_its_fresh_category_check_is_missing(self):
+    def test_an_open_interaction_does_not_add_a_new_mandatory_category_check(self):
         from unittest.mock import Mock
         from tests.support.dataset import scene_observation
         old = SceneSpec(1, "adult", "Adults converse", (Participant("P1", "adult", "", "", "", ""),),
@@ -457,10 +632,10 @@ class SceneSpecPipelineTests(unittest.TestCase):
         session.generate.return_value = json.dumps([observation])
         checked = verify_scenes(session, [saved_scene(scene=scene, scene_spec=old.to_dict(),
             edited_stage="scene", self_check="")], lambda: None)[0]
-        self.assertFalse(scene_eligibility(checked, {}).usable)
-        self.assertEqual(checked["scene_status"], "repair_required")
-        self.assertEqual(checked["edited_stage"], "scene")
-        self.assertEqual(session.generate.call_count, 2)
+        self.assertTrue(scene_eligibility(checked, {}).usable)
+        self.assertEqual(checked["scene_status"], "unverified")
+        self.assertNotIn("edited_stage", checked)
+        self.assertEqual(session.generate.call_count, 1)
         self.assertNotIn("category", [check["id"] for check in checked["scene_validation"]["observation"]["requirements"]])
 
     def test_saved_edits_drop_stale_proof_and_metadata_without_rewriting_prose(self):
@@ -638,7 +813,7 @@ class SceneSpecPipelineTests(unittest.TestCase):
         self.assertEqual(result["completed"], 1)
         self.assertEqual(backend.writes, 2)
         self.assertEqual(sum(call.diagnostic_stage == "dataset:ideas" for call in backend.calls), 1)
-        self.assertEqual(sum(call.diagnostic_stage == "dataset:validation:scene" for call in backend.calls), 1)
+        self.assertEqual(sum(call.diagnostic_stage == "dataset:validation:scene" for call in backend.calls), 0)
         self.assertEqual(sum(call.diagnostic_stage == "dataset:validation:prompt" for call in backend.calls), 2)
 
     def test_check_edit_updates_only_the_selected_row_and_keeps_passing_siblings(self):
@@ -661,7 +836,7 @@ class SceneSpecPipelineTests(unittest.TestCase):
         self.assertNotIn("edited_stage", result["scene_plan"][0])
         self.assertTrue(scene_eligibility(validate_saved_scene_plan(result["scene_plan"])[0], data).usable)
 
-    def test_malformed_edit_observation_blocks_its_slot_without_crashing_siblings(self):
+    def test_malformed_edit_observation_is_unverified_without_crashing_siblings(self):
         from unittest.mock import Mock
         data = greeting_draft(2)
         specs = {index: replace(spec, state="frozen") for index, spec in plan_scene_specs(data, dataset_assignments(data), directions={}).items()}
@@ -670,7 +845,8 @@ class SceneSpecPipelineTests(unittest.TestCase):
         session = Mock()
         session.generate.return_value = json.dumps([{"index": 1, "participants": None}, greeting_observation(2, rows[1]["scene"], spec=rows[1]["scene_spec"])])
         result = verify_scenes(session, rows, lambda: None)
-        self.assertFalse(scene_eligibility(result[0], data).usable)
+        self.assertTrue(scene_eligibility(result[0], data).usable)
+        self.assertEqual(result[0]["scene_status"], "unverified")
         self.assertTrue(scene_eligibility(result[1], data).usable)
 
     def test_missing_validation_slot_preserves_grounded_siblings_and_persists_the_pending_slot(self):
@@ -682,7 +858,8 @@ class SceneSpecPipelineTests(unittest.TestCase):
         session.generate.return_value = json.dumps([greeting_observation(1, rows[0]["scene"], spec=rows[0]["scene_spec"])])
         result = verify_scenes(session, rows, lambda: None)
         self.assertTrue(scene_eligibility(result[0], data).usable)
-        self.assertFalse(scene_eligibility(result[1], data).usable)
+        self.assertTrue(scene_eligibility(result[1], data).usable)
+        self.assertEqual(result[1]["scene_status"], "unverified")
         self.assertNotIn("scene_validation", result[1])
         self.assertEqual(validate_saved_scene_plan(result)[1]["scene"], rows[1]["scene"])
 
@@ -772,7 +949,9 @@ class SceneSpecPipelineTests(unittest.TestCase):
         checked = verify_scenes(session, [row], lambda: None)[0]
         self.assertNotIn("scene_validation", checked)
         self.assertEqual(checked["scene"], row["scene"])
-        self.assertFalse(scene_eligibility(checked, data).usable)
+        self.assertTrue(scene_eligibility(checked, data).usable)
+        self.assertEqual(checked["scene_status"], "unverified")
+        self.assertNotEqual(checked["self_check"], "PASS")
 
     def test_routing_preview_scopes_guided_diagnostics_without_additional_model_calls(self):
         data = greeting_draft(2)

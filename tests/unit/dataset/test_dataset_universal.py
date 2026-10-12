@@ -93,7 +93,62 @@ def subject_draft(subjects, **changes):
 
 
 class UniversalPipelineTests(unittest.TestCase):
-    def test_failed_final_prompt_coverage_retains_outputs_but_returns_failure_and_retryable_slots(self):
+    def test_whitespace_equivalent_approved_requirements_do_not_trigger_an_extra_scene_check(self):
+        from goated_prompter.features.dataset.service import DatasetService
+        from goated_prompter.features.dataset.plan import scene_plan_signature
+        from goated_prompter.contracts import GoatedPrompterRequest
+        from tests.support.dataset import CaptureBackend, planned_scene
+        data = valid_draft(amount=1, _confirmed_intent=dataset_understanding_fixture(
+            hard=[{"scope": "all_outputs", "text": "Preserve the\n original outfit."}]))
+        data["scene_plan"] = [planned_scene(data)]
+        data["scene_plan_signature"] = scene_plan_signature(data, dataset_assignments(data))
+        backend = CaptureBackend(scenes=data["scene_plan"])
+        with patch("goated_prompter.features.dataset.service.create_backend", return_value=backend):
+            result = DatasetService({"backend": "mock"}, lambda: None).run(
+                GoatedPrompterRequest(idea=data["subject"], prompt_model="Custom"), data, lambda _: None, lambda _: None)
+        self.assertEqual(result["completed"], 1)
+        self.assertEqual([call.diagnostic_stage for call in backend.calls], ["dataset:1", "dataset:validation:prompt"])
+
+    def test_final_validation_has_one_targeted_repair_and_retains_uncertainty(self):
+        from goated_prompter.features.dataset.service import DatasetService
+        from goated_prompter.contracts import GoatedPrompterRequest
+        for finding in ("unknown", "repairable", "hard"):
+            with self.subTest(finding=finding):
+                data = subject_draft([("Alice", "human", 1, "red jacket")], amount=3)
+                class FindingBackend(UniversalBackend):
+                    def generate(self, instruction):
+                        raw = super().generate(instruction)
+                        if instruction.diagnostic_stage == "dataset:validation:prompt":
+                            observed = json.loads(raw)
+                            for item in observed:
+                                if item["index"] == 2:
+                                    if finding == "repairable":
+                                        item["conflicts"] = ["The reaching arm has an unclear contact with the work surface."]
+                                    else:
+                                        next(check for check in item["requirements"] if check["id"] == "subject:P1")["status"] = (
+                                            "fail" if finding == "hard" else "unknown")
+                            raw = json.dumps(observed)
+                        return raw
+                backend = FindingBackend()
+                with patch("goated_prompter.features.dataset.service.create_backend", return_value=backend):
+                    result = DatasetService({"backend": "mock"}, lambda: None).run(
+                        GoatedPrompterRequest(idea=data["subject"], prompt_model="Custom"), data, lambda _: None, lambda _: None)
+                writes = [call for call in backend.calls if call.diagnostic_stage.startswith("dataset:2")]
+                self.assertEqual(len(writes), 1 if finding == "unknown" else 2)
+                self.assertEqual(sum(call.diagnostic_stage == "dataset:ideas" for call in backend.calls), 1)
+                self.assertFalse(any(call.diagnostic_stage == "dataset:validation:scene" for call in backend.calls))
+                row = result["scene_plan"][1]
+                if finding == "hard":
+                    self.assertEqual([item["index"] for item in result["prompts"]], [1, 3])
+                    self.assertEqual(row["prompt_status"], "failed")
+                    self.assertIn("approved requirement", row["failure_reason"])
+                else:
+                    self.assertEqual(result["completed"], 3)
+                    self.assertEqual(row["prompt_status"], "unverified")
+                    self.assertTrue(row["quality_warnings"])
+                self.assertEqual([result["scene_plan"][index]["prompt_status"] for index in (0, 2)], ["valid", "valid"])
+
+    def test_failed_final_prompt_coverage_retains_individually_valid_outputs_but_returns_batch_failure(self):
         from goated_prompter.features.dataset.service import DatasetService
         from goated_prompter.contracts import GoatedPrompterRequest
         data = subject_draft([("kettle", "product", 1, "red finish")], amount=2)
@@ -115,9 +170,8 @@ class UniversalPipelineTests(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertEqual(len(result["prompts"]), 2)
         self.assertIn("dataset-wide", result["error"])
-        self.assertEqual(result["failed"], 2)
-        self.assertTrue(all(row["prompt_status"] == "failed" and row["failure_stage"] == "prompt"
-                            and row["scene_status"] == "valid" for row in result["scene_plan"]))
+        self.assertEqual(result["failed"], 0)
+        self.assertTrue(all(row["prompt_status"] == "valid" and "failure_stage" not in row for row in result["scene_plan"]))
         self.assertTrue(all(row["batch_validation"]["valid"] is False for row in result["scene_plan"]))
         self.assertEqual(snapshots[-1]["prompts"], result["prompts"])
         data.update(scene_plan=result["scene_plan"], scene_plan_signature=result["scene_plan_signature"],
@@ -159,7 +213,7 @@ class UniversalPipelineTests(unittest.TestCase):
                 self.assertFalse(any(call.diagnostic_stage == "dataset:ideas" or call.diagnostic_stage == "dataset:1"
                                      for call in backend.calls))
 
-    def test_unresolved_dataset_coverage_preserves_checked_scenes_but_does_not_start_builder(self):
+    def test_uncertain_dataset_coverage_does_not_block_individually_valid_prompts(self):
         from goated_prompter.features.dataset.service import DatasetService
         from goated_prompter.contracts import GoatedPrompterRequest
         data = subject_draft([("kettle", "product", 1, "red finish")], amount=2)
@@ -174,13 +228,14 @@ class UniversalPipelineTests(unittest.TestCase):
         with patch("goated_prompter.features.dataset.service.create_backend", return_value=backend):
             result = DatasetService({"backend": "mock"}, lambda: None).run(GoatedPrompterRequest(idea=data["subject"],
                 prompt_model="Custom"), data, lambda _: None, lambda _: None)
-        self.assertEqual(result["completed"], 0)
-        self.assertEqual(result["failed"], 2)
-        self.assertTrue(all(row["scene_status"] == "valid" and row["scene_validation"] for row in result["scene_plan"]))
+        self.assertEqual(result["completed"], 2)
+        self.assertEqual(result["failed"], 0)
+        self.assertFalse(result["ok"])
+        self.assertTrue(all(row["prompt_status"] == "valid" for row in result["scene_plan"]))
         self.assertTrue(all(row["batch_validation"]["valid"] is False for row in result["scene_plan"]))
-        self.assertFalse(any(call.diagnostic_stage in {"dataset:1", "dataset:2"} for call in backend.calls))
+        self.assertEqual(sum(call.diagnostic_stage in {"dataset:1", "dataset:2"} for call in backend.calls), 2)
 
-    def test_dataset_coverage_is_checked_once_for_scenes_and_again_for_final_prompts(self):
+    def test_dataset_coverage_is_checked_only_once_after_final_prompts(self):
         from goated_prompter.features.dataset.service import DatasetService
         from goated_prompter.contracts import GoatedPrompterRequest
         data = subject_draft([("kettle", "product", 1, "red finish")], amount=2)
@@ -199,9 +254,9 @@ class UniversalPipelineTests(unittest.TestCase):
                 prompt_model="Custom"), data, lambda _: None, lambda _: None)
         self.assertEqual((result["completed"], result["failed"]), (2, 0))
         stages = [call.diagnostic_stage for call in backend.calls]
-        self.assertEqual(stages.count("dataset:validation:batch:scene"), 1)
+        self.assertEqual(stages.count("dataset:validation:batch:scene"), 0)
         self.assertEqual(stages.count("dataset:validation:batch:prompt"), 1)
-        self.assertLess(stages.index("dataset:validation:batch:scene"), stages.index("dataset:1"))
+        self.assertLess(stages.index("dataset:2"), stages.index("dataset:validation:batch:prompt"))
 
     def test_cached_scene_is_rechecked_against_the_current_approved_hard_requirements(self):
         from goated_prompter.features.dataset.plan import scene_plan_signature
@@ -213,13 +268,14 @@ class UniversalPipelineTests(unittest.TestCase):
         data["scene_plan_signature"] = scene_plan_signature(data, dataset_assignments(data))
         class MissingRequirementBackend(CaptureBackend):
             def generate(self, instruction):
-                if instruction.diagnostic_stage == "dataset:validation:scene":
+                if instruction.diagnostic_stage == "dataset:validation:prompt":
                     self.calls.append(instruction)
                     context = json.loads(instruction.user_message)
                     from tests.support.dataset import scene_observation
                     spec = SceneSpec.from_dict(data["scene_plan"][0]["scene_spec"])
                     observation = scene_observation(spec, context[0]["description"])
-                    observation["requirements"].append({"id": "hard:0", "status": "unknown", "evidence": ""})
+                    observation["requirements"] = [{"id": check["id"], "status": "fail" if check["id"] == "hard:0" else "pass",
+                        "evidence": "" if check["id"] == "hard:0" else context[0]["description"]} for check in context[0]["checks"]]
                     return json.dumps([observation])
                 return super().generate(instruction)
         backend = MissingRequirementBackend(scenes=data["scene_plan"])
@@ -228,7 +284,9 @@ class UniversalPipelineTests(unittest.TestCase):
                 data, lambda _: None, lambda _: None, valid_only=True)
         self.assertEqual(result["completed"], 0)
         self.assertEqual(result["scene_plan"][0]["scene"], data["scene_plan"][0]["scene"])
-        self.assertFalse(any(call.diagnostic_stage.startswith("dataset:1") for call in backend.calls))
+        self.assertEqual(sum(call.diagnostic_stage.startswith("dataset:1") for call in backend.calls), 2)
+        self.assertEqual(result["scene_plan"][0]["prompt_status"], "failed")
+        self.assertFalse(any(call.diagnostic_stage == "dataset:validation:scene" for call in backend.calls))
 
     def run_dataset(self, data):
         from goated_prompter.contracts import GoatedPrompterRequest
@@ -252,7 +310,7 @@ class UniversalPipelineTests(unittest.TestCase):
                 spec = result["scene_plan"][0]["scene_spec"]
                 self.assertEqual(spec["state"], "frozen")
                 self.assertEqual(len(spec["participants"]), sum(item[2] for item in subjects))
-                checks = [json.loads(call.user_message)[0] for call in backend.calls if call.diagnostic_stage == "dataset:validation:scene"]
+                checks = [json.loads(call.user_message)[0] for call in backend.calls if call.diagnostic_stage == "dataset:validation:prompt"]
                 self.assertEqual(checks[0]["applicable_validators"]["anatomy_subjects"], [])
                 expected = [item["id"] for item in spec["participants"] if item["kind"] in {"human", "animal"}]
                 self.assertEqual(checks[0]["applicable_validators"]["position_subjects"], expected)
@@ -269,12 +327,14 @@ class UniversalPipelineTests(unittest.TestCase):
         result, backend = self.run_dataset(data)
         self.assertEqual((result["completed"], result["failed"]), (25, 0))
         self.assertEqual([item["index"] for item in result["prompts"]], list(range(1, 26)))
-        for stage in ("dataset:planning", "dataset:ideas", "dataset:validation:scene"):
+        for stage in ("dataset:planning", "dataset:ideas"):
             calls = [call for call in backend.calls if call.diagnostic_stage == stage]
             self.assertEqual(len(calls), 5)
             self.assertTrue(all(len(json.loads(call.user_message)["assignments"] if stage != "dataset:validation:scene"
                 else json.loads(call.user_message)) == 5 for call in calls))
         kinds = [row["scene_spec"]["participants"][0]["kind"] for row in result["scene_plan"]]
+        self.assertEqual(sum(call.diagnostic_stage == "dataset:validation:prompt" for call in backend.calls), 25)
+        self.assertFalse(any(call.diagnostic_stage == "dataset:validation:scene" for call in backend.calls))
         self.assertEqual(kinds, ["human", "human", "animal", "product", "environment"] * 5)
 
     def test_target_and_style_changes_preserve_the_same_subject_specification(self):
@@ -291,7 +351,7 @@ class UniversalPipelineTests(unittest.TestCase):
         result, backend = self.run_dataset(data)
         self.assertEqual(result["completed"], 1)
         self.assertEqual(result["scene_plan"][0]["scene_spec"]["route"], "adult")
-        check = json.loads(next(call for call in backend.calls if call.diagnostic_stage == "dataset:validation:scene").user_message)[0]
+        check = json.loads(next(call for call in backend.calls if call.diagnostic_stage == "dataset:validation:prompt").user_message)[0]
         self.assertEqual(check["applicable_validators"]["anatomy_subjects"], ["P1"])
 
 
@@ -359,6 +419,39 @@ class UniversalValidationTests(unittest.TestCase):
 
 
 class UniversalPlanningTests(unittest.TestCase):
+    def test_planning_schema_binds_each_mixed_subject_and_excludes_nonbodied_mechanics(self):
+        from goated_prompter.features.dataset.batch_planner import planning_instruction
+        data = subject_draft([("ranger", "human", 1, ""), ("goat", "animal", 1, ""),
+                              ("cargo bicycle", "object", 1, "")], amount=2)
+        specs = list(plan_scene_specs(data, dataset_assignments(data), directions={}).values())
+        schema = planning_instruction(data, specs).json_schema
+        self.assertEqual(len(schema["prefixItems"]), 2)
+        for slot, spec in zip(schema["prefixItems"], specs):
+            self.assertEqual(slot["properties"]["index"]["const"], spec.index)
+            participants = slot["properties"]["participants"]
+            self.assertEqual(participants["minItems"], 3)
+            self.assertEqual(participants["maxItems"], 3)
+            for fields, subject in zip(participants["prefixItems"], spec.participants):
+                fields = fields["properties"]
+                self.assertEqual(fields["id"]["const"], subject.id)
+                for field in ("pose", "support"):
+                    if subject.bodied:
+                        self.assertEqual(fields[field]["maxLength"], 240)
+                    else:
+                        self.assertEqual(fields[field], {"type": "string", "const": ""})
+
+    def test_multiple_required_place_descriptions_are_retained_not_last_write_wins(self):
+        from goated_prompter.features.dataset.batch_planner import planning_instruction
+        data = subject_draft([("teapot", "product", 1, "blue ceramic")])
+        data["_confirmed_intent"]["planning_constraints"] = [
+            {"scope": "all_outputs", "action": None, "setting": setting, "participants": [], "contacts": []}
+            for setting in ("old astronomical observatory", "wooden worktable", "old astronomical observatory")]
+        spec = plan_scene_specs(data, dataset_assignments(data), directions={})[1]
+        self.assertEqual(spec.setting, "old astronomical observatory; wooden worktable")
+        self.assertIn("setting", spec.locked)
+        field = planning_instruction(data, [spec]).json_schema["prefixItems"][0]["properties"]["setting"]
+        self.assertEqual(field["const"], spec.setting)
+
     def test_schema_constrained_forest_and_animal_candidates_reach_frozen_plans(self):
         from unittest.mock import Mock
         from goated_prompter.features.dataset.batch_planner import propose_scene_specs
@@ -374,7 +467,7 @@ class UniversalPlanningTests(unittest.TestCase):
                 session = Mock()
                 def generate(instruction):
                     context = json.loads(instruction.user_message)
-                    fields = instruction.json_schema["items"]["properties"]["participants"]["items"]["properties"]
+                    fields = instruction.json_schema["prefixItems"][0]["properties"]["participants"]["prefixItems"][0]["properties"]
                     # Replay an allowed natural-language location unless the wire contract rules it out.
                     layout = "center" if "enum" in fields["location"] else location
                     return json.dumps([{"index": item["index"], "action": action, "setting": "woodland",
@@ -393,12 +486,12 @@ class UniversalPlanningTests(unittest.TestCase):
         data = subject_draft([("spaniel", "animal", 1, "brown fur"), ("bench", "object", 1, "wooden")])
         specs = list(plan_scene_specs(data, dataset_assignments(data), directions={}).values())
         instruction = planning_instruction(data, specs)
-        fields = instruction.json_schema["items"]["properties"]["participants"]["items"]["properties"]
+        fields = instruction.json_schema["prefixItems"][0]["properties"]["participants"]["prefixItems"][0]["properties"]
         self.assertEqual(set(fields["location"].get("enum", [])), {"", "left", "right", "center", "foreground", "background"})
         for field in ("role", "pose", "support"):
             self.assertEqual(fields[field]["maxLength"], 240)
-        self.assertEqual(fields["id"].get("enum"), ["P1", "P2"])
-        endpoints = instruction.json_schema["items"]["properties"]["contacts"]["items"]["properties"]
+        self.assertEqual(fields["id"].get("const"), "P1")
+        endpoints = instruction.json_schema["prefixItems"][0]["properties"]["contacts"]["items"]["properties"]
         for field in ("source", "target"):
             self.assertRegex("P1.paw", endpoints[field].get("pattern", r"(?!)"))
             self.assertNotRegex("spaniel's paw", endpoints[field].get("pattern", ""))

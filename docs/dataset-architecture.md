@@ -6,8 +6,10 @@ Dataset produces prompts, not images. There is one pipeline:
 concept + rules + local guided input
   → UNDERSTAND (characters + hard / soft / free) → human approval
   → BRAINSTORM candidate events (random batches) → app picks each image's event
+  → compatible provisional planning → frozen SceneSpecs
   → IDEAS, five per call, each an idea with its finished scene
   → Builder ENHANCE / Direct with the approved cast → FINAL PROMPT
+  → essential fidelity check → valid / unverified / failed per prompt
 ```
 
 ## Owners
@@ -21,6 +23,7 @@ concept + rules + local guided input
 | Recent-event RAM history, read and written only by Ideas | `goated_prompter/features/dataset/ideas.py`, `idea_history.py` |
 | Chunked idea orchestration and versioned saved-plan validation | `goated_prompter/features/dataset/plan.py` |
 | Writer eligibility, shared by API and enhancement | `goated_prompter/features/dataset/eligibility.py` |
+| Essential fidelity, repairable findings, warnings and final batch coverage | `goated_prompter/features/dataset/validation.py` |
 | Builder handoff, cast section, Anima cast tags, cast check and trigger controls | `goated_prompter/features/dataset/prompting.py` |
 | Batch/actions and bounded final-output recovery | `goated_prompter/features/dataset/service.py` |
 | Target syntax and output normalization | `goated_prompter/prompting/target_models.py`, `workflow_output.py` |
@@ -171,13 +174,15 @@ manual reset control or endpoint. The writer does not read this history or chang
 accepted event for novelty. Semantic variation beyond exact repeats
 remains model-guided, not independently verified.
 
-There is no separate scene-building call. Each idea's scene, or the user's edit of it,
-is accepted for the writer as written. A `REPAIR:` note saved by the former scene check
-still blocks its writer until the idea is regenerated.
+There is no separate scene-building call. Direct generation admits complete, structurally
+usable scene contracts to Builder as **unverified**, deferring text fidelity to the final
+prompt check. Generate scenes only and Check scene explicitly request scene review.
+Edits clear stale proof and reconcile only unlocked mechanics; a failed or repair-required
+scene remains blocked until repaired. Validation uncertainty alone does not block writing.
 
-Scenes state exactly one camera angle and shot size and one head-to-feet pose per character;
-the app's creative directions never ask for top-down or worm's-eye views, and the writer may not
-add a second viewpoint or extra pose detail. A deterministic check rejects final prompts that
+Scenes request one coherent camera angle, shot size and pose per character. The writer may
+clarify open mechanics without changing required interactions or the central event.
+A deterministic check rejects final prompts that
 describe the camera from above and from below at once, because contradictory viewpoints are a
 common cause of folded anatomy. When the target's library has prompts, the writer gets a
 measured prompt format (range of lengths, structure, section labels, shared trigger; the selected
@@ -191,10 +196,16 @@ existing `assemble_instruction` with **Enhance / Direct**, adds the approved cas
 the applicable hard/soft/free contract. Director, creativity, style, length and target
 controls enrich open detail, not a different event, cast or crop. For Anima, count tags
 derived from the cast lead the tag block, followed by named characters' Danbooru and
-series tags. A deterministic check retries the writer when cast-derived count tags or a
-named character's name are missing from the prompt.
-Dataset has no separate final writer or semantic/support reviewer. Shared Builder
-and MiniMax planning/validation remain independent and available.
+series tags. Count-tag normalization follows the approved cast; the essential final
+text check enforces required identities and attributes.
+Dataset has no separate final writer. One final text extraction checks approved cast,
+identity, route, scoped hard requirements and locked mechanics. Generated open pose,
+support, placement, category and setting labels are not mandatory fidelity constraints.
+Required contacts have individual locks, so added creative contacts are not promoted
+to requirements. Evidence quotations support the result; missing or paraphrased evidence
+produces an unverified warning, not a false hard rejection. A known failed requirement
+still blocks, even if other validator fields are malformed. Optional checks do not require
+another validation call. Shared Builder and MiniMax validation remain independent.
 
 ## Recovery and text preservation
 
@@ -203,12 +214,21 @@ UNDERSTAND approval, regardless of the legacy `plan_scenes_first` saved flag.
 **Generate scenes only** is an explicit separate action for manual scene review;
 Continue reuses the accepted plan and writes only its missing prompts.
 
-Final enhancement retains up to three bounded retries for transport errors, malformed
+Final enhancement permits at most one bounded retry for transport errors, malformed
 target output, missing protected triggers, positive-content leakage and runaway
 generation, and for a dropped cast member. These retries never replan the scene. Transport retries repeat
 the instruction; output correction stays within the accepted scene and target format.
 Runaway retries reduce the output allowance. A sentence-complete prefix may be
 accepted only after normal output validation.
+
+Correctable physical inconsistencies get a targeted writer correction. If the bounded
+repair leaves only non-hard findings, retain the complete prompt as **unverified** with
+warnings; never label it valid. Validator uncertainty or unavailability also retains
+unverified output. A recheck cannot clear a known violation in unchanged scene text
+without fresh affirmative evidence. Completed unverified prompts are retained on Continue,
+not automatically regenerated. Cards and JSONL expose their status and warnings.
+Dataset-wide coverage is checked once after writing. A failed or uncertain coverage proof
+keeps the batch unresolved without blocking or marking unrelated individual prompts failed.
 
 With trigger expansion disabled, Dataset restores a missing literal numeric count
 from its equivalent English number-word phrase (1–20) before strict validation,

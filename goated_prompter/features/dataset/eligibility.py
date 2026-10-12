@@ -1,7 +1,8 @@
-"""Dataset writer gate: a scene with affirmative evidence for its frozen specification."""
+"""Admit complete scene contracts; final prompts carry their own fidelity status."""
 
 from dataclasses import asdict, dataclass
 from .validation import validation_errors
+from .scene_spec import SceneSpec, validate_scene_mechanics
 
 
 MAX_CHECK_CHARACTERS = 1200
@@ -31,9 +32,7 @@ class SceneEligibility:
         return asdict(self)
 
 
-def scene_eligibility(row, data, *, include_batch=True):
-    if include_batch and row.get("batch_validation", {}).get("valid") is False:
-        return SceneEligibility(False, reason=" ".join(row["batch_validation"]["errors"]) or "Dataset-wide constraints remain unresolved.")
+def scene_eligibility(row, data):
     if row.get("scene_status") in {"failed", "repair_required"} or row.get("idea_status") == "failed":
         return SceneEligibility(False, reason=row.get("failure_reason") or "Scene generation failed.")
     if not row.get("scene", "").strip():
@@ -42,8 +41,14 @@ def scene_eligibility(row, data, *, include_batch=True):
         return SceneEligibility(False, reason="This scene has no verified SceneSpec. Generate a new scene plan.")
     if row["scene_spec"].get("state", "frozen") != "frozen":
         return SceneEligibility(False, reason="This is a provisional plan, not a frozen SceneSpec.")
-    if errors := validation_errors(row):
+    try:
+        validate_scene_mechanics(SceneSpec.from_dict(row["scene_spec"]))
+    except (ValueError, TypeError, KeyError) as exc:
+        return SceneEligibility(False, reason=str(exc))
+    if row.get("scene_validation") and (errors := validation_errors(row)):
         return SceneEligibility(False, reason=" ".join(errors)[:2000])
+    if not row.get("scene_validation") and row.get("scene_status") != "unverified":
+        return SceneEligibility(False, reason="Scene fidelity has not been checked or explicitly marked unverified.")
     try:
         check = validate_self_check(row.get("self_check", ""), allow_pending=True)
     except ValueError as exc:

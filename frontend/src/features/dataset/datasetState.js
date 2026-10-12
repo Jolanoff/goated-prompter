@@ -26,7 +26,7 @@ export function datasetRequestSignature(draft) {
   const source = Object.fromEntries(Object.entries(draft || {})
     .filter(([key]) => !["results", "result_job_id", "plan_scenes_first"].includes(key)));
   if (source.scene_plan) source.scene_plan = source.scene_plan.map((row) => Object.fromEntries(
-    Object.entries(row).filter(([key]) => key !== "prompt_status" &&
+    Object.entries(row).filter(([key]) => !["prompt_status", "quality_warnings"].includes(key) &&
       !(row.failure_stage === "prompt" && ["failure_stage", "failure_reason"].includes(key))),
   ));
   return JSON.stringify(canonicalValue(source));
@@ -97,7 +97,7 @@ export function freshDatasetRequest(draft) {
 }
 
 export function hasCompletedDatasetPrompt(row, results) {
-  return row.prompt_status === "valid" && results.some((item) => item.index === row.index && item.prompt?.trim() &&
+  return ["valid", "unverified"].includes(row.prompt_status) && results.some((item) => item.index === row.index && item.prompt?.trim() &&
     ["input", "idea", "scene"].every((field) => item[field] === (row[field] || "")));
 }
 
@@ -236,7 +236,7 @@ export function editDatasetPlan(draft, index, stage, text) {
     scene_plan: draft.scene_plan.map((row) => {
       if (row.index !== index) return row.batch_validation ? { ...row, batch_validation: {
         ...row.batch_validation, valid: false, errors: ["Dataset-wide validation is pending after a scene edit."] } } : row;
-      const { failure_reason, failure_stage, selected_position, selected_setting, scene_validation, ...scene } = row;
+      const { failure_reason, failure_stage, selected_position, selected_setting, scene_validation, quality_warnings, ...scene } = row;
       // The idea is a label for its scene, so editing either keeps the other.
       return { ...scene, [stage]: text, self_check: "", edited_stage: stage,
         ...(row.batch_validation ? { batch_validation: { ...row.batch_validation, valid: false,

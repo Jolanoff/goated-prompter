@@ -42,7 +42,17 @@ test("export downloads only on click, retains confirmed understanding, and does 
   const log = await exportLog(page);
   expect(log.settings.amount).toBe(2);
   expect(log.dataset_idea).toBe("A duck confronting a dinosaur.");
-  expect(log.scene_plan).toEqual(before.draft.scene_plan);
+  const exportedPlan = before.draft.scene_plan.map((row) => {
+    const sceneSpec = { ...row.scene_spec };
+    delete sceneSpec.catalog_id;
+    delete sceneSpec.private_vocabulary;
+    return { ...row, scene_spec: sceneSpec };
+  });
+  expect(log.scene_plan).toEqual(exportedPlan);
+  for (const row of log.scene_plan) {
+    expect(row.scene_spec).not.toHaveProperty("catalog_id");
+    expect(row.scene_spec).not.toHaveProperty("private_vocabulary");
+  }
   expect(log.generated_prompts).toEqual(before.draft.results);
   expect(log.understanding.status).toBe("confirmed");
   expect(log.understanding.brief.requested_generation).toBe(log.dataset_idea);

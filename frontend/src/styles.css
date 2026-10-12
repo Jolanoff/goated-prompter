@@ -243,7 +243,7 @@
   .dataset-scene-title h3 { font-family: var(--font-display); font-size: 16px; font-weight: 700; letter-spacing: -.3px; }
   .dataset-scene-title h3 span { margin-left: 3px; color: var(--color-accent); font-variant-numeric: tabular-nums; }
   .dataset-scene-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; padding: 22px; }
-  .dataset-scene-body > [role=note], .dataset-scene-source { grid-column: 1 / -1; }
+  .dataset-scene-body > [role=note], .dataset-scene-body > details, .dataset-scene-source { grid-column: 1 / -1; }
   .dataset-scene-source { color: var(--color-muted); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
   .dataset-scene-editor { display: flex; flex-direction: column; min-width: 0; gap: 10px; }
   .dataset-scene-editor-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; min-height: 36px; }

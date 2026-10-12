@@ -197,9 +197,9 @@ class TriggerExpansionTests(unittest.TestCase):
         instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=row)
         session = Mock()
         session.generate.return_value = "The banana punches the apple on a mat."
-        with self.assertRaisesRegex(BackendGenerationError, "after 3 retries"):
+        with self.assertRaisesRegex(BackendGenerationError, "after 1 retry"):
             DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None, row)
-        self.assertEqual(session.generate.call_count, 4)
+        self.assertEqual(session.generate.call_count, 2)
         prefix = "The banana punches the apple on a wooden mat in a dojo. " + "Their clothes ripple with the force of the impact. " * 3
         session = Mock()
         checked_writer_responses(session, [BackendRunawayError("loop", recoverable_text=prefix), "On a mat, a banana punches an apple."], [row])

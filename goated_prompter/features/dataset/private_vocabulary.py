@@ -320,7 +320,7 @@ def load_vocabulary(path=None):
             sections = Vocabulary(sections, records=records, diagnostics=diagnostics, loaded=sections.loaded)
         except (OSError, ValueError, TypeError, KeyError):
             sections = Vocabulary(sections, records=sections.records, loaded=sections.loaded,
-                diagnostics=(*sections.diagnostics, {"rule": "invalid_record",
+                diagnostics=(*sections.diagnostics, {"rule": "invalid_catalog",
                     "reason": "Approved vocabulary catalog is stale or invalid; general planning remains available."}))
     _cache[path] = (stamp, sections)
     return sections

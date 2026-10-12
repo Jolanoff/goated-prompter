@@ -22,10 +22,10 @@ const sceneSources = [
 function StatusChip({ label, status }) {
   const state = status === "valid" ? "success"
     : status === "failed" ? "failed"
-    : ["repair_required", "duplicate_warning"].includes(status) ? "warning" : "pending";
+    : ["unverified", "repair_required", "duplicate_warning"].includes(status) ? "warning" : "pending";
   const Icon = state === "success" ? CircleCheck : state === "pending" ? Circle : CircleAlert;
   return <span className="dataset-status-chip" data-state={state} aria-label={`${label}: ${state}`}>
-    <Icon size={13} aria-hidden="true" />{label}
+    <Icon size={13} aria-hidden="true" />{label}{status === "unverified" ? " · unverified" : ""}
   </span>;
 }
 
@@ -37,13 +37,17 @@ function HelpDetails({ children }) {
 }
 
 function FailureReason({ item }) {
-  if (item.batch_validation?.valid === false) return <p className={`${ui.warningNote} mt-2`} role="note">
+  return <>
+  {item.batch_validation?.valid === false && <p className={`${ui.warningNote} mt-2`} role="note">
     <strong>Dataset constraints unresolved: </strong>{item.batch_validation.errors.join(" ")}
-  </p>;
-  if (!item.failure_reason && item.scene_status !== "failed" && item.prompt_status !== "failed") return null;
-  return <p className={`${ui.warningNote} mt-2`} role="note" aria-label={`Prompt ${item.index} failure reason`}>
+  </p>}
+  {!!item.quality_warnings?.length && <p className={`${ui.warningNote} mt-2`} role="note" aria-label={`Prompt ${item.index} quality warnings`}>
+    <strong>Unverified: </strong>{item.quality_warnings.join(" ")}
+  </p>}
+  {(item.failure_reason || item.scene_status === "failed" || item.prompt_status === "failed") && <p className={`${ui.warningNote} mt-2`} role="note" aria-label={`Prompt ${item.index} failure reason`}>
     <strong>{item.failure_stage === "prompt" ? "Prompt failed: " : "Scene planning failed: "}</strong>{item.failure_reason || "No failure details were recorded. Retry this item to get a fresh result."}
-  </p>;
+  </p>}
+  </>;
 }
 
 function elapsedLabel(seconds) {
@@ -104,7 +108,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
     if (!advancingJob.current || job?.id !== advancingJob.current) return;
     const scenes = job.result?.scene_plan || [];
     if (job.status === "succeeded" || job.result?.completed > 0 || (scenes.length && scenes.every((row) =>
-      ["valid", "failed", "repair_required"].includes(row.scene_status)))) {
+      ["valid", "unverified", "failed", "repair_required"].includes(row.scene_status)))) {
       advancingJob.current = "";
       setPage("dataset");
       window.scrollTo({ top: 0 });
@@ -124,7 +128,8 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
   const allText = draft?.results.map((item) => item.prompt).join("\n\n") || "";
   const jsonl = datasetJsonl(draft);
   const failedItems = draft?.scene_plan?.filter((item) => item.scene_status === "failed" || item.prompt_status === "failed") || [];
-  const displayedResults = [...(draft?.results || []), ...failedItems.filter((item) => !draft.results.some((result) => result.index === item.index))
+  const displayedResults = [...(draft?.results || []).map((item) => ({ ...draft.scene_plan.find((row) => row.index === item.index), ...item })),
+    ...failedItems.filter((item) => !draft.results.some((result) => result.index === item.index))
     .map((item) => ({ ...item, failed: true, prompt: "" }))].sort((left, right) => left.index - right.index);
 
   function exportGenerationLog() {
@@ -198,7 +203,6 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
     {draft && <>
       <div id="dataset-configure" role="tabpanel" aria-labelledby="dataset-tab-configure" tabIndex={0} hidden={page !== "configure"}>
       {page === "configure" && <section className="dataset-configuration" aria-label="Configure dataset">
-      <VocabularyPreparation busy={busy || active} noEngine={noEngine} onGenerate={onGenerate} />
       <div className="dataset-config-grid">
         <section className="dataset-config-column" aria-label="Dataset trigger and concept settings">
           <header className="dataset-config-heading">
@@ -259,7 +263,8 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                    </label>
                  </div>
                  <small className={ui.directorDescription}>Shows the seed of the last batch. Each new batch keeps it (Fixed), adds one (Increment) or picks a new one (Randomize). Regenerating one image stays random.</small>
-             <details className="dataset-details rounded-lg border border-line p-3">
+              <VocabularyPreparation busy={busy || active} noEngine={noEngine} onGenerate={onGenerate} job={job} />
+              <details className="dataset-details rounded-lg border border-line p-3">
                <summary><Tag size={14} aria-hidden="true" /><span>Training trigger & controls</span><ChevronDown size={14} aria-hidden="true" /></summary>
                <div className="mt-4 grid gap-4">
             <div className="grid gap-2">
@@ -385,7 +390,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
               <div className="dataset-scene-title"><Layers3 size={18} aria-hidden="true" />
                 <h3>Scene <span>{String(item.index).padStart(2, "0")}</span></h3></div>
               <div className="dataset-status-group"><StatusChip label="Idea" status={item.idea_status || "valid"} />
-                <StatusChip label="Scene" status={sceneUsable(item) ? "valid" : item.scene_status === "valid" ? "not_generated" : item.scene_status} />
+                <StatusChip label="Scene" status={sceneUsable(item) ? item.scene_status : item.scene_status === "valid" ? "not_generated" : item.scene_status} />
                 <StatusChip label="Prompt" status={item.prompt_status} /></div>
             </header>
             <div className="dataset-scene-body">
@@ -470,7 +475,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                <div><span className="text-sm font-semibold text-accent">Prompt {item.index}</span>
                 {item.input && <p className="mt-1 max-w-[48ch] truncate text-[10px] text-muted" title={item.input}>{item.input}</p>}
                 </div>
-               <div className="dataset-status-group">{item.failed ? <StatusChip label="Failed · skipped" status="failed" /> : <StatusChip label="Generated" status="valid" />}</div>
+               <div className="dataset-status-group">{item.failed ? <StatusChip label="Failed · skipped" status="failed" /> : <StatusChip label="Generated" status={item.prompt_status || "unverified"} />}</div>
              </div>
               {item.idea ? <div className="text-xs">
                 <p className="whitespace-pre-wrap leading-relaxed text-muted">{item.idea}</p>

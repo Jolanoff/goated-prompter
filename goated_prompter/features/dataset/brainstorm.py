@@ -198,6 +198,10 @@ stay compatible. Open actions and arrangements may be proposed now, before freez
 Coverage requirements apply across the batch; guided requirements stay in their slots.
 Authority: hard requirements > compatible selected geometry > soft preferences >
 Director defaults > optional creative suggestions. Do not invent attributes to fit entries.
+Use a concrete visible activity with a goal or interaction, not generic exploration or a
+camera/lighting description. When the request requires distinct activities, looking at
+different objects is not enough. Vary what the subjects actually do while preserving any
+required place and cast. Do not repeat the batch premise as each event.
 """ if provisional else """Suggest brief event variations for the supplied frozen SceneSpecs.
 Return candidates tagged with the exact SceneSpec index they describe. The action, cast,
 owned roles, physical arrangement, contacts, support and setting are already chosen.

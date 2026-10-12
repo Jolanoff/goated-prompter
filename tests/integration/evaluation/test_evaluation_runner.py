@@ -49,9 +49,9 @@ class EvaluationRunnerTests(unittest.TestCase):
         with patch.object(MockBackend, "generate", generate), patch("builtins.input", return_value="yes"):
             rows = [live_case(case, workflow, {"backend": "mock"}, self.args()) for workflow in ("builder", "dataset", "minimax")]
         self.assertEqual([call.diagnostic_stage for call in calls if call.diagnostic_stage.startswith("dataset:")],
-            ["dataset:understanding", "dataset:planning", "dataset:ideas", "dataset:validation:scene",
+            ["dataset:understanding", "dataset:planning", "dataset:ideas",
              "dataset:1", "dataset:validation:prompt"])
-        self.assertEqual(len(calls), 8)
+        self.assertEqual(len(calls), 7)
         for row in rows:
             self.assertNotIn("error", row)
             self.assertEqual(row["completion_state"], "completed")

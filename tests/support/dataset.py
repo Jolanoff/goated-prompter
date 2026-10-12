@@ -95,13 +95,14 @@ def checked_scene(row, *, spec=None):
         "observation": scene_observation(spec, row["scene"])}, "self_check": "PASS", "scene_status": "valid"}
 
 
-def scene_observation(spec, scene):
+def scene_observation(spec, scene, *, essential=False):
     """Faithful external-checker fixture; negative cases supply their own conflicting observations."""
     return {"index": spec.index, "participants": [{"id": item.id,
         **{key: getattr(item, key) for key in ("role", "pose", "location", "support")}, "evidence": scene}
         for item in spec.participants], "contacts": [{"source": item.source, "target": item.target, "evidence": scene}
         for item in spec.contacts], "setting": spec.setting or "unknown", "setting_evidence": scene if spec.setting else "",
-        "requirements": [{"id": check["id"], "status": "pass", "evidence": scene} for check in specification_checks(spec)],
+        "requirements": [{"id": check["id"], "status": "pass", "evidence": scene}
+            for check in specification_checks(spec, essential=essential)],
         "action": spec.action, "action_evidence": scene, "category": spec.category, "conflicts": []}
 
 
@@ -111,7 +112,7 @@ def checked_writer_responses(session, outputs, scenes):
     specs = {row["index"]: SceneSpec.from_dict(row["scene_spec"]) for row in scenes}
     def generate(instruction):
         if instruction.diagnostic_stage.startswith("dataset:validation:"):
-            return json.dumps([scene_observation(specs[row["index"]], row["description"])
+            return json.dumps([scene_observation(specs[row["index"]], row["description"], essential=True)
                               for row in json.loads(instruction.user_message)])
         output = next(outputs)
         if isinstance(output, Exception):
@@ -134,7 +135,7 @@ class CheckedWriterBackend(GoatedPrompterBackend):
     def generate(self, instruction):
         self.calls.append(instruction)
         if instruction.diagnostic_stage.startswith("dataset:validation:"):
-            return json.dumps([scene_observation(self.specs[row["index"]], row["description"])
+            return json.dumps([scene_observation(self.specs[row["index"]], row["description"], essential=True)
                               for row in json.loads(instruction.user_message)])
         output = next(self.outputs)
         if isinstance(output, Exception):
@@ -174,6 +175,6 @@ class CaptureBackend(GoatedPrompterBackend):
             return json.dumps([{**row, "index": spec["index"]} for row, spec in zip(
                 brainstorm_fixture(len(context["scene_specs"])), context["scene_specs"])])
         if stage.startswith("dataset:validation:"):
-            return json.dumps([scene_observation(self.specs[row["index"]], row["description"])
+            return json.dumps([scene_observation(self.specs[row["index"]], row["description"], essential=True)
                               for row in json.loads(instruction.user_message)])
         return "ohwx_person " + self.scenes[int(stage.split(":")[1])]

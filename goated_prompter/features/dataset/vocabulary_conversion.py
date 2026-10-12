@@ -8,7 +8,7 @@ import secrets
 from ...contracts import PromptInstruction
 from ...json_store import atomic_json, MAX_STORE_BYTES, read_store
 from ...strict_json import reject_duplicate_keys
-from .private_vocabulary import blocked_entry, catalog_path, compile_arrangement, parse_vocabulary, vocabulary_path
+from .private_vocabulary import blocked_entry, catalog_path, compile_arrangement, load_vocabulary, parse_vocabulary, vocabulary_path
 from .scene_spec import PLANNING_CATEGORIES
 from .understanding import unwrap_json_fence
 
@@ -26,6 +26,29 @@ class VocabularyConversion:
         self.source = Path(source) if source is not None else vocabulary_path()
         self.catalog_path = catalog_path(self.source)
         self.pending_path = self.source.with_name(self.source.name + ".review.json")
+
+    def status(self):
+        result = {"state": "not_prepared", "catalog_path": str(self.catalog_path),
+                  "approved": 0, "validated": 0, "rejected": 0}
+        if self.catalog_path.exists():
+            catalog = load_vocabulary(self.source)
+            if any(item["rule"] in {"invalid_catalog", "unavailable", "unreadable"} for item in catalog.diagnostics):
+                result["state"] = "stale_catalog"
+            else:
+                prepared = read_store(self.catalog_path, None, lambda value: value)
+                result.update(state="saved", approved=len(prepared["records"]))
+        if self.pending_path.exists():
+            try:
+                review = self.review()
+                digest, _ = source_digest(self.source)
+                if digest != review["source_digest"]:
+                    result["state"] = "stale_review"
+                else:
+                    result.update(state="awaiting_review", validated=sum(not row["reason"] for row in review["rows"]),
+                                  rejected=sum(bool(row["reason"]) for row in review["rows"]))
+            except (ValueError, OSError, UnicodeDecodeError):
+                result["state"] = "stale_review"
+        return result
 
     def prepare(self, generate, checkpoint, *, family="qwen"):
         digest, text = source_digest(self.source)

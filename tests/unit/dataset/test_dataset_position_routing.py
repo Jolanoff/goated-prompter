@@ -341,7 +341,7 @@ class PositionRoutingTests(unittest.TestCase):
                 self.assertEqual((route["cast"]["male"], route["cast"]["female"]), expected)
                 self.assertEqual(route["cast"]["unspecified"], 0)
 
-    def test_selected_act_substitution_fails_ideas_instead_of_reaching_pass(self):
+    def test_optional_catalog_category_does_not_become_an_approved_act_requirement(self):
         self.write_records(("oral positions", vocabulary_record("oral supported pose", "oral")))
         data = self.draft("Two adults in an NSFW scene", "male", "female", amount=1)
         session = Mock()
@@ -352,8 +352,9 @@ class PositionRoutingTests(unittest.TestCase):
         observation["category"] = "anal"
         session.generate.return_value = json.dumps([observation])
         checked = verify_scenes(session, rows, lambda: None)[0]
-        self.assertEqual(checked["scene_status"], "repair_required")
-        self.assertIn("selected category", checked["failure_reason"].lower())
+        self.assertEqual(checked["scene_status"], "unverified")
+        self.assertNotEqual(checked["self_check"], "PASS")
+        self.assertNotIn("failure_reason", checked)
 
     def test_anatomical_sex_adjectives_do_not_add_people_to_a_missing_cast(self):
         from goated_prompter.features.dataset.brainstorm import dataset_routing
@@ -366,7 +367,8 @@ class PositionRoutingTests(unittest.TestCase):
         self.assertEqual((cast["count"], cast["male"], cast["female"]), (2, 1, 1))
 
     def test_final_writer_retries_a_different_explicit_act(self):
-        data = self.draft("Two adults in an NSFW scene", "male", "female", amount=1, trigger="eval_subject")
+        data = self.draft("Two adults sharing only oral contact", "male", "female", amount=1, trigger="eval_subject")
+        data["_confirmed_intent"]["hard"] = [{"scope": "all_outputs", "text": "Only the requested oral interaction is depicted."}]
         self.write_records(("oral positions", vocabulary_record("oral supported pose", "oral")))
         scene = self.scene(data, scene="Two adults share a supported oral arrangement.")
         instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=scene)
@@ -376,8 +378,9 @@ class PositionRoutingTests(unittest.TestCase):
         def generate(instruction):
             if instruction.diagnostic_stage == "dataset:validation:prompt":
                 text = json.loads(instruction.user_message)[0]["description"]
-                observation = scene_observation(SceneSpec.from_dict(scene["scene_spec"]), text)
+                observation = scene_observation(SceneSpec.from_dict(scene["scene_spec"]), text, essential=True)
                 observation["category"] = "anal" if "anal" in text else "oral"
+                next(check for check in observation["requirements"] if check["id"] == "hard:0")["status"] = "fail" if "anal" in text else "pass"
                 return json.dumps([observation])
             return next(outputs)
         session.generate.side_effect = generate

@@ -18,7 +18,7 @@ from goated_prompter.features.dataset.scene_spec import SceneSpec
 from goated_prompter.features.dataset.understanding import validate_understanding
 from goated_prompter.json_store import atomic_json
 from tests.helpers import dataset_understanding_fixture, dataset_idea_fixture, enter_context
-from tests.support.dataset import CaptureBackend, saved_scene, valid_draft
+from tests.support.dataset import CaptureBackend, saved_scene, valid_draft, vocabulary_record
 
 
 class UnderstandingBackend(CaptureBackend):
@@ -115,6 +115,47 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result["routing"][0]["nsfw"])
         self.assertEqual(result["routing"][0]["position_pools"], [])
         self.assertEqual(len(self.backend.calls), 1)
+
+    async def test_vocabulary_preparation_requires_selected_review_before_dataset_loads_catalog(self):
+        source = Path(self.temp.name) / "sexual.txt"
+        original = b"[two women positions]\nTwo adult women sit together for a clothed portrait.\n"
+        source.write_bytes(original)
+        record = vocabulary_record("synthetic-portrait", "paired_pose", sexes=("female", "female"))
+        with patch.dict("os.environ", {"GOATED_PROMPTER_VOCABULARY_FILE": str(source)}), \
+                patch("goated_prompter.features.dataset.runner.resolve_director_config",
+                      return_value=({"backend": "local_llama_cpp"}, None)), \
+                patch("goated_prompter.features.dataset.runner.create_backend", return_value=self.backend), \
+                patch.object(self.backend, "generate", return_value=json.dumps([record])):
+            response = await self.client.post("/api/workspace/dataset/vocabulary/prepare", json={})
+            self.assertEqual(response.status, 202, await response.text())
+            job = await self.terminal(await response.json())
+            self.assertEqual(job["status"], "succeeded", job.get("error"))
+            catalog_path = source.with_name("sexual.txt.catalog.json")
+            self.assertFalse(catalog_path.exists())
+            status_response = await self.client.get("/api/workspace/dataset/vocabulary/status")
+            self.assertEqual(status_response.headers["Cache-Control"], "no-store")
+            status = await status_response.json()
+            self.assertEqual(status["state"], "awaiting_review")
+            self.assertNotIn("rows", status)
+            review = await (await self.client.get("/api/workspace/dataset/vocabulary/review")).json()
+            response = await self.client.post("/api/workspace/dataset/vocabulary/review",
+                json={"token": review["token"], "indexes": [0]})
+            self.assertEqual(response.status, 200, await response.text())
+            self.assertEqual((await response.json())["approved"], 1)
+            self.assertTrue(catalog_path.exists())
+            self.assertEqual(source.read_bytes(), original)
+            status = await (await self.client.get("/api/workspace/dataset/vocabulary/status")).json()
+            self.assertEqual(status["state"], "saved")
+            self.assertEqual(status["catalog_path"], str(catalog_path))
+            from goated_prompter.features.dataset.private_vocabulary import load_vocabulary
+            self.assertEqual([item.id for item in load_vocabulary().records], ["synthetic-portrait"])
+            data = valid_draft(subject="Two adult women in a clothed NSFW boudoir portrait.",
+                trigger_type="Multiple characters", amount=1,
+                _confirmed_intent=dataset_understanding_fixture(character_count=2, characters=[
+                    {"name": name, "count": 1, "sex": "female", "kind": "human",
+                     "origin": "described", "series": "", "traits": ""} for name in ("first woman", "second woman")]))
+            from tests.support.dataset import frozen_specs
+            self.assertTrue(frozen_specs(data, catalog=load_vocabulary())[1].private_vocabulary)
 
     async def test_all_planning_failures_are_failed_jobs_with_durable_slot_diagnostics(self):
         original_generate = self.backend.generate
@@ -213,7 +254,8 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(job["status"], "failed")
         self.assertIsNone(job["result"])
         self.assertIn("per-image character count", job["error"])
-        self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:understanding"])
+        self.assertEqual([call.diagnostic_stage for call in self.backend.calls],
+                         ["dataset:understanding", "dataset:understanding:cast_retry"])
         self.assertFalse(self.app[local.STATE].dataset_checkpoints.snapshot()["jobs"])
         self.assertEqual(await (await self.client.get("/api/workspace/settings/dataset")).json(), before)
 
@@ -297,7 +339,7 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(scene, dataset_idea_fixture()["scene"])
         self.assertEqual([call.diagnostic_stage for call in self.backend.calls],
             ["dataset:understanding", "dataset:ideas:brainstorm", "dataset:planning", "dataset:ideas",
-             "dataset:validation:scene", "dataset:1", "dataset:validation:prompt"])
+             "dataset:1", "dataset:validation:prompt"])
 
     async def test_saved_approved_plan_continues_without_reanalysis_and_keeps_completed_prompt(self):
         data = valid_draft(amount=2)
@@ -556,6 +598,38 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(finished["result"]["scene_plan"][1], second_scene)
         self.assertEqual(finished["result"]["prompts"][1], second_prompt)
 
+    async def test_uncertain_final_fidelity_is_saved_as_unverified_and_continue_retains_the_prompt(self):
+        data = valid_draft(amount=1)
+        approved = await self.analyze(data)
+        generate = self.backend.generate
+        def uncertain_check(instruction):
+            raw = generate(instruction)
+            if instruction.diagnostic_stage == "dataset:validation:prompt":
+                observations = json.loads(raw)
+                observations[0]["requirements"][0]["status"] = "unknown"
+                return json.dumps(observations)
+            return raw
+        with patch.object(self.backend, "generate", side_effect=uncertain_check):
+            response = await self.client.post("/api/workspace/dataset", json={"input": data,
+                "confirmation_token": approved["confirmation_token"]})
+            done = await self.terminal(await response.json())
+        self.assertEqual(done["status"], "succeeded", done.get("error"))
+        self.assertEqual(done["result"]["completed"], 1)
+        saved = await (await self.client.get("/api/workspace/settings/dataset")).json()
+        row = saved["draft"]["scene_plan"][0]
+        self.assertEqual(row["prompt_status"], "unverified")
+        self.assertTrue(row["quality_warnings"])
+        self.assertTrue(saved["scene_eligibility"]["1"]["usable"])
+        self.backend.calls.clear()
+        response = await self.client.post("/api/workspace/dataset", json={"input": saved["draft"],
+            "confirmation_token": saved["continuation_token"], "valid_only": True, "resume": True})
+        self.assertEqual(response.status, 202, await response.text())
+        continued = await self.terminal(await response.json())
+        self.assertEqual(continued["status"], "succeeded", continued.get("error"))
+        self.assertEqual(continued["result"]["prompts"], saved["draft"]["results"])
+        self.assertEqual(continued["result"]["scene_plan"][0]["prompt_status"], "unverified")
+        self.assertEqual(self.backend.calls, [])
+
     async def test_idea_only_edit_drops_old_proof_and_exposes_conflict_without_rewriting_siblings(self):
         from tests.support.dataset import scene_observation
         data = valid_draft(amount=2)
@@ -591,7 +665,7 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
             context = json.loads(instruction.user_message)[0]
             self.assertEqual(context["edited_idea"], new_idea)
             observation = scene_observation(SceneSpec.from_dict(row["scene_spec"]), context["description"])
-            observation["requirements"][0]["status"] = "fail"
+            observation["requirements"].append({"id": "action", "status": "fail", "evidence": context["description"]})
             return json.dumps([observation])
         with patch.object(self.backend, "generate", side_effect=conflicting_check):
             response = await self.client.post("/api/workspace/dataset/scene", json={"input": edited["draft"],
@@ -630,7 +704,7 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(finished["result"]["completed"], 1)
         self.assertEqual([call.diagnostic_stage for call in self.backend.calls],
             ["dataset:understanding", "dataset:ideas:brainstorm", "dataset:planning", "dataset:ideas",
-             "dataset:validation:scene", "dataset:1", "dataset:validation:prompt"])
+             "dataset:1", "dataset:validation:prompt"])
         ideas = next(call for call in self.backend.calls if call.diagnostic_stage == "dataset:ideas")
         builder = next(call for call in self.backend.calls if call.diagnostic_stage == "dataset:1")
         self.assertEqual(json.loads(ideas.user_message)["confirmed_intent"], approved["brief"])
@@ -806,7 +880,7 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(job["result"]["completed"], 1)
         stages = [call.diagnostic_stage for call in self.backend.calls]
         self.assertEqual(stages, ["dataset:ideas:brainstorm", "dataset:planning", "dataset:ideas",
-            "dataset:validation:scene", "dataset:1", "dataset:validation:prompt"])
+            "dataset:1", "dataset:validation:prompt"])
         for call in (call for call in self.backend.calls if call.diagnostic_stage in {"dataset:ideas:brainstorm", "dataset:ideas"}):
             self.assertEqual(json.loads(call.user_message)["confirmed_intent"], result["brief"])
             self.assertIn("Arena", call.user_message)

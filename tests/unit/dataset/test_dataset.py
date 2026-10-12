@@ -88,16 +88,29 @@ class DatasetUnitTests(unittest.TestCase):
         self.assertEqual(session.generate.call_count, 2)
 
     def test_output_recovery_keeps_scene_and_reduced_budget(self):
-        result, session = self.generate([BackendRunawayError("loop"), "missing trigger", "ohwx_person punches a bag."])
+        result, session = self.generate([BackendRunawayError("loop"), "ohwx_person punches a bag."])
         self.assertIn("ohwx_person", result)
         calls = [call.args[0] for call in session.generate.call_args_list if not call.args[0].diagnostic_stage.startswith("dataset:validation:")]
         self.assertLess(calls[1].hard_max_tokens, calls[0].hard_max_tokens)
-        self.assertEqual(calls[2].hard_max_tokens, calls[1].hard_max_tokens)
+        self.assertEqual(len(calls), 2)
         self.assertTrue(all(call.user_message == self.row["scene"] for call in calls))
 
     def test_invalid_outputs_are_bounded(self):
         session = Mock(); session.generate.return_value = "Missing the protected token."
         with self.assertRaises(BackendGenerationError):
+            DatasetService({}, lambda: None)._generate(session, self.instruction, self.data, 1, lambda _: None, self.row)
+        self.assertEqual(session.generate.call_count, 2)
+
+    def test_unknown_retry_check_cannot_clear_known_violation_in_identical_final_text(self):
+        text = "ohwx_person punches the training bag."
+        spec = SceneSpec.from_dict(self.row["scene_spec"])
+        failed = scene_observation(spec, text, essential=True)
+        failed["requirements"][0]["status"] = "fail"
+        uncertain = scene_observation(spec, text, essential=True)
+        uncertain["requirements"][0]["status"] = "unknown"
+        session = Mock()
+        session.generate.side_effect = [text, json.dumps([failed]), text, json.dumps([uncertain])]
+        with self.assertRaisesRegex(BackendGenerationError, "approved requirement"):
             DatasetService({}, lambda: None)._generate(session, self.instruction, self.data, 1, lambda _: None, self.row)
         self.assertEqual(session.generate.call_count, 4)
 
@@ -107,7 +120,7 @@ class DatasetUnitTests(unittest.TestCase):
         with patch("goated_prompter.features.dataset.service.create_backend", return_value=backend):
             result = DatasetService({"backend": "mock"}, lambda: None).run(GoatedPrompterRequest(idea=self.data["subject"], prompt_model="Custom"), self.data, lambda _: None, snapshots.append)
         self.assertEqual([call.diagnostic_stage for call in backend.calls], ["dataset:ideas:brainstorm", "dataset:planning",
-            "dataset:ideas", "dataset:validation:scene", "dataset:1", "dataset:validation:prompt"])
+            "dataset:ideas", "dataset:1", "dataset:validation:prompt"])
         self.assertEqual(backend.sessions, 1)
         self.assertEqual(result["completed"], 1)
         self.assertNotIn("quality_report", result)

@@ -56,7 +56,9 @@ for (const width of [1920, 1440, 1100, 768, 390, 360]) {
     await openDatasetPage(page, "Scenes");
     await expect(page.getByRole("button", { name: "Regenerate idea", exact: true }).first()).toHaveAttribute("title", "Regenerate idea");
     await expect(page.getByRole("button", { name: "Repair scene", exact: true })).toHaveCount(0);
-    await expect(page.getByRole("article", { name: "Scene 1 card", exact: true }).getByLabel("Scene: success", { exact: true })).toBeVisible();
+    const sceneCard = page.getByRole("article", { name: "Scene 1 card", exact: true });
+    await expect(sceneCard.getByLabel("Scene: warning", { exact: true })).toHaveText("Scene · unverified");
+    await expect(sceneCard.getByLabel("Prompt: success", { exact: true })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.evaluate(() => Promise.all(document.getAnimations()
       .filter((animation) => animation.effect.target.checkVisibility() && Number.isFinite(animation.effect.getTiming().iterations))
