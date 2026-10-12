@@ -59,6 +59,52 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(result["scene_plan"][0]["prompt_status"], "valid")
         self.assertEqual(history.recent(self.data), [idea_calls[0]])
 
+    def test_scene_repair_revalidates_unchanged_prose_with_failure_feedback(self):
+        self.data.update(amount=1, scene_plan=[], scene_plan_signature="", results=[])
+        original = self.backend.generate
+        validation_calls = []
+        def generate(instruction):
+            raw = original(instruction)
+            if instruction.diagnostic_stage == "dataset:validation:scene":
+                observations = json.loads(raw)
+                validation_calls.append(observations)
+                if len(validation_calls) == 1:
+                    observations[0]["requirements"] = observations[0]["requirements"][:-1]
+                return json.dumps(observations)
+            return raw
+        self.backend.generate = generate
+        result = self.run_service(idea_history=RecentIdeaHistory())
+        self.assertEqual(result["completed"], 1, result["scene_plan"][0].get("failure_reason"))
+        self.assertEqual(len(validation_calls), 2)
+        ideas = [call for call in self.backend.calls if call.diagnostic_stage == "dataset:ideas"]
+        feedback = json.loads(ideas[1].user_message)["existing_ideas"][0]
+        self.assertIn("Not every approved requirement was checked exactly once.", feedback["failure_reason"])
+        self.assertEqual(feedback["failure_stage"], "scene")
+        self.assertEqual(result["scene_plan"][0]["scene"], dataset_idea_fixture(1)["scene"])
+        self.assertTrue(any(snapshot["scene_plan"][0].get("failure_stage") == "scene" for snapshot in self.snapshots))
+
+    def test_unchanged_scene_repair_still_blocks_builder_when_support_is_unknown(self):
+        self.data.update(amount=1, scene_plan=[], scene_plan_signature="", results=[])
+        original = self.backend.generate
+        validation_calls = []
+        def generate(instruction):
+            raw = original(instruction)
+            if instruction.diagnostic_stage == "dataset:validation:scene":
+                observations = json.loads(raw)
+                observations[0]["conflicts"] = ["The physical support is unknown."]
+                validation_calls.append(observations)
+                return json.dumps(observations)
+            return raw
+        self.backend.generate = generate
+        result = self.run_service(idea_history=RecentIdeaHistory())
+        self.assertEqual(len(validation_calls), 2)
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["completed"], 0)
+        self.assertEqual(result["scene_plan"][0]["failure_stage"], "scene")
+        self.assertIn("support is unknown", result["scene_plan"][0]["failure_reason"])
+        self.assertEqual(result["scene_plan"][0]["scene"], dataset_idea_fixture(1)["scene"])
+        self.assertFalse(any(call.diagnostic_stage == "dataset:1" for call in self.backend.calls))
+
     def test_new_idea_is_one_targeted_call_whose_scene_is_written_directly(self):
         result = self.run_service(scene_action=("regenerate_idea", 1))
         self.assertEqual([call.diagnostic_stage for call in self.backend.calls],

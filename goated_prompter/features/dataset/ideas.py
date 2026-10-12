@@ -33,7 +33,8 @@ IDEAS_SYSTEM = """Write one idea and readable scene for each supplied frozen Sce
 The application already chose the action, cast, owned roles, pose, spatial placement,
 contacts and support. Describe those facts; do not choose an alternative arrangement.
 Every principal subject needs a readable description faithful to its supplied attributes.
-For bodily subjects, describe the specified pose, frame location and support. For objects,
+For every subject, describe its specified role and frame location, including environments
+and objects. For bodily subjects, describe the specified pose, frame location and support. For objects,
 products, environments and other non-bodied subjects, do not invent human anatomy or poses.
 Each selected contact names both owners and their appropriate body parts or object surfaces.
 Use natural synonyms for poses; catalog ids and original vocabulary labels need not appear.
@@ -63,6 +64,9 @@ what to show. They cannot add subjects, props, places, actions or requirements.
 Avoid recent events when the plan leaves alternatives; a fixed guided action may repeat.
 When repairing a failed scene, keep its frozen event and correct the description. Its
 own earlier idea in history is not a request to change the action.
+Use the supplied failure_reason to address missing mechanics or evidence. An unchanged
+description may be rechecked when the failure was in validation; never invent a new event
+just to make that repair look different. Scene validation will run again before Builder.
 Return ONLY a minified JSON array in output_contract.indexes order, including every requested
 index. Each object has exactly index, idea (nonempty, at most 240 characters) and scene
 (nonempty, at most 1500 characters). No extra fields, Markdown, tags or reasoning.
@@ -230,7 +234,7 @@ def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existin
         "batch": source_context["batch"],
         "output_contract": {"record_count": len(indexes), "indexes": indexes},
         "assignments": selected,
-        "existing_ideas": [{key: row[key] for key in ("index", *IDEA_FIELDS, "failure_stage") if key in row} for row in existing],
+        "existing_ideas": [{key: row[key] for key in ("index", *IDEA_FIELDS, "failure_stage", "failure_reason") if key in row} for row in existing],
         "recently_used_ideas": list(recent)[:40],
         **({"craft_notes": list(craft_notes)} if craft_notes else {})}
     budget = 512 + len(indexes) * 512
@@ -468,6 +472,8 @@ class DatasetIdeasService:
             cast = (data.get("_confirmed_intent") or {}).get("characters")
             rows = [_relabel(row, cast, looks.get(row["index"])) for row in rows]
             previous = {row["index"]: row for row in existing if row["index"] in indexes}
+            scene_repairs = {index for index, row in previous.items() if row.get("failure_stage") == "scene"
+                             and row.get("scene_spec") == specifications[index]}
             inputs = {row["index"]: row["input"] for row in assignments}
             recent_events = {" ".join(idea.casefold().split()) for idea in recent}
 
@@ -475,8 +481,7 @@ class DatasetIdeasService:
                 event = " ".join(row["idea"].casefold().split())
                 anchored = data.get("source_mode") == "guided" and event == " ".join(inputs[row["index"]].casefold().split())
                 original = previous.get(row["index"], {})
-                repairing_own_event = (original.get("failure_stage") == "scene"
-                    and original.get("scene_spec") == specifications[row["index"]]
+                repairing_own_event = (row["index"] in scene_repairs
                     and event == " ".join(str(original.get("idea", "")).casefold().split()))
                 # A repair of a slot that already failed for repeating history is kept: an old
                 # event in one image is better than a failed image.
@@ -518,7 +523,7 @@ class DatasetIdeasService:
                 retained = []
                 for row in rows:
                     if row.get("idea_status") != "failed":
-                        unchanged = row["index"] in previous and all(
+                        unchanged = row["index"] in previous and row["index"] not in scene_repairs and all(
                             row[field] == previous[row["index"]].get(field) for field in IDEA_FIELDS) and not str(
                             previous[row["index"]].get("failure_reason", "")).startswith(HISTORY_REPEAT)
                         candidate = {**row, "input": inputs[row["index"]]}
@@ -545,7 +550,7 @@ class DatasetIdeasService:
             for row in rows:
                 if repeats_history(row):
                     raise ValueError(f"Idea {row['index']} repeats a recently generated event. Choose a different permitted action or interaction.")
-                if row["index"] in previous and all(row[field] == previous[row["index"]].get(field) for field in IDEA_FIELDS):
+                if row["index"] in previous and row["index"] not in scene_repairs and all(row[field] == previous[row["index"]].get(field) for field in IDEA_FIELDS):
                     raise ValueError("The replacement repeated the unchanged idea and all its planning choices.")
             comparison = [{**row, "input": inputs[row["index"]]} for row in rows]
             comparison.extend({**row, "input": inputs[row["index"]]} for row in existing if row["index"] not in indexes)

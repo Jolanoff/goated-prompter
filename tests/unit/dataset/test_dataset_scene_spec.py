@@ -12,7 +12,7 @@ from goated_prompter.features.dataset.eligibility import scene_eligibility
 from goated_prompter.features.dataset.plan import ScenePlanner
 from goated_prompter.features.dataset.private_vocabulary import parse_vocabulary
 from goated_prompter.features.dataset.scene_spec import Contact, Participant, SceneSpec
-from goated_prompter.features.dataset.validation import scene_spec_errors, text_signature, verify_scenes
+from goated_prompter.features.dataset.validation import scene_spec_errors, text_signature, verify_scenes, validation_instruction
 from goated_prompter.features.dataset.assignments import dataset_assignments
 from goated_prompter.features.dataset.batch_planner import plan_scene_specs
 from goated_prompter.features.dataset.compatibility import compatible_arrangements, vocabulary_diagnostics
@@ -29,6 +29,90 @@ from tests.support.dataset import saved_scene, valid_draft
 
 
 class SceneSpecGateTests(unittest.TestCase):
+    def test_forest_observation_with_place_names_missing_checks_and_invented_quotes_stays_blocked(self):
+        from unittest.mock import Mock
+        spec = SceneSpec(3, "general", "The explorer explores a mossy forest", (
+            Participant("P1", "the explorer", "explorer", "standing_observing", "center", "ground"),
+            Participant("P2", "the forest", "environment", "", "background", "", kind="environment", sex="none")),
+            setting="mossy forest", hard=("The explorer is the central subject.",), concept="exploring a forest")
+        scene = "The explorer stands still in a mossy forest and observes the trees."
+        observation = {"index": 3, "participants": [
+            {"id": "P1", "role": "explorer", "pose": "standing", "location": "mossy forest", "support": "unknown",
+             "evidence": "The explorer stands still in a mossy forest"},
+            {"id": "P2", "role": "environment", "pose": "", "location": "mossy forest", "support": "",
+             "evidence": "a mossy forest"}], "contacts": [], "requirements": [
+                 {"id": "subject:P1", "status": "pass", "evidence": "The explorer"},
+                 {"id": "subject:P2", "status": "pass", "evidence": "a mossy forest"},
+                 {"id": "hard:0", "status": "pass", "evidence": "The explorer is the central subject."}],
+            "setting": "mossy forest", "setting_evidence": "a mossy forest", "action": "observes the trees",
+            "action_evidence": "observes the trees", "category": "general", "conflicts": []}
+        session = Mock()
+        session.generate.return_value = json.dumps([observation])
+        row = saved_scene(3, scene=scene, scene_spec=spec.to_dict())
+        checked = verify_scenes(session, [row], lambda: None)[0]
+        self.assertFalse(scene_eligibility(checked, {}).usable)
+        self.assertEqual(checked["scene"], scene)
+        for reason in ("described pose differs", "described location differs", "described support differs",
+                       "Not every approved requirement", "Requirement hard:0 is not evidenced"):
+            self.assertIn(reason, checked["failure_reason"])
+
+    def test_compound_forest_labels_require_grounded_qualifiers_and_complete_checks(self):
+        from tests.support.dataset import scene_observation
+        spec = SceneSpec(3, "general", "The explorer observes the forest", (
+            Participant("P1", "the explorer", "explorer", "standing_observing", "center", "ground"),
+            Participant("P2", "the forest", "environment", "", "background", "", kind="environment", sex="none")),
+            setting="mossy forest", hard=("The explorer is the central subject.",), concept="exploring a forest")
+        scene = ("The explorer is the central subject, standing in the center with boots planted on mossy ground, "
+                 "observing the mossy forest in the background.")
+        observation = scene_observation(spec, scene)
+        self.assertEqual(scene_spec_errors(scene, spec, observation), [])
+        for field in ("pose", "location", "support"):
+            for value in ("unknown", "conflict"):
+                with self.subTest(field=field, value=value):
+                    changed = deepcopy(observation)
+                    changed["participants"][0][field] = value
+                    self.assertTrue(scene_spec_errors(scene, spec, changed))
+        for check in ("action", "concept"):
+            changed = deepcopy(observation)
+            changed["requirements"] = [item for item in changed["requirements"] if item["id"] != check]
+            self.assertIn("Not every approved requirement was checked exactly once.", scene_spec_errors(scene, spec, changed))
+
+    def test_validation_wire_uses_the_frozen_labels_and_layout_not_generic_pose_names(self):
+        spec = SceneSpec(1, "general", "The explorer observes a mossy forest", (
+            Participant("P1", "the explorer", "explorer", "standing_observing", "center", "ground"),
+            Participant("P2", "the forest", "environment", "", "background", "", kind="environment", sex="none")),
+            setting="mossy forest", hard=("The explorer is the central subject.",), concept="exploring a forest")
+        row = saved_scene(scene="The explorer stands at the center, boots on mossy ground, observing the forest behind her.",
+                          scene_spec=spec.to_dict())
+        instruction = validation_instruction([row])
+        context = json.loads(instruction.user_message)[0]
+        self.assertEqual(context["cast"][0]["normalization_labels"],
+            {"role": "explorer", "pose": "standing_observing", "location": "center", "support": "ground"})
+        schema = instruction.json_schema["prefixItems"][0]["properties"]
+        participant = schema["participants"]["prefixItems"][0]["properties"]
+        for field, label in context["cast"][0]["normalization_labels"].items():
+            self.assertEqual(set(participant[field]["enum"]), {label, "unknown", "conflict"})
+        environment = schema["participants"]["prefixItems"][1]["properties"]
+        self.assertEqual(environment["pose"].get("const"), "")
+        self.assertEqual(environment["support"].get("const"), "")
+        checks = schema["requirements"]
+        self.assertEqual(checks["minItems"], len(context["checks"]))
+        self.assertEqual(checks["maxItems"], len(context["checks"]))
+        self.assertEqual([item["properties"]["id"]["const"] for item in checks["prefixItems"]],
+            ["action", "concept", "subject:P1", "subject:P2", "hard:0"])
+
+    def test_editable_mechanics_are_extracted_instead_of_constrained_to_the_old_labels(self):
+        spec = replace(self.paired_spec(), locked=("hard",))
+        row = saved_scene(scene="Alice now stands in the foreground; Bob sits on a chair behind her.",
+            scene_spec=spec.to_dict(), edited_stage="scene")
+        instruction = validation_instruction([row])
+        context = json.loads(instruction.user_message)[0]
+        self.assertEqual(context["cast"][0]["normalization_labels"],
+                         dict.fromkeys(("role", "pose", "location", "support"), ""))
+        participant = instruction.json_schema["prefixItems"][0]["properties"]["participants"]["prefixItems"][0]["properties"]
+        self.assertNotIn("enum", participant["pose"])
+        self.assertIn("foreground", participant["location"]["enum"])
+
     def paired_spec(self):
         return SceneSpec(1, "general", "Alice greets Bob", (
             Participant("A", "Alice", "participant", "seated", "left", "supported_by_chair"),

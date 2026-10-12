@@ -182,26 +182,23 @@ class HistoryRepairTests(unittest.TestCase):
         self.assertEqual(context["existing_ideas"][0]["failure_stage"], "scene")
         session.generate.assert_called_once()
 
-    def test_scene_repair_still_rejects_unrelated_history_and_unchanged_prose(self):
+    def test_scene_repair_still_rejects_unrelated_history(self):
         from goated_prompter.features.dataset.ideas import HISTORY_REPEAT
         data = valid_draft(amount=1)
         previous = saved_scene(failure_stage="scene", failure_reason="The support is obscured.",
             self_check="", scene_status="repair_required")
         unrelated = "A boxer repairs a torn training bag."
-        for idea, scene, reason in (
-                (unrelated, "A boxer stitches the torn training bag.", HISTORY_REPEAT),
-                (previous["idea"], previous["scene"], "The idea repeats an existing event or unchanged planning choices.")):
-            with self.subTest(idea=idea):
-                history, session = RecentIdeaHistory(), Mock()
-                history.remember(data, [previous, {"idea": unrelated}])
-                session.generate.return_value = json.dumps([dataset_idea_fixture(idea=idea, scene=scene)])
-                rows = ScenePlanner(lambda: None, history).plan_ideas(session=session, data=data,
-                    assignments=dataset_assignments(data), indexes=[1], existing=[previous],
-                    progress=lambda _: None, allow_partial=True)
-                self.assertEqual(rows[0]["idea_status"], "failed")
-                self.assertEqual(rows[0]["failure_reason"], reason)
-                self.assertEqual(rows[0]["scene_spec"], previous["scene_spec"])
-                session.generate.assert_called_once()
+        history, session = RecentIdeaHistory(), Mock()
+        history.remember(data, [previous, {"idea": unrelated}])
+        session.generate.return_value = json.dumps([dataset_idea_fixture(idea=unrelated,
+            scene="A boxer stitches the torn training bag.")])
+        rows = ScenePlanner(lambda: None, history).plan_ideas(session=session, data=data,
+            assignments=dataset_assignments(data), indexes=[1], existing=[previous],
+            progress=lambda _: None, allow_partial=True)
+        self.assertEqual(rows[0]["idea_status"], "failed")
+        self.assertEqual(rows[0]["failure_reason"], HISTORY_REPEAT)
+        self.assertEqual(rows[0]["scene_spec"], previous["scene_spec"])
+        session.generate.assert_called_once()
 
     def test_a_repair_that_repeats_history_again_is_kept_instead_of_failing(self):
         from goated_prompter.features.dataset.ideas import HISTORY_REPEAT
