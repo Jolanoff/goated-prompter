@@ -17,7 +17,7 @@ import re
 from ...config import PROJECT_ROOT
 from .quality import broken_anatomy, minor_reference, ownership_request, sexual_request
 from .routing import assignment_scope, scoped_request
-from .scene_spec import BODY_PARTS, Contact, LOCATIONS, Participant, POSE_SUPPORTS, SceneSpec, PLANNING_CATEGORIES
+from .scene_spec import BODY_PARTS, Contact, LOCATIONS, Participant, POSE_SUPPORTS, SceneSpec, PLANNING_CATEGORIES, validate_scene_mechanics
 from ...strict_json import reject_duplicate_keys
 from ...json_store import MAX_STORE_BYTES, read_store
 
@@ -187,6 +187,7 @@ def compile_arrangement(value, section):
         "participants": cast, "contacts": [{"source": item["from"], "target": item["to"]} for item in value["contacts"]],
         "setting": "", "hard": [], "choices": {}, "catalog_id": value["id"],
         "locked": ["action", "participants", "contacts", "hard"], "version": 1, "category": category})
+    validate_scene_mechanics(template)
     if any(endpoint.split(".")[1] not in BODY_PARTS for contact in template.contacts
            for endpoint in (contact.source, contact.target)):
         raise ValueError("Specialized vocabulary needs normalized body-part endpoints.")

@@ -8,7 +8,7 @@ import re
 from ...backends.base import BackendGenerationError
 from ...contracts import PromptInstruction
 from ...strict_json import reject_duplicate_keys
-from .scene_spec import Contact, LOCATIONS, Participant, PLANNING_CATEGORIES, SceneSpec
+from .scene_spec import Contact, LOCATIONS, Participant, PLANNING_CATEGORIES, SceneSpec, validate_scene_mechanics
 from .understanding import unwrap_json_fence
 
 
@@ -95,6 +95,10 @@ def scene_spec_errors(text, value, observation=None, *, evidence_spec=None):
         return [str(exc)]
     if spec.state != "frozen":
         return ["Provisional plans cannot be promoted to usable scenes."]
+    try:
+        validate_scene_mechanics(spec)
+    except (ValueError, TypeError) as exc:
+        return [str(exc)]
     if not isinstance(text, str) or not text.strip():
         return ["SceneSpec requires a nonempty description."]
     if not isinstance(observation, dict):

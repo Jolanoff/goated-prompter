@@ -8,6 +8,30 @@ from goated_prompter.features.dataset.scene_spec import Contact, Participant, Sc
 
 
 class OwnedSupportTests(unittest.TestCase):
+    def test_saved_legacy_spec_is_readable_but_unresolved_support_still_blocks_builder(self):
+        from goated_prompter.features.dataset.validation import scene_spec_errors
+        spec, _ = self.candidate("supported by some unnamed surface")
+        legacy = spec.to_dict()
+        legacy.update(state="frozen")
+        legacy.pop("supports", None)
+        parsed = SceneSpec.from_dict(legacy)
+        self.assertEqual(parsed.participants[0].support, "supported by some unnamed surface")
+        errors = scene_spec_errors("The traveller walks along a path.", parsed, {})
+        self.assertTrue(any("resolved owned support" in error for error in errors), errors)
+
+    def test_legacy_semantic_errors_are_readable_but_do_not_pass_generation_validation(self):
+        from goated_prompter.features.dataset.validation import scene_spec_errors
+        for support, contacts in (("four_paws_on_ground", []),
+                ("ground", [{"source": "P1.paw", "target": "P2.top"}])):
+            with self.subTest(support=support, contacts=contacts):
+                spec, _ = self.candidate("ground")
+                legacy = spec.to_dict()
+                legacy.update(state="frozen", contacts=contacts)
+                legacy["participants"][0]["support"] = support
+                legacy.pop("supports", None)
+                parsed = SceneSpec.from_dict(legacy)
+                self.assertTrue(any("nonhuman" in error for error in scene_spec_errors("A person walks.", parsed, {})))
+
     def candidate(self, support="ground", supports=None):
         subjects = (Participant("P1", "person", "subject", "walking", "center", support),
                     Participant("P2", "platform", "prop", "", "foreground", "", kind="object"))

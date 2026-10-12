@@ -174,7 +174,7 @@ def resolve_supports(participants, relationships=(), *, require_resolved=False):
         elif match := re.fullmatch(r"supported_at_([a-z_]+)_by_([A-Za-z][A-Za-z0-9_-]*)", item.support):
             part, target = match[1], match[2] + ".body"
         elif existing:
-            if not item.support:
+            if require_resolved and not item.support:
                 raise ValueError("A support relationship needs an explicit participant support label.")
             continue
         else:
@@ -182,12 +182,14 @@ def resolve_supports(participants, relationships=(), *, require_resolved=False):
                 raise ValueError("Selected bodily mechanics need resolved owned support, not unspecified surface prose.")
             continue
         if existing:
-            if any(edge.target != target for edge in existing):
+            if require_resolved and any(edge.target != target for edge in existing):
                 raise ValueError("Owned support contradicts the participant support label.")
         else:
             result.append(Contact(item.id + "." + part, target))
     if len(result) > 100 or len(set(result)) != len(result):
         raise ValueError("Support relationships must be bounded and distinct.")
+    if not require_resolved:
+        return tuple(result)
     graph = {}
     for edge in result:
         if not isinstance(edge.source, str) or not isinstance(edge.target, str):
@@ -222,6 +224,22 @@ def resolve_supports(participants, relationships=(), *, require_resolved=False):
     for owner in graph:
         visit(owner, set())
     return tuple(result)
+
+
+def validate_scene_mechanics(spec):
+    """Generation readiness is separate from decoding historical saved specifications."""
+    resolve_supports(spec.participants, spec.supports, require_resolved=True)
+    owners = {item.id: item for item in spec.participants}
+    for contact in spec.contacts:
+        if contact.source == contact.target:
+            raise ValueError("A contact cannot connect an endpoint to itself.")
+        for endpoint in (contact.source, contact.target):
+            owner, part = endpoint.split(".")
+            subject = owners[owner]
+            if subject.kind in {"style", "text", "concept"}:
+                raise ValueError("Nonphysical subjects cannot own physical contacts.")
+            if subject.kind == "human" and part in {"paw", "paws", "wing", "tail"}:
+                raise ValueError("Human contact references nonhuman anatomy.")
 
 
 @dataclass(frozen=True)
@@ -294,21 +312,12 @@ class SceneSpec:
             contacts.append(Contact(**item))
         if len(set(contacts)) != len(contacts):
             raise ValueError("SceneSpec contacts must be distinct.")
-        for contact in contacts:
-            if contact.source == contact.target:
-                raise ValueError("A contact cannot connect an endpoint to itself.")
-            for endpoint in (contact.source, contact.target):
-                owner, part = endpoint.split(".")
-                subject = next(item for item in participants if item.id == owner)
-                if subject.kind in {"style", "text", "concept"}:
-                    raise ValueError("Nonphysical subjects cannot own physical contacts.")
-                if subject.kind == "human" and part in {"paw", "paws", "wing", "tail"}:
-                    raise ValueError("Human contact references nonhuman anatomy.")
         supports = value.get("supports", [])
         if not isinstance(supports, list) or any(not isinstance(item, dict) or set(item) != {"source", "target"} for item in supports):
             raise ValueError("Support relationships require owned source and target endpoints.")
         supports = tuple(Contact(**item) for item in supports)
-        supports = resolve_supports(participants, supports, require_resolved=value.get("state", "frozen") == "frozen")
+        # Historical frozen plans predate owned support; readability is not readiness.
+        supports = resolve_supports(participants, supports)
         for field in ("setting", "catalog_id"):
             if not isinstance(value[field], str) or len(value[field]) > 1000:
                 raise ValueError(f"Invalid SceneSpec {field}.")

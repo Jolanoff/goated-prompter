@@ -13,7 +13,7 @@ from .compatibility import compatible_arrangements
 from .director import director_section
 from .private_vocabulary import load_vocabulary, private_rules, Vocabulary
 from .routing import assignment_scope, image_hard_requirements, resolve_routes
-from .scene_spec import CONTACT_PART_LIMIT, CONTACT_PART_PATTERN, LOCATIONS, PARTICIPANT_TEXT_LIMIT, Contact, Participant, SceneSpec, resolve_supports
+from .scene_spec import CONTACT_PART_LIMIT, CONTACT_PART_PATTERN, LOCATIONS, PARTICIPANT_TEXT_LIMIT, Contact, Participant, SceneSpec, resolve_supports, validate_scene_mechanics
 from .understanding import label_replacements, unwrap_json_fence
 
 
@@ -129,7 +129,9 @@ def freeze_scene_spec(provisional, candidate):
     candidate_spec = replace(provisional, action=candidate["action"], participants=tuple(participants), contacts=contacts,
                               setting=candidate["setting"], state="frozen", supports=supports,
                               locked=provisional.locked)
-    return SceneSpec.from_dict(candidate_spec.to_dict())
+    frozen = SceneSpec.from_dict(candidate_spec.to_dict())
+    validate_scene_mechanics(frozen)
+    return frozen
 
 
 def propose_scene_specs(session, data, specs, checkpoint, *, family="qwen", existing=(), event_seeds=None):

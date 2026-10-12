@@ -15,6 +15,28 @@ from tests.helpers import dataset_understanding_fixture
 
 
 class DatasetCheckpointTests(unittest.TestCase):
+    def test_legacy_free_text_support_does_not_block_startup_or_rewrite_saved_checkpoint(self):
+        from tests.support.dataset import saved_scene
+        job = self.begin()
+        job.result, job.status = self.result(), "succeeded"
+        self.state.workflow_settings.checkpoint_dataset(job)
+        store = self.state.dataset_checkpoints.snapshot()
+        row = saved_scene(scene="A traveller leans against a rock beside a path.")
+        spec = row["scene_spec"]
+        spec.pop("supports", None)
+        spec["participants"][0].update(pose="leaning forward", support="supported by a rock beside the path")
+        row.pop("scene_validation", None)
+        store["jobs"][0]["input"]["scene_plan"] = [deepcopy(row)]
+        store["jobs"][0]["snapshot"]["result"]["scene_plan"] = [row]
+        original = deepcopy(store["jobs"][0]["snapshot"]["result"])
+        atomic_json(self.state.dataset_checkpoints.path, store)
+        before = self.state.dataset_checkpoints.path.read_bytes()
+        restarted = local.create_app(config_loader=lambda: {"backend": "mock"}, settings_path=self.path)[local.STATE]
+        self.assertEqual(restarted.dataset_checkpoints.find(job.id)["result"], original)
+        self.assertEqual(restarted.dataset_checkpoints.path.read_bytes(), before)
+        from goated_prompter.features.dataset.plan import scene_is_usable
+        self.assertFalse(scene_is_usable(row, self.data))
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
