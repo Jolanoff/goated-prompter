@@ -63,6 +63,13 @@ test("scene edits and writer setting changes retain the selected position contra
   }
 });
 
+test("selected settings participate in scene signatures and survive scene edits", () => {
+  const row = { ...draft.scene_plan[0], selected_setting: "synthetic room alpha" };
+  assert.notEqual(datasetSceneSignature(row), datasetSceneSignature({ ...row, selected_setting: "synthetic room beta" }));
+  const edited = editDatasetPlan({ ...draft, scene_plan: [row] }, 1, "scene", "Updated prose.");
+  assert.equal(edited.scene_plan[0].selected_setting, "synthetic room alpha");
+});
+
 test("scene signatures invalidate source, idea, prose, self-check and scene-state changes", () => {
   const row = draft.scene_plan[0];
   for (const change of [{ input: "new source" }, { idea: "new event" }, { scene: "new scene" },

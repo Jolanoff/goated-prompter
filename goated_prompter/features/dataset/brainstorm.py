@@ -38,7 +38,7 @@ the user asked for that exact move. Humor and surprise come from the situation, 
 timing and expressions, not from twisted anatomy.
 
 SEXUAL CONTENT
-When the request, confirmed_intent or Director is sexual:
+Only when context.sexual_action_requested is true:
 - The sex act or sexual use is the core event in every idea: visible and in progress or at a
   clearly readable peak, never implied.
 - Use concrete sexual language when the request is explicit, and name the anatomy that is part
@@ -92,16 +92,30 @@ def _position_routing(data, *, vocabulary=None):
     women = sum(item.get("count") or 1 for item in cast if resolved_sex(item, data) == "female")
     asked = requested_text(data)
     if not cast:
-        user = " ".join(str(data.get(key) or "") for key in ("subject", "constraints", "inputs", "trigger"))
+        fields = ("subject", "constraints", "trigger") + (("inputs",) if data.get("source_mode") == "guided" else ())
+        user = " ".join(str(data.get(key) or "") for key in fields)
         if MALE_PAIR.search(user.casefold()) or FEMALE_PAIR.search(user.casefold()):
             people = max(people, 2)
-        count = re.search(r"\b(\d+|two|three|four|five|six) (?:adult )?(?:men|males|women|females)\b", user, re.I)
-        if count:
-            number = count[1].casefold()
-            people = max(people, int(number) if number.isdecimal() else
-                         {"two": 2, "three": 3, "four": 4, "five": 5, "six": 6}[number])
-        sex = resolved_sex({"name": user}, data)
-        men, women = (people, 0) if sex == "male" else (0, people) if sex == "female" else (0, 0)
+        numbers = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6}
+        totals = {"male": 0, "female": 0}
+        for field in fields:
+            counts = {"male": 0, "female": 0}
+            for match in re.finditer(r"\b(?:(\d+|a|an|one|two|three|four|five|six)\s+(?:adult\s+)?)?"
+                                     r"(men|man|guys?|women|woman|(?:fe)?males?"
+                                     r"(?!\s+(?:genital\w*|anatomy|body|breasts?|nipples?|traits?|features?)))\b",
+                                     str(data.get(field) or ""), re.I):
+                number, noun = (match[1] or "one").casefold(), match[2].casefold()
+                sex = "female" if noun.startswith(("wom", "fem")) else "male"
+                counts[sex] += int(number) if number.isdecimal() else numbers[number]
+            for sex in totals:
+                totals[sex] = max(totals[sex], counts[sex])
+            if type(brief.get("character_count")) is int and sum(totals.values()) == brief["character_count"]:
+                break
+        men, women = totals["male"], totals["female"]
+        if not men and not women:
+            sex = resolved_sex({"name": user}, data)
+            men, women = (people, 0) if sex == "male" else (0, people) if sex == "female" else (0, 0)
+        people = max(people, men + women)
     requested, forbidden = position_categories(data)
     requested.discard("solo")
     if "penetration" in requested:
@@ -266,6 +280,7 @@ def brainstorm_instruction(data, count, *, avoid=(), family="qwen", position_ide
     source = json.loads(understanding_instruction(data).user_message)
     brief = validate_understanding(data.get("_confirmed_intent"), tuple(source["scopes"]))
     context = {"source": source["source"], "confirmed_intent": brief, "requested_events": count,
+               "sexual_action_requested": sexual_request(data),
                "recently_used_ideas": list(avoid)[:60],
                **({"position_ideas": list(position_ideas)} if position_ideas else {})}
     item = {"type": "object", "additionalProperties": False, "required": ["event", "typicality"],

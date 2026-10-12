@@ -288,6 +288,100 @@ class PositionRoutingTests(unittest.TestCase):
         self.assertEqual(route["position_pools"], [])
         self.assertEqual(route["private_position_count"], 0)
 
+    def test_body_traits_and_model_summaries_do_not_authorize_sexual_actions(self):
+        from goated_prompter.features.dataset.quality import adults_only_error, sexual_request
+        for traits in ("large cock and big boobs", "visible genitals", "nude adults"):
+            data = self.draft("An adult man and female sightseeing in Japan", "male", "female", trigger=traits)
+            data["_confirmed_intent"]["requested_generation"] = "Sexual anatomy remains fixed during sightseeing."
+            with self.subTest(traits=traits):
+                self.assertFalse(sexual_request(data))
+                self.assertNotIn("position", creative_directions(data, [1])[1])
+                self.assertIsNotNone(adults_only_error({**data, "subject": "a child sightseeing"}))
+
+    def test_director_styling_and_conditional_actions_do_not_authorize_acts(self):
+        from goated_prompter.features.dataset.quality import sexual_request
+        data = self.draft("Two adults sightseeing", "male", "female", director_preset="nsfw_director")
+        self.assertFalse(sexual_request(data))
+        with patch("goated_prompter.features.dataset.quality.get_director_preset",
+                   return_value=Mock(instructions="For an oral sex request, preserve the act.")):
+            self.assertFalse(sexual_request(data))
+        self.assertTrue(sexual_request({**data, "subject": "Two adults in an NSFW scene"}))
+
+    def test_inactive_guided_inputs_do_not_activate_routing(self):
+        from goated_prompter.features.dataset.quality import sexual_request
+        data = self.draft("Two adults reading", "male", "female", inputs="oral sex", source_mode="random")
+        self.assertFalse(sexual_request(data))
+        self.assertEqual(position_categories(data), (set(), set()))
+        self.assertTrue(sexual_request({**data, "source_mode": "guided"}))
+
+    def test_inactive_guided_inputs_do_not_recast_a_missing_cast(self):
+        from goated_prompter.features.dataset.brainstorm import dataset_routing
+        data = self.draft("Adults reading", inputs="four men having sex", source_mode="random")
+        data["_confirmed_intent"]["character_count"] = 2
+        cast = dataset_routing(data)[0]["cast"]
+        self.assertEqual((cast["count"], cast["male"], cast["female"]), (2, 0, 0))
+
+    def test_missing_cast_resolves_mixed_aliases_and_counts_without_double_counting_fields(self):
+        from goated_prompter.features.dataset.brainstorm import dataset_routing
+        for subject, expected in (("A man and female sightseeing", (1, 1)),
+                                  ("Two men and one woman sightseeing", (2, 1)),
+                                  ("A woman with a male sightseeing", (1, 1))):
+            data = self.draft(subject, trigger=subject)
+            data["_confirmed_intent"]["character_count"] = sum(expected)
+            route = dataset_routing(data)[0]
+            with self.subTest(subject=subject):
+                self.assertEqual((route["cast"]["male"], route["cast"]["female"]), expected)
+                self.assertEqual(route["cast"]["unspecified"], 0)
+
+    def test_selected_act_substitution_fails_ideas_instead_of_reaching_pass(self):
+        self.path.write_text("[oral positions]\noral supported pose\n", encoding="utf-8")
+        data = self.draft("Two adults in an NSFW scene", "male", "female", amount=1)
+        session = Mock()
+        session.generate.return_value = json.dumps([{"index": 1, "idea": "Adults choose an anal arrangement.",
+            "scene": "The adults use an anal pose in a room."}])
+        rows = DatasetIdeasService(lambda: None).run(session=session, data=data,
+            assignments=dataset_assignments(data), progress=lambda _: None, allow_partial=True)
+        self.assertEqual(rows[0]["idea_status"], "failed")
+        self.assertIn("selected", rows[0]["failure_reason"].lower())
+
+    def test_anatomical_sex_adjectives_do_not_add_people_to_a_missing_cast(self):
+        from goated_prompter.features.dataset.brainstorm import dataset_routing
+        data = self.draft("An adult man and female share a map in Japan",
+                          trigger="adult man with male genitals; adult female with female anatomy")
+        data["_confirmed_intent"]["character_count"] = 2
+        cast = dataset_routing(data)[0]["cast"]
+        self.assertEqual((cast["count"], cast["male"], cast["female"]), (2, 1, 1))
+
+    def test_final_writer_retries_a_different_explicit_act(self):
+        data = self.draft("Two adults in an NSFW scene", "male", "female", amount=1, trigger="eval_subject")
+        scene = saved_scene(selected_position="oral supported pose", scene="Two adults share a supported arrangement.")
+        instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=scene)
+        session = Mock()
+        session.generate.side_effect = ["eval_subject and another adult use an anal arrangement.",
+                                       "eval_subject and another adult use an oral arrangement."]
+        result = DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None, scene, retries=1)
+        self.assertIn("oral", result)
+        self.assertEqual(session.generate.call_count, 2)
+
+    def test_body_parts_and_grounded_support_are_not_evidence_of_a_changed_act(self):
+        from goated_prompter.features.dataset.quality import selected_position_error
+        self.assertIsNone(selected_position_error("An adult has a pussy, feet grounded, and nipples visible.",
+                                                 "oral supported pose"))
+        self.assertIsNone(selected_position_error("Adults use no anal pose, only an oral arrangement.",
+                                                 "oral supported pose"))
+        self.assertIsNone(selected_position_error("Adults use an oral arrangement with an anal toy nearby.",
+                                                 "oral supported pose"))
+        self.assertIsNotNone(selected_position_error("Adults use a vaginal arrangement.", "oral supported pose"))
+
+    def test_selected_setting_survives_scene_save_and_reaches_writer(self):
+        scene = saved_scene(selected_position="supported seated pose", selected_setting="synthetic room beta")
+        loaded = validate_saved_scene_plan(ScenePlanner.compose([scene]))[0]
+        self.assertEqual(loaded["selected_setting"], "synthetic room beta")
+        data = self.draft("Two adults in an NSFW scene", "male", "female")
+        instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=loaded)
+        self.assertIn("SELECTED SETTING", instruction.system_message)
+        self.assertIn("synthetic room beta", instruction.system_message)
+
     def test_a_generic_penetration_entry_is_compatible_with_an_explicit_act(self):
         self.path.write_text("[two men positions]\npenetration while seated\n", encoding="utf-8")
         positions = sexual_positions(self.draft("two adult men having anal sex", "male", "male"))
@@ -321,6 +415,8 @@ class PositionRoutingTests(unittest.TestCase):
         assignments = json.loads(session.generate.call_args.args[0].user_message)["assignments"]
         self.assertEqual([row["selected_position"] for row in rows],
                          [row["creative_direction"]["position"] for row in assignments])
+        self.assertEqual([row["selected_setting"] for row in rows],
+                         [row["creative_direction"]["setting"] for row in assignments])
 
     def test_selected_position_survives_saved_scene_validation(self):
         scene = saved_scene(selected_position="supported seated pose", scene="Two adults sit facing away.")
@@ -369,6 +465,11 @@ class PositionRoutingTests(unittest.TestCase):
         for position in (None, 7, [], "", " " * 3, "x" * 10001):
             with self.subTest(position_type=type(position).__name__), self.assertRaises(ValueError):
                 validate_saved_scene_plan([saved_scene(selected_position=position)])
+
+    def test_invalid_selected_setting_metadata_is_rejected(self):
+        for setting in (None, 7, [], "", " " * 3, "x" * 10001):
+            with self.subTest(setting_type=type(setting).__name__), self.assertRaises(ValueError):
+                validate_saved_scene_plan([saved_scene(selected_setting=setting)])
 
     def test_kink_request_does_not_turn_into_oral_or_vaginal(self):
         positions = set(sexual_positions(self.draft("two adult males in bondage", "male", "male")))

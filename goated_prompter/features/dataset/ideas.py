@@ -12,9 +12,9 @@ from ...contracts import PromptInstruction
 from .brainstorm import PLAUSIBLE_BODIES, pick_position_ideas, position_groups
 from .director import director_fixes_shot, director_section
 from .private_vocabulary import load_vocabulary, private_rules
-from .quality import (ADULTS_ONLY, BROKEN_ANATOMY, analyze_idea_diversity, broken_anatomy, kink_request,
+from .quality import (ADULTS_ONLY, BROKEN_ANATOMY, adult_content_request, analyze_idea_diversity, broken_anatomy, kink_request,
                       minor_reference, ownership_request, passive_idea, passive_request, pet_request,
-                      resolved_sex, sexual_request)
+                      resolved_sex, selected_position_error, sexual_request)
 from .understanding import (label_replacements, numbered_labels, replace_labels, understanding_instruction,
                             unwrap_json_fence, validate_understanding)
 from ...strict_json import reject_duplicate_keys
@@ -38,7 +38,10 @@ or output format.
 
 WHAT MAKES A STRONG IDEA
 """ + PLAUSIBLE_BODIES + """
-When the request is sexual, a strong idea is a concrete sexual act with clear roles, contact points and expression.
+The context's sexual_action_requested flag decides whether act-focused directions apply.
+When false, preserve the requested activity: anatomy, nudity or the Director's suggestive
+styling does not authorize replacing it with sexual acts or unrelated private locations.
+When true, a strong idea is a concrete sexual act with clear roles, contact points and expression.
 Each idea is a moment where something is happening: someone is in the middle of a specific
 activity with a goal, a problem or a reaction. With two or more characters they act on each
 other, not just stand side by side. Give each idea one concrete detail that belongs to this
@@ -336,7 +339,7 @@ def ideas_instruction(data, assignments, family="qwen", *, indexes=None, existin
             direction = {axis: value for axis, value in direction.items() if axis not in dropped}
         entry["creative_direction"] = direction
         selected.append(entry)
-    context = {"source": source_context["source"], "confirmed_intent": brief,
+    context = {"source": source_context["source"], "confirmed_intent": brief, "sexual_action_requested": sexual,
         "output_contract": {"record_count": len(indexes), "indexes": indexes},
         "assignments": selected,
         "existing_ideas": [{key: row[key] for key in ("index", *IDEA_FIELDS) if key in row} for row in existing],
@@ -358,6 +361,18 @@ def _failed_idea(row, index, reason):
     return {**row, "index": index, "idea": row.get("idea", ""), "scene": "", "self_check": "",
         "idea_status": "failed", "scene_status": "failed", "prompt_status": "failed",
         "failure_stage": "idea", "failure_reason": reason[:2000]}
+
+
+def _apply_selected_direction(row, direction, allow_partial):
+    metadata = {f"selected_{axis}": direction[axis] for axis in ("position", "setting")
+                if direction.get("position") and direction.get(axis)}
+    row = {**row, **metadata}
+    if row.get("idea_status") != "failed" and (reason := selected_position_error(
+            row["scene"], row.get("selected_position"))):
+        if not allow_partial:
+            raise ValueError(f"Idea {row['index']}: {reason}")
+        return _failed_idea(row, row["index"], reason)
+    return row
 
 
 UNRENDERABLE_POSE = "The idea shows a body in the air, upside down or in an acrobatic move; show an ordinary supported pose instead."
@@ -425,7 +440,7 @@ def _reject_unrenderable_pose(row, data, allow_partial):
 
 def _reject_sexual_content(row, data, allow_partial):
     """In a sexual batch, an idea or scene that makes anyone a child or teen, or detaches or merges a body part, fails."""
-    if row.get("idea_status") == "failed" or not sexual_request(data):
+    if row.get("idea_status") == "failed" or not adult_content_request(data):
         return row
     text = f"{row['idea']} {row['scene']}"
     if word := minor_reference(text):
@@ -551,9 +566,8 @@ class DatasetIdeasService:
                 self.checkpoint()
                 rows = validate_ideas(raw, indexes, allow_partial=allow_partial)
             rows = [_reject_sexual_content(_reject_unrenderable_pose(row, data, allow_partial), data, allow_partial) for row in rows]
-            positions = {entry["index"]: (entry.get("creative_direction") or {}).get("position") for entry in selected}
-            rows = [{**row, **({"selected_position": positions[row["index"]]} if positions.get(row["index"]) else {})}
-                    for row in rows]
+            directions = {entry["index"]: entry.get("creative_direction") or {} for entry in selected}
+            rows = [_apply_selected_direction(row, directions[row["index"]], allow_partial) for row in rows]
             looks = {entry["index"]: (entry.get("creative_direction") or {}).get("random_character_looks")
                      for entry in selected}
             cast = (data.get("_confirmed_intent") or {}).get("characters")
@@ -596,9 +610,8 @@ class DatasetIdeasService:
                     except ValueError:
                         retried = None
                     if retried:
-                        rows = [{**_relabel(row, cast, looks.get(row["index"])),
-                            **({"selected_position": positions[row["index"]]} if positions.get(row["index"]) else {})}
-                            for row in retried]
+                        rows = [_apply_selected_direction(_relabel(row, cast, looks.get(row["index"])),
+                                                          directions[row["index"]], False) for row in retried]
             if allow_partial:
                 accepted = [{**row, "input": inputs[row["index"]]} for row in existing
                     if row["index"] not in indexes and row.get("idea_status") != "failed"]

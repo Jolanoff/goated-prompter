@@ -264,13 +264,17 @@ def dataset_instruction(request, data, index, model_family="qwen", plan_item=Non
                          "keeping each adult's role, body contacts and support. The label need not be copied literally. "
                          "It takes precedence over a conflicting Director default, but never a user requirement: "
                          + position) if position else ""
+    setting = plan_item.get("selected_setting")
+    setting_contract = ("SELECTED SETTING\nPreserve this app-selected location in natural prose. "
+                        "It takes precedence over a conflicting Director default, but never an explicit user requirement: "
+                        + setting) if setting else ""
     builder_request = replace(request, idea=plan_item["scene"], mode="Enhance", planning_mode="Direct",
         target_model=data["target"], prompt_length=data["length"], creativity=data["creativity"],
         style=data.get("style", "Auto"),
         director_preset=data["director_preset"], preserve_subject=True, preserve_composition=True, preserve_camera=True,
         image=None, image_2=None, image_3=None, image_4=None, linked_references=False, reference_map=None,
         custom_instructions="\n\n".join(part for part in (ENHANCE_SCENE_CONTRACT, private_rules(data).strip(),
-            position_contract,
+            position_contract, setting_contract,
             cast_section(characters), grouping + " " + placement, requirements_message) if part))
     # With a locked Anima prefix the writer returns only a continuation, which a
     # full tags-then-prose example would contradict.

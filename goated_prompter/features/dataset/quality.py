@@ -89,8 +89,7 @@ def passive_idea(text):
     return bool(_STANCE.search(main) and (_PASSIVE.search(rest) or _SEEN.search(main + " " + rest)))
 
 
-# Sexual requests get act-focused directions, and everyone in them must be an adult. The request,
-# rules, guided inputs, cast and selected Director all count, since any of them can make a batch sexual.
+# Broad safety detection includes anatomy and styling even when no sexual action is requested.
 _SEXUAL = re.compile(r"\b(?:sex|sexual\w*|intercourse|nsfw|porn\w*|explicit|erotic\w*|nude|nudity|naked|fuck\w*|blowjob\w*|"
                      r"handjob\w*|oral(?! (?:presentations?|exams?|examinations?|hygiene|history|health|surgery|traditions?|reports?|arguments?))|anal|penetrat\w*|masturbat\w*|cum|cums|cumming|cumshot\w*|orgasm\w*|cocks?|"
                      r"dicks?|pussy|pussies|boobs?|tits|nipples?|genitals?|horny|aroused|"
@@ -121,8 +120,24 @@ def _request_text(data):
     return " ".join(parts).casefold()
 
 
+_SEXUAL_ACTION = re.compile(r"\b(?:sex|intercourse|nsfw|porn\w*|erotic\w*|fuck\w*|blowjob\w*|handjob\w*|"
+    r"oral(?! (?:presentations?|exams?|examinations?|hygiene|history|health|surgery|traditions?|reports?|arguments?))|"
+    r"anal|penetrat\w*|masturbat\w*|cum(?:s|ming|shots?)?|orgasm\w*|horny|aroused|"
+    r"slaves?|owned by|collared|leash(?:ed)?|pet play|bdsm|dominatrix|dom(?:/| and )sub|"
+    r"submissive|bondage|kinky|kinks?|yaoi|bara|mm sex|footjob\w*|foot fetish|feet worship|"
+    r"breeding (?:kink|her|him)|breed (?:her|him|me)|"
+    r"presenting (?:herself|himself|themselves|her ass|his ass)|sexual (?:acts?|scenes?|content|activity))\b")
+
+
 def sexual_request(data):
-    return bool(_SEXUAL.search(_request_text(data)))
+    """Authorize act-focused routing from requested activity, not anatomy or model-added facts."""
+    return _asked(_user_text(data), _SEXUAL_ACTION) or _asked(_director_text(data), _SEXUAL_ACTION)
+
+
+def adult_content_request(data):
+    """Keep anatomy, nudity and suggestive styling subject to the existing safety checks."""
+    text = _request_text(data)
+    return bool(_SEXUAL.search(text) or _SUGGESTIVE.search(text))
 
 
 def minor_reference(text):
@@ -136,9 +151,9 @@ NO_ANIMALS = "Sexual content cannot involve animals. Remove the animal from the 
 
 def adults_only_error(data):
     """For a sexual or suggestive batch, the reason it cannot run: someone under 18, or an animal."""
-    text = _request_text(data)
-    if not (_SEXUAL.search(text) or _SUGGESTIVE.search(text)):
+    if not adult_content_request(data):
         return None
+    text = _request_text(data)
     if word := minor_reference(text):
         return f'{ADULTS_ONLY} ("{word}")'
     cast = (data.get("_confirmed_intent") or {}).get("characters") or ()
@@ -182,9 +197,7 @@ _ORAL = re.compile(r"\b(?:oral|blowjob\w*|suck\w*|deepthroat\w*|69|sixty-nine|fa
 # The user's own words (concept, rules, trigger, guided input) and the Director, without the
 # brief the model wrote, so a word the model added never unlocks anything.
 def requested_text(data):
-    parts = [str(data.get(key) or "") for key in ("subject", "constraints", "inputs", "trigger")]
-    parts.append(_director_text(data))
-    return " ".join(parts).casefold()
+    return _user_text(data) + "\n" + _director_text(data)
 
 
 _FEET = re.compile(r"\b(?:feet|foot\w*|soles|toes)\b")
@@ -233,7 +246,8 @@ def _asked(text, pattern, *, ignore_conditional=False):
 
 
 def _user_text(data):
-    return "\n".join(str(data.get(key) or "") for key in ("subject", "constraints", "inputs", "trigger")).casefold()
+    fields = ("subject", "constraints", "trigger") + (("inputs",) if data.get("source_mode") == "guided" else ())
+    return "\n".join(str(data.get(key) or "") for key in fields).casefold()
 
 
 def _director_text(data):
@@ -334,3 +348,30 @@ def position_phrase_present(text, position):
         return " ".join(re.findall(r"\w+", str(value or "").casefold()))
     expected = words(position)
     return bool(expected) and f" {expected} " in f" {words(text)} "
+
+
+def selected_position_error(text, position):
+    """Reject explicit act substitutions without requiring a vocabulary label verbatim.
+
+    This lexical check detects contradictions, not semantic pose adherence or missing acts.
+    """
+    if not position:
+        return None
+    expected = {name for name, pattern in _ACT_EVIDENCE.items() if _asked(str(position).casefold(), pattern)}
+    actual = {name for name, pattern in _ACT_EVIDENCE.items() if _asked(str(text).casefold(), pattern)}
+    if expected and actual - expected:
+        return ("The output changes the selected act (" + ", ".join(sorted(expected)) + ") to "
+                + ", ".join(sorted(actual - expected)) + ". Preserve the selected arrangement and act.")
+    return None
+
+
+# A body part or ordinary support is not evidence of a different act.
+_ACT_EVIDENCE = {
+    "anal": re.compile(r"\b(?:anal(?![- ](?:beads?|plugs?|toys?|anatomy|opening|area|sphincter|muscles?)\b)|"
+                       r"sodomy|sodomiz\w*)\b"),
+    "vaginal": re.compile(r"\bvaginal\b"),
+    "oral": re.compile(r"\b(?:oral|blowjob\w*|deepthroat\w*|cunnilingus|fellatio|"
+                       r"face[- ]?(?:sitting|fuck\w*)|mouth[- ]?fuck\w*|sixty-nine|69)\b"),
+    "feet": re.compile(r"\b(?:footjob\w*|foot fetish|feet worship|foot worship|"
+                       r"(?:lick\w*|suck\w*) (?:the |his |her |their |a partner's )?(?:feet|toes|soles))\b"),
+}

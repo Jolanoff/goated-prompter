@@ -188,6 +188,7 @@ export function datasetSceneSignature(row) {
   return JSON.stringify(canonicalValue({ index: row.index, input: row.input || "",
     idea: row.idea, scene: (row.scene || "").trim().split(/\s+/).join(" "),
     selected_position: row.selected_position,
+    selected_setting: row.selected_setting,
     scene_status: row.scene_status || "valid", self_check: row.self_check }));
 }
 

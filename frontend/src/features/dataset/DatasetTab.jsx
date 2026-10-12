@@ -388,6 +388,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
             {item.input && <p className="dataset-scene-source">Original idea: {item.input}</p>}
             {item.selected_position && <p className="dataset-scene-source"><strong>Selected position:</strong> {item.selected_position}
               <span className="block">Assigned instruction; generated pose adherence is not verified.</span></p>}
+            {item.selected_setting && <p className="dataset-scene-source"><strong>Selected setting:</strong> {item.selected_setting}</p>}
             <div className="dataset-scene-editor dataset-scene-idea">
               <div className="dataset-scene-editor-heading"><label htmlFor={`dataset-idea-${item.index}`}><Lightbulb size={15} aria-hidden="true" />Idea {item.index}</label></div>
               <textarea className={ui.notesInput} aria-label={`Planned idea ${item.index}`} value={item.idea || ""}

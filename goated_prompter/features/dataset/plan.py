@@ -14,7 +14,7 @@ from .private_vocabulary import vocabulary_signature
 from .quality import sexual_request
 
 
-SCENE_PLAN_VERSION = 11
+SCENE_PLAN_VERSION = 12
 # Small local models write better ideas a few at a time than as one long list.
 IDEAS_PER_CALL = 5
 MAX_STORED_SCENE_CHARACTERS = 10000
@@ -25,7 +25,7 @@ PLAN_STATUS_VALUES = {
     "scene_status": {"valid", "not_generated", "repair_required", "failed"},
     "prompt_status": {"valid", "not_generated", "failed"},
 }
-PLAN_FIELDS = {"index", "input", "idea", "scene", "self_check", "selected_position", *PLAN_STATUS_VALUES, *FAILURE_METADATA}
+PLAN_FIELDS = {"index", "input", "idea", "scene", "self_check", "selected_position", "selected_setting", *PLAN_STATUS_VALUES, *FAILURE_METADATA}
 
 
 def scene_plan_signature(data, assignments):
@@ -41,9 +41,10 @@ def scene_plan_signature(data, assignments):
 
 
 def validate_plan_metadata(row):
-    if "selected_position" in row and (not isinstance(row["selected_position"], str)
-            or not row["selected_position"].strip() or len(row["selected_position"]) > MAX_STORED_SCENE_CHARACTERS):
-        raise ValueError("Selected position must be nonempty text of at most 10000 characters.")
+    for key in ("selected_position", "selected_setting"):
+        if key in row and (not isinstance(row[key], str)
+                or not row[key].strip() or len(row[key]) > MAX_STORED_SCENE_CHARACTERS):
+            raise ValueError(f"{key.replace('_', ' ').capitalize()} must be nonempty text of at most 10000 characters.")
     if "failure_reason" in row and (not isinstance(row["failure_reason"], str) or len(row["failure_reason"]) > 2000):
         raise ValueError("Failure reason must be text of at most 2000 characters.")
     if "failure_stage" in row and (not isinstance(row["failure_stage"], str) or row["failure_stage"] not in {"idea", "scene", "prompt"}):
