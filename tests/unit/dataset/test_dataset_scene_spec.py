@@ -218,6 +218,25 @@ class SceneSpecGateTests(unittest.TestCase):
         self.assertTrue(all(quote in scene and len(quote) <= 240 for quote in quotes))
         self.assertTrue(all(any(f"word{index}" in quote.split() for quote in quotes) for index in range(249)))
 
+    def test_essential_prompt_evidence_uses_exact_quotes_without_locking_open_mechanics(self):
+        spec = replace(self.paired_spec(), locked=("hard",))
+        scene = "Alice sits beside Bob. Alice's left hand rests on Bob's shoulder."
+        instruction = validation_instruction([saved_scene(scene=scene, scene_spec=spec.to_dict())],
+                                             kind="prompt", essential=True)
+        fields = instruction.json_schema["prefixItems"][0]["properties"]
+        evidence = fields["participants"]["prefixItems"][0]["properties"]["evidence"]
+        self.assertIn("enum", evidence)
+        self.assertIn("", evidence["enum"])
+        self.assertTrue(all(not quote or quote in scene for quote in evidence["enum"]))
+        for field in ("setting_evidence", "action_evidence"):
+            self.assertEqual(fields[field], evidence)
+        for check in fields["requirements"]["prefixItems"]:
+            self.assertEqual(check["properties"]["evidence"], evidence)
+            self.assertEqual(check["properties"]["status"]["enum"], ["pass", "fail", "unknown"])
+        self.assertEqual(fields["contacts"]["items"]["properties"]["evidence"], evidence)
+        participant = fields["participants"]["prefixItems"][0]["properties"]
+        self.assertNotIn("enum", participant["pose"])
+
     def test_forest_observation_with_place_names_missing_checks_and_invented_quotes_stays_blocked(self):
         from unittest.mock import Mock
         spec = SceneSpec(3, "general", "The explorer explores a mossy forest", (

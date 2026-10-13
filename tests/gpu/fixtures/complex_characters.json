@@ -1,0 +1,54 @@
+{
+  "description": "Five adult character Dataset batches at Maximum Detail; non-graphic NSFW cases exercise private TXT routing without requesting explicit prose.",
+  "cases": [
+    {
+      "name": "complex-sfw-solo",
+      "subject": "Exactly one adult woman botanist, Mara, aged 34, with dark brown skin, short curly silver hair, amber eyes and a teal field jacket works inside a terraced alpine greenhouse.",
+      "trigger": "Mara the botanist",
+      "trigger_type": "Character",
+      "amount": 2,
+      "source_mode": "guided",
+      "inputs": "Mara kneels on the greenhouse floor and prunes a potted fern using pruning shears in her right hand while her left hand steadies its pot.\nMara stands at a greenhouse workbench and pours water from a small watering can in her right hand into a seedling tray while her left hand steadies the tray.",
+      "constraints": "Exactly one adult woman in every image. Preserve Mara's name, skin, hair, eye color and jacket. Remain inside the terraced alpine greenhouse. Keep each guided task in its own image; show her hands, tool contact and physical support clearly. No additional people or animals. No nudity or sexual content.",
+      "expected_cast": 1
+    },
+    {
+      "name": "complex-sfw-trio",
+      "subject": "Exactly three adult theatre technicians collaborate in a theatre workshop: Mira, a woman electrician with dark skin, short black curls and a yellow vest; Tomas, a man carpenter with pale skin, a red beard and a blue apron; Lena, a woman scenic painter with olive skin, long brown hair and a red smock.",
+      "trigger": "the theatre crew",
+      "trigger_type": "Multiple characters",
+      "amount": 2,
+      "source_mode": "guided",
+      "inputs": "Tomas holds a wooden stage panel steady, Lena paints its front with a brush, and Mira shines a handheld lamp onto the painted area.\nTomas braces a wooden workbench, Mira adjusts a portable lamp on its surface, and Lena places a closed paint can beside the lamp.",
+      "constraints": "Exactly three adults in every image. Preserve each person's name, job, skin, hair and assigned garment separately; never swap them. Keep all three people visible and recognizably distinct. Stay inside the theatre workshop. Keep each guided activity in its assigned image, with tools, hand contacts and support belonging to their actual owners. No extra people, animals, nudity or sexual content.",
+      "expected_cast": 3
+    },
+    {
+      "name": "complex-nsfw-solo",
+      "subject": "Exactly one adult woman art model, Selene, aged 36, with deep brown skin, short white curls and hazel eyes poses for a non-graphic NSFW fine-art nude study.",
+      "trigger": "Selene the adult art model",
+      "trigger_type": "Character",
+      "amount": 2,
+      "constraints": "Exactly one adult woman in every image. Preserve Selene's name, age, skin, hair and eyes. Nude artistic figure study, no genital detail or explicit sexual acts: no oral, anal or vaginal activity. No toys, kink, pet play, human furniture, feet focus, climax or aftercare. Keep each pose naturally supported, with coherent anatomy. No partner, extra people or animals. Vary supported artistic poses and suitable studio settings; keep the imagery non-graphic.",
+      "expected_cast": 1
+    },
+    {
+      "name": "complex-nsfw-female-pair",
+      "subject": "Exactly two adult women pose together for a non-graphic NSFW boudoir editorial: Nia, aged 31, with dark skin, a short black bob and a blue silk robe; Elise, aged 38, with pale skin, long red hair and a cream silk robe.",
+      "trigger": "Nia and Elise the adult editorial pair",
+      "trigger_type": "Multiple characters",
+      "amount": 2,
+      "constraints": "Exactly two adult women in every image. Preserve each name, age, skin, hair and assigned robe; both remain clothed. Keep both women visible and distinct, with natural anatomy and supported poses. Gentle nonsexual partner gestures such as a hand on the other's shoulder are allowed. No explicit sexual acts or genital detail: no oral, anal or vaginal activity. No toys, kink, pet roleplay, human furniture, feet focus, climax or aftercare. No men, extra people or animals. Vary coherent partner poses and suitable boudoir settings without swapping identities.",
+      "expected_cast": 2
+    },
+    {
+      "name": "complex-nsfw-mixed-group",
+      "subject": "Exactly four adults collaborate in a non-graphic NSFW boudoir group editorial: Aria, a woman aged 32 with brown skin, short black curls and a green robe; Theo, a man aged 37 with pale skin, a brown beard and a blue robe; Rosa, a woman aged 41 with olive skin, long red hair and a burgundy robe; Leon, a man aged 35 with dark skin, cropped black hair and a cream robe.",
+      "trigger": "Aria Theo Rosa and Leon the adult editorial group",
+      "trigger_type": "Multiple characters",
+      "amount": 2,
+      "constraints": "Exactly two adult women and two adult men in every image, all visible and distinct. Preserve each name, age, sex, skin, hair and assigned robe without swapping owners; everyone remains clothed. Use coherent supported group poses and gentle nonsexual gestures, never tangled anatomy. No genital detail or explicit sexual acts: no oral, anal or vaginal activity. No toys, kink, pet play, human furniture, feet focus, climax or aftercare. No additional people or animals. Vary the group arrangement and suitable boudoir setting without requiring every participant to perform the same gesture.",
+      "expected_cast": 4
+    }
+  ]
+}

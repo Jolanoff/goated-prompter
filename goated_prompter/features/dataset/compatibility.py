@@ -117,7 +117,8 @@ def compatible_entry(text, route, *, category="general", position=False):
         if excluded and re.search(r"\b" + re.escape(excluded) + r"\b", text):
             return False
     clothing = requested_clothing_state(route.request_text)
-    if clothing == "nude" and re.search(r"\b(?:wear\w*|clothed|clothing|lingerie|dress|shirt|pants|outfit|uniform)\b", text):
+    if clothing == "nude" and re.search(r"\b(?:wear\w*|clothed|clothing|lingerie|dress(?:es)?|shirts?|pants|outfits?|uniforms?|"
+                                       r"bras?|skirts?|robes?|bikinis?|corsets?|stockings?|jeans|jackets?|underwear|underpants)\b", text):
         return False
     if clothing == "clothed" and re.search(r"\b(?:nude|naked|unclothed|topless|bottomless|undress\w*)\b", text):
         return False

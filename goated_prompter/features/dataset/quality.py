@@ -117,7 +117,7 @@ def _request_text(data):
     parts += [str(item.get("text") or "") for field in ("hard", "soft", "action_options", "interactions")
               for item in brief.get(field) or () if isinstance(item, dict)]
     parts.append(get_director_preset(data.get("director_preset")).instructions)
-    return " ".join(parts).casefold()
+    return "\n".join(parts).casefold()
 
 
 _SEXUAL_ACTION = re.compile(r"\b(?:sex|intercourse|nsfw|porn\w*|erotic\w*|fuck\w*|blowjob\w*|handjob\w*|"
@@ -140,7 +140,8 @@ def sexual_request(data, *, include_director=True):
 def adult_content_request(data, *, include_director=True):
     """Keep anatomy, nudity and suggestive styling subject to the existing safety checks."""
     text = _request_text(data) if include_director else _user_text(data)
-    return bool(_SEXUAL.search(text) or _SUGGESTIVE.search(text) or sexual_request(data, include_director=include_director))
+    return (_asked(text, _SEXUAL) or _asked(text, _SUGGESTIVE)
+            or sexual_request(data, include_director=include_director))
 
 
 def minor_reference(text):
@@ -235,7 +236,14 @@ def _mentions(text, pattern, *, ignore_conditional=False):
         for match in pattern.finditer(sentence):
             if pattern is _FEET and match.group() == "feet" and _GROUNDED_FEET.search(sentence[match.end():]):
                 continue
-            clause = re.split(r"[,:]|\b(?:but|however|instead)\b", sentence[:match.start()])[-1]
+            segment = re.split(r"\b(?:but|however|instead)\b", sentence[:match.start()])[-1]
+            clauses = re.split(r"[,:]", segment)
+            clause = clauses[-1]
+            # A comma-separated prohibition still governs later nouns in its list.
+            # A new positive directive or adversative starts a separate clause.
+            if (any(_NEGATED.search(item) for item in clauses[:-1])
+                    and not re.match(r"\s*(?:always|only|use|allow|include|show|depict|wear|want|request|with|keep)\b", clause)):
+                clause = segment
             if _NEGATED.search(clause):
                 if not (ignore_conditional and re.search(r"\bunrequested\b", clause)):
                     forbidden = True

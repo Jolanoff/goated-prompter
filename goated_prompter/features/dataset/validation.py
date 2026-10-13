@@ -306,7 +306,7 @@ def validation_instruction(rows, *, family="qwen", kind="scene", essential=False
                     break
                 start += max(1, (end - start) // 2)
         quotes = list(dict.fromkeys(quotes))
-        evidence = {"type": "string", "maxLength": 1000} if essential else {"type": "string", "enum": ["", *quotes]}
+        evidence = {"type": "string", "enum": ["", *quotes]}
         required_contacts = spec.required_contacts if essential else spec.contacts
         editable_contacts = essential or bool(row.get("edited_stage")) and kind == "scene" and not spec.required_contacts
         setting_label = "" if (essential or row.get("edited_stage") and kind == "scene") and "setting" not in spec.locked else spec.setting

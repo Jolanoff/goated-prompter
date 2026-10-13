@@ -207,6 +207,15 @@ class TxtVocabularyTests(unittest.TestCase):
             self.assertEqual(choices['clothing'], expected)
             self.assertEqual(choices['setting'], 'A quiet room.')
 
+    def test_nude_requests_reject_garment_names_without_wearing_verbs(self):
+        data = adult_draft('female', subject='One adult woman in a NSFW fine-art nude study.')
+        for garment in ('An open-cup bra and a micro skirt.', 'A silk robe.',
+                        'A bikini.', 'A corset and stockings.', 'Jeans and a jacket.', 'Underwear pulled aside.'):
+            with self.subTest(garment=garment):
+                text = '[solo positions]\nA supported solo pose.\n[clothing]\n' + garment + '\nNaked.\n'
+                choices = dict(self.plan(data, text)[1].choices)
+                self.assertEqual(choices['clothing'], 'Naked.')
+
     def test_freezing_resolves_guidance_without_locking_optional_activity_or_position(self):
         data = adult_draft('female', subject='Solo adult woman masturbating')
         provisional = self.plan(data, '[solo positions]\nSeated self-pleasure.\n')[1]
@@ -283,3 +292,28 @@ class TxtVocabularyTests(unittest.TestCase):
         self.assertEqual(specs[1].route, 'general')
         self.assertEqual(dict(specs[1].choices), {'framing': 'Full body'})
         self.assertFalse(specs[1].private_vocabulary)
+
+    def test_sfw_exclusion_lists_never_load_or_activate_adult_vocabulary(self):
+        for constraints in ("No extra people, animals, nudity or sexual content.",
+                            "No nudity, sex or toys.", "No sexual content or nudity."):
+            data = adult_draft('male', 'female', subject='Two adult technicians repair a lamp.', constraints=constraints)
+            with self.subTest(constraints=constraints), patch(
+                    'goated_prompter.features.dataset.brainstorm.load_vocabulary',
+                    side_effect=AssertionError('SFW must not read private vocabulary')):
+                routing = dataset_routing(data)
+                self.assertFalse(routing[0]['nsfw'])
+                self.assertEqual(routing[0]['private_position_count'], 0)
+
+    def test_comma_separated_optional_exclusions_do_not_activate_later_list_items(self):
+        data = adult_draft('male', 'female', subject='Two adults having oral sex',
+                           constraints='No anal, vaginal, toys, pet play or human furniture.')
+        route = resolve_route(data)
+        self.assertTrue({'anal', 'vaginal', 'toys', 'pet', 'furniture'} <= route.excluded)
+        self.assertFalse(route.categories & {'anal', 'vaginal', 'toys', 'pet', 'furniture'})
+        self.assertIn('oral', route.categories)
+
+    def test_positive_clause_after_exclusions_can_still_request_an_activity(self):
+        for constraints in ('No oral sex, but use anal sex.', 'No oral sex, use anal sex.',
+                            'No toys, with oral sex permitted.'):
+            route = resolve_route(adult_draft('male', 'female', subject='Two consenting adults', constraints=constraints))
+            self.assertIn('anal' if 'anal' in constraints else 'oral', route.categories)

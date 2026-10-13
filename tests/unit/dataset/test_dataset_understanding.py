@@ -17,7 +17,7 @@ from goated_prompter.backends.openai_compatible import OpenAICompatibleBackend
 from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.dataset.assignments import dataset_assignments
 from goated_prompter.features.dataset.intent import DatasetIntentTickets
-from goated_prompter.features.dataset.understanding import (UNDERSTANDING_SYSTEM, DatasetUnderstandingService,
+from goated_prompter.features.dataset.understanding import (CHARACTER_FIELDS, UNDERSTANDING_SYSTEM, DatasetUnderstandingService,
     understanding_instruction, validate_understanding)
 from goated_prompter.features.dataset.prompting import dataset_instruction
 from tests.helpers import dataset_understanding_fixture
@@ -776,6 +776,39 @@ class DatasetUnderstandingTests(unittest.TestCase):
                 DatasetUnderstandingService({"backend": "mock"}, lambda: None).run(
                     GoatedPrompterRequest(idea="Fox and raven"), valid_draft(), lambda _: None)
         self.assertEqual(session.generate.call_count, 2)
+
+    def test_count_correction_identifies_the_failed_inventory_without_changing_source(self):
+        character = {"name": "Mara", "count": 1, "sex": "female", "kind": "human",
+                     "origin": "described", "series": "", "traits": "silver curls"}
+        complete = dataset_understanding_fixture(character_count=1, characters=[character])
+        duplicate = {**complete, "characters": [character, {**character}]}
+        session, backend = Mock(), Mock()
+        session.generate.side_effect = [json.dumps(duplicate), json.dumps(complete)]
+        backend.generation_session.return_value = nullcontext(session)
+        data = valid_draft(subject="Exactly one woman, Mara.", source_mode="guided",
+                           inputs="Mara prunes a fern.\nMara waters a tray.")
+        with patch("goated_prompter.features.dataset.understanding.create_backend", return_value=backend):
+            result = DatasetUnderstandingService({"backend": "mock"}, lambda: None).run(
+                GoatedPrompterRequest(idea=data["subject"]), data, lambda _: None)
+        self.assertEqual(result, complete)
+        first, retry = [call.args[0] for call in session.generate.call_args_list]
+        self.assertEqual(retry.user_message, first.user_message)
+        self.assertEqual(retry.json_schema, first.json_schema)
+        self.assertIn('"declared_count":1', retry.system_message)
+        self.assertIn('"listed_count":2', retry.system_message)
+        self.assertIn('"name":"Mara"', retry.system_message)
+        self.assertIn("never once per guided input", retry.system_message)
+        self.assertEqual(session.generate.call_count, 2)
+
+    def test_understanding_defines_trait_string_types_and_complete_compact_shape(self):
+        instruction = understanding_instruction(valid_draft())
+        self.assertIn("traits is one string, never an array", instruction.system_message)
+        self.assertIn("Every root field is required, including empty arrays", instruction.system_message)
+        shape = json.loads(instruction.system_message.split("RESPONSE SHAPE ONLY (not source facts):\n")[1])
+        self.assertEqual(set(shape), set(instruction.json_schema["required"]))
+        self.assertEqual(set(shape["characters"][0]), set(CHARACTER_FIELDS))
+        self.assertIsInstance(shape["characters"][0]["traits"], str)
+        self.assertIsInstance(shape["subjects"][0]["traits"], str)
 
     def test_valid_brief_accepts_one_json_fence_without_another_model_call(self):
         brief = dataset_understanding_fixture()
