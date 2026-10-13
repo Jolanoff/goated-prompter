@@ -166,12 +166,33 @@ def _same_support(left, right):
     return left_owner != "setting" or left_surface == right_surface or {left_surface, right_surface} <= _GROUND_SURFACES
 
 
+_SUPPORT_PARTS = ("feet|foot|knees|knee|hands|hand|elbows|forearms|back|chest|stomach|belly|side|hips|buttocks"
+                  "|shins|shoulders|head|body|torso|arms")
+_SUPPORT_VERBS = ("supported_by|resting_on|lying_on|leaning_on|leaning_against|sitting_on|seated_on|kneeling_on"
+                  "|standing_on|straddling|bent_over|draped_over|pinned_to|pressed_against|tied_to|bound_to"
+                  "|strapped_to|chained_to|cuffed_to|attached_to|suspended_from|suspended_by|hanging_from"
+                  "|held_by|carried_by|lifted_by|held_up_by")
+_SUPPORT_TARGET = r"[A-Za-z][A-Za-z0-9]*(?:_[a-z0-9]+)*"
+# Open label grammar: "<part>_on_<surface>", "tied_to_<surface>", "held_by_<owner>" and similar.
+_SUPPORT_LABEL = re.compile(rf"(?:(?P<part>{_SUPPORT_PARTS})_(?:on|against|in)|{_SUPPORT_VERBS})_(?P<target>{_SUPPORT_TARGET})")
+# A person is never a background surface: partner support must name the supplied owner id.
+_PERSON_WORDS = {"partner", "partners", "man", "men", "woman", "women", "person", "people", "lover", "master", "mistress",
+                 "dom", "sub", "slave", "owner", "other", "boyfriend", "girlfriend", "husband", "wife", "guy", "girl"}
+STANDARD_SUPPORTS = ("airborne", "ground", "feet_on_floor", "knees_on_floor", "supported_by_chair", "supported_by_bed",
+                     "supported_by_floor", "four_paws_on_ground", "three_paws_on_ground")
+# The same grammar as a JSON-schema pattern, so a planner cannot return free support prose.
+SUPPORT_LABEL_PATTERN = ("^(|" + "|".join(STANDARD_SUPPORTS)
+    + rf"|[A-Za-z][A-Za-z0-9_-]*\.[a-z]+(?:_[a-z]+)*|supported_at_[a-z_]+_by_[A-Za-z][A-Za-z0-9_-]*"
+    + rf"|(?:(?:{_SUPPORT_PARTS})_(?:on|against|in)|{_SUPPORT_VERBS})_{_SUPPORT_TARGET})$")
+
+
 def resolve_supports(participants, relationships=(), *, require_resolved=False):
     """Resolve load-bearing ownership and cycles; this is not a geometry simulator.
 
     A support label names one weight-bearing surface. Further owned supports (a hand on a rail,
     feet on the floor while seated) are additional, not contradictions; only the label's own
     body part resting on a different surface contradicts it.
+    Airborne describes placement; explicit owned supports still carry the body's weight.
     """
     owners = {item.id: item for item in participants}
     result = list(relationships)
@@ -181,6 +202,8 @@ def resolve_supports(participants, relationships=(), *, require_resolved=False):
         if not item.bodied or not item.pose and not item.support:
             continue
         existing = [edge for edge in result if edge.source.split(".")[0] == item.id]
+        if item.support == "airborne":
+            continue
         normalized = {"feet_on_floor": ("feet", "floor"), "knees_on_floor": ("knees", "floor"),
                       "supported_by_chair": ("body", "chair"), "supported_by_bed": ("body", "bed"),
                       "supported_by_floor": ("body", "floor"), "ground": ("body", "ground"),
@@ -192,6 +215,12 @@ def resolve_supports(participants, relationships=(), *, require_resolved=False):
             part, target = "body", item.support
         elif match := re.fullmatch(r"supported_at_([a-z_]+)_by_([A-Za-z][A-Za-z0-9_-]*)", item.support):
             part, target = match[1], match[2] + ".body"
+        elif (match := _SUPPORT_LABEL.fullmatch(item.support)) and (
+                match["target"] in owners or match["target"].split("_")[-1] not in _PERSON_WORDS):
+            # Open label grammar: "<part>_on_<surface>", "supported_by_<surface|owner>",
+            # "tied_to_<surface>", "suspended_from_<surface>", "held_by_<owner>" and similar.
+            part = match["part"] or "body"
+            target = match["target"] + ".body" if match["target"] in owners else "setting." + match["target"]
         elif existing:
             if require_resolved and not item.support:
                 raise ValueError("A support relationship needs an explicit participant support label.")

@@ -24,6 +24,9 @@ For each cast id extract actual role, pose, frame location and support. A nonemp
 label represents locked mechanics: return that label when its full meaning is evidenced, unknown
 when ambiguous, conflict when contradicted. Empty labels are open; do not impose old planning
 choices. Ordinary standing or sitting may imply natural support without an off-frame inventory.
+The support label airborne describes in-air placement. If owned supports are supplied, check
+those actual supports (e.g. rope suspension or a partner holding the body). Otherwise accept
+an explicitly airborne body without demanding a floor, suspension equipment or flight mechanism.
 Follow applicable_validators; never impose human poses/anatomy on objects or environments.
 Animals use species-appropriate mechanics. Keep irrelevant pose/support fields empty.
 Extract described contacts with both owned endpoints. Do not invent or infer an unstated contact.

@@ -52,6 +52,80 @@ class OwnedSupportTests(unittest.TestCase):
         frozen = freeze_scene_spec(*self.candidate())
         self.assertEqual(frozen.to_dict()["supports"], [{"source": "P1.body", "target": "setting.ground"}])
 
+    def test_explicit_airborne_scene_freezes_without_inventing_surface_support(self):
+        participants = (Participant("P1", "first man", "participant", "floating", "left", ""),
+                        Participant("P2", "second man", "participant", "floating", "right", ""))
+        spec = SceneSpec(1, "adult", "Two adult men having sex in the air", participants,
+                         state="provisional")
+        candidate = {"index": 1, "action": spec.action, "participants": [
+            {key: getattr(item, key) if key != "support" else "airborne"
+             for key in ("id", "role", "pose", "location", "support")} for item in participants],
+            "setting": "", "contacts": [{"source": "P1.hand", "target": "P2.waist"}], "supports": []}
+        frozen = freeze_scene_spec(spec, candidate)
+        self.assertEqual(frozen.supports, ())
+        self.assertEqual(frozen.contacts, (Contact("P1.hand", "P2.waist"),))
+        self.assertEqual([item.support for item in frozen.participants], ["airborne", "airborne"])
+        self.assertEqual(SceneSpec.from_dict(frozen.to_dict()), frozen)
+
+    def test_airborne_participant_can_coexist_with_owned_grounded_support(self):
+        participants = (Participant("P1", "goalkeeper", "subject", "diving", "left", "airborne"),
+                        Participant("P2", "spectator", "subject", "standing", "right", "feet_on_floor"))
+        self.assertEqual(resolve_supports(participants, require_resolved=True),
+                         (Contact("P2.feet", "setting.floor"),))
+
+    def test_airborne_label_does_not_bypass_support_ownership_checks(self):
+        participants = (Participant("P1", "performer", "subject", "floating", "center", "airborne"),)
+        for target, error in (("P9.hands", "unknown supporting owner"), ("P1.hand", "own weight-bearing"),
+                              ("setting.hand", "physical surface")):
+            with self.subTest(target=target), self.assertRaisesRegex(ValueError, error):
+                resolve_supports(participants, (Contact("P1.body", target),), require_resolved=True)
+
+    def test_airborne_pose_alone_does_not_excuse_unresolved_support(self):
+        for support in ("", "unspecified", "some unspecified surface"):
+            with self.subTest(support=support), self.assertRaisesRegex(ValueError, "resolved owned support"):
+                resolve_supports((Participant("P1", "performer", "subject", "floating", "center", support),),
+                                 require_resolved=True)
+
+    def test_rope_suspension_freezes_when_planner_also_labels_body_airborne(self):
+        spec, candidate = self.candidate("airborne", [{"source": "P1.wrists", "target": "setting.ropes"}])
+        spec = replace(spec, action="An adult man suspended in ropes beside another adult man",
+                       participants=(replace(spec.participants[0], pose="suspended"),
+                                     replace(spec.participants[1], kind="human", role="partner")))
+        candidate["action"] = spec.action
+        candidate["participants"][0]["pose"] = "suspended"
+        candidate["participants"][1]["role"] = "partner"
+        frozen = freeze_scene_spec(spec, candidate)
+        self.assertEqual(frozen.supports, (Contact("P1.wrists", "setting.ropes"),))
+        self.assertEqual(SceneSpec.from_dict(frozen.to_dict()), frozen)
+
+    def test_rope_wall_and_owned_partner_support_labels_resolve(self):
+        for label, target in (("supported_by_rope", "setting.rope"),
+                              ("supported_by_ropes", "setting.ropes"),
+                              ("supported_by_wall", "setting.wall"),
+                              ("supported_by_P2", "P2.body")):
+            with self.subTest(label=label):
+                spec, candidate = self.candidate(label)
+                expected = (Contact("P1.body", target),)
+                if label == "supported_by_P2":
+                    spec = replace(spec, participants=(spec.participants[0],
+                        replace(spec.participants[1], kind="human", pose="standing", support="feet_on_floor")))
+                    candidate["participants"][1].update(pose="standing", support="feet_on_floor")
+                    expected += (Contact("P2.feet", "setting.floor"),)
+                frozen = freeze_scene_spec(spec, candidate)
+                self.assertEqual(frozen.supports, expected)
+
+    def test_airborne_owned_supports_still_reject_cycles(self):
+        participants = (Participant("P1", "first", "subject", "floating", "left", "airborne"),
+                        Participant("P2", "second", "subject", "floating", "right", "airborne"))
+        with self.assertRaisesRegex(ValueError, "cycle"):
+            resolve_supports(participants, (Contact("P1.body", "P2.hands"), Contact("P2.body", "P1.hands")),
+                             require_resolved=True)
+
+    def test_supported_by_owner_does_not_guess_a_missing_partner(self):
+        for label in ("supported_by_P9", "supported_by_partner"):
+            with self.subTest(label=label), self.assertRaises(ValueError):
+                freeze_scene_spec(*self.candidate(label))
+
     def test_explicit_object_surface_is_owned_and_round_trips(self):
         frozen = freeze_scene_spec(*self.candidate("P2.top", [{"source": "P1.feet", "target": "P2.top"}]))
         self.assertEqual(SceneSpec.from_dict(frozen.to_dict()), frozen)
@@ -115,3 +189,19 @@ class OwnedSupportTests(unittest.TestCase):
         participants = (Participant("P1", "person", "subject", "standing", "center", "feet_on_floor"),)
         with self.assertRaisesRegex(ValueError, "feet"):
             resolve_supports(participants, (Contact("P1.head", "setting.floor"),), require_resolved=True)
+
+
+class SupportLabelGrammarTests(unittest.TestCase):
+    def test_restraint_furniture_and_partner_labels_resolve_to_owned_supports(self):
+        import re
+        from goated_prompter.features.dataset.scene_spec import SUPPORT_LABEL_PATTERN
+        partner = Participant("P2", "partner", "", "standing", "right", "feet_on_floor")
+        for label, expected in (("tied_to_bed", Contact("P1.body", "setting.bed")),
+                                ("knees_on_bench", Contact("P1.knees", "setting.bench")),
+                                ("suspended_from_ceiling_beam", Contact("P1.body", "setting.ceiling_beam")),
+                                ("held_by_P2", Contact("P1.body", "P2.body"))):
+            with self.subTest(label=label):
+                bound = Participant("P1", "bound man", "", "bound", "left", label)
+                self.assertIn(expected, resolve_supports((bound, partner), require_resolved=True))
+                self.assertTrue(re.fullmatch(SUPPORT_LABEL_PATTERN, label))
+        self.assertFalse(re.fullmatch(SUPPORT_LABEL_PATTERN, "wrists tied overhead"))

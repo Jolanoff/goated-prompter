@@ -41,6 +41,12 @@ products, environments and other non-bodied subjects, do not invent human anatom
 Write the physical facts before styling: explicitly state each subject's frame placement,
 and each bodily subject's weight-bearing support. A close-up does not erase support: explain
 what supports the body even when that surface lies outside the crop. Do not merely imply it.
+For support="airborne", describe the body in the air and retain any supplied owned supports,
+such as ropes or a partner holding it. With no owned supports, do not invent a supporting
+surface, suspension equipment or flight mechanism.
+A kink, dominance or BDSM request sets the power dynamic, not objects: add ropes, restraints, collars,
+leashes, gags, blindfolds, impact tools, toys (except in solo scenes), fetish clothing, body writing, pet roles
+or human-furniture roles only when the request names them. Aftercare is ordinary.
 Each selected contact names both owners and their appropriate body parts or object surfaces.
 Use natural synonyms for poses; catalog ids and original vocabulary labels need not appear.
 Keep approved hard requirements and the selected action visible in the same frozen moment.

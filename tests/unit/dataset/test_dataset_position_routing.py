@@ -767,3 +767,29 @@ class PositionRoutingTests(unittest.TestCase):
             sent, _ = json.JSONDecoder().raw_decode(instruction.system_message.split("FROZEN SCENE SPEC\n", 1)[1])
             self.assertEqual(sent, writer_view(spec))
         self.assertEqual(len({spec["catalog_id"] for spec in specs}), 3)
+
+
+class KinkAccessoryTests(unittest.TestCase):
+    """A kink request sets the dynamic; objects and roles appear only when named."""
+
+    def route(self, subject, *sexes):
+        from goated_prompter.features.dataset.routing import resolve_route
+        return resolve_route(PositionRoutingTests.draft(None, subject, *sexes))
+
+    def test_dominance_with_ropes_keeps_rope_entries_and_drops_unrequested_accessories(self):
+        from goated_prompter.features.dataset.compatibility import compatible_entry
+        route = self.route("a man dominating another man, tied with ropes", "male", "male")
+        self.assertIn("kink", route.categories)
+        self.assertTrue(compatible_entry("wrists bound behind, taken from behind", route, category="kink", position=True))
+        self.assertTrue(compatible_entry("one pins the other down", route))
+        for entry in ("collared, kneeling oral", "ballgag in place, being fucked", "riding a dildo while collared",
+                      "human pet crawling on a leash", "used as a human footrest", "sissy maid uniform",
+                      "a room with a St. Andrew's cross", "ownership written on the chest"):
+            with self.subTest(entry=entry):
+                self.assertFalse(compatible_entry(entry, route))
+
+    def test_named_accessories_toys_in_solo_and_aftercare_stay_available(self):
+        from goated_prompter.features.dataset.compatibility import compatible_entry
+        self.assertTrue(compatible_entry("collared, kneeling", self.route("a collared submissive man kneels", "male", "male")))
+        self.assertTrue(compatible_entry("riding a dildo in front of a mirror", self.route("a woman masturbating", "female")))
+        self.assertTrue(compatible_entry("held close during aftercare", self.route("dominant man and submissive man", "male", "male")))

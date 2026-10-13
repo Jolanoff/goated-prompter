@@ -59,6 +59,51 @@ def participant_anatomy(route):
     return result
 
 
+# Objects and roles a kink request does not imply: each appears only when the request names it.
+ACCESSORY_FAMILIES = {
+    "rope": re.compile(r"\b(?:ropes?|roped|shibari|kinbaku|tied|ties?|tying|hogtie\w*|frogtie|crotch rope|box tie|"
+                       r"takate-kote|karada|ebi|kikkou|shinju|bound|binding)\b"),
+    "restraints": re.compile(r"\b(?:cuff\w*|handcuff\w*|shackle\w*|chain\w*|spreader\w*|armbinder|strappado|restrain\w*|"
+                             r"straps?(?![- ]?ons?\b)|strapped|stirrups|st\.? andrew's cross|cross|stocks|pillory|hooks?|bedposts?|bondage|harness\w*|"
+                             r"wooden pony|bonding chair)\b"),
+    "collar": re.compile(r"\b(?:collar\w*|leash\w*|name tag)\b"),
+    "gag": re.compile(r"\b(?:gag\w*|ballgag|blindfold\w*|muzzle\w*|hood(?:ed)?)\b"),
+    "impact": re.compile(r"\b(?:paddle\w*|crop(?![- ]?tops?\b)|flogger\w*|whip\w*|cane|caning|spank\w*)\b"),
+    "props": re.compile(r"\b(?:nipple clamps?|clamps?|chastity|marker|writing|written|writes|labels?|property of|lipstick|"
+                        r"pedestal|wedge|barrel|medical table|exam table|inspection table|padlock|key held)\b"),
+    "toys": re.compile(r"\b(?:toys?|dildo\w*|vibrator\w*|wand|plugs?|beads|prostate massager|machines?|sybian|pumps?|"
+                       r"tentacle\w*)\b"),
+    "pet": re.compile(r"\b(?:pets?|puppy|kitten|crawl\w*|bowls?|kennel|(?<!chastity )cage|crate|tail|"
+                      r"beg\w* like (?:a )?(?:pet|puppy|dog))\b"),
+    "furniture": re.compile(r"\b(?:human (?:furniture|table|chair|stool|ottoman|bench|carpet|armrest|pillow|footrest|"
+                            r"side table|display piece)|footrest|furniture (?:pose|pet|position)|living furniture|"
+                            r"used as (?:a )?(?:human )?(?:furniture|table|chair|stool|bench|carpet|armrest|pillow|"
+                            r"mounting block|footrest)|objectif\w*)\b"),
+    "clothing": re.compile(r"\b(?:maid|sissy|latex|pvc|catsuit|fishnets?|crossdress\w*|feminiz\w*|whore|"
+                           r"micro[- ](?:skirt|dress)|garter\w*|stockings?|heels|apron|frilly|open-cup|bodysuit|"
+                           r"panties|corset|crop[- ]?tops?|short skirt|lingerie set)\b"),
+}
+# "Bondage" names restraint itself, so it permits rope and restraint hardware.
+_ACCESSORY_ALIASES = {"rope": re.compile(r"\bbondage\b")}
+
+
+def _positive_clauses(text):
+    return "\n".join(clause for clause in re.split(r"[.!?;\n,]", str(text).casefold())
+                     if not re.search(r"\b(?:no|not|without|avoid|never)\b", clause))
+
+
+def accessory_families(text):
+    text = str(text).casefold()
+    return {name for name, pattern in ACCESSORY_FAMILIES.items() if pattern.search(text)}
+
+
+def requested_accessories(route):
+    """Accessory families the request names; toys are ordinary in a solo scene."""
+    positive = _positive_clauses(route.request_text)
+    requested = accessory_families(positive) | {name for name, pattern in _ACCESSORY_ALIASES.items() if pattern.search(positive)}
+    return requested | ({"toys"} if len(route.position_slots) == 1 else set())
+
+
 def compatible_entry(text, route, *, category="general", position=False, clothing_detail=False):
     """Reject clear contradictions; the model resolves prose, not a new geometry schema."""
     text = text.casefold()
@@ -68,8 +113,11 @@ def compatible_entry(text, route, *, category="general", position=False, clothin
         acts.add(category)
     if categories & route.excluded or acts & route.excluded:
         return False
-    themes = {"kink", "pet", "furniture", "feet", "toys", "finish", "aftercare"}
+    # Aftercare is ordinary; toys are ordinary in a solo scene.
+    themes = {"kink", "pet", "furniture", "feet", "finish"} | ({"toys"} if len(route.position_slots) != 1 else set())
     if (categories & themes) - route.categories:
+        return False
+    if accessory_families(text) - requested_accessories(route):
         return False
     requested_acts = route.categories & POSITION_ACT_CATEGORIES
     if requested_acts and acts - requested_acts:
@@ -238,8 +286,7 @@ def compatible_arrangements(catalog, route, *, constraints=()):
                 category = "paired_pose" if len(route.position_slots) == 2 else "group_pose" if len(route.position_slots) > 2 else "solo"
             records.append(PositionCandidate(hashlib.sha256((section + text).encode()).hexdigest(), category, text, section))
     for pattern, text in catalog.get("requested", ()):
-        positive = "\n".join(clause for clause in re.split(r"[.!?;\n,]", route.request_text)
-                             if not re.search(r"\b(?:no|not|without|avoid|never)\b", clause))
+        positive = _positive_clauses(route.request_text)
         if route.vocabulary_applicable and pattern.search(positive):
             categories = activity_categories(text)
             category = next(iter(categories)) if len(categories) == 1 else "general"

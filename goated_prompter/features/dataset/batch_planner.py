@@ -13,7 +13,7 @@ from .compatibility import compatible_arrangements, vocabulary_choices
 from .director import director_section
 from .private_vocabulary import load_vocabulary, private_rules, Vocabulary
 from .routing import assignment_scope, image_hard_requirements, resolve_routes
-from .scene_spec import CONTACT_PART_LIMIT, CONTACT_PART_PATTERN, LOCATIONS, PARTICIPANT_TEXT_LIMIT, Contact, Participant, SceneSpec, resolve_supports, validate_scene_mechanics
+from .scene_spec import CONTACT_PART_LIMIT, CONTACT_PART_PATTERN, LOCATIONS, PARTICIPANT_TEXT_LIMIT, SUPPORT_LABEL_PATTERN, Contact, Participant, SceneSpec, resolve_supports, validate_scene_mechanics
 from .understanding import label_replacements, unwrap_json_fence
 
 
@@ -49,6 +49,9 @@ support into one coherent scene. For 3+ adults, assign the activity to compatibl
 participants; other adults need not perform the same act. Never invent anatomy or a partner.
 For open adult choices, avoid repeating an existing plan's position/setting combination;
 vary compatible arrangements, never approved requirements.
+A kink, dominance or BDSM request sets the power dynamic, not objects: add ropes, restraints, collars,
+leashes, gags, blindfolds, impact tools, toys (except in solo scenes), fetish clothing, body writing, pet roles
+or human-furniture roles only when the request names them. Aftercare is ordinary.
 For nonstandard poses or supports, include supports: owned source/target load-bearing
 relationships, e.g. P1.hand to P2.rail. Background surfaces use setting.floor or
 setting.ground. Never use unspecified support prose; cycles and self-support are invalid.
@@ -56,6 +59,17 @@ The support label and owned relationship must name the same surface. For standar
 ground, feet_on_floor, knees_on_floor, supported_by_chair, supported_by_bed or supported_by_floor,
 use setting.ground, setting.floor, setting.chair or setting.bed respectively, not a different
 participant's surface. For other surfaces use the owned endpoint as support, e.g. P2.rail.
+Any other support label uses this grammar with one lowercase surface or a supplied owner id:
+<part>_on_<surface> (knees_on_bed, chest_on_table, back_on_floor, hands_on_wall),
+supported_by_<surface> (supported_by_bench), tied_to_<surface>, bound_to_<surface>,
+strapped_to_<surface>, chained_to_<surface>, suspended_from_<surface>, hanging_from_<surface>,
+bent_over_<surface>, pinned_to_<surface>, leaning_against_<surface>, straddling_<owner|surface>,
+held_by_<owner>, carried_by_<owner>, supported_by_<owner>. Partner support names the actual owner
+(held_by_P2), never an unnamed partner. Never write free prose in support.
+An in-air body may be suspended by supplied ropes or held by a partner: retain those owned
+supports, rather than treating its height as unsupported flight. Use support="airborne" only
+when the approved request places the body in the air without supplied support. Explicit owned
+supports take precedence over that placement label. Do not invent a floor or suspension equipment.
 Return only a minified JSON array in assignment order. Each object has exactly index,
 action, participants, contacts, supports and setting. A participant has id, role, pose, location,
 support, with text values (empty if open/not applicable). Contacts have source and target.
@@ -143,7 +157,8 @@ def planning_instruction(data, specs, *, family="qwen", existing=(), event_seeds
                 if value or f"participant:{subject.id}:{field}" in spec.locked or field in {"pose", "support"} and not subject.bodied:
                     fields[field] = {"type": "string", "const": value}
                 else:
-                    fields[field] = {"type": "string", "enum": ["", *sorted(LOCATIONS)]} if field == "location" else mechanics
+                    fields[field] = ({"type": "string", "enum": ["", *sorted(LOCATIONS)]} if field == "location"
+                                     else {**mechanics, "pattern": SUPPORT_LABEL_PATTERN} if field == "support" else mechanics)
             cast.append({"type": "object", "additionalProperties": False, "required": list(fields), "properties": fields})
         properties = {"index": {"type": "integer", "const": spec.index},
             "action": {"type": "string", "const": spec.action} if "action" in spec.locked else text,
