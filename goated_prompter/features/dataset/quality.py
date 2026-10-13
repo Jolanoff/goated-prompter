@@ -64,7 +64,7 @@ def analyze_idea_diversity(data, rows):
 # An idea where the cast only watches, looks at or admires something is passive: one per batch
 # at most. The main clause decides; standing, sitting or holding hands while watching counts too.
 _PASSIVE = re.compile(r"\b(?:watch\w*|look(?:s|ing)? (?:at|out|on|over)|gaz\w*|admir\w*|observ\w*|star(?:e|es|ing)|"
-                      r"marvel\w*|overlook\w*|sightsee\w*|views?|vista|scenery|in awe|taking in|"
+                      r"marvel\w*|overlook\w*|sightsee\w*|views?(?!\s+of\b)|vista|scenery|in awe|taking in|"
                       r"(?:shar|enjoy|spend)\w* a (?:quiet|peaceful|calm|still|tender|silent) moment|"
                       r"(?:walk|stroll|wander)\w* (?:together )?(?:through|along|past|across|down|around|among))\b")
 _STANCE = re.compile(r"\b(?:stand\w*|sit|sits|sitting|seated|lean\w*|rest\w*|kneel\w*|wait\w*|hold(?:s|ing)? hands|"
@@ -392,7 +392,7 @@ def activity_categories(text):
 def requested_clothing_state(text):
     """Only explicit nudity or a clothing-preservation rule limits clothing guidance."""
     nude = re.compile(r"\b(?:nude|naked|nudity|unclothed)\b")
-    clothed = re.compile(r"\b(?:fully clothed|remain clothed|keep (?:their )?clothes on)\b")
+    clothed = re.compile(r"\b(?:fully clothed|remain(?:s|ing)? clothed|keep (?:their )?clothes on)\b")
     asked_nude, forbidden_nude = _mentions(str(text).casefold(), nude)
     if _asked(str(text).casefold(), clothed) or forbidden_nude:
         return "clothed"

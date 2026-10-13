@@ -104,6 +104,10 @@ _HIGH_VIEW = re.compile(r"\bhigh[- ]angle\b" + _LIGHT + r"|\btop[- ]down\b|\bbir
 _LOW_VIEW = re.compile(r"\blow[- ]angle\b" + _LIGHT + r"|\bworm'?s[- ]eye\b|\bfrom ground level\b"
                        r"|\b(?:shot|seen|viewed|filmed|photographed|camera(?: looking)?) (?:from )?(?:directly )?below\b"
                        r"|\bcamera looks? up\b")
+_FULL_BODY_SHOT = re.compile(r"\bfull[- ]body (?:shot|view|framing)\b")
+_UPPER_BODY_CROP = re.compile(r"\b(?:waist|chest|shoulders)[- ]up shot\b|"
+                             r"\b(?:camera|shot|framing)\b[^.!?\n]{0,180}\bfrom (?:the |her |his |their )?"
+                             r"(?:waist|chest|shoulders) up\b")
 
 
 # Words about the task, settings or rules, never about what is in the picture. A term the
@@ -139,6 +143,9 @@ def instruction_leak_error(prompt, scene):
 def geometry_error(prompt, scene=None):
     """Contradictory viewpoints make image models fold bodies (heads near feet); None when consistent."""
     text = str(prompt).casefold()
+    if _FULL_BODY_SHOT.search(text) and _UPPER_BODY_CROP.search(text):
+        return ("The prompt claims both full-body framing and an upper-body crop. Keep one coherent shot size "
+                "consistent with the accepted scene; remove the contradictory crop without changing the cast or action.")
     if _HIGH_VIEW.search(text) and _LOW_VIEW.search(text):
         return ("The prompt describes the camera from above and from below at once. Keep the scene's single camera "
                 "angle and remove the other, without changing anything else.")

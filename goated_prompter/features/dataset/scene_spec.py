@@ -13,6 +13,7 @@ POSE_SUPPORTS = {
     "lying": {"supported_by_bed", "supported_by_floor"},
 }
 LOCATIONS = {"left", "right", "center", "foreground", "background"}
+UNSET_MECHANIC_LABELS = {"null", "unspecified", "none", "not applicable", "n/a"}
 PARTICIPANT_TEXT_LIMIT = 240
 CONTACT_PART_LIMIT = 80
 CONTACT_PART_PATTERN = r"[a-z]+(_[a-z]+)*"
@@ -53,7 +54,8 @@ def validate_planning_constraints(values, scopes, count, *, subject_kinds=None):
                 raise ValueError("Planning owner exceeds the approved per-image cast.")
             owners.append(item["id"])
             for field in ("pose", "location", "support"):
-                if item[field] is not None and (not isinstance(item[field], str) or not item[field].strip() or len(item[field]) > PARTICIPANT_TEXT_LIMIT):
+                if item[field] is not None and (not isinstance(item[field], str) or not item[field].strip()
+                        or item[field].strip().casefold() in UNSET_MECHANIC_LABELS or len(item[field]) > PARTICIPANT_TEXT_LIMIT):
                     raise ValueError(f"Unresolved planning {field}.")
                 if item[field] is not None:
                     compact_text(item[field], f"Planning {field}", limit=PARTICIPANT_TEXT_LIMIT, resolved=True)

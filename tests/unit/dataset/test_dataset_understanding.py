@@ -54,6 +54,19 @@ class DatasetUnderstandingTests(unittest.TestCase):
         self.assertEqual(brief["rules"], [{"scope": "all_outputs", "text": "two kids"}])
         self.assertEqual(len(brief["fixed"]), 2)
 
+    def test_model_absence_labels_are_not_promoted_to_locks(self):
+        for label in ('null', 'unspecified', 'none', 'not applicable', 'N/A'):
+            with self.subTest(label=label):
+                constraint = {'scope': 'all_outputs', 'action': None, 'setting': None,
+                    'participants': [{'id': 'P1', 'role': 'model', 'pose': label, 'location': None, 'support': label}],
+                    'contacts': []}
+                brief = dataset_understanding_fixture(planning_constraints=[constraint])
+                parsed = self.run_response(json.dumps(brief))
+                self.assertIsNone(parsed['planning_constraints'][0]['participants'][0]['pose'])
+                self.assertIsNone(parsed['planning_constraints'][0]['participants'][0]['support'])
+                with self.assertRaises(ValueError):
+                    validate_understanding(brief, ('all_outputs', 'dataset'))
+
     def test_distinct_literal_case_and_spacing_survive_understanding_and_approval(self):
         for first, second in (('Display "A".', 'Display "a".'),
                 ('Display "NO ENTRY".', 'Display "NO  ENTRY".'),

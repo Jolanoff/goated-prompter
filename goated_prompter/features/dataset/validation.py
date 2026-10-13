@@ -81,6 +81,35 @@ def specification_checks(spec, *, essential=False):
             *[{"id": f"hard:{index}", "text": text} for index, text in enumerate(spec.hard)]]
 
 
+_EXACT_AGE = r"(?:\b(?:aged?|age)\s+(\d{1,3})(?![\d–-])\b|\b(\d{1,3})\s*(?:[- ]year[- ]old|years?\s+old|yo|y/o)\b)"
+
+
+def _identity_age_findings(text, spec):
+    """Catch explicit named age changes, not missing ages or nearby objects' ages."""
+    findings = []
+    for subject in spec.participants:
+        if subject.kind not in {"human", "anthro"}:
+            continue
+        if re.search(r"\b\d{1,3}\s*(?:[-–]|to|and)\s*\d{1,3}\b", subject.traits, re.I):
+            continue
+        matches = list(re.finditer(_EXACT_AGE, subject.traits, re.I))
+        if any(re.search(r"\b(?:about|around|roughly|approximately|between|over|under|at least|at most)\b",
+                         subject.traits[max(0, match.start() - 24):match.start()], re.I) for match in matches):
+            continue
+        supplied = {int(match[1] or match[2]) for match in matches}
+        if len(supplied) != 1:
+            continue
+        expected = next(iter(supplied))
+        prefix = (r"(?<!\w)" + re.escape(subject.name) + r"(?!\w)"
+                  r"(?:\s+the\s+[^,.!?;:\n]{1,60},)?\s*,?\s*"
+                  r"(?:is\s+|who is\s+)?(?:an?\s+(?:adult\s+)?(?:(?:woman|man|person|model)\s+)?)?")
+        for match in re.finditer(prefix + _EXACT_AGE, text, re.I):
+            actual = int(match[1] or match[2])
+            if actual != expected:
+                findings.append(f"{subject.name}: supplied age {expected} contradicts the described age {actual}.")
+    return findings
+
+
 def scene_spec_findings(text, value, observation=None, *, evidence_spec=None, essential=False):
     findings = {"hard": [], "repairable": [], "warnings": []}
     def add(message, level="hard"):
@@ -102,6 +131,8 @@ def scene_spec_findings(text, value, observation=None, *, evidence_spec=None, es
     if not isinstance(text, str) or not text.strip():
         add("SceneSpec requires a nonempty description.")
         return findings
+    for conflict in _identity_age_findings(text, spec):
+        add(conflict)
     if not isinstance(observation, dict):
         add("Essential fidelity is unverified: no usable validator observations are available.", "warnings")
         return findings
@@ -392,12 +423,14 @@ def verify_scenes(session, rows, checkpoint, *, family="qwen", kind="scene"):
                 raise ValueError("Scene validation must return a bounded indexed array.")
         except (BackendGenerationError, ValueError, TypeError, RecursionError) as exc:
             for row in chunk:
-                known_failure = row.get("scene_status") == "failed"
+                hard = scene_spec_findings(row["scene"], row["scene_spec"], essential=True)["hard"]
+                known_failure = row.get("scene_status") == "failed" or bool(hard)
                 retained = {key: value for key, value in row.items()
                             if key != "scene_validation" and (known_failure or key not in {"failure_stage", "failure_reason"})}
                 checked.append({**retained, "scene_status": "failed" if known_failure else "unverified",
                     "prompt_status": "not_generated", "self_check": "",
-                    "quality_warnings": [f"Essential fidelity validation unavailable: {exc}"[:2000]]})
+                    "quality_warnings": [f"Essential fidelity validation unavailable: {exc}"[:2000]],
+                    **({"failure_stage": "scene", "failure_reason": " ".join(hard)[:2000]} if hard else {})})
             continue
         for row in chunk:
             matching = [item for item in observations if isinstance(item, dict)

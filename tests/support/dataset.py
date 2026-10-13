@@ -159,6 +159,10 @@ class CaptureBackend(GoatedPrompterBackend):
     def generate(self, instruction):
         self.calls.append(instruction)
         stage = instruction.diagnostic_stage
+        if stage == "dataset:planning:setting":
+            context = json.loads(instruction.user_message)
+            return json.dumps([{"index": row["index"], "setting": "synthetic scene environment"}
+                               for row in context["assignments"]])
         if stage == "dataset:planning":
             context = json.loads(instruction.user_message)
             return json.dumps([{"index": row["index"], "action": row["action"], "setting": row["setting"],

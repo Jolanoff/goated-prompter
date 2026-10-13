@@ -643,6 +643,16 @@ class BatchVarietyTests(unittest.TestCase):
             with self.subTest(idea=idea):
                 self.assertFalse(passive_idea(idea))
 
+    def test_camera_view_noun_does_not_turn_an_activity_into_sightseeing(self):
+        from goated_prompter.features.dataset.quality import passive_idea
+        for idea in ('A dramatic three-quarter view of an adult reclining in an artistic pose.',
+                     'A full-body view of a potter turning a bowl on a wheel.',
+                     'A side view of an explorer crossing a forest stream.'):
+            with self.subTest(idea=idea):
+                self.assertFalse(passive_idea(idea))
+        self.assertTrue(passive_idea('The visitors view the mountain scenery.'))
+        self.assertTrue(passive_idea('A woman stands watching a parade.'))
+
     def test_a_second_passive_idea_is_queued_for_repair_but_shared_props_are_not(self):
         from unittest.mock import Mock
         from goated_prompter.features.dataset.ideas import DatasetIdeasService, PASSIVE_REPEAT

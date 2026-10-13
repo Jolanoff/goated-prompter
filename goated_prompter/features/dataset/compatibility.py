@@ -124,6 +124,10 @@ def compatible_entry(text, route, *, category="general", position=False, clothin
         return False
     if clothing == "clothed" and re.search(r"\b(?:nude|naked|unclothed|topless|bottomless|undress\w*)\b", text):
         return False
+    if clothing == "clothed" and clothing_detail and re.search(
+            r"\b(?:pulled|slid|pushed|rolled) (?:down|off|aside)\b|\b(?:tops?|bottoms?) (?:off|removed)\b|"
+            r"\bcrop(?:ped)?[- ]tops?\b|\bbarely cover\w*\b", text):
+        return False
     return True
 
 

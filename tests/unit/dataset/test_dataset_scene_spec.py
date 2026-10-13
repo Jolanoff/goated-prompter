@@ -30,6 +30,71 @@ from tests.support.dataset import saved_scene, valid_draft
 
 
 class SceneSpecGateTests(unittest.TestCase):
+    def test_named_age_contradictions_cannot_be_hidden_by_a_checker_pass(self):
+        from goated_prompter.features.dataset.validation import scene_spec_findings
+        from tests.support.dataset import scene_observation
+        spec = SceneSpec(1, 'general', 'Two adults pose.',
+            (Participant('P1', 'Ada', '', '', '', '', traits='woman aged 47, silver hair'),
+             Participant('P2', 'Ben', '', '', '', '', traits='man aged 52, red beard')), locked=('hard',))
+        for text in ('Ada, a 42-year-old woman, poses. Ben is 52 years old.',
+                     'Ada is 47 years old. Ben, a man aged 57, stands nearby.'):
+            with self.subTest(text=text):
+                proof = scene_observation(spec, text, essential=True)
+                self.assertTrue(scene_spec_findings(text, spec, proof, essential=True)['hard'])
+                self.assertTrue(scene_spec_findings(text, spec, None, essential=True)['hard'])
+        for text in ('Ada, a 47-year-old woman, poses. Ben is 52 years old.',
+                     'Ada holds a 42-year-old violin. Ben stands nearby.',
+                     'Ada and Ben stand beside a plaque marked 42.',
+                     'Adaline is 42 years old. Ada poses. Ben stands nearby.'):
+            with self.subTest(text=text):
+                proof = scene_observation(spec, text, essential=True)
+                self.assertEqual(scene_spec_findings(text, spec, proof, essential=True)['hard'], [])
+        for traits in ('woman about 47 years old', 'woman between 40 and 50 years old',
+                       'woman aged 40-50', 'woman in her 40s'):
+            relaxed = replace(spec, participants=(replace(spec.participants[0], traits=traits), spec.participants[1]))
+            text = 'Ada is 42 years old. Ben stands nearby.'
+            with self.subTest(traits=traits):
+                proof = scene_observation(relaxed, text, essential=True)
+                self.assertEqual(scene_spec_findings(text, relaxed, proof, essential=True)['hard'], [])
+
+    def test_named_age_conflict_uses_the_existing_bounded_writer_repair(self):
+        from unittest.mock import Mock
+        from tests.support.dataset import checked_writer_responses
+        spec = SceneSpec(1, 'general', 'Ada poses.',
+            (Participant('P1', 'Ada', '', '', '', '', traits='woman aged 47, silver hair'),), locked=('hard',))
+        row = saved_scene(scene='Ada poses.', scene_spec=spec.to_dict(), scene_status='unverified', self_check='')
+        data = valid_draft(trigger='Ada', target='Krea 2')
+        instruction = dataset_instruction(GoatedPrompterRequest(idea=data['subject']), data, 1, plan_item=row)
+        wrong = 'Ada, a 42-year-old woman with silver hair, poses.'
+        right = 'Ada, a 47-year-old woman with silver hair, poses.'
+        session = Mock()
+        checked_writer_responses(session, [wrong, right], [row])
+        result = DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None, row)
+        self.assertEqual(result, right)
+        self.assertEqual(row['prompt_status'], 'valid')
+        writes = [call.args[0] for call in session.generate.call_args_list
+                  if call.args[0].diagnostic_stage.startswith('dataset:1')]
+        self.assertEqual(len(writes), 2)
+        self.assertIn('supplied age 47', writes[1].system_message)
+        checked_writer_responses(session, [wrong, wrong], [row])
+        with self.assertRaises(BackendGenerationError):
+            DatasetService({}, lambda: None)._generate(session, instruction, data, 1, lambda _: None, row)
+
+    def test_checker_unavailability_does_not_hide_a_new_named_age_contradiction(self):
+        from unittest.mock import Mock
+        spec = SceneSpec(1, 'general', 'Ada poses.',
+            (Participant('P1', 'Ada', '', '', '', '', traits='woman aged 47, silver hair'),), locked=('hard',))
+        session = Mock()
+        session.generate.side_effect = BackendGenerationError('Synthetic unavailable checker')
+        for text, expected in (('Ada, a 42-year-old woman, poses.', 'failed'),
+                               ('Ada, a 47-year-old woman, poses.', 'unverified')):
+            with self.subTest(text=text):
+                row = saved_scene(scene=text, scene_spec=spec.to_dict(), scene_status='unverified', self_check='')
+                checked = verify_scenes(session, [row], lambda: None)[0]
+                self.assertEqual(checked['scene_status'], expected)
+                if expected == 'failed':
+                    self.assertIn('supplied age 47', checked['failure_reason'])
+
     def test_writer_does_not_invent_elevation_from_a_shot_size_alone(self):
         data = valid_draft()
         row = saved_scene(scene="A full-body shot of an adult greeting a friend.")
@@ -38,6 +103,15 @@ class SceneSpecGateTests(unittest.TestCase):
         self.assertIn("omit high-angle and low-angle labels", instruction.system_message)
         self.assertIsNotNone(geometry_error("A low-angle full-body shot of an adult.", row['scene']))
         self.assertIsNone(geometry_error("A full-body shot of an adult.", row['scene']))
+
+    def test_camera_cannot_claim_full_body_and_an_upper_body_crop(self):
+        for text in ('A full-body shot. The camera captures her from the waist up.',
+                     'A full-body view with a waist-up shot.'):
+            self.assertIsNotNone(geometry_error(text))
+        for text in ('A full-body shot. She holds a waist-up portrait.',
+                     'A full-body shot in which she holds a waist-up portrait.',
+                     'The camera captures her from the waist up.', 'A full-body shot at eye level.'):
+            self.assertIsNone(geometry_error(text))
 
     def test_unavailable_recheck_does_not_clear_a_known_violation_in_unchanged_text(self):
         from unittest.mock import Mock
@@ -866,6 +940,16 @@ class SceneSpecPipelineTests(unittest.TestCase):
         self.assertEqual(sum(call.diagnostic_stage == "dataset:ideas" for call in backend.calls), 1)
         self.assertEqual(sum(call.diagnostic_stage == "dataset:validation:scene" for call in backend.calls), 0)
         self.assertEqual(sum(call.diagnostic_stage == "dataset:validation:prompt" for call in backend.calls), 2)
+
+    def test_pre_setting_split_plans_are_not_reused_as_current_plans(self):
+        from goated_prompter.features.dataset.plan import scene_plan_signature, reusable_scene_plan
+        data, backend = greeting_draft(1), GreetingBackend()
+        assignments = dataset_assignments(data)
+        data['scene_plan'] = ScenePlanner(lambda: None).plan_batch(session=backend, data=data,
+            assignments=assignments, progress=lambda _: None, seed=5)
+        with patch('goated_prompter.features.dataset.plan.SCENE_PLAN_VERSION', 16):
+            data['scene_plan_signature'] = scene_plan_signature(data, assignments)
+        self.assertIsNone(reusable_scene_plan(data, assignments))
 
     def test_check_edit_updates_only_the_selected_row_and_keeps_passing_siblings(self):
         from goated_prompter.features.dataset.plan import scene_plan_signature

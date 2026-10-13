@@ -11,7 +11,7 @@ from ...contracts import GoatedPrompterRequest, PromptInstruction, effective_mod
 from ...director_profiles import resolve_director_config
 from ...strict_json import reject_duplicate_keys
 from .quality import adults_only_error
-from .scene_spec import LOCATIONS, validate_planning_constraints
+from .scene_spec import LOCATIONS, UNSET_MECHANIC_LABELS, validate_planning_constraints
 from ...options.dataset import CHARACTER_KINDS, SUBJECT_KINDS
 
 
@@ -459,6 +459,20 @@ def validate_characters(items):
 
 def _expand_understanding(value, data, scopes):
     """Project compact model facts into the unchanged public review contract."""
+    if isinstance(value, dict) and isinstance(value.get("planning_constraints"), list):
+        constraints = []
+        for constraint in value["planning_constraints"]:
+            if isinstance(constraint, dict) and isinstance(constraint.get("participants"), list):
+                participants = []
+                for item in constraint["participants"]:
+                    # Model absence labels are not selected bodily mechanics.
+                    if isinstance(item, dict):
+                        item = {**item, **{field: None for field in ("pose", "support")
+                            if isinstance(item.get(field), str) and item[field].strip().casefold() in UNSET_MECHANIC_LABELS}}
+                    participants.append(item)
+                constraint = {**constraint, "participants": participants}
+            constraints.append(constraint)
+        value = {**value, "planning_constraints": constraints}
     if not isinstance(value, dict) or "requirements" not in value:
         return value
     if set(value) - {"characters", "subjects", "planning_constraints"} != set(COMPACT_FIELDS):

@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import patch
 
 from goated_prompter.features.dataset.brainstorm import dataset_routing, sexual_positions
-from goated_prompter.features.dataset.batch_planner import plan_scene_specs, planning_instruction, freeze_scene_spec
+from goated_prompter.features.dataset.batch_planner import plan_scene_specs, planning_instruction, freeze_scene_spec, propose_scene_specs
 from goated_prompter.features.dataset.assignments import dataset_assignments
 from goated_prompter.features.dataset.compatibility import position_sections, styling_sections
 from goated_prompter.features.dataset.private_vocabulary import SECTIONS, load_vocabulary, parse_vocabulary, private_rules
@@ -26,6 +26,111 @@ def adult_draft(*sexes, subject="Adults having sex", **changes):
 
 
 class TxtVocabularyTests(unittest.TestCase):
+    def test_clothing_preservation_inflections_reject_partial_undressing_hints(self):
+        from goated_prompter.features.dataset.quality import requested_clothing_state
+        text = ('[group positions]\nFour adults stand together.\n[clothing]\n'
+                'Fully clothed in assigned robes.\nPants unbuttoned and pulled down.\n'
+                'A cropped top that barely covers the chest.\nTop off, bottom on.\n')
+        for requirement in ('Everyone remains clothed in assigned robes.',
+                            'All four remain clothed in assigned robes.',
+                            'The group is remaining clothed in assigned robes.'):
+            with self.subTest(requirement=requirement):
+                self.assertEqual(requested_clothing_state(requirement), 'clothed')
+                data = adult_draft('female', 'male', 'female', 'male', subject='Four adults in an NSFW editorial. '+requirement)
+                self.assertTrue(all(dict(spec.choices)['clothing'] == 'Fully clothed in assigned robes.'
+                                    for spec in self.plan(data, text).values()))
+
+    def test_frozen_plan_discards_rejected_setting_suggestion(self):
+        from dataclasses import replace
+        data = {**adult_draft('female'), 'amount': 1}
+        provisional = replace(self.plan(data, '[solo positions]\nA supported seated pose.\n')[1],
+                              choices=(('setting', 'railway waiting room'), ('mood', 'quiet')))
+        candidate = {'index': 1, 'action': 'An adult poses in an art studio.', 'setting': 'daylit art studio',
+            'participants': [{'id': 'P1', 'role': 'model', 'pose': 'seated', 'location': 'center',
+                              'support': 'supported_by_chair'}], 'contacts': []}
+        frozen = freeze_scene_spec(provisional, candidate)
+        self.assertEqual(frozen.setting, 'daylit art studio')
+        self.assertNotIn('setting', dict(frozen.choices))
+        self.assertEqual(dict(frozen.choices)['mood'], 'quiet')
+
+    def test_planner_does_not_present_suggestions_as_selected_choices(self):
+        data = adult_draft('female')
+        specs = self.plan(data, '[solo positions]\nA supported seated pose.\n[setting]\nRailway room.\n')
+        context = json.loads(planning_instruction(data, [specs[1]]).user_message)
+        assignment = context['assignments'][0]
+        self.assertNotIn('choices', assignment)
+        self.assertEqual(assignment['optional_suggestions']['setting'], 'Railway room.')
+        self.assertIn('approved_domain', assignment)
+
+    def test_setting_choice_precedes_geometry_without_competing_txt_suggestions(self):
+        from unittest.mock import Mock
+        data = {**adult_draft('female'), 'amount': 2}
+        data['_confirmed_intent']['requested_generation'] = 'An adult poses in a museum.'
+        data['_confirmed_intent']['free'] = [{'scope': 'all_outputs', 'text': 'Museum rooms and supported poses may vary.'}]
+        specs = self.plan(data, '[solo positions]\nA supported seated pose.\n[setting]\nPRIVATE_SENTINEL waiting room.\n')
+        session = Mock()
+        def generate(instruction):
+            context = json.loads(instruction.user_message)
+            if instruction.diagnostic_stage == 'dataset:planning:setting':
+                self.assertNotIn('PRIVATE_SENTINEL', instruction.user_message)
+                self.assertIn('Museum rooms', instruction.user_message)
+                return json.dumps([{'index': i, 'setting': place} for i, place in
+                                   ((1, 'museum portrait gallery'), (2, 'museum sculpture hall'))])
+            return json.dumps([{'index': row['index'], 'action': 'An adult poses.', 'setting': row['setting'],
+                'participants': [{'id': 'P1', 'role': 'model', 'pose': 'seated', 'location': 'center',
+                                  'support': 'supported_by_chair'}], 'contacts': []} for row in context['assignments']])
+        session.generate.side_effect = generate
+        frozen, errors = propose_scene_specs(session, data, list(specs.values()), lambda: None)
+        self.assertEqual(errors, {})
+        self.assertEqual([call.args[0].diagnostic_stage for call in session.generate.call_args_list],
+                         ['dataset:planning:setting', 'dataset:planning'])
+        self.assertEqual([frozen[i].setting for i in (1, 2)], ['museum portrait gallery', 'museum sculpture hall'])
+        self.assertTrue(all('setting' not in dict(spec.choices) for spec in frozen.values()))
+        self.assertTrue(all('setting' not in spec.locked for spec in frozen.values()))
+
+    def test_setting_failure_preserves_an_already_supplied_setting_sibling(self):
+        from dataclasses import replace
+        from unittest.mock import Mock
+        from goated_prompter.backends.base import BackendGenerationError
+        data = {**adult_draft('female'), 'amount': 2}
+        specs = self.plan(data, '[solo positions]\nA supported seated pose.\n[setting]\nPRIVATE_SENTINEL waiting room.\n')
+        specs[1] = replace(specs[1], setting='required outdoor courtyard', locked=(*specs[1].locked, 'setting'))
+        for failure in (BackendGenerationError('Synthetic unavailable selector'), '[]',
+                        json.dumps([{'index': 2, 'setting': 'unknown'}])):
+            session = Mock()
+            def generate(instruction):
+                if instruction.diagnostic_stage == 'dataset:planning:setting':
+                    self.assertEqual([row['index'] for row in json.loads(instruction.user_message)['assignments']], [2])
+                    if isinstance(failure, Exception):
+                        raise failure
+                    return failure
+                rows = json.loads(instruction.user_message)['assignments']
+                return json.dumps([{'index': row['index'], 'action': 'An adult poses.', 'setting': row['setting'],
+                    'participants': [{'id': 'P1', 'role': 'model', 'pose': 'seated', 'location': 'center',
+                                      'support': 'supported_by_chair'}], 'contacts': []} for row in rows])
+            session.generate.side_effect = generate
+            with self.subTest(failure=failure):
+                frozen, errors = propose_scene_specs(session, data, list(specs.values()), lambda: None)
+                self.assertEqual(set(frozen), {1})
+                self.assertEqual(set(errors), {2})
+                self.assertEqual(frozen[1].setting, 'required outdoor courtyard')
+
+    def test_setting_selection_keeps_guided_category_boundaries_local(self):
+        from goated_prompter.features.dataset.batch_planner import setting_instruction
+        data = adult_draft('female', source_mode='guided', inputs='Museum pose\nGarden pose')
+        data['_confirmed_intent']['free'] = [
+            {'scope': 'guided:1', 'text': 'Vary museum rooms.'},
+            {'scope': 'guided:2', 'text': 'Vary garden paths.'},
+            {'scope': 'dataset', 'text': 'Choose one shared site.'}]
+        data['_confirmed_intent']['hard'] = [{'scope': 'dataset', 'text': 'All places belong to the same site.'}]
+        specs = self.plan(data, '[solo positions]\nA supported seated pose.\n[setting]\nWaiting room.\n')
+        context = json.loads(setting_instruction(data, list(specs.values())).user_message)
+        rows = context['assignments']
+        self.assertEqual([row['approved_domain']['permitted_variation'] for row in rows],
+                         [['Vary museum rooms.'], ['Vary garden paths.'], ['Vary museum rooms.'], ['Vary garden paths.']])
+        self.assertEqual(context['shared_choices'], ['Choose one shared site.'])
+        self.assertEqual(context['batch_requirements'], ['All places belong to the same site.'])
+
     def positions(self, data, text):
         with patch("goated_prompter.features.dataset.brainstorm.load_vocabulary",
                    return_value=parse_vocabulary(text)):
