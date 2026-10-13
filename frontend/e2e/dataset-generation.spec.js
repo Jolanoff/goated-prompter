@@ -22,58 +22,15 @@ function datasetPosts(page) {
   return posts;
 }
 
-test("vocabulary preparation shows pending review and saved catalog without automatic approval", async ({ page }) => {
-  let finished = false;
-  let state = "not_prepared";
-  const decisions = [];
-  const catalog = "synthetic/sexual.txt.catalog.json";
-  const job = { id: "synthetic-vocabulary", kind: "dataset_vocabulary", revision: 1,
-    status: "running", progress: "Preparing synthetic vocabulary", events: [] };
-  await page.route("**/api/workspace/dataset/vocabulary/status", (route) => route.fulfill({ json: {
-    state, catalog_path: catalog, validated: state === "awaiting_review" ? 1 : 0,
-    rejected: state === "awaiting_review" ? 1 : 0, approved: state === "saved" ? 1 : 0,
-  } }));
-  await page.route("**/api/workspace/dataset/vocabulary/prepare", (route) => route.fulfill({ status: 202, json: job }));
-  await page.route("**/api/jobs/synthetic-vocabulary", (route) => {
-    if (finished) state = state === "not_prepared" ? "awaiting_review" : state;
-    return route.fulfill({ json: finished ? { ...job, revision: 2, status: "succeeded",
-      result: { validated: 1, rejected: 1 } } : job });
-  });
-  await page.route("**/api/workspace/dataset/vocabulary/review", async (route) => {
-    if (route.request().method() === "POST") {
-      decisions.push(route.request().postDataJSON());
-      state = "saved";
-      return route.fulfill({ json: { approved: 1 } });
-    }
-    return route.fulfill({ json: { token: "synthetic-review-token", rows: [
-      { line: 2, section: "couple positions", text: "Two clothed adults sit together.", reason: "",
-        record: { id: "synthetic-seated-pair", participantCount: 2 } },
-      { line: 3, section: "couple positions", text: "An unresolved synthetic pose.", reason: "Missing support.", record: null },
-    ] } });
-  });
+test("Dataset uses existing TXT vocabulary without conversion or entry approval", async ({ page }) => {
+  const posts = datasetPosts(page);
   await page.goto("/");
   await page.getByRole("button", { name: "Dataset", exact: true }).click();
   await page.getByText("Advanced options", { exact: true }).click();
-  await page.getByText("Prepare private vocabulary (optional)", { exact: true }).click();
-  await expect(page.getByText("No approved catalog or pending review.", { exact: false })).toBeVisible();
-  await page.getByRole("button", { name: "Prepare with saved local model", exact: true }).click();
-  await expect(page.getByText("Preparation pending.", { exact: false })).toBeVisible();
-  expect(decisions).toEqual([]);
-  finished = true;
-  await expect(page.getByText("1 valid records awaiting approval", { exact: false })).toBeVisible();
-  await page.getByRole("button", { name: "Open prepared records for review", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Approve selected records", exact: true })).toBeDisabled();
-  await expect(page.getByRole("checkbox", { name: /Source line 3/ })).toBeDisabled();
-  await page.getByRole("checkbox", { name: /Source line 2/ }).check();
-  await page.getByRole("button", { name: "Approve selected records", exact: true }).click();
-  await expect(page.getByText("Catalog saved: 1 approved records.", { exact: false })).toBeVisible();
-  expect(decisions).toEqual([{ token: "synthetic-review-token", indexes: [0] }]);
-  await expect(page.getByText(catalog, { exact: true })).toBeVisible();
-  await page.reload();
-  await page.getByRole("button", { name: "Dataset", exact: true }).click();
-  await page.getByText("Advanced options", { exact: true }).click();
-  await page.getByText("Prepare private vocabulary (optional)", { exact: true }).click();
-  await expect(page.getByText("Catalog saved: 1 approved records.", { exact: false })).toBeVisible();
+  await expect(page.getByText("No conversion or entry approval is needed", { exact: false })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Prepare with saved local model", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Approve selected records", exact: true })).toHaveCount(0);
+  expect(posts).toEqual([]);
 });
 
 test("retained unverified prompts show their warning after reload without a success badge", async ({ page, request }) => {

@@ -16,15 +16,15 @@ async function loadReviewModal() {
   return (await import(`data:text/javascript;base64,${Buffer.from(linked).toString("base64")}`)).default;
 }
 
-test("vocabulary review reports counts, per-entry rules and unresolved constraints", () => {
+test("vocabulary diagnostics report counts and file issues without exposing entries", () => {
   const routing = [{ scope: "guided:2", vocabulary: { loaded: 7, eligible: 2, rejected: 3,
-    diagnostics: [{ entry: "ambiguous pair", line: 8, reason: "Support unresolved", rule: "unresolved_structure" }],
-    unresolved_constraints: ["Missing owned support"], filtering_rules: ["Participant count"] } }];
+    diagnostics: [{ entry: "private sentinel", line: 8, reason: "Entry contains blocked content.", rule: "blocked_content" }],
+    unresolved_constraints: [], filtering_rules: ["Participant count"] } }];
   const sections = datasetVocabularySections(routing);
   assert.equal(sections[0].label, "Guided input 2");
-  assert.deepEqual(sections[0].items, ["7 loaded entries · 2 eligible arrangements · 3 rejected entries",
-    "Filter: Participant count", "Unresolved: Missing owned support",
-    "Vocabulary file (line 8): Support unresolved [unresolved_structure]"]);
+  assert.deepEqual(sections[0].items, ["7 loaded entries · 2 compatible position choices · 3 skipped entries",
+    "Filter: Participant count", "Vocabulary file (line 8): Entry contains blocked content. [blocked_content]"]);
+  assert.doesNotMatch(JSON.stringify(sections), /private sentinel/);
 });
 
 test("supplied mechanics display participant ownership and contacts before approval", () => {
@@ -38,7 +38,7 @@ test("supplied mechanics display participant ownership and contacts before appro
 const broadMaleRoute = { scope: "all_outputs", nsfw: true,
   cast: { mode: "pair", count: 2, male: 2, female: 0, unspecified: 0, source: "approved_cast" },
   user_categories: [], director_categories: [], effective_categories: [], excluded_categories: [],
-  position_pools: ["two men", "anal", "oral", "feet", "kink"], private_position_count: 12,
+  position_pools: ["anal", "oral"], private_position_count: 12,
   kink_styling: false, ownership_styling: false };
 
 test("routing display distinguishes broad requests, eligible pools and activated styling", () => {
@@ -47,8 +47,8 @@ test("routing display distinguishes broad requests, eligible pools and activated
   assert.ok(items.includes("NSFW detected"));
   assert.ok(items.includes("pair: 2 males (reviewed cast)"));
   assert.ok(items.includes("Requested categories: Broad sexual request; no specific act detected"));
-  assert.ok(items.includes("Effective categories: Broad; all compatible categories eligible"));
-  assert.ok(items.includes("Eligible vocabulary pools: two men, anal, oral, feet, kink"));
+  assert.ok(items.includes("Effective categories: Broad; ordinary compatible activities eligible"));
+  assert.ok(items.includes("Eligible vocabulary pools: anal, oral"));
   assert.ok(items.includes("Kink styling: not activated; ownership rules: not activated"));
   assert.deepEqual(datasetRoutingSections(null), []);
 });
@@ -79,8 +79,18 @@ test("review modal renders server routing rather than detecting acts from the co
   assert.match(markup, /aria-label="Request routing"/);
   assert.match(markup, /NSFW detected/);
   assert.match(markup, /pair: 2 males/);
-  assert.match(markup, /Eligible vocabulary pools: two men, anal, oral, feet, kink/);
+  assert.match(markup, /Eligible vocabulary pools: anal, oral/);
   assert.match(markup, /choices, not detected acts/);
+});
+
+test("vocabulary copy describes direct TXT guidance without preparation or approval controls", async () => {
+  const Modal = await loadReviewModal();
+  const markup = renderToStaticMarkup(createElement(Modal, { review: { status: "ready", input: {},
+    brief: { requested_generation: "Adults sharing an activity" }, routing: [{ ...broadMaleRoute,
+      vocabulary: { loaded: 100, eligible: 7, rejected: 0, diagnostics: [], unresolved_constraints: [] } }] } }));
+  assert.match(markup, /compatible TXT choices/);
+  assert.match(markup, /no conversion or entry approval is needed/);
+  assert.doesNotMatch(markup, /structured arrangements|Approve selected|unresolved_structure/);
 });
 
 test("approval shows hard obligations, soft preferences and free choices before rich interpretation", () => {

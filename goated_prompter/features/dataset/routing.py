@@ -1,8 +1,9 @@
 """Resolve content profile and approved cast once per scoped Dataset request."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
-from .quality import (POSITION_ACT_CATEGORIES, adult_content_request, position_categories, resolved_sex, sexual_request, ownership_request)
+from .quality import (POSITION_ACT_CATEGORIES, adult_content_request, position_categories, requested_text, resolved_sex, sexual_request, ownership_request)
+from .compatibility import participant_anatomy
 from ...options.dataset import BODIED_KINDS, DATASET_SUBJECT_KINDS
 
 
@@ -18,10 +19,12 @@ class ContentRoute:
     owned: bool
     subjects: tuple = ()
     sexual_action: bool = True
+    request_text: str = ""
 
     @property
     def vocabulary_applicable(self):
-        return self.profile == "adult" and self.sexual_action and any(item["kind"] in BODIED_KINDS - {"animal"} for item in self.subjects)
+        return self.profile == "adult" and self.sexual_action and (
+            any(item["kind"] in BODIED_KINDS - {"animal"} for item in self.subjects) or not self.subjects and self.count > 0)
 
     @property
     def position_slots(self):
@@ -72,16 +75,18 @@ def resolve_route(data, scope="all_outputs"):
     if not sexes:
         sexes = tuple("unspecified" for _ in range(count))
     categories, excluded = position_categories(data, include_director=False)
+    adult = adult_content_request(data, include_director=False) and any(item["kind"] in BODIED_KINDS for item in cast)
+    route = ContentRoute("adult" if adult else "general", count, sexes, frozenset(categories),
+                         frozenset(excluded), scope, adult and "kink" in categories,
+                         adult and ownership_request(data, include_director=False), tuple(cast), sexual_request(data, include_director=False),
+                         requested_text(data, include_director=False) + "\n" + "\n".join(image_hard_requirements({"_confirmed_intent": brief}, scope)))
     if "penetration" in categories:
         categories.discard("penetration")
         if not categories & POSITION_ACT_CATEGORIES:
             categories.add("anal")
-            if "female" in sexes:
+            if any("vagina" in parts for _, parts in participant_anatomy(route)):
                 categories.add("vaginal")
     if "penetration" in excluded:
         excluded.update(("anal", "vaginal"))
     categories.difference_update(excluded)
-    adult = adult_content_request(data, include_director=False) and any(item["kind"] in BODIED_KINDS for item in cast)
-    return ContentRoute("adult" if adult else "general", count, sexes, frozenset(categories),
-                        frozenset(excluded), scope, adult and "kink" in categories,
-                        adult and ownership_request(data, include_director=False), tuple(cast), sexual_request(data, include_director=False))
+    return replace(route, categories=frozenset(categories), excluded=frozenset(excluded), kink=adult and "kink" in categories)

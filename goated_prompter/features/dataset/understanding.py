@@ -73,6 +73,10 @@ and policy, rather than one fact per possible trait. Do not inventory every poss
 unspecified trait or setting. Separate entries only when supplied restrictions,
 ownership or scope differ. Keep choose-once freedoms separate from per-image freedoms.
 UNDERSTANDING identifies open choices; it does not choose their values or how they vary.
+For adult sexual requests, identify each character's sex and explicitly supplied anatomy,
+the total character count, requested activity, exclusions and optional themes. Keep anatomy
+in that owner's traits. Do not plan poses, contacts or detailed scene geometry; retain any
+user-supplied mechanics as requirements without expanding them into a scene.
 Do not invent candidate species, outfits, weapons, environments, narrative themes,
 eras, props or transformations merely to illustrate FREE choices.
 
@@ -183,7 +187,8 @@ Each record has exactly scope, action (required activity or null), setting (requ
 or null), participants and contacts. Expand cast groups in user order as P1, P2, etc.
 Each participant constraint has exactly id, role, pose, location and support; unset values
 are null. Only record mechanics the user supplied or the stated interaction logically
-requires. Never select an open pose, place or arrangement here. pose is standing, seated,
+requires. For sexual activities, do not infer contacts or detailed geometry here; keep
+supplied mechanics as requirements. Never select an open pose, place or arrangement here. pose is standing, seated,
 kneeling or lying; location is left, right, center, foreground or background. support is
 feet_on_floor, knees_on_floor, supported_by_chair, supported_by_bed or supported_by_floor.
 Contacts have source and target owned body parts (P1.left_hand, P2.shoulder, etc.). Use

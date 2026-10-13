@@ -183,3 +183,15 @@ test("diagnostic export cannot expose private rule lines from raw transport trac
   assert.equal(JSON.parse(json).job.llm_trace.parameters.temperature, 0.7);
   assert.deepEqual(context, before);
 });
+
+test("generation logs omit selected TXT candidates and styling but keep generated scenes", () => {
+  const context = { draft: { scene_plan: [{ index: 1, scene: "Two adults share a coherent scene.",
+    scene_spec: { private_vocabulary: true, choices: { position_candidates: "PRIVATE_POSITION_ALPHA\nPRIVATE_POSITION_BETA",
+      setting: "PRIVATE_SETTING", mood: "PRIVATE_MOOD", clothing: "PRIVATE_CLOTHING" } } }] },
+    job: { kind: "dataset", llm_trace: { private_content: true, output: "PRIVATE_POSITION_ALPHA" } } };
+  const before = structuredClone(context);
+  const text = datasetGenerationLog(context);
+  assert.doesNotMatch(text, /PRIVATE_(?:POSITION|SETTING|MOOD|CLOTHING)/);
+  assert.equal(JSON.parse(text).scene_plan[0].scene, "Two adults share a coherent scene.");
+  assert.deepEqual(context, before);
+});

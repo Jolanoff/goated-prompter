@@ -121,12 +121,13 @@ def _request_text(data):
 
 
 _SEXUAL_ACTION = re.compile(r"\b(?:sex|intercourse|nsfw|porn\w*|erotic\w*|fuck\w*|blowjob\w*|handjob\w*|"
+    r"vaginal|cunnilingus|fellatio|self[- ]pleasure|dildos?|vibrators?|strap[- ]?ons?|"
     r"oral(?! (?:presentations?|exams?|examinations?|hygiene|history|health|surgery|traditions?|reports?|arguments?))|"
     r"anal|penetrat\w*|masturbat\w*|cum(?:s|ming|shots?)?|orgasm\w*|horny|aroused|"
     r"slaves?|owned by|collared|leash(?:ed)?|pet play|bdsm|dominatrix|dom(?:/| and )sub|"
     r"submissive|bondage|kinky|kinks?|yaoi|bara|mm sex|footjob\w*|foot fetish|feet worship|"
     r"breeding (?:kink|her|him)|breed (?:her|him|me)|"
-    r"presenting (?:herself|himself|themselves|her ass|his ass)|sexual (?:acts?|scenes?|content|activity))\b")
+    r"presenting (?:herself|himself|themselves|her ass|his ass)|sexual (?:acts?|scenes?|content|activity|aftercare|roleplay))\b")
 
 
 def sexual_request(data, *, include_director=True):
@@ -139,7 +140,7 @@ def sexual_request(data, *, include_director=True):
 def adult_content_request(data, *, include_director=True):
     """Keep anatomy, nudity and suggestive styling subject to the existing safety checks."""
     text = _request_text(data) if include_director else _user_text(data)
-    return bool(_SEXUAL.search(text) or _SUGGESTIVE.search(text) or _asked(text, _ACT_EVIDENCE["feet"]))
+    return bool(_SEXUAL.search(text) or _SUGGESTIVE.search(text) or sexual_request(data, include_director=include_director))
 
 
 def minor_reference(text):
@@ -192,14 +193,15 @@ _KINK = re.compile(r"\b(?:slaves?|owned by|collared|collars?|leash(?:ed)?|pet pl
                    r"submissive|dominant|dominat\w*|bondage|bound|restrain\w*|tied up|handcuff\w*|spank\w*|chok\w*|"
                    r"foot fetish|feet worship|breeding|degrad\w*|humiliat\w*|fetish\w*|kinky|kinks?|"
                    r"latex|rough sex|(?:his|her|my|their) (?:master|mistress))\b")
+_KINK_EXCLUSION = re.compile(r"\b(?:kinks?|kinky|bdsm|bondage|power exchange|ownership|domination)\b")
 _ORAL = re.compile(r"\b(?:oral|blowjob\w*|suck\w*|deepthroat\w*|69|sixty-nine|face[- ]?sitting|cunnilingus|"
                    r"face[- ]?fuck\w*|mouth[- ]?fuck\w*|eat(?:s|ing)? (?:her|him) out|lick\w*)\b")
 
 
 # The user's own words (concept, rules, trigger, guided input) and the Director, without the
 # brief the model wrote, so a word the model added never unlocks anything.
-def requested_text(data):
-    return _user_text(data) + "\n" + _director_text(data)
+def requested_text(data, *, include_director=True):
+    return _user_text(data) + ("\n" + _director_text(data) if include_director else "")
 
 
 _FEET = re.compile(r"\b(?:feet|foot\w*|soles|toes)\b")
@@ -284,7 +286,7 @@ def aftercare_request(data):
 _POSITION_CATEGORIES = {
     "penetration": re.compile(r"\b(?:fuck(?:s|ed|ing)?|intercourse|penetrat\w*)\b"),
     "anal": re.compile(r"\b(?:anal|sodomy|sodomiz\w*)\b"),
-    "vaginal": re.compile(r"\b(?:vaginal|vagina|pussy)\b"),
+    "vaginal": re.compile(r"\bvaginal\b"),
     "oral": _ORAL,
     "feet": _FEET,
     "kink": _KINK,
@@ -292,7 +294,7 @@ _POSITION_CATEGORIES = {
     "furniture": _FURNITURE,
     "aftercare": _AFTERCARE,
     "solo": re.compile(r"\b(?:masturbat\w*|solo|self[- ]pleasure)\b"),
-    "toys": re.compile(r"\b(?:toys?|dildos?|vibrators?|plugs?)\b"),
+    "toys": re.compile(r"\b(?:toys?|dildos?|vibrators?|plugs?|strap[- ]?ons?)\b"),
     "finish": re.compile(r"\b(?:climax\w*|finish\w*|orgasm\w*|cum(?:s|ming|shots?)?)\b"),
 }
 POSITION_ACT_CATEGORIES = frozenset(("anal", "vaginal", "oral", "feet"))
@@ -329,6 +331,9 @@ def position_categories(data, *, include_director=True):
     asked, defaults, forbidden = set(), set(), set()
     for name, pattern in _POSITION_CATEGORIES.items():
         user_asked, user_forbids = _mentions(user, pattern)
+        if name == "kink":
+            # Excluding a pet/feet theme or one prop does not exclude all requested kink.
+            user_forbids = _mentions(user, _KINK_EXCLUSION)[1]
         director_asked, director_forbids = _mentions(director, pattern, ignore_conditional=True)
         if user_asked:
             asked.add(name)
@@ -369,6 +374,21 @@ def selected_position_error(text, position):
         return ("The output changes the selected act (" + ", ".join(sorted(expected)) + ") to "
                 + ", ".join(sorted(actual - expected)) + ". Preserve the selected arrangement and act.")
     return None
+
+
+def activity_categories(text):
+    """Actual activity wording, not anatomy labels or ordinary feet-on-floor support."""
+    return {name for name, pattern in _ACT_EVIDENCE.items() if _asked(str(text).casefold(), pattern)}
+
+
+def requested_clothing_state(text):
+    """Only explicit nudity or a clothing-preservation rule limits clothing guidance."""
+    nude = re.compile(r"\b(?:nude|naked|nudity|unclothed)\b")
+    clothed = re.compile(r"\b(?:fully clothed|remain clothed|keep (?:their )?clothes on)\b")
+    asked_nude, forbidden_nude = _mentions(str(text).casefold(), nude)
+    if _asked(str(text).casefold(), clothed) or forbidden_nude:
+        return "clothed"
+    return "nude" if asked_nude or re.search(r"\bno clothes\b", str(text).casefold()) else "open"
 
 
 # A body part or ordinary support is not evidence of a different act.

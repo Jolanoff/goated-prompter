@@ -18,7 +18,7 @@ from goated_prompter.features.dataset.scene_spec import SceneSpec
 from goated_prompter.features.dataset.understanding import validate_understanding
 from goated_prompter.json_store import atomic_json
 from tests.helpers import dataset_understanding_fixture, dataset_idea_fixture, enter_context
-from tests.support.dataset import CaptureBackend, saved_scene, valid_draft, vocabulary_record
+from tests.support.dataset import CaptureBackend, saved_scene, valid_draft
 
 
 class UnderstandingBackend(CaptureBackend):
@@ -116,46 +116,28 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["routing"][0]["position_pools"], [])
         self.assertEqual(len(self.backend.calls), 1)
 
-    async def test_vocabulary_preparation_requires_selected_review_before_dataset_loads_catalog(self):
+    async def test_plain_vocabulary_is_available_at_analysis_without_preparation_or_private_preview(self):
         source = Path(self.temp.name) / "sexual.txt"
         original = b"[two women positions]\nTwo adult women sit together for a clothed portrait.\n"
         source.write_bytes(original)
-        record = vocabulary_record("synthetic-portrait", "paired_pose", sexes=("female", "female"))
-        with patch.dict("os.environ", {"GOATED_PROMPTER_VOCABULARY_FILE": str(source)}), \
-                patch("goated_prompter.features.dataset.runner.resolve_director_config",
-                      return_value=({"backend": "local_llama_cpp"}, None)), \
-                patch("goated_prompter.features.dataset.runner.create_backend", return_value=self.backend), \
-                patch.object(self.backend, "generate", return_value=json.dumps([record])):
-            response = await self.client.post("/api/workspace/dataset/vocabulary/prepare", json={})
-            self.assertEqual(response.status, 202, await response.text())
-            job = await self.terminal(await response.json())
-            self.assertEqual(job["status"], "succeeded", job.get("error"))
-            catalog_path = source.with_name("sexual.txt.catalog.json")
-            self.assertFalse(catalog_path.exists())
-            status_response = await self.client.get("/api/workspace/dataset/vocabulary/status")
-            self.assertEqual(status_response.headers["Cache-Control"], "no-store")
-            status = await status_response.json()
-            self.assertEqual(status["state"], "awaiting_review")
-            self.assertNotIn("rows", status)
-            review = await (await self.client.get("/api/workspace/dataset/vocabulary/review")).json()
-            response = await self.client.post("/api/workspace/dataset/vocabulary/review",
-                json={"token": review["token"], "indexes": [0]})
-            self.assertEqual(response.status, 200, await response.text())
-            self.assertEqual((await response.json())["approved"], 1)
-            self.assertTrue(catalog_path.exists())
-            self.assertEqual(source.read_bytes(), original)
-            status = await (await self.client.get("/api/workspace/dataset/vocabulary/status")).json()
-            self.assertEqual(status["state"], "saved")
-            self.assertEqual(status["catalog_path"], str(catalog_path))
-            from goated_prompter.features.dataset.private_vocabulary import load_vocabulary
-            self.assertEqual([item.id for item in load_vocabulary().records], ["synthetic-portrait"])
+        with patch.dict("os.environ", {"GOATED_PROMPTER_VOCABULARY_FILE": str(source)}):
             data = valid_draft(subject="Two adult women in a clothed NSFW boudoir portrait.",
                 trigger_type="Multiple characters", amount=1,
                 _confirmed_intent=dataset_understanding_fixture(character_count=2, characters=[
                     {"name": name, "count": 1, "sex": "female", "kind": "human",
-                     "origin": "described", "series": "", "traits": ""} for name in ("first woman", "second woman")]))
+                      "origin": "described", "series": "", "traits": ""} for name in ("first woman", "second woman")]))
+            self.backend.summary = data["_confirmed_intent"]
+            result = await self.analyze(data)
+            self.assertEqual(result["routing"][0]["private_position_count"], 1)
+            self.assertFalse(result["routing"][0]["vocabulary"]["unresolved_constraints"])
+            self.assertNotIn("Two adult women sit together", json.dumps(result))
+            self.assertEqual(len(self.backend.calls), 1)
             from tests.support.dataset import frozen_specs
+            from goated_prompter.features.dataset.private_vocabulary import load_vocabulary
             self.assertTrue(frozen_specs(data, catalog=load_vocabulary())[1].private_vocabulary)
+            self.assertEqual(source.read_bytes(), original)
+            self.assertFalse(source.with_name("sexual.txt.catalog.json").exists())
+            self.assertFalse(source.with_name("sexual.txt.review.json").exists())
 
     async def test_all_planning_failures_are_failed_jobs_with_durable_slot_diagnostics(self):
         original_generate = self.backend.generate

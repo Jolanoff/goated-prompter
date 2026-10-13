@@ -53,6 +53,7 @@ function secretValues(value, sensitive = false, field = "") {
   if (!value || typeof value !== "object") return [];
   if (Array.isArray(value)) return value.flatMap((item) => secretValues(item, sensitive, field));
   return Object.entries(value).flatMap(([key, child]) => secretValues(child, sensitive || sensitiveKey(key)
+    || (value.private_vocabulary === true && key === "choices")
     || (field === "vocabulary" && !vocabularyDiagnosticFields.includes(key))
     || (field === "diagnostics" && key === "entry"), key));
 }
@@ -74,6 +75,7 @@ function redactText(text, secrets, detectCredentials) {
 const rawDiagnosticFields = new Set(["content", "output", "reasoning", "partial_text", "issue", "message", "error"]);
 
 function sanitize(value, secrets, field = "", privateDiagnostics = false) {
+  if (privateDiagnostics && field === "choices") return {};
   if (privateDiagnostics && ["messages", "response_format"].includes(field)) return "[PRIVATE CONTENT OMITTED]";
   if (privateDiagnostics && field === "finish_reason" && value !== null &&
     !/^(stop|length|content_filter|tool_calls|function_call|other)$/.test(value)) return "other";

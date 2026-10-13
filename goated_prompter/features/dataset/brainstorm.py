@@ -198,6 +198,10 @@ stay compatible. Open actions and arrangements may be proposed now, before freez
 Coverage requirements apply across the batch; guided requirements stay in their slots.
 Authority: hard requirements > compatible selected geometry > soft preferences >
 Director defaults > optional creative suggestions. Do not invent attributes to fit entries.
+Adult vocabulary choices are alternatives for one primary activity and position, not a
+checklist or new requirements. Do not combine contradictory suggestions. For groups, assign
+each action only to anatomically compatible actual participants; do not involve everyone
+in the same act or add an unrequested specialized theme.
 Use a concrete visible activity with a goal or interaction, not generic exploration or a
 camera/lighting description. When the request requires distinct activities, looking at
 different objects is not enough. Vary what the subjects actually do while preserving any

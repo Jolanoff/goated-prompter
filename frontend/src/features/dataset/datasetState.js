@@ -56,7 +56,7 @@ export function datasetRoutingSections(routing) {
     if (route.nsfw) {
       items.push(`Requested categories: ${categories(route.user_categories) || "Broad sexual request; no specific act detected"}`);
       items.push(`Director defaults: ${categories(route.director_categories) || "No specific category"}`);
-      items.push(`Effective categories: ${categories(route.effective_categories) || "Broad; all compatible categories eligible"}`);
+      items.push(`Effective categories: ${categories(route.effective_categories) || "Broad; ordinary compatible activities eligible"}`);
       if (route.excluded_categories?.length) items.push(`Excluded categories: ${categories(route.excluded_categories)}`);
       items.push(`Eligible vocabulary pools: ${categories(route.position_pools) || "None available"}`);
       items.push(`${route.private_position_count || 0} compatible private positions`);
@@ -70,7 +70,7 @@ export function datasetVocabularySections(routing) {
   return (routing || []).filter((route) => route.vocabulary).map((route) => ({
     label: route.scope === "all_outputs" ? "Every image" : `Guided input ${route.scope?.split(":")[1]}`,
     items: [
-      `${route.vocabulary.loaded} loaded entries · ${route.vocabulary.eligible} eligible arrangements · ${route.vocabulary.rejected} rejected entries`,
+      `${route.vocabulary.loaded} loaded entries · ${route.vocabulary.eligible} compatible position choices · ${route.vocabulary.rejected} skipped entries`,
       ...(route.vocabulary.filtering_rules || []).map((rule) => `Filter: ${rule}`),
       ...(route.vocabulary.unresolved_constraints || []).map((constraint) => `Unresolved: ${constraint}`),
       ...(route.vocabulary.diagnostics || []).map((item) =>

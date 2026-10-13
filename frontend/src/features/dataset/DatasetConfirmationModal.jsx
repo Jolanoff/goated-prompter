@@ -59,7 +59,7 @@ export default function DatasetConfirmationModal({ review, busy, onRevise, onCon
       </section>}
       {!!datasetVocabularySections(review.routing).length && <section className="dataset-review-requirements" aria-label="Vocabulary diagnostics">
         <h3>Vocabulary diagnostics</h3>
-        <p className="dataset-review-note">Vocabulary is optional. Relevant structured arrangements can guide planning; incompatible or unresolved entries are skipped. General concepts do not require vocabulary files.</p>
+        <p className="dataset-review-note">Vocabulary is optional. A few compatible TXT choices guide planning without adding hard requirements. Specialized themes activate only when requested; no conversion or entry approval is needed.</p>
         {datasetVocabularySections(review.routing).map(({ label, items }) =>
           <SummaryList key={label} label={label} items={items} />)}
       </section>}

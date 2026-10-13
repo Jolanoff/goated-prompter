@@ -1,13 +1,10 @@
 """Adult Dataset vocabulary, read from a private plain-text file the user keeps in data/.
 
-The file is never shipped or committed. Position records compile to owned, supported
-arrangements before generation; unreadable files and unresolved prose are reported rather
-than handing arrangement selection to the scene writer. Every entry passes the same adults-only and anatomy
-checks as generated text, plus checks for consent, death, family, animals and breathing, so a
-line added to the file can never bring that content back.
+The original sectioned TXT is creative guidance, not a source of user requirements.
+Only small compatible selections reach generation. Legacy inline records remain readable;
+generation does not need conversion, sidecars or per-entry approval.
 """
 
-import hashlib
 import json
 from dataclasses import dataclass, replace
 import os
@@ -16,29 +13,30 @@ import re
 
 from ...config import PROJECT_ROOT
 from .quality import broken_anatomy, minor_reference, ownership_request, sexual_request
-from .routing import assignment_scope, scoped_request
+from .routing import assignment_scope, resolve_route, scoped_request
+from .compatibility import compatible_entry
 from .scene_spec import BODY_PARTS, Contact, LOCATIONS, Participant, POSE_SUPPORTS, SceneSpec, PLANNING_CATEGORIES, validate_scene_mechanics
 from ...strict_json import reject_duplicate_keys
-from ...json_store import MAX_STORE_BYTES, read_store
+from ...json_store import MAX_STORE_BYTES
 
 VOCABULARY_FILE_ENV = "GOATED_PROMPTER_VOCABULARY_FILE"
 
 # What each [section] is used for. Unknown sections are ignored.
 SECTIONS = {
     "rules": "extra rule lines for every sexual batch",
-    "ownership rules": "extra rule lines when the request or Director uses ownership language",
+    "ownership rules": "extra guidance when the request uses ownership language",
     "mood": "moods for every sexual batch",
-    "interaction": "dynamics between partners for every sexual batch",
+    "interaction": "dynamics between partners for multiple-character sexual batches",
     "group interaction": "dynamics for three or more people",
-    "setting": "private places for every sexual batch",
-    "clothing": "clothing states for every sexual batch",
+    "setting": "places for every compatible sexual batch",
+    "clothing": "clothing states compatible with requested clothing or nudity",
     "kink mood": "moods when kink or ownership is requested",
     "kink interaction": "dynamics when kink or ownership is requested",
     "kink setting": "places when kink or ownership is requested",
     "kink clothing": "clothing states when kink or ownership is requested",
     "pet mood": "moods when pet play is requested",
     "pet interaction": "dynamics when pet play is requested",
-    "props": "props when kink or ownership is requested",
+    "props": "compatible props for explicitly requested themes",
     "solo positions": "one person",
     "couple positions": "two people of any sex",
     "two men positions": "two men",
@@ -48,14 +46,14 @@ SECTIONS = {
     "group positions": "four or more people",
     "oral positions": "oral positions compatible with the cast",
     "anal positions": "anal positions compatible with the cast",
-    "vaginal positions": "vaginal positions when the cast includes a woman",
+    "vaginal positions": "vaginal activities compatible with the participants' actual anatomy",
     "feet positions": "feet positions compatible with the cast",
     "toys": "toy positions compatible with the cast",
     "finish positions": "climax and finish moments compatible with the cast",
     "kink positions": "kink positions for multiple people",
     "solo kink positions": "kink positions for one person",
-    "pet positions": "human pet-play positions for multiple people",
-    "furniture positions": "human-furniture positions for multiple people",
+    "pet positions": "cast-compatible positions when human pet roleplay is requested",
+    "furniture positions": "cast-compatible positions when a human-furniture theme is requested",
     "aftercare positions": "aftercare positions compatible with the cast",
     "requested": "lines 'pattern => entry': the entry joins the positions when the request matches the pattern",
 }
@@ -81,21 +79,14 @@ def vocabulary_path():
     return Path(configured).expanduser() if configured else PROJECT_ROOT / "data" / "vocabulary" / "sexual.txt"
 
 
-def catalog_path(source):
-    source = Path(source)
-    return source.with_name(source.name + ".catalog.json")
-
-
 TEMPLATE_HEADER = """# Private adult vocabulary for the Dataset tab. It stays on this computer and is never committed.
 # Add one entry per line under a [section] heading; lines starting with # are comments.
 # Changes apply to the next batch without a restart. Positions are selected per image;
-# explicit acts narrow the pool, while general sex uses every cast-compatible category.
+# explicit acts narrow the pool; broad requests use ordinary compatible activities.
 # Entries about minors, non-consent, death, family members, animals,
 # school, breath restriction or injury, or that detach or merge body parts, are skipped.
-# Positions need structured records: one JSON object per line with id, category,
-# participantCount, participants (pose/location/role), contacts (from/to) and
-# physicalConstraints (one explicit support per participant). Ambiguous prose is
-# reported in Dataset understanding, not used as an authoritative arrangement.
+# Plain position descriptions are enough. No conversion or approval is needed.
+# The model resolves selected guidance into one scene while preserving your request.
 """
 
 
@@ -131,7 +122,7 @@ class Arrangement:
 
 
 class Vocabulary(dict):
-    """Styling sections plus compiled planning records and load/rejection diagnostics."""
+    """Private TXT sections, legacy inline records and content-free diagnostics."""
 
     def __init__(self, sections=(), *, records=(), diagnostics=(), loaded=0):
         super().__init__(sections)
@@ -192,7 +183,8 @@ def compile_arrangement(value, section):
            for endpoint in (contact.source, contact.target)):
         raise ValueError("Specialized vocabulary needs normalized body-part endpoints.")
     act_parts = {"oral": ({"mouth"}, {"penis", "vagina", "genitals", "anus"}),
-                 "anal": ({"penis", "genitals"}, {"anus"}), "vaginal": ({"penis", "genitals"}, {"vagina"}),
+                 "anal": ({"penis", "genitals", "hand", "left_hand", "right_hand"}, {"anus"}),
+                 "vaginal": ({"penis", "genitals", "hand", "left_hand", "right_hand"}, {"vagina"}),
                  "feet": ({"mouth", "feet"}, {"feet", "penis", "genitals"})}
     if category in act_parts:
         sources, targets = act_parts[category]
@@ -254,8 +246,6 @@ def parse_vocabulary(text):
             records.append(record)
             sections.setdefault(current, []).append(record.label)
             continue
-        if position_section:
-            reject(number, line, "unresolved_structure", "Plain position prose does not establish participant roles, contacts and support. Add a structured record.")
         if current == "requested":
             pattern, separator, entry = line.partition("=>")
             pattern, entry = pattern.strip(), entry.strip()
@@ -283,11 +273,6 @@ def load_vocabulary(path=None):
         stamp = path.stat().st_mtime_ns
     except OSError:
         return Vocabulary(diagnostics=({"rule": "unavailable", "reason": "Vocabulary file is missing or inaccessible."},))
-    prepared_path = catalog_path(path)
-    try:
-        stamp = (stamp, prepared_path.stat().st_mtime_ns)
-    except OSError:
-        stamp = (stamp, None)
     cached = _cache.get(path)
     if cached and cached[0] == stamp:
         return cached[1]
@@ -299,61 +284,34 @@ def load_vocabulary(path=None):
         sections = parse_vocabulary(source.decode("utf-8-sig"))
     except (OSError, UnicodeDecodeError):
         return Vocabulary(diagnostics=({"rule": "unreadable", "reason": "Vocabulary file could not be read as UTF-8."},))
-    if stamp[1] is not None:
-        try:
-            prepared = read_store(prepared_path, None, lambda value: value)
-            if (not isinstance(prepared, dict) or prepared.get("version") != 1
-                    or prepared.get("source_digest") != hashlib.sha256(source).hexdigest()
-                    or not isinstance(prepared.get("records"), list)):
-                raise ValueError("Stale or invalid approved vocabulary catalog.")
-            records = list(sections.records)
-            converted_lines = set()
-            for entry in prepared["records"]:
-                record = compile_arrangement(entry["record"], entry["section"])
-                if any(item.id == record.id for item in records):
-                    raise ValueError("Duplicate approved position id.")
-                records.append(record)
-                if type(entry.get("line")) is int:
-                    converted_lines.add(entry["line"])
-            diagnostics = [item for item in sections.diagnostics
-                           if not (item["rule"] == "unresolved_structure" and item.get("line") in converted_lines)]
-            sections = Vocabulary(sections, records=records, diagnostics=diagnostics, loaded=sections.loaded)
-        except (OSError, ValueError, TypeError, KeyError):
-            sections = Vocabulary(sections, records=sections.records, loaded=sections.loaded,
-                diagnostics=(*sections.diagnostics, {"rule": "invalid_catalog",
-                    "reason": "Approved vocabulary catalog is stale or invalid; general planning remains available."}))
     _cache[path] = (stamp, sections)
     return sections
-
-
-def vocabulary_signature():
-    """Only the digest leaves storage; editing usable vocabulary invalidates old plans."""
-    vocabulary = load_vocabulary()
-    sections = {name: [(pattern.pattern, pattern.flags, entry) for pattern, entry in entries]
-                if name == "requested" else entries for name, entries in vocabulary.items()}
-    records = [{"id": record.id, "category": record.category, "participants": [vars(item) for item in record.participants],
-                "contacts": [vars(item) for item in record.contacts]} for record in vocabulary.records]
-    return hashlib.sha256(json.dumps({"sections": sections, "records": records}, sort_keys=True,
-                                    ensure_ascii=False).encode("utf-8")).hexdigest()
 
 
 def private_rules(data, *, indexes=None):
     """Optional rule guidance, explicitly limited to the applicable supplied assignments."""
     indexes = range(1, data.get("amount", 1) + 1) if indexes is None else indexes
-    applicable = [(index, scoped_request(data, assignment_scope(data, index))) for index in indexes]
-    applicable = [(index, request) for index, request in applicable if sexual_request(request, include_director=False)]
+    applicable = [(index, scoped_request(data, assignment_scope(data, index)), resolve_route(data, assignment_scope(data, index)))
+                  for index in indexes]
+    applicable = [(index, request, route) for index, request, route in applicable if sexual_request(request, include_director=False)]
     if not applicable:
         return ""
     vocabulary = load_vocabulary()
     sections = []
     for name, label, selected in (
-            ("rules", "General", [index for index, _ in applicable]),
-            ("ownership rules", "Ownership", [index for index, request in applicable
+            ("rules", "General", [index for index, _, _ in applicable]),
+            ("ownership rules", "Ownership", [index for index, request, _ in applicable
                                                if ownership_request(request, include_director=False)])):
-        lines = vocabulary.get(name, ())
-        if selected and lines:
-            sections.append(f"{label} guidance for assignment indexes: {', '.join(map(str, selected))}.\n"
-                            + "\n".join(f"- {line}" for line in lines))
+        # Rules are guidance too; never send an unbounded section to the model.
+        lines = []
+        for line in vocabulary.get(name, ()):
+            indexes = [index for index, _, route in applicable if index in selected and compatible_entry(line, route)]
+            if indexes:
+                lines.append(f"- {line[:240]} (assignment indexes: {', '.join(map(str, indexes))})")
+                if len(lines) == 4:
+                    break
+        if lines:
+            sections.append(f"{label} guidance:\n" + "\n".join(lines))
     return ("\n\nMORE SEXUAL CONTENT RULES\n"
              "Optional vocabulary guidance for applicable adult assignments only. Approved hard requirements,\n"
              "SceneSpec, compatible soft preferences and Director defaults take precedence. Never add an unrequested act.\n"

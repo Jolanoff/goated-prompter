@@ -9,7 +9,6 @@ import { datasetCopyText, datasetJsonl, datasetGenerationLog } from "./datasetEx
 import { editDatasetPlan } from "./datasetState.js";
 import { useDatasetWorkflow } from "./useDatasetWorkflow.js";
 import DatasetConfirmationModal from "./DatasetConfirmationModal.jsx";
-import VocabularyPreparation from "./VocabularyPreparation.jsx";
 import { maxSeed, seedModes, triggerTypes } from "./options.js";
 import { styles } from "../../shared/workflow/options.js";
 
@@ -263,7 +262,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                    </label>
                  </div>
                  <small className={ui.directorDescription}>Shows the seed of the last batch. Each new batch keeps it (Fixed), adds one (Increment) or picks a new one (Randomize). Regenerating one image stays random.</small>
-              <VocabularyPreparation busy={busy || active} noEngine={noEngine} onGenerate={onGenerate} job={job} />
+               <p className={ui.subtleNote}>NSFW vocabulary uses your existing <code>data/vocabulary/sexual.txt</code> directly. No conversion or entry approval is needed; only a few compatible choices guide each scene.</p>
               <details className="dataset-details rounded-lg border border-line p-3">
                <summary><Tag size={14} aria-hidden="true" /><span>Training trigger & controls</span><ChevronDown size={14} aria-hidden="true" /></summary>
                <div className="mt-4 grid gap-4">

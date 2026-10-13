@@ -414,7 +414,8 @@ class UniversalValidationTests(unittest.TestCase):
         data = valid_draft(subject="Two adults in sexual scenes.", _confirmed_intent=dataset_understanding_fixture(character_count=2))
         diagnostics = vocabulary_diagnostics(catalog, resolve_route(data))
         self.assertEqual(diagnostics["loaded"], 1)
-        self.assertEqual(diagnostics["rejected"], 1)
+        self.assertEqual(diagnostics["eligible"], 1)
+        self.assertEqual(diagnostics["rejected"], 0)
         self.assertNotIn("PRIVATE_SENTINEL", json.dumps(diagnostics))
 
 

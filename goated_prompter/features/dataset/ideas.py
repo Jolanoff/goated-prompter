@@ -13,8 +13,10 @@ from .scene_spec import SceneSpec
 from .director import director_fixes_shot, director_section
 from .validation import validation_strategies
 from .private_vocabulary import load_vocabulary, private_rules
-from .quality import (ADULTS_ONLY, BROKEN_ANATOMY, adult_content_request, analyze_idea_diversity, broken_anatomy, kink_request,
-                      minor_reference, ownership_request, passive_idea, passive_request, pet_request,
+from .compatibility import vocabulary_choices
+from .routing import assignment_scope, resolve_route
+from .quality import (ADULTS_ONLY, BROKEN_ANATOMY, adult_content_request, analyze_idea_diversity, broken_anatomy,
+                      minor_reference, passive_idea, passive_request,
                       resolved_sex, sexual_request)
 from .understanding import (label_replacements, numbered_labels, replace_labels, understanding_instruction,
                             unwrap_json_fence, validate_understanding)
@@ -96,9 +98,8 @@ def creative_directions(data, indexes, salt=0, *, vocabulary=None):
     Guided inputs already fix the event, so they get no moment. When the approved
     brief requires an action for an image, that image only gets framing and light,
     because moment, mood and setting directions otherwise replace the required action.
-    Sexual batches draw mood, interaction, setting, clothing and (when kink is asked) a prop
-    from the private vocabulary file, get no moment, and keep them alongside a required act;
-    an ownership request uses only the file's kink moods, dynamics and clothing. Every random character in them
+    Sexual batches use the same cast-aware TXT guidance selector as planning, with no moment.
+    Universal sections remain available alongside explicitly activated themes. Every random character in them
     gets a drawn adult age unless a numeric adult age is stated.
     """
     source = json.dumps({key: data.get(key) for key in _DIRECTION_SOURCE}, sort_keys=True, ensure_ascii=False)
@@ -111,29 +112,15 @@ def creative_directions(data, indexes, salt=0, *, vocabulary=None):
     brief_count = brief.get("character_count")
     group = data.get("trigger_type") == "Multiple characters" or (type(brief_count) is int and brief_count > 1)
     sexual = sexual_request(data, include_director=False)
-    kink = sexual and kink_request(data)
-    owned = sexual and ownership_request(data, include_director=False)
-    pet = sexual and pet_request(data)
     vocabulary = (load_vocabulary() if sexual else {}) if vocabulary is None else vocabulary
     safe_axes = SEXUAL_ACTION_SAFE_AXES if sexual else ACTION_SAFE_AXES
     axes = list(DIRECTION_AXES.items())
-    if sexual:
-        # The private file's clothing states and props; an ownership request keeps only its kink ones.
-        kink_clothing = vocabulary.get("kink clothing", ()) if kink else ()
-        clothing = kink_clothing if owned and kink_clothing else vocabulary.get("clothing", ()) + kink_clothing
-        axes += [("clothing", clothing), ("prop", vocabulary.get("props", ()) if kink else ())]
     orders = {}
     for position, (axis, values) in enumerate(axes):
         if group and axis == "framing":
             values = GROUP_FRAMING
         elif sexual and axis in ("mood", "interaction", "setting"):
-            # Without the private file these axes stay open and the model invents them within the rules.
-            values = vocabulary.get(axis, ())
-            extra = vocabulary.get(f"kink {axis}", ()) if kink else ()
-            extra = extra + (vocabulary.get(f"pet {axis}", ()) if pet else ())
-            values = extra if owned and extra else values + extra
-            if axis == "interaction" and type(brief_count) is int and brief_count >= 3:
-                values = values + vocabulary.get("group interaction", ())
+            values = ()
         if not values:
             continue
         order = list(values)
@@ -171,13 +158,18 @@ def creative_directions(data, indexes, salt=0, *, vocabulary=None):
         return look
 
     directions = {}
+    used_combinations = set()
     fixed_shot = director_fixes_shot(data)
     for index in indexes:
         scopes = {"all_outputs", *([f"guided:{(index - 1) % len(lines) + 1}"] if guided else [])}
         required_action = bool(action_scopes & scopes)
         directions[index] = {axis: order[(index - 1) % len(order)] for axis, order in orders.items()
                                if (axis in safe_axes if required_action else not ((guided or sexual) and axis == "moment"))
-                               and (group or axis != "interaction") and not (fixed_shot and axis == "framing")}
+                                and (group or axis != "interaction") and not (fixed_shot and axis == "framing")}
+        if sexual:
+            route = resolve_route(data, assignment_scope(data, index))
+            if route.vocabulary_applicable:
+                directions[index].update(vocabulary_choices(vocabulary, route, None, (), random.Random(seed + index), used_combinations))
         if random_cast:
             looks = {}
             for slot, (name, sex, open_sex, aged, count) in enumerate(random_cast):

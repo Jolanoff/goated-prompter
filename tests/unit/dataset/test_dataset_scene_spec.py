@@ -420,10 +420,11 @@ class SceneSpecGateTests(unittest.TestCase):
         self.assertEqual(record.participants[0].support, "supported_by_chair")
         self.assertEqual(record.contacts[0].target, "B.shoulder")
 
-    def test_unresolved_entries_and_unknown_sections_have_diagnostics(self):
+    def test_plain_entries_need_no_structure_but_unknown_sections_have_diagnostics(self):
         catalog = parse_vocabulary("[couple positions]\nambiguous paired pose\n[unknown]\nignored entry\n")
         self.assertFalse(catalog.records)
-        self.assertTrue(any(item["rule"] == "unresolved_structure" for item in catalog.diagnostics))
+        self.assertEqual(catalog["couple positions"], ("ambiguous paired pose",))
+        self.assertFalse(any(item["rule"] == "unresolved_structure" for item in catalog.diagnostics))
         self.assertTrue(any(item["rule"] == "unknown_section" for item in catalog.diagnostics))
 
 
@@ -728,8 +729,8 @@ class SceneSpecPipelineTests(unittest.TestCase):
         catalog = {"rules": ("SYNTHETIC_GENERAL_GUIDANCE",), "ownership rules": ("SYNTHETIC_OWNERSHIP_GUIDANCE",)}
         with patch("goated_prompter.features.dataset.private_vocabulary.load_vocabulary", return_value=catalog):
             guidance = private_rules(data)
-        self.assertIn("General guidance for assignment indexes: 1, 3.", guidance)
-        self.assertIn("Ownership guidance for assignment indexes: 1, 3.", guidance)
+        self.assertIn("SYNTHETIC_GENERAL_GUIDANCE (assignment indexes: 1, 3)", guidance)
+        self.assertIn("SYNTHETIC_OWNERSHIP_GUIDANCE (assignment indexes: 1, 3)", guidance)
         self.assertNotIn("indexes: 1, 2, 3, 4", guidance)
 
     def test_private_vocabulary_run_marks_every_engine_instruction_without_redacting_model_inputs(self):
@@ -884,17 +885,19 @@ class SceneSpecPipelineTests(unittest.TestCase):
         sent = json.loads(instruction.user_message)["assignments"][0]["scene_spec"]
         self.assertEqual(sent, replace(specs[1], state="frozen").to_dict())
 
-    def test_ambiguous_vocabulary_is_diagnosed_instead_of_used_for_planning(self):
+    def test_plain_vocabulary_guides_planning_without_replacing_approved_mechanics(self):
         data = greeting_draft(1)
         data["subject"] = "Two adults in sexual scenes."
         catalog = parse_vocabulary("[couple positions]\nambiguous unsupported pose\n")
         diagnostics = vocabulary_diagnostics(catalog, resolve_route(data))
-        self.assertEqual((diagnostics["loaded"], diagnostics["eligible"], diagnostics["rejected"]), (1, 0, 1))
-        self.assertTrue(diagnostics["unresolved_constraints"])
+        self.assertEqual((diagnostics["loaded"], diagnostics["eligible"], diagnostics["rejected"]), (1, 1, 0))
+        self.assertFalse(diagnostics["unresolved_constraints"])
         self.assertTrue(diagnostics["filtering_rules"])
         specs = plan_scene_specs(data, dataset_assignments(data), directions={}, catalog=catalog)
         self.assertEqual(specs[1].state, "provisional")
-        self.assertEqual(specs[1].catalog_id, "")
+        self.assertTrue(specs[1].catalog_id)
+        self.assertEqual(specs[1].participants[0].pose, "seated")
+        self.assertIn("participant:P1:pose", specs[1].locked)
 
     def test_approved_mechanical_constraints_filter_a_conflicting_record_with_a_reason(self):
         data = greeting_draft(1)
@@ -962,7 +965,8 @@ class SceneSpecPipelineTests(unittest.TestCase):
             routes = dataset_routing(data)
         self.assertEqual([item["scope"] for item in routes], ["guided:1", "guided:2"])
         self.assertEqual([item["nsfw"] for item in routes], [True, False])
-        self.assertEqual(routes[0]["vocabulary"]["rejected"], 1)
+        self.assertEqual(routes[0]["vocabulary"]["eligible"], 1)
+        self.assertEqual(routes[0]["vocabulary"]["rejected"], 0)
         self.assertEqual(routes[1]["private_position_count"], 0)
 
 

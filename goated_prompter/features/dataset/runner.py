@@ -4,25 +4,6 @@ from ...backends.base import BackendGenerationError
 from .service import DatasetService
 from .understanding import DatasetUnderstandingService
 from .brainstorm import dataset_routing
-from .vocabulary_conversion import VocabularyConversion
-from ...backends.factory import canonical_backend_name, create_backend
-from ...contracts import effective_model_family
-from ...director_profiles import resolve_director_config
-
-
-def run_vocabulary_preparation(state, job, request, config, workflow):
-    effective, profile = resolve_director_config(config, request)
-    if canonical_backend_name(effective.get("backend")) != "local_llama_cpp":
-        raise ValueError("Private vocabulary preparation requires a configured local model, not a remote backend.")
-    backend = create_backend(effective)
-    job.set_progress("Preparing private vocabulary for review; no catalog is approved yet.")
-    with backend.generation_session() as session:
-        def generate(instruction):
-            session.validate_instruction(instruction)
-            return session.generate(instruction)
-        result = VocabularyConversion().prepare(generate, job.checkpoint,
-            family=effective_model_family(request, profile, effective))
-    job.commit(lambda: {"ok": True, "kind": "dataset_vocabulary", **result}, finish=True)
 
 
 def run_dataset_understanding(state, job, request, config, workflow):

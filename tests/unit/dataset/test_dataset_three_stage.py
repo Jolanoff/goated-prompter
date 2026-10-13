@@ -1050,7 +1050,7 @@ class CastPositionTests(SeedVarietyTests):
         from goated_prompter.features.dataset.brainstorm import sexual_positions
         from goated_prompter.features.dataset.private_vocabulary import load_vocabulary
         pools = {name.removesuffix(" positions"): set(entries) for name, entries in load_vocabulary().items()}
-        pair = pools["finish"] | pools["feet"] | pools["aftercare"] | pools["oral"] | pools["anal"] | pools["kink"]
+        pair = pools["oral"] | pools["anal"]
         solo = set(sexual_positions(self.cast("female", subject="a woman masturbating")))
         self.assertEqual(solo, pools["solo"])
         self.assertFalse(solo & pools["oral"])
@@ -1068,19 +1068,20 @@ class CastPositionTests(SeedVarietyTests):
         group = set(sexual_positions(self.cast("female", "male", "male", "male", subject="a group having sex")))
         self.assertEqual(group, pools["group"])
 
-    def test_general_sex_uses_all_categories_and_named_extras_only_when_asked(self):
+    def test_general_sex_uses_ordinary_categories_and_named_extras_only_when_asked(self):
         from goated_prompter.features.dataset.brainstorm import sexual_positions
         from goated_prompter.features.dataset.private_vocabulary import load_vocabulary
         pools = {name.removesuffix(" positions"): set(entries) for name, entries in load_vocabulary().items()}
         plain = set(sexual_positions(self.cast("female", "male")))
-        for kind in ("oral", "feet", "kink"):
+        for kind in ("oral", "anal"):
             self.assertTrue(pools[kind] <= plain, kind)
+        self.assertFalse(plain & (pools["feet"] | pools["kink"]))
         self.assertNotIn("fixture blindfold position", plain)
         asked = set(sexual_positions(self.cast("male", "male",
             subject="two men, a footjob in bondage while one is blindfolded")))
-        self.assertEqual(asked, pools["feet"])
+        self.assertEqual(asked, pools["feet"] | {"fixture blindfold position"})
         self.assertFalse(asked & (pools["oral"] | pools["anal"]))
-        self.assertNotIn("fixture blindfold position", asked, "An unstructured requested extra cannot define mechanics.")
+        self.assertIn("fixture blindfold position", asked, "Matching TXT extras are guidance, not frozen mechanics.")
         solo = set(sexual_positions(self.cast("female", subject="a woman masturbating in bondage, showing her feet")))
         self.assertEqual(solo, set(), "There is no one-subject foot arrangement; planning remains LLM-assisted.")
         self.assertFalse(solo & (pools["kink"] | pools["oral"] | pools["anal"]))
@@ -1170,20 +1171,21 @@ class PrivateVocabularyTests(unittest.TestCase):
         self.data = valid_draft(amount=8, subject="a couple having sex", trigger_type="Multiple characters",
                                 _confirmed_intent=dataset_understanding_fixture(characters=couple))
 
-    def test_an_ownership_request_uses_only_power_exchange_vocabulary_and_a_prop_per_image(self):
+    def test_ownership_keeps_universal_vocabulary_without_activating_unrequested_themes(self):
         from goated_prompter.features.dataset.brainstorm import sexual_positions
         from goated_prompter.features.dataset.private_vocabulary import load_vocabulary
         private = load_vocabulary()
         owned = {**self.data, "subject": "his collared slave having sex with her master"}
         for row in creative_directions(owned, range(1, 9), 2).values():
-            self.assertIn(row["mood"], private["kink mood"])
-            self.assertIn(row["interaction"], private["kink interaction"])
-            self.assertIn(row["clothing"], private["kink clothing"])
+            self.assertIn(row["mood"], private["mood"] + private["kink mood"])
+            self.assertIn(row["interaction"], private["interaction"] + private["kink interaction"])
+            self.assertIn(row["clothing"], private["clothing"] + private["kink clothing"])
             self.assertIn(row["prop"], private["props"])
         positions = set(sexual_positions(owned))
-        self.assertEqual(positions, set(), "Legacy prose-only fixtures must not become frozen geometry.")
-        self.assertTrue(any(item["rule"] == "unresolved_structure" for item in private.diagnostics))
-        self.assertFalse(positions & set(private["oral positions"]))
+        self.assertTrue(positions & set(private["kink positions"]))
+        self.assertFalse(any(item["rule"] == "unresolved_structure" for item in private.diagnostics))
+        self.assertFalse(positions & set(private["pet positions"]))
+        self.assertFalse(positions & set(private["furniture positions"]))
         kinky = {**self.data, "subject": "a couple having sex in bondage"}
         moods = {row["mood"] for row in creative_directions(kinky, range(1, 9), 2).values()}
         self.assertTrue(moods & set(private["mood"]), "A kink request without ownership keeps ordinary moods too.")
@@ -1267,7 +1269,7 @@ class PrivateVocabularyTests(unittest.TestCase):
             with self.subTest(subject=subject, cast=bool(cast)):
                 with patch("goated_prompter.features.dataset.brainstorm.load_vocabulary", return_value=catalog):
                     positions = set(sexual_positions(data))
-                    expected = {"feet"} if "footjob" in subject else {"kink"} if "slave" in subject else {"men", "feet", "kink", "finish"}
+                    expected = {"feet"} if "footjob" in subject else {"men", "kink"} if "slave" in subject else {"men"}
                     self.assertEqual(positions, expected)
                     picks = [pick_position_ideas(position_groups(data), random.Random(seed), POSITION_IDEAS) for seed in range(30)]
                     self.assertTrue(all(set(pick) == expected for pick in picks))

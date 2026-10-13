@@ -110,33 +110,49 @@ placement, action, setting, light and camera. The selected Director's instructio
 applies to the target) go to IDEAS too, so it decides each scene's framing, camera and light;
 the writer then keeps them. The brainstorm gets the same Director section (`director.py`). A
 Director built around one kind of shot (selfie, mirror, first person) also replaces each image's
-framing direction, lifts the mirror and posing bans, and is not limited as a watching idea. A sexual request (`quality.sexual_request`, which also reads
-the cast, the brief and the Director) takes its mood, interaction, setting and clothing directions,
-and a random handful of `position_ideas` for the brainstorm, from the user's private vocabulary file
-(`private_vocabulary.py`, `data/vocabulary/sexual.txt`, never committed; without it those axes stay open
-and the model invents them within the rules). `brainstorm.position_groups` filters positions by
-count, resolved cast sexes and explicit acts or exclusions. `quality.resolved_sex` fills open sexes
-from roles or unambiguous pairings and keeps the drawn looks consistent. Generic sex permits every compatible
-category; a specific act narrows the pool to its category and compatible cast entries. Category
-round-robin selection prevents long lists from dominating. `creative_directions` assigns positions
-per image, including scoped guided inputs and batches without a usable brainstorm. The selected
-choice is stored as `selected_position` on the scene plan and passed directly to Builder,
-including when a saved scene is reused or a prompt is regenerated. Scenes and final prompts
-may describe the arrangement naturally; copying the vocabulary label is not required.
-The contract preserves the instruction, not independent proof of model geometry.
-The selected sexual position and setting take precedence over a generic event seed or Director
-default; explicit user requirements remain authoritative. A vocabulary digest invalidates saved
-adult plans after usable entries change. The file's `requested` entries join when their patterns
-match, subject to the same compatibility filters. Kink moods, dynamics, clothing and a
-prop per image join only when `kink_request` finds BDSM or fetish wording in the request, or a Director
-unconditional clause that asks for it (a clause that forbids it does not count). Conditional
-Director sentences such as “if requested”, “when requested” or “for ownership requests” do not
-activate categories, ownership rules or requested-vocabulary extras. The full Director still
-reaches the model unchanged. An `ownership_request` (slave, owned,
-master or mistress, human pet) uses only the kink moods, dynamics and clothing
-and adds the file's ownership rules. Every file entry passes the
-adults-only and anatomy checks plus consent, incapacitation, death, family, animal, school and
-breath-restriction checks before use. The stage also keeps
+framing direction, lifts the mirror and posing bans, and is not limited as a watching idea.
+
+### Private adult TXT vocabulary
+
+Dataset reads the existing sectioned `data/vocabulary/sexual.txt` directly. Entries are
+ordinary prose, one per line. There is no conversion job, JSON catalog or entry-approval
+step. Existing TXT and old sidecar files are not modified; sidecars are ignored. Legacy
+inline structured entries remain readable, but they are not required.
+
+Understanding identifies the adult cast, sex and supplied anatomy per owner, total count,
+requested activities, exclusions and themes. It does not invent poses or contact geometry.
+`compatibility.py` gates the sections and filters clear cast, anatomy, activity, theme,
+clothing and literal exclusion contradictions before planning:
+
+| Sections | Activation |
+| --- | --- |
+| `solo positions` | One character; never add a partner or require a toy. |
+| `couple positions`, matching `two men`, `two women`, `man and woman positions` | Two characters; eligible alternatives, not positions to combine. |
+| `three positions`, `group positions` | Three or four-plus characters respectively. Activities may involve a compatible subset of the cast. |
+| `oral`, `anal`, `vaginal positions` | Ordinary compatible activities for multiple adults; prioritize an explicit act. Vaginal activity requires applicable anatomy; hands are possible without inventing male anatomy or a toy. Solo activities must be explicitly solo-compatible. |
+| `rules`, `setting`, `mood`, `clothing` | Universal guidance, with clothing filtered against the requested state. Settings and moods are not tied to one act. |
+| `interaction`, `group interaction` | Multiple characters, or three-plus, respectively. |
+| `kink mood/interaction/setting/clothing/positions`, `solo kink positions` | Requested relevant kink, with the solo/multiple distinction preserved. |
+| `pet mood/interaction/positions` | Requested human pet roleplay, independently of other kink. |
+| `furniture positions`, `feet positions` | Requested human-furniture or feet-focused theme, respectively. |
+| `props`, `toys` | Compatible requested themes; toy use must be requested or explicitly permitted. |
+| `finish positions`, `aftercare positions` | Relevant requested moment, not automatic additions to every scene. |
+| `ownership rules`, `requested` | Requested ownership, or a positive matching request pattern, subject to compatibility checks. |
+
+Each provisional SceneSpec gets at most three short alternatives for one activity, one
+setting, compatible mood/interaction, appropriate clothing and at most one compatible prop.
+The planner resolves these into one supported scene, assigning actions and anatomy to their
+actual owners. It must not combine contradictory alternatives. Category dealing and unused
+position/setting pairs spread suggestions across the batch. Vocabulary choices are not new
+hard requirements. Once planning resolves an event, alternative position suggestions are
+removed before scene writing. Saved scenes keep their event when vocabulary changes.
+
+Only selected guidance reaches the model; routing diagnostics expose counts and generic
+filtering reasons, not entries. Private guidance and raw model diagnostics are omitted from
+generation-log exports. Without usable entries, ordinary model planning remains available.
+Text filtering and synthetic tests do not prove semantic, anatomical or image correctness.
+The existing adults-only, anatomy, consent, incapacitation, death, family, animal, school
+and breath-restriction entry checks remain in place. The stage also keeps
 every sexual act between the people the request pairs, allows a partner-supported lift during sex, keeps the place and
 position next to a required act, drops the moment axis, and draws an adult age for random characters; `adults_only_error` refuses a
 sexual or suggestive batch that names someone under 18 or involves an animal before any model call, and brainstorm
