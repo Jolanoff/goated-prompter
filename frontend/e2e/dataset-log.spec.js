@@ -69,8 +69,8 @@ test("review export omits approval credentials and does not confirm the request"
   await configure(page);
   await expect(page.getByText("Dataset settings: Saved", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Generate 2 prompts", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Review your Dataset request" });
-  await expect(dialog.getByRole("button", { name: "Confirm and generate prompts" })).toBeEnabled();
+  const dialog = page.getByRole("dialog", { name: "Confirm understanding" });
+  await expect(dialog.getByRole("button", { name: "Confirm & Generate" })).toBeEnabled();
   const before = await (await request.get("/api/workspace/settings/dataset")).json();
   const writes = [];
   page.on("request", (event) => { if (event.method() !== "GET") writes.push(event.url()); });
@@ -81,7 +81,7 @@ test("review export omits approval credentials and does not confirm the request"
   expect(log.scene_plan).toEqual([]);
   expect(writes).toEqual([]);
   expect(await (await request.get("/api/workspace/settings/dataset")).json()).toEqual(before);
-  await expect(dialog.getByRole("button", { name: "Confirm and generate prompts" })).toBeEnabled();
+  await expect(dialog.getByRole("button", { name: "Confirm & Generate" })).toBeEnabled();
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
   const cancelled = await exportLog(page);
   expect(cancelled.understanding.status).toBe("cancelled");
@@ -100,7 +100,7 @@ test("active and failed generation exports include partial output, retries and r
     status: "failed", error: "Request timed out: api_key=inline-secret", finished_at: 1791374401,
     partial_responses: [{ partial_text: "Partial model text", completion_state: "timeout" }] } : job }));
   await generateDataset(page);
-  await expect(page.getByRole("dialog", { name: "Review your Dataset request" })).not.toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Confirm understanding" })).not.toBeVisible();
   await openDatasetPage(page, "Configure");
   await expect(page.getByRole("button", { name: "Generating 2 prompts…", exact: true })).toBeDisabled();
   const activeLog = await exportLog(page);

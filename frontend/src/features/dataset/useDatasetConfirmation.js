@@ -13,7 +13,7 @@ export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm
   async function analyze(item) {
     pending.current = item;
     setUnderstanding(null);
-    setConfirmation({ ...item, status: "analyzing", brief: null, confirmation_token: "", error: "" });
+    setConfirmation({ ...item, status: "analyzing", brief: null, summary: null, confirmation_token: "", error: "" });
     try {
       const accepted = await onGenerate("dataset/understand", { input: item.input });
       if (!accepted) throw new Error("Request analysis could not start. Wait for active work and try again.");
@@ -77,7 +77,7 @@ export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm
     void analyze({ input, baseSignature: confirmation.baseSignature,
       operation: confirmation.operation === "dataset/scenes" ? "dataset/scenes" : needsReplan ? "dataset" : confirmation.operation,
       options: needsReplan ? {} : confirmation.options,
-      notice: needsReplan ? "New rules require fresh ideas and scenes. Review them before continuing to Dataset." : confirmation.notice });
+      notice: needsReplan ? "Understanding will use your corrections. Fresh scenes will be planned after confirmation." : confirmation.notice });
   }
 
   async function confirmRequest() {

@@ -172,7 +172,7 @@ test("Scene Continue with a lost session ticket resumes writing rather than Unde
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   expect(new URL((await submission).url()).pathname).toBe("/api/workspace/dataset");
   await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/duck_token/);
-  await expect(page.getByRole("dialog", { name: "Review your Dataset request", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "Confirm understanding", exact: true })).toHaveCount(0);
   expect(posts).toEqual(["/api/workspace/dataset"]);
   const after = (await (await request.get("/api/workspace/settings/dataset")).json()).draft;
   expect(after.scene_plan.map((row) => row.scene)).toEqual(saved.draft.scene_plan.map((row) => row.scene));
@@ -238,11 +238,11 @@ test("revised source rules preserve automatic generation instead of introducing 
   await page.getByLabel("Dataset prompt length").selectOption("Detailed");
   await openDatasetPage(page, "Scenes");
   await page.getByRole("button", { name: "Regenerate prompt", exact: true }).first().click();
-  const dialog = page.getByRole("dialog", { name: "Review your Dataset request", exact: true });
-  await expect(dialog.getByRole("button", { name: "Update summary", exact: true })).toBeEnabled();
-  await dialog.getByLabel("Extra instructions or answers").fill("Keep the duck's feet visible.");
-  await dialog.getByRole("button", { name: "Update summary", exact: true }).click();
-  await expect(dialog.getByRole("button", { name: "Confirm and generate prompts", exact: true })).toBeEnabled();
+  const dialog = page.getByRole("dialog", { name: "Confirm understanding", exact: true });
+  await expect(dialog.getByRole("button", { name: "Update understanding", exact: true })).toBeEnabled();
+  await dialog.getByLabel("Corrections or answers").fill("Keep the duck's feet visible.");
+  await dialog.getByRole("button", { name: "Update understanding", exact: true }).click();
+  await expect(dialog.getByRole("button", { name: "Confirm & Generate", exact: true })).toBeEnabled();
   await confirmDatasetReview(page);
   await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/duck_token/);
   await openDatasetPage(page, "Scenes");
@@ -299,7 +299,7 @@ test("Anima inserts locked multiple-character tags unchanged before a scene-only
   const admission = page.waitForResponse((response) => response.status() === 202 &&
     new URL(response.url()).pathname === "/api/workspace/dataset");
   await page.getByRole("button", { name: "Generate 1 prompt", exact: true }).click();
-  const review = page.getByRole("dialog", { name: "Review your Dataset request", exact: true });
+  const review = page.getByRole("dialog", { name: "Confirm understanding", exact: true });
   await expect(review).toContainText("Supplied character trigger (verbatim):");
   await expect(review).toContainText(trigger);
   await expect(review).toContainText("not a visibility requirement");

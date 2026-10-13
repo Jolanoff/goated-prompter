@@ -29,8 +29,8 @@ test("request review blocks generation, exposes the source, and cancellation pre
   });
   const trigger = page.getByRole("button", { name: "Generate 2 prompts", exact: true });
   await trigger.click();
-  const dialog = page.getByRole("dialog", { name: "Review your Dataset request" });
-  await expect(dialog.getByRole("button", { name: "Confirm and generate prompts" })).toBeEnabled();
+  const dialog = page.getByRole("dialog", { name: "Confirm understanding" });
+  await expect(dialog.getByRole("button", { name: "Confirm & Generate" })).toBeEnabled();
   await expect(dialog.getByText("Person 1 and person 2 fighting.", { exact: true }).first()).toBeVisible();
   await expect(dialog.locator(".dataset-review-identity")).toContainText("Randomized per independent prompt");
   await expect(page.getByLabel("Dataset idea", { exact: true })).toBeDisabled();
@@ -53,13 +53,13 @@ test("request review blocks generation, exposes the source, and cancellation pre
 test("extra instructions require a revised summary and only persist after confirmation", async ({ page, request }) => {
   await openDataset(page);
   await page.getByRole("button", { name: "Generate 2 prompts", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Review your Dataset request" });
-  const confirm = dialog.getByRole("button", { name: "Confirm and generate prompts" });
+  const dialog = page.getByRole("dialog", { name: "Confirm understanding" });
+  const confirm = dialog.getByRole("button", { name: "Confirm & Generate" });
   await expect(confirm).toBeEnabled();
   const addition = "Randomize the people, but at least one must have blond hair in every image.";
-  await dialog.getByLabel("Extra instructions or answers").fill(addition);
+  await dialog.getByLabel("Corrections or answers").fill(addition);
   await expect(confirm).toBeDisabled();
-  await dialog.getByRole("button", { name: "Update summary" }).click();
+  await dialog.getByRole("button", { name: "Update understanding" }).click();
   await expect(confirm).toBeEnabled();
   await expect(dialog.getByRole("region", { name: "Image requirements" }).getByText(addition, { exact: true })).toBeVisible();
   const before = (await (await request.get("/api/workspace/settings/dataset")).json()).draft;
@@ -79,12 +79,12 @@ test("blocking questions must be answered and reanalyzed before generation", asy
   await openDataset(page);
   await page.getByLabel("Dataset idea", { exact: true }).fill("Two people doing unclear breaking.");
   await page.getByRole("button", { name: "Generate 2 prompts", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Review your Dataset request" });
-  const confirm = dialog.getByRole("button", { name: "Confirm and generate prompts" });
+  const dialog = page.getByRole("dialog", { name: "Confirm understanding" });
+  const confirm = dialog.getByRole("button", { name: "Confirm & Generate" });
   await expect(dialog.getByText("Breaking what?", { exact: true })).toBeVisible();
   await expect(confirm).toBeDisabled();
-  await dialog.getByLabel("Extra instructions or answers").fill("They are breaking a board.");
-  await dialog.getByRole("button", { name: "Update summary" }).click();
+  await dialog.getByLabel("Corrections or answers").fill("They are breaking a board.");
+  await dialog.getByRole("button", { name: "Update understanding" }).click();
   await expect(confirm).toBeEnabled();
   await expect(dialog.getByText("Breaking what?", { exact: true })).toHaveCount(0);
   await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -95,10 +95,10 @@ test("blocking questions must be answered and reanalyzed before generation", asy
 test("rejected admission after revised approval keeps the saved request and old prompt", async ({ page, request }) => {
   await openDataset(page);
   await page.getByRole("button", { name: "Generate 2 prompts", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: "Review your Dataset request" });
-  await expect(dialog.getByRole("button", { name: "Confirm and generate prompts" })).toBeEnabled();
-  await dialog.getByLabel("Extra instructions or answers").fill("One person has blond hair.");
-  await dialog.getByRole("button", { name: "Update summary" }).click();
+  const dialog = page.getByRole("dialog", { name: "Confirm understanding" });
+  await expect(dialog.getByRole("button", { name: "Confirm & Generate" })).toBeEnabled();
+  await dialog.getByLabel("Corrections or answers").fill("One person has blond hair.");
+  await dialog.getByRole("button", { name: "Update understanding" }).click();
   await page.route("**/api/workspace/dataset", (route) => route.fulfill({ status: 503, json: { error: "Admission unavailable." } }));
   await confirmDatasetReview(page);
   await expect(dialog.getByRole("alert")).toContainText("Admission unavailable.");

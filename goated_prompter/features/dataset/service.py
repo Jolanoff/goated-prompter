@@ -180,6 +180,9 @@ class DatasetService:
         self.config, self.checkpoint, self.idea_history = config, checkpoint, idea_history
 
     def _generate(self, session, instruction, data, index, progress, plan_item, *, retries=DATASET_MAX_RETRIES):
+        if (data.get("_confirmed_intent") or {}).get("subjects"):
+            route = resolve_routes(data, [{"index": index}])[assignment_scope(data, index)]
+            data = {**data, "_confirmed_intent": {**data["_confirmed_intent"], "characters": list(route.subjects)}}
         expected_text = requested_visible_text(plan_item["scene"])
         spec = SceneSpec.from_dict(plan_item["scene_spec"])
         strategies = validation_strategies(spec)

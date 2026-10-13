@@ -6,8 +6,8 @@ export async function openDatasetPage(page, name) {
 }
 
 export async function confirmDatasetReview(page) {
-  const dialog = page.getByRole("dialog", { name: "Review your Dataset request", exact: true });
-  const confirm = dialog.getByRole("button", { name: /^Confirm and/ });
+  const dialog = page.getByRole("dialog", { name: "Confirm understanding", exact: true });
+  const confirm = dialog.getByRole("button", { name: /^Confirm &/ });
   try {
     await expect(confirm).toBeEnabled();
   } catch (error) {

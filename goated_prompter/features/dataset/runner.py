@@ -2,15 +2,13 @@
 
 from ...backends.base import BackendGenerationError
 from .service import DatasetService
-from .understanding import DatasetUnderstandingService
-from .brainstorm import dataset_routing
+from .understanding import DatasetUnderstandingService, confirmation_summary
 
 
 def run_dataset_understanding(state, job, request, config, workflow):
     brief = DatasetUnderstandingService(config, job.checkpoint).run(request, workflow["input"], job.set_progress)
-    routing = dataset_routing({**workflow["input"], "_confirmed_intent": brief})
     job.commit(lambda: {"ok": True, "kind": "dataset_understanding",
-                       "routing": routing,
+                       "summary": confirmation_summary(brief),
                        **state.dataset_intents.register(workflow["input"], brief)}, finish=True)
 
 

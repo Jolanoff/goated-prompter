@@ -34,28 +34,19 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 
     await expect.poll(async () => (await (await request.get(`/api/jobs/${jobId}`)).json()).status).toBe("succeeded");
     const job = await (await request.get(`/api/jobs/${jobId}`)).json();
     expect(job.result.brief).toEqual(fixture.brief);
-    const dialog = page.getByRole("dialog", { name: "Review your Dataset request" });
+    const dialog = page.getByRole("dialog", { name: "Confirm understanding" });
     await expect(dialog.getByText(fixture.brief.requested_generation, { exact: true })).toBeVisible();
     await expect(dialog.locator(".dataset-review-identity")).toContainText("Randomized per independent prompt");
-    for (const heading of ["Concept", "What stays consistent", "What should vary", "Every image should", "Output settings"]) {
+    for (const heading of ["Concept", "Requirements", "Open creative choices", "Output settings"]) {
       await expect(dialog.getByRole("heading", { name: heading, exact: true })).toBeVisible();
     }
-    await expect(dialog.locator(".dataset-review-details")).not.toHaveAttribute("open");
+    await expect(dialog.locator(".dataset-review-details")).toHaveCount(0);
     if (viewport.width === 1280) expect((await dialog.boundingBox()).width).toBeGreaterThan(850);
     await expect(dialog.getByText(fixture.brief.expansion_freedom, { exact: true })).toBeVisible();
     expect((await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze()).violations).toEqual([]);
     await page.screenshot({ path: testInfo.outputPath("populated-understanding.png") });
-    await dialog.getByText("Show details", { exact: true }).click();
-    const details = dialog.locator(".dataset-review-details");
-    await expect(details.getByText("Characters and identity", { exact: true })).toBeVisible();
-    await expect(dialog.getByText(fixture.brief.dataset_contents, { exact: true })).toBeVisible();
-    for (const field of ["fixed", "may_vary", "must_vary", "rules", "visible_evidence", "interactions", "natural_occlusions", "visibility_to_preserve", "action_options"]) {
-      for (const item of fixture.brief[field]) {
-        const prefix = item.scope === "all_outputs" ? "" : item.scope === "dataset" ? "Across the dataset: " : `Guided input ${item.scope.split(":")[1]}: `;
-        await expect(details.getByText(`${prefix}${item.text}`, { exact: true })).toHaveCount(field === "may_vary" ? 2 : 1);
-      }
-    }
-    await expect(dialog.getByRole("button", { name: "Confirm and generate prompts" })).toBeEnabled();
+    await expect(dialog.getByText("Show details", { exact: true })).toHaveCount(0);
+    await expect(dialog.getByRole("button", { name: "Confirm & Generate" })).toBeEnabled();
     expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
     expect(errors).toEqual([]);
     expect(downstream).toEqual([]);

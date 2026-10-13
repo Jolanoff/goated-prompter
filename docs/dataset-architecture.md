@@ -4,7 +4,8 @@ Dataset produces prompts, not images. There is one pipeline:
 
 ```text
 concept + rules + local guided input
-  → UNDERSTAND (characters + hard / soft / free) → human approval
+  → UNDERSTAND (scoped subjects + plain hard / soft / free) → human confirmation
+  → deterministic vocabulary routing from the confirmed cast and source constraints
   → BRAINSTORM candidate events (random batches) → app picks each image's event
   → compatible provisional planning → frozen SceneSpecs
   → IDEAS, five per call, each an idea with its finished scene
@@ -16,7 +17,7 @@ concept + rules + local guided input
 
 | Responsibility | Owner |
 | --- | --- |
-| Scoped understanding, character list and richer brief validation | `goated_prompter/features/dataset/understanding.py` |
+| Intent extraction, scoped subject inventory, confirmation summary and saved brief validation | `goated_prompter/features/dataset/understanding.py` |
 | Source-bound, expiring approval tickets | `goated_prompter/features/dataset/intent.py` |
 | Guided assignment indexes and cycling | `goated_prompter/features/dataset/assignments.py` |
 | Ideas with finished scenes and lexical duplicate hints | `goated_prompter/features/dataset/ideas.py`, `quality.py` |
@@ -36,45 +37,41 @@ concept + rules + local guided input
 
 ## Authority and stages
 
-UNDERSTAND interprets the user's request without generating scenes. Its brief lists the
-characters in every image (name, count, sex, kind such as human, anthro, monster, alien
-or robot, origin as an existing, described or randomly invented character, series and
-supplied traits) and records character count, identity policy, scoped requirements, action alternatives, permitted
-expansion, visible evidence, interactions, natural occlusions and physical conflicts.
+UNDERSTAND extracts only intent and supplied constraints. It generates one scoped
+subject inventory (name, count, sex, kind, origin, series and supplied traits),
+character count, identity policy, plain hard/soft/free facts, expansion limits and
+necessary clarification questions. User-supplied actions, settings and mechanics
+remain plain-language requirements; no geometry or support calculations are generated.
 `all_outputs` applies to every image, `dataset` to the set, and `guided:N` only to that
 line's assignments. Clarifications prevent approval. Added instructions require
 reanalysis; the approval ticket is bound to source settings and saved scene edits.
 Each character entry's count applies only to that entry. Counts exceeding the declared
-per-image total fail validation before approval; a partial list still falls back to the
-scoped requirements. A null total stays open for locally varying counts.
+per-image total or an incomplete generated inventory receive one source-preserving
+correction; a repeated mismatch blocks approval. A null total permits locally varying counts.
 Historical checkpoints may retain an older over-counted cast without blocking startup
 or rewriting the archive. Continuation and new saves still require valid counts;
 an invalid historical approval needs fresh analysis and confirmation.
 
-The understanding response also exposes `routing`, separate from the approval brief.
-It reuses the position selector's cast, effective categories, exclusions and eligible
-vocabulary pools, and separates user categories from unconditional Director defaults.
-Guided acts retain their line scopes; NSFW detection and styling flags apply to the
-batch, like creative-direction selection. Review displays these decisions, and scene
-cards display their `selected_position`. Neither is a semantic pose-adherence check.
+Understanding does not load vocabulary or return routing diagnostics. After confirmation,
+the deterministic router uses the approved scoped inventory and source activity/theme
+gates; compatible TXT alternatives feed scene planning. Scene cards display their
+`selected_position`, not a semantic pose-adherence guarantee.
 
 The brief also exposes three small scoped lists for approval: **hard** obligations,
 **soft** preferences that may yield to hard requirements, and **free** creative
 choices within the user's expansion limits. Only approved hard requirements are
-immutable. The richer interpretation explains this contract; downstream stages do
-not infer extra locks from it or promote their own inventions into requirements.
-UNDERSTAND generates each scoped fact once in a hard, soft, free or explanatory
-context bucket, tagged with the review sections it belongs to. The generation schema
+immutable. Downstream stages do not infer extra locks or promote their inventions
+into requirements. UNDERSTAND generates each scoped fact once in a hard, soft or free
+bucket, with only scope and text. It generates no review tags or explanatory context bucket.
+The generation schema
 reserves one HARD slot for the app-retained character trigger when needed, without
 reducing the other buckets' capacities. The app expands these facts into the same public
-brief, supplies output-setting prose from the request, and retains the supplied
-character trigger before approval. Valid existing full briefs remain supported; saved reviews,
+saved contract, derives the shared character list from the subject inventory, supplies
+output-setting prose from the request, and retains the supplied character trigger before
+approval. Valid existing full briefs remain supported; saved reviews,
 approval tickets, IDEAS and the writer still consume the unchanged public contract.
-Generation uses bucket-specific review-tag schemas: HARD excludes `may_vary`, FREE
-allows only `may_vary`, SOFT has no review tags, and CONTEXT requires exactly
-`natural_occlusions`. Required overlaps may still be HARD. This prevents constrained
-decoding from producing cross-authority tags that the projection would reject;
-nonconforming responses remain rejected, without moving or dropping their facts.
+Fresh plain facts cannot produce cross-authority review tags. Nonconforming responses
+remain rejected, without moving or dropping their facts.
 The generation instructions request minified, single-line JSON, preserving whitespace
 inside string values. This is model guidance, not a JSON-schema whitespace guarantee;
 valid pretty-printed responses remain accepted without a formatting retry.
@@ -85,12 +82,14 @@ enumerating every possible trait. Explicit restrictions, owners and choose-once
 versus per-image policies remain distinct. Array limits are ceilings, not targets;
 complex requests retain their full existing capacity. This is model guidance, not
 automatic semantic deduplication or truncation of a generated brief.
-The review summary lists mandatory variation once instead of repeating it among
-image/scoped requirements. Within the optional details view, exact scoped facts
-with the same authority appear once, with their additional review categories shown
-as annotations. Different wording, literal case/spacing, scopes or authorities
-remain separate, and conflict resolutions remain inspectable. The original brief,
-approval and downstream inputs are not rewritten by these display changes.
+Confirmation shows the concept, subjects, requirements, stated preferences, open
+choices and output settings once, followed by one correction box and Update
+understanding, Confirm & Generate and Cancel. There is no duplicated details view,
+per-image description, routing explanation or vocabulary diagnostics section.
+The server shortens its app-owned source-retention entry for display; the full
+contract remains in the approval ticket and generation-log export. Different
+wording, literal case/spacing, scopes or authorities remain separate. The display
+summary never replaces downstream authority.
 Explicit user counts, actions, contacts, exclusions and required visual evidence
 belong in hard, retaining their scope and qualifiers. A semantic trait does not
 automatically require exposure. Unresolved user conflicts block approval.

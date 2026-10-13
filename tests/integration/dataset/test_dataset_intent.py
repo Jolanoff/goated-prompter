@@ -111,12 +111,10 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("visible_evidence", result["brief"])
         self.assertIn("physical_conflicts", result["brief"])
         self.assertNotIn("goal", result["brief"])
-        self.assertEqual(result["routing"][0]["scope"], "all_outputs")
-        self.assertFalse(result["routing"][0]["nsfw"])
-        self.assertEqual(result["routing"][0]["position_pools"], [])
+        self.assertNotIn("routing", result)
         self.assertEqual(len(self.backend.calls), 1)
 
-    async def test_plain_vocabulary_is_available_at_analysis_without_preparation_or_private_preview(self):
+    async def test_vocabulary_is_not_loaded_until_after_confirmation(self):
         source = Path(self.temp.name) / "sexual.txt"
         original = b"[two women positions]\nTwo adult women sit together for a clothed portrait.\n"
         source.write_bytes(original)
@@ -127,9 +125,11 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
                     {"name": name, "count": 1, "sex": "female", "kind": "human",
                       "origin": "described", "series": "", "traits": ""} for name in ("first woman", "second woman")]))
             self.backend.summary = data["_confirmed_intent"]
-            result = await self.analyze(data)
-            self.assertEqual(result["routing"][0]["private_position_count"], 1)
-            self.assertFalse(result["routing"][0]["vocabulary"]["unresolved_constraints"])
+            with patch("goated_prompter.features.dataset.brainstorm.load_vocabulary",
+                       side_effect=AssertionError("Understanding must not load vocabulary")):
+                result = await self.analyze(data)
+            self.assertNotIn("routing", result)
+            self.assertNotIn("Supplied character trigger", json.dumps(result["summary"]))
             self.assertNotIn("Two adult women sit together", json.dumps(result))
             self.assertEqual(len(self.backend.calls), 1)
             from tests.support.dataset import frozen_specs
@@ -165,13 +165,20 @@ class DatasetIntentEndpointTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(saved["draft"]["scene_plan"], job["result"]["scene_plan"])
                     self.assertFalse(any(item["usable"] for item in saved["scene_eligibility"].values()))
 
-    async def test_analysis_returns_actual_cast_and_act_routing_without_new_model_calls(self):
+    async def test_confirmed_cast_reaches_deterministic_routing_only_after_review(self):
         cast = [{"name": f"participant {index}", "count": 1, "sex": "male", "kind": "human",
                  "origin": "random", "series": "", "traits": ""} for index in (1, 2)]
         self.backend.summary = dataset_understanding_fixture(character_count=2, characters=cast)
-        result = await self.analyze(valid_draft(subject="Two adult males having anal sex.",
-            trigger_type="Multiple characters", amount=1))
-        route = result["routing"][0]
+        data = valid_draft(subject="Two adult males having anal sex.", trigger_type="Multiple characters", amount=1)
+        with patch("goated_prompter.features.dataset.brainstorm.load_vocabulary",
+                   side_effect=AssertionError("Understanding must not load vocabulary")):
+            result = await self.analyze(data)
+        self.assertNotIn("routing", result)
+        approved = self.app[local.STATE].dataset_intents.approve(result["confirmation_token"], data)
+        self.assertIn("Supplied character trigger", approved["hard"][-1]["text"])
+        self.assertNotIn("Supplied character trigger", result["summary"]["hard"][-1]["text"])
+        from goated_prompter.features.dataset.brainstorm import dataset_routing
+        route = dataset_routing({**data, "_confirmed_intent": approved})[0]
         self.assertTrue(route["nsfw"])
         self.assertEqual(route["cast"]["male"], 2)
         self.assertEqual(route["cast"]["mode"], "pair")

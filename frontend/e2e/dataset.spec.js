@@ -147,7 +147,7 @@ test("writer-setting acknowledgements retain eligibility despite reordered JSON 
 });
 
 for (const [button, step, endpoint, confirmation] of [
-  ["Generate 2 prompts", "Configure", "/api/workspace/dataset", "Confirm and generate prompts"],
+  ["Generate 2 prompts", "Configure", "/api/workspace/dataset", "Confirm & Generate"],
   ["Continue", "Scenes", "/api/workspace/dataset", ""],
 ]) {
   for (const status of [400, 409, 503]) {
@@ -184,7 +184,7 @@ for (const [button, step, endpoint, confirmation] of [
       if (confirmation) await confirmDatasetReview(page);
       expect((await submission).postDataJSON().input.results).toEqual(before.results);
       expect((await settings(request)).draft).toEqual(before);
-      await expect(confirmation ? page.getByRole("dialog", { name: "Review your Dataset request" })
+      await expect(confirmation ? page.getByRole("dialog", { name: "Confirm understanding" })
         .getByRole("button", { name: confirmation }) : page.getByRole("button", { name: "Continue", exact: true })).toBeDisabled();
       releaseAdmission();
       const job = await (await accepted).json();

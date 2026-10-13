@@ -11,7 +11,7 @@ from ...contracts import GoatedPrompterRequest, PromptInstruction, effective_mod
 from ...director_profiles import resolve_director_config
 from ...strict_json import reject_duplicate_keys
 from .quality import adults_only_error
-from .scene_spec import LOCATIONS, UNSET_MECHANIC_LABELS, validate_planning_constraints
+from .scene_spec import UNSET_MECHANIC_LABELS, validate_planning_constraints
 from ...options.dataset import CHARACTER_KINDS, SUBJECT_KINDS
 
 
@@ -32,6 +32,7 @@ SECTION_FIELDS = (*REQUIREMENT_FIELDS, "action_options")
 COMPACT_KINDS = (*CONTRACT_FIELDS, "context")
 COMPACT_FIELDS = ("requested_generation", "character_count", "identity_policy",
     "requirements", "expansion_freedom", "physical_conflicts", "clarifications")
+INTENT_FIELDS = tuple(field for field in COMPACT_FIELDS if field != "physical_conflicts") + ("subjects",)
 # Who appears in each image. Older saved briefs predate this list, so it stays optional.
 CHARACTER_FIELDS = ("name", "count", "sex", "kind", "origin", "series", "traits")
 CHARACTER_SEXES = ("female", "male", "mixed", "unspecified", "none")
@@ -54,13 +55,14 @@ MULTIPLE_CHARACTER_VISIBILITY = (
 UNDERSTANDING_SYSTEM = """You are the Dataset UNDERSTANDING stage.
 Identify the core premise that every generated image must still clearly represent.
 Separate that premise from details that may change between images.
-Generate each independent fact once in its authority bucket, with review-section tags.
+Extract only the user's intent and constraints for a confirmation screen.
+Generate each independent fact once in its authority bucket.
 Do not add paraphrases or separate facts already contained in another fact
 within the same scope and authority. For example, "one red duck" already specifies
 its color. State a relationship once, not as several synonymous rules.
 Keep distinct obligations, qualifiers and owners explicit.
-Review-section names below are tags, not separate output arrays. The app builds
-the existing brief from these tagged facts.
+Do not generate review tags, vocabulary routes, per-image descriptions or scene mechanics.
+Vocabulary routing and actual scene planning happen only after confirmation.
 
 Preserve the premise at the same level of specificity the user supplied. Do not
 silently narrow a broad concept into one particular visual interpretation. For
@@ -100,8 +102,8 @@ and never ask the user to narrow it.
 Preserve explicit counts, identities, attributes, actions, contact relationships,
 literal text, exclusions, and local versus global rule scope. Trigger labels alone
 do not establish appearance. A trigger is a prompt identifier, not visible image lettering
-unless the user explicitly requests that lettering. Do not add it to visible_evidence
-or turn it into a sign, caption or watermark. trigger_at_start=false does not forbid
+unless the user explicitly requests that lettering. Do not turn it into a demanded
+visible feature, sign, caption or watermark. trigger_at_start=false does not forbid
 placing the trigger first; it prefers a natural introduction before a later trigger,
 not a hard exclusion rule.
 Unspecified values stay unspecified; do not invent
@@ -115,8 +117,8 @@ may choose it once, but must not independently choose a different value per imag
 Examples include one shared stunt setup, one shared event premise, one shared
 environment layout, or one shared product configuration. Do not turn "unspecified"
 into "may vary per output" when the user requires consistency once chosen.
-Record freedom to choose once in dataset-scoped free/may_vary and expansion_freedom;
-record the shared-consistency obligation in hard and fixed without inventing a value.
+Record freedom to choose once in dataset-scoped free and expansion_freedom;
+record the shared-consistency obligation in hard without inventing a value.
 Distinguish permission to vary from an obligation to vary. Diversity and creativity
 fill permitted gaps; they never change a fixed action, identity or rule. Action
 examples are alternatives unless explicitly required together.
@@ -129,7 +131,7 @@ each person's identity and trigger role stays consistent through that image's
 idea, scene and prompt. Partial identity locks do not fix every other trait.
 If some identities are explicitly fixed while other human identities remain
 unspecified/random, identity_policy is mixed, not fixed.
-Record these identity requirements in scoped fixed/may_vary/rules as well as the
+Record these identity requirements in scoped hard/free facts as well as the
 identity_policy summary. If identities or counts differ by guided input, use mixed
 or null as appropriate and explain each local requirement in its scoped entries.
 Preserve quantities and ownership precisely: one person with a trait does not mean
@@ -138,15 +140,10 @@ An unspecified detail, including the object of an action, is a FREE choice for l
 stages: do not ask about it and do not lock one value. Unspecified clothing, lighting
 or scenery remain permitted freedoms, not reasons to block the request.
 
-For visibility, distinguish semantic facts from demanded visual evidence.
-visible_evidence contains only features the user actually requires to be visibly
-demonstrated. A fixed identity trait that may naturally be hidden is not demanded
-visible evidence. Keep it fixed without forcing later stages to expose it. Identify
-the evidence needed to read the required action or demonstrate a required feature.
-Keep who/what, counts and qualifiers such as both, at least one, and partial visibility.
-Natural contact may obscure its interface. Do not demand every interacting surface
-be completely unobstructed, invent separate views, or remove contact to expose it.
-Record the natural overlap and the evidence that must survive it separately.
+For visibility, distinguish identity traits from expressly demanded visual evidence.
+A fixed identity trait that may naturally be hidden is not demanded visible evidence.
+Keep it fixed without forcing later stages to expose it. Preserve requested visibility
+in hard, with its owner and qualifiers. Do not invent views or support calculations.
 
 Classify downstream authority in three categories:
 hard: user requirements that must be satisfied after the user approves this brief.
@@ -163,16 +160,13 @@ limits. Distinguish dataset-shared choices from per-image freedoms; describe the
 scope, not examples of what the later stages could invent.
 FREE never overrides HARD.
 
-These three categories are the downstream contract. The richer sections explain it, not
-additional independent locks. Keep the contract concise but complete; do not let
+These three categories are the downstream contract. Keep it concise but complete; do not let
 later stages infer which requirements are sacred from generated choices or prose.
 If a soft preference conflicts with HARD, adjust the preference, not the requirement.
 
-Flag incompatible HARD requirements, not adjustable SOFT preferences or merely
-unusual poses. A compatible_resolution is only a
-brief feasibility approach preserving all requirements, not a generated scene or
-proof of physical correctness. If both cannot be satisfied without changing an
-explicit requirement, use null and ask for clarification. Never secretly relax it.
+Flag incompatible HARD requirements with a concise clarification question, not
+adjustable SOFT preferences or merely unusual poses. Never secretly relax requirements
+or attempt to solve a scene before confirmation.
 Ask a clarification only when the request contradicts itself, cannot be depicted as
 written, or combines sexual content with characters who may be minors. Never ask about
 details the user left open; the Dataset exists to invent them. Most requests need none.
@@ -182,22 +176,9 @@ local to that line, including when lines later repeat across assignments. Never
 promote local clothing, setting or action into a global requirement. Dataset-wide
 coverage requirements are not a checklist of actions to combine in every image.
 
-planning_constraints: an array of supplied physical requirements, scoped like requirements.
-Each record has exactly scope, action (required activity or null), setting (required place
-or null), participants and contacts. Expand cast groups in user order as P1, P2, etc.
-Each participant constraint has exactly id, role, pose, location and support; unset values
-are null. Only record mechanics the user supplied or the stated interaction logically
-requires. For sexual activities, do not infer contacts or detailed geometry here; keep
-supplied mechanics as requirements. Never select an open pose, place or arrangement here. pose is standing, seated,
-kneeling or lying; location is left, right, center, foreground or background. support is
-feet_on_floor, knees_on_floor, supported_by_chair, supported_by_bed or supported_by_floor.
-Contacts have source and target owned body parts (P1.left_hand, P2.shoulder, etc.). Use
-an empty list when no mechanical constraint was supplied. Unsupported mechanics remain
-in hard requirements for validation; never turn them into a guessed supported pose.
-Setting is the environment, not an object's supporting surface. For a product on a table
-inside a room, retain the room as setting and the table relationship in hard requirements.
-Combine compatible nested place descriptions without dropping either. Products and
-objects do not receive human pose/support labels; their placement remains in requirements.
+Retain user-supplied poses, settings, contacts and support relationships as plain-language
+hard requirements with their owners. Do not translate them into P1/P2 geometry, infer
+body mechanics or choose unspecified values. Keep nested place descriptions together.
 
 Return ONLY one minified JSON object on a single line with exactly these fields.
 No indentation or optional whitespace outside string values. Preserve whitespace
@@ -206,8 +187,12 @@ Formatting compaction must not omit facts or change qualifiers.
 
 requested_generation: one short interpretation of the premise and its defining
 meaning. Put detailed obligations in requirements, not repeated in this summary;
-characters: who appears in each image, one entry per distinct character or group of
-identical extras, in the user's order. Later stages cast and tag images from this list.
+subjects: one scoped inventory of all principal subjects, in the user's order.
+Each entry has exactly scope, name, count, sex, kind, origin, series and traits.
+Shared subjects use all_outputs; guided subjects use that line's guided:N scope and
+are additional to shared subjects. Never repeat shared subjects on guided lines.
+Do not include background props unless they are requested principal subjects.
+Use one entry per distinct character or group of identical extras:
   name: the character's name when the user gave one or named an existing character
   ("Naruto Uzumaki"), otherwise a short role label ("random companion", "the mother");
   count: how many of this character appear in each image (1 unless the user said more).
@@ -215,61 +200,38 @@ identical extras, in the user's order. Later stages cast and tag images from thi
   A heterogeneous group with different roles, species, sexes or supplied traits needs separate
   entries, each with its own count, sex and traits. A collective trigger names the group; it
   does not replace the separately specified identities or give every member the whole group's traits.
-  When character_count is an integer, these counts must sum to it. Never repeat the
+   When character_count is an integer, character counts within each applicable scope
+   (shared subjects plus that guided line's subjects) must sum to it. Never repeat the
   total on every individual entry. List a shared character once, never once per guided input;
   sex: female, male, mixed (a group with both), unspecified (left open: each image may
   choose) or none (no sex applies, such as a robot or object);
-  kind: human, humanoid (elf, demon, vampire and other human-shaped fantasy beings),
-  anthro (furry or anthropomorphic animal), animal, monster, alien, robot, creature or other;
+   kind: human, humanoid (human-shaped fantasy beings), anthro (anthropomorphic animal),
+   animal, monster, alien, robot, creature, other, object, product, environment, style, text or concept;
   origin: named (an existing character from a franchise or work), described (the user
   defined them) or random (invented freely for each image);
   series: the franchise or work of a named character ("Naruto"), otherwise "";
   traits: appearance traits the user supplied for this character, verbatim, otherwise "".
   For a named character, use what is canonical about them: Naruto Uzumaki is a male human
   from Naruto. Never invent traits for a random character; leave sex unspecified when the
-  user did not imply one. Use an empty array only when no character appears.
-subjects: a scoped inventory of every principal subject, including people, animals,
-objects, products, environments and mixed compositions. Each entry has exactly scope,
-name, count (1-100), kind, sex and traits. kind may use the character kinds above or
-object, product, environment, style, text, concept. Copy only supplied identity attributes;
-sex is none when not applicable. Shared entries use all_outputs; guided entries apply
-only to that line and are additional to shared entries. Do not duplicate shared subjects
-locally. Do not turn background props into principal subjects unless requested.
-Use this inventory for varying guided casts; the characters summary never globalizes them.
-Split explicitly distinct group members here too; bind each role and supplied attribute to
-its individual subject. Use count > 1 only for interchangeable members with shared facts.
+   user did not imply one. Use an empty array only when no principal subject appears.
+For non-character subjects use sex none, origin described and an empty series.
+Counts are 1-100. Use count > 1 only for interchangeable members with shared facts.
 character_count: integer 1-100 for an explicit shared per-image count of people or
 animal characters, or null if unknown, not applicable, or differing by local input.
 Never use 0: for an object-only scene with no people or animal characters, use
 "character_count": null, "identity_policy": "not_applicable". Object counts belong
-in scoped requirements, not character_count. batch.requested_outputs is the number of
+in subjects, not character_count. batch.requested_outputs is the number of
 images to generate, not the number of people per image. Never use it as character_count
 or infer it only from trigger labels;
 identity_policy: fixed, random_per_prompt, not_applicable, or mixed when identities
 have different policies or local guided inputs disagree. Scoped requirements are
 authoritative; this summary does not globalize local identities;
-requirements: an object with exactly four arrays: hard (user obligations), soft
-(adjustable preferences), free (open choices), context (natural-occlusion explanations
-that are not themselves user obligations). Each fact has exactly scope, text, sections;
-its containing array establishes authority, so do not generate a kind field.
-Preserve every qualifier and ownership. Do not repeat a fact in different buckets
-or for different sections, or paraphrase it twice. Use empty arrays for unused buckets.
-sections is an array of applicable review tags, possibly empty for contract-only facts:
-fixed: must stay unchanged; may_vary: open choice with its original shared/local scope;
-must_vary: mandatory dataset diversity; rules: required or forbidden content;
-visible_evidence: expressly demanded visible features with ownership and qualifiers;
-interactions: required roles, actions and defining contact relationships;
-natural_occlusions: implied overlaps; visibility_to_preserve: evidence surviving overlap;
-action_options: supplied alternatives and essential meaning, not simultaneous events.
-Do not brainstorm new alternatives or separate a required joint interaction.
-fixed, must_vary, rules, visible_evidence, interactions, visibility_to_preserve and
-action_options belong in hard. may_vary belongs in free. Facts in context must have
-only the natural_occlusions tag. An explicitly required overlap may instead be hard.
-HARD never uses may_vary. FREE uses only may_vary or an empty sections array.
-SOFT uses an empty sections array. CONTEXT uses exactly ["natural_occlusions"].
-Use several sections on ONE fact when it serves several purposes. Sections add no
-new authority; keep explanations out of hard unless the user requires them.
-physical_conflicts: diagnosed conflicts and compatible approaches, if any;
+requirements: an object with exactly three arrays: hard (user obligations), soft
+(stated adjustable preferences), free (open choices). Each fact has exactly scope and text.
+Preserve every qualifier and ownership. Do not repeat facts or add review tags.
+Traits already present in subjects need not be repeated here. Use empty arrays for unused buckets.
+Supplied action alternatives stay alternatives, not simultaneous events.
+Mandatory dataset diversity is a dataset-scoped hard requirement.
 expansion_freedom: one short statement of expansion limits, not a repeated free list;
 do not brainstorm candidate scenes, props, costumes, species, settings or story ideas;
 clarifications: necessary questions, or an empty array.
@@ -278,15 +240,11 @@ The app supplies dataset_contents from the known output settings. Do not regener
 amount, target, detail, creativity or trigger-placement settings in prose. Preserve
 genuine dataset coverage obligations in requirements.
 requested_generation and expansion_freedom are nonempty strings.
-Use empty arrays when no facts, conflicts or clarifications apply.
+Use empty arrays when no subjects, facts or clarifications apply.
 Scopes are all_outputs, dataset, or a supplied guided:N scope. all_outputs means
 every image; dataset means the set as a whole; guided:N means that local input only.
-physical_conflicts entries have exactly scope, conflict and compatible_resolution.
-scope is one supplied scope; conflict is nonempty text explaining which requirements
-conflict and why; compatible_resolution is brief text preserving both requirements
-or JSON null (not the string "null") when clarification is needed.
-clarifications is an array of nonempty question strings. Every unresolved physical
-conflict requires a clarification question. Each requirement bucket and review section
+clarifications is an array of nonempty question strings. Each unresolved contradiction
+requires a question. Each requirement bucket
 has at most 24 facts, except any reserved source slot specified below. Other arrays
 have at most 24 entries. The 24-entry limit is a ceiling, not a target: a simple
 concept needs only a few facts. Complex requests still retain every distinct supplied
@@ -340,6 +298,14 @@ class CastCountError(ValueError):
     """A generated inventory disagrees with its declared per-image count."""
 
 
+def confirmation_summary(brief):
+    """Shorten app-owned source retention for display, never for downstream authority."""
+    return {**brief, "hard": [{**item, "text":
+        "Keep every required character recognizable and each person's supplied traits correctly assigned. Natural overlap is allowed."}
+        if item["scope"] == "all_outputs" and item["text"].startswith(MULTIPLE_CHARACTER_VISIBILITY) else dict(item)
+        for item in brief["hard"]]}
+
+
 def validate_understanding(value: dict, scopes: tuple[str, ...], *, historical=False, require_complete_cast=False) -> dict:
     """Validate shape and scopes; fresh model responses require a complete supplied cast."""
     fields = {*SUMMARY_FIELDS, *REQUIREMENT_FIELDS, *CONTRACT_FIELDS, *DETAIL_FIELDS, "physical_conflicts", "clarifications"}
@@ -386,15 +352,18 @@ def validate_understanding(value: dict, scopes: tuple[str, ...], *, historical=F
     if "characters" in value:
         characters = validate_characters(value["characters"])
         listed_count = sum(item["count"] for item in characters)
-        if not historical and type(count) is int and listed_count > count:
+        inventory = value.get("subjects", [])
+        local_cast = (any(item.get("scope", "").startswith("guided:") for item in inventory if isinstance(item, dict))
+                      and all(isinstance(item, dict) and "origin" in item and "series" in item for item in inventory))
+        if not historical and not local_cast and type(count) is int and listed_count > count:
             raise CastCountError("Character entries exceed the declared character count. Each entry's count applies only "
                              "to that entry, not the whole cast. Review the understanding again.")
-        if require_complete_cast and not historical and type(count) is int and listed_count < count:
+        if require_complete_cast and not historical and not local_cast and type(count) is int and listed_count < count:
             raise CastCountError("Character entries do not match the declared per-image character count. "
                              "The batch size is the number of images, not people in each image. Review the understanding again.")
         # A small model sometimes lists only part of a large cast; a partial cast would make the
         # writer drop people, so the requirements alone describe them instead.
-        if type(count) is int and characters and listed_count < count:
+        if not local_cast and type(count) is int and characters and listed_count < count:
             characters = []
         result["characters"] = characters
     if "subjects" in value:
@@ -403,7 +372,8 @@ def validate_understanding(value: dict, scopes: tuple[str, ...], *, historical=F
             raise ValueError("Subjects must be a bounded inventory of principal subjects.")
         result["subjects"] = []
         for subject in subjects:
-            if not isinstance(subject, dict) or set(subject) != {"scope", "name", "count", "kind", "sex", "traits"}:
+            if (not isinstance(subject, dict) or set(subject) - {"origin", "series"}
+                    != {"scope", "name", "count", "kind", "sex", "traits"}):
                 raise ValueError("Subjects need scope, name, count, kind, sex and traits.")
             if (not isinstance(subject["kind"], str) or subject["kind"] not in SUBJECT_KINDS
                     or not isinstance(subject["sex"], str) or subject["sex"] not in CHARACTER_SEXES
@@ -413,11 +383,23 @@ def validate_understanding(value: dict, scopes: tuple[str, ...], *, historical=F
                 "name": _text(subject["name"], "Subject name"), "traits": subject["traits"]})
             if not isinstance(subject["traits"], str) or len(subject["traits"]) > MAX_CHARACTER_TEXT:
                 raise ValueError("Subject attributes must be bounded text.")
+            if "origin" in subject and (not isinstance(subject["origin"], str) or subject["origin"] not in CHARACTER_ORIGINS):
+                raise ValueError("Unknown subject origin.")
+            if "series" in subject and (not isinstance(subject["series"], str) or len(subject["series"]) > MAX_CHARACTER_TEXT):
+                raise ValueError("Subject series must be bounded text.")
         for scope in scopes:
             if scope != "dataset" and sum(item["count"] for item in subjects if item["scope"] in {scope, "all_outputs"}) > 100:
                 raise ValueError("The scoped subject inventory exceeds 100 subjects.")
         if any(item["scope"] == "dataset" for item in subjects):
             raise ValueError("Principal subjects need an all-output or guided scope, not dataset coverage.")
+        if require_complete_cast and not historical and type(count) is int and all("origin" in item for item in subjects):
+            image_scopes = [scope for scope in scopes if scope.startswith("guided:")] or ["all_outputs"]
+            for scope in image_scopes:
+                listed = sum(item["count"] for item in subjects
+                             if item["scope"] in {scope, "all_outputs"} and item["kind"] in CHARACTER_KINDS)
+                if listed != count:
+                    raise CastCountError(f"Subject entries do not match the declared per-image character count in {scope}. "
+                                         "Review the scoped inventory against the user source.")
     if "planning_constraints" in value:
         subjects = result.get("subjects", [])
         kinds = {scope: {f"P{index}": item["kind"] for index, item in enumerate(
@@ -442,8 +424,8 @@ def validate_characters(items):
         name = item["name"]
         if not isinstance(name, str) or not name.strip() or len(name) > MAX_CHARACTER_TEXT:
             raise ValueError("Each character needs a short name or role.")
-        if type(item["count"]) is not int or not 1 <= item["count"] <= 20:
-            raise ValueError("Character count must be an integer from 1 to 20.")
+        if type(item["count"]) is not int or not 1 <= item["count"] <= 100:
+            raise ValueError("Character count must be an integer from 1 to 100.")
         for key, allowed in (("sex", CHARACTER_SEXES), ("kind", CHARACTER_KINDS), ("origin", CHARACTER_ORIGINS)):
             if not isinstance(item[key], str) or item[key] not in allowed:
                 raise ValueError(f"Unknown character {key}.")
@@ -458,7 +440,31 @@ def validate_characters(items):
 
 
 def _expand_understanding(value, data, scopes):
-    """Project compact model facts into the unchanged public review contract."""
+    """Project intent facts into the saved contract; retain previously supported briefs."""
+    if isinstance(value, dict) and set(value) == set(INTENT_FIELDS):
+        subjects = value["subjects"]
+        if not isinstance(subjects, list) or len(subjects) > MAX_CHARACTERS:
+            raise ValueError("Subjects must be a bounded inventory of principal subjects.")
+        for subject in subjects:
+            if not isinstance(subject, dict) or set(subject) != {"scope", *CHARACTER_FIELDS}:
+                raise ValueError("Intent subjects need scope and complete identity fields.")
+            _scope(subject["scope"], tuple(scope for scope in scopes if scope != "dataset"))
+        buckets = value["requirements"]
+        if not isinstance(buckets, dict) or set(buckets) != set(CONTRACT_FIELDS):
+            raise ValueError("Intent requirements need exactly hard, soft and free buckets.")
+        facts = {}
+        for kind in CONTRACT_FIELDS:
+            items = buckets[kind]
+            if not isinstance(items, list) or len(items) > MAX_ITEMS:
+                raise ValueError(f"Intent {kind} bucket must be an array within the understanding limit.")
+            facts[kind] = []
+            for item in items:
+                if not isinstance(item, dict) or set(item) != {"scope", "text"}:
+                    raise ValueError("Intent requirements need exactly scope and text, without review tags.")
+                facts[kind].append({**item, "sections": []})
+        value = {**value, "requirements": {**facts, "context": []}, "physical_conflicts": [],
+            "characters": [{key: item[key] for key in CHARACTER_FIELDS} for item in subjects
+                           if item["scope"] == "all_outputs" and item["kind"] in CHARACTER_KINDS]}
     if isinstance(value, dict) and isinstance(value.get("planning_constraints"), list):
         constraints = []
         for constraint in value["planning_constraints"]:
@@ -540,58 +546,28 @@ def _expand_understanding(value, data, scopes):
 
 def _understanding_schema(scopes, *, hard_limit):
     text = {"type": "string", "minLength": 1, "maxLength": MAX_TEXT_CHARACTERS}
-    section_tags = {"hard": tuple(tag for tag in SECTION_FIELDS if tag != "may_vary"),
-        "soft": (), "free": ("may_vary",), "context": ("natural_occlusions",)}
     buckets = {}
-    for kind, tags in section_tags.items():
-        sections = {"type": "array", "maxItems": len(tags),
-            "items": {"type": "string", **({"enum": list(tags)} if tags else {})}}
-        if kind == "context":
-            sections["minItems"] = 1
+    for kind in CONTRACT_FIELDS:
         scoped = {"type": "object", "additionalProperties": False,
-            "required": ["scope", "text", "sections"],
-            "properties": {"scope": {"type": "string", "enum": scopes}, "text": text, "sections": sections}}
+            "required": ["scope", "text"],
+            "properties": {"scope": {"type": "string", "enum": scopes}, "text": text}}
         buckets[kind] = {"type": "array", "maxItems": hard_limit if kind == "hard" else MAX_ITEMS, "items": scoped}
-    conflict = {"type": "object", "additionalProperties": False,
-        "required": ["scope", "conflict", "compatible_resolution"],
-        "properties": {"scope": {"type": "string", "enum": scopes}, "conflict": text,
-            "compatible_resolution": {**text, "type": ["string", "null"]}}}
     properties = {field: text for field in ("requested_generation", "expansion_freedom")}
     properties.update(character_count={"type": ["integer", "null"], "minimum": 1, "maximum": 100},
         identity_policy={"type": "string", "enum": ["fixed", "random_per_prompt", "not_applicable", "mixed"]})
     short = {"type": "string", "maxLength": MAX_CHARACTER_TEXT}
-    properties["characters"] = {"type": "array", "maxItems": MAX_CHARACTERS, "items": {
-        "type": "object", "additionalProperties": False, "required": list(CHARACTER_FIELDS),
-        "properties": {"name": {**short, "minLength": 1}, "count": {"type": "integer", "minimum": 1, "maximum": 20},
-            "sex": {"type": "string", "enum": list(CHARACTER_SEXES)},
-            "kind": {"type": "string", "enum": list(CHARACTER_KINDS)},
-            "origin": {"type": "string", "enum": list(CHARACTER_ORIGINS)},
-            "series": short, "traits": short}}}
     properties["requirements"] = {"type": "object", "additionalProperties": False,
-        "required": list(COMPACT_KINDS), "properties": buckets}
-    nullable = {"type": ["string", "null"], "maxLength": 1000}
-    participant_constraint = {"type": "object", "additionalProperties": False,
-        "required": ["id", "role", "pose", "location", "support"],
-        "properties": {"id": short, **{key: nullable for key in ("role", "pose", "location", "support")}}}
-    participant_constraint["properties"]["location"] = {"type": ["string", "null"], "enum": [None, *sorted(LOCATIONS)]}
-    contact_constraint = {"type": "object", "additionalProperties": False, "required": ["source", "target"],
-        "properties": {"source": short, "target": short}}
-    properties["planning_constraints"] = {"type": "array", "maxItems": MAX_ITEMS, "items": {
-        "type": "object", "additionalProperties": False,
-        "required": ["scope", "action", "setting", "participants", "contacts"],
-        "properties": {"scope": {"type": "string", "enum": scopes}, "action": nullable, "setting": nullable,
-            "participants": {"type": "array", "maxItems": 100, "items": participant_constraint},
-            "contacts": {"type": "array", "maxItems": 100, "items": contact_constraint}}}}
+        "required": list(CONTRACT_FIELDS), "properties": buckets}
     properties["subjects"] = {"type": "array", "maxItems": MAX_CHARACTERS, "items": {
         "type": "object", "additionalProperties": False,
-        "required": ["scope", "name", "count", "kind", "sex", "traits"],
-        "properties": {"scope": {"type": "string", "enum": scopes}, "name": short, "traits": short,
+        "required": ["scope", *CHARACTER_FIELDS],
+        "properties": {"scope": {"type": "string", "enum": [scope for scope in scopes if scope != "dataset"]},
+            "name": {**short, "minLength": 1}, "traits": short, "series": short,
+            "origin": {"type": "string", "enum": list(CHARACTER_ORIGINS)},
             "count": {"type": "integer", "minimum": 1, "maximum": 100},
             "kind": {"type": "string", "enum": list(SUBJECT_KINDS)},
             "sex": {"type": "string", "enum": list(CHARACTER_SEXES)}}}}
-    for field in ("physical_conflicts", "clarifications"):
-        properties[field] = {"type": "array", "maxItems": MAX_ITEMS,
-            "items": conflict if field == "physical_conflicts" else text}
+    properties["clarifications"] = {"type": "array", "maxItems": MAX_ITEMS, "items": text}
     return {"type": "object", "additionalProperties": False,
         "required": list(properties), "properties": properties}
 
@@ -639,11 +615,10 @@ def understanding_instruction(data: dict, family: str = "qwen") -> PromptInstruc
                      None if "null" in definition["type"] else "")
              for field, definition in schema["properties"].items()}
     shape["identity_policy"] = "fixed"
-    for field in ("characters", "subjects"):
-        shape[field] = [{key: 1 if key == "count" else "all_outputs" if key == "scope" else
-                        definition.get("enum", ["[supplied text]"])[0]
-                        for key, definition in schema["properties"][field]["items"]["properties"].items()}]
-    system += ("\nEach characters/subjects entry's traits is one string, never an array. "
+    shape["subjects"] = [{key: 1 if key == "count" else "all_outputs" if key == "scope" else
+                         definition.get("enum", ["[supplied text]"])[0]
+                         for key, definition in schema["properties"]["subjects"]["items"]["properties"].items()}]
+    system += ("\nEach subject entry's traits is one string, never an array. "
                "Every root field is required, including empty arrays. The example below shows types only; "
                "replace placeholders with source facts, use the applicable enum values and counts, "
                "and use empty arrays when no entries apply. Never copy example subjects or facts. "
@@ -760,7 +735,7 @@ class DatasetUnderstandingService:
                             "An entry's count is copies of THAT character/group, not the total cast. "
                             "Three individually named people each have count 1, totaling 3; a homogeneous group of three "
                             "interchangeable people has one entry with count 3. Keep distinct named/described people separate "
-                            "in both characters and subjects, with each person's own sex and traits. Shared characters appear "
+                            "in the subject inventory, with each person's own sex and traits. Shared characters appear "
                             "once, never once per guided input. Do not repeat the total on each entry. "
                             "Reconcile character_count with the source and the per-image inventory, not batch.requested_outputs. "
                             "Varying guided casts stay scoped; their shared character_count may be null. "

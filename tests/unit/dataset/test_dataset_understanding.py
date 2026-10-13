@@ -3,7 +3,6 @@
 from contextlib import nullcontext
 from copy import deepcopy
 from dataclasses import replace
-from itertools import combinations
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -26,6 +25,72 @@ from tests.support.dataset import planned_scene, saved_scene, valid_draft
 
 
 class DatasetUnderstandingTests(unittest.TestCase):
+    def test_confirmation_schema_has_no_scene_mechanics_or_review_tags(self):
+        schema = understanding_instruction(valid_draft()).json_schema
+        self.assertEqual(set(schema["required"]), {"requested_generation", "character_count",
+            "identity_policy", "subjects", "requirements", "expansion_freedom", "clarifications"})
+        buckets = schema["properties"]["requirements"]["properties"]
+        self.assertEqual(set(buckets), {"hard", "soft", "free"})
+        for bucket in buckets.values():
+            self.assertEqual(set(bucket["items"]["required"]), {"scope", "text"})
+
+    def intent_brief(self, **changes):
+        return {"requested_generation": "Mara reads in a garden.", "character_count": 1,
+            "identity_policy": "fixed", "subjects": [{"scope": "all_outputs", "name": "Mara", "count": 1,
+                "sex": "female", "kind": "human", "origin": "described", "series": "", "traits": "adult; silver curls"}],
+            "requirements": {"hard": [{"scope": "all_outputs", "text": "Read in a garden; no hats."}],
+                "soft": [], "free": [{"scope": "all_outputs", "text": "Unspecified clothing and composition may vary."}]},
+            "expansion_freedom": "Vary only unspecified details.", "clarifications": [], **changes}
+
+    def test_intent_inventory_and_plain_facts_reach_approval_without_mechanics(self):
+        source = self.intent_brief()
+        before = deepcopy(source)
+        brief = self.run_response(json.dumps(source))
+        self.assertEqual(brief["subjects"], source["subjects"])
+        self.assertEqual(brief["characters"], [{key: source["subjects"][0][key] for key in CHARACTER_FIELDS}])
+        for kind in ("hard", "soft", "free"):
+            self.assertEqual(brief[kind], source["requirements"][kind])
+        for field in ("fixed", "rules", "may_vary", "must_vary", "action_options", "physical_conflicts"):
+            self.assertEqual(brief[field], [])
+        self.assertNotIn("planning_constraints", brief)
+        data = valid_draft()
+        tickets = DatasetIntentTickets()
+        token = tickets.register(data, brief)["confirmation_token"]
+        self.assertEqual(tickets.approve(token, data), brief)
+        self.assertEqual(source, before)
+
+    def test_intent_guided_cast_stays_local_and_keeps_each_origin(self):
+        mara = self.intent_brief()["subjects"][0]
+        fox = {**mara, "scope": "guided:1", "name": "fox", "sex": "unspecified", "kind": "animal", "traits": "red fur"}
+        raven = {**fox, "scope": "guided:2", "name": "raven", "traits": "black feathers"}
+        source = self.intent_brief(character_count=2, subjects=[mara, fox, raven], identity_policy="mixed")
+        data = valid_draft(source_mode="guided", inputs="Mara feeds a fox\nMara feeds a raven")
+        brief = self.run_response(json.dumps(source), data)
+        self.assertEqual(brief["subjects"], source["subjects"])
+        self.assertEqual([item["name"] for item in brief["characters"]], ["Mara"])
+        source["subjects"][-1]["count"] = 2
+        with self.assertRaisesRegex(BackendGenerationError, "per-image character count.*No generation started"):
+            self.run_response(json.dumps(source), data, expected_calls=2)
+
+    def test_intent_rejects_review_tags_unknown_fields_and_bad_subjects(self):
+        original = self.intent_brief()
+        invalid = [self.intent_brief(requirements={**original["requirements"], "hard": [
+            {**original["requirements"]["hard"][0], "sections": ["fixed"]}]}),
+            self.intent_brief(subjects=[{**original["subjects"][0], "scope": "dataset"}]),
+            self.intent_brief(subjects=[{**original["subjects"][0], "origin": "invented"}]),
+            self.intent_brief(subjects=[{**original["subjects"][0], "traits": ["silver curls"]}]),
+            self.intent_brief(planning_constraints=[]), self.intent_brief(extra=True)]
+        for source in invalid:
+            with self.subTest(source=source), self.assertRaises(BackendGenerationError):
+                self.run_response(json.dumps(source))
+
+    def test_intent_questions_still_block_approval(self):
+        source = self.intent_brief(clarifications=["Should the eyes-only crop also show the shoes?"])
+        brief = self.run_response(json.dumps(source))
+        review = DatasetIntentTickets().register(valid_draft(), brief)
+        self.assertEqual(review["confirmation_token"], "")
+        self.assertEqual(review["brief"]["clarifications"], source["clarifications"])
+
     def test_trigger_placement_stays_a_writer_option_not_an_understanding_lock(self):
         for placement in (False, True):
             with self.subTest(placement=placement):
@@ -285,7 +350,7 @@ class DatasetUnderstandingTests(unittest.TestCase):
         self.assertEqual(source["guided_inputs"][1]["input"], "At least one man is blond; show both hands")
         buckets = instruction.json_schema["properties"]["requirements"]["properties"]
         self.assertEqual({kind: bucket["maxItems"] for kind, bucket in buckets.items()},
-            {"hard": 23, "soft": 24, "free": 24, "context": 24})
+            {"hard": 23, "soft": 24, "free": 24})
         self.assertEqual((instruction.max_tokens, instruction.hard_max_tokens), (4096, 4096))
 
     def test_categorical_freedoms_keep_local_and_choose_once_policies_through_approval(self):
@@ -340,12 +405,12 @@ class DatasetUnderstandingTests(unittest.TestCase):
                 schema = understanding_instruction(valid_draft(trigger_type=subject_type, trigger=trigger)).json_schema
                 requirements = schema["properties"]["requirements"]
                 self.assertEqual(requirements["type"], "object")
-                self.assertEqual(set(requirements["required"]), {"hard", "soft", "free", "context"})
+                self.assertEqual(set(requirements["required"]), {"hard", "soft", "free"})
                 self.assertIs(requirements["additionalProperties"], False)
-                for kind in ("hard", "soft", "free", "context"):
+                for kind in ("hard", "soft", "free"):
                     bucket = requirements["properties"][kind]
                     self.assertEqual(bucket["maxItems"], hard_limit if kind == "hard" else 24)
-                    self.assertEqual(bucket["items"]["required"], ["scope", "text", "sections"])
+                    self.assertEqual(bucket["items"]["required"], ["scope", "text"])
 
     def test_cross_authority_tags_reproduce_the_reported_error_without_retrying(self):
         data = valid_draft(subject="Three young adult men dancing together.",
@@ -364,38 +429,26 @@ class DatasetUnderstandingTests(unittest.TestCase):
         instruction = understanding_instruction(valid_draft(trigger_type="Multiple characters",
             trigger="3 male must be 20 yo", source_mode="guided", inputs="Three men dance\nThree men rest"))
         buckets = instruction.json_schema["properties"]["requirements"]["properties"]
-        expected_tags = {"hard": {"fixed", "must_vary", "rules", "visible_evidence", "interactions",
-                "natural_occlusions", "visibility_to_preserve", "action_options"},
-            "soft": set(), "free": {"may_vary"}, "context": {"natural_occlusions"}}
-        for kind, tags in expected_tags.items():
+        for kind in ("hard", "soft", "free"):
             with self.subTest(kind=kind):
-                sections = buckets[kind]["items"]["properties"]["sections"]
-                self.assertEqual(sections["maxItems"], len(tags))
-                if tags:
-                    self.assertEqual(set(sections["items"]["enum"]), tags)
-                self.assertEqual(sections.get("minItems", 0), 1 if kind == "context" else 0)
+                self.assertNotIn("sections", buckets[kind]["items"]["properties"])
+                self.assertIs(buckets[kind]["items"]["additionalProperties"], False)
         self.assertEqual(buckets["hard"]["maxItems"], 23)
         self.assertEqual(buckets["free"]["items"]["properties"]["scope"]["enum"],
             ["all_outputs", "dataset", "guided:1", "guided:2"])
 
-    def test_every_distinct_generated_tag_combination_preserves_scoped_authority(self):
+    def test_plain_intent_buckets_preserve_scoped_authority_without_review_tags(self):
         data = valid_draft(source_mode="guided", inputs="Three men dancing", trigger_type="Character", trigger="")
-        buckets = understanding_instruction(data).json_schema["properties"]["requirements"]["properties"]
         entry = {"scope": "guided:1", "text": "A scoped fact with its original qualifiers."}
-        for kind, bucket in buckets.items():
-            schema = bucket["items"]["properties"]["sections"]
-            tags = schema["items"].get("enum", []) if schema["maxItems"] else []
-            for size in range(schema.get("minItems", 0), schema["maxItems"] + 1):
-                for sections in combinations(tags, size):
-                    with self.subTest(kind=kind, sections=sections):
-                        requirements = {"hard": [], "soft": [], "free": [], "context": []}
-                        requirements[kind] = [{**entry, "sections": list(sections)}]
-                        result = self.run_response(json.dumps(self.compact_brief(requirements=requirements)), data)
-                        for authority in ("hard", "soft", "free"):
-                            self.assertEqual(result[authority], [entry] if authority == kind else [])
-                        for section in ("fixed", "may_vary", "must_vary", "rules", "visible_evidence",
-                                "interactions", "natural_occlusions", "visibility_to_preserve", "action_options"):
-                            self.assertEqual(result[section], [entry] if section in sections else [])
+        for kind in ("hard", "soft", "free"):
+            with self.subTest(kind=kind):
+                requirements = {"hard": [], "soft": [], "free": [], kind: [entry, entry]}
+                result = self.run_response(json.dumps(self.intent_brief(requirements=requirements)), data)
+                for authority in ("hard", "soft", "free"):
+                    self.assertEqual(result[authority], [entry] if authority == kind else [])
+                for section in ("fixed", "may_vary", "must_vary", "rules", "visible_evidence",
+                        "interactions", "natural_occlusions", "visibility_to_preserve", "action_options"):
+                    self.assertEqual(result[section], [])
 
     def test_dancing_brief_keeps_counts_approximate_age_and_free_choices_through_approval(self):
         data = valid_draft(subject="Three men dancing together.", trigger_type="Multiple characters",
@@ -706,8 +759,8 @@ class DatasetUnderstandingTests(unittest.TestCase):
         rules = " ".join(instruction.system_message.split())
         self.assertIn("keep that freedom dataset-scoped", rules)
         self.assertIn("may choose it once, but must not independently choose a different value per image", rules)
-        self.assertIn("dataset-scoped free/may_vary", rules)
-        self.assertIn("shared-consistency obligation in hard and fixed without inventing a value", rules)
+        self.assertIn("dataset-scoped free", rules)
+        self.assertIn("shared-consistency obligation in hard without inventing a value", rules)
         self.assertEqual(json.loads(instruction.user_message)["source"]["subject"], data["subject"])
 
     def test_fixed_and_unspecified_human_identities_explicitly_require_mixed_policy(self):
@@ -722,7 +775,7 @@ class DatasetUnderstandingTests(unittest.TestCase):
         data = valid_draft(subject="The same performer has a back tattoo and a shoulder scar; neither needs to be visible.")
         instruction = understanding_instruction(data)
         rules = " ".join(instruction.system_message.split())
-        self.assertIn("visible_evidence contains only features the user actually requires to be visibly demonstrated", rules)
+        self.assertIn("Preserve requested visibility in hard, with its owner and qualifiers", rules)
         self.assertIn("A fixed identity trait that may naturally be hidden is not demanded visible evidence", rules)
         self.assertIn("Keep it fixed without forcing later stages to expose it", rules)
         self.assertEqual(json.loads(instruction.user_message)["source"]["subject"], data["subject"])
@@ -822,11 +875,9 @@ class DatasetUnderstandingTests(unittest.TestCase):
         self.assertIn("Every root field is required, including empty arrays", instruction.system_message)
         shape = json.loads(instruction.system_message.split("RESPONSE SHAPE ONLY (not source facts):\n")[1])
         self.assertEqual(set(shape), set(instruction.json_schema["required"]))
-        self.assertEqual(set(shape["characters"][0]), set(CHARACTER_FIELDS))
-        self.assertIsInstance(shape["characters"][0]["traits"], str)
+        self.assertEqual(set(shape["subjects"][0]), {"scope", *CHARACTER_FIELDS})
         self.assertIsInstance(shape["subjects"][0]["traits"], str)
-        fields = instruction.json_schema['properties']['planning_constraints']['items']['properties']['participants']['items']['properties']
-        self.assertEqual(set(fields['location']['enum']), {None, 'left', 'right', 'center', 'foreground', 'background'})
+        self.assertNotIn("planning_constraints", instruction.json_schema["properties"])
 
     def test_valid_brief_accepts_one_json_fence_without_another_model_call(self):
         brief = dataset_understanding_fixture()
@@ -1017,7 +1068,7 @@ class DatasetUnderstandingTests(unittest.TestCase):
         self.assertEqual(manager.acquire.call_args_list, [call(config, include_state=True)] * 2)
         self.assertEqual(manager.release.call_args_list, [call(owned)] * 2)
 
-    def test_understanding_schema_generates_each_fact_once_with_scoped_section_tags(self):
+    def test_understanding_schema_generates_each_fact_once_without_review_tags(self):
         for subject_type, trigger in (("Character", "token"),
                 ("Multiple characters", "Mira, blue hair, Hana, blonde hair"),
                 ("Multiple characters", "")):
@@ -1028,7 +1079,7 @@ class DatasetUnderstandingTests(unittest.TestCase):
                 self.assertIsNotNone(schema)
                 self.assertEqual(schema["type"], "object")
                 self.assertIs(schema["additionalProperties"], False)
-                fields = set(self.compact_brief()) | {"characters", "subjects", "planning_constraints"}
+                fields = set(self.intent_brief())
                 self.assertEqual(set(schema["required"]), fields)
                 self.assertEqual(set(schema["properties"]), fields)
                 props = schema["properties"]
@@ -1037,43 +1088,26 @@ class DatasetUnderstandingTests(unittest.TestCase):
                 requirements = props["requirements"]
                 self.assertEqual(requirements["type"], "object")
                 self.assertIs(requirements["additionalProperties"], False)
-                self.assertEqual(set(requirements["required"]), {"hard", "soft", "free", "context"})
-                for kind in ("hard", "soft", "free", "context"):
+                self.assertEqual(set(requirements["required"]), {"hard", "soft", "free"})
+                for kind in ("hard", "soft", "free"):
                     array = requirements["properties"][kind]
                     self.assertEqual(array["maxItems"], 23 if kind == "hard" and subject_type == "Multiple characters" else 24)
                     item = array["items"]
-                    self.assertEqual(set(item["required"]), {"scope", "text", "sections"})
-                    self.assertEqual(set(item["properties"]), {"scope", "text", "sections"})
+                    self.assertEqual(set(item["required"]), {"scope", "text"})
+                    self.assertEqual(set(item["properties"]), {"scope", "text"})
                     self.assertIs(item["additionalProperties"], False)
                     self.assertEqual(item["properties"]["scope"]["enum"], ["all_outputs", "dataset", "guided:1", "guided:2"])
-                    sections = item["properties"]["sections"]
-                    if kind == "soft":
-                        self.assertEqual(sections["maxItems"], 0)
-                    else:
-                        expected_tags = {"hard": {"fixed", "must_vary", "rules", "visible_evidence", "interactions",
-                                "natural_occlusions", "visibility_to_preserve", "action_options"},
-                            "free": {"may_vary"}, "context": {"natural_occlusions"}}
-                        self.assertEqual(set(sections["items"]["enum"]), expected_tags[kind])
                 for field, value in self.compact_brief().items():
                     if isinstance(value, str) and field != "identity_policy":
                         self.assertEqual(props[field], {"type": "string", "minLength": 1, "maxLength": 2000})
-                    if not isinstance(value, list) or field == "requirements":
+                    if field != "clarifications":
                         continue
                     array = props[field]
                     self.assertEqual(array["type"], "array")
                     self.assertEqual(array["maxItems"], 24)
                     self.assertIsInstance(array["items"], dict)
                     item = array["items"]
-                    if field == "clarifications":
-                        self.assertEqual(item, {"type": "string", "minLength": 1, "maxLength": 2000})
-                        continue
-                    self.assertIs(item["additionalProperties"], False)
-                    self.assertEqual(item["properties"]["scope"]["enum"], ["all_outputs", "dataset", "guided:1", "guided:2"])
-                    expected = {"scope", "conflict", "compatible_resolution"}
-                    self.assertEqual(set(item["required"]), expected)
-                    self.assertEqual(set(item["properties"]), expected)
-                    if field == "physical_conflicts":
-                        self.assertEqual(item["properties"]["compatible_resolution"]["type"], ["string", "null"])
+                    self.assertEqual(item, {"type": "string", "minLength": 1, "maxLength": 2000})
 
     def test_shape_valid_object_with_25_hard_entries_is_rejected_without_retry(self):
         brief = dataset_understanding_fixture(hard=[{"scope": "all_outputs", "text": f"Source requirement {index}."}

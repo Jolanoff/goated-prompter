@@ -272,6 +272,9 @@ def dataset_instruction(request, data, index, model_family="qwen", plan_item=Non
         scopes.add(f"guided:{(index - 1) % len(lines) + 1}")
     brief = data.get("_confirmed_intent") or {}
     original_cast = {item["name"]: item for item in brief.get("characters", ())}
+    for subject in brief.get("subjects", ()):
+        if subject["scope"] in scopes:
+            original_cast[subject["name"]] = {**original_cast.get(subject["name"], {}), **subject}
     characters = [{"name": participant["name"], "kind": participant.get("kind", "human"),
         "sex": participant["sex"], "traits": participant["traits"], "count": 1,
         "origin": original_cast.get(participant["name"], {}).get("origin", "described"),

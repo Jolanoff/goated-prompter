@@ -94,10 +94,10 @@ class CharacterTests(unittest.TestCase):
     def test_understanding_asks_for_each_characters_sex_kind_and_origin(self):
         instruction = understanding_instruction(valid_draft())
         rules = " ".join(instruction.system_message.split())
-        self.assertIn("characters: who appears in each image", rules)
-        self.assertIn("anthro (furry or anthropomorphic animal)", rules)
+        self.assertIn("subjects: one scoped inventory of all principal subjects", rules)
+        self.assertIn("anthro (anthropomorphic animal)", rules)
         self.assertIn("Naruto Uzumaki is a male human from Naruto", rules)
-        schema = instruction.json_schema["properties"]["characters"]["items"]
+        schema = instruction.json_schema["properties"]["subjects"]["items"]
         self.assertEqual(schema["properties"]["sex"]["enum"], ["female", "male", "mixed", "unspecified", "none"])
         self.assertIn("anthro", schema["properties"]["kind"]["enum"])
 
@@ -156,6 +156,15 @@ class IdeaSceneTests(unittest.TestCase):
 
 
 class CastWriterTests(unittest.TestCase):
+    def test_guided_named_subject_keeps_its_origin_in_the_anima_writer(self):
+        brief = dataset_understanding_fixture(character_count=None, characters=[], subjects=[
+            {"scope": "guided:1", **NARUTO}, {"scope": "guided:2", **COMPANION}])
+        data = valid_draft(amount=2, source_mode="guided", inputs="Naruto reads\nA companion reads",
+            target="Anima", _confirmed_intent=brief)
+        instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1,
+            plan_item=planned_scene(data))
+        self.assertIn("Danbooru character tag and series tag", instruction.system_message)
+
     def writer(self, characters, **changes):
         data = valid_draft(amount=1, **changes,
                            _confirmed_intent=dataset_understanding_fixture(characters=characters))
