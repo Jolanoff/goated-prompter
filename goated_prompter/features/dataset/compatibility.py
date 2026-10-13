@@ -59,7 +59,7 @@ def participant_anatomy(route):
     return result
 
 
-def compatible_entry(text, route, *, category="general", position=False):
+def compatible_entry(text, route, *, category="general", position=False, clothing_detail=False):
     """Reject clear contradictions; the model resolves prose, not a new geometry schema."""
     text = text.casefold()
     categories, _ = position_categories({"subject": text}, include_director=False)
@@ -117,6 +117,8 @@ def compatible_entry(text, route, *, category="general", position=False):
         if excluded and re.search(r"\b" + re.escape(excluded) + r"\b", text):
             return False
     clothing = requested_clothing_state(route.request_text)
+    if clothing == "nude" and clothing_detail and re.search(r"\b(?:tops?|bottoms?)\b", text):
+        return False
     if clothing == "nude" and re.search(r"\b(?:wear\w*|clothed|clothing|lingerie|dress(?:es)?|shirts?|pants|outfits?|uniforms?|"
                                        r"bras?|skirts?|robes?|bikinis?|corsets?|stockings?|jeans|jackets?|underwear|underpants)\b", text):
         return False
@@ -158,7 +160,7 @@ def vocabulary_choices(catalog, route, record, candidates, rng, used):
             choices["activity"] = next(iter(route.categories & POSITION_ACT_CATEGORIES))
     for axis, sections in styling_sections(route).items():
         values = list(dict.fromkeys(text for section in sections for text in catalog.get(section, ())
-                                    if compatible_entry(text, selected_route)))
+                                    if compatible_entry(text, selected_route, clothing_detail=axis == "clothing")))
         rng.shuffle(values)
         if axis == "setting":
             key = record.label if record else ""

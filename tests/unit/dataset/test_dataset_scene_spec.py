@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from goated_prompter.features.dataset.eligibility import scene_eligibility
 from goated_prompter.features.dataset.plan import ScenePlanner
+from goated_prompter.features.dataset.prompting import dataset_instruction, geometry_error
 from goated_prompter.features.dataset.private_vocabulary import parse_vocabulary
 from goated_prompter.features.dataset.scene_spec import Contact, Participant, SceneSpec
 from goated_prompter.features.dataset.validation import scene_spec_errors, text_signature, verify_scenes, validation_instruction
@@ -29,6 +30,15 @@ from tests.support.dataset import saved_scene, valid_draft
 
 
 class SceneSpecGateTests(unittest.TestCase):
+    def test_writer_does_not_invent_elevation_from_a_shot_size_alone(self):
+        data = valid_draft()
+        row = saved_scene(scene="A full-body shot of an adult greeting a friend.")
+        instruction = dataset_instruction(GoatedPrompterRequest(idea=data['subject']), data, 1, plan_item=row)
+        self.assertIn("A full-body or wide shot does not specify camera elevation", instruction.system_message)
+        self.assertIn("omit high-angle and low-angle labels", instruction.system_message)
+        self.assertIsNotNone(geometry_error("A low-angle full-body shot of an adult.", row['scene']))
+        self.assertIsNone(geometry_error("A full-body shot of an adult.", row['scene']))
+
     def test_unavailable_recheck_does_not_clear_a_known_violation_in_unchanged_text(self):
         from unittest.mock import Mock
         from tests.support.dataset import scene_observation
@@ -218,6 +228,24 @@ class SceneSpecGateTests(unittest.TestCase):
         self.assertTrue(all(quote in scene and len(quote) <= 240 for quote in quotes))
         self.assertTrue(all(any(f"word{index}" in quote.split() for quote in quotes) for index in range(249)))
 
+    def test_claimed_requirement_pass_or_fail_requires_nonempty_exact_evidence(self):
+        scene = "Alice greets Bob. Both adults wear coats."
+        for essential in (False, True):
+            instruction = validation_instruction([saved_scene(scene=scene)], essential=essential)
+            checks = instruction.json_schema["prefixItems"][0]["properties"]["requirements"]["prefixItems"]
+            for check in checks:
+                claimed, uncertain = check["anyOf"]
+                self.assertEqual(claimed["properties"]["status"]["enum"], ["pass", "fail"])
+                quotes = claimed["properties"]["evidence"]["enum"]
+                self.assertTrue(quotes)
+                self.assertTrue(all(quote and quote in scene for quote in quotes))
+                self.assertEqual(uncertain["properties"]["status"]["enum"], ["unknown"])
+                self.assertIn("", uncertain["properties"]["evidence"]["enum"])
+        empty = validation_instruction([saved_scene(scene="")], essential=True)
+        checks = empty.json_schema["prefixItems"][0]["properties"]["requirements"]["prefixItems"]
+        self.assertTrue(all(len(check["anyOf"]) == 1 for check in checks))
+        self.assertTrue(all(check["anyOf"][0]["properties"]["status"]["enum"] == ["unknown"] for check in checks))
+
     def test_essential_prompt_evidence_uses_exact_quotes_without_locking_open_mechanics(self):
         spec = replace(self.paired_spec(), locked=("hard",))
         scene = "Alice sits beside Bob. Alice's left hand rests on Bob's shoulder."
@@ -231,8 +259,11 @@ class SceneSpecGateTests(unittest.TestCase):
         for field in ("setting_evidence", "action_evidence"):
             self.assertEqual(fields[field], evidence)
         for check in fields["requirements"]["prefixItems"]:
-            self.assertEqual(check["properties"]["evidence"], evidence)
-            self.assertEqual(check["properties"]["status"]["enum"], ["pass", "fail", "unknown"])
+            claimed, uncertain = check["anyOf"]
+            self.assertEqual(claimed["properties"]["evidence"]["enum"], evidence["enum"][1:])
+            self.assertEqual(uncertain["properties"]["evidence"], evidence)
+            self.assertEqual(claimed["properties"]["status"]["enum"], ["pass", "fail"])
+            self.assertEqual(uncertain["properties"]["status"]["enum"], ["unknown"])
         self.assertEqual(fields["contacts"]["items"]["properties"]["evidence"], evidence)
         participant = fields["participants"]["prefixItems"][0]["properties"]
         self.assertNotIn("enum", participant["pose"])
@@ -306,7 +337,7 @@ class SceneSpecGateTests(unittest.TestCase):
         checks = schema["requirements"]
         self.assertEqual(checks["minItems"], len(context["checks"]))
         self.assertEqual(checks["maxItems"], len(context["checks"]))
-        self.assertEqual([item["properties"]["id"]["const"] for item in checks["prefixItems"]],
+        self.assertEqual([item["anyOf"][0]["properties"]["id"]["const"] for item in checks["prefixItems"]],
             ["action", "concept", "subject:P1", "subject:P2", "support:P1.body->setting.ground", "hard:0"])
 
     def test_editable_mechanics_are_extracted_instead_of_constrained_to_the_old_labels(self):

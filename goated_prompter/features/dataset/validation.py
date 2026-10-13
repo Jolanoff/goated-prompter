@@ -36,6 +36,9 @@ If edited_idea is supplied, check its consistency with the scene without restori
 When editable_action is true, generated events/categories may change within approved requirements.
 Evidence should be a concise exact quote from the description, using evidence_quotes when useful.
 Quotes are not proof by themselves. Use empty evidence and unknown rather than inventing support.
+Never claim pass or fail with empty evidence. For exclusions, inspect the whole description
+and quote the relevant affirmative cast, clothing or activity as the review anchor; do not
+invent a sentence saying the excluded thing is absent. Use unknown if compliance is uncertain.
 Return only the requested indexed JSON array with exactly index, participants, contacts,
 requirements, setting, setting_evidence, action, action_evidence, category and conflicts.
 A participant has id, role, pose, location, support and evidence; a contact has source, target
@@ -349,8 +352,12 @@ def validation_instruction(rows, *, family="qwen", kind="scene", essential=False
         schemas.append(record({"index": {"type": "integer", "const": spec.index},
             "participants": indexed_array(participants),
             "contacts": {"type": "array", "maxItems": 101, "items": contact},
-            "requirements": indexed_array([record({"id": {"type": "string", "const": check["id"]},
-                "status": {"type": "string", "enum": ["pass", "fail", "unknown"]}, "evidence": evidence}) for check in checks]),
+            "requirements": indexed_array([{"anyOf": [
+                *([record({"id": {"type": "string", "const": check["id"]},
+                    "status": {"type": "string", "enum": ["pass", "fail"]},
+                    "evidence": {"type": "string", "enum": quotes}})] if quotes else []),
+                record({"id": {"type": "string", "const": check["id"]},
+                    "status": {"type": "string", "enum": ["unknown"]}, "evidence": evidence})]} for check in checks]),
             "setting": {"type": "string", "enum": [setting_label, "unknown", "conflict"]} if setting_label else string,
             "setting_evidence": evidence, "action": string, "action_evidence": evidence,
             "category": {"type": "string", "enum": sorted(PLANNING_CATEGORIES | {"unknown"})},

@@ -11,7 +11,7 @@ from ...contracts import GoatedPrompterRequest, PromptInstruction, effective_mod
 from ...director_profiles import resolve_director_config
 from ...strict_json import reject_duplicate_keys
 from .quality import adults_only_error
-from .scene_spec import validate_planning_constraints
+from .scene_spec import LOCATIONS, validate_planning_constraints
 from ...options.dataset import CHARACTER_KINDS, SUBJECT_KINDS
 
 
@@ -559,6 +559,7 @@ def _understanding_schema(scopes, *, hard_limit):
     participant_constraint = {"type": "object", "additionalProperties": False,
         "required": ["id", "role", "pose", "location", "support"],
         "properties": {"id": short, **{key: nullable for key in ("role", "pose", "location", "support")}}}
+    participant_constraint["properties"]["location"] = {"type": ["string", "null"], "enum": [None, *sorted(LOCATIONS)]}
     contact_constraint = {"type": "object", "additionalProperties": False, "required": ["source", "target"],
         "properties": {"source": short, "target": short}}
     properties["planning_constraints"] = {"type": "array", "maxItems": MAX_ITEMS, "items": {
@@ -668,14 +669,51 @@ class DatasetUnderstandingService:
                 raw = session.generate(instruction)
                 self.checkpoint()
                 try:
-                    brief = _brief_json(raw)
-                    brief = _expand_understanding(brief, data, scopes)
+                    generated = _brief_json(raw)
+                    brief = _expand_understanding(generated, data, scopes)
                     # Object-only model responses may encode "not applicable" as zero.
                     # Canonicalize that representation here; keep the shared validator strict.
                     if (isinstance(brief, dict) and data.get("trigger_type") == "Object / product"
                             and brief.get("identity_policy") == "not_applicable"
                             and type(brief.get("character_count")) is int and brief["character_count"] == 0):
                         brief = {**brief, "character_count": None}
+                    brief = validate_understanding(brief, scopes, require_complete_cast=True)
+                    characters = brief.get("characters", [])
+                    subjects = brief.get("subjects", [])
+                    # A shared homogeneous inventory can hide the individually extracted
+                    # owners. Reconcile only an exact shared, same-kind inventory match.
+                    if (len(characters) > 1 and len({item["name"] for item in characters}) == len(characters)
+                            and len(subjects) == 1 and subjects[0]["scope"] == "all_outputs"
+                            and all(item["kind"] == subjects[0]["kind"] for item in characters)
+                            and subjects[0]["count"] == sum(item["count"] for item in characters)
+                            and subjects[0]["count"] == brief["character_count"]):
+                        brief["subjects"] = [{"scope": "all_outputs", **{key: item[key] for key in
+                            ("name", "count", "sex", "kind", "traits")}} for item in characters]
+                        brief = validate_understanding(brief, scopes, require_complete_cast=True)
+                    for constraint in brief.get("planning_constraints", []):
+                        cast = [item for item in brief.get("subjects", [])
+                                if item["scope"] in {"all_outputs", constraint["scope"]}
+                                for _ in range(item["count"])]
+                        named = {item["name"]: f"P{index}" for index, item in enumerate(cast, 1)}
+                        participants = constraint["participants"]
+                        for participant in participants:
+                            role = participant["role"]
+                            if role and role not in named:
+                                matches = [f"P{index}" for index, item in enumerate(cast, 1)
+                                           if re.search(r"(?<!\w)" + re.escape(role) + r"(?!\w)",
+                                                        item["traits"], re.IGNORECASE)]
+                                if len(matches) == 1:
+                                    named[role] = matches[0]
+                        if (cast and len({item["name"] for item in cast}) == len(cast) and len(participants) == len(cast)
+                                and all(item["role"] in named for item in participants)
+                                and len({named[item["role"]] for item in participants}) == len(participants)):
+                            owners = {item["id"]: named[item["role"]] for item in participants}
+                            def endpoint(value):
+                                owner, part = value.split(".", 1)
+                                return owners.get(owner, owner) + "." + part
+                            constraint["participants"] = [{**item, "id": owners[item["id"]]} for item in participants]
+                            constraint["contacts"] = [{key: endpoint(value) for key, value in edge.items()}
+                                                      for edge in constraint["contacts"]]
                     brief = validate_understanding(brief, scopes, require_complete_cast=True)
                     if data.get("trigger_type") == "Multiple characters":
                         # Retain source authority before approval, never retrofit saved reviews.
@@ -700,12 +738,27 @@ class DatasetUnderstandingService:
                             "characters": [{key: item[key] for key in ("name", "count", "sex", "kind")}
                                            for item in brief["characters"]]}
                         instruction = replace(instruction, diagnostic_stage="dataset:understanding:cast_retry",
-                            system_message=instruction.system_message + "\nCAST COUNT CORRECTION\n" + str(error)
+                            system_message="CAST COUNT CORRECTION\n"
+                            "Repair the failed Dataset Understanding response against the unchanged user source. "
+                            "The failed brief is model output, not authority. Return the COMPLETE brief in the same response schema, "
+                            "not a patch, explanation or scene. Retain faithful requirements, qualifiers, scopes and identity facts. "
+                            "Correct any inventory error without changing the user's requested cast.\n"
+                            "An entry's count is copies of THAT character/group, not the total cast. "
+                            "Three individually named people each have count 1, totaling 3; a homogeneous group of three "
+                            "interchangeable people has one entry with count 3. Keep distinct named/described people separate "
+                            "in both characters and subjects, with each person's own sex and traits. Shared characters appear "
+                            "once, never once per guided input. Do not repeat the total on each entry. "
+                            "Reconcile character_count with the source and the per-image inventory, not batch.requested_outputs. "
+                            "Varying guided casts stay scoped; their shared character_count may be null. "
+                            "traits is one string, not an array. Never invent traits, anatomy, poses or contacts.\n"
+                            + str(error)
                             + "\nFailed inventory (model output, not requirements): "
                             + json.dumps(inventory, ensure_ascii=False, separators=(",", ":"))
                             + " Re-read the unchanged source and return the complete brief with consistent per-image counts. "
                             "Do not drop a requested subject, invent a subject or change requirements to satisfy a count. "
-                            "Keep separately specified subjects and their traits in separate entries. The result still requires user review.")
+                            "Keep separately specified subjects and their traits in separate entries. The result still requires user review.\n"
+                            "FAILED BRIEF (model output, not requirements):\n"
+                            + json.dumps(generated, ensure_ascii=False, separators=(",", ":")))
                         continue
                     raise BackendGenerationError("Dataset understanding returned an invalid brief: " + str(error)
                                                  + " No generation started.") from error

@@ -210,11 +210,15 @@ class TxtVocabularyTests(unittest.TestCase):
     def test_nude_requests_reject_garment_names_without_wearing_verbs(self):
         data = adult_draft('female', subject='One adult woman in a NSFW fine-art nude study.')
         for garment in ('An open-cup bra and a micro skirt.', 'A silk robe.',
-                        'A bikini.', 'A corset and stockings.', 'Jeans and a jacket.', 'Underwear pulled aside.'):
+                        'A bikini.', 'A corset and stockings.', 'Jeans and a jacket.', 'Underwear pulled aside.',
+                        'Top on, bottom removed.'):
             with self.subTest(garment=garment):
                 text = '[solo positions]\nA supported solo pose.\n[clothing]\n' + garment + '\nNaked.\n'
                 choices = dict(self.plan(data, text)[1].choices)
                 self.assertEqual(choices['clothing'], 'Naked.')
+        text = '[solo positions]\nA supported solo pose.\n[clothing]\nTop on, bottom on.\n'
+        clothed = adult_draft('female', subject='One adult woman in a fully clothed NSFW editorial.')
+        self.assertEqual(dict(self.plan(clothed, text)[1].choices)['clothing'], 'Top on, bottom on.')
 
     def test_freezing_resolves_guidance_without_locking_optional_activity_or_position(self):
         data = adult_draft('female', subject='Solo adult woman masturbating')

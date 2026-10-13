@@ -798,6 +798,9 @@ class DatasetUnderstandingTests(unittest.TestCase):
         self.assertIn('"listed_count":2', retry.system_message)
         self.assertIn('"name":"Mara"', retry.system_message)
         self.assertIn("never once per guided input", retry.system_message)
+        self.assertLess(len(retry.system_message), len(first.system_message))
+        failed = json.loads(retry.system_message.split("FAILED BRIEF (model output, not requirements):\n")[1])
+        self.assertEqual(failed, duplicate)
         self.assertEqual(session.generate.call_count, 2)
 
     def test_understanding_defines_trait_string_types_and_complete_compact_shape(self):
@@ -809,6 +812,8 @@ class DatasetUnderstandingTests(unittest.TestCase):
         self.assertEqual(set(shape["characters"][0]), set(CHARACTER_FIELDS))
         self.assertIsInstance(shape["characters"][0]["traits"], str)
         self.assertIsInstance(shape["subjects"][0]["traits"], str)
+        fields = instruction.json_schema['properties']['planning_constraints']['items']['properties']['participants']['items']['properties']
+        self.assertEqual(set(fields['location']['enum']), {None, 'left', 'right', 'center', 'foreground', 'background'})
 
     def test_valid_brief_accepts_one_json_fence_without_another_model_call(self):
         brief = dataset_understanding_fixture()
@@ -816,6 +821,42 @@ class DatasetUnderstandingTests(unittest.TestCase):
         for value in (raw, "```json\n" + raw + "\n```", "```\n" + raw + "\n```", "\ufeff" + raw):
             with self.subTest(wrapper=value[:10]):
                 self.assertEqual(self.run_response(value), brief)
+
+    def test_shared_group_inventory_retains_extracted_individual_owners(self):
+        characters = [{"name": name, "count": 1, "sex": sex, "kind": "human", "origin": "described",
+                       "series": "", "traits": traits} for name, sex, traits in
+                      (("A", "female", "silver hair"), ("B", "male", "red beard"))]
+        group = {"scope": "all_outputs", "name": "crew", "count": 2, "sex": "mixed", "kind": "human", "traits": "adults"}
+        brief = dataset_understanding_fixture(character_count=2, characters=characters, subjects=[group])
+        result = self.run_response(json.dumps(brief))
+        self.assertEqual(result['subjects'], [{"scope": "all_outputs", **{key: item[key] for key in
+                         ('name', 'count', 'sex', 'kind', 'traits')}} for item in characters])
+        constraint = {'scope': 'all_outputs', 'action': None, 'setting': None,
+            'participants': [{'id': 'P1', 'role': 'B', 'pose': None, 'location': None, 'support': None},
+                             {'id': 'P2', 'role': 'A', 'pose': None, 'location': None, 'support': None}],
+            'contacts': [{'source': 'P1.hand', 'target': 'P2.shoulder'}]}
+        bound = self.run_response(json.dumps({**brief, 'planning_constraints': [constraint]}))['planning_constraints'][0]
+        self.assertEqual([(p['id'], p['role']) for p in bound['participants']], [('P2', 'B'), ('P1', 'A')])
+        self.assertEqual(bound['contacts'], [{'source': 'P2.hand', 'target': 'P1.shoulder'}])
+        roles = {**constraint, 'participants': [{**p, 'role': 'red beard' if p['role'] == 'B' else 'silver hair'}
+                                                for p in constraint['participants']]}
+        bound_roles = self.run_response(json.dumps({**brief, 'planning_constraints': [roles]}))['planning_constraints'][0]
+        self.assertEqual([(p['id'], p['role']) for p in bound_roles['participants']],
+                         [('P2', 'red beard'), ('P1', 'silver hair')])
+        for unchanged in ({**constraint, 'participants': constraint['participants'][:1]},
+                          {**constraint, 'participants': [{**p, 'role': 'worker'} for p in constraint['participants']]}):
+            with self.subTest(constraint=unchanged):
+                result = self.run_response(json.dumps({**brief, 'planning_constraints': [unchanged]}))
+                self.assertEqual(result['planning_constraints'], [unchanged])
+        ambiguous = {**brief, 'characters': [{**p, 'traits': 'worker'} for p in characters],
+                     'planning_constraints': [{**constraint, 'participants': [{**p, 'role': 'worker'} for p in constraint['participants']]}]}
+        result = self.run_response(json.dumps(ambiguous))
+        self.assertEqual(result['planning_constraints'], ambiguous['planning_constraints'])
+        for changed in ({**group, 'count': 3}, {**group, 'scope': 'guided:1'}):
+            with self.subTest(subject=changed):
+                candidate = {**brief, 'subjects': [changed]}
+                data = valid_draft(source_mode='guided', inputs='First task\nSecond task')
+                self.assertEqual(self.run_response(json.dumps(candidate), data)['subjects'], [changed])
 
     def test_richer_count_identity_and_scoped_action_options_survive_validation(self):
         brief = dataset_understanding_fixture(character_count=2, identity_policy="random_per_prompt",

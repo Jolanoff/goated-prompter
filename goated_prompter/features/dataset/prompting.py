@@ -27,7 +27,9 @@ are creative guidance, not additional user requirements. Clarify incomplete pose
 support and spatial relationships where needed without replacing the event or restaging
 a required interaction. Ordinary standing and sitting need not inventory off-frame surfaces.
 Use one coherent camera angle and shot size. Prefer the scene's framing, setting and light;
-avoid contradictory viewpoints. Describe each body's pose once, keeping limbs and held
+avoid contradictory viewpoints. A full-body or wide shot does not specify camera elevation:
+if the scene does not supply it, omit high-angle and low-angle labels rather than inventing
+an elevated or lowered camera. Describe each body's pose once, keeping limbs and held
 objects with their owner. Use natural prose, never endpoint ids or catalog labels.
 Make it vivid where the scene leaves room: concrete appearance, clothing, materials,
 texture, color, atmosphere and fine detail, shaped by creativity, style and length.
