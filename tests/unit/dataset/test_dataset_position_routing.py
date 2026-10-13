@@ -17,7 +17,7 @@ from goated_prompter.features.dataset.prompting import dataset_instruction
 from goated_prompter.features.dataset.quality import kink_request, ownership_request, pet_request, position_categories
 from goated_prompter.features.dataset.service import DatasetService, saved_dataset_draft
 from tests.helpers import dataset_understanding_fixture
-from goated_prompter.features.dataset.scene_spec import SceneSpec
+from goated_prompter.features.dataset.scene_spec import SceneSpec, writer_view
 from goated_prompter.features.dataset.validation import verify_scenes
 from tests.support.dataset import (CaptureBackend, checked_scene, checked_writer_responses, frozen_specs,
     planned_scene, saved_scene, scene_observation, valid_draft, vocabulary_record, vocabulary_text)
@@ -673,7 +673,7 @@ class PositionRoutingTests(unittest.TestCase):
         scene = self.scene(data, scene="Two adult men sit together in a room.")
         instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=scene)
         sent, _ = json.JSONDecoder().raw_decode(instruction.system_message.split("FROZEN SCENE SPEC\n", 1)[1])
-        self.assertEqual(sent, scene["scene_spec"])
+        self.assertEqual(sent, writer_view(scene["scene_spec"]))
         self.assertTrue(sent["contacts"])
 
     def test_saved_plans_and_prompt_regeneration_pass_the_explicit_position_to_the_writer(self):
@@ -693,7 +693,7 @@ class PositionRoutingTests(unittest.TestCase):
                 self.assertEqual(result["scene_plan"][0]["scene_spec"], scene["scene_spec"])
                 self.assertEqual([call.diagnostic_stage for call in backend.calls], ["dataset:1", "dataset:validation:prompt"])
                 sent, _ = json.JSONDecoder().raw_decode(backend.calls[0].system_message.split("FROZEN SCENE SPEC\n", 1)[1])
-                self.assertEqual(sent, scene["scene_spec"])
+                self.assertEqual(sent, writer_view(scene["scene_spec"]))
 
     def test_final_output_can_describe_the_position_without_copying_its_label(self):
         data = self.draft("two adult men having anal sex", "male", "male", trigger="ohwx_person")
@@ -765,5 +765,5 @@ class PositionRoutingTests(unittest.TestCase):
         self.assertEqual(len(writers), 3)
         for spec, instruction in zip(specs, writers):
             sent, _ = json.JSONDecoder().raw_decode(instruction.system_message.split("FROZEN SCENE SPEC\n", 1)[1])
-            self.assertEqual(sent, spec)
+            self.assertEqual(sent, writer_view(spec))
         self.assertEqual(len({spec["catalog_id"] for spec in specs}), 3)

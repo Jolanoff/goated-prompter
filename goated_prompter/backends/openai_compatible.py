@@ -12,7 +12,8 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from .base import BackendConfigurationError, BackendGenerationError, BackendRunawayError, GoatedPrompterBackend
-from ..diagnostics import debug_prompts_enabled, diagnostic_finish_reason, log_request, log_response, payload_without_binary_images
+from ..diagnostics import (debug_prompts_enabled, diagnostic_finish_reason, log_request, log_response,
+                           payload_without_binary_images, private_error_message)
 from ..output_repetition import repeated_tag
 from .interruptible_http import interruptible_urlopen
 
@@ -192,7 +193,7 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
             return self._generate(instruction, private_content=private_content)
         except BackendGenerationError as exc:
             if private_content:
-                exc.args = ("The prompt engine did not complete the private-content request; raw engine diagnostics were omitted.",)
+                exc.args = (private_error_message(exc),)
                 exc.finish_reason = diagnostic_finish_reason(exc.finish_reason, private_content=True)
             raise
 
@@ -280,7 +281,8 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
         if not private_content:
             _log_multimodal_messages(payload["messages"])
         if streaming:
-            safe = payload_without_binary_images(payload, private_content=private_content)
+            # The live inspector is local and in memory; exports and checkpoints apply their own redaction.
+            safe = payload_without_binary_images(payload)
             self.emit_activity(
                 "request",
                 stage=getattr(instruction, "diagnostic_stage", "final"),

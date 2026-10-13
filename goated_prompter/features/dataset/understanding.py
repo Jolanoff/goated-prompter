@@ -807,3 +807,19 @@ def replace_labels(text, replacements):
 
         value = re.sub(rf"(?<![\w-]){re.escape(name)}(?![\w-])", swap, source, flags=re.I)
     return value
+
+
+def name_owner_ids(text, participants, *, supplied=""):
+    """Replace leaked internal owner ids ("P2", "P1.hand") with each participant's name.
+
+    Ids that also appear in the user's own wording (``supplied``) are the user's, not leaks.
+    """
+    value = str(text or "")
+    names = {item["id"]: item["name"] for item in participants
+             if not re.search(rf"(?<![\w-]){re.escape(item['id'])}(?![\w-])", str(supplied), re.I)}
+    if not names:
+        return value
+    owners = "|".join(map(re.escape, sorted(names, key=len, reverse=True)))
+    value = re.sub(rf"(?<![\w-])({owners})\.([a-z]+(?:_[a-z]+)*)\b",
+                   lambda match: f"{names[match[1]]}'s {match[2].replace('_', ' ')}", value)
+    return replace_labels(value, names)

@@ -29,6 +29,18 @@ from tests.helpers import dataset_understanding_fixture
 from tests.support.dataset import saved_scene, valid_draft
 
 
+
+def inline_refs(schema, definitions=None):
+    """Resolve local $defs references so tests inspect the effective constraint."""
+    definitions = schema.get("$defs", {}) if definitions is None else definitions
+    if isinstance(schema, dict):
+        if "$ref" in schema:
+            return inline_refs(definitions[schema["$ref"].rsplit("/", 1)[1]], definitions)
+        return {key: inline_refs(value, definitions) for key, value in schema.items() if key != "$defs"}
+    if isinstance(schema, list):
+        return [inline_refs(value, definitions) for value in schema]
+    return schema
+
 class SceneSpecGateTests(unittest.TestCase):
     def test_named_age_contradictions_cannot_be_hidden_by_a_checker_pass(self):
         from goated_prompter.features.dataset.validation import scene_spec_findings
@@ -259,7 +271,7 @@ class SceneSpecGateTests(unittest.TestCase):
                 spec = replace(self.paired_spec(), setting=setting)
                 scene = f"Alice greets Bob inside the {setting}."
                 row = saved_scene(scene=scene, scene_spec=spec.to_dict())
-                fields = validation_instruction([row]).json_schema["prefixItems"][0]["properties"]
+                fields = inline_refs(validation_instruction([row]).json_schema)["prefixItems"][0]["properties"]
                 self.assertEqual(set(fields["setting"]["enum"]), {setting, "unknown", "conflict"})
                 for value in ("unknown", "conflict"):
                     observation = scene_observation(spec, scene)
@@ -279,7 +291,7 @@ class SceneSpecGateTests(unittest.TestCase):
             with self.subTest(kind=kind, locked=locked):
                 row["scene_spec"] = replace(spec, locked=locked).to_dict()
                 instruction = validation_instruction([row], kind=kind)
-                field = instruction.json_schema["prefixItems"][0]["properties"]["setting"]
+                field = inline_refs(instruction.json_schema)["prefixItems"][0]["properties"]["setting"]
                 self.assertEqual("enum" in field, normalized)
                 self.assertEqual(json.loads(instruction.user_message)[0]["setting_to_identify"],
                                  "observatory" if normalized else "")
@@ -288,7 +300,7 @@ class SceneSpecGateTests(unittest.TestCase):
         spec = self.paired_spec()
         scene = "Alice sits on a chair on the left and greets Bob. Bob stands on the right with feet on the floor. Alice's left hand rests on Bob's shoulder."
         instruction = validation_instruction([saved_scene(scene=scene, scene_spec=spec.to_dict())])
-        fields = instruction.json_schema["prefixItems"][0]["properties"]
+        fields = inline_refs(instruction.json_schema)["prefixItems"][0]["properties"]
         evidence = fields["participants"]["prefixItems"][0]["properties"]["evidence"]
         self.assertIn("enum", evidence)
         self.assertTrue(all(not quote or quote in scene for quote in evidence["enum"]))
@@ -299,6 +311,18 @@ class SceneSpecGateTests(unittest.TestCase):
         self.assertIn("A.left_hand", contact["source"]["enum"])
         self.assertIn("B.shoulder", contact["target"]["enum"])
         self.assertEqual(contact["evidence"], evidence)
+
+    def test_each_quote_list_is_defined_once_and_final_prompts_get_no_open_critique(self):
+        scene = " ".join(f"Sentence {index} describes the room in detail." for index in range(12))
+        for kind, critique in (("scene", 24), ("prompt", 0)):
+            with self.subTest(kind=kind):
+                instruction = validation_instruction([saved_scene(scene=scene)], kind=kind, essential=True)
+                encoded = json.dumps(instruction.json_schema, ensure_ascii=False)
+                quote = json.loads(instruction.user_message)[0]["evidence_quotes"][0]
+                # Once with the empty "unknown" choice, once as a claimed quote.
+                self.assertEqual(encoded.count(json.dumps(quote, ensure_ascii=False)), 2)
+                conflicts = instruction.json_schema["prefixItems"][0]["properties"]["conflicts"]
+                self.assertEqual(conflicts["maxItems"], critique)
 
     def test_long_validation_quotes_are_bounded_exact_overlapping_excerpts(self):
         scene = " ".join(f"word{index}" for index in range(250)) + "."
@@ -311,7 +335,7 @@ class SceneSpecGateTests(unittest.TestCase):
         scene = "Alice greets Bob. Both adults wear coats."
         for essential in (False, True):
             instruction = validation_instruction([saved_scene(scene=scene)], essential=essential)
-            checks = instruction.json_schema["prefixItems"][0]["properties"]["requirements"]["prefixItems"]
+            checks = inline_refs(instruction.json_schema)["prefixItems"][0]["properties"]["requirements"]["prefixItems"]
             for check in checks:
                 claimed, uncertain = check["anyOf"]
                 self.assertEqual(claimed["properties"]["status"]["enum"], ["pass", "fail"])
@@ -321,7 +345,7 @@ class SceneSpecGateTests(unittest.TestCase):
                 self.assertEqual(uncertain["properties"]["status"]["enum"], ["unknown"])
                 self.assertIn("", uncertain["properties"]["evidence"]["enum"])
         empty = validation_instruction([saved_scene(scene="")], essential=True)
-        checks = empty.json_schema["prefixItems"][0]["properties"]["requirements"]["prefixItems"]
+        checks = inline_refs(empty.json_schema)["prefixItems"][0]["properties"]["requirements"]["prefixItems"]
         self.assertTrue(all(len(check["anyOf"]) == 1 for check in checks))
         self.assertTrue(all(check["anyOf"][0]["properties"]["status"]["enum"] == ["unknown"] for check in checks))
 
@@ -330,7 +354,7 @@ class SceneSpecGateTests(unittest.TestCase):
         scene = "Alice sits beside Bob. Alice's left hand rests on Bob's shoulder."
         instruction = validation_instruction([saved_scene(scene=scene, scene_spec=spec.to_dict())],
                                              kind="prompt", essential=True)
-        fields = instruction.json_schema["prefixItems"][0]["properties"]
+        fields = inline_refs(instruction.json_schema)["prefixItems"][0]["properties"]
         evidence = fields["participants"]["prefixItems"][0]["properties"]["evidence"]
         self.assertIn("enum", evidence)
         self.assertIn("", evidence["enum"])
@@ -406,7 +430,7 @@ class SceneSpecGateTests(unittest.TestCase):
         context = json.loads(instruction.user_message)[0]
         self.assertEqual(context["cast"][0]["normalization_labels"],
             {"role": "explorer", "pose": "standing_observing", "location": "center", "support": "ground"})
-        schema = instruction.json_schema["prefixItems"][0]["properties"]
+        schema = inline_refs(instruction.json_schema)["prefixItems"][0]["properties"]
         participant = schema["participants"]["prefixItems"][0]["properties"]
         for field, label in context["cast"][0]["normalization_labels"].items():
             self.assertEqual(set(participant[field]["enum"]), {label, "unknown", "conflict"})
@@ -427,7 +451,7 @@ class SceneSpecGateTests(unittest.TestCase):
         context = json.loads(instruction.user_message)[0]
         self.assertEqual(context["cast"][0]["normalization_labels"],
                          dict.fromkeys(("role", "pose", "location", "support"), ""))
-        participant = instruction.json_schema["prefixItems"][0]["properties"]["participants"]["prefixItems"][0]["properties"]
+        participant = inline_refs(instruction.json_schema)["prefixItems"][0]["properties"]["participants"]["prefixItems"][0]["properties"]
         self.assertNotIn("enum", participant["pose"])
         self.assertIn("foreground", participant["location"]["enum"])
 

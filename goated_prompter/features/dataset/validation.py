@@ -234,8 +234,10 @@ def scene_spec_findings(text, value, observation=None, *, evidence_spec=None, es
     if not isinstance(conflicts, list) or any(not isinstance(item, str) or len(item) > 1000 for item in conflicts):
         add("Invalid scene consistency findings.", "warnings")
     else:
+        # Free-form critique is advisory: only structured requirement, cast, contact and support
+        # findings trigger repairs, so an invented inconsistency never forces a regeneration.
         for conflict in conflicts:
-            add(conflict, "repairable")
+            add(conflict, "warnings")
     return findings
 
 
@@ -319,7 +321,7 @@ def reconcile_scene_spec(value, observation):
 
 
 def validation_instruction(rows, *, family="qwen", kind="scene", essential=False):
-    context, schemas = [], []
+    context, schemas, definitions = [], [], {}
     string = {"type": "string", "maxLength": 10000}
     def record(properties):
         return {"type": "object", "additionalProperties": False, "required": list(properties), "properties": properties}
@@ -340,7 +342,13 @@ def validation_instruction(rows, *, family="qwen", kind="scene", essential=False
                     break
                 start += max(1, (end - start) // 2)
         quotes = list(dict.fromkeys(quotes))
-        evidence = {"type": "string", "enum": ["", *quotes]}
+        # Each quote list is defined once and referenced, so the constrained grammar stays small.
+        slot = len(schemas)
+        definitions[f"evidence_{slot}"] = {"type": "string", "enum": ["", *quotes]}
+        evidence = {"$ref": f"#/$defs/evidence_{slot}"}
+        if quotes:
+            definitions[f"quote_{slot}"] = {"type": "string", "enum": quotes}
+        quote = {"$ref": f"#/$defs/quote_{slot}"}
         required_contacts = spec.required_contacts if essential else spec.contacts
         editable_contacts = essential or bool(row.get("edited_stage")) and kind == "scene" and not spec.required_contacts
         setting_label = "" if (essential or row.get("edited_stage") and kind == "scene") and "setting" not in spec.locked else spec.setting
@@ -386,18 +394,19 @@ def validation_instruction(rows, *, family="qwen", kind="scene", essential=False
             "requirements": indexed_array([{"anyOf": [
                 *([record({"id": {"type": "string", "const": check["id"]},
                     "status": {"type": "string", "enum": ["pass", "fail"]},
-                    "evidence": {"type": "string", "enum": quotes}})] if quotes else []),
+                    "evidence": quote})] if quotes else []),
                 record({"id": {"type": "string", "const": check["id"]},
                     "status": {"type": "string", "enum": ["unknown"]}, "evidence": evidence})]} for check in checks]),
             "setting": {"type": "string", "enum": [setting_label, "unknown", "conflict"]} if setting_label else string,
             "setting_evidence": evidence, "action": string, "action_evidence": evidence,
             "category": {"type": "string", "enum": sorted(PLANNING_CATEGORIES | {"unknown"})},
-            "conflicts": {"type": "array", "maxItems": 24, "items": {"type": "string", "maxLength": 1000}}}))
+            # A final prompt is checked for fidelity only; open-ended critique belongs to scene review.
+            "conflicts": {"type": "array", "maxItems": 0 if kind == "prompt" else 24, "items": {"type": "string", "maxLength": 1000}}}))
     budget = min(16384, 512 + sum(512 + 128 * len(item["cast"])
         + 96 * len(item["contact_labels"]) + 96 * len(item["checks"]) for item in context))
     return PromptInstruction(system_message=VALIDATION_SYSTEM, user_message=json.dumps(context, ensure_ascii=False),
         model_family=family, diagnostic_stage=f"dataset:validation:{kind}", json_output=True,
-        json_schema=indexed_array(schemas),
+        json_schema={**indexed_array(schemas), "$defs": definitions},
         max_tokens=budget, hard_max_tokens=budget, unlimited_tokens=False, temperature=0,
         stream_character_limit=max(1024 + 10000 * len(rows), budget * 6))
 

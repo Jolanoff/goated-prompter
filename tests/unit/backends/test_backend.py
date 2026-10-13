@@ -313,7 +313,7 @@ class OpenAITimeoutTests(unittest.TestCase):
         self.assertEqual(next(event["text"] for event in events if event["type"] == "reasoning_delta"), "visible analysis")
         self.assertEqual(events[-1], {"type": "response_complete", "finish_reason": "stop"})
 
-    def test_private_request_keeps_model_payload_but_suppresses_raw_diagnostic_messages_and_schema(self):
+    def test_private_request_is_flagged_for_the_live_inspector_but_kept_off_stdout_debug(self):
         events = []
         backend = openai.OpenAICompatibleBackend({
             "base_url": "http://127.0.0.1:8189/v1", "model": "test", "_activity_callback": events.append,
@@ -334,11 +334,19 @@ class OpenAITimeoutTests(unittest.TestCase):
         self.assertEqual(outgoing["response_format"]["json_schema"]["schema"], instruction.json_schema)
         request = next(event for event in events if event["type"] == "request")
         self.assertTrue(request["private_content"])
-        self.assertNotIn("SYNTHETIC_PRIVATE", json.dumps(request))
+        self.assertEqual(request["messages"], instruction.to_messages())
         self.assertEqual(request["parameters"]["temperature"], outgoing["temperature"])
         debug.assert_not_called()
 
-    def test_private_transport_error_does_not_publish_echoed_source_but_retains_partial_text_for_recovery(self):
+    def test_private_errors_keep_content_free_causes(self):
+        from goated_prompter.diagnostics import private_error_message
+        timeout = "The prompt engine did not respond within 90 seconds. Check that the engine is healthy."
+        self.assertEqual(private_error_message(timeout), timeout)
+        self.assertEqual(private_error_message("OpenAI-compatible backend returned HTTP 400: grammar echo PRIVATE"),
+                         "OpenAI-compatible backend returned HTTP 400 (engine detail omitted for private content).")
+        self.assertNotIn("PRIVATE", private_error_message('The prompt engine entered a repetition loop around "PRIVATE words".'))
+
+    def test_private_transport_error_keeps_its_category_without_echoed_engine_text(self):
         class FailedStream:
             headers = {"Content-Type": "text/event-stream"}
 
@@ -363,9 +371,14 @@ class OpenAITimeoutTests(unittest.TestCase):
              self.assertRaises(openai.BackendGenerationError) as error:
             backend.generate(instruction)
         self.assertNotIn("SYNTHETIC_PRIVATE_RULE", str(error.exception))
+        self.assertIn("stream failed", str(error.exception))
         self.assertEqual(error.exception.partial_text, "Original partial scene")
-        self.assertNotIn("SYNTHETIC_PRIVATE_RULE", json.dumps(job.snapshot()))
-        self.assertNotIn("Original partial scene", json.dumps(job.snapshot()))
+        snapshot = job.snapshot()
+        # Checkpointed event messages carry the category, never echoed engine text.
+        self.assertNotIn("SYNTHETIC_PRIVATE_RULE", json.dumps(snapshot["events"]))
+        self.assertIn("stream failed", snapshot["events"][-1]["message"])
+        # The in-memory live inspector still shows what the model returned.
+        self.assertEqual(snapshot["llm_trace"]["partial_text"], "Original partial scene")
 
     def test_streaming_repetition_loop_is_stopped_early(self):
         class RepeatingResponse:

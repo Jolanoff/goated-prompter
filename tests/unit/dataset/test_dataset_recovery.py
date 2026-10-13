@@ -69,7 +69,7 @@ class RecoveryTests(unittest.TestCase):
                 observations = json.loads(raw)
                 validation_calls.append(observations)
                 if len(validation_calls) == 1:
-                    observations[0]["conflicts"] = ["The supporting feet are obscured."]
+                    observations[0]["requirements"][0]["status"] = "fail"
                 return json.dumps(observations)
             return raw
         self.backend.generate = generate
@@ -107,7 +107,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(result["scene_plan"][0]["scene"], dataset_idea_fixture(1)["scene"])
         self.assertNotIn("failure_stage", result["scene_plan"][0])
 
-    def test_unresolved_support_finding_retains_prompt_unverified_after_one_local_repair(self):
+    def test_advisory_finding_retains_prompt_unverified_without_a_repair(self):
         self.data.update(amount=1, scene_plan=[], scene_plan_signature="", results=[])
         original = self.backend.generate
         validation_calls = []
@@ -121,13 +121,13 @@ class RecoveryTests(unittest.TestCase):
             return raw
         self.backend.generate = generate
         result = self.run_service(idea_history=RecentIdeaHistory())
-        self.assertEqual(len(validation_calls), 2)
+        self.assertEqual(len(validation_calls), 1)
         self.assertTrue(result["ok"])
         self.assertEqual(result["completed"], 1)
         self.assertEqual(result["scene_plan"][0]["prompt_status"], "unverified")
         self.assertIn("support is unknown", " ".join(result["scene_plan"][0]["quality_warnings"]))
         self.assertEqual(result["scene_plan"][0]["scene"], dataset_idea_fixture(1)["scene"])
-        self.assertEqual(sum(call.diagnostic_stage.startswith("dataset:1") for call in self.backend.calls), 2)
+        self.assertEqual(sum(call.diagnostic_stage.startswith("dataset:1") for call in self.backend.calls), 1)
         self.assertEqual(sum(call.diagnostic_stage == "dataset:ideas" for call in self.backend.calls), 1)
 
     def test_new_idea_is_one_targeted_call_whose_scene_is_written_directly(self):

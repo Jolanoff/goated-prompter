@@ -18,7 +18,7 @@ from .routing import assignment_scope, resolve_route
 from .quality import (ADULTS_ONLY, BROKEN_ANATOMY, adult_content_request, analyze_idea_diversity, broken_anatomy,
                       minor_reference, passive_idea, passive_request,
                       resolved_sex, sexual_request)
-from .understanding import (label_replacements, numbered_labels, replace_labels, understanding_instruction,
+from .understanding import (label_replacements, name_owner_ids, numbered_labels, replace_labels, understanding_instruction,
                             unwrap_json_fence, validate_understanding)
 from ...strict_json import reject_duplicate_keys
 from .vocabulary import (DIRECTION_AXES, ACTION_SAFE_AXES, SEXUAL_ACTION_SAFE_AXES, GROUP_FRAMING, AGES, LOOK_PARTS,
@@ -299,9 +299,15 @@ def _looks_described(looks):
     return described
 
 
-def _relabel(row, characters, looks):
-    """Numbered labels name nobody an image can show; describe those people instead."""
-    if row.get("idea_status") == "failed" or not numbered_labels(characters):
+def _relabel(row, characters, looks, supplied=""):
+    """Numbered labels and internal owner ids name nobody an image can show; describe those people instead."""
+    if row.get("idea_status") == "failed":
+        return row
+    if row.get("scene_spec"):
+        cast = row["scene_spec"]["participants"]
+        row = {**row, "idea": name_owner_ids(row["idea"], cast, supplied=supplied),
+               "scene": name_owner_ids(row["scene"], cast, supplied=supplied)}
+    if not numbered_labels(characters):
         return row
     replacements = label_replacements(characters, _looks_described(looks))
     return {**row, "idea": replace_labels(row["idea"], replacements),
@@ -465,7 +471,8 @@ class DatasetIdeasService:
             looks = {entry["index"]: (entry.get("creative_direction") or {}).get("random_character_looks")
                      for entry in selected}
             cast = (data.get("_confirmed_intent") or {}).get("characters")
-            rows = [_relabel(row, cast, looks.get(row["index"])) for row in rows]
+            supplied = " ".join(str(data.get(key) or "") for key in ("subject", "constraints", "inputs", "trigger"))
+            rows = [_relabel(row, cast, looks.get(row["index"]), supplied) for row in rows]
             previous = {row["index"]: row for row in existing if row["index"] in indexes}
             scene_repairs = {index for index, row in previous.items() if row.get("failure_stage") == "scene"
                               and SceneSpec.from_dict(row["scene_spec"]).signature
@@ -515,7 +522,7 @@ class DatasetIdeasService:
                     except ValueError:
                         retried = None
                     if retried:
-                        rows = [_apply_scene_spec(_relabel(row, cast, looks.get(row["index"])),
+                        rows = [_apply_scene_spec(_relabel(row, cast, looks.get(row["index"]), supplied),
                                                    specifications[row["index"]]) for row in retried]
             if allow_partial:
                 accepted = [{**row, "input": inputs[row["index"]]} for row in existing

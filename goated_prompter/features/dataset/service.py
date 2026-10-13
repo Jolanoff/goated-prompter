@@ -18,7 +18,7 @@ from .quality import (ADULTS_ONLY, BROKEN_ANATOMY, adults_only_error, analyze_id
                       minor_reference)
 from .triggers import (trigger_presence_error, trigger_terms, fixed_anima_prefix, restore_numeric_trigger_spelling,
                        tidy_expanded_trigger)
-from .understanding import label_replacements, replace_labels
+from .understanding import label_replacements, name_owner_ids, replace_labels
 from . import private_vocabulary
 from .validation import batch_requirements, text_signature, validation_strategies, verify_batch_requirements, verify_scenes
 from .scene_spec import SceneSpec
@@ -197,6 +197,8 @@ class DatasetService:
                 prompt = tidy_expanded_trigger(prompt, data["trigger"], data["target"], plan_item["scene"])
             if labels := label_replacements((data.get("_confirmed_intent") or {}).get("characters")):
                 prompt = replace_labels(prompt, labels)
+            prompt = name_owner_ids(prompt, plan_item["scene_spec"]["participants"], supplied=" ".join(
+                str(data.get(key) or "") for key in ("subject", "constraints", "inputs", "trigger")))
             if prefix := fixed_anima_prefix(data):
                 tail = prompt[len(prefix):] if prompt.startswith(prefix) else None
                 if tail is not None and (not tail or tail.lstrip(" \t")[:1] in ",;:\r\n"):

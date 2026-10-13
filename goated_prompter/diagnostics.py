@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 
 
 def sha256_text(value):
@@ -15,6 +16,13 @@ def diagnostic_finish_reason(value, *, private_content=False):
             or value not in {"stop", "length", "content_filter", "tool_calls", "function_call", "other"}):
         return "other"
     return value
+
+
+def private_error_message(message):
+    """Keep a private request's failure category; drop only engine text that may echo prompt content."""
+    message = re.sub(r"(returned HTTP \d+): .*", r"\1 (engine detail omitted for private content).", str(message), flags=re.S)
+    message = re.sub(r"(stream failed): .*", r"\1 (engine detail omitted for private content).", message, flags=re.S)
+    return re.sub(r'(repetition loop around )"[^"]*"', r"\1a private phrase", message)
 
 
 def debug_prompts_enabled():
@@ -70,16 +78,12 @@ def _redacted_image_url(url):
     }
 
 
-def payload_without_binary_images(payload, *, private_content=False):
+def payload_without_binary_images(payload):
     redacted = dict(payload or {})
     messages = []
     for message in redacted.get("messages", ()):
         safe_message = dict(message)
         content = safe_message.get("content")
-        if private_content:
-            messages.append({"role": safe_message.get("role"), "content_sha256": sha256_json(content),
-                             "content_chars": len(content) if isinstance(content, str) else 0})
-            continue
         if isinstance(content, list):
             safe_parts = []
             for part in content:
@@ -94,8 +98,6 @@ def payload_without_binary_images(payload, *, private_content=False):
             safe_message["content"] = safe_parts
         messages.append(safe_message)
     redacted["messages"] = messages
-    if private_content and "response_format" in redacted:
-        redacted["response_format"] = {"sha256": sha256_json(redacted["response_format"]), "private_content": True}
     return redacted
 
 

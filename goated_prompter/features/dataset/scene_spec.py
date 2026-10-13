@@ -154,8 +154,25 @@ class Contact:
     target: str
 
 
+_GROUND_SURFACES = {"floor", "ground"}
+
+
+def _same_support(left, right):
+    """Same supporting owner; for the background, the same surface (floor and ground are one)."""
+    left_owner, _, left_surface = left.partition(".")
+    right_owner, _, right_surface = right.partition(".")
+    if left_owner != right_owner:
+        return False
+    return left_owner != "setting" or left_surface == right_surface or {left_surface, right_surface} <= _GROUND_SURFACES
+
+
 def resolve_supports(participants, relationships=(), *, require_resolved=False):
-    """Resolve load-bearing ownership and cycles; this is not a geometry simulator."""
+    """Resolve load-bearing ownership and cycles; this is not a geometry simulator.
+
+    A support label names one weight-bearing surface. Further owned supports (a hand on a rail,
+    feet on the floor while seated) are additional, not contradictions; only the label's own
+    body part resting on a different surface contradicts it.
+    """
     owners = {item.id: item for item in participants}
     result = list(relationships)
     if len(result) > 100 or any(not isinstance(edge.source, str) or not isinstance(edge.target, str) for edge in result):
@@ -183,11 +200,11 @@ def resolve_supports(participants, relationships=(), *, require_resolved=False):
             if require_resolved:
                 raise ValueError("Selected bodily mechanics need resolved owned support, not unspecified surface prose.")
             continue
-        if existing:
-            if require_resolved and any(edge.target != target for edge in existing):
-                raise ValueError("Owned support contradicts the participant support label.")
-        else:
-            result.append(Contact(item.id + "." + part, target))
+        if any(_same_support(edge.target, target) for edge in existing):
+            continue
+        if require_resolved and any(edge.source.partition(".")[2] == part for edge in existing):
+            raise ValueError("Owned support contradicts the participant support label.")
+        result.append(Contact(item.id + "." + part, target))
     if len(result) > 100 or len(set(result)) != len(result):
         raise ValueError("Support relationships must be bounded and distinct.")
     if not require_resolved:
@@ -210,10 +227,14 @@ def resolve_supports(participants, relationships=(), *, require_resolved=False):
             raise ValueError("Human support references nonhuman anatomy.")
         if target == "setting" and surface in BODY_PARTS | {"body", "head", "foot", "knees"}:
             raise ValueError("Background support must identify a physical surface, not unowned anatomy.")
-        if (owners[source].kind == "human" and owners[source].pose == "standing"
-                and part not in {"body", "feet", "foot", "left_foot", "right_foot"}):
-            raise ValueError("Standing human support must bear weight through the feet.")
         graph.setdefault(source, set()).add(target)
+    for owner, item in owners.items():
+        # A standing person may also lean a hand on a rail, but the feet carry the weight.
+        if (item.kind == "human" and item.pose == "standing" and any(edge.source.partition(".")[0] == owner for edge in result)
+                and not any(edge.source.partition(".")[0] == owner
+                            and edge.source.partition(".")[2] in {"body", "feet", "foot", "left_foot", "right_foot"}
+                            for edge in result)):
+            raise ValueError("Standing human support must bear weight through the feet.")
     visited = set()
     def visit(owner, path):
         if owner in path:
@@ -242,6 +263,34 @@ def validate_scene_mechanics(spec):
                 raise ValueError("Nonphysical subjects cannot own physical contacts.")
             if subject.kind == "human" and part in {"paw", "paws", "wing", "tail"}:
                 raise ValueError("Human contact references nonhuman anatomy.")
+
+
+def _named_endpoint(endpoint, names):
+    owner, _, part = str(endpoint).partition(".")
+    part = part.replace("_", " ")
+    if owner == "setting":
+        return f"the {part}"
+    return f"{names[owner]}'s {part}" if owner in names else str(endpoint)
+
+
+def _named_lock(lock, names):
+    if match := re.fullmatch(r"participant:([^:]+):(\w+)", lock):
+        return f"participant:{names.get(match[1], match[1])}:{match[2]}"
+    if match := re.fullmatch(r"contact:(.+)->(.+)", lock):
+        return f"contact:{_named_endpoint(match[1], names)}->{_named_endpoint(match[2], names)}"
+    return lock
+
+
+def writer_view(value):
+    """The SceneSpec as prose writers see it: people by name, never internal owner ids."""
+    spec = value.to_dict() if isinstance(value, SceneSpec) else dict(value)
+    names = {item["id"]: item["name"] for item in spec.get("participants", ())}
+    return {**spec,
+            "participants": [{key: item for key, item in participant.items() if key != "id"}
+                             for participant in spec.get("participants", ())],
+            "locked": [_named_lock(lock, names) for lock in spec.get("locked", ())],
+            **{field: [{"source": _named_endpoint(edge["source"], names), "target": _named_endpoint(edge["target"], names)}
+                       for edge in spec.get(field, ())] for field in ("contacts", "supports")}}
 
 
 @dataclass(frozen=True)

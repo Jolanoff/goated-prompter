@@ -80,6 +80,37 @@ class OwnedSupportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Nonphysical"):
             freeze_scene_spec(spec, candidate)
 
+    def test_additional_owned_supports_do_not_contradict_the_support_label(self):
+        rail = Participant("P2", "railing", "prop", "", "right", "", kind="object")
+        cases = (
+            ((Participant("P1", "person", "subject", "standing", "center", "feet_on_floor"), rail),
+             (Contact("P1.hand", "P2.rail"),), Contact("P1.feet", "setting.floor")),
+            ((Participant("P1", "person", "subject", "seated", "center", "supported_by_chair"),),
+             (Contact("P1.feet", "setting.floor"),), Contact("P1.body", "setting.chair")),
+            ((Participant("P1", "first", "subject", "seated", "left", "supported_at_hips_by_P2"),
+              Participant("P2", "second", "subject", "seated", "right", "supported_by_chair")),
+             (Contact("P1.hips", "P2.lap"),), None),
+            ((Participant("P1", "person", "subject", "standing", "center", "feet_on_floor"),),
+             (Contact("P1.feet", "setting.ground"),), None),
+        )
+        for participants, supplied, added in cases:
+            with self.subTest(supplied=supplied):
+                resolved = resolve_supports(participants, supplied, require_resolved=True)
+                self.assertTrue(set(supplied) <= set(resolved))
+                if added:
+                    self.assertIn(added, resolved)
+
+    def test_label_part_on_a_different_surface_still_contradicts_the_label(self):
+        participants = (Participant("P1", "person", "subject", "kneeling", "center", "knees_on_floor"),)
+        with self.assertRaisesRegex(ValueError, "contradicts"):
+            resolve_supports(participants, (Contact("P1.knees", "setting.bed"),), require_resolved=True)
+
+    def test_standing_person_may_lean_but_feet_bear_the_weight(self):
+        participants = (Participant("P1", "person", "subject", "standing", "center", "P2.rail"),
+                        Participant("P2", "railing", "prop", "", "right", "", kind="object"))
+        with self.assertRaisesRegex(ValueError, "feet"):
+            resolve_supports(participants, (Contact("P1.hand", "P2.rail"),), require_resolved=True)
+
     def test_explicit_support_must_agree_with_a_selected_human_pose(self):
         participants = (Participant("P1", "person", "subject", "standing", "center", "feet_on_floor"),)
         with self.assertRaisesRegex(ValueError, "feet"):

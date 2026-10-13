@@ -140,3 +140,52 @@ class DatasetUnitTests(unittest.TestCase):
         data = {**self.data, "scene_plan": [self.row], "scene_plan_signature": old_signature}
         self.assertIsNone(reusable_scene_plan(data, assignments))
         self.assertEqual(data["scene_plan"], [self.row])
+
+
+class OwnerIdLeakTests(unittest.TestCase):
+    """Internal participant ids are planning handles, never words an image writer sees or returns."""
+
+    def setUp(self):
+        from goated_prompter.features.dataset.scene_spec import Contact, Participant
+        from tests.support.dataset import checked_scene
+        self.data = valid_draft(amount=1, _confirmed_intent=dataset_understanding_fixture())
+        spec = SceneSpec(1, "general", "A dancer steadies her partner", (
+            Participant("P1", "the dancer", "", "standing", "left", "feet_on_floor"),
+            Participant("P2", "the partner", "", "standing", "right", "feet_on_floor")),
+            (Contact("P1.left_hand", "P2.shoulder"),), locked=("hard", "contact:P1.left_hand->P2.shoulder", "participant:P2:pose"))
+        self.row = checked_scene({**saved_scene(), "scene": "The dancer steadies her partner by the shoulder."}, spec=spec)
+
+    def test_writer_instruction_names_people_instead_of_owner_ids(self):
+        import re
+        instruction = dataset_instruction(GoatedPrompterRequest(idea=self.data["subject"]), self.data, 1, plan_item=self.row)
+        self.assertNotRegex(instruction.system_message + instruction.user_message, r"(?<![\w-])P[12](?![\w-])")
+        self.assertIn("the dancer's left hand", instruction.system_message + instruction.user_message)
+        self.assertTrue(re.search(r"the partner's shoulder", instruction.system_message + instruction.user_message))
+        sent, _ = json.JSONDecoder().raw_decode(instruction.system_message.split("FROZEN SCENE SPEC\n", 1)[1])
+        self.assertEqual(sent["locked"], ["hard", "contact:the dancer's left hand->the partner's shoulder",
+                                          "participant:the partner:pose"])
+
+    def test_leaked_owner_ids_are_named_without_a_retry(self):
+        instruction = dataset_instruction(GoatedPrompterRequest(idea=self.data["subject"]), self.data, 1, plan_item=self.row)
+        leaked = "ohwx_person, P1 rests P1.left_hand on P2's shoulder in a bright rehearsal studio with wooden floors."
+        session = Mock()
+        session.generate.side_effect = lambda item: json.dumps([scene_observation(
+            SceneSpec.from_dict(self.row["scene_spec"]), row["description"], essential=True)
+            for row in json.loads(item.user_message)]) if item.diagnostic_stage.startswith("dataset:validation:") else leaked
+        prompt = DatasetService({}, lambda: None)._generate(session, instruction, self.data, 1, lambda _: None, dict(self.row))
+        self.assertNotRegex(prompt, r"(?<![\w-])P[12](?![\w-])")
+        self.assertIn("the dancer's left hand", prompt)
+        self.assertEqual(sum(not call.args[0].diagnostic_stage.startswith("dataset:validation:")
+                             for call in session.generate.call_args_list), 1)
+
+    def test_owner_ids_written_by_the_user_are_kept(self):
+        from goated_prompter.features.dataset.understanding import name_owner_ids
+        cast = [{"id": "P1", "name": "the dancer"}, {"id": "P2", "name": "the partner"}]
+        self.assertEqual(name_owner_ids("P2 bows to P1.", cast, supplied="trigger P2 robot"), "P2 bows to the dancer.")
+
+    def test_idea_and_scene_text_name_people_instead_of_owner_ids(self):
+        from goated_prompter.features.dataset.ideas import _relabel
+        row = {**self.row, "idea": "P1 steadies P2.", "scene": "P1 rests P1.left_hand on P2.shoulder."}
+        relabeled = _relabel(row, [], None, "")
+        self.assertEqual(relabeled["idea"], "The dancer steadies the partner.")
+        self.assertEqual(relabeled["scene"], "The dancer rests the dancer's left hand on the partner's shoulder.")

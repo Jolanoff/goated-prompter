@@ -12,6 +12,7 @@ import re
 from ...output_repetition import MAX_ANIMA_TAGS, anima_tag_count, anima_tag_key, anima_tags
 from .understanding import CONTRACT_FIELDS
 from .eligibility import scene_eligibility
+from .scene_spec import writer_view
 from .private_vocabulary import private_rules
 from ...prompting.details import DATASET_OUTPUT_TOKEN_LIMITS
 from ...options.dataset import CHARACTER_KINDS, SUBJECT_KINDS
@@ -289,7 +290,7 @@ def dataset_instruction(request, data, index, model_family="qwen", plan_item=Non
         requirements_message += "\n\nSAVED SCENE SOURCE REQUIREMENTS\n" + json.dumps({
             "subject": data["subject"], "constraints": data["constraints"],
             "guided_input": plan_item.get("input", "")}, ensure_ascii=False)
-    specification = "FROZEN SCENE SPEC\n" + json.dumps(plan_item["scene_spec"], ensure_ascii=False)
+    specification = "FROZEN SCENE SPEC\n" + json.dumps(writer_view(plan_item["scene_spec"]), ensure_ascii=False)
     builder_request = replace(request, idea=plan_item["scene"], mode="Enhance", planning_mode="Direct",
         target_model=data["target"], prompt_length=data["length"], creativity=data["creativity"],
         style=data.get("style", "Auto"),

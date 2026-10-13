@@ -112,7 +112,7 @@ class UniversalPipelineTests(unittest.TestCase):
     def test_final_validation_has_one_targeted_repair_and_retains_uncertainty(self):
         from goated_prompter.features.dataset.service import DatasetService
         from goated_prompter.contracts import GoatedPrompterRequest
-        for finding in ("unknown", "repairable", "hard"):
+        for finding in ("unknown", "advisory", "hard"):
             with self.subTest(finding=finding):
                 data = subject_draft([("Alice", "human", 1, "red jacket")], amount=3)
                 class FindingBackend(UniversalBackend):
@@ -122,7 +122,7 @@ class UniversalPipelineTests(unittest.TestCase):
                             observed = json.loads(raw)
                             for item in observed:
                                 if item["index"] == 2:
-                                    if finding == "repairable":
+                                    if finding == "advisory":
                                         item["conflicts"] = ["The reaching arm has an unclear contact with the work surface."]
                                     else:
                                         next(check for check in item["requirements"] if check["id"] == "subject:P1")["status"] = (
@@ -134,7 +134,7 @@ class UniversalPipelineTests(unittest.TestCase):
                     result = DatasetService({"backend": "mock"}, lambda: None).run(
                         GoatedPrompterRequest(idea=data["subject"], prompt_model="Custom"), data, lambda _: None, lambda _: None)
                 writes = [call for call in backend.calls if call.diagnostic_stage.startswith("dataset:2")]
-                self.assertEqual(len(writes), 1 if finding == "unknown" else 2)
+                self.assertEqual(len(writes), 2 if finding == "hard" else 1)
                 self.assertEqual(sum(call.diagnostic_stage == "dataset:ideas" for call in backend.calls), 1)
                 self.assertFalse(any(call.diagnostic_stage == "dataset:validation:scene" for call in backend.calls))
                 row = result["scene_plan"][1]
