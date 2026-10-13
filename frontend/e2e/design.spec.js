@@ -160,8 +160,9 @@ for (const theme of ["dark", "light"]) {
     await openDatasetPage(page, "Scenes");
     for (const index of [1, 2]) {
       await expect(page.getByLabel(`Scene ${index} self-check`, { exact: true })).toHaveCount(0);
-      await expect(page.getByRole("article", { name: `Scene ${index} card`, exact: true })
-        .getByLabel("Scene: success", { exact: true })).toBeVisible();
+      const card = page.getByRole("article", { name: `Scene ${index} card`, exact: true });
+      await expect(card.getByLabel("Scene: warning", { exact: true })).toHaveText("Scene · unverified");
+      await expect(card.getByLabel("Prompt: success", { exact: true })).toBeVisible();
     }
     await openDatasetPage(page, "Dataset");
     // A contrast audit during the cards' entrance fade measures transient

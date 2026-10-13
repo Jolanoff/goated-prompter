@@ -270,6 +270,7 @@ test("guided Dataset persists and exports on mobile without retired controls", a
   await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/running through/);
   await expect(page.getByRole("region", { name: "Dataset quality report" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "View geometry 1", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "End generation", exact: true })).toHaveCount(0);
   const downloaded = page.waitForEvent("download");
   const cleanup = page.waitForResponse((response) => response.url().endsWith("/api/jobs?kind=dataset") && response.request().method() === "DELETE");
   await page.getByRole("button", { name: "JSONL", exact: true }).click();
