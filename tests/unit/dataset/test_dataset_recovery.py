@@ -224,7 +224,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(result["completed"], 3)
         self.assertEqual([row["index"] for row in result["prompts"]], [1, 2, 3])
         self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:ideas:brainstorm", "dataset:planning",
-            "dataset:ideas", "dataset:1", "dataset:validation:prompt", "dataset:3", "dataset:validation:prompt",
+            "dataset:ideas", "dataset:1", "dataset:3", "dataset:validation:prompt",
             "dataset:ideas", "dataset:2", "dataset:validation:prompt"])
         repairs = json.loads(next(call for call in reversed(self.backend.calls) if call.diagnostic_stage == "dataset:ideas").user_message)
         self.assertEqual(repairs["output_contract"]["indexes"], [2])

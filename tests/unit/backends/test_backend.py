@@ -313,6 +313,21 @@ class OpenAITimeoutTests(unittest.TestCase):
         self.assertEqual(next(event["text"] for event in events if event["type"] == "reasoning_delta"), "visible analysis")
         self.assertEqual(events[-1], {"type": "response_complete", "finish_reason": "stop"})
 
+    def test_structured_llama_cpp_requests_skip_hidden_thinking_but_free_text_keeps_the_setting(self):
+        backend = openai.OpenAICompatibleBackend({"base_url": "http://127.0.0.1:8189/v1", "model": "test", "_is_llama_cpp": True})
+        response = MagicMock()
+        response.__enter__.return_value.headers = {"Content-Type": "application/json"}
+        response.__enter__.return_value.read.return_value = b'{"choices":[{"message":{"content":"[]"},"finish_reason":"stop"}]}'
+        for json_output in (True, False):
+            with self.subTest(json_output=json_output), patch.object(openai, "urlopen", return_value=response) as send, \
+                    patch.object(openai, "log_request"), patch.object(openai, "log_response"):
+                backend.generate(contracts.PromptInstruction(system_message="Plan", user_message="[]", json_output=json_output))
+                outgoing = json.loads(send.call_args.args[0].data)
+                if json_output:
+                    self.assertEqual(outgoing["chat_template_kwargs"], {"enable_thinking": False})
+                else:
+                    self.assertNotIn("chat_template_kwargs", outgoing)
+
     def test_private_request_is_flagged_for_the_live_inspector_but_kept_off_stdout_debug(self):
         events = []
         backend = openai.OpenAICompatibleBackend({

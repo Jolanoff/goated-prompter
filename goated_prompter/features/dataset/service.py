@@ -33,6 +33,10 @@ from .plan import (ScenePlanner, MAX_STORED_SCENE_CHARACTERS, MAX_STORED_IDEA_CH
 
 
 DATASET_MAX_RETRIES = 1
+# Final prompts checked per fidelity request; matches the scene checker's chunk size.
+VERIFY_GROUP = 5
+# Shown on a written prompt until its group's fidelity check finishes; Continue rewrites it.
+PENDING_CHECK = "Fidelity check pending."
 FINAL_BATCH_FAILURE = ("Final prompts did not satisfy the approved dataset-wide requirements. "
                        "Review coverage and retry the affected prompts.")
 
@@ -179,7 +183,8 @@ class DatasetService:
     def __init__(self, config, checkpoint, idea_history=None):
         self.config, self.checkpoint, self.idea_history = config, checkpoint, idea_history
 
-    def _generate(self, session, instruction, data, index, progress, plan_item, *, retries=DATASET_MAX_RETRIES):
+    def _write(self, session, instruction, data, index, progress, plan_item, *, retries=DATASET_MAX_RETRIES):
+        """Write one final prompt and apply the deterministic output checks; fidelity is checked separately."""
         if (data.get("_confirmed_intent") or {}).get("subjects"):
             route = resolve_routes(data, [{"index": index}])[assignment_scope(data, index)]
             data = {**data, "_confirmed_intent": {**data["_confirmed_intent"], "characters": list(route.subjects)}}
@@ -187,9 +192,9 @@ class DatasetService:
         spec = SceneSpec.from_dict(plan_item["scene_spec"])
         strategies = validation_strategies(spec)
         original = instruction
-        rejected_texts = {}
+        warnings = []
         def validate(raw, attempt):
-            warnings = []
+            warnings.clear()
             prompt = normalize_workflow_output(raw, data["target"], mode="Enhance", expected_visible_text=expected_text)
             if data["target"] == "Anima":
                 prompt = drop_wrong_count_tags(drop_repeated_tags(remove_contradictory_solo(prompt)), data)
@@ -240,24 +245,6 @@ class DatasetService:
                 raise WorkflowFormatError("The prompt copied wording from a library reference prompt. Write new wording "
                                           "for this scene; use the references only for style and quality.")
             prompt = validate_positive_content(validate_trigger_contract(prompt, data, progress), data)
-            if plan_item.get("scene_spec"):
-                verified = verify_scenes(session, [{**plan_item, "scene": prompt}], self.checkpoint,
-                                         family=original.model_family, kind="prompt")[0]
-                status = verified["scene_status"]
-                signature = text_signature(prompt)
-                if status == "failed":
-                    rejected_texts[signature] = verified["failure_reason"]
-                elif status != "valid" and signature in rejected_texts:
-                    raise WorkflowFormatError(rejected_texts[signature])
-                if status == "failed" or status == "repair_required" and attempt < retries:
-                    raise WorkflowFormatError("Repair only these final-prompt fidelity problems, preserving the other details: "
-                        + verified.get("failure_reason", "Essential fidelity conflict."))
-                warnings.extend(verified.get("quality_warnings", []))
-                if status == "repair_required":
-                    warnings.append("Unresolved after the bounded repair: " + verified["failure_reason"])
-                plan_item.update(prompt_status="valid" if status == "valid" and not warnings else "unverified", quality_warnings=warnings)
-                for warning in warnings:
-                    progress(f"Dataset prompt {index} unverified: {warning}")
             return prompt
         for attempt in range(retries + 1):
             self.checkpoint()
@@ -275,7 +262,7 @@ class DatasetService:
                         pass
                     else:
                         progress(f"Dataset prompt {index} recovered from the complete pre-loop output.")
-                        return prompt
+                        return prompt, list(warnings)
                 if attempt >= retries:
                     raise
                 instruction = replace(original,
@@ -303,7 +290,64 @@ class DatasetService:
                     diagnostic_stage=original.diagnostic_stage + f":output_retry_{attempt + 1}", temperature=.25, top_p=.85)
             else:
                 session.emit_activity("validation", workflow="dataset", attempt=attempt, accepted=True)
-                return prompt
+                return prompt, list(warnings)
+
+    def _verify_drafts(self, session, drafts, data, progress):
+        """One fidelity check per group of drafts; each failing draft gets one targeted rewrite.
+
+        Returns one outcome per draft: the kept prompt with its status and warnings, or a failure reason.
+        """
+        def check(items):
+            return verify_scenes(session, [{**item["plan_item"], "scene": item["prompt"]} for item in items], self.checkpoint,
+                                 family=items[0]["instruction"].model_family, kind="prompt")
+        outcomes, repairs = {}, []
+        def keep(draft, prompt, warnings, verified):
+            warnings = [*warnings, *verified.get("quality_warnings", [])]
+            status = verified["scene_status"]
+            if status == "repair_required":
+                warnings.append("Unresolved after the bounded repair: " + verified["failure_reason"])
+            outcomes[draft["index"]] = {"prompt": prompt, "warnings": warnings,
+                                        "status": "valid" if status == "valid" and not warnings else "unverified"}
+        for draft, verified in zip(drafts, check(drafts)):
+            if verified["scene_status"] not in {"failed", "repair_required"}:
+                keep(draft, draft["prompt"], draft["warnings"], verified)
+                continue
+            reason = verified.get("failure_reason", "Essential fidelity conflict.")
+            correction = "Repair only these final-prompt fidelity problems, preserving the other details: " + reason
+            original = draft["instruction"]
+            retry = replace(original, system_message=original.system_message + "\nFINAL OUTPUT CORRECTION: " + correction,
+                            diagnostic_stage=original.diagnostic_stage + ":output_retry_1", temperature=.25, top_p=.85)
+            try:
+                prompt, warnings = self._write(session, retry, data, draft["index"], progress, draft["plan_item"], retries=0)
+            except BackendGenerationError as exc:
+                if verified["scene_status"] == "failed":
+                    outcomes[draft["index"]] = {"failure": f"Dataset prompt {draft['index']} remained invalid after 1 retry. {correction} {exc}"}
+                else:
+                    keep(draft, draft["prompt"], draft["warnings"], verified)
+                continue
+            # Only a failed draft is rejected text; an unchanged repairable draft is kept with a warning.
+            rejected = text_signature(draft["prompt"]) if verified["scene_status"] == "failed" else None
+            repairs.append({**draft, "prompt": prompt, "warnings": warnings, "rejected": rejected, "correction": correction})
+        for draft, verified in zip(repairs, check(repairs) if repairs else ()):
+            status = verified["scene_status"]
+            if status == "failed" or status != "valid" and text_signature(draft["prompt"]) == draft["rejected"]:
+                outcomes[draft["index"]] = {"failure": f"Dataset prompt {draft['index']} remained invalid after 1 retry. "
+                                            + (verified.get("failure_reason") or draft["correction"])}
+            else:
+                keep(draft, draft["prompt"], draft["warnings"], verified)
+        return [outcomes[draft["index"]] for draft in drafts]
+
+    def _generate(self, session, instruction, data, index, progress, plan_item, *, retries=DATASET_MAX_RETRIES):
+        """Write and check one prompt (a group of one)."""
+        prompt, warnings = self._write(session, instruction, data, index, progress, plan_item, retries=retries)
+        outcome = self._verify_drafts(session, [{"index": index, "prompt": prompt, "warnings": warnings,
+                                                  "plan_item": plan_item, "instruction": instruction}], data, progress)[0]
+        if "failure" in outcome:
+            raise BackendGenerationError(outcome["failure"])
+        plan_item.update(prompt_status=outcome["status"], quality_warnings=outcome["warnings"])
+        for warning in outcome["warnings"]:
+            progress(f"Dataset prompt {index} unverified: {warning}")
+        return outcome["prompt"]
 
     def run(self, request, data, progress, partial, *, scenes_only=False, scene_action=None, valid_only=False, resume=False):
         if resume and (scenes_only or scene_action):
@@ -404,6 +448,7 @@ class DatasetService:
                 for item in data["results"]:
                     row = by_index.get(item["index"])
                     if (row and scene_is_usable(row, data) and row.get("prompt_status") in {"valid", "unverified"}
+                            and PENDING_CHECK not in row.get("quality_warnings", ())
                             and item["prompt"].strip()
                             and all(item.get(field) == row.get(field, "") for field in ("input", "idea", "scene"))):
                         completed[item["index"]] = dict(item)
@@ -461,25 +506,50 @@ class DatasetService:
                 return {"ok": True, "kind": "dataset_scenes", "prompts": results, "scene_plan": scenes,
                         "scene_plan_signature": signature, "backend": backend.name}
             publish()
+            def fail_prompt(index, exc):
+                self.checkpoint()
+                scenes[index - 1].update(prompt_status="failed", failure_stage="prompt", failure_reason=failure_reason(exc))
+                publish()
             def write_prompts(indexes):
-                for index in indexes:
-                    self.checkpoint()
-                    if not scene_is_usable(scenes[index - 1], data):
-                        continue
-                    plan_item = {**assignments[index - 1], **scenes[index - 1]}
-                    instruction = dataset_instruction(request, data, index, model_family=family, plan_item=plan_item)
-                    try:
-                        prompt = self._generate(session, instruction, data, index, progress, plan_item)
-                    except BackendGenerationError as exc:
+                # Write up to five drafts, then check their fidelity in one request instead of one per prompt.
+                usable = [index for index in indexes if scene_is_usable(scenes[index - 1], data)]
+                for start in range(0, len(usable), VERIFY_GROUP):
+                    drafts = []
+                    for index in usable[start:start + VERIFY_GROUP]:
                         self.checkpoint()
-                        scenes[index - 1].update(prompt_status="failed", failure_stage="prompt", failure_reason=failure_reason(exc))
+                        plan_item = {**assignments[index - 1], **scenes[index - 1]}
+                        instruction = dataset_instruction(request, data, index, model_family=family, plan_item=plan_item)
+                        try:
+                            prompt, warnings = self._write(session, instruction, data, index, progress, plan_item)
+                        except BackendGenerationError as exc:
+                            fail_prompt(index, exc)
+                            continue
+                        drafts.append({"index": index, "prompt": prompt, "warnings": warnings,
+                                       "plan_item": plan_item, "instruction": instruction})
+                        # Keep written work durable if the run stops before the group is checked.
+                        results.append({"index": index, "prompt": prompt, "input": plan_item["input"],
+                                        "scene": plan_item["scene"], "idea": plan_item["idea"]})
+                        results.sort(key=lambda row: row["index"])
+                        scenes[index - 1].update(prompt_status="unverified", quality_warnings=[*warnings, PENDING_CHECK])
                         publish()
+                    if not drafts:
                         continue
-                    results.append({"index": index, "prompt": prompt, "input": plan_item["input"],
-                                    "scene": plan_item["scene"], "idea": plan_item["idea"]})
-                    results.sort(key=lambda row: row["index"])
-                    scenes[index - 1] = {key: value for key, value in scenes[index - 1].items() if key not in FAILURE_METADATA}
-                    scenes[index - 1].update(prompt_status=plan_item["prompt_status"], quality_warnings=plan_item["quality_warnings"])
+                    self.checkpoint()
+                    progress(f"Checking fidelity of dataset prompts {', '.join(str(draft['index']) for draft in drafts)}…")
+                    for draft, outcome in zip(drafts, self._verify_drafts(session, drafts, data, progress)):
+                        index = draft["index"]
+                        results[:] = [row for row in results if row["index"] != index]
+                        if "failure" in outcome:
+                            fail_prompt(index, BackendGenerationError(outcome["failure"]))
+                            continue
+                        for warning in outcome["warnings"]:
+                            progress(f"Dataset prompt {index} unverified: {warning}")
+                        plan_item = draft["plan_item"]
+                        results.append({"index": index, "prompt": outcome["prompt"], "input": plan_item["input"],
+                                        "scene": plan_item["scene"], "idea": plan_item["idea"]})
+                        results.sort(key=lambda row: row["index"])
+                        scenes[index - 1] = {key: value for key, value in scenes[index - 1].items() if key not in FAILURE_METADATA}
+                        scenes[index - 1].update(prompt_status=outcome["status"], quality_warnings=outcome["warnings"])
                     publish()
             write_prompts(selected)
             write_prompts(repair_pending_ideas())

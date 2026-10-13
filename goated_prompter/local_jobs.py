@@ -5,6 +5,7 @@ event loop and generation worker, so mutations remain protected by an RLock.
 """
 
 import copy
+import re
 import threading
 import time
 import uuid
@@ -40,6 +41,9 @@ class Job:
         self._llm_request_sequence = 0
         self.llm_trace = None
         self.partial_responses = []
+        # Content-free per-stage accounting: calls, retries, errors, seconds and output size.
+        self.llm_stages = {}
+        self._llm_stage = None
         self.released = False
         self.workflow_revision = None
         self.input_signature = None
@@ -86,6 +90,12 @@ class Job:
             if event_type == "request":
                 private_content = event.get("private_content") is True
                 self._llm_request_sequence += 1
+                stage, retry = _stage_key(event.get("stage"))
+                stats = self.llm_stages.setdefault(stage, {"calls": 0, "retries": 0, "errors": 0, "seconds": 0.0,
+                                                           "output_chars": 0, "reasoning_chars": 0})
+                stats["calls"] += 1
+                stats["retries"] += retry
+                self._llm_stage = (stage, now)
                 self.llm_trace = {
                     "request_number": self._llm_request_sequence,
                     "status": "waiting_first_token",
@@ -115,6 +125,8 @@ class Job:
                 if text:
                     first = self.llm_trace["first_token_at"] is None
                     self.llm_trace[field] += text
+                    if self._llm_stage:
+                        self.llm_stages[self._llm_stage[0]][field + "_chars"] += len(text)
                     self.llm_trace["status"] = "receiving"
                     self.llm_trace["first_token_at"] = self.llm_trace["first_token_at"] or now
                     self.llm_trace["updated_at"] = now
@@ -124,6 +136,7 @@ class Job:
                             "response",
                         )
             elif self.llm_trace is not None and event_type == "response_complete":
+                self._finish_stage(now)
                 finish_reason = diagnostic_finish_reason(event.get("finish_reason"), private_content=self.llm_trace.get("private_content"))
                 self.llm_trace["status"] = "complete" if finish_reason == "stop" else "interrupted"
                 self.llm_trace["completion_state"] = "completed" if finish_reason == "stop" else "interrupted"
@@ -140,6 +153,7 @@ class Job:
                 self.progress_at = now
                 self._append_event(self.progress, "planning")
             elif event_type == "error":
+                self._finish_stage(now, error=True)
                 message = str(event.get("message") or "The model transport failed.")
                 private_content = self.llm_trace is not None and self.llm_trace.get("private_content") is True
                 if private_content:
@@ -165,6 +179,20 @@ class Job:
                 return
             self.revision += 1
 
+    def _finish_stage(self, now, *, error=False):
+        if self._llm_stage:
+            stage, started = self._llm_stage
+            self.llm_stages[stage]["seconds"] = round(self.llm_stages[stage]["seconds"] + now - started, 3)
+            self.llm_stages[stage]["errors"] += error
+            self._llm_stage = None
+
+    def _append_stage_summary(self):
+        if self.llm_stages:
+            self._append_event("Model calls by stage: " + "; ".join(
+                f"{stage} {stats['calls']}" + (f" ({stats['retries']} retries)" if stats["retries"] else "")
+                + (f" ({stats['errors']} errors)" if stats["errors"] else "") + f" {stats['seconds']:.1f}s"
+                for stage, stats in self.llm_stages.items()), "summary")
+
     def snapshot(self):
         with self.lock:
             return {"id": self.id, "status": self.status, "completion_state": self.completion_state, "revision": self.revision, "created_at": self.created_at,
@@ -173,6 +201,7 @@ class Job:
                     "status_reason": self.status_reason, "events": list(self.events),
                     "llm_trace": copy.deepcopy(self.llm_trace),
                     "partial_responses": copy.deepcopy(self.partial_responses),
+                    "llm_stages": copy.deepcopy(self.llm_stages),
                     "workflow_revision": self.workflow_revision, "input_signature": self.input_signature}
 
     def clear_private_data(self):
@@ -269,6 +298,7 @@ class Job:
             self.status = "cancelled"
             self.completion_state = "cancelled"
             self.status_reason = "Generation stopped because cancellation was requested."
+            self._append_stage_summary()
             self._append_event(self.status_reason, "cancel")
             self.finished_at = time.time()
             self.revision += 1
@@ -280,6 +310,7 @@ class Job:
             self.completion_state = completion_state
             self.status = "interrupted" if completion_state == "interrupted" else "failed"
             self.status_reason = error
+            self._append_stage_summary()
             self._append_event(error, "error")
             self.finished_at = time.time()
             self.revision += 1
@@ -314,6 +345,7 @@ class Job:
                     self.status = "succeeded"
                     self.completion_state = "completed"
                     self.status_reason = "Generation completed successfully."
+                    self._append_stage_summary()
                     self._append_event(self.status_reason, "success")
                     self.finished_at = time.time()
                     self.revision += 1
@@ -328,6 +360,17 @@ class Job:
             value = operation()
             self.checkpoint()
             return value
+
+
+_RETRY_SUFFIX = re.compile(r":(?:(?:output|loop|transport)_retry_\d+|(?:format|variety|loop|cast)_retry)$")
+
+
+def _stage_key(stage):
+    """Group retries under their stage and every numbered Dataset writer under one stage."""
+    key, retry = str(stage or "final"), False
+    while match := _RETRY_SUFFIX.search(key):
+        key, retry = key[:match.start()], True
+    return re.sub(r"^dataset:\d+$", "dataset:write", key), retry
 
 
 class JobCancelled(Exception):

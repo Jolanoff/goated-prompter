@@ -135,6 +135,9 @@ class UniversalPipelineTests(unittest.TestCase):
                         GoatedPrompterRequest(idea=data["subject"], prompt_model="Custom"), data, lambda _: None, lambda _: None)
                 writes = [call for call in backend.calls if call.diagnostic_stage.startswith("dataset:2")]
                 self.assertEqual(len(writes), 2 if finding == "hard" else 1)
+                checks = [json.loads(call.user_message) for call in backend.calls if call.diagnostic_stage == "dataset:validation:prompt"]
+                self.assertEqual([[row["index"] for row in check] for check in checks],
+                                 [[1, 2, 3], [2]] if finding == "hard" else [[1, 2, 3]])
                 self.assertEqual(sum(call.diagnostic_stage == "dataset:ideas" for call in backend.calls), 1)
                 self.assertFalse(any(call.diagnostic_stage == "dataset:validation:scene" for call in backend.calls))
                 row = result["scene_plan"][1]
@@ -333,7 +336,8 @@ class UniversalPipelineTests(unittest.TestCase):
             self.assertTrue(all(len(json.loads(call.user_message)["assignments"] if stage != "dataset:validation:scene"
                 else json.loads(call.user_message)) == 5 for call in calls))
         kinds = [row["scene_spec"]["participants"][0]["kind"] for row in result["scene_plan"]]
-        self.assertEqual(sum(call.diagnostic_stage == "dataset:validation:prompt" for call in backend.calls), 25)
+        # Final prompts are checked five per fidelity request.
+        self.assertEqual(sum(call.diagnostic_stage == "dataset:validation:prompt" for call in backend.calls), 5)
         self.assertFalse(any(call.diagnostic_stage == "dataset:validation:scene" for call in backend.calls))
         self.assertEqual(kinds, ["human", "human", "animal", "product", "environment"] * 5)
 

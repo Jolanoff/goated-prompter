@@ -94,6 +94,23 @@ class JobTransitionTests(unittest.TestCase):
         self.assertNotIn("private_content", job.snapshot()["llm_trace"])
 
 
+    def test_model_calls_are_summarised_per_stage_with_retries_errors_and_output_size(self):
+        job = Job()
+        for stage, text, finish in (("dataset:1", "abc", "stop"), ("dataset:2", "de", "stop"),
+                                    ("dataset:2:output_retry_1", "f", None), ("dataset:validation:prompt", "[]", "stop")):
+            job.record_llm_activity({"type": "request", "stage": stage, "model": "test", "messages": [], "parameters": {}})
+            job.record_llm_activity({"type": "response_delta", "text": text})
+            job.record_llm_activity({"type": "response_complete", "finish_reason": finish} if finish
+                                    else {"type": "error", "message": "timeout"})
+        stages = job.snapshot()["llm_stages"]
+        self.assertEqual({key: (value["calls"], value["retries"], value["errors"], value["output_chars"])
+                          for key, value in stages.items()},
+                         {"dataset:write": (3, 1, 1, 6), "dataset:validation:prompt": (1, 0, 0, 2)})
+        job.deliver({"ok": True})
+        summary = next(event for event in job.snapshot()["events"] if event["type"] == "summary")["message"]
+        self.assertIn("dataset:write 3 (1 retries) (1 errors)", summary)
+
+
 class JobConstantTests(unittest.TestCase):
     def test_constants_have_one_definition(self):
         self.assertEqual(TERMINAL_JOB_STATUSES, frozenset(TERMINAL))

@@ -206,6 +206,9 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
             "max_tokens": self.max_tokens,
         }
         if self.is_llama_cpp and getattr(instruction, "json_output", False) is True:
+            # Structured stages have fixed output budgets; hidden thinking would consume them and
+            # truncate the JSON. Free-text writing keeps the configured reasoning setting.
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
             schema = getattr(instruction, "json_schema", None)
             if schema is None:
                 payload["response_format"] = {"type": "json_object"}

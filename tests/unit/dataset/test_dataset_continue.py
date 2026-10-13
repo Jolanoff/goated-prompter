@@ -45,7 +45,7 @@ class DatasetContinueTests(unittest.TestCase):
                 self.saved[field] = "Stale source text"
                 self.backend.calls.clear()
                 result = self.run_service(valid_only=True, resume=True)
-                self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:1", "dataset:validation:prompt", "dataset:2", "dataset:validation:prompt"])
+                self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:1", "dataset:2", "dataset:validation:prompt"])
                 self.assertNotEqual(result["prompts"][0], self.saved)
                 self.saved[field] = self.data["scene_plan"][0][field]
 
@@ -55,8 +55,15 @@ class DatasetContinueTests(unittest.TestCase):
                 self.data["scene_plan"][0]["prompt_status"] = status
                 self.backend.calls.clear()
                 result = self.run_service(valid_only=True, resume=True)
-                self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:1", "dataset:validation:prompt", "dataset:2", "dataset:validation:prompt"])
+                self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:1", "dataset:2", "dataset:validation:prompt"])
                 self.assertNotEqual(result["prompts"][0], self.saved)
+
+    def test_continue_rewrites_a_prompt_whose_fidelity_check_never_finished(self):
+        self.data["scene_plan"][0].update(prompt_status="unverified", quality_warnings=["Fidelity check pending."])
+        result = self.run_service(valid_only=True, resume=True)
+        self.assertEqual([call.diagnostic_stage for call in self.backend.calls], ["dataset:1", "dataset:2", "dataset:validation:prompt"])
+        self.assertNotEqual(result["prompts"][0], self.saved)
+        self.assertNotIn("Fidelity check pending.", result["scene_plan"][0].get("quality_warnings", []))
 
     def test_continue_excludes_results_for_scenes_that_need_repair(self):
         self.data["scene_plan"][0].update(self_check="REPAIR:\nRequired glove hidden.\nMove it into view.",

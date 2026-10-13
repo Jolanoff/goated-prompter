@@ -21,7 +21,7 @@ const settingFields = ["subject", "trigger_type", "custom_type", "constraints", 
   "target", "length", "creativity", "style", "source_mode", "inputs", "seed", "seed_mode"];
 const jobFields = ["id", "kind", "status", "completion_state", "revision", "created_at", "finished_at", "result",
   "error", "progress", "progress_at", "status_reason", "events", "llm_trace", "partial_responses",
-  "workflow_revision", "input_signature"];
+  "llm_stages", "workflow_revision", "input_signature"];
 
 function pick(value, fields) {
   return Object.fromEntries(fields.filter((field) => value && Object.hasOwn(value, field))
