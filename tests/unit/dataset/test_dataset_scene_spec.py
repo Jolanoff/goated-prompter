@@ -103,6 +103,11 @@ class SceneSpecGateTests(unittest.TestCase):
         self.assertIn("omit high-angle and low-angle labels", instruction.system_message)
         self.assertIsNotNone(geometry_error("A low-angle full-body shot of an adult.", row['scene']))
         self.assertIsNone(geometry_error("A full-body shot of an adult.", row['scene']))
+        lighting = ('Sun streams in from a high-angle source. The camera is at eye level.',
+                    'The room has a low-angle source. The camera is at eye level.')
+        for text in lighting:
+            with self.subTest(text=text):
+                self.assertIsNone(geometry_error(text, row['scene']))
 
     def test_camera_cannot_claim_full_body_and_an_upper_body_crop(self):
         for text in ('A full-body shot. The camera captures her from the waist up.',
