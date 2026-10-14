@@ -362,7 +362,7 @@ class GoatedPrompterService:
     def generate(self, request):
         return self._generate(request, text_only=False)
 
-    def generate_text_only(self, request, *, seed=None):
+    def generate_text_only(self, request, *, seed=None, recovery=None):
         """Generate from text settings without touching image/reference state."""
         if not str(request.idea or "").strip():
             raise ValueError("Enter a text prompt first.")
@@ -383,9 +383,9 @@ class GoatedPrompterService:
             preserve_lighting=False,
             preserve_colors=False,
         )
-        return self._generate(sanitized, text_only=True, seed=seed)
+        return self._generate(sanitized, text_only=True, seed=seed, **({"recovery": recovery} if recovery is not None else {}))
 
-    def _generate(self, request, text_only=False, *, seed=None):
+    def _generate(self, request, text_only=False, *, seed=None, recovery=None):
         if self._checkpoint is not None:
             self._checkpoint()
         config = self._config if self._config is not None else load_config(self._config_path)
@@ -486,7 +486,8 @@ class GoatedPrompterService:
                 session_backend.validate_instruction(instruction)
                 if self._checkpoint is not None:
                     self._checkpoint()
-                prompt = str(session_backend.generate(instruction) or "").strip()
+                prompt = str((recovery.generate(session_backend, instruction, self._checkpoint) if recovery is not None
+                              else session_backend.generate(instruction)) or "").strip()
                 if self._checkpoint is not None:
                     self._checkpoint()
                 raw_candidate = prompt
@@ -506,7 +507,8 @@ class GoatedPrompterService:
                     if problems:
                         raise WorkflowFormatError(problems[0]["message"])
                     if validate_semantics or audit_constraints:
-                        accepted_facts = review_candidate(session_backend, {**semantic_contract, "accepted_facts": list(accepted_facts)},
+                        review_session = recovery.review_session(session_backend, self._checkpoint) if recovery is not None else session_backend
+                        accepted_facts = review_candidate(review_session, {**semantic_contract, "accepted_facts": list(accepted_facts)},
                             prompt, stage="builder:final", family=model_family, checkpoint=self._checkpoint,
                             checks=("action_fidelity", "scene_fidelity", "constraint_validity", *(["repair_preservation"] if attempt else []))
                             if validate_semantics else ("constraint_validity",))
@@ -517,6 +519,8 @@ class GoatedPrompterService:
                         format_valid=False if format_valid is None and validate_format else format_valid,
                         error=str(exc), issues=getattr(exc, "issues", []))
                     if attempt:
+                        if recovery is not None and recovery.had_runaway:
+                            raise recovery.invalid_output() from exc
                         raise BackendGenerationError(f"{request.target_model} returned an invalid prompt after one format-repair attempt: {exc}") from exc
                     accepted_facts = getattr(exc, "accepted_facts", ()) or accepted_facts
                     semantic_contract.update(previous_response=raw_candidate, listed_defect=str(exc))
@@ -530,6 +534,8 @@ class GoatedPrompterService:
                         )), user_message=instruction.user_message + repair_contract(semantic_contract, raw_candidate, exc, accepted_facts), temperature=.25, top_p=.85,
                         diagnostic_stage="final:semantic_retry" if isinstance(exc, SemanticValidationError) else "final:constraint_retry" if problems else "final:format_retry")
         if not prompt:
+            if recovery is not None and recovery.had_runaway:
+                raise recovery.invalid_output()
             raise RuntimeError("Goated Prompter backend returned an empty prompt.")
         if request.target_model != "Ideogram4" and not (request.target_model == "MiniMax H3" and request.mode == "Video"):
             prompt = sanitize_prompt_text(prompt)

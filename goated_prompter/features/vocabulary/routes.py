@@ -1,15 +1,18 @@
 """Pack management admission; all storage and validation belong to PackManager."""
 
 import asyncio
+import json
 
 from aiohttp import web
 
 from ...api.common import json_object
 from ...options.vocabulary import CATALOGUE_SORTS
 from .packs import MAX_ARCHIVE_BYTES, RATINGS, PackManager, VocabularyError, validate_pack_id
-from .explorer import catalogue, entry_detail, inspect_retrieval
+from .explorer import catalogue, entry_detail, inspect_retrieval, inspection_sample
+from .creator import PackCreator
 
 MANAGER = web.AppKey("vocabulary_pack_manager", PackManager)
+CREATOR = web.AppKey("vocabulary_pack_creator", PackCreator)
 
 
 def snapshot(manager):
@@ -61,16 +64,7 @@ async def explorer_endpoint(request):
     manager = request.app[MANAGER]
     try:
         if request.method == "POST":
-            payload = await json_object(request)
-            if set(payload) - {"request", "nsfw", "characters"}:
-                raise ValueError("Expected a sample request, NSFW rating filter and optional character descriptions.")
-            text, nsfw, characters = payload.get("request", ""), payload.get("nsfw", False), payload.get("characters", [])
-            if not isinstance(text, str) or not text.strip() or len(text) > 4000 or type(nsfw) is not bool:
-                raise ValueError("Enter a sample request of 1–4000 characters and a boolean NSFW rating filter.")
-            if not isinstance(characters, list) or len(characters) > 16 or any(
-                    not isinstance(item, str) or not item.strip() or len(item) > 512 for item in characters):
-                raise ValueError("Use up to 16 character descriptions of 1–512 characters each.")
-            result = await asyncio.to_thread(inspect_retrieval, manager, text, nsfw=nsfw, characters=characters)
+            result = await asyncio.to_thread(inspect_retrieval, manager, **inspection_sample(await json_object(request)))
         else:
             params = request.query
             if "entry" in request.match_info:
@@ -91,8 +85,66 @@ async def explorer_endpoint(request):
     return web.json_response({"ok": True, **result})
 
 
+async def creator_endpoint(request):
+    creator = request.app[CREATOR]
+    action = request.match_info["action"]
+    try:
+        if request.method == "GET":
+            if action == "schemas":
+                result = await asyncio.to_thread(creator.schemas)
+            elif action == "references":
+                result = await asyncio.to_thread(creator.references)
+            elif action == "drafts":
+                result = await asyncio.to_thread(creator.open, request.match_info["id"]) if "id" in request.match_info else {"drafts": await asyncio.to_thread(creator.drafts)}
+            elif action == "source":
+                result = await asyncio.to_thread(creator.installed_document, request.match_info["id"], request.query.get("origin"))
+            else:
+                raise web.HTTPNotFound()
+        elif action == "import":
+            result = await asyncio.to_thread(creator.import_archive, await archive_bytes(request))
+        else:
+            try:
+                payload = json.loads(await archive_bytes(request))
+            except (ValueError, UnicodeError, RecursionError):
+                raise ValueError("Expected valid draft JSON.") from None
+            if not isinstance(payload, dict) or "document" not in payload:
+                raise ValueError("Expected a draft document.")
+            if action == "drafts":
+                if set(payload) - {"document", "revision"}:
+                    raise ValueError("Unknown draft save field.")
+                result = await asyncio.to_thread(creator.save, payload["document"], request.match_info.get("id"), payload.get("revision"))
+            elif action in ("validate", "preview"):
+                if set(payload) - {"document", "sample"}:
+                    raise ValueError("Unknown draft validation field.")
+                sample = inspection_sample(payload.get("sample")) if action == "preview" else None
+                result = await asyncio.to_thread(creator.validate, payload["document"], sample)
+            elif action == "export":
+                data = await asyncio.to_thread(creator.export, payload["document"])
+                return web.Response(body=data, content_type="application/zip", headers={"Content-Disposition": 'attachment; filename="vocabulary-pack.zip"'})
+            elif action == "install":
+                if set(payload) - {"document", "update_id", "confirmed"} or payload.get("confirmed") is not True:
+                    raise ValueError("Explicit confirmation is required to install or update a pack.")
+                update_id = payload.get("update_id")
+                if update_id is not None:
+                    validate_pack_id(update_id)
+                pack = await asyncio.to_thread(creator.install, payload["document"], update_id)
+                result = {"pack": pack}
+            else:
+                raise web.HTTPNotFound()
+    except VocabularyError as error:
+        return web.json_response({"ok": False, "error": str(error), "problems": error.problems}, status=400)
+    except OSError:
+        return web.json_response({"ok": False, "error": "Cannot access draft storage or pack files. Check permissions and retry."}, status=400)
+    return web.json_response({"ok": True, **result})
+
+
 def register(app):
     app[MANAGER] = PackManager()
+    app[CREATOR] = PackCreator(app[MANAGER])
+    app.add_routes([web.get("/api/vocabulary/creator/{action:schemas|references|drafts}", creator_endpoint),
+                    web.get("/api/vocabulary/creator/{action:drafts|source}/{id}", creator_endpoint),
+                    web.post("/api/vocabulary/creator/{action:drafts|import|validate|preview|export|install}", creator_endpoint),
+                    web.put("/api/vocabulary/creator/{action:drafts}/{id}", creator_endpoint)])
     app.add_routes([web.get("/api/vocabulary/packs", packs_endpoint), web.post("/api/vocabulary/packs", packs_endpoint),
                     web.get("/api/vocabulary/packs/{id}/entries", explorer_endpoint),
                     web.get("/api/vocabulary/entries/{entry}", explorer_endpoint),

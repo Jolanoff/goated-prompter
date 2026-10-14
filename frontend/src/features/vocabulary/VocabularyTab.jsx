@@ -3,6 +3,7 @@ import { useRef, useState } from "react";
 import { ui } from "../../ui.js";
 import { useVocabularyPacks } from "./useVocabularyPacks.js";
 import VocabularyExplorer from "./VocabularyExplorer.jsx";
+import PackCreator from "./PackCreator.jsx";
 
 const ratings = { general: "General", mature: "Mature", adult: "Adult" };
 const origins = { core: "Mandatory Core", bundled: "Bundled", installed: "User-installed" };
@@ -119,8 +120,10 @@ export default function VocabularyTab({ visible }) {
     <nav className="vocabulary-sections" aria-label="Vocabulary sections">
       <button className={ui.button} aria-pressed={section === "packs"} onClick={() => setSection("packs")}>Pack Manager</button>
       <button className={ui.button} aria-pressed={section === "explorer"} onClick={() => setSection("explorer")}>Explorer</button>
+      <button className={ui.button} aria-pressed={section === "creator"} onClick={() => setSection("creator")}>Creator</button>
     </nav>
     <PackManagerView visible={visible && section === "packs"} state={state} heading={false} />
     <VocabularyExplorer visible={visible && section === "explorer"} packs={state.snapshot?.packs || []} revision={state.snapshot} />
+    <PackCreator visible={visible && section === "creator"} packs={state.snapshot?.packs || []} onInstalled={state.reload} />
   </div>;
 }

@@ -1,21 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { transformWithEsbuild } from "vite";
+import { compileView } from "./testSupport.js";
 
-async function compileView(source) {
-  const { code } = await transformWithEsbuild(await readFile(source, "utf8"), source.pathname,
-    { loader: "jsx", jsx: "automatic", sourcemap: false });
-  let linked = code;
-  for (const [statement, , specifier] of code.matchAll(/from (["'])([^"']+)\1/g)) {
-    const target = specifier.startsWith(".") ? new URL(specifier, source).href : import.meta.resolve(specifier);
-    const resolved = specifier.endsWith(".jsx") ? await compileView(new URL(target)) : target;
-    linked = linked.replace(statement, `from ${JSON.stringify(resolved)}`);
-  }
-  return `data:text/javascript;base64,${Buffer.from(linked).toString("base64")}`;
-}
 const { PackManagerView } = await import(await compileView(new URL("./VocabularyTab.jsx", import.meta.url)));
 
 function pack(id, overrides = {}) {

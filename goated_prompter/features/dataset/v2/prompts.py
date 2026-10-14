@@ -6,13 +6,14 @@ formatting and clean-up apply unchanged (Dataset delegates final writing to the 
 
 Code checks one thing: when the user gave a trigger, the prompt contains it exactly (and starts
 with it when "Require trigger at start" is on). A prompt that misses it is written once more with
-the reason; if it misses again it is kept and flagged trigger_ok: false.
+the reason; if it misses again the item is marked failed, not accepted as a valid prompt.
 """
 
 from dataclasses import replace
 import json
 
 from ...builder.service import GoatedPrompterService
+from ....backends.recovery import GenerationRecovery, RunawayRecoveryError
 from .debug import DebugTrace
 
 SCENE_ORDER = ("subjects", "position", "actions", "space", "lighting", "mood", "camera", "extras")
@@ -74,6 +75,8 @@ def write_prompts(config, request, brief, scenes, *, checkpoint=lambda: None, pr
             progress(f"Writing final prompt {number} of {len(scenes)}...")
             idea = scene_text(scene)
             problem = None
+            recovery = GenerationRecovery("dataset_v2:builder", [number],
+                report=lambda detail: trace.decide("runaway_recovery", detail), progress=progress)
             for attempt in (1, 2):
                 rules = "\n\n".join(part for part in (SCENE_RULES, requirements, _trigger_rule(brief),
                                                      f"CORRECTION: {problem}" if problem else "") if part)
@@ -81,13 +84,25 @@ def write_prompts(config, request, brief, scenes, *, checkpoint=lambda: None, pr
                                           target_model=brief["settings"]["target"], prompt_length=brief["settings"]["length"],
                                           creativity=brief["settings"]["creativity"], style=brief["settings"]["style"] or "Auto",
                                           director_preset=request.director_preset, custom_instructions=rules)
-                prompt = service.generate_text_only(builder_request, seed=brief["input"].get("seed")).prompt
+                try:
+                    prompt = service.generate_text_only(builder_request, seed=brief["input"].get("seed"), recovery=recovery).prompt
+                except RunawayRecoveryError as error:
+                    recovery.finish("failed")
+                    results.append({"index": number, "prompt": "", "trigger_ok": False, "error": str(error),
+                                    "stage": error.stage, "attempts": error.attempts, "reason": error.reason})
+                    trace.decide("prompt_failed", results[-1])
+                    on_prompt(results[-1])
+                    break
                 problem = trigger_problem(prompt, brief)
                 trace.attempt(scene=number, attempt=attempt, idea=idea, rules=rules, prompt=prompt, problem=problem)
                 if not problem:
                     break
-            results.append({"index": number, "prompt": prompt, "trigger_ok": problem is None})
+            if results and results[-1]["index"] == number:
+                continue
+            recovery.finish("succeeded" if not problem else "failed")
+            results.append({"index": number, "prompt": "" if problem else prompt, "trigger_ok": problem is None})
             if problem:
+                results[-1].update(error=problem, stage="dataset_v2:builder", attempts=recovery.attempts)
                 trace.decide("trigger_missing", {"scene": number, "problem": problem})
             on_prompt(results[-1])
     except Exception as error:

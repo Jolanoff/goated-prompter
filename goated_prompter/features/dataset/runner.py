@@ -29,7 +29,8 @@ def run_dataset_v2_scenes(state, job, request, config, workflow):
     def on_prompt(item):
         written.append(item)
         publish({**result, "stage": "prompts", "prompts": list(written)},
-                f"Final prompt {item['index']} of {len(result['scenes'])} is ready.")
+                 f"Final prompt {item['index']} of {len(result['scenes'])} "
+                 + ("failed; continuing with the remaining scenes." if item.get("error") else "is ready."))
     # One session held for the whole run: the scene steps and every Builder call share the loaded
     # model instead of each releasing it (a release with no other holder unloads the model).
     effective, _ = resolve_director_config(config, request)

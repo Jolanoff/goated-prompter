@@ -5,7 +5,7 @@ Three paths:
   sfw_character   switch off and the request is about one or more characters
   non_character   switch off and characters are not the point (object, product, style, place...)
 
-One model call, plus one retry only when the answer breaks the contract. Code then applies the
+One model call, plus one contract repair; runaway recovery shares a three-call ceiling. Code applies the
 few fixed rules below and logs every decision. No questions are asked, no vocabulary is read and
 the user's rules are passed through unchanged.
 
@@ -28,6 +28,7 @@ import json
 import re
 
 from ....backends.factory import create_backend
+from ....backends.recovery import GenerationRecovery
 from ....contracts import PromptInstruction, effective_model_family
 from ....director_profiles import resolve_director_config
 from ..quality import ADULTS_ONLY, NO_ANIMALS, adult_content_request, adults_only_error, minor_reference
@@ -291,6 +292,7 @@ def validate_content(brief, data=None):
 def understand(config, request, data, *, checkpoint=lambda: None, progress=print):
     """Run Understanding. Every run writes one debug JSON file and prints the brief."""
     trace = DebugTrace("understanding", **copied_input(data), settings=copied_settings(data))
+    recovery = GenerationRecovery("dataset_v2:understanding", report=lambda detail: trace.decide("runaway_recovery", detail), progress=progress)
     try:
         if not str(data.get("subject") or "").strip():
             raise ValueError("Write a request first.")
@@ -303,8 +305,7 @@ def understand(config, request, data, *, checkpoint=lambda: None, progress=print
             for _ in (1, 2):
                 checkpoint()
                 prompt = instruction(data, family, errors)
-                session.validate_instruction(prompt)
-                raw = session.generate(prompt)
+                raw = recovery.generate(session, prompt, checkpoint)
                 checkpoint()
                 try:
                     value = parse(raw)
@@ -318,8 +319,10 @@ def understand(config, request, data, *, checkpoint=lambda: None, progress=print
                 raise ValueError("The model returned an invalid answer twice: " + " ".join(errors))
         brief = validate_brief(apply_rules(value, data, trace))
     except Exception as error:
+        recovery.finish("failed")
         trace.finish(error=f"{type(error).__name__}: {error}")
         raise
+    recovery.finish("succeeded")
     trace.finish(output=brief)
     return brief
 

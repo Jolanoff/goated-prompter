@@ -115,6 +115,16 @@ def _schema_problems(name, data, where):
             for error in sorted(_validator(name).iter_errors(data), key=lambda error: list(error.absolute_path))]
 
 
+def pack_schemas():
+    """The authoritative schemas for data-only editor controls and validation."""
+    return {name: _validator(name).schema for name in ("manifest", "entry")}
+
+
+def schema_issues(name, data, prefix=()):
+    return [{"path": [*prefix, *error.absolute_path], "message": error.message}
+            for error in _validator(name).iter_errors(data)]
+
+
 def validate_pack_id(pack_id):
     schema = _validator("manifest").schema["$defs"]["packId"]
     if not isinstance(pack_id, str) or not jsonschema.Draft202012Validator(schema).is_valid(pack_id):
@@ -684,6 +694,21 @@ class PackManager:
                     problems.extend(error.problems)
             return {"pack": selected, "loaded": loaded, "registry": registry,
                     "problems": list(dict.fromkeys(problems))}
+
+    def draft_registry(self, pack):
+        """Resolve a draft and only its declared dependency closure, without changing availability."""
+        with self._lock:
+            available = {other.id: other for other in self._packs(exclude={pack.id})}
+            selected = {pack.id: replace(pack, enabled=True)}
+
+            def include(current):
+                for ident in current.manifest.get("requires", {}):
+                    if ident not in selected and ident in available:
+                        selected[ident] = replace(available[ident], enabled=True)
+                        include(available[ident])
+
+            include(pack)
+            return build_registry(list(selected.values()))
 
     # -- enable / disable / remove
     def _require_optional(self, pack_id):

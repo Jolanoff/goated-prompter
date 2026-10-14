@@ -33,6 +33,7 @@ import json
 import re
 
 from ....backends.factory import create_backend
+from ....backends.recovery import GenerationRecovery, RunawayRecoveryError
 from ....contracts import PromptInstruction, effective_model_family
 from ....director_profiles import resolve_director_config
 from ....prompting.creativity import CREATIVITY_ADAPTERS
@@ -342,10 +343,13 @@ def description_errors(description, labels, avoid):
     return _avoided(description, avoid)
 
 
-def _ask(session, prompt, key, trace, stage, slots, checkpoint):
-    """One model call; the parsed list, or (None, reason) when the answer is not the JSON asked for."""
+def _ask(session, prompt, key, trace, stage, slots, checkpoint, recovery):
+    """A bounded generation; the parsed list, or (None, reason) for invalid/exhausted output."""
     checkpoint()
-    raw = session.generate(prompt)
+    try:
+        raw = recovery.generate(session, prompt, checkpoint)
+    except RunawayRecoveryError as error:
+        return None, str(error)
     checkpoint()
     try:
         answer, error = _parse(raw, key), None
@@ -357,14 +361,17 @@ def _ask(session, prompt, key, trace, stage, slots, checkpoint):
 
 def _concepts(session, brief, total, trace, checkpoint, progress):
     """One concept per image, literal repeats dropped; up to ROUNDS tries per chunk."""
-    concepts, labels = [], _labels(brief)
+    concepts, labels, failure = [], _labels(brief), None
     while len(concepts) < total:
         missing = min(PLAN_BATCH, total - len(concepts))
         errors = []
+        recovery = GenerationRecovery("dataset_v2:concepts", range(len(concepts) + 1, len(concepts) + missing + 1),
+            report=lambda detail: trace.decide("runaway_recovery", detail), progress=progress)
         for _ in range(ROUNDS):
+            recovery.items = tuple(range(len(concepts) + 1, len(concepts) + missing + 1))
             progress(f"Planning {missing} scene concept{'s' if missing > 1 else ''}...")
             answer, error = _ask(session, concept_instruction(brief, missing, concepts, errors), "concepts",
-                                 trace, "concept", [], checkpoint)
+                                 trace, "concept", list(recovery.items), checkpoint, recovery)
             rejected = []
             for concept in (answer or [])[:missing]:
                 problems = concept_errors(concept, concepts, labels)
@@ -380,16 +387,24 @@ def _concepts(session, brief, total, trace, checkpoint, progress):
             if rejected:
                 trace.decide("concepts_rejected", rejected)
             if not missing:
+                recovery.finish("succeeded")
                 break
             errors = [error] if error else rejected or [f"Write {missing} more concepts."]
+            if recovery.exhausted:
+                recovery.finish("failed")
+                trace.decide("concepts_short", {"missing": missing, "reasons": errors})
+                break
         else:
             trace.decide("concepts_short", {"missing": missing, "reasons": errors})
+        if missing:
+            recovery.finish("failed")
+            failure = {"tries": recovery.attempts, "reasons": errors}
             break
     trace.decide("concepts", concepts)
-    return concepts
+    return concepts, failure
 
 
-def _round(session, brief, slots, numbers, kind, trace, checkpoint, progress):
+def _round(session, brief, slots, numbers, kind, trace, checkpoint, progress, recovery):
     """One staging or description call for the given slots; fills what passes the shape check."""
     labels, avoid = _labels(brief), brief["_avoid"]
     errors = sorted({reason for number in numbers for reason in slots[number]["reasons"]})
@@ -402,9 +417,11 @@ def _round(session, brief, slots, numbers, kind, trace, checkpoint, progress):
         prompt = description_instruction(brief, [{"concept": slots[number]["concept"], "staging": slots[number]["staging"]}
                                                  for number in numbers], errors)
         key, check = "scenes", description_errors
-    answer, error = _ask(session, prompt, key, trace, kind, numbers, checkpoint)
+    before = recovery.attempts
+    recovery.items = tuple(numbers)
+    answer, error = _ask(session, prompt, key, trace, kind, numbers, checkpoint, recovery)
     for number, item in zip(numbers, (answer or []) + [None] * len(numbers)):
-        slots[number]["tries"] += 1
+        slots[number]["tries"] += recovery.attempts - before
         problems = [error] if error else ["an answer was missing"] if item is None else check(item, labels, avoid)
         if problems:
             slots[number]["reasons"] = problems
@@ -434,39 +451,37 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
         trace.decide("vocabulary", reference["log"])
         brief = {**brief, "_vocabulary": reference["block"]}
         with create_backend(effective).generation_session() as session:
-            concepts = _concepts(session, brief, total, trace, checkpoint, progress)
-            if not concepts:
-                raise ValueError("No usable scene concept was planned.")
+            concepts, concept_failure = _concepts(session, brief, total, trace, checkpoint, progress)
             # One slot per concept: a scene always lands in its own concept's place.
             slots = {number: {"concept": concept, "staging": None, "description": None, "reasons": [], "tries": 0}
                      for number, concept in enumerate(concepts, 1)}
             for start in range(1, len(slots) + 1, BATCH):
                 batch = list(range(start, min(start + BATCH, len(slots) + 1)))
-                for _ in range(ROUNDS):
-                    unstaged = [number for number in batch if slots[number]["staging"] is None]
-                    if unstaged:
-                        _round(session, brief, slots, unstaged, "staging", trace, checkpoint, progress)
-                    staged = [number for number in batch
-                              if slots[number]["staging"] is not None and slots[number]["description"] is None]
-                    if staged:
-                        _round(session, brief, slots, staged, "description", trace, checkpoint, progress)
-                    if all(slots[number]["description"] is not None for number in batch):
-                        break
+                for kind in ("staging", "description"):
+                    recovery = GenerationRecovery(f"dataset_v2:{kind}", batch,
+                        report=lambda detail: trace.decide("runaway_recovery", detail), progress=progress)
+                    for _ in range(ROUNDS):
+                        pending = [number for number in batch if slots[number][kind] is None
+                                   and (kind == "staging" or slots[number]["staging"] is not None)]
+                        if not pending or recovery.exhausted:
+                            break
+                        _round(session, brief, slots, pending, kind, trace, checkpoint, progress, recovery)
+                    recovery.finish("succeeded" if all(slots[number][kind] is not None for number in batch) else "failed")
         done = [number for number, slot in slots.items() if slot["description"] is not None]
-        missing = [{"slot": number, "tries": slot["tries"], "reasons": slot["reasons"]}
+        missing = [{"slot": number, "tries": slot["tries"], "reasons": slot["reasons"],
+                    "stage": "staging" if slot["staging"] is None else "description"}
                    for number, slot in slots.items() if slot["description"] is None]
-        missing += [{"slot": number, "tries": 0, "reasons": ["no concept was planned"]}
+        missing += [{"slot": number, "stage": "concepts", **concept_failure}
                     for number in range(len(slots) + 1, total + 1)]
         trace.decide("slots", {number: {"concept": slot["concept"], "staging": slot["staging"]} for number, slot in slots.items()})
-        if not done:
-            raise ValueError("No usable scene was written. " + " ".join(missing[0]["reasons"] if missing else []))
         scenes = []
         for number in done:
             slot = slots[number]
             scene = {**slot["description"], "position": slot["staging"]["position"], "actions": slot["staging"]["actions"]}
             scenes.append({key: scene[key] for key in SECTIONS})
         result = {"complete": len(done) == total, "requested": total, "written": len(done), "missing": missing,
-                  "scenes": scenes, "vocabulary": {"enabled": reference["enabled"], "provided": reference["provided"]}}
+                  "scenes": scenes, "concepts": concepts,
+                  "vocabulary": {"enabled": reference["enabled"], "provided": reference["provided"]}}
     except Exception as error:
         trace.finish(error=f"{type(error).__name__}: {error}")
         raise

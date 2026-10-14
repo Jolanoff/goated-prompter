@@ -5,6 +5,18 @@ from .packs import RATINGS, VocabularyError, entry_references
 from .retrieval import RetrievalRequest, retrieve
 
 
+def inspection_sample(payload):
+    if not isinstance(payload, dict) or set(payload) - {"request", "nsfw", "characters"}:
+        raise ValueError("Expected a sample request, NSFW rating filter and optional character descriptions.")
+    text, nsfw, characters = payload.get("request", ""), payload.get("nsfw", False), payload.get("characters", [])
+    if not isinstance(text, str) or not text.strip() or len(text) > 4000 or type(nsfw) is not bool:
+        raise ValueError("Enter a sample request of 1–4000 characters and a boolean NSFW rating filter.")
+    if not isinstance(characters, list) or len(characters) > 16 or any(
+            not isinstance(item, str) or not item.strip() or len(item) > 512 for item in characters):
+        raise ValueError("Use up to 16 character descriptions of 1–512 characters each.")
+    return {"request": text, "nsfw": nsfw, "characters": characters}
+
+
 def catalogue(manager, pack_id, *, origin=None, query="", category="", rating="", sort="name"):
     view = manager.inspect_pack(pack_id, origin)
     pack = view["loaded"].get(pack_id)
@@ -56,7 +68,11 @@ def entry_detail(manager, entry_id, *, origin=None):
 
 def inspect_retrieval(manager, request, *, nsfw=False, characters=()):
     # No Understanding, model call or scene generation: only the existing deterministic engine.
-    registry = manager.registry()
+    return inspect_registry(manager.registry(), request, nsfw=nsfw, characters=characters)
+
+
+def inspect_registry(registry, request, *, nsfw=False, characters=()):
+    """The same inspection projection for enabled packs and isolated draft registries."""
     cast = tuple({"label": f"Character {number}", "gender": "custom", "custom": text}
                  for number, text in enumerate(characters, 1))
     result = retrieve(registry, RetrievalRequest(request=request, nsfw=nsfw, characters=cast)).to_dict()
