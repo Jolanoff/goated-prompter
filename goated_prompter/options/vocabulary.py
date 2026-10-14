@@ -1,0 +1,3 @@
+"""Read-only vocabulary catalogue ordering."""
+
+CATALOGUE_SORTS = {"name": "Name", "id": "ID", "category": "Category", "rating": "Content rating"}

@@ -16,7 +16,7 @@ from tests.unit.vocabulary.test_vocabulary_packs import archive, capability, tin
 from tests.unit.dataset.test_dataset_vocabulary_integration import ScriptedDirector, RecordingTrace, PEOPLE, brief
 
 
-class VocabularyAPITests(unittest.IsolatedAsyncioTestCase):
+class VocabularyAPIBase(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -53,6 +53,8 @@ class VocabularyAPITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, expected, await response.text())
         return await response.json()
 
+
+class VocabularyAPITests(VocabularyAPIBase):
     async def test_inventory_includes_complete_metadata_and_all_three_ratings(self):
         for rating in ("general", "mature", "adult"):
             pack_id = f"user_{rating}"

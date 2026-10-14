@@ -1,7 +1,8 @@
 import { Box, Check, LockKeyhole, Package, RefreshCw, ShieldCheck, Trash2, Upload } from "lucide-react";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { ui } from "../../ui.js";
 import { useVocabularyPacks } from "./useVocabularyPacks.js";
+import VocabularyExplorer from "./VocabularyExplorer.jsx";
 
 const ratings = { general: "General", mature: "Mature", adult: "Adult" };
 const origins = { core: "Mandatory Core", bundled: "Bundled", installed: "User-installed" };
@@ -51,7 +52,7 @@ function PackCard({ pack, busy, removing, onToggle, onUpdate, onRemove, onCancel
   </li>;
 }
 
-export function PackManagerView({ visible, state }) {
+export function PackManagerView({ visible, state, heading = true }) {
   const { snapshot, loading, saving, error, notice, removing, target, file, reload, upload,
     setFile, chooseUpdate, setRemoving, toggle, remove } = state;
   const importer = useRef(null);
@@ -62,8 +63,8 @@ export function PackManagerView({ visible, state }) {
     importer.current?.querySelector("input")?.focus();
   }
   return <section className="vocabulary-view" hidden={!visible} aria-label="Vocabulary pack manager" aria-busy={busy}>
-    <div className={ui.pageHeading}>
-      <div><h2>Vocabulary</h2><p>Give the scene Director more to draw from. You decide which packs are available.</p></div>
+    <div className={heading ? ui.pageHeading : "vocabulary-manager-toolbar"}>
+      {heading && <div><h2>Vocabulary</h2><p>Give the scene Director more to draw from. You decide which packs are available.</p></div>}
       <button className={ui.button} disabled={busy} onClick={reload}><RefreshCw size={15} />Refresh packs</button>
     </div>
     <div className="vocabulary-guidance"><Package size={18} aria-hidden="true" />
@@ -112,5 +113,14 @@ export function PackManagerView({ visible, state }) {
 
 export default function VocabularyTab({ visible }) {
   const state = useVocabularyPacks(visible);
-  return <PackManagerView visible={visible} state={state} />;
+  const [section, setSection] = useState("packs");
+  return <div className="vocabulary-shell" hidden={!visible}>
+    <div className={ui.pageHeading}><div><h2>Vocabulary</h2><p>Manage the packs. Explore the definitions. See what a request retrieves.</p></div></div>
+    <nav className="vocabulary-sections" aria-label="Vocabulary sections">
+      <button className={ui.button} aria-pressed={section === "packs"} onClick={() => setSection("packs")}>Pack Manager</button>
+      <button className={ui.button} aria-pressed={section === "explorer"} onClick={() => setSection("explorer")}>Explorer</button>
+    </nav>
+    <PackManagerView visible={visible && section === "packs"} state={state} heading={false} />
+    <VocabularyExplorer visible={visible && section === "explorer"} packs={state.snapshot?.packs || []} revision={state.snapshot} />
+  </div>;
 }

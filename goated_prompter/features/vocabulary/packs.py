@@ -15,7 +15,7 @@ reachable packs, inheritance without cycles or contradictions (section 7), and r
 than the pack. No compatibility resolution, retrieval or scene logic lives here.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import io
 import json
 import os
@@ -188,6 +188,18 @@ def _capability_refs(comp):
     refs += comp.get("object", {}).get("provides", []) + comp.get("object", {}).get("complete_for", [])
     refs += comp.get("environment", {}).get("provides", [])
     return refs
+
+
+def entry_references(entry):
+    """Schema-declared references, shared by registry validation and read-only inspection."""
+    comp = entry["components"]
+    capabilities = _capability_refs(comp)
+    requirements = comp.get("requirements", {})
+    for condition in [*requirements.get("participants", {}).values(), requirements.get("space", {})]:
+        capabilities += [ref for group in condition.get("any_of_groups", []) for ref in group]
+    return {"extends": list(entry.get("extends", [])), "capability": capabilities,
+            "posture": [placement["posture"] for placement in comp.get("spatial", {}).get("participants", {}).values()
+                        if "posture" in placement]}
 
 
 def _union(*lists):
@@ -389,9 +401,7 @@ def build_registry(packs):
         categories = {category["id"] for pack_id in reachable for category in active[pack_id].manifest.get("categories", [])}
         if entry["category"] not in categories:
             problems.append(f"{entry_id}: category {entry['category']} is not declared by its pack or the packs it requires")
-        comp = entry["components"]
-        postures = [placement["posture"] for placement in comp.get("spatial", {}).get("participants", {}).values() if "posture" in placement]
-        for kind, refs in (("extends", entry.get("extends", [])), ("capability", _capability_refs(comp)), ("posture", postures)):
+        for kind, refs in entry_references(entry).items():
             for ref in refs:
                 if ref not in entries:
                     problems.append(f"{entry_id}: {kind} reference {ref} does not exist")
@@ -627,6 +637,53 @@ class PackManager:
         """The merged registry of every enabled pack."""
         with self._lock:
             return build_registry(self._packs())
+
+    def inspect_pack(self, pack_id, origin=None):
+        """Read one pack and resolve its dependency closure without enabling or writing anything.
+
+        Broken references retain the validated declarations; unresolved data is never fabricated.
+        Unrelated disabled or broken packs do not prevent browsing a healthy pack.
+        """
+        validate_pack_id(pack_id)
+        with self._lock:
+            inventory = self.discover()
+            matches = [pack for pack in inventory if pack["id"] == pack_id and (origin is None or pack["origin"] == origin)]
+            if len(matches) != 1:
+                raise VocabularyError(f"{pack_id}: pack is missing or ambiguous; select its origin explicitly.")
+            selected, loaded, problems = matches[0], {}, []
+
+            def load(summary):
+                ident = summary["id"]
+                if ident in loaded:
+                    return
+                if not summary["valid"]:
+                    problems.extend(summary["problems"])
+                    return
+                try:
+                    if summary["origin"] == "core":
+                        pack = next(pack for pack in self._bundled() if pack.id == ident)
+                    else:
+                        root = self.official_dir if summary["origin"] == "bundled" else self.install_dir
+                        pack = self._optional(root / ident, bundled=summary["bundled"], enabled=summary["enabled"])
+                    loaded[ident] = pack
+                    for dependency in pack.manifest.get("requires", {}):
+                        candidates = [item for item in inventory if item["id"] == dependency]
+                        if len(candidates) == 1:
+                            load(candidates[0])
+                        else:
+                            problems.append(f"{ident}: dependency {dependency} is missing or ambiguous.")
+                except (VocabularyError, OSError) as error:
+                    problems.extend(getattr(error, "problems", [str(error)]))
+
+            load(selected)
+            registry = None
+            if loaded:
+                try:
+                    registry = build_registry([replace(pack, enabled=True) for pack in loaded.values()])
+                except VocabularyError as error:
+                    problems.extend(error.problems)
+            return {"pack": selected, "loaded": loaded, "registry": registry,
+                    "problems": list(dict.fromkeys(problems))}
 
     # -- enable / disable / remove
     def _require_optional(self, pack_id):

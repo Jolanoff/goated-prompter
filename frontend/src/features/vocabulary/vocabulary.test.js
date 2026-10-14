@@ -5,12 +5,18 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { transformWithEsbuild } from "vite";
 
-const source = new URL("./VocabularyTab.jsx", import.meta.url);
-const { code } = await transformWithEsbuild(await readFile(source, "utf8"), source.pathname,
-  { loader: "jsx", jsx: "automatic", sourcemap: false });
-const linked = code.replace(/from (["'])([^"']+)\1/g, (_match, _quote, specifier) =>
-  `from ${JSON.stringify(specifier.startsWith(".") ? new URL(specifier, source).href : import.meta.resolve(specifier))}`);
-const { PackManagerView } = await import(`data:text/javascript;base64,${Buffer.from(linked).toString("base64")}`);
+async function compileView(source) {
+  const { code } = await transformWithEsbuild(await readFile(source, "utf8"), source.pathname,
+    { loader: "jsx", jsx: "automatic", sourcemap: false });
+  let linked = code;
+  for (const [statement, , specifier] of code.matchAll(/from (["'])([^"']+)\1/g)) {
+    const target = specifier.startsWith(".") ? new URL(specifier, source).href : import.meta.resolve(specifier);
+    const resolved = specifier.endsWith(".jsx") ? await compileView(new URL(target)) : target;
+    linked = linked.replace(statement, `from ${JSON.stringify(resolved)}`);
+  }
+  return `data:text/javascript;base64,${Buffer.from(linked).toString("base64")}`;
+}
+const { PackManagerView } = await import(await compileView(new URL("./VocabularyTab.jsx", import.meta.url)));
 
 function pack(id, overrides = {}) {
   return { id, name: `${id} pack`, description: `Knowledge from ${id}`, version: "1.2.3", entries: 12,
