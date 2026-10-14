@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../api.js";
-import { datasetRequestSignature, reviseDatasetRequest } from "./datasetState.js";
-
-const canConfirm = (review, busy) => review?.status === "ready" && !!review.brief && !busy;
+import { canConfirmDatasetReview, datasetRequestSignature, reviseDatasetRequest } from "./datasetState.js";
 
 export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm, setError }) {
   const [confirmation, setConfirmation] = useState(null);
@@ -96,7 +94,7 @@ export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm
   }
 
   async function confirmRequest() {
-    if (!canConfirm(confirmation, busy)) return;
+    if (!canConfirmDatasetReview(confirmation, busy)) return;
     if (datasetRequestSignature(latestDraft.current) !== confirmation.baseSignature) {
       setConfirmation((current) => current && { ...current, confirmation_token: "",
         error: "Dataset settings changed during review. Cancel and review the updated request." });

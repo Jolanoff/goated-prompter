@@ -294,6 +294,10 @@ class Section2Vocabulary(Section2Run):
                       {**brief("a woman using a dildo on her partner", characters=PEOPLE),
                        "input": {**brief("x")["input"], "request": "a woman using a dildo on her partner", "nsfw": True}}):
             with self.subTest(nsfw_flag=value["input"]["nsfw"]):
+                if value["input"]["nsfw"]:
+                    with self.assertRaisesRegex(ValueError, "NSFW switch"):
+                        self.run_scenes(value)
+                    continue
                 _, log = self.run_scenes(value)
                 self.assertEqual(log["allowed_ratings"], ["general", "mature"])
                 self.assertFalse([entry for entry in log["entries"] if entry["rating"] == "adult"])

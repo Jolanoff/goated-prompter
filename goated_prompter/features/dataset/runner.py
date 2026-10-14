@@ -12,11 +12,12 @@ from .v2.understanding import understand
 def run_dataset_understanding(state, job, request, config, workflow):
     # Rebuild (issue 106): the tab's Understand button runs only the new Understanding.
     brief = understand(config, request, workflow["input"], checkpoint=job.checkpoint, progress=job.set_progress)
-    job.commit(lambda: {"ok": True, "kind": "dataset_understanding", "brief": brief}, finish=True)
+    job.commit(lambda: {"ok": True, "kind": "dataset_understanding",
+                        **state.dataset_intents.register(workflow["input"], brief)}, finish=True)
 
 
 def run_dataset_v2_scenes(state, job, request, config, workflow):
-    # Rebuild (issue 106): Confirm runs Section 2 (scenes) and Section 3 (final prompts through the Builder).
+    # Confirm runs scenes, then final prompts unless the owner chose scenes only.
     # The scenes are published as soon as they exist, then each final prompt as it is written.
     def publish(value, message):
         def apply():
@@ -34,6 +35,9 @@ def run_dataset_v2_scenes(state, job, request, config, workflow):
     effective, _ = resolve_director_config(config, request)
     with create_backend(effective).generation_session():
         result = write_scenes(config, request, workflow["brief"], checkpoint=job.checkpoint, progress=job.set_progress)
+        if workflow.get("scenes_only"):
+            job.commit(lambda: {"ok": True, "kind": "dataset_v2_scenes", **result, "stage": "scenes", "prompts": []}, finish=True)
+            return
         publish({**result, "stage": "prompts", "prompts": []}, f"{result['written']} scenes are ready; writing final prompts.")
         prompts = write_prompts(config, request, workflow["brief"], result["scenes"],
                                 checkpoint=job.checkpoint, progress=job.set_progress, on_prompt=on_prompt)

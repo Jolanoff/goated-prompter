@@ -7,7 +7,7 @@ from .assignments import dataset_assignments
 from .intent import intent_signature
 from ...presets import get_director_preset
 from .plan import reusable_scene_plan, scene_is_usable, scene_unusable_reason
-from .v2.understanding import confirm
+from .v2.understanding import VERSION, confirm, copied_input, copied_settings
 from ...api.common import STATE, active_job_conflict, engine_request, json_object
 
 
@@ -67,6 +67,8 @@ async def dataset_endpoint(request):
                       if payload.get("confirmation_token") else retained or None)
         else:
             intent = state.dataset_intents.approve(payload.get("confirmation_token"), data)
+        if intent and intent.get("version") == VERSION:
+            raise ValueError("Use the rebuilt Dataset confirmation endpoint for this brief.")
         config = state.config()
         director_request = engine_request(
             state, config, settings,
@@ -84,12 +86,20 @@ async def confirm_endpoint(request):
     """Rebuild (issue 106): check and log the confirmed brief, then start Section 2 (scene writing)."""
     state = request.app[STATE]
     payload = await json_object(request)
-    if set(payload) != {"brief", "settings"}:
+    if set(payload) != {"brief", "settings", "input", "operation", "confirmation_token"}:
         raise ValueError("Expected the confirmed brief and prompt-engine settings. Rebuild the frontend if it is out of date.")
+    if payload["operation"] not in ("dataset", "dataset/scenes"):
+        raise ValueError("Choose Dataset generation or scenes only.")
+    data = validate_dataset_draft(payload["input"], generation=True, planning=True)
     settings = payload["settings"]
     if not isinstance(settings, dict) or set(settings) - {"director_profile"}:
         raise ValueError("Invalid Dataset prompt-engine settings.")
-    brief = confirm(payload["brief"])
+    brief = state.dataset_intents.approve(payload["confirmation_token"], data)
+    if brief != payload["brief"]:
+        raise ValueError("The brief changed after analysis. Review the updated request before generating.")
+    if brief.get("version") != VERSION or brief["input"] != copied_input(data) or brief["settings"] != copied_settings(data):
+        raise ValueError("Dataset input changed after analysis. Review the updated request before generating.")
+    brief = confirm(brief, data)
     director = get_director_preset(brief["settings"]["director"], strict=True)
     async with state.admission:
         if (conflict := active_job_conflict(state, "Wait for the active generation before generating again.")) is not None:
@@ -102,7 +112,8 @@ async def confirm_endpoint(request):
             prompt_length=brief["settings"]["length"], director_preset=director.id,
         )
         return web.json_response(state.start_job("dataset_v2_scenes", director_request, config, True,
-            {"operation": "dataset_v2_scenes", "brief": brief}), status=202)
+            {"operation": "dataset_v2_scenes", "brief": brief,
+             "scenes_only": payload["operation"] == "dataset/scenes"}), status=202)
 
 
 def register(app):

@@ -5,7 +5,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { transformWithEsbuild } from "vite";
 import { canConfirmDatasetReview, datasetRequestSignature, datasetUnderstandingSections, datasetUnderstandingSummary,
-  reviseDatasetRequest } from "./datasetState.js";
+  reviseDatasetRequest, datasetConfirmationPayload } from "./datasetState.js";
 
 async function loadReviewModal() {
   const sourceUrl = new URL("./DatasetConfirmationModal.jsx", import.meta.url);
@@ -16,26 +16,36 @@ async function loadReviewModal() {
   return (await import(`data:text/javascript;base64,${Buffer.from(linked).toString("base64")}`)).default;
 }
 
+function brief(overrides = {}) {
+  return { version: 9, path: "sfw_character", summary: "Two adults greet each other", people: 2,
+    characters: [{ label: "First reader", gender: "male", custom: "", pronoun: "he" },
+      { label: "Second reader", gender: "custom", custom: "elf", pronoun: "she" }],
+    fixed: "The two readers", randomized: "Lighting and framing", must: [], avoid: [],
+    input: { request: "Two adults greet each other", rules: [], amount: 2, nsfw: false },
+    settings: { style: "Auto", target: "Generic", director: "general_director", length: "Medium", creativity: "Balanced" },
+    ...overrides };
+}
+
 test("confirmation contains no routing, vocabulary or scene-planning diagnostics", async () => {
   const Modal = await loadReviewModal();
   const markup = renderToStaticMarkup(createElement(Modal, { review: { status: "ready", input: {},
-    brief: { requested_generation: "Two adults greet each other", hard: [{ scope: "all_outputs", text: "Wear blue coats" }],
-      planning_constraints: [{ scope: "all_outputs", participants: [], contacts: [{ source: "P1.hand", target: "P2.hand" }] }] },
+    confirmation_token: "synthetic", brief: brief({ must: ["Wear blue coats"] }),
     routing: [{ scope: "all_outputs", vocabulary: { loaded: 100, eligible: 3, rejected: 0 } }] } }));
   assert.doesNotMatch(markup, /Vocabulary diagnostics|Request routing|Supplied mechanics|P1\.hand|Show details/);
   assert.equal(markup.split("Wear blue coats").length - 1, 1);
-  assert.match(markup, /Update understanding/);
-  assert.match(markup, /Confirm &amp; Generate/);
+  assert.match(markup, /Confirm understanding/);
+  assert.doesNotMatch(markup.match(/<button[^>]*>Confirm<\/button>/)[0], /disabled/);
 });
 
-test("the concise server summary is displayed while the full contract still gates confirmation", async () => {
+test("the brief is displayed directly and missing approval still gates confirmation", async () => {
   const Modal = await loadReviewModal();
   const markup = renderToStaticMarkup(createElement(Modal, { review: { status: "ready", input: {},
-    confirmation_token: "synthetic", brief: { requested_generation: "Raw source retention", clarifications: ["Which crop?"] },
-    summary: { requested_generation: "Two adults reading", hard: [{ scope: "all_outputs", text: "Keep both recognizable" }] } } }));
-  assert.match(markup, /Two adults reading|Keep both recognizable/);
-  assert.doesNotMatch(markup, /Raw source retention/);
-  assert.match(markup, /<button[^>]*disabled=""[^>]*>Confirm &amp; Generate<\/button>/);
+    confirmation_token: "", brief: brief({ summary: "Two adults reading", must: ["Keep both recognizable"] }),
+    summary: { requested_generation: "Obsolete summary" } } }));
+  assert.match(markup, /Two adults reading/);
+  assert.match(markup, /Keep both recognizable/);
+  assert.doesNotMatch(markup, /Obsolete summary/);
+  assert.match(markup, /<button[^>]*disabled=""[^>]*>Confirm<\/button>/);
 });
 
 const broadMaleRoute = { scope: "all_outputs", nsfw: true,
@@ -47,7 +57,7 @@ const broadMaleRoute = { scope: "all_outputs", nsfw: true,
 test("review modal does not expose server routing", async () => {
   const Modal = await loadReviewModal();
   const markup = renderToStaticMarkup(createElement(Modal, { review: { status: "ready", input: {},
-    brief: { requested_generation: "Concept does not contain the server routing", identity_policy: "fixed" },
+    brief: brief({ summary: "Concept does not contain the server routing" }),
     routing: [broadMaleRoute] } }));
   assert.doesNotMatch(markup, /aria-label="Request routing"|NSFW detected|Eligible vocabulary pools/);
 });
@@ -55,7 +65,7 @@ test("review modal does not expose server routing", async () => {
 test("vocabulary diagnostics stay outside the confirmation screen", async () => {
   const Modal = await loadReviewModal();
   const markup = renderToStaticMarkup(createElement(Modal, { review: { status: "ready", input: {},
-    brief: { requested_generation: "Adults sharing an activity" }, routing: [{ ...broadMaleRoute,
+    brief: brief({ summary: "Adults sharing an activity" }), routing: [{ ...broadMaleRoute,
       vocabulary: { loaded: 100, eligible: 7, rejected: 0, diagnostics: [], unresolved_constraints: [] } }] } }));
   assert.doesNotMatch(markup, /compatible TXT choices|Vocabulary diagnostics|100 loaded/);
   assert.doesNotMatch(markup, /structured arrangements|Approve selected|unresolved_structure/);
@@ -227,18 +237,18 @@ test("conflict deduplication never hides distinct resolutions or unresolved ques
 
 test("the modal renders each requirement once without a duplicated details view", async () => {
   const Modal = await loadReviewModal();
-  const fact = { scope: "dataset", text: 'Vary destinations marked "DUCK & friends".' };
-  const brief = { requested_generation: "Traveling friends", hard: [fact, fact], must_vary: [fact],
-    rules: [fact], expansion_freedom: "Keep the required group.", dataset_contents: "Two prompts",
-    character_count: 3, identity_policy: "random_per_prompt", clarifications: [] };
+  const contract = brief({ randomized: 'Vary destinations marked "DUCK & friends".',
+    must: ["Keep the required group."], avoid: ["No tattoos"] });
   const review = { status: "ready", confirmation_token: "synthetic", operation: "dataset",
-    input: { subject: "Traveling friends", amount: 2, trigger: "duck, 2 men" }, brief };
+    input: { subject: "Traveling friends", amount: 2, trigger: "duck, 2 men" }, brief: contract };
   const markup = renderToStaticMarkup(createElement(Modal, { review, busy: false,
     onRevise() {}, onConfirm() {}, onCancel() {} }));
   assert.equal(markup.split("Vary destinations marked").length - 1, 1);
   assert.doesNotMatch(markup, /<details|Also:|Rules every output must follow/);
   assert.match(markup, /DUCK &amp; friends/);
-  assert.doesNotMatch(markup.match(/<button[^>]*>Confirm &amp; Generate<\/button>/)[0], /disabled/);
+  assert.equal(markup.split("Keep the required group.").length - 1, 1);
+  assert.equal(markup.split("No tattoos").length - 1, 1);
+  assert.doesNotMatch(markup.match(/<button[^>]*>Confirm<\/button>/)[0], /disabled/);
 });
 
 test("understanding grouping preserves local scope, qualifiers and distinct obligations", () => {
@@ -313,50 +323,47 @@ test("writer completion and failure bookkeeping does not invalidate approval of 
   }
 });
 
-test("the existing modal renders the new brief, keeps extra instructions and blocks unresolved questions", async () => {
+test("the current brief renders constraints, cast and settings safely and blocks busy confirmation", async () => {
   const Modal = await loadReviewModal();
-  const brief = { requested_generation: "Boxing <script>not markup</script>", expansion_freedom: "Preserve the contact",
-    hard: [{ scope: "all_outputs", text: "Two adults with readable gloves" }],
-    soft: [{ scope: "all_outputs", text: "Warm lighting" }],
-    free: [{ scope: "guided:1", text: "Background <script>not markup</script>" }],
-    character_count: 2, identity_policy: "random_per_prompt",
-    action_options: [{ scope: "guided:1", text: "Punch or block <script>not markup</script>" }],
-    dataset_contents: "One prompt", fixed: [{ scope: "all_outputs", text: "Two adults" }],
-    may_vary: [{ scope: "dataset", text: "Lighting" }], must_vary: [{ scope: "dataset", text: "Actions" }],
-    rules: [{ scope: "all_outputs", text: "Gloves" }], visible_evidence: [{ scope: "all_outputs", text: "Readable glove" }],
-    interactions: [{ scope: "all_outputs", text: "Glove contact" }], natural_occlusions: [{ scope: "all_outputs", text: "Partial cheek" }],
-    visibility_to_preserve: [{ scope: "guided:1", text: "Exposed head" }],
-    physical_conflicts: [{ scope: "all_outputs", conflict: "Full cheek exposure.", compatible_resolution: null }],
-    clarifications: ["Allow partial overlap?"] };
+  const contract = brief({ summary: "Boxing <script>not markup</script>", fixed: "Preserve the contact",
+    randomized: "Background and light", must: ["Two adults with readable gloves", 'Show literal "DUCK"'],
+    avoid: ["No tattoos <script>not markup</script>"],
+    input: { guided_inputs: ["Punch", "Block"] } });
   const review = { status: "ready", confirmation_token: "synthetic", operation: "dataset",
-    input: { subject: "Boxing", constraints: "Gloves", trigger: "boxer", source_mode: "random" }, brief };
+    input: { subject: "Boxing", constraints: "Gloves", trigger: "boxer", source_mode: "random" }, brief: contract };
   const render = (item) => renderToStaticMarkup(createElement(Modal, { review: item, busy: false,
     onRevise() {}, onConfirm() {}, onCancel() {} }));
   const markup = render(review);
-  for (const section of datasetUnderstandingSections(brief).filter(({ items }) => items.length)) assert.ok(markup.includes(section.label));
-  for (const heading of ["Concept", "Requirements", "Open creative choices", "Output settings"]) {
+  for (const heading of ["Summary", "Stays the same", "Changes per image", "Must", "Avoid", "Output settings", "Guided inputs"]) {
     assert.ok(markup.includes(`<h3>${heading}</h3>`), `missing ${heading}`);
   }
   assert.match(markup, /Preserve the contact/);
   assert.doesNotMatch(markup, /<details|Show details|Also:/);
   assert.doesNotMatch(markup, /Every output:/);
   assert.doesNotMatch(markup, /What the dataset will contain|Characters and identity/);
-  assert.match(markup, /Randomized per independent prompt/);
-  assert.match(markup, /Requirements/);
-  assert.match(markup, /Adjustable preferences/);
-  assert.match(markup, /Open creative choices/);
-  assert.match(markup, /Scenes are planned only after you confirm/);
-  assert.match(markup, /Guided input 1: Punch or block &lt;script&gt;/);
-  assert.match(markup, /Corrections or answers/);
-  assert.match(markup, /Update understanding/);
-  assert.match(markup, /Allow partial overlap\?/);
+  assert.match(markup, /First reader: male/);
+  assert.match(markup, /Second reader: elf/);
+  assert.match(markup, /Two adults with readable gloves/);
+  assert.match(markup, /Show literal &quot;DUCK&quot;/);
+  assert.match(markup, /No tattoos &lt;script&gt;/);
+  assert.match(markup, /Generic/);
+  assert.match(markup, /<li>Punch<\/li><li>Block<\/li>/);
   assert.match(markup, /&lt;script&gt;/);
   assert.doesNotMatch(markup, /<script>/);
-  assert.match(markup, /<button[^>]*disabled=""[^>]*>Confirm &amp; Generate<\/button>/);
-  const resolved = { ...review, brief: { ...brief, physical_conflicts: [], clarifications: [] } };
-  assert.doesNotMatch(render(resolved).match(/<button[^>]*>Confirm &amp; Generate<\/button>/)[0], /disabled/);
-  assert.match(render({ ...resolved, operation: "dataset/scenes" }), /Confirm &amp; Generate/);
-  assert.match(render({ ...resolved, options: { resume: true } }), /Confirm &amp; Continue/);
+  assert.doesNotMatch(markup.match(/<button[^>]*>Confirm<\/button>/)[0], /disabled/);
+  for (const status of ["analyzing", "confirming", "failed"]) {
+    assert.match(render({ ...review, status }), /<button[^>]*disabled=""[^>]*>Confirm<\/button>/);
+  }
+  const nonCharacter = render({ ...review, brief: brief({ path: "non_character", people: 0, characters: [] }) });
+  assert.doesNotMatch(nonCharacter, /aria-label="People"/);
+  assert.equal(nonCharacter.split("None specified").length - 1, 2);
+});
+
+test("confirmation submission preserves scenes-only choice, source, approval and chosen seed", () => {
+  const review = { brief: brief(), input: { seed: 73, seed_mode: "fixed", inputs: "Read\nWalk" },
+    operation: "dataset/scenes", confirmation_token: "synthetic" };
+  assert.deepEqual(datasetConfirmationPayload(review), review);
+  assert.equal(datasetConfirmationPayload({ ...review, operation: "dataset" }).operation, "dataset");
 });
 
 test("extra instructions create an isolated revised request without discarding old results", () => {

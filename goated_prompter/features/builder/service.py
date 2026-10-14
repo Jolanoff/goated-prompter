@@ -362,7 +362,7 @@ class GoatedPrompterService:
     def generate(self, request):
         return self._generate(request, text_only=False)
 
-    def generate_text_only(self, request):
+    def generate_text_only(self, request, *, seed=None):
         """Generate from text settings without touching image/reference state."""
         if not str(request.idea or "").strip():
             raise ValueError("Enter a text prompt first.")
@@ -383,9 +383,9 @@ class GoatedPrompterService:
             preserve_lighting=False,
             preserve_colors=False,
         )
-        return self._generate(sanitized, text_only=True)
+        return self._generate(sanitized, text_only=True, seed=seed)
 
-    def _generate(self, request, text_only=False):
+    def _generate(self, request, text_only=False, *, seed=None):
         if self._checkpoint is not None:
             self._checkpoint()
         config = self._config if self._config is not None else load_config(self._config_path)
@@ -459,6 +459,7 @@ class GoatedPrompterService:
             instruction = replace(
                 instruction,
                 diagnostic_stage="final",
+                seed=seed,
                 diagnostic_context=_diagnostic_context(
                     request,
                     evidence_digest=resolved_scene_sha256(resolved_scene) if resolved_scene is not None else "NONE",

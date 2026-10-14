@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../api.js";
 import { datasetRetryStage, freshDatasetRequest, hasCompletedDatasetPrompt, invalidateDatasetPrompts, isDatasetSceneCurrent,
-  nextDatasetSeed } from "./datasetState.js";
+  nextDatasetSeed, datasetConfirmationPayload } from "./datasetState.js";
 import { useDatasetConfirmation } from "./useDatasetConfirmation.js";
 
 /** Dataset requests and job projections; editable-draft revisions stay in useWorkflowSettings. */
@@ -12,9 +12,12 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, d
   const [error, setError] = useState("");
   const submission = useRef(false);
   const synced = useRef("");
-  // Rebuild (issue 106): Confirm starts Section 2 (scene writing); its scenes are only logged for now.
   const confirmationFlow = useDatasetConfirmation({ draft, job, busy, onGenerate,
-    onConfirm: (item) => onGenerate("dataset/v2/confirm", { brief: item.brief }), setError });
+    onConfirm: async (item) => {
+      const accepted = await onGenerate("dataset/v2/confirm", datasetConfirmationPayload(item));
+      if (accepted) update({ seed: item.input.seed });
+      return accepted;
+    }, setError });
   const datasetJob = ["dataset", "dataset_scenes", "dataset_understanding", "dataset_v2_scenes"].includes(job?.kind);
   const workflowActive = datasetJob && active;
   const disabled = busy || starting || preferences.working || !!confirmationFlow.confirmation;
@@ -91,12 +94,12 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, d
 
   function generateDataset() {
     if (!canWrite || submission.current) return;
-    confirmationFlow.requestConfirmation("dataset", {}, freshDatasetRequest(draft));
+    confirmationFlow.requestConfirmation("dataset", {}, { ...freshDatasetRequest(draft), seed: nextDatasetSeed(draft) });
   }
 
   function generateScenes() {
     if (!canPlanScenes || submission.current) return;
-    confirmationFlow.requestConfirmation("dataset/scenes", {}, freshDatasetRequest(draft));
+    confirmationFlow.requestConfirmation("dataset/scenes", {}, { ...freshDatasetRequest(draft), seed: nextDatasetSeed(draft) });
   }
 
   async function continueDataset() {

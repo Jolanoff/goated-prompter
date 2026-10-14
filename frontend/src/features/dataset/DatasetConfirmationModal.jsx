@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { Download, LoaderCircle, X } from "lucide-react";
 import { ui } from "../../ui.js";
+import { canConfirmDatasetReview } from "./datasetState.js";
 
 // Rebuild (issue 106): the modal shows only the new Understanding brief.
 const genderLabel = (person) => person.gender === "custom" ? person.custom : person.gender;
@@ -23,7 +24,7 @@ export default function DatasetConfirmationModal({ review, busy, directorLabel, 
   const brief = review?.brief;
   const working = ["analyzing", "confirming"].includes(review?.status);
   const confirmed = review?.status === "confirmed";
-  const canConfirm = review?.status === "ready" && !!brief && !busy;
+  const canConfirm = canConfirmDatasetReview(review, busy);
   return <dialog ref={dialog} className="app-dialog dataset-confirmation-dialog"
     aria-labelledby="dataset-confirmation-title" aria-describedby="dataset-confirmation-description"
     onCancel={(event) => { event.preventDefault(); if (review?.status !== "confirming") onCancel(); }}>
@@ -45,6 +46,16 @@ export default function DatasetConfirmationModal({ review, busy, directorLabel, 
         <h3>Summary</h3>
         <p className="whitespace-pre-wrap wrap-anywhere">{brief.summary}</p>
       </section>
+      <section className="dataset-review-requirements" aria-label="Must and avoid constraints">
+        {[ ["Must", brief.must], ["Avoid", brief.avoid] ].map(([label, items]) =>
+          <div className="dataset-review-list" key={label}><h3>{label}</h3>
+            {items.length ? <ul>{items.map((item, index) => <li className="whitespace-pre-wrap wrap-anywhere" key={index}>{item}</li>)}</ul>
+              : <p>None specified</p>}
+          </div>)}
+      </section>
+      {!!brief.input.guided_inputs?.length && <section className="dataset-review-concept" aria-label="Guided inputs">
+        <h3>Guided inputs</h3><ol>{brief.input.guided_inputs.map((item, index) => <li key={index}>{item}</li>)}</ol>
+      </section>}
       {brief.path !== "non_character" && <PeopleBar characters={brief.characters} />}
       <section className="dataset-review-requirements" aria-label="Fixed and randomized">
         <div className="dataset-review-list"><h3>Stays the same</h3><p className="wrap-anywhere">{brief.fixed}</p></div>

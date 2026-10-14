@@ -9,6 +9,7 @@ import threading
 import time
 
 from .understanding import understanding_instruction, validate_understanding
+from .v2.understanding import VERSION, validate_brief
 
 
 def intent_signature(data):
@@ -37,10 +38,13 @@ class DatasetIntentTickets:
         self.lock = threading.RLock()
 
     def register(self, data, brief):
-        scopes = tuple(json.loads(understanding_instruction(data).user_message)["scopes"])
-        brief = validate_understanding(brief, scopes)
-        if brief["clarifications"]:
-            return {"brief": brief, "confirmation_token": ""}
+        if isinstance(brief, dict) and brief.get("version") == VERSION:
+            brief = validate_brief(brief)
+        else:
+            scopes = tuple(json.loads(understanding_instruction(data).user_message)["scopes"])
+            brief = validate_understanding(brief, scopes)
+            if brief["clarifications"]:
+                return {"brief": brief, "confirmation_token": ""}
         with self.lock:
             token = secrets.token_urlsafe(32)
             self.items[token] = (self.clock(), intent_signature(data), deepcopy(brief))

@@ -76,7 +76,7 @@ def write_prompts(config, request, brief, scenes, *, checkpoint=lambda: None, pr
                                           target_model=brief["settings"]["target"], prompt_length=brief["settings"]["length"],
                                           creativity=brief["settings"]["creativity"], style=brief["settings"]["style"] or "Auto",
                                           director_preset=request.director_preset, custom_instructions=rules)
-                prompt = service.generate_text_only(builder_request).prompt
+                prompt = service.generate_text_only(builder_request, seed=brief["input"].get("seed")).prompt
                 problem = trigger_problem(prompt, brief)
                 trace.attempt(scene=number, attempt=attempt, idea=idea, rules=rules, prompt=prompt, problem=problem)
                 if not problem:

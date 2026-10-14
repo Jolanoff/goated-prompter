@@ -19,7 +19,8 @@ Brief (validated by validate_brief before it can be confirmed):
               empty on non_character
   must        what the user requires, in short phrases of the user's meaning ("toys in every image")
   avoid       what the user rules out ("no oral")
-  input       request, trigger, trigger_at_start, rules (one per line), amount, nsfw — copied by code
+  input       request, trigger, trigger_at_start, rules, amount, nsfw, source_mode, guided_inputs,
+              seed, seed_mode — copied by code
   settings    style, target, director, length, creativity — copied by code
 """
 
@@ -29,7 +30,7 @@ import re
 from ....backends.factory import create_backend
 from ....contracts import PromptInstruction, effective_model_family
 from ....director_profiles import resolve_director_config
-from ..quality import ADULTS_ONLY, NO_ANIMALS, minor_reference
+from ..quality import ADULTS_ONLY, NO_ANIMALS, adult_content_request, adults_only_error, minor_reference
 from .debug import DebugTrace
 
 VERSION = 9
@@ -78,13 +79,17 @@ def _rules(data):
 
 
 def _user_text(data):
-    return "\n".join([data["subject"], *_rules(data)])
+    return "\n".join([data["subject"], *_rules(data), *copied_input(data)["guided_inputs"]])
 
 
 def copied_input(data):
     return {"request": data["subject"].strip(), "trigger": str(data.get("trigger") or "").strip(),
             "trigger_at_start": data.get("trigger_at_start") is True, "rules": _rules(data),
-            "amount": data.get("amount"), "nsfw": data.get("nsfw") is True}
+            "amount": data.get("amount"), "nsfw": data.get("nsfw") is True,
+            "source_mode": data.get("source_mode", "random"),
+            "guided_inputs": [line.strip() for line in str(data.get("inputs") or "").splitlines() if line.strip()]
+                if data.get("source_mode") == "guided" else [],
+            "seed": data.get("seed", 0), "seed_mode": data.get("seed_mode", "randomize")}
 
 
 def copied_settings(data):
@@ -112,10 +117,13 @@ def instruction(data, family="qwen", errors=()):
     if errors:
         system += "\n\nYour previous answer broke these rules. Return the complete corrected JSON:\n- " + "\n- ".join(errors)
     user = {"request": data["subject"].strip(), "rules": _rules(data)}
+    if data.get("source_mode") == "guided":
+        user["guided_inputs"] = copied_input(data)["guided_inputs"]
+        system += "\nGuided inputs are ordered scene ideas. Preserve their actions; do not make one input's details global."
     return PromptInstruction(system_message=system, user_message=json.dumps(user, ensure_ascii=False),
                              model_family=family, diagnostic_stage="dataset_v2:understanding",
                              max_tokens=2048, hard_max_tokens=2048, temperature=.15, top_p=.85,
-                             json_output=True, json_schema=_schema())
+                             json_output=True, json_schema=_schema(), seed=data.get("seed"))
 
 
 def parse(raw):
@@ -215,18 +223,15 @@ def apply_rules(value, data, trace):
     path = "nsfw_character" if nsfw else "sfw_character" if value["path"] == "character" else "non_character"
     trace.decide("path", f"{path} (NSFW switch {'on' if nsfw else 'off'}, model said {value['path']})")
     characters = expand_characters(value["characters"], trace)
-    if nsfw:
-        people = " ".join(f'{item["label"]} {item["custom"]}' for item in characters)
-        if word := minor_reference("\n".join([_user_text(data), people])):
-            raise ValueError(f'{ADULTS_ONLY} ("{word}")')
-        if any(_ANIMALS.search(item["custom"].casefold()) for item in characters):
-            raise ValueError(NO_ANIMALS)
-        trace.decide("adults_only", "passed")
-    return {"version": VERSION, "path": path, "summary": value["summary"].strip(),
+    brief = {"version": VERSION, "path": path, "summary": value["summary"].strip(),
             "people": len(characters), "characters": characters,
             "fixed": value["fixed"].strip(), "randomized": value["randomized"].strip(),
             "must": [item.strip() for item in value["must"]], "avoid": [item.strip() for item in value["avoid"]],
             "input": copied_input(data), "settings": copied_settings(data)}
+    validate_content(brief, data)
+    if nsfw:
+        trace.decide("adults_only", "passed")
+    return brief
 
 
 def validate_brief(brief):
@@ -257,7 +262,30 @@ def validate_brief(brief):
         raise ValueError("input.request is missing.")
     if not isinstance(brief["settings"], dict):
         raise ValueError("settings is missing.")
+    if type(brief["input"].get("nsfw")) is not bool or (brief["path"] == "nsfw_character") != brief["input"]["nsfw"]:
+        raise ValueError("The brief path must match the NSFW switch.")
     return brief
+
+
+def validate_content(brief, data=None):
+    """Recheck source and interpreted cast at the confirmation boundary."""
+    source = brief["input"]
+    data = data or {"subject": source["request"], "trigger": source.get("trigger", ""),
+                    "constraints": "\n".join(source.get("rules", [])),
+                    "inputs": "\n".join(source.get("guided_inputs", []))}
+    data = {**data, "source_mode": source.get("source_mode", "random"),
+            "inputs": "\n".join(source.get("guided_inputs", []))}
+    if blocked := adults_only_error(data, include_director=False):
+        raise ValueError(blocked)
+    if source["nsfw"] or adult_content_request(data, include_director=False):
+        text = "\n".join([_user_text(data), str(data.get("trigger") or ""), str(data.get("custom_type") or ""),
+                          brief["summary"], brief["fixed"], *brief["must"],
+                          *(f'{item["label"]} {item["custom"]}' for item in brief["characters"])])
+        if word := minor_reference(text):
+            raise ValueError(f'{ADULTS_ONLY} ("{word}")')
+        if data.get("trigger_type") == "Animal" or any(
+                _ANIMALS.search(f'{item["label"]} {item["custom"]}'.casefold()) for item in brief["characters"]):
+            raise ValueError(NO_ANIMALS)
 
 
 def understand(config, request, data, *, checkpoint=lambda: None, progress=print):
@@ -296,14 +324,15 @@ def understand(config, request, data, *, checkpoint=lambda: None, progress=print
     return brief
 
 
-def confirm(brief):
-    """Confirm hands the brief to the next step; until that step exists it is only checked and logged."""
+def confirm(brief, data=None):
+    """Validate the confirmed contract and content before any downstream generation."""
     trace = DebugTrace("confirmed", path=brief.get("path") if isinstance(brief, dict) else None)
     try:
         validate_brief(brief)
+        validate_content(brief, data)
     except Exception as error:
         trace.finish(error=f"{type(error).__name__}: {error}")
         raise
-    trace.decide("contract", "valid brief; the next step is not built yet")
+    trace.decide("contract", "valid brief and eligible content")
     trace.finish(output=brief)
     return brief

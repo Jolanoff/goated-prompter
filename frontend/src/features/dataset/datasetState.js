@@ -43,7 +43,7 @@ export function datasetReviewQuestions(brief) {
 }
 
 export function canConfirmDatasetReview(review, busy, additions = "") {
-  return review?.status === "ready" && !!review.confirmation_token && !busy &&
+  return review?.status === "ready" && !!review.brief && !!review.confirmation_token && !busy &&
     !additions.trim() && !datasetReviewQuestions(review.brief).length;
 }
 
@@ -156,6 +156,11 @@ export function datasetCharacterLines(brief) {
     item.series ? `from ${item.series}` : characterOrigin[item.origin] || item.origin,
     item.traits,
   ].filter(Boolean).join(" · "));
+}
+
+export function datasetConfirmationPayload(review) {
+  return { brief: review.brief, input: review.input, operation: review.operation,
+    confirmation_token: review.confirmation_token };
 }
 
 export function datasetSceneSignature(row) {
