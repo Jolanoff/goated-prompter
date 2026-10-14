@@ -9,7 +9,8 @@
         "environment": {
           "provides": [
             "core:surface.ground",
-            "core:surface.wide"
+            "core:surface.wide",
+            "core:surface.seat"
           ]
         }
       }
@@ -21,7 +22,8 @@
       "components": {
         "environment": {
           "provides": [
-            "core:surface.wide"
+            "core:surface.wide",
+            "core:surface.seat"
           ]
         }
       }
@@ -35,6 +37,102 @@
           "provides": [
             "core:surface.ground",
             "core:surface.vertical"
+          ]
+        }
+      }
+    },
+    {
+      "id": "core:space.sofa",
+      "category": "space",
+      "name": "Sofa",
+      "aliases": [
+        "couch",
+        "settee"
+      ],
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.seat",
+            "core:surface.wide"
+          ]
+        }
+      }
+    },
+    {
+      "id": "core:space.bench",
+      "category": "space",
+      "name": "Bench",
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.seat",
+            "core:surface.ground"
+          ]
+        }
+      }
+    },
+    {
+      "id": "core:space.chair",
+      "category": "space",
+      "name": "Chair",
+      "aliases": [
+        "armchair"
+      ],
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.seat"
+          ]
+        }
+      }
+    },
+    {
+      "id": "core:space.table",
+      "category": "space",
+      "name": "Table",
+      "aliases": [
+        "desk"
+      ],
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.wide"
+          ]
+        }
+      }
+    },
+    {
+      "id": "core:space.grass",
+      "category": "space",
+      "name": "Grass",
+      "aliases": [
+        "lawn",
+        "meadow"
+      ],
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.ground",
+            "core:surface.wide",
+            "core:surface.seat"
+          ]
+        }
+      }
+    },
+    {
+      "id": "core:space.cliff",
+      "category": "space",
+      "name": "Cliff",
+      "description": "A sheer rock face; its top is a narrow, exposed ledge with a long drop below.",
+      "aliases": [
+        "cliffside",
+        "clifftop",
+        "ledge"
+      ],
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.ground"
           ]
         }
       }

@@ -20,6 +20,10 @@ actions and position (from staging, unchanged), space, lighting, mood, camera, e
 The selected Director decides staging choices and the language of every step; the request,
 fixed, must, avoid and the user's rules outrank it.
 
+Before the first concept, the enabled vocabulary packs are searched with the confirmed brief
+(vocabulary_packs.py). Concept and staging receive the result as an optional "vocabulary" field of
+the brief data; with nothing relevant the field is absent and the requests are unchanged.
+
 Code checks only the shape of each answer (every section filled, exactly the character labels, no
 phrase from the avoid list) and retries a slot up to ROUNDS times. Slots still empty are listed
 under "missing" and the result says complete: false. Physical plausibility is the model's job.
@@ -35,6 +39,7 @@ from ....prompting.creativity import CREATIVITY_ADAPTERS
 from ..director import active_director
 from .debug import DebugTrace
 from .understanding import validate_brief
+from .vocabulary_packs import vocabulary_reference
 
 BATCH = 5
 PLAN_BATCH = 40
@@ -154,8 +159,12 @@ avoid and the user's rules outrank the director. When the director fixes a kind 
 camera uses that shot."""
 
 
+def _preset(brief):
+    return active_director({"director_preset": brief["settings"]["director"], "target": brief["settings"]["target"]})
+
+
 def _director(brief):
-    preset = active_director({"director_preset": brief["settings"]["director"], "target": brief["settings"]["target"]})
+    preset = _preset(brief)
     return (preset.label, DIRECTOR.format(label=preset.label, instructions=preset.instructions.strip())) if preset else (None, "")
 
 
@@ -189,6 +198,11 @@ def _brief_for_model(brief):
             "style": brief["settings"]["style"] or "Auto"}
 
 
+def _reference(brief):
+    """The optional vocabulary block for concept and staging; nothing at all when there is none."""
+    return {"vocabulary": brief["_vocabulary"]} if brief.get("_vocabulary") else {}
+
+
 def _keyed(labels, value):
     return {"type": "object", "additionalProperties": False, "required": labels,
             "properties": {label: value for label in labels}}
@@ -216,7 +230,7 @@ def concept_instruction(brief, count, earlier, errors=()):
     item = {"type": "object", "additionalProperties": False, "required": list(CONCEPT_FIELDS),
             "properties": {field: _keyed(labels, _text(MAX_CONCEPT)) if field == "looks" else _text(MAX_CONCEPT)
                            for field in CONCEPT_FIELDS}}
-    user = {"concepts_needed": count, **_brief_for_model(brief), "earlier_concepts": earlier}
+    user = {"concepts_needed": count, **_brief_for_model(brief), **_reference(brief), "earlier_concepts": earlier}
     return _instruction(brief, CONCEPT_SYSTEM, errors, user, "concepts", item, count, 250, [*labels, *CONCEPT_FIELDS])
 
 
@@ -226,8 +240,8 @@ def staging_instruction(brief, concepts, errors=()):
             "properties": {"reach": _text(MAX_FIELD), "position": _keyed(labels, _text(MAX_FIELD)),
                            "actions": _text(MAX_FIELD)}}
     # A: staging gets no looks, so it cannot copy appearance into the placement.
-    user = {**_brief_for_model(brief), "concepts": [{key: value for key, value in concept.items() if key != "looks"}
-                                                    for concept in concepts]}
+    user = {**_brief_for_model(brief), **_reference(brief),
+            "concepts": [{key: value for key, value in concept.items() if key != "looks"} for concept in concepts]}
     return _instruction(brief, STAGING_SYSTEM, errors, user, "stagings", item, len(concepts), 300 + 250 * len(labels),
                         [*labels, "reach", "position", "actions"])
 
@@ -393,8 +407,10 @@ def _round(session, brief, slots, numbers, kind, trace, checkpoint, progress):
             slots[number][kind], slots[number]["reasons"] = item, []
 
 
-def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=print):
-    """Concept -> staging -> description, one scene per image. One debug JSON file per run."""
+def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=print, packs=None):
+    """Concept -> staging -> description, one scene per image. One debug JSON file per run.
+
+    packs: the vocabulary PackManager (default: the app's bundled and installed packs)."""
     brief = validate_brief(brief)
     total = brief["input"]["amount"]
     trace = DebugTrace("scenes", amount=total, people=brief["people"], path=brief["path"], settings=brief["settings"])
@@ -405,6 +421,12 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
         brief = {**brief, "_family": effective_model_family(request, profile, effective), "_avoid": _avoid_patterns(brief)}
         trace.decide("director", _director(brief)[0] or "none (no instructions, or not for this target)")
         trace.decide("avoid_checks", [phrase for phrase, _ in brief["_avoid"]])
+        # After Understanding, before the first concept: optional knowledge from the enabled packs.
+        progress("Searching vocabulary packs...")
+        preset = _preset(brief)
+        reference = vocabulary_reference(config, brief, director=preset.instructions.strip() if preset else "", manager=packs)
+        trace.decide("vocabulary", reference["log"])
+        brief = {**brief, "_vocabulary": reference["block"]}
         with create_backend(effective).generation_session() as session:
             concepts = _concepts(session, brief, total, trace, checkpoint, progress)
             if not concepts:
@@ -438,7 +460,7 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
             scene = {**slot["description"], "position": slot["staging"]["position"], "actions": slot["staging"]["actions"]}
             scenes.append({key: scene[key] for key in SECTIONS})
         result = {"complete": len(done) == total, "requested": total, "written": len(done), "missing": missing,
-                  "scenes": scenes}
+                  "scenes": scenes, "vocabulary": {"enabled": reference["enabled"], "provided": reference["provided"]}}
     except Exception as error:
         trace.finish(error=f"{type(error).__name__}: {error}")
         raise

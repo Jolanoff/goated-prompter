@@ -1,0 +1,21 @@
+{
+  "spec": 1,
+  "id": "adult",
+  "name": "Adult",
+  "version": "1.0.0",
+  "description": "Adult-only positions, acts and accessories for NSFW datasets. Reuses core bodies, postures and positions (core's From behind and Spooning are not repeated here). Anatomy is never assumed from gender.",
+  "authors": [
+    "Jolanoff"
+  ],
+  "license": "Goated Prompter Source-Available License 1.0",
+  "rating": "adult",
+  "requires": {
+    "core": ">=1.1.0 <2.0.0"
+  },
+  "files": [
+    "capabilities.json",
+    "positions.json",
+    "acts.json",
+    "accessories.json"
+  ]
+}

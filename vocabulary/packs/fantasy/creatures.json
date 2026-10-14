@@ -1,0 +1,129 @@
+{
+  "spec": 1,
+  "entries": [
+    {
+      "id": "fantasy:body.dragon",
+      "category": "body",
+      "name": "Dragon",
+      "description": "A huge winged reptile on four legs, with a long tail; flies and breathes fire. Whether its claws can grip is not declared.",
+      "aliases": [
+        "drake",
+        "wyrm"
+      ],
+      "extends": [
+        "core:body.vertebrate"
+      ],
+      "components": {
+        "body": {
+          "resources": {
+            "leg.front_left": {
+              "type": "core:limb.leg"
+            },
+            "leg.front_right": {
+              "type": "core:limb.leg"
+            },
+            "leg.back_left": {
+              "type": "core:limb.leg"
+            },
+            "leg.back_right": {
+              "type": "core:limb.leg"
+            },
+            "foot.front_left": {
+              "type": "core:limb.foot"
+            },
+            "foot.front_right": {
+              "type": "core:limb.foot"
+            },
+            "foot.back_left": {
+              "type": "core:limb.foot"
+            },
+            "foot.back_right": {
+              "type": "core:limb.foot"
+            },
+            "wing.left": {
+              "type": "fantasy:anatomy.wing"
+            },
+            "wing.right": {
+              "type": "fantasy:anatomy.wing"
+            },
+            "tail": {
+              "type": "fantasy:anatomy.tail"
+            }
+          },
+          "provides": [
+            "core:locomotion.quadruped",
+            "core:locomotion.flight",
+            "core:size.huge",
+            "fantasy:ability.fire_breath"
+          ],
+          "complete_for": [
+            "core:locomotion"
+          ]
+        }
+      }
+    },
+    {
+      "id": "fantasy:body.elf",
+      "category": "body",
+      "name": "Elf",
+      "description": "A humanoid body like a human's: two arms, hands, legs and feet. Gender and identity belong to the character.",
+      "aliases": [
+        "elves",
+        "elven"
+      ],
+      "extends": [
+        "core:body.humanoid"
+      ],
+      "components": {
+        "body": {
+          "complete_for": [
+            "core:locomotion"
+          ]
+        }
+      }
+    },
+    {
+      "id": "fantasy:trait.wings",
+      "category": "trait",
+      "name": "Wings",
+      "description": "A pair of wings that let a body fly.",
+      "components": {
+        "body": {
+          "resources": {
+            "wing.left": {
+              "type": "fantasy:anatomy.wing"
+            },
+            "wing.right": {
+              "type": "fantasy:anatomy.wing"
+            }
+          },
+          "provides": [
+            "core:locomotion.flight"
+          ]
+        }
+      }
+    },
+    {
+      "id": "fantasy:trait.spellcaster",
+      "category": "trait",
+      "name": "Spellcaster",
+      "description": "Can cast spells.",
+      "aliases": [
+        "mage",
+        "wizard",
+        "witch",
+        "sorcerer",
+        "sorceress",
+        "warlock",
+        "magician"
+      ],
+      "components": {
+        "body": {
+          "provides": [
+            "fantasy:magic.caster"
+          ]
+        }
+      }
+    }
+  ]
+}

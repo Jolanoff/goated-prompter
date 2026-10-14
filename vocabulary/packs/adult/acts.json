@@ -1,0 +1,226 @@
+{
+  "spec": 1,
+  "entries": [
+    {
+      "id": "adult:action.oral",
+      "category": "action",
+      "name": "Oral",
+      "description": "The giver's mouth on the receiver's genitals.",
+      "aliases": [
+        "blowjob",
+        "fellatio",
+        "cunnilingus"
+      ],
+      "components": {
+        "participants": {
+          "slots": {
+            "giver": {
+              "count": 1,
+              "kind": "being"
+            },
+            "receiver": {
+              "count": 1,
+              "kind": "being"
+            }
+          }
+        },
+        "requirements": {
+          "participants": {
+            "giver": {
+              "all_of": [
+                "core:anatomy.mouth"
+              ]
+            },
+            "receiver": {
+              "all_of": [
+                "core:anatomy.genitals"
+              ]
+            }
+          }
+        },
+        "spatial": {
+          "access": [
+            {
+              "from": "giver",
+              "using": "core:anatomy.mouth",
+              "to": "receiver",
+              "regions": [
+                "core:anatomy.genitals"
+              ],
+              "kind": "touch"
+            }
+          ]
+        },
+        "claims": {
+          "giver": [
+            {
+              "resource": "core:anatomy.mouth",
+              "count": 1,
+              "mode": "exclusive",
+              "purpose": "contact"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:action.manual",
+      "category": "action",
+      "name": "Manual stimulation",
+      "description": "One hand of the giver on the receiver's genitals.",
+      "aliases": [
+        "handjob",
+        "fingering"
+      ],
+      "components": {
+        "participants": {
+          "slots": {
+            "giver": {
+              "count": 1,
+              "kind": "being"
+            },
+            "receiver": {
+              "count": 1,
+              "kind": "being"
+            }
+          }
+        },
+        "requirements": {
+          "participants": {
+            "giver": {
+              "all_of": [
+                "core:limb.hand"
+              ]
+            },
+            "receiver": {
+              "all_of": [
+                "core:anatomy.genitals"
+              ]
+            }
+          }
+        },
+        "spatial": {
+          "access": [
+            {
+              "from": "giver",
+              "using": "core:limb.hand",
+              "to": "receiver",
+              "regions": [
+                "core:anatomy.genitals"
+              ],
+              "kind": "touch"
+            }
+          ]
+        },
+        "claims": {
+          "giver": [
+            {
+              "resource": "core:limb.hand",
+              "count": 1,
+              "mode": "exclusive",
+              "purpose": "contact"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:action.toy_play",
+      "category": "action",
+      "name": "Toy play",
+      "description": "A handheld toy used on oneself or a partner; holding it takes the same hand as holding it anywhere else.",
+      "components": {
+        "participants": {
+          "slots": {
+            "user": {
+              "count": 1,
+              "kind": "being"
+            },
+            "toy": {
+              "count": 1,
+              "kind": "object"
+            }
+          }
+        },
+        "requirements": {
+          "participants": {
+            "user": {
+              "all_of": [
+                "core:limb.hand"
+              ]
+            },
+            "toy": {
+              "any_of": [
+                "adult:item.insertable",
+                "adult:item.vibrating"
+              ]
+            }
+          }
+        },
+        "claims": {
+          "user": [
+            {
+              "resource": "core:limb.hand",
+              "count": 1,
+              "mode": "exclusive",
+              "purpose": "hold",
+              "key": "hold:{toy}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:action.restrained",
+      "category": "action",
+      "name": "Wrists restrained",
+      "description": "Both wrists cuffed or tied, so neither hand can hold or touch anything else.",
+      "aliases": [
+        "handcuffed",
+        "bondage"
+      ],
+      "components": {
+        "participants": {
+          "slots": {
+            "bound": {
+              "count": 1,
+              "kind": "being"
+            },
+            "restraint": {
+              "count": {
+                "min": 0,
+                "max": 1
+              },
+              "kind": "object"
+            }
+          }
+        },
+        "requirements": {
+          "participants": {
+            "bound": {
+              "all_of": [
+                "core:limb.hand"
+              ]
+            },
+            "restraint": {
+              "all_of": [
+                "adult:item.restraint"
+              ]
+            }
+          }
+        },
+        "claims": {
+          "bound": [
+            {
+              "resource": "core:limb.hand",
+              "count": 2,
+              "mode": "exclusive",
+              "purpose": "contact",
+              "key": "restrained"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

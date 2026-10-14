@@ -174,7 +174,7 @@ class CrossPack(unittest.TestCase):
         self.assertIn("studio", packs)
         self.assertIn("studio:position.aerial_carry", ids(found))
         self.assertEqual(found.cast[0]["body"], "studio:body.person")
-        self.assertEqual(found.cast[0]["traits"], ["fantasy:trait.wings"], "body and trait come from different packs")
+        self.assertIn("fantasy:trait.wings", found.cast[0]["traits"], "body and trait come from different packs")
 
     def test_a_category_the_code_never_heard_of(self):
         found = ask("she waves hello")
@@ -183,7 +183,7 @@ class CrossPack(unittest.TestCase):
 
     def test_disabled_packs_are_not_searched(self):
         without = VocabularyIndex(registry("fantasy", "adult"))
-        self.assertEqual(ids(ask("two friends hugging", index=without)), [])
+        self.assertNotIn("studio", {entry.pack for entry in ask("two friends hugging", index=without).entries})
         self.assertNotIn("studio", {entry.pack for entry in ask("a mage casting a spell", index=without).entries})
 
 
@@ -248,20 +248,23 @@ class Compatibility(unittest.TestCase):
         self.assertEqual(alone.entries[0].warnings, ["no retrieved position or action uses it, so it is not checked"])
 
     def test_unchosen_space_is_a_need_not_an_unknown_about_the_cast(self):
-        found = ask("two people kneeling, one on all fours from behind")
+        found = ask("two people kneeling, one on all fours from behind", nsfw=True)
         behind = next(entry for entry in found.entries if entry.id == "core:position.from_behind")
+        self.assertNotIn("core:position.from_behind", ids(ask("two people kneeling, one on all fours from behind")),
+                         "the position is rated adult")
         self.assertEqual(behind.status, "feasible", behind.warnings)
         self.assertEqual(behind.needs, ["a space with: wide surface to kneel or lie on"])
 
 
 class UnknownEntries(unittest.TestCase):
-    UNDESCRIBED = ({"label": "Male 1", "gender": "male", "custom": ""}, {"label": "Female 1", "gender": "female", "custom": ""})
+    # Custom characters no pack describes (plain male and female characters are humans; see CastFromTheBrief).
+    UNDESCRIBED = ({"label": "Unit 1", "gender": "custom", "custom": "robot"}, {"label": "Unit 2", "gender": "custom", "custom": "robot"})
 
     def test_incomplete_vocabulary_keeps_the_entry_as_unknown(self):
         found = ask("two friends hugging", characters=self.UNDESCRIBED)
         hug = found.entries[0]
         self.assertEqual((hug.id, hug.status), ("studio:action.embrace", "unknown"))
-        self.assertTrue(any("Male 1" in warning or "Female 1" in warning for warning in hug.warnings), hug.warnings)
+        self.assertTrue(any("Unit 1" in warning or "Unit 2" in warning for warning in hug.warnings), hug.warnings)
         self.assertTrue(any("no vocabulary body matches" in warning for warning in found.warnings))
         self.assertEqual([member["body"] for member in found.cast], [None, None])
 
@@ -374,6 +377,15 @@ class Guidance(unittest.TestCase):
         self.assertEqual(score(guided, "studio:action.duel"), score(plain, "studio:action.duel"))
         self.assertNotIn("studio:action.embrace", ids(ask("two companions at a party")))
         self.assertIn("studio:action.embrace", ids(ask("two companions at a party", director="Favour hugs.")))
+
+    def test_director_boilerplate_never_brings_in_entries(self):
+        # General words of a director's instructions match descriptions and categories of everything.
+        director = "Describe the subject, the action and the composition, with one clear position for each person."
+        self.assertEqual(ids(ask("a quiet afternoon", director=director)), [])
+        self.assertEqual(set(ids(ask("two friends hugging", director=director))), {"studio:action.embrace", "core:action.hug"},
+                         "only what the request names")
+        self.assertIn("studio:action.embrace", ids(ask("two companions at a party", director="Favour hugs.")),
+                      "a director that names an entry still guides retrieval")
 
     def test_the_request_outweighs_the_director(self):
         found = ask("a sword duel", director="Favour hugs.")

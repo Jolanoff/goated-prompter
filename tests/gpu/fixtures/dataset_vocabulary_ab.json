@@ -1,0 +1,26 @@
+{
+  "note": "Fixed confirmed briefs (version 9) for the Dataset vocabulary A/B. Both arms of a case receive the same brief, so Understanding variance never enters the comparison.",
+  "settings": {"style": "Auto", "target": "Generic", "director": "general_director", "length": "Medium", "creativity": "Balanced"},
+  "amount": 4,
+  "cases": [
+    {"id": "two-characters",
+     "request": "A woman and a man hugging goodbye on a train platform",
+     "characters": [{"label": "woman", "gender": "female", "custom": "", "pronoun": "she"},
+                    {"label": "man", "gender": "male", "custom": "", "pronoun": "he"}],
+     "fixed": "A woman and a man hug goodbye on a train platform.",
+     "randomized": "Their looks and clothing, the station, time of day, light, camera angle and framing.",
+     "must": [], "avoid": []},
+    {"id": "fantasy-creature",
+     "request": "A dragon resting on a cliff above a stormy sea",
+     "characters": [{"label": "dragon", "gender": "custom", "custom": "dragon", "pronoun": "it"}],
+     "fixed": "A dragon rests on a cliff above a stormy sea.",
+     "randomized": "The dragon's colouring and size, the cliff, the weather, light, camera angle and framing.",
+     "must": [], "avoid": []},
+    {"id": "character-object",
+     "request": "A woman holding a lantern while walking through a dark forest",
+     "characters": [{"label": "woman", "gender": "female", "custom": "", "pronoun": "she"}],
+     "fixed": "A woman walks through a dark forest holding a lantern.",
+     "randomized": "Her looks and clothing, the forest, the lantern's style, light, camera angle and framing.",
+     "must": [], "avoid": []}
+  ]
+}

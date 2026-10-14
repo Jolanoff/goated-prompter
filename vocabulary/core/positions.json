@@ -252,9 +252,12 @@
       "id": "core:position.from_behind",
       "category": "position",
       "name": "From behind",
+      "rating": "adult",
       "description": "One participant on all fours facing away; the other kneels behind their hips.",
       "aliases": [
-        "kneeling behind"
+        "kneeling behind",
+        "doggy",
+        "doggystyle"
       ],
       "components": {
         "participants": {
@@ -374,6 +377,9 @@
       "id": "core:position.riding",
       "category": "position",
       "name": "Riding a mount",
+      "aliases": [
+        "riding"
+      ],
       "components": {
         "participants": {
           "slots": {
@@ -503,6 +509,278 @@
                 "core:anatomy.torso"
               ],
               "kind": "sight"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "core:posture.lying_back",
+      "category": "posture",
+      "name": "Lying on the back",
+      "description": "Face up; the back rests on the surface, so it cannot be reached.",
+      "components": {
+        "requirements": {
+          "participants": {
+            "self": {
+              "all_of": [
+                "core:anatomy.back"
+              ]
+            }
+          }
+        },
+        "spatial": {
+          "participants": {
+            "self": {
+              "orientation": "face_up"
+            }
+          }
+        },
+        "claims": {
+          "self": [
+            {
+              "resource": "core:anatomy.back",
+              "count": 1,
+              "mode": "exclusive",
+              "purpose": "support"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "core:posture.lying_front",
+      "category": "posture",
+      "name": "Lying prone",
+      "description": "Face down; chest and belly rest on the surface.",
+      "components": {
+        "requirements": {
+          "participants": {
+            "self": {
+              "all_of": [
+                "core:anatomy.torso"
+              ]
+            }
+          }
+        },
+        "spatial": {
+          "participants": {
+            "self": {
+              "orientation": "face_down"
+            }
+          }
+        },
+        "claims": {
+          "self": [
+            {
+              "resource": "core:anatomy.torso",
+              "count": 1,
+              "mode": "exclusive",
+              "purpose": "support"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "core:posture.lying_side",
+      "category": "posture",
+      "name": "Lying on the side",
+      "description": "Resting on one shoulder and hip; front and back both stay free.",
+      "components": {
+        "requirements": {
+          "participants": {
+            "self": {
+              "all_of": [
+                "core:anatomy.torso"
+              ]
+            }
+          }
+        },
+        "spatial": {
+          "participants": {
+            "self": {
+              "orientation": "side"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "core:posture.flying",
+      "category": "posture",
+      "name": "Flying",
+      "description": "Airborne under its own power, with no surface supporting it.",
+      "aliases": [
+        "airborne",
+        "soaring"
+      ],
+      "components": {
+        "requirements": {
+          "participants": {
+            "self": {
+              "all_of": [
+                "core:locomotion.flight"
+              ]
+            }
+          }
+        },
+        "spatial": {
+          "participants": {
+            "self": {
+              "facing": {
+                "world": "level"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "core:position.side_by_side",
+      "category": "position",
+      "name": "Sitting side by side",
+      "description": "Seated next to each other on the same seat, facing the same way.",
+      "components": {
+        "participants": {
+          "slots": {
+            "a": {
+              "count": 1,
+              "kind": "being"
+            },
+            "b": {
+              "count": 1,
+              "kind": "being"
+            }
+          }
+        },
+        "requirements": {
+          "space": {
+            "all_of": [
+              "core:surface.seat"
+            ]
+          }
+        },
+        "spatial": {
+          "participants": {
+            "a": {
+              "posture": "core:posture.sitting",
+              "facing": {
+                "same_as": "b"
+              },
+              "anchors": [
+                {
+                  "relation": "left_of",
+                  "of": "b",
+                  "distance": "near"
+                }
+              ]
+            },
+            "b": {
+              "posture": "core:posture.sitting"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "core:position.lap_sit",
+      "category": "position",
+      "name": "Sitting on a lap",
+      "description": "Seated across the thighs of a seated partner.",
+      "components": {
+        "participants": {
+          "slots": {
+            "seated": {
+              "count": 1,
+              "kind": "being"
+            },
+            "base": {
+              "count": 1,
+              "kind": "being"
+            }
+          }
+        },
+        "requirements": {
+          "space": {
+            "all_of": [
+              "core:surface.seat"
+            ]
+          }
+        },
+        "spatial": {
+          "participants": {
+            "base": {
+              "posture": "core:posture.sitting"
+            },
+            "seated": {
+              "posture": "core:posture.sitting",
+              "anchors": [
+                {
+                  "relation": "on",
+                  "of": "base",
+                  "at": "core:anatomy.hips",
+                  "distance": "contact"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "core:position.spooning",
+      "category": "position",
+      "name": "Spooning",
+      "description": "Both on their sides facing the same way, the back partner curled against the front partner.",
+      "components": {
+        "participants": {
+          "slots": {
+            "front": {
+              "count": 1,
+              "kind": "being"
+            },
+            "back": {
+              "count": 1,
+              "kind": "being"
+            }
+          }
+        },
+        "requirements": {
+          "space": {
+            "all_of": [
+              "core:surface.wide"
+            ]
+          }
+        },
+        "spatial": {
+          "participants": {
+            "front": {
+              "posture": "core:posture.lying_side"
+            },
+            "back": {
+              "posture": "core:posture.lying_side",
+              "facing": {
+                "same_as": "front"
+              },
+              "anchors": [
+                {
+                  "relation": "behind",
+                  "of": "front",
+                  "distance": "contact"
+                }
+              ]
+            }
+          },
+          "access": [
+            {
+              "from": "back",
+              "using": "core:limb.arm",
+              "to": "front",
+              "regions": [
+                "core:anatomy.torso"
+              ],
+              "kind": "touch"
             }
           ]
         }

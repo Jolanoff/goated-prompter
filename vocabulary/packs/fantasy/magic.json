@@ -1,0 +1,112 @@
+{
+  "spec": 1,
+  "entries": [
+    {
+      "id": "fantasy:action.cast_spell",
+      "category": "action",
+      "name": "Cast a spell",
+      "description": "A gesture or a focus channels a visible spell; a focus takes one hand.",
+      "aliases": [
+        "spellcasting"
+      ],
+      "components": {
+        "participants": {
+          "slots": {
+            "caster": {
+              "count": 1,
+              "kind": "being"
+            },
+            "focus": {
+              "count": {
+                "min": 0,
+                "max": 1
+              },
+              "kind": "object"
+            }
+          }
+        },
+        "requirements": {
+          "participants": {
+            "caster": {
+              "all_of": [
+                "fantasy:magic.caster"
+              ]
+            },
+            "focus": {
+              "all_of": [
+                "fantasy:magic.focus"
+              ]
+            }
+          }
+        },
+        "claims": {
+          "caster": [
+            {
+              "resource": "core:limb.hand",
+              "count": 1,
+              "mode": "shared",
+              "purpose": "use"
+            },
+            {
+              "resource": "core:limb.hand",
+              "count": 1,
+              "mode": "exclusive",
+              "purpose": "hold",
+              "key": "hold:{focus}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "fantasy:action.breathe_fire",
+      "category": "action",
+      "name": "Breathe fire",
+      "description": "Flames pour from the open jaws.",
+      "components": {
+        "participants": {
+          "slots": {
+            "creature": {
+              "count": 1,
+              "kind": "being"
+            }
+          }
+        },
+        "requirements": {
+          "participants": {
+            "creature": {
+              "all_of": [
+                "fantasy:ability.fire_breath"
+              ]
+            }
+          }
+        },
+        "claims": {
+          "creature": [
+            {
+              "resource": "core:anatomy.mouth",
+              "count": 1,
+              "mode": "exclusive",
+              "purpose": "use"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "fantasy:item.staff",
+      "category": "item",
+      "name": "Magic staff",
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.handheld",
+            "fantasy:magic.focus"
+          ],
+          "size": "medium",
+          "hands": 1
+        }
+      }
+    }
+  ]
+}

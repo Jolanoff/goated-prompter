@@ -1,8 +1,13 @@
 """Vocabulary pack manager (Phase 2): data-only packs, validated and merged into one registry.
 
-Bundled packs (vocabulary/core) ship with the app and can be neither removed nor disabled.
-Installed packs live in data/vocabulary/packs/<pack-id>/ and are enabled unless listed in
-data/vocabulary/state.json. Packs contain JSON data and optional README/LICENSE text only.
+Three locations:
+  vocabulary/core/            the core pack: mandatory, always enabled, read-only
+  vocabulary/packs/<id>/      official packs that ship with the app (Fantasy, Adult): read-only, optional,
+                              enabled by default
+  data/vocabulary/packs/<id>/ packs the user installed: optional, enabled by default, removable
+Official and installed packs are enabled unless listed in data/vocabulary/state.json, which keeps the
+choice for both. A pack id may appear in one location only; a duplicate is rejected, never overridden.
+Packs contain JSON data and optional README/LICENSE text only.
 
 The rules implemented here are those of vocabulary/schemas/SPEC.md: manifest and entry schemas,
 pack ids as id prefixes, declared categories, dependency versions and conflicts, references only into
@@ -27,7 +32,8 @@ import jsonschema
 from ...config import PROJECT_ROOT
 
 SCHEMA_DIR = PROJECT_ROOT / "vocabulary" / "schemas"
-BUNDLED_DIRS = (PROJECT_ROOT / "vocabulary" / "core",)
+BUNDLED_DIRS = (PROJECT_ROOT / "vocabulary" / "core",)  # mandatory
+OFFICIAL_DIR = PROJECT_ROOT / "vocabulary" / "packs"     # bundled, optional
 INSTALL_DIR = PROJECT_ROOT / "data" / "vocabulary" / "packs"
 STATE_FILE = PROJECT_ROOT / "data" / "vocabulary" / "state.json"
 SPEC = 1
@@ -56,14 +62,15 @@ class Pack:
     id: str
     manifest: dict
     path: Path
-    bundled: bool
+    bundled: bool                                # ships with the app: read-only
     enabled: bool
     entries: list = field(default_factory=list)  # [(file name, entry)]
+    mandatory: bool = False                      # the core: always enabled
 
     def summary(self):
         return {"id": self.id, "name": self.manifest["name"], "version": self.manifest["version"],
-                "rating": self.manifest["rating"], "bundled": self.bundled, "enabled": self.enabled,
-                "requires": dict(self.manifest.get("requires", {})), "entries": len(self.entries)}
+                "rating": self.manifest["rating"], "bundled": self.bundled, "mandatory": self.mandatory,
+                "enabled": self.enabled, "requires": dict(self.manifest.get("requires", {})), "entries": len(self.entries)}
 
 
 # ---------------------------------------------------------------- versions
@@ -499,10 +506,11 @@ def extract_archive(data, target):
 class PackManager:
     """Discovery, install, removal, enable/disable and the merged registry. Thread-safe."""
 
-    def __init__(self, install_dir=INSTALL_DIR, state_file=STATE_FILE, bundled_dirs=BUNDLED_DIRS):
+    def __init__(self, install_dir=INSTALL_DIR, state_file=STATE_FILE, bundled_dirs=BUNDLED_DIRS, official_dir=OFFICIAL_DIR):
         self.install_dir = Path(install_dir)
         self.state_file = Path(state_file)
         self.bundled_dirs = tuple(Path(path) for path in bundled_dirs)
+        self.official_dir = Path(official_dir) if official_dir is not None else None
         self._lock = threading.RLock()
 
     # -- state
@@ -524,39 +532,75 @@ class PackManager:
 
     # -- discovery
     def _bundled(self):
-        return [read_pack(path, bundled=True) for path in self.bundled_dirs]
+        """The mandatory core pack(s)."""
+        packs = [read_pack(path, bundled=True) for path in self.bundled_dirs]
+        for pack in packs:
+            pack.mandatory = True
+        return packs
+
+    @staticmethod
+    def _folders(root):
+        if root is None or not root.is_dir():
+            return []
+        return sorted(path for path in root.iterdir() if path.is_dir() and not path.name.startswith("."))
 
     def _installed_folders(self):
-        if not self.install_dir.is_dir():
-            return []
-        return sorted(path for path in self.install_dir.iterdir() if path.is_dir() and not path.name.startswith("."))
+        return self._folders(self.install_dir)
+
+    def _official_folders(self):
+        return self._folders(self.official_dir)
+
+    def _optional(self, folder, *, bundled, enabled):
+        """An official or installed pack: its folder carries its id (read_pack checks it)."""
+        pack = read_pack(folder, bundled=False, enabled=enabled)
+        pack.bundled = bundled
+        return pack
+
+    def _duplicate(self, pack_id, where, seen):
+        if pack_id in seen:
+            article = "an" if seen[pack_id][0] in "aeiou" else "a"
+            return (f"{where} pack {pack_id} uses the id of {article} {seen[pack_id]} pack; "
+                    "a pack id may appear in one location only (rename or remove one)")
+        seen[pack_id] = where
+        return None
 
     def discover(self):
-        """Every pack with its summary. A broken installed pack is reported, not raised."""
+        """Every pack with its summary. A broken official or installed pack, or a duplicate id, is
+        reported, not raised."""
         with self._lock:
             disabled = self._disabled()
-            found = [pack.summary() | {"problems": []} for pack in self._bundled()]
-            for folder in self._installed_folders():
-                try:
-                    pack = read_pack(folder, bundled=False, enabled=folder.name not in disabled)
-                    found.append(pack.summary() | {"problems": []})
-                except VocabularyError as error:
-                    found.append({"id": folder.name, "bundled": False, "enabled": False, "problems": error.problems})
+            core = self._bundled()
+            found = [pack.summary() | {"problems": []} for pack in core]
+            seen = {pack.id: "bundled" for pack in core}
+            for where, folders in (("official", self._official_folders()), ("installed", self._installed_folders())):
+                for folder in folders:
+                    if problem := self._duplicate(folder.name, where, seen):
+                        found.append({"id": folder.name, "bundled": where == "official", "mandatory": False,
+                                      "enabled": False, "problems": [problem]})
+                        continue
+                    try:
+                        pack = self._optional(folder, bundled=where == "official", enabled=folder.name not in disabled)
+                        found.append(pack.summary() | {"problems": []})
+                    except VocabularyError as error:
+                        found.append({"id": folder.name, "bundled": where == "official", "mandatory": False,
+                                      "enabled": False, "problems": error.problems})
             return found
 
     def _packs(self, overrides=None, exclude=()):
-        """All packs as Pack objects, with optional per-id enabled overrides. Broken installed packs raise."""
+        """All packs as Pack objects, with optional per-id enabled overrides (official and installed).
+        exclude leaves out installed folders. A broken pack or a duplicate id raises."""
         disabled = self._disabled()
         overrides = overrides or {}
         packs = self._bundled()
-        bundled_ids = {pack.id for pack in packs}
-        for folder in self._installed_folders():
-            if folder.name in exclude:
-                continue
-            if folder.name in bundled_ids:
-                raise VocabularyError(f"installed pack {folder.name} uses the id of a bundled pack")
-            enabled = overrides.get(folder.name, folder.name not in disabled)
-            packs.append(read_pack(folder, bundled=False, enabled=enabled))
+        seen = {pack.id: "bundled" for pack in packs}
+        for where, folders in (("official", self._official_folders()), ("installed", self._installed_folders())):
+            for folder in folders:
+                if where == "installed" and folder.name in exclude:
+                    continue
+                if problem := self._duplicate(folder.name, where, seen):
+                    raise VocabularyError(problem)
+                enabled = overrides.get(folder.name, folder.name not in disabled)
+                packs.append(self._optional(folder, bundled=where == "official", enabled=enabled))
         return packs
 
     def registry(self):
@@ -565,18 +609,26 @@ class PackManager:
             return build_registry(self._packs())
 
     # -- enable / disable / remove
-    def _require_installed(self, pack_id):
+    def _require_optional(self, pack_id):
+        """An official or installed pack can be enabled and disabled; the core cannot."""
         if any(read_pack(path, bundled=True).id == pack_id for path in self.bundled_dirs):
             raise VocabularyError(f"{pack_id} is bundled with the app and cannot be changed")
-        if not (self.install_dir / pack_id).is_dir():
+        if not ((self.install_dir / pack_id).is_dir()
+                or self.official_dir is not None and (self.official_dir / pack_id).is_dir()):
             raise VocabularyError(f"{pack_id} is not installed")
+
+    def _require_installed(self, pack_id):
+        """Only a user-installed pack can be removed or replaced; bundled packs are read-only."""
+        self._require_optional(pack_id)
+        if not (self.install_dir / pack_id).is_dir():
+            raise VocabularyError(f"{pack_id} is bundled with the app and cannot be removed; disable it instead")
 
     def _dependents(self, pack_id, packs):
         return sorted(pack.id for pack in packs if pack.enabled and pack_id in pack.manifest.get("requires", {}))
 
     def set_enabled(self, pack_id, enabled):
         with self._lock:
-            self._require_installed(pack_id)
+            self._require_optional(pack_id)
             packs = self._packs(overrides={pack_id: bool(enabled)})
             if not enabled and (dependents := self._dependents(pack_id, packs)):
                 raise VocabularyError(f"{pack_id} cannot be disabled; enabled packs require it: {', '.join(dependents)}")
@@ -616,7 +668,7 @@ class PackManager:
                 if problems := _schema_problems("manifest", manifest, "manifest.json"):
                     raise VocabularyError(problems)
                 pack_id = manifest["id"]
-                if any(pack.id == pack_id for pack in self._bundled()):
+                if any(pack.id == pack_id for pack in self._bundled()) or pack_id in {folder.name for folder in self._official_folders()}:
                     raise VocabularyError(f"{pack_id} is the id of a bundled pack")
                 target = self.install_dir / pack_id
                 if target.exists() and not replace:

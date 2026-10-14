@@ -392,6 +392,30 @@
           ]
         }
       }
+    },
+    {
+      "id": "core:surface.seat",
+      "category": "capability",
+      "name": "Seat to sit on",
+      "components": {
+        "capability": {
+          "implies": [
+            "core:surface"
+          ]
+        }
+      }
+    },
+    {
+      "id": "core:item.wearable",
+      "category": "capability",
+      "name": "Can be worn",
+      "components": {
+        "capability": {
+          "implies": [
+            "core:item"
+          ]
+        }
+      }
     }
   ]
 }

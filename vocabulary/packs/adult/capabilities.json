@@ -1,0 +1,41 @@
+{
+  "spec": 1,
+  "entries": [
+    {
+      "id": "adult:item.insertable",
+      "category": "capability",
+      "name": "Insertable",
+      "components": {
+        "capability": {
+          "implies": [
+            "core:item"
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:item.vibrating",
+      "category": "capability",
+      "name": "Vibrates",
+      "components": {
+        "capability": {
+          "implies": [
+            "core:item"
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:item.restraint",
+      "category": "capability",
+      "name": "Restrains wrists",
+      "components": {
+        "capability": {
+          "implies": [
+            "core:item"
+          ]
+        }
+      }
+    }
+  ]
+}

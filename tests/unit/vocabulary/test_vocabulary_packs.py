@@ -10,7 +10,8 @@ import zipfile
 from pathlib import Path
 
 from goated_prompter.features.vocabulary.packs import (
-    MAX_FILE_BYTES, PackManager, VocabularyError, build_registry, read_pack, satisfies)
+    BUNDLED_DIRS, MAX_FILE_BYTES, OFFICIAL_DIR, PackManager, VocabularyError, build_registry, read_pack, satisfies)
+from goated_prompter.features.vocabulary.retrieval import RetrievalRequest, retrieve
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "packs"
 
@@ -60,7 +61,8 @@ class ManagerTest(unittest.TestCase):
     def setUp(self):
         self.root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.root, True)
-        self.manager = PackManager(self.root / "packs", self.root / "state.json")
+        # Installed fixture packs only: an empty official folder keeps vocabulary/packs out of these tests.
+        self.manager = PackManager(self.root / "packs", self.root / "state.json", official_dir=self.root / "official")
 
     def installed(self):
         folder = self.root / "packs"
@@ -155,7 +157,8 @@ class Install(ManagerTest):
 
     def test_missing_dependency_and_unsatisfied_version_are_rejected(self):
         self.assertRejected(archive(fixture("fantasy", manifest={"requires": {"elves": ">=1.0.0"}})), "requires elves")
-        self.assertRejected(archive(fixture("fantasy", manifest={"requires": {"core": ">=2.0.0"}})), "1.0.0 is enabled")
+        core = json.loads((BUNDLED_DIRS[0] / "manifest.json").read_text(encoding="utf-8"))["version"]
+        self.assertRejected(archive(fixture("fantasy", manifest={"requires": {"core": ">=2.0.0"}})), f"{core} is enabled")
 
     def test_declared_conflicts_are_rejected(self):
         self.manager.install_archive(archive(fixture("fantasy")))
@@ -272,7 +275,7 @@ class EnableDisableRemove(ManagerTest):
     def test_disable_removes_entries_and_persists(self):
         self.manager.set_enabled("adult", False)
         self.assertNotIn("adult:item.dildo", self.manager.registry())
-        reloaded = PackManager(self.root / "packs", self.root / "state.json")
+        reloaded = PackManager(self.root / "packs", self.root / "state.json", official_dir=self.root / "official")
         self.assertFalse([pack for pack in reloaded.discover() if pack["id"] == "adult"][0]["enabled"])
         reloaded.set_enabled("adult", True)
         self.assertIn("adult:item.dildo", reloaded.registry())
@@ -323,6 +326,100 @@ class Units(unittest.TestCase):
         with self.assertRaises(VocabularyError) as caught:
             build_registry(packs)
         self.assertIn("dependency cycle", str(caught.exception))
+
+
+def snapshot(folder):
+    return {path.relative_to(folder).as_posix(): path.read_bytes() for path in sorted(Path(folder).rglob("*")) if path.is_file()}
+
+
+class Locations(unittest.TestCase):
+    """vocabulary/core (mandatory), vocabulary/packs (official, optional) and data/vocabulary/packs (installed)."""
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.manager = PackManager(self.root / "packs", self.root / "state.json")  # the real official folder
+        self.before = snapshot(OFFICIAL_DIR)
+        self.addCleanup(lambda: self.assertEqual(snapshot(OFFICIAL_DIR), self.before, "official packs are read-only"))
+
+    def summary(self, manager=None):
+        return {pack["id"]: (pack["bundled"], pack["mandatory"], pack["enabled"]) for pack in (manager or self.manager).discover()}
+
+    def test_official_packs_are_discovered_without_copying(self):
+        self.assertEqual(self.summary(), {"core": (True, True, True), "fantasy": (True, False, True), "adult": (True, False, True)})
+        registry = self.manager.registry()
+        self.assertIn("fantasy:body.dragon", registry)
+        self.assertIn("adult:position.cowgirl", registry)
+        self.assertEqual(registry.owner("fantasy:body.dragon"), "fantasy")
+        self.assertFalse((self.root / "packs").exists(), "nothing is copied into the install folder")
+
+    def test_toggling_official_packs_persists(self):
+        self.manager.set_enabled("adult", False)
+        self.assertEqual(json.loads((self.root / "state.json").read_text())["disabled"], ["adult"])
+        reloaded = PackManager(self.root / "packs", self.root / "state.json")
+        self.assertEqual(self.summary(reloaded)["adult"], (True, False, False))
+        self.assertNotIn("adult:position.cowgirl", reloaded.registry())
+        self.assertIn("fantasy:body.dragon", reloaded.registry())
+        reloaded.set_enabled("adult", True)
+        self.assertIn("adult:position.cowgirl", self.manager.registry())
+
+    def test_core_stays_mandatory(self):
+        for action in (lambda: self.manager.set_enabled("core", False), lambda: self.manager.remove("core")):
+            with self.assertRaises(VocabularyError):
+                action()
+        self.assertEqual(self.summary()["core"], (True, True, True))
+
+    def test_official_packs_are_read_only(self):
+        with self.assertRaises(VocabularyError) as caught:
+            self.manager.remove("fantasy")
+        self.assertIn("disable it instead", str(caught.exception))
+        for replace in (False, True):
+            with self.assertRaises(VocabularyError) as caught:
+                self.manager.install_archive(archive(fixture("fantasy", manifest={"version": "9.0.0"})), replace=replace)
+            self.assertIn("bundled pack", str(caught.exception))
+
+    def test_installed_packs_depend_on_official_packs(self):
+        wizards = tiny_pack("wizards", [capability("wizards:x", ["fantasy:magic"])],
+                            requires={"core": ">=1.0.0", "fantasy": ">=1.0.0"})
+        self.manager.install_archive(archive(wizards))
+        self.assertEqual(self.summary()["wizards"], (False, False, True))
+        with self.assertRaises(VocabularyError) as caught:
+            self.manager.set_enabled("fantasy", False)
+        self.assertIn("wizards", str(caught.exception))
+        self.manager.set_enabled("wizards", False)
+        self.manager.set_enabled("fantasy", False)
+        with self.assertRaises(VocabularyError) as caught:
+            self.manager.set_enabled("wizards", True)
+        self.assertIn("requires fantasy", str(caught.exception))
+        self.manager.set_enabled("fantasy", True)
+        self.manager.remove("wizards")
+        self.assertEqual(set(self.summary()), {"core", "fantasy", "adult"})
+
+    def test_duplicate_ids_across_locations_are_rejected(self):
+        shutil.copytree(OFFICIAL_DIR / "fantasy", self.root / "packs" / "fantasy")  # placed by hand, not installed
+        with self.assertRaises(VocabularyError) as caught:
+            self.manager.registry()
+        self.assertIn("installed pack fantasy uses the id of an official pack", str(caught.exception))
+        problems = [pack["problems"] for pack in self.manager.discover() if pack["id"] == "fantasy" and pack["problems"]]
+        self.assertEqual(len(problems), 1, "discovery reports it instead of raising")
+        official = self.root / "official"
+        shutil.copytree(BUNDLED_DIRS[0], official / "core")
+        clash = PackManager(self.root / "none", self.root / "none.json", official_dir=official)
+        with self.assertRaises(VocabularyError) as caught:
+            clash.registry()
+        self.assertIn("official pack core uses the id of a bundled pack", str(caught.exception))
+
+    def test_ratings_follow_the_request(self):
+        cast = ({"label": "woman", "gender": "female", "custom": "", "pronoun": "she"},
+                {"label": "man", "gender": "male", "custom": "", "pronoun": "he"})
+        def offered(nsfw, manager=self.manager):
+            found = retrieve(manager.registry(), RetrievalRequest(request="reverse cowgirl on a sofa", characters=cast, nsfw=nsfw))
+            return [entry.id for entry in found.entries]
+        self.assertNotIn("adult:position.reverse_cowgirl", offered(False))
+        self.assertIn("core:space.sofa", offered(False))
+        self.assertIn("adult:position.reverse_cowgirl", offered(True))
+        self.manager.set_enabled("adult", False)
+        self.assertFalse([entry_id for entry_id in offered(True) if entry_id.startswith("adult:")], "a disabled pack offers nothing")
 
 
 if __name__ == "__main__":

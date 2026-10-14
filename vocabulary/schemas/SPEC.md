@@ -12,8 +12,17 @@ Files:
 | `manifest.schema.json` | `manifest.json` of every pack |
 | `entry.schema.json` | every entry file (`{"spec": 1, "entries": [...]}`) and every entry |
 
-Locations: the built-in pack is `vocabulary/core/`. User-installed packs live in the Git-ignored
-`data/vocabulary/packs/<pack-id>/`.
+Locations:
+
+| Folder | Packs | Can be |
+|---|---|---|
+| `vocabulary/core/` | the core pack | always enabled; read-only |
+| `vocabulary/packs/<pack-id>/` | official packs that ship with the app (`fantasy`, `adult`) | enabled by default; disabled and re-enabled; read-only |
+| `data/vocabulary/packs/<pack-id>/` (Git-ignored) | packs the user installed | enabled by default; disabled, updated and removed |
+
+Official and installed packs are found automatically; nothing is copied. `data/vocabulary/state.json`
+keeps which official and installed packs are disabled. A pack id may appear in one location only: a
+duplicate is rejected, never silently overridden, and an archive cannot install over a core or official pack.
 
 ## 1. Packs
 
@@ -239,6 +248,14 @@ A term found in several sources counts once, at its highest weight.
 query word ("spell" in "spellcaster") at 0.5. A multi-word name or alias found in one source counts
 in full when its words are contiguous and half when they are only all present. One shared word in a
 description is not a match: an entry needs a name, alias, tag or phrase match, or two looser matches.
+One word of a multi-word name or alias on its own ("staff" of "Magic staff", "side" of "Lying on the
+side") counts only when the request also names, in full, an entry linked to it (its parent, an action
+that uses it, a position that takes it): "a mage casting a spell with a staff" finds the staff, "hotel
+staff" does not. A one-word name or alias, a tag or a whole multi-word name always counts.
+The `director` and `style` texts count only where they name an entry: a tag, a whole one-word name or
+alias, or a multi-word name found in full. Their general words ("action", "composition", "face") would
+otherwise match the descriptions, categories and longer names of every entry. A director that names an
+entry ("favour hugs") still guides retrieval.
 
 **Negation.** `no`, `not`, `without`, `never`, `avoid`, `except`, `nor` and `none` negate the next
 three content words of their clause. The scope ends early at a clause word (`and`, `but`, `while`,
@@ -258,7 +275,7 @@ the request names (at least half of one of its names or aliases matched):
 |---|---|---|---|
 | uses (a capability or posture it references) | 0.5 | parent (an entry it extends) | 0.4 |
 | used by, broader, narrower (capability `implies`) | 0.35 | child | 0.3 |
-| shares (both use a capability that 2 to 6 entries use) | 0.25 | | |
+| shares (an item or space and an entry that uses the same capability; 2 to 6 users) | 0.25 | | |
 
 The strongest link adds its factor × that entry's score; the next two add a quarter of theirs. An
 entry found only through links needs twice `min_relevance`. Capabilities and bodies (and traits) are
@@ -272,12 +289,15 @@ relevant entry with a disallowed rating is reported as excluded, never returned.
 best score set by the brief's creativity: Strict 0.30, Balanced 0.20, Creative 0.15, Dice 0.10.
 
 **Cast.** Unless the request gives an explicit resolver cast, retrieval infers one from the brief's
-characters (label, gender unless custom, and custom text) through the packs' own entries with a
-`body` component (bodies, traits, creatures) whose rating is allowed, matched on names, aliases and
-tags only. The matching body with the most resource instances is the
-character's body; other matching bodies are added as traits. Gender and species never select a body
-in code. A character no body matches is undescribed (`"body": null`), so checks involving it are
-`unknown`, with a warning naming the character.
+characters through the packs' own entries with a `body` component (bodies, traits, creatures) whose
+rating is allowed, matched on names, aliases and tags only. What the label and custom text name comes
+first: the matching body with the most resource instances is the character's body, other matches are
+traits. Gender is never matched against bodies or anatomy. It only carries what Understanding defines:
+`male` or `female` is a human man or woman, `custom` is anything else. So a male or female character
+whose label and custom text name no full body plan (only traits, or nothing: "knight", "Ana", "winged
+knight") gets the pack body named "human", with any named traits; a named species always wins. A
+`custom` character is never made human: one no body matches is undescribed (`"body": null`), so checks
+involving it are `unknown`, with a warning naming the character.
 
 **Compatibility.** The `shortlist` best entries are checked with the Phase 3 resolver; the rest are
 suppressed. What an entry is comes from its components, never its category:
@@ -299,8 +319,9 @@ kept unless `include_unknown` is off. The score is multiplied by 1.0 (`feasible`
 or 0.8 (`unknown`).
 
 **Selection.** First, an entry and a descendant (an entry that extends it, directly or not) that are
-both relevant are settled. The descendant replaces the ancestor when it matches more of the request:
-every request term the ancestor matched and at least one more ("a deep bow" keeps Deep bow, not Bow).
+both relevant are settled, counting the same matches as relevance. The descendant replaces the ancestor
+when it matches more of the request: every request term the ancestor matched and at least one more ("a
+deep bow" keeps Deep bow, not Bow).
 A descendant that declares more does not replace an ancestor the request also names on its own,
 outside the descendant's names and aliases ("a polite bow and a deep bow" keeps both). Otherwise a
 descendant whose resolved components equal the ancestor's is an equivalent and is dropped. A

@@ -1,0 +1,89 @@
+{
+  "spec": 1,
+  "entries": [
+    {
+      "id": "adult:item.dildo",
+      "category": "item",
+      "name": "Dildo",
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.handheld",
+            "adult:item.insertable"
+          ],
+          "size": "small",
+          "hands": 1
+        }
+      }
+    },
+    {
+      "id": "adult:item.vibrator",
+      "category": "item",
+      "name": "Vibrator",
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.handheld",
+            "adult:item.vibrating"
+          ],
+          "size": "small",
+          "hands": 1
+        }
+      }
+    },
+    {
+      "id": "adult:item.strap_on",
+      "category": "item",
+      "name": "Strap-on",
+      "aliases": [
+        "strapon"
+      ],
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.wearable",
+            "adult:item.insertable"
+          ],
+          "size": "small",
+          "hands": 0
+        }
+      }
+    },
+    {
+      "id": "adult:item.handcuffs",
+      "category": "item",
+      "name": "Handcuffs",
+      "aliases": [
+        "cuffs"
+      ],
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.wearable",
+            "adult:item.restraint"
+          ],
+          "size": "small",
+          "hands": 1
+        }
+      }
+    },
+    {
+      "id": "adult:item.bondage_rope",
+      "category": "item",
+      "name": "Bondage rope",
+      "aliases": [
+        "shibari"
+      ],
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.wearable",
+            "adult:item.restraint"
+          ],
+          "size": "medium",
+          "hands": 1
+        }
+      }
+    }
+  ]
+}

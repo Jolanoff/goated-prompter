@@ -1,0 +1,54 @@
+{
+  "spec": 1,
+  "entries": [
+    {
+      "id": "fantasy:space.great_hall",
+      "category": "space",
+      "name": "Great hall",
+      "description": "A castle's high stone hall with a throne and long tables.",
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.ground",
+            "core:surface.wide",
+            "core:surface.vertical"
+          ]
+        }
+      }
+    },
+    {
+      "id": "fantasy:space.enchanted_woods",
+      "category": "space",
+      "name": "Enchanted woods",
+      "description": "Glowing plants, mist and ancient trees touched by magic.",
+      "aliases": [
+        "enchanted forest",
+        "fairy glade"
+      ],
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.ground",
+            "core:surface.wide",
+            "core:surface.seat"
+          ]
+        }
+      }
+    },
+    {
+      "id": "fantasy:space.lair",
+      "category": "space",
+      "name": "Lair",
+      "description": "A cave den strewn with a hoard, where a large creature sleeps.",
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.ground",
+            "core:surface.wide",
+            "core:surface.vertical"
+          ]
+        }
+      }
+    }
+  ]
+}

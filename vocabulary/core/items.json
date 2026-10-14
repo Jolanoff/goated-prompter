@@ -1,0 +1,97 @@
+{
+  "spec": 1,
+  "entries": [
+    {
+      "id": "core:item.book",
+      "category": "item",
+      "name": "Book",
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.handheld"
+          ],
+          "size": "small",
+          "hands": 1
+        }
+      }
+    },
+    {
+      "id": "core:item.cup",
+      "category": "item",
+      "name": "Cup",
+      "aliases": [
+        "mug",
+        "teacup"
+      ],
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.handheld"
+          ],
+          "size": "tiny",
+          "hands": 1
+        }
+      }
+    },
+    {
+      "id": "core:item.umbrella",
+      "category": "item",
+      "name": "Umbrella",
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.handheld"
+          ],
+          "size": "medium",
+          "hands": 1
+        }
+      }
+    },
+    {
+      "id": "core:item.lantern",
+      "category": "item",
+      "name": "Lantern",
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.handheld"
+          ],
+          "size": "small",
+          "hands": 1
+        }
+      }
+    },
+    {
+      "id": "core:item.phone",
+      "category": "item",
+      "name": "Phone",
+      "aliases": [
+        "smartphone",
+        "cellphone"
+      ],
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.handheld"
+          ],
+          "size": "tiny",
+          "hands": 1
+        }
+      }
+    },
+    {
+      "id": "core:item.sword",
+      "category": "item",
+      "name": "Sword",
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.handheld"
+          ],
+          "size": "medium",
+          "hands": 1
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,251 @@
+{
+  "spec": 1,
+  "entries": [
+    {
+      "id": "adult:position.missionary",
+      "category": "position",
+      "name": "Missionary",
+      "description": "One partner on the back, the other above and facing them, hips together.",
+      "components": {
+        "participants": {
+          "slots": {
+            "top": {
+              "count": 1,
+              "kind": "being"
+            },
+            "bottom": {
+              "count": 1,
+              "kind": "being"
+            }
+          }
+        },
+        "requirements": {
+          "space": {
+            "all_of": [
+              "core:surface.wide"
+            ]
+          }
+        },
+        "spatial": {
+          "participants": {
+            "bottom": {
+              "posture": "core:posture.lying_back"
+            },
+            "top": {
+              "facing": {
+                "toward": "bottom"
+              },
+              "anchors": [
+                {
+                  "relation": "above",
+                  "of": "bottom",
+                  "at": "core:anatomy.hips",
+                  "distance": "contact"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "adult:position.cowgirl",
+      "category": "position",
+      "name": "Cowgirl",
+      "description": "One partner on the back; the other straddles their hips, upright and facing them.",
+      "components": {
+        "participants": {
+          "slots": {
+            "rider": {
+              "count": 1,
+              "kind": "being"
+            },
+            "partner": {
+              "count": 1,
+              "kind": "being"
+            }
+          }
+        },
+        "requirements": {
+          "space": {
+            "all_of": [
+              "core:surface.wide"
+            ]
+          }
+        },
+        "spatial": {
+          "participants": {
+            "partner": {
+              "posture": "core:posture.lying_back"
+            },
+            "rider": {
+              "posture": "core:posture.straddling",
+              "facing": {
+                "toward": "partner"
+              },
+              "anchors": [
+                {
+                  "relation": "astride",
+                  "of": "partner",
+                  "at": "core:anatomy.hips",
+                  "distance": "contact"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "adult:position.reverse_cowgirl",
+      "category": "position",
+      "name": "Reverse cowgirl",
+      "description": "As cowgirl, but the straddling partner faces away, toward the other's feet.",
+      "extends": [
+        "adult:position.cowgirl"
+      ],
+      "components": {
+        "spatial": {
+          "participants": {
+            "rider": {
+              "facing": {
+                "away_from": "partner"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "adult:position.standing_behind",
+      "category": "position",
+      "name": "Standing from behind",
+      "description": "Both standing; the back partner close behind the front partner's hips, often with the front partner leaning on a wall.",
+      "components": {
+        "participants": {
+          "slots": {
+            "front": {
+              "count": 1,
+              "kind": "being"
+            },
+            "back": {
+              "count": 1,
+              "kind": "being"
+            }
+          }
+        },
+        "spatial": {
+          "participants": {
+            "front": {
+              "posture": "core:posture.standing",
+              "facing": {
+                "away_from": "back"
+              }
+            },
+            "back": {
+              "posture": "core:posture.standing",
+              "facing": {
+                "toward": "front"
+              },
+              "anchors": [
+                {
+                  "relation": "behind",
+                  "of": "front",
+                  "at": "core:anatomy.hips",
+                  "distance": "contact"
+                }
+              ]
+            }
+          },
+          "access": [
+            {
+              "from": "back",
+              "using": "core:limb.hand",
+              "to": "front",
+              "regions": [
+                "core:anatomy.hips"
+              ],
+              "kind": "touch"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:position.sixty_nine",
+      "category": "position",
+      "name": "Sixty-nine",
+      "description": "Head to toe, one lying on the back and the other face down on top; each mouth reaches the other's genitals.",
+      "components": {
+        "participants": {
+          "slots": {
+            "a": {
+              "count": 1,
+              "kind": "being"
+            },
+            "b": {
+              "count": 1,
+              "kind": "being"
+            }
+          }
+        },
+        "requirements": {
+          "participants": {
+            "a": {
+              "all_of": [
+                "core:anatomy.mouth"
+              ]
+            },
+            "b": {
+              "all_of": [
+                "core:anatomy.mouth"
+              ]
+            }
+          },
+          "space": {
+            "all_of": [
+              "core:surface.wide"
+            ]
+          }
+        },
+        "spatial": {
+          "participants": {
+            "a": {
+              "posture": "core:posture.lying_back"
+            },
+            "b": {
+              "posture": "core:posture.lying_front",
+              "anchors": [
+                {
+                  "relation": "above",
+                  "of": "a",
+                  "distance": "contact"
+                }
+              ]
+            }
+          },
+          "access": [
+            {
+              "from": "a",
+              "using": "core:anatomy.mouth",
+              "to": "b",
+              "regions": [
+                "core:anatomy.genitals"
+              ],
+              "kind": "touch"
+            },
+            {
+              "from": "b",
+              "using": "core:anatomy.mouth",
+              "to": "a",
+              "regions": [
+                "core:anatomy.genitals"
+              ],
+              "kind": "touch"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

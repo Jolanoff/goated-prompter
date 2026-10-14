@@ -51,6 +51,9 @@ SHARED_MAX = 6          # a capability used by more entries than this is too com
 LINK_COVERAGE = 0.5     # a linked entry passes relevance on only when this much of its name or an alias matched
 RELATED_ONLY = 2.0      # an entry found only through links needs this multiple of min_relevance
 CAST_MIN = 1.5
+# Step 1 (Understanding) gives each character gender "male" or "female" for a human man or woman, and
+# "custom" (with a description) for anything else. Only the first two establish a human.
+HUMAN_GENDERS = ("male", "female")
 CONTEXT = "space"
 
 
@@ -175,6 +178,13 @@ def _clip(text, limit):
     return text if len(text) <= limit else text[:limit - 1].rsplit(" ", 1)[0] + "…"
 
 
+def _body_text(item):
+    """What a brief character says about its body: its label and custom description, never its gender."""
+    if not isinstance(item, dict):
+        return str(item)
+    return " ".join(str(part) for part in (item.get("label", ""), item.get("custom", "")) if part)
+
+
 def _character_text(item):
     if not isinstance(item, dict):
         return str(item)
@@ -253,7 +263,11 @@ class VocabularyIndex:
         for ref, group in sorted(users.items()):
             if 1 < len(group) <= SHARED_MAX:
                 for entry_id in group:
-                    self.neighbours[entry_id] += [(other, "shares") for other in group if other != entry_id]
+                    # An item or space and what uses what it provides. Two actions, an action and a posture
+                    # (both use a mouth or a back) or two spaces (both have a floor) are alternatives, not
+                    # related knowledge.
+                    self.neighbours[entry_id] += [(other, "shares") for other in group if other != entry_id
+                                                  and (self.kind[other] in ("item", "space")) != (self.kind[entry_id] in ("item", "space"))]
         for entry_id in ids:
             self.neighbours[entry_id] = sorted(set(self.neighbours[entry_id]))
 
@@ -360,8 +374,20 @@ class _Retrieval:
         return self.index.resolved[entry_id].get("rating", "general") in self.allowed
 
     # -- direct and related relevance
+    def counted(self, entry_id, query=None, exact=False):
+        """The text matches that count for an entry.
+
+        Standing instructions (director, style) count only where they name an entry: a tag, or a whole
+        one-word name or alias. Their general words ("action", "composition", "face") would otherwise
+        match the descriptions, categories and longer names of everything."""
+        _, matches = self.index.text.score(entry_id, self.query if query is None else query, exact=exact)
+        single = {phrase[0] for _, _, phrase in self.index.text.documents[entry_id].phrases if len(phrase) == 1}
+        return [match for match in matches if match[3] not in STANDING
+                or match[2] == "tag" or match[2] in STRONG_FIELDS and match[1] in single]
+
     def direct(self, entry_id, query=None, sequences=None, exact=False):
-        score, matches = self.index.text.score(entry_id, self.query if query is None else query, exact=exact)
+        matches = self.counted(entry_id, query, exact)
+        score = sum(match[4] for match in matches)
         hits = self.index.text.phrase_hits(entry_id, self.sequences if sequences is None else sequences)
         seen, why = set(), []
         for label, name, source, value, contiguous in hits:
@@ -371,6 +397,12 @@ class _Retrieval:
                 why.append((value, f'{name} "{label}" {"in" if contiguous else "matches"} the {source}'))
         self.matched[entry_id] = {other for _, other, name, _, _ in matches if name in STRONG_FIELDS}
         loose = {other for _, other, name, _, _ in matches if name not in STRONG_FIELDS}
+        # Named: a tag, a whole one-word name or alias, or a multi-word name found in full. Isolated: only
+        # single words of longer names ("staff" of "Magic staff") and at most one other word.
+        single = {phrase[0] for _, _, phrase in self.index.text.documents[entry_id].phrases if len(phrase) == 1}
+        whole = {other for _, other, name, _, _ in matches if name == "tag" or name in STRONG_FIELDS and other in single}
+        self.evidence = (bool(hits or whole),
+                         not hits and not whole and bool(self.matched[entry_id]) and len(self.matched[entry_id] | loose) < 2)
         if not hits and not self.matched[entry_id] and len(loose) < 2:
             return 0.0, []  # one shared word in a description is not meaning
         for term, other, name, source, value in matches:
@@ -387,13 +419,23 @@ class _Retrieval:
             if entry_id not in allowed and index.kind[entry_id] not in ("concept", "body"):
                 if self.direct(entry_id)[0] >= self.config.min_relevance:
                     self.excluded.append({"id": entry_id, "reason": f"rating {index.resolved[entry_id].get('rating')} is not allowed"})
-        direct, linkable = {}, set()
+        direct, linkable, named, isolated = {}, set(), set(), set()
         for entry_id in allowed:
             if index.kind[entry_id] == "body":
                 continue  # bodies describe the cast; they never make scene entries relevant
             direct[entry_id] = self.direct(entry_id)
+            if self.evidence[0]:
+                named.add(entry_id)
+            elif self.evidence[1]:
+                isolated.add(entry_id)
             if self.coverage(entry_id) >= LINK_COVERAGE:
                 linkable.add(entry_id)
+        # One word of a longer name ("hotel staff" and Magic staff, "side of the road" and Lying on the side)
+        # counts only when the request also names an entry linked to it: its parent ("a bow" and Deep bow),
+        # the action that uses it ("casting a spell with a staff"), the posture it takes.
+        for entry_id in sorted(isolated):
+            if not any(other in named for other, _ in index.neighbours[entry_id]):
+                direct[entry_id] = (0.0, [])
         negative = {term: (1.0, source) for term, source in self.negated.items()}
         scored = {}
         for entry_id in allowed:
@@ -453,20 +495,17 @@ class _Retrieval:
                   if self.index.kind[entry_id] == "body" and self.allowed_entry(entry_id)]
         cast, report, self.labels = [], [], {}
         for number, character in enumerate(self.request.characters, start=1):
-            text = _character_text(character)
             label = character.get("label") if isinstance(character, dict) else None
             label = label or f"character {number}"
-            positive, _ = split_negated(text)
-            query = {term: (1.0, "character") for term in positive if not term.isdigit()}
-            matches = []
-            for entry_id in bodies:
-                score, why = self.direct(entry_id, query, [("character", 1.0, positive)])
-                strong = [text for _, text in why if text.startswith(("name", "alias", "tag"))]
-                if score >= CAST_MIN and strong:  # names, aliases and tags only: descriptions are too loose for a cast
-                    size = len(self.index.resolved[entry_id]["components"]["body"].get("resources", {}))
-                    matches.append((score, entry_id, strong[0], size))
-            # The body is the largest matching body plan; the other matches are traits added to it.
-            matches.sort(key=lambda item: (-item[3], -item[0], item[1]))
+            # What the label and custom text name comes first. Gender is never matched against bodies or
+            # anatomy; it only says, as Step 1 defines it, whether the character is human at all.
+            matches = self.bodies_named(_body_text(character), bodies)
+            if isinstance(character, dict) and character.get("gender") in HUMAN_GENDERS:
+                human = self.bodies_named("human", bodies)[:1]
+                if human and (not matches or matches[0][3] < human[0][3]):
+                    # Nothing named is a full body plan (only traits, or nothing): the brief's human body.
+                    reason = f'the brief says {character["gender"]}, a human'
+                    matches = [(*human[0][:2], reason, human[0][3]), *[item for item in matches if item[1] != human[0][1]]]
             ident = f"c{number}"
             self.labels[ident] = label
             member = {"id": ident, "body": matches[0][1] if matches else None, "traits": [item[1] for item in matches[1:]]}
@@ -477,6 +516,21 @@ class _Retrieval:
             if not matches:
                 self.warnings.append(f"{label}: no vocabulary body matches, so compatibility involving them is unknown")
         return cast, report
+
+    def bodies_named(self, text, bodies):
+        """Body entries the text names (names, aliases and tags only), largest body plan first."""
+        positive, _ = split_negated(text)
+        query = {term: (1.0, "character") for term in positive if not term.isdigit()}
+        matches = []
+        for entry_id in bodies:
+            score, why = self.direct(entry_id, query, [("character", 1.0, positive)])
+            strong = [text for _, text in why if text.startswith(("name", "alias", "tag"))]
+            if score >= CAST_MIN and strong:  # descriptions are too loose for a cast
+                size = len(self.index.resolved[entry_id]["components"]["body"].get("resources", {}))
+                matches.append((score, entry_id, strong[0], size))
+        # The body is the largest matching body plan; the other matches are traits added to it.
+        matches.sort(key=lambda item: (-item[3], -item[0], item[1]))
+        return matches
 
     # -- compatibility (Phase 3 resolver)
     def compatibility(self, relevant):
@@ -645,7 +699,7 @@ class _Retrieval:
         when it matches nothing beyond its ancestor, the ancestor ranks first ("a bow": Bow, then Deep bow).
         """
         ids = [item[2] for item in checked]
-        matched = {entry_id: {match[0] for match in self.index.text.score(entry_id, self.query)[1]} for entry_id in ids}
+        matched = {entry_id: {match[0] for match in self.counted(entry_id)} for entry_id in ids}
         dropped, self.after = {}, {}
         for child in ids:
             for parent in self.index.ancestors[child]:

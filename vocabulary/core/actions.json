@@ -5,7 +5,10 @@
       "id": "core:action.hold",
       "category": "action",
       "name": "Hold an object",
-      "description": "One hand holds an item. Other actions on the same item share this hand through the key.",
+      "description": "Held in one hand; any other action on the same item uses that same hand.",
+      "aliases": [
+        "hold"
+      ],
       "components": {
         "participants": {
           "slots": {
@@ -41,6 +44,252 @@
               "mode": "exclusive",
               "purpose": "hold",
               "key": "hold:{item}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "core:action.hug",
+      "category": "action",
+      "name": "Hug",
+      "description": "Arms wrapped around each other's back, chests close, facing each other.",
+      "aliases": [
+        "embrace",
+        "cuddle"
+      ],
+      "components": {
+        "participants": {
+          "slots": {
+            "a": {
+              "count": 1,
+              "kind": "being"
+            },
+            "b": {
+              "count": 1,
+              "kind": "being"
+            }
+          }
+        },
+        "requirements": {
+          "participants": {
+            "a": {
+              "all_of": [
+                "core:limb.arm"
+              ]
+            },
+            "b": {
+              "all_of": [
+                "core:limb.arm"
+              ]
+            }
+          }
+        },
+        "spatial": {
+          "participants": {
+            "a": {
+              "facing": {
+                "toward": "b"
+              },
+              "anchors": [
+                {
+                  "relation": "in_front",
+                  "of": "b",
+                  "distance": "contact"
+                }
+              ]
+            },
+            "b": {
+              "facing": {
+                "toward": "a"
+              }
+            }
+          },
+          "access": [
+            {
+              "from": "a",
+              "using": "core:limb.arm",
+              "to": "b",
+              "regions": [
+                "core:anatomy.back"
+              ],
+              "kind": "touch"
+            },
+            {
+              "from": "b",
+              "using": "core:limb.arm",
+              "to": "a",
+              "regions": [
+                "core:anatomy.back"
+              ],
+              "kind": "touch"
+            }
+          ]
+        },
+        "claims": {
+          "a": [
+            {
+              "resource": "core:limb.arm",
+              "count": 2,
+              "mode": "shared",
+              "purpose": "contact"
+            }
+          ],
+          "b": [
+            {
+              "resource": "core:limb.arm",
+              "count": 2,
+              "mode": "shared",
+              "purpose": "contact"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "core:action.kiss",
+      "category": "action",
+      "name": "Kiss",
+      "description": "Lips meet; faces turned toward each other at close range.",
+      "components": {
+        "participants": {
+          "slots": {
+            "a": {
+              "count": 1,
+              "kind": "being"
+            },
+            "b": {
+              "count": 1,
+              "kind": "being"
+            }
+          }
+        },
+        "requirements": {
+          "participants": {
+            "a": {
+              "all_of": [
+                "core:anatomy.mouth"
+              ]
+            },
+            "b": {
+              "all_of": [
+                "core:anatomy.mouth"
+              ]
+            }
+          }
+        },
+        "spatial": {
+          "participants": {
+            "a": {
+              "facing": {
+                "toward": "b"
+              },
+              "anchors": [
+                {
+                  "relation": "in_front",
+                  "of": "b",
+                  "distance": "contact"
+                }
+              ]
+            },
+            "b": {
+              "facing": {
+                "toward": "a"
+              }
+            }
+          },
+          "access": [
+            {
+              "from": "a",
+              "using": "core:anatomy.mouth",
+              "to": "b",
+              "regions": [
+                "core:anatomy.mouth"
+              ],
+              "kind": "touch"
+            }
+          ]
+        },
+        "claims": {
+          "a": [
+            {
+              "resource": "core:anatomy.mouth",
+              "count": 1,
+              "mode": "exclusive",
+              "purpose": "contact"
+            }
+          ],
+          "b": [
+            {
+              "resource": "core:anatomy.mouth",
+              "count": 1,
+              "mode": "exclusive",
+              "purpose": "contact"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "core:action.hold_hands",
+      "category": "action",
+      "name": "Holding hands",
+      "description": "One hand of each clasped together; the free hands stay free.",
+      "components": {
+        "participants": {
+          "slots": {
+            "a": {
+              "count": 1,
+              "kind": "being"
+            },
+            "b": {
+              "count": 1,
+              "kind": "being"
+            }
+          }
+        },
+        "requirements": {
+          "participants": {
+            "a": {
+              "all_of": [
+                "core:limb.hand"
+              ]
+            },
+            "b": {
+              "all_of": [
+                "core:limb.hand"
+              ]
+            }
+          }
+        },
+        "spatial": {
+          "access": [
+            {
+              "from": "a",
+              "using": "core:limb.hand",
+              "to": "b",
+              "regions": [
+                "core:limb.hand"
+              ],
+              "kind": "touch"
+            }
+          ]
+        },
+        "claims": {
+          "a": [
+            {
+              "resource": "core:limb.hand",
+              "count": 1,
+              "mode": "exclusive",
+              "purpose": "contact"
+            }
+          ],
+          "b": [
+            {
+              "resource": "core:limb.hand",
+              "count": 1,
+              "mode": "exclusive",
+              "purpose": "contact"
             }
           ]
         }
