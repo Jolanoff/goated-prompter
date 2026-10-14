@@ -1,0 +1,59 @@
+{
+  "name": "object_shared_hand",
+  "description": "From behind: the back person holds a toy and uses it on the front person.",
+  "packs": [
+    "core",
+    "adult"
+  ],
+  "cast": [
+    {
+      "id": "giver",
+      "body": "core:body.humanoid"
+    },
+    {
+      "id": "receiver",
+      "body": "core:body.humanoid"
+    }
+  ],
+  "objects": [
+    {
+      "id": "toy",
+      "item": "adult:item.dildo"
+    }
+  ],
+  "space": "core:space.bed",
+  "use": [
+    {
+      "entry": "core:position.from_behind",
+      "bind": {
+        "front": "receiver",
+        "back": "giver"
+      }
+    },
+    {
+      "entry": "core:action.hold",
+      "bind": {
+        "holder": "giver",
+        "item": "toy"
+      }
+    },
+    {
+      "entry": "adult:action.toy_insert",
+      "bind": {
+        "user": "giver",
+        "receiver": "receiver",
+        "toy": "toy"
+      }
+    }
+  ],
+  "expect": {
+    "status": "feasible",
+    "because": "from_behind declares the back's hand access to the front's ass; hold and toy_insert share one hand by key hold:toy.",
+    "detail": {
+      "participant": "giver",
+      "resource": "core:limb.hand",
+      "claimed": 1,
+      "available": 2
+    }
+  }
+}

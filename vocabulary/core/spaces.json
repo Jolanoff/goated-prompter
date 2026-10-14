@@ -1,0 +1,43 @@
+{
+  "spec": 1,
+  "entries": [
+    {
+      "id": "core:space.floor",
+      "category": "space",
+      "name": "Floor",
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.ground",
+            "core:surface.wide"
+          ]
+        }
+      }
+    },
+    {
+      "id": "core:space.bed",
+      "category": "space",
+      "name": "Bed",
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.wide"
+          ]
+        }
+      }
+    },
+    {
+      "id": "core:space.wall",
+      "category": "space",
+      "name": "Wall",
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.ground",
+            "core:surface.vertical"
+          ]
+        }
+      }
+    }
+  ]
+}

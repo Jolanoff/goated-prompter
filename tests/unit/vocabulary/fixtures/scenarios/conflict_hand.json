@@ -1,0 +1,61 @@
+{
+  "name": "conflict_hand",
+  "description": "Deliberate conflict: the person on all fours also holds the toy.",
+  "packs": [
+    "core",
+    "adult"
+  ],
+  "cast": [
+    {
+      "id": "giver",
+      "body": "core:body.humanoid"
+    },
+    {
+      "id": "receiver",
+      "body": "core:body.humanoid"
+    }
+  ],
+  "objects": [
+    {
+      "id": "toy",
+      "item": "adult:item.dildo"
+    }
+  ],
+  "space": "core:space.bed",
+  "use": [
+    {
+      "entry": "core:position.from_behind",
+      "bind": {
+        "front": "receiver",
+        "back": "giver"
+      }
+    },
+    {
+      "entry": "core:action.hold",
+      "bind": {
+        "holder": "receiver",
+        "item": "toy"
+      }
+    }
+  ],
+  "expect": {
+    "status": "conflict",
+    "because": "All fours claims both of the receiver's hands exclusively as support; holding needs a third exclusive hand.",
+    "detail": {
+      "participant": "receiver",
+      "resource": "core:limb.hand",
+      "available": 2,
+      "claimed": 3,
+      "claims": [
+        {
+          "entry": "core:posture.all_fours",
+          "count": 2
+        },
+        {
+          "entry": "core:action.hold",
+          "count": 1
+        }
+      ]
+    }
+  }
+}

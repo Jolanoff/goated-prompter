@@ -1,0 +1,62 @@
+{
+  "name": "magic",
+  "description": "A mage holding a staff casts a spell on someone facing them across a room.",
+  "packs": [
+    "core",
+    "fantasy"
+  ],
+  "cast": [
+    {
+      "id": "mage",
+      "body": "core:body.humanoid",
+      "traits": [
+        "fantasy:trait.spellcaster"
+      ]
+    },
+    {
+      "id": "foe",
+      "body": "core:body.humanoid"
+    }
+  ],
+  "objects": [
+    {
+      "id": "staff",
+      "item": "fantasy:item.staff"
+    }
+  ],
+  "space": "core:space.floor",
+  "use": [
+    {
+      "entry": "core:position.facing_apart",
+      "bind": {
+        "a": "mage",
+        "b": "foe"
+      }
+    },
+    {
+      "entry": "core:action.hold",
+      "bind": {
+        "holder": "mage",
+        "item": "staff"
+      }
+    },
+    {
+      "entry": "fantasy:action.cast_on",
+      "bind": {
+        "caster": "mage",
+        "target": "foe",
+        "focus": "staff"
+      }
+    }
+  ],
+  "expect": {
+    "status": "feasible",
+    "because": "Sight access is declared by facing_apart; hold and cast_on claim one hand with the same key hold:staff, so they share it.",
+    "detail": {
+      "participant": "mage",
+      "resource": "core:limb.hand",
+      "claimed": 1,
+      "available": 2
+    }
+  }
+}

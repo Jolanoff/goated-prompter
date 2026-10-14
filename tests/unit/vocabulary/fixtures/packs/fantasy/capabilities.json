@@ -1,0 +1,61 @@
+{
+  "spec": 1,
+  "entries": [
+    {
+      "id": "fantasy:magic",
+      "category": "capability",
+      "name": "Magic",
+      "components": {
+        "capability": {}
+      }
+    },
+    {
+      "id": "fantasy:magic.caster",
+      "category": "capability",
+      "name": "Casts spells",
+      "components": {
+        "capability": {
+          "implies": [
+            "fantasy:magic"
+          ]
+        }
+      }
+    },
+    {
+      "id": "fantasy:magic.focus",
+      "category": "capability",
+      "name": "Channels magic",
+      "components": {
+        "capability": {
+          "implies": [
+            "fantasy:magic"
+          ]
+        }
+      }
+    },
+    {
+      "id": "fantasy:anatomy.wing",
+      "category": "capability",
+      "name": "Wing",
+      "components": {
+        "capability": {
+          "implies": [
+            "core:anatomy"
+          ]
+        }
+      }
+    },
+    {
+      "id": "fantasy:anatomy.tail",
+      "category": "capability",
+      "name": "Tail",
+      "components": {
+        "capability": {
+          "implies": [
+            "core:anatomy"
+          ]
+        }
+      }
+    }
+  ]
+}

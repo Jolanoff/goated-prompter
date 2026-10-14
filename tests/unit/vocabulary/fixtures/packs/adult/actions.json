@@ -1,0 +1,72 @@
+{
+  "spec": 1,
+  "entries": [
+    {
+      "id": "adult:action.toy_insert",
+      "category": "action",
+      "name": "Use a toy on someone",
+      "components": {
+        "participants": {
+          "slots": {
+            "user": {
+              "count": 1,
+              "kind": "being"
+            },
+            "receiver": {
+              "count": 1,
+              "kind": "being"
+            },
+            "toy": {
+              "count": 1,
+              "kind": "object"
+            }
+          }
+        },
+        "requirements": {
+          "participants": {
+            "user": {
+              "all_of": [
+                "core:limb.hand"
+              ]
+            },
+            "receiver": {
+              "any_of": [
+                "core:anatomy.ass",
+                "core:anatomy.vagina"
+              ]
+            },
+            "toy": {
+              "all_of": [
+                "core:item.handheld",
+                "adult:item.insertable"
+              ]
+            }
+          },
+          "access": [
+            {
+              "from": "user",
+              "using": "core:limb.hand",
+              "to": "receiver",
+              "regions": [
+                "core:anatomy.ass",
+                "core:anatomy.vagina"
+              ],
+              "kind": "touch"
+            }
+          ]
+        },
+        "claims": {
+          "user": [
+            {
+              "resource": "core:limb.hand",
+              "count": 1,
+              "mode": "exclusive",
+              "purpose": "hold",
+              "key": "hold:{toy}"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

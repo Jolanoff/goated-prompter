@@ -1,0 +1,61 @@
+{
+  "spec": 1,
+  "id": "core",
+  "name": "Core",
+  "version": "1.0.0",
+  "description": "Built-in general vocabulary: capabilities, bodies, postures, positions, actions and spaces.",
+  "authors": [
+    "Jolanoff"
+  ],
+  "license": "Goated Prompter Source-Available License 1.0",
+  "rating": "general",
+  "categories": [
+    {
+      "id": "capability",
+      "name": "Capabilities",
+      "description": "What bodies, objects and spaces can provide."
+    },
+    {
+      "id": "body",
+      "name": "Bodies",
+      "description": "Body plans with their resources."
+    },
+    {
+      "id": "trait",
+      "name": "Traits",
+      "description": "Optional body features added to a body."
+    },
+    {
+      "id": "posture",
+      "name": "Postures",
+      "description": "How one body holds itself."
+    },
+    {
+      "id": "position",
+      "name": "Positions",
+      "description": "How participants are placed relative to each other."
+    },
+    {
+      "id": "action",
+      "name": "Actions",
+      "description": "What participants do."
+    },
+    {
+      "id": "item",
+      "name": "Items",
+      "description": "Objects that can be used or held."
+    },
+    {
+      "id": "space",
+      "name": "Spaces",
+      "description": "Places and the surfaces they offer."
+    }
+  ],
+  "files": [
+    "capabilities.json",
+    "anatomy.json",
+    "positions.json",
+    "actions.json",
+    "spaces.json"
+  ]
+}

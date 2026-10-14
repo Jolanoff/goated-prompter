@@ -1,0 +1,512 @@
+{
+  "spec": 1,
+  "entries": [
+    {
+      "id": "core:posture.standing",
+      "category": "posture",
+      "name": "Standing",
+      "components": {
+        "requirements": {
+          "participants": {
+            "self": {
+              "all_of": [
+                "core:locomotion.biped"
+              ]
+            }
+          }
+        },
+        "spatial": {
+          "participants": {
+            "self": {
+              "orientation": "upright"
+            }
+          }
+        },
+        "claims": {
+          "self": [
+            {
+              "resource": "core:limb.foot",
+              "count": 2,
+              "mode": "exclusive",
+              "purpose": "support"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "core:posture.standing_four",
+      "category": "posture",
+      "name": "Standing on four legs",
+      "components": {
+        "requirements": {
+          "participants": {
+            "self": {
+              "all_of": [
+                "core:locomotion.quadruped"
+              ]
+            }
+          }
+        },
+        "spatial": {
+          "participants": {
+            "self": {
+              "orientation": "upright"
+            }
+          }
+        },
+        "claims": {
+          "self": [
+            {
+              "resource": "core:limb.foot",
+              "count": 4,
+              "mode": "exclusive",
+              "purpose": "support"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "core:posture.kneeling",
+      "category": "posture",
+      "name": "Kneeling",
+      "components": {
+        "requirements": {
+          "participants": {
+            "self": {
+              "all_of": [
+                "core:limb.leg"
+              ]
+            }
+          }
+        },
+        "spatial": {
+          "participants": {
+            "self": {
+              "orientation": "upright"
+            }
+          }
+        },
+        "claims": {
+          "self": [
+            {
+              "resource": "core:limb.leg",
+              "count": 2,
+              "mode": "exclusive",
+              "purpose": "support"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "core:posture.all_fours",
+      "category": "posture",
+      "name": "On all fours",
+      "description": "Weight on both hands and both knees; both hands are busy supporting.",
+      "components": {
+        "requirements": {
+          "participants": {
+            "self": {
+              "all_of": [
+                "core:limb.hand",
+                "core:limb.leg"
+              ]
+            }
+          }
+        },
+        "spatial": {
+          "participants": {
+            "self": {
+              "orientation": "face_down"
+            }
+          }
+        },
+        "claims": {
+          "self": [
+            {
+              "resource": "core:limb.hand",
+              "count": 2,
+              "mode": "exclusive",
+              "purpose": "support"
+            },
+            {
+              "resource": "core:limb.leg",
+              "count": 2,
+              "mode": "exclusive",
+              "purpose": "support"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "core:posture.sitting",
+      "category": "posture",
+      "name": "Sitting",
+      "description": "Weight on the seat; the ass is against the surface.",
+      "components": {
+        "requirements": {
+          "participants": {
+            "self": {
+              "all_of": [
+                "core:anatomy.ass"
+              ]
+            }
+          }
+        },
+        "spatial": {
+          "participants": {
+            "self": {
+              "orientation": "upright"
+            }
+          }
+        },
+        "claims": {
+          "self": [
+            {
+              "resource": "core:anatomy.ass",
+              "count": 1,
+              "mode": "exclusive",
+              "purpose": "support"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "core:posture.straddling",
+      "category": "posture",
+      "name": "Straddling",
+      "description": "Seated astride something, one leg on each side.",
+      "components": {
+        "requirements": {
+          "participants": {
+            "self": {
+              "all_of": [
+                "core:limb.leg",
+                "core:anatomy.ass"
+              ]
+            }
+          }
+        },
+        "spatial": {
+          "participants": {
+            "self": {
+              "orientation": "upright"
+            }
+          }
+        },
+        "claims": {
+          "self": [
+            {
+              "resource": "core:anatomy.ass",
+              "count": 1,
+              "mode": "exclusive",
+              "purpose": "support"
+            },
+            {
+              "resource": "core:limb.leg",
+              "count": 2,
+              "mode": "shared",
+              "purpose": "contact"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "core:position.standing_alone",
+      "category": "position",
+      "name": "Standing alone",
+      "components": {
+        "participants": {
+          "slots": {
+            "person": {
+              "count": 1,
+              "kind": "being"
+            }
+          }
+        },
+        "requirements": {
+          "space": {
+            "all_of": [
+              "core:surface.ground"
+            ]
+          }
+        },
+        "spatial": {
+          "participants": {
+            "person": {
+              "posture": "core:posture.standing",
+              "facing": {
+                "world": "level"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "core:position.from_behind",
+      "category": "position",
+      "name": "From behind",
+      "description": "One participant on all fours facing away; the other kneels behind their hips.",
+      "aliases": [
+        "kneeling behind"
+      ],
+      "components": {
+        "participants": {
+          "slots": {
+            "front": {
+              "count": 1,
+              "kind": "being"
+            },
+            "back": {
+              "count": 1,
+              "kind": "being"
+            }
+          }
+        },
+        "requirements": {
+          "space": {
+            "all_of": [
+              "core:surface.wide"
+            ]
+          }
+        },
+        "spatial": {
+          "participants": {
+            "front": {
+              "posture": "core:posture.all_fours",
+              "facing": {
+                "away_from": "back"
+              }
+            },
+            "back": {
+              "posture": "core:posture.kneeling",
+              "facing": {
+                "toward": "front"
+              },
+              "anchors": [
+                {
+                  "relation": "behind",
+                  "of": "front",
+                  "at": "core:anatomy.hips",
+                  "distance": "arm"
+                }
+              ]
+            }
+          },
+          "access": [
+            {
+              "from": "back",
+              "using": "core:limb.hand",
+              "to": "front",
+              "regions": [
+                "core:anatomy.hips",
+                "core:anatomy.ass",
+                "core:anatomy.back"
+              ],
+              "kind": "touch"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "core:position.circle",
+      "category": "position",
+      "name": "Circle",
+      "description": "A group kneeling in a ring, each within reach of the next.",
+      "components": {
+        "participants": {
+          "slots": {
+            "member": {
+              "count": {
+                "min": 3,
+                "max": 12
+              },
+              "kind": "being",
+              "topology": "ring"
+            }
+          }
+        },
+        "requirements": {
+          "space": {
+            "all_of": [
+              "core:surface.wide"
+            ]
+          }
+        },
+        "spatial": {
+          "participants": {
+            "member[*]": {
+              "posture": "core:posture.kneeling",
+              "facing": {
+                "toward": "center"
+              },
+              "anchors": [
+                {
+                  "relation": "around",
+                  "of": "center",
+                  "distance": "near"
+                }
+              ]
+            }
+          },
+          "access": [
+            {
+              "from": "member[i]",
+              "using": "core:limb.hand",
+              "to": "member[i+1]",
+              "regions": [
+                "core:anatomy.shoulders"
+              ],
+              "kind": "touch"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "core:position.riding",
+      "category": "position",
+      "name": "Riding a mount",
+      "components": {
+        "participants": {
+          "slots": {
+            "rider": {
+              "count": 1,
+              "kind": "being"
+            },
+            "mount": {
+              "count": 1,
+              "kind": "being"
+            }
+          }
+        },
+        "requirements": {
+          "participants": {
+            "rider": {
+              "all_of": [
+                "core:locomotion.biped"
+              ]
+            },
+            "mount": {
+              "all_of": [
+                "core:locomotion.quadruped"
+              ],
+              "any_of": [
+                "core:size.large",
+                "core:size.huge"
+              ]
+            }
+          }
+        },
+        "spatial": {
+          "participants": {
+            "mount": {
+              "posture": "core:posture.standing_four"
+            },
+            "rider": {
+              "posture": "core:posture.straddling",
+              "facing": {
+                "same_as": "mount"
+              },
+              "anchors": [
+                {
+                  "relation": "astride",
+                  "of": "mount",
+                  "at": "core:anatomy.back",
+                  "distance": "contact"
+                }
+              ]
+            }
+          },
+          "access": [
+            {
+              "from": "rider",
+              "using": "core:limb.hand",
+              "to": "mount",
+              "regions": [
+                "core:anatomy.back"
+              ],
+              "kind": "touch"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "core:position.facing_apart",
+      "category": "position",
+      "name": "Facing each other at a distance",
+      "components": {
+        "participants": {
+          "slots": {
+            "a": {
+              "count": 1,
+              "kind": "being"
+            },
+            "b": {
+              "count": 1,
+              "kind": "being"
+            }
+          }
+        },
+        "requirements": {
+          "space": {
+            "all_of": [
+              "core:surface.ground"
+            ]
+          }
+        },
+        "spatial": {
+          "participants": {
+            "a": {
+              "posture": "core:posture.standing",
+              "facing": {
+                "toward": "b"
+              },
+              "anchors": [
+                {
+                  "relation": "in_front",
+                  "of": "b",
+                  "distance": "far"
+                }
+              ]
+            },
+            "b": {
+              "posture": "core:posture.standing",
+              "facing": {
+                "toward": "a"
+              }
+            }
+          },
+          "access": [
+            {
+              "from": "a",
+              "using": "core:sense.sight",
+              "to": "b",
+              "regions": [
+                "core:anatomy.torso"
+              ],
+              "kind": "sight"
+            },
+            {
+              "from": "b",
+              "using": "core:sense.sight",
+              "to": "a",
+              "regions": [
+                "core:anatomy.torso"
+              ],
+              "kind": "sight"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

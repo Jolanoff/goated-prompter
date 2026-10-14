@@ -1,0 +1,177 @@
+{
+  "spec": 1,
+  "entries": [
+    {
+      "id": "core:body.vertebrate",
+      "category": "body",
+      "name": "Vertebrate",
+      "description": "Shared base of bodies with a head, mouth, torso, back and hips.",
+      "components": {
+        "body": {
+          "resources": {
+            "head": {
+              "type": "core:anatomy.head"
+            },
+            "mouth": {
+              "type": "core:anatomy.mouth"
+            },
+            "torso": {
+              "type": "core:anatomy.torso"
+            },
+            "back": {
+              "type": "core:anatomy.back"
+            },
+            "hips": {
+              "type": "core:anatomy.hips"
+            }
+          },
+          "provides": [
+            "core:sense.sight"
+          ]
+        }
+      }
+    },
+    {
+      "id": "core:body.humanoid",
+      "category": "body",
+      "name": "Humanoid",
+      "description": "A generic human body: two arms, two hands, two legs, two feet. No sex-specific anatomy; add traits.",
+      "extends": [
+        "core:body.vertebrate"
+      ],
+      "components": {
+        "body": {
+          "resources": {
+            "chest": {
+              "type": "core:anatomy.chest"
+            },
+            "shoulders": {
+              "type": "core:anatomy.shoulders"
+            },
+            "ass": {
+              "type": "core:anatomy.ass"
+            },
+            "arm.left": {
+              "type": "core:limb.arm"
+            },
+            "arm.right": {
+              "type": "core:limb.arm"
+            },
+            "hand.left": {
+              "type": "core:limb.hand"
+            },
+            "hand.right": {
+              "type": "core:limb.hand"
+            },
+            "leg.left": {
+              "type": "core:limb.leg"
+            },
+            "leg.right": {
+              "type": "core:limb.leg"
+            },
+            "foot.left": {
+              "type": "core:limb.foot"
+            },
+            "foot.right": {
+              "type": "core:limb.foot"
+            }
+          },
+          "provides": [
+            "core:locomotion.biped",
+            "core:size.medium"
+          ],
+          "complete_for": [
+            "core:limb"
+          ]
+        }
+      }
+    },
+    {
+      "id": "core:body.quadruped",
+      "category": "body",
+      "name": "Quadruped",
+      "description": "A four-legged body.",
+      "extends": [
+        "core:body.vertebrate"
+      ],
+      "components": {
+        "body": {
+          "resources": {
+            "leg.front_left": {
+              "type": "core:limb.leg"
+            },
+            "leg.front_right": {
+              "type": "core:limb.leg"
+            },
+            "leg.back_left": {
+              "type": "core:limb.leg"
+            },
+            "leg.back_right": {
+              "type": "core:limb.leg"
+            },
+            "foot.front_left": {
+              "type": "core:limb.foot"
+            },
+            "foot.front_right": {
+              "type": "core:limb.foot"
+            },
+            "foot.back_left": {
+              "type": "core:limb.foot"
+            },
+            "foot.back_right": {
+              "type": "core:limb.foot"
+            }
+          },
+          "provides": [
+            "core:locomotion.quadruped"
+          ],
+          "complete_for": [
+            "core:limb"
+          ]
+        }
+      }
+    },
+    {
+      "id": "core:trait.penis",
+      "category": "trait",
+      "name": "Penis",
+      "components": {
+        "body": {
+          "resources": {
+            "penis": {
+              "type": "core:anatomy.penis"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "core:trait.vagina",
+      "category": "trait",
+      "name": "Vagina",
+      "components": {
+        "body": {
+          "resources": {
+            "vagina": {
+              "type": "core:anatomy.vagina"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "core:trait.breasts",
+      "category": "trait",
+      "name": "Breasts",
+      "components": {
+        "body": {
+          "resources": {
+            "breasts": {
+              "type": "core:anatomy.breasts"
+            }
+          }
+        }
+      }
+    }
+  ]
+}

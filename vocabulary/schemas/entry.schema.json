@@ -1,0 +1,260 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://goated-prompter.local/vocabulary/entry.schema.json",
+  "title": "Vocabulary entry file",
+  "description": "An entry file of a vocabulary pack: {\"spec\": 1, \"entries\": [...]}. See SPEC.md sections 2-8.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["spec", "entries"],
+  "properties": {
+    "spec": { "const": 1 },
+    "entries": { "type": "array", "items": { "$ref": "#/$defs/entry" } }
+  },
+  "$defs": {
+    "entryId": { "type": "string", "pattern": "^[a-z][a-z0-9_]*:[a-z][a-z0-9_]*(\\.[a-z0-9_]+)*$" },
+    "entryIds": { "type": "array", "items": { "$ref": "#/$defs/entryId" }, "uniqueItems": true },
+    "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+    "instanceId": { "type": "string", "pattern": "^[a-z][a-z0-9_]*(\\.[a-z0-9_]+)*$" },
+    "participantRef": {
+      "type": "string",
+      "description": "SPEC.md section 4: slot, slot[n], slot[-n], slot[*], slot[a:b], slot[i], slot[i+k], slot[i-k], center, self.",
+      "pattern": "^(self|center|[a-z][a-z0-9_]*(\\[(-?[0-9]+|\\*|[0-9]*:[0-9]*|i|i[+-][0-9]+)\\])?)$"
+    },
+    "rating": { "enum": ["general", "mature", "adult"] },
+    "text": { "type": "string", "minLength": 1, "maxLength": 2000 },
+
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "category", "name", "components"],
+      "properties": {
+        "id": { "$ref": "#/$defs/entryId" },
+        "category": { "$ref": "#/$defs/name" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "description": { "$ref": "#/$defs/text" },
+        "aliases": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 80 }, "uniqueItems": true },
+        "tags": { "type": "array", "items": { "$ref": "#/$defs/name" }, "uniqueItems": true },
+        "rating": { "$ref": "#/$defs/rating" },
+        "extends": { "$ref": "#/$defs/entryIds" },
+        "notes": { "type": "array", "items": { "$ref": "#/$defs/text" } },
+        "components": { "$ref": "#/$defs/components" }
+      }
+    },
+
+    "components": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "capability": { "$ref": "#/$defs/capability" },
+        "body": { "$ref": "#/$defs/body" },
+        "participants": { "$ref": "#/$defs/participants" },
+        "requirements": { "$ref": "#/$defs/requirements" },
+        "spatial": { "$ref": "#/$defs/spatial" },
+        "claims": { "$ref": "#/$defs/claims" },
+        "object": { "$ref": "#/$defs/object" },
+        "environment": { "$ref": "#/$defs/environment" }
+      }
+    },
+
+    "capability": {
+      "description": "This entry is a capability. implies lists broader capabilities (transitive).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": { "implies": { "$ref": "#/$defs/entryIds" } }
+    },
+
+    "body": {
+      "description": "Resource instances (each provides its type), extra capabilities, and capabilities this body declares complete (SPEC.md section 3).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "resources": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/instanceId" },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["type"],
+            "properties": { "type": { "$ref": "#/$defs/entryId" } }
+          }
+        },
+        "provides": { "$ref": "#/$defs/entryIds" },
+        "complete_for": { "$ref": "#/$defs/entryIds" }
+      }
+    },
+
+    "count": {
+      "oneOf": [
+        { "type": "integer", "minimum": 0, "maximum": 64 },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["min", "max"],
+          "properties": {
+            "min": { "type": "integer", "minimum": 0, "maximum": 64 },
+            "max": { "type": "integer", "minimum": 1, "maximum": 64 }
+          }
+        }
+      ]
+    },
+
+    "participants": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slots"],
+      "properties": {
+        "slots": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": { "$ref": "#/$defs/name" },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["count", "kind"],
+            "properties": {
+              "count": { "$ref": "#/$defs/count" },
+              "kind": { "enum": ["being", "object"] },
+              "topology": { "enum": ["ring", "chain"] }
+            }
+          }
+        }
+      }
+    },
+
+    "condition": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "all_of": { "$ref": "#/$defs/entryIds" },
+        "any_of": { "type": "array", "items": { "$ref": "#/$defs/entryId" }, "uniqueItems": true, "minItems": 2 },
+        "none_of": { "$ref": "#/$defs/entryIds" }
+      }
+    },
+
+    "access": {
+      "description": "from can reach the regions of to using a capability. kind touch needs contact; sight needs a clear line of sight.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "using", "to", "regions", "kind"],
+      "properties": {
+        "from": { "$ref": "#/$defs/participantRef" },
+        "using": { "$ref": "#/$defs/entryId" },
+        "to": { "$ref": "#/$defs/participantRef" },
+        "regions": { "type": "array", "items": { "$ref": "#/$defs/entryId" }, "minItems": 1, "uniqueItems": true },
+        "kind": { "enum": ["touch", "sight"] }
+      }
+    },
+
+    "requirements": {
+      "description": "Eligibility (SPEC.md section 3). access lists reach the placement must provide.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "participants": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/participantRef" },
+          "additionalProperties": { "$ref": "#/$defs/condition" }
+        },
+        "space": { "$ref": "#/$defs/condition" },
+        "access": { "type": "array", "items": { "$ref": "#/$defs/access" } }
+      }
+    },
+
+    "facing": {
+      "oneOf": [
+        { "type": "object", "additionalProperties": false, "required": ["toward"], "properties": { "toward": { "$ref": "#/$defs/participantRef" } } },
+        { "type": "object", "additionalProperties": false, "required": ["away_from"], "properties": { "away_from": { "$ref": "#/$defs/participantRef" } } },
+        { "type": "object", "additionalProperties": false, "required": ["same_as"], "properties": { "same_as": { "$ref": "#/$defs/participantRef" } } },
+        { "type": "object", "additionalProperties": false, "required": ["world"], "properties": { "world": { "enum": ["up", "down", "level"] } } }
+      ]
+    },
+
+    "anchor": {
+      "description": "Frames: SPEC.md section 6.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relation", "of"],
+      "properties": {
+        "relation": { "enum": ["in_front", "behind", "left_of", "right_of", "above", "below", "on", "under", "around", "between", "astride"] },
+        "of": {
+          "oneOf": [
+            { "$ref": "#/$defs/participantRef" },
+            { "type": "array", "items": { "$ref": "#/$defs/participantRef" }, "minItems": 2, "maxItems": 2 }
+          ]
+        },
+        "at": { "$ref": "#/$defs/entryId" },
+        "distance": { "enum": ["contact", "arm", "near", "far"] }
+      }
+    },
+
+    "placement": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "posture": { "$ref": "#/$defs/entryId" },
+        "orientation": { "enum": ["upright", "face_up", "face_down", "side"] },
+        "facing": { "$ref": "#/$defs/facing" },
+        "anchors": { "type": "array", "items": { "$ref": "#/$defs/anchor" } }
+      }
+    },
+
+    "spatial": {
+      "description": "Declared feasibility facts (SPEC.md sections 3 and 6).",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "participants": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/participantRef" },
+          "additionalProperties": { "$ref": "#/$defs/placement" }
+        },
+        "access": { "type": "array", "items": { "$ref": "#/$defs/access" } }
+      }
+    },
+
+    "claims": {
+      "description": "Resource claims per participant (SPEC.md section 5).",
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/participantRef" },
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["resource", "count", "mode", "purpose"],
+          "properties": {
+            "resource": { "$ref": "#/$defs/entryId" },
+            "count": { "type": "integer", "minimum": 1, "maximum": 16 },
+            "mode": { "enum": ["exclusive", "shared"] },
+            "purpose": { "enum": ["support", "hold", "contact", "use"] },
+            "key": { "type": "string", "pattern": "^[a-z0-9_:.-]*(\\{[a-z][a-z0-9_]*\\}[a-z0-9_:.-]*)*$", "minLength": 1, "maxLength": 80 }
+          }
+        }
+      }
+    },
+
+    "object": {
+      "description": "What an item provides. complete_for declares capabilities this item is complete for, with the same meaning as on a body (SPEC.md section 3).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provides"],
+      "properties": {
+        "provides": { "$ref": "#/$defs/entryIds" },
+        "complete_for": { "$ref": "#/$defs/entryIds" },
+        "size": { "enum": ["tiny", "small", "medium", "large", "huge"] },
+        "hands": { "type": "integer", "minimum": 0, "maximum": 4 }
+      }
+    },
+
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provides"],
+      "properties": { "provides": { "$ref": "#/$defs/entryIds" } }
+    }
+  }
+}

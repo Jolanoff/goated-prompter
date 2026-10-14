@@ -1,0 +1,57 @@
+{
+  "spec": 1,
+  "entries": [
+    {
+      "id": "fantasy:trait.wings",
+      "category": "trait",
+      "name": "Wings",
+      "components": {
+        "body": {
+          "resources": {
+            "wing.left": {
+              "type": "fantasy:anatomy.wing"
+            },
+            "wing.right": {
+              "type": "fantasy:anatomy.wing"
+            }
+          },
+          "provides": [
+            "core:locomotion.flight"
+          ]
+        }
+      }
+    },
+    {
+      "id": "fantasy:trait.tail",
+      "category": "trait",
+      "name": "Tail",
+      "components": {
+        "body": {
+          "resources": {
+            "tail": {
+              "type": "fantasy:anatomy.tail"
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "fantasy:creature.dragon",
+      "category": "creature",
+      "name": "Dragon",
+      "description": "A huge winged, tailed quadruped. Its magic is not declared either way.",
+      "extends": [
+        "core:body.quadruped",
+        "fantasy:trait.wings",
+        "fantasy:trait.tail"
+      ],
+      "components": {
+        "body": {
+          "provides": [
+            "core:size.huge"
+          ]
+        }
+      }
+    }
+  ]
+}

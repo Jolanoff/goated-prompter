@@ -1,0 +1,50 @@
+{
+  "spec": 1,
+  "entries": [
+    {
+      "id": "core:action.hold",
+      "category": "action",
+      "name": "Hold an object",
+      "description": "One hand holds an item. Other actions on the same item share this hand through the key.",
+      "components": {
+        "participants": {
+          "slots": {
+            "holder": {
+              "count": 1,
+              "kind": "being"
+            },
+            "item": {
+              "count": 1,
+              "kind": "object"
+            }
+          }
+        },
+        "requirements": {
+          "participants": {
+            "holder": {
+              "all_of": [
+                "core:limb.hand"
+              ]
+            },
+            "item": {
+              "all_of": [
+                "core:item.handheld"
+              ]
+            }
+          }
+        },
+        "claims": {
+          "holder": [
+            {
+              "resource": "core:limb.hand",
+              "count": 1,
+              "mode": "exclusive",
+              "purpose": "hold",
+              "key": "hold:{item}"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

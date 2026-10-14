@@ -1,0 +1,36 @@
+{
+  "name": "unknown_dragon_caster",
+  "description": "Unknown: a dragon casts a spell. The dragon never declares whether it has magic.",
+  "packs": [
+    "core",
+    "fantasy"
+  ],
+  "cast": [
+    {
+      "id": "drake",
+      "body": "fantasy:creature.dragon"
+    },
+    {
+      "id": "foe",
+      "body": "core:body.humanoid"
+    }
+  ],
+  "use": [
+    {
+      "entry": "fantasy:action.cast_on",
+      "bind": {
+        "caster": "drake",
+        "target": "foe"
+      }
+    }
+  ],
+  "expect": {
+    "status": "unknown",
+    "because": "fantasy:magic.caster is neither provided nor declared absent for the dragon; the director may still invent this.",
+    "detail": {
+      "participant": "drake",
+      "capability": "fantasy:magic.caster",
+      "state": "undeclared"
+    }
+  }
+}

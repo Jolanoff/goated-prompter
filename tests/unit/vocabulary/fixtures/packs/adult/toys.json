@@ -1,0 +1,32 @@
+{
+  "spec": 1,
+  "entries": [
+    {
+      "id": "adult:item.insertable",
+      "category": "capability",
+      "name": "Insertable",
+      "components": {
+        "capability": {
+          "implies": [
+            "core:item"
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:item.dildo",
+      "category": "item",
+      "name": "Dildo",
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.handheld",
+            "adult:item.insertable"
+          ],
+          "size": "small",
+          "hands": 1
+        }
+      }
+    }
+  ]
+}
