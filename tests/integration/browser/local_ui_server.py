@@ -15,6 +15,7 @@ from aiohttp import web
 from local_app import create_app
 from goated_prompter.features.builder.service import GoatedPrompterService
 from goated_prompter.backends.mock import MockBackend
+from goated_prompter.features.vocabulary.packs import PackManager
 
 
 class DatasetUIMock(MockBackend):
@@ -141,10 +142,13 @@ if __name__ == "__main__":
     _, scratch = task_paths(os.environ.get("GOATED_TEST_TASK_KEY", "browser-tests"), "browser")
     with synthetic_storage(scratch) as data:
         port = int(os.environ.get("GOATED_UI_TEST_PORT", "8190"))
+        packs = PackManager(Path(data) / "vocabulary" / "packs", Path(data) / "vocabulary" / "state.json")
         with patch("goated_prompter.features.dataset.service.create_backend", side_effect=dataset_ui_backend), \
                 patch("goated_prompter.features.dataset.understanding.create_backend", side_effect=dataset_ui_backend), \
                 patch("goated_prompter.features.builder.service.create_backend", side_effect=dataset_ui_backend), \
-                patch("local_app.get_process_manager"):
+                patch("local_app.get_process_manager"), \
+                patch("goated_prompter.features.vocabulary.routes.PackManager", return_value=packs), \
+                patch("goated_prompter.features.dataset.v2.vocabulary_packs.PackManager", return_value=packs):
             # Exercise accepted aliases through the real API, not only factory tests.
             web.run_app(create_app(port=port, config_loader=lambda: {"backend": " DeBuG "}, settings_path=Path(data) / "settings.json",
                                    service_factory=DelayedMockService), host="127.0.0.1",

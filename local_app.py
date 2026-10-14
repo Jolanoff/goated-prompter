@@ -36,6 +36,7 @@ from goated_prompter.features.refine import routes as refine_routes
 from goated_prompter.features.saved_prompts import routes as saved_prompts_routes
 from goated_prompter.features.saved_prompts.store import validate_prompts
 from goated_prompter.features.settings import routes as settings_routes
+from goated_prompter.features.vocabulary import routes as vocabulary_routes
 from goated_prompter.features.settings.routes import models_payload
 from goated_prompter.features.settings.validation import validate_local_paths, validate_settings
 from goated_prompter.job_lifecycle import DATASET_CHECKPOINT_KINDS, release_completed_checkpoints, daemon_work
@@ -362,7 +363,7 @@ def create_app(*, port=8190, dist=None, config_loader=load_config, service_facto
                     web.get("/api/jobs/{id}", job_endpoint),
                     web.post("/api/jobs/{id}/{action:pause|resume|cancel}", job_endpoint)])
     for routes in (builder_routes, settings_routes, presets_routes, saved_prompts_routes, prompt_library_routes,
-                   minimax_routes, dataset_routes, workflow_settings_routes, refine_routes):
+                   minimax_routes, dataset_routes, workflow_settings_routes, refine_routes, vocabulary_routes):
         routes.register(app)
     root = Path(dist or Path(__file__).parent / "frontend" / "dist").resolve()
 

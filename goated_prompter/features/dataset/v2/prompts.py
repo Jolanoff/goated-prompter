@@ -10,6 +10,7 @@ the reason; if it misses again it is kept and flagged trigger_ok: false.
 """
 
 from dataclasses import replace
+import json
 
 from ...builder.service import GoatedPrompterService
 from .debug import DebugTrace
@@ -63,6 +64,10 @@ def write_prompts(config, request, brief, scenes, *, checkpoint=lambda: None, pr
     trace = DebugTrace("prompts", amount=len(scenes), target=brief["settings"]["target"], trigger=brief["input"]["trigger"],
                        trigger_at_start=brief["input"]["trigger_at_start"])
     service = GoatedPrompterService(config, checkpoint=checkpoint)
+    requirements = "CONFIRMED DATASET REQUIREMENTS\n" + json.dumps({
+        "request": brief["input"]["request"], "rules": brief["input"]["rules"],
+        "characters": brief["characters"], "people": brief["people"], "fixed": brief["fixed"],
+        "must": brief["must"], "avoid": brief["avoid"]}, ensure_ascii=False)
     results = []
     try:
         for number, scene in enumerate(scenes, 1):
@@ -70,7 +75,7 @@ def write_prompts(config, request, brief, scenes, *, checkpoint=lambda: None, pr
             idea = scene_text(scene)
             problem = None
             for attempt in (1, 2):
-                rules = "\n\n".join(part for part in (SCENE_RULES, _trigger_rule(brief),
+                rules = "\n\n".join(part for part in (SCENE_RULES, requirements, _trigger_rule(brief),
                                                      f"CORRECTION: {problem}" if problem else "") if part)
                 builder_request = replace(request, idea=idea, mode="Enhance", planning_mode="Direct",
                                           target_model=brief["settings"]["target"], prompt_length=brief["settings"]["length"],

@@ -1,6 +1,46 @@
 # Dataset architecture
 
-Dataset produces prompts, not images. There is one pipeline:
+Dataset produces prompts, not images. The rebuilt workflow uses
+`features/dataset/v2/understanding.py`, `scenes.py` and `prompts.py`:
+Understanding → source-bound human confirmation → scenes → final Builder prompts.
+Scenes-only generation stops before Builder. The legacy workflow described below
+remains available during migration; it must not be removed yet.
+
+## Remaining migration requirements
+
+Before retiring the legacy Dataset pipeline or old adult TXT logic, the rebuilt
+workflow must demonstrate these retained capabilities:
+
+- Durable recovery of new runs, including partial scenes and final prompts after
+  cancellation, failure, reload and restart, without stale jobs overwriting newer work.
+- Scene editing with dependent-prompt invalidation, plus per-scene regeneration
+  that preserves unrelated scenes and results.
+- Continue from new scenes-only runs using the reviewed scenes rather than
+  regenerating or reinterpreting them.
+
+These are requirements for final migration, not implemented rebuilt features.
+
+### Phase 7: separate UI stages
+
+- **7A — Pack Manager:** manage installed packs and their enabled state.
+- **7B — Vocabulary Explorer:** inspect entries, relationships and compatibility data.
+- **7C — Visual Pack Creator:** create and edit packs visually.
+
+Each stage must be separately reviewable. Adult packs require the same management,
+inspection and creation capabilities as General and Fantasy packs, while preserving
+content ratings and eligibility rules.
+
+### Phase 8: quality gates
+
+Evaluate General/SFW, Fantasy and Adult/NSFW separately, inspecting both generated
+scenes and final Builder prompts. Adult evaluation must cover solo, pair and group
+requests; explicit anatomy; positions; participant and role consistency;
+interactions and physical constraints; accessory requirements and exclusions;
+diversity; and vocabulary relevance. Scripted contract tests establish data flow,
+not generated-output quality. Required functional parity and quality evidence must
+be established before legacy removal.
+
+## Legacy pipeline reference
 
 ```text
 concept + rules + local guided input

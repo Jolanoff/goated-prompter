@@ -1,5 +1,6 @@
 import { ChevronDown, Copy, Database, Download, FileJson, Layers3, LoaderCircle } from "lucide-react";
 import { ui } from "../../ui.js";
+import { datasetCopyText } from "./datasetExport.js";
 
 // Rebuild (issue 106): the Scenes and Dataset pages for a run started by Confirm.
 const pad = (number) => String(number).padStart(2, "0");
@@ -77,7 +78,7 @@ export function RunPrompts({ run, onCopy, onDownload }) {
         <p className="mt-1 text-xs text-muted">{run.status === "running" && total
           ? `Final prompts appear as they are written: ${prompts.length} of ${total}.` : `${prompts.length} final prompts.`}</p></div>
       <div className="flex flex-wrap gap-2">
-        <button className={ui.button} disabled={!prompts.length} onClick={() => onCopy(text)}><Copy size={15} />Copy all</button>
+        <button className={ui.button} disabled={!prompts.length} onClick={() => onCopy(datasetCopyText({ results: prompts }))}><Copy size={15} />Copy all</button>
         <button className={ui.button} disabled={!prompts.length} onClick={() => onDownload("dataset-prompts.txt", text, "text/plain;charset=utf-8")}><Download size={15} />TXT</button>
         <button className={ui.button} disabled={!result} onClick={() => onDownload("dataset.json", json, "application/json")}><FileJson size={15} />JSON</button>
       </div>

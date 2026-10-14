@@ -69,6 +69,8 @@ class Pack:
 
     def summary(self):
         return {"id": self.id, "name": self.manifest["name"], "version": self.manifest["version"],
+                "description": self.manifest.get("description", ""),
+                "origin": "core" if self.mandatory else "bundled" if self.bundled else "installed",
                 "rating": self.manifest["rating"], "bundled": self.bundled, "mandatory": self.mandatory,
                 "enabled": self.enabled, "requires": dict(self.manifest.get("requires", {})), "entries": len(self.entries)}
 
@@ -111,6 +113,13 @@ def _validator(name):
 def _schema_problems(name, data, where):
     return [f"{where}: {'/'.join(str(part) for part in error.absolute_path) or '(root)'}: {error.message}"
             for error in sorted(_validator(name).iter_errors(data), key=lambda error: list(error.absolute_path))]
+
+
+def validate_pack_id(pack_id):
+    schema = _validator("manifest").schema["$defs"]["packId"]
+    if not isinstance(pack_id, str) or not jsonschema.Draft202012Validator(schema).is_valid(pack_id):
+        raise VocabularyError("Invalid pack id. Use the id declared in the pack manifest.")
+    return pack_id
 
 
 def _read_json(path, where):
@@ -569,21 +578,32 @@ class PackManager:
         reported, not raised."""
         with self._lock:
             disabled = self._disabled()
-            core = self._bundled()
-            found = [pack.summary() | {"problems": []} for pack in core]
-            seen = {pack.id: "bundled" for pack in core}
-            for where, folders in (("official", self._official_folders()), ("installed", self._installed_folders())):
+            found, loaded, seen = [], [], {}
+            for where, folders in (("core", self.bundled_dirs), ("official", self._official_folders()),
+                                   ("installed", self._installed_folders())):
                 for folder in folders:
+                    fallback = {"id": folder.name, "name": folder.name, "description": "", "version": None,
+                                "rating": None, "entries": None, "requires": {}, "valid": False,
+                                "bundled": where != "installed", "mandatory": where == "core",
+                                "origin": "bundled" if where == "official" else where,
+                                "enabled": where == "core" or folder.name not in disabled}
                     if problem := self._duplicate(folder.name, where, seen):
-                        found.append({"id": folder.name, "bundled": where == "official", "mandatory": False,
-                                      "enabled": False, "problems": [problem]})
+                        found.append(fallback | {"enabled": False, "problems": [problem]})
                         continue
                     try:
-                        pack = self._optional(folder, bundled=where == "official", enabled=folder.name not in disabled)
-                        found.append(pack.summary() | {"problems": []})
-                    except VocabularyError as error:
-                        found.append({"id": folder.name, "bundled": where == "official", "mandatory": False,
-                                      "enabled": False, "problems": error.problems})
+                        pack = (read_pack(folder, bundled=True) if where == "core" else
+                                self._optional(folder, bundled=where == "official", enabled=folder.name not in disabled))
+                        pack.mandatory = where == "core"
+                        loaded.append(pack)
+                        found.append(pack.summary() | {"valid": True, "problems": []})
+                    except (VocabularyError, OSError) as error:
+                        found.append(fallback | {"enabled": where == "core", "problems": getattr(error, "problems", [str(error)])})
+            try:
+                build_registry(loaded)
+            except VocabularyError as error:
+                for summary in found:
+                    summary["problems"].extend(problem for problem in error.problems
+                        if re.search(rf"(?<![a-z0-9_]){re.escape(summary['id'])}(?=[: /;]|$)", problem))
             return found
 
     def _packs(self, overrides=None, exclude=()):
@@ -611,6 +631,7 @@ class PackManager:
     # -- enable / disable / remove
     def _require_optional(self, pack_id):
         """An official or installed pack can be enabled and disabled; the core cannot."""
+        validate_pack_id(pack_id)
         if any(read_pack(path, bundled=True).id == pack_id for path in self.bundled_dirs):
             raise VocabularyError(f"{pack_id} is bundled with the app and cannot be changed")
         if not ((self.install_dir / pack_id).is_dir()
@@ -624,13 +645,13 @@ class PackManager:
             raise VocabularyError(f"{pack_id} is bundled with the app and cannot be removed; disable it instead")
 
     def _dependents(self, pack_id, packs):
-        return sorted(pack.id for pack in packs if pack.enabled and pack_id in pack.manifest.get("requires", {}))
+        return sorted(pack["id"] for pack in packs if pack["enabled"] and pack_id in pack.get("requires", {}))
 
     def set_enabled(self, pack_id, enabled):
         with self._lock:
             self._require_optional(pack_id)
             packs = self._packs(overrides={pack_id: bool(enabled)})
-            if not enabled and (dependents := self._dependents(pack_id, packs)):
+            if not enabled and (dependents := self._dependents(pack_id, [pack.summary() for pack in packs])):
                 raise VocabularyError(f"{pack_id} cannot be disabled; enabled packs require it: {', '.join(dependents)}")
             build_registry(packs)  # the new combination must load before it is saved
             disabled = self._disabled()
@@ -640,7 +661,8 @@ class PackManager:
     def remove(self, pack_id):
         with self._lock:
             self._require_installed(pack_id)
-            packs = self._packs(exclude={pack_id})
+            # Invalid unrelated packs must not prevent removing a broken installation.
+            packs = [pack for pack in self.discover() if pack["origin"] != "installed" or pack["id"] != pack_id]
             if dependents := self._dependents(pack_id, packs):
                 raise VocabularyError(f"{pack_id} cannot be removed; enabled packs require it: {', '.join(dependents)}")
             shutil.rmtree(self.install_dir / pack_id)
@@ -650,11 +672,13 @@ class PackManager:
                 self._write_disabled(disabled)
 
     # -- install / update
-    def install_archive(self, data, *, replace=False, allow_downgrade=False):
+    def install_archive(self, data, *, replace=False, allow_downgrade=False, expected_id=None):
         """Install (or, with replace=True, update) a pack from ZIP bytes. Nothing changes unless the
         pack validates and every enabled pack still loads together with it. Replacing a pack with an
         older version also needs allow_downgrade=True."""
         with self._lock:
+            if expected_id is not None:
+                self._require_installed(expected_id)
             self.install_dir.mkdir(parents=True, exist_ok=True)
             staging = Path(tempfile.mkdtemp(dir=self.install_dir, prefix=".install-"))
             backup = None
@@ -668,15 +692,21 @@ class PackManager:
                 if problems := _schema_problems("manifest", manifest, "manifest.json"):
                     raise VocabularyError(problems)
                 pack_id = manifest["id"]
+                if expected_id is not None and pack_id != expected_id:
+                    raise VocabularyError(f"This ZIP contains {pack_id}, not {expected_id}. Choose the matching pack to update.")
                 if any(pack.id == pack_id for pack in self._bundled()) or pack_id in {folder.name for folder in self._official_folders()}:
                     raise VocabularyError(f"{pack_id} is the id of a bundled pack")
                 target = self.install_dir / pack_id
                 if target.exists() and not replace:
                     raise VocabularyError(f"{pack_id} is already installed; update it instead")
                 if target.exists() and not allow_downgrade:
-                    current = _read_json(target / "manifest.json", f"{pack_id}/manifest.json").get("version", "0.0.0")
-                    if parse_version(manifest["version"]) < parse_version(current):
-                        raise VocabularyError(f"{pack_id} {manifest['version']} is older than the installed {current}; "
+                    try:
+                        current = _read_json(target / "manifest.json", f"{pack_id}/manifest.json")
+                        current_version = parse_version(current.get("version")) if isinstance(current, dict) else None
+                    except (VocabularyError, ValueError):
+                        current_version = None  # A broken installation may be repaired by a valid ZIP.
+                    if current_version is not None and parse_version(manifest["version"]) < current_version:
+                        raise VocabularyError(f"{pack_id} {manifest['version']} is older than the installed {current['version']}; "
                                               "allow the downgrade explicitly to install it")
                 folder = staging / pack_id  # read_pack requires the folder to carry the pack id
                 payload.rename(folder)
@@ -696,6 +726,8 @@ class PackManager:
                         backup = None
                     raise
                 return new_pack.summary() | {"enabled": enabled}
+            except (zipfile.BadZipFile, NotImplementedError, RuntimeError, EOFError) as error:
+                raise VocabularyError(f"Cannot read ZIP archive: {error}") from None
             finally:
                 shutil.rmtree(staging, ignore_errors=True)
 
