@@ -4,6 +4,7 @@ import re
 
 from ...presets import get_director_preset
 from .director import director_fixes_shot
+from .modules import CORE_ACTIVITIES, FEET, FURNITURE, GENERIC_PROPS, KINK, MODULES, PET
 
 
 _CONCEPT_FAMILIES = {
@@ -189,11 +190,6 @@ def broken_anatomy(text):
     return match.group() if match else None
 
 
-# Ordinary sex is the default; domination, restraint and fetish dynamics only when asked for.
-_KINK = re.compile(r"\b(?:slaves?|owned by|collared|collars?|leash(?:ed)?|pet play|bdsm|dominatrix|dom(?:/| and )sub|"
-                   r"submissive|dominant|dominat\w*|bondage|bound|restrain\w*|tied up|handcuff\w*|spank\w*|chok\w*|"
-                   r"foot fetish|feet worship|breeding|degrad\w*|humiliat\w*|fetish\w*|kinky|kinks?|"
-                   r"latex|rough sex|(?:his|her|my|their) (?:master|mistress))\b")
 _KINK_EXCLUSION = re.compile(r"\b(?:kinks?|kinky|bdsm|bondage|power exchange|ownership|domination)\b")
 _ORAL = re.compile(r"\b(?:oral|blowjob\w*|suck\w*|deepthroat\w*|69|sixty-nine|face[- ]?sitting|cunnilingus|"
                    r"face[- ]?fuck\w*|mouth[- ]?fuck\w*|eat(?:s|ing)? (?:her|him) out|lick\w*)\b")
@@ -205,11 +201,8 @@ def requested_text(data, *, include_director=True):
     return _user_text(data) + ("\n" + _director_text(data) if include_director else "")
 
 
-_FEET = re.compile(r"\b(?:feet|foot\w*|soles|toes)\b")
-
-
 def feet_request(data):
-    return bool(_FEET.search(requested_text(data)))
+    return _asked(requested_text(data), FEET)
 
 
 # A Director only unlocks BDSM when it is built for it; a general NSFW Director that mentions
@@ -221,12 +214,10 @@ _DIRECTOR_CONDITION = re.compile(r"\b(?:if|when|unless)\b|^\s*(?:[-*]\s*)?for\s+
                                  r"[^.!?;\n]*\b(?:requests?|requested|focus(?:es)?)\b")
 _NOT_A_PERSON = r"(?! (?:bedroom|bath\w*|suite|key|plan|class|chef|piece|copy|cylinder|degree))"
 # Ownership and slave roles ask for the power exchange in every image, not as one option among many.
-_OWNERSHIP = re.compile(r"\b(?:slaves?|(?<!-)owned|ownership|property|dominated|human pets?|pet play|petplay|"
+# Pet roleplay is its own switch and does not imply ownership or kink.
+_OWNERSHIP = re.compile(r"\b(?:slaves?|(?<!-)owned|ownership|property|dominated|"
                         r"collared|leashed|(?:master|mistress)"
                         + _NOT_A_PERSON + r")\b")
-_PET = re.compile(r"\b(?:pet play|petplay|human pets?|puppy play|kitten play|puppy|kitten|pets?)\b")
-_FURNITURE = re.compile(r"\b(?:human furniture|furniture|footrest|human (?:table|chair|stool)|objectif\w*)\b")
-_AFTERCARE = re.compile(r"\b(?:aftercare|aftermath)\b")
 _GROUNDED_FEET = re.compile(r"^\s+(?:(?:are|stay|rest)\s+)?(?:planted|flat|firmly|on (?:the )?(?:floor|ground|mat))\b")
 
 
@@ -234,7 +225,7 @@ def _mentions(text, pattern, *, ignore_conditional=False):
     asked, forbidden = False, False
     for sentence in re.split(r"[.!?;\n]", text):
         for match in pattern.finditer(sentence):
-            if pattern is _FEET and match.group() == "feet" and _GROUNDED_FEET.search(sentence[match.end():]):
+            if match.group() == "feet" and _GROUNDED_FEET.search(sentence[match.end():]):
                 continue
             segment = re.split(r"\b(?:but|however|instead)\b", sentence[:match.start()])[-1]
             clauses = re.split(r"[,:]", segment)
@@ -275,43 +266,46 @@ def ownership_request(data, *, include_director=True):
 
 
 def kink_request(data):
-    return (_asked(_user_text(data), _KINK) or _asked(_director_text(data), _KINK_DIRECTOR, ignore_conditional=True)
+    return (_asked(_user_text(data), KINK) or _asked(_director_text(data), _KINK_DIRECTOR, ignore_conditional=True)
             or ownership_request(data))
 
 
 def pet_request(data):
-    return (_asked(_user_text(data), _PET) or _asked(_director_text(data), _PET, ignore_conditional=True))
+    return (_asked(_user_text(data), PET) or _asked(_director_text(data), PET, ignore_conditional=True))
 
 
 def furniture_request(data):
-    return (_asked(_user_text(data), _FURNITURE) or _asked(_director_text(data), _FURNITURE, ignore_conditional=True))
+    return (_asked(_user_text(data), FURNITURE) or _asked(_director_text(data), FURNITURE, ignore_conditional=True))
 
 
-def aftercare_request(data):
-    return (_asked(_user_text(data), _AFTERCARE) or _asked(_director_text(data), _AFTERCARE, ignore_conditional=True))
-
-
+# Core activities plus every switch module's conservative fallback pattern (modules.py).
 _POSITION_CATEGORIES = {
     "penetration": re.compile(r"\b(?:fuck(?:s|ed|ing)?|intercourse|penetrat\w*)\b"),
     "anal": re.compile(r"\b(?:anal|sodomy|sodomiz\w*)\b"),
     "vaginal": re.compile(r"\bvaginal\b"),
     "oral": _ORAL,
-    "feet": _FEET,
-    "kink": _KINK,
-    "pet": _PET,
-    "furniture": _FURNITURE,
-    "aftercare": _AFTERCARE,
     "solo": re.compile(r"\b(?:masturbat\w*|solo|self[- ]pleasure)\b"),
-    "toys": re.compile(r"\b(?:toys?|dildos?|vibrators?|plugs?|strap[- ]?ons?)\b"),
-    "finish": re.compile(r"\b(?:climax\w*|finish\w*|orgasm\w*|cum(?:s|ming|shots?)?)\b"),
+    **{module.name: module.pattern for module in MODULES if module.kind != "core"},
 }
-POSITION_ACT_CATEGORIES = frozenset(("anal", "vaginal", "oral", "feet"))
+POSITION_ACT_CATEGORIES = CORE_ACTIVITIES
 _MAN_ROLE = re.compile(r"\b(?:master|sir|king|prince|husband|boyfriend|daddy|groom|man|men|males?)\b")
 _WOMAN_ROLE = re.compile(r"\b(?:mistress|queen|princess|wife|girlfriend|dominatrix|goddess|bride|woman|women|females?)\b")
 MALE_PAIR = re.compile(r"\b(?:two|2|three|3|several) (?:men|males|guys)\b|\b(?:gay|yaoi|bara|male[- ]male)\b|"
                        r"\bmm\b|\bmale (?:partner|slave|sub|lover|pet|friend)s?\b")
 FEMALE_PAIR = re.compile(r"\b(?:two|2|three|3|several) (?:women|females)\b|\b(?:lesbian\w*|yuri|female[- ]female)\b|"
                          r"\bfemale (?:partner|slave|sub|lover|pet|friend)s?\b")
+# "only anal", "just oral and anal", "anal only": the named activities become exclusive.
+_ONLY = re.compile(r"\b(?:only|just|exclusively)\b")
+_CORE_ACT = re.compile(r"\b(anal|oral|vaginal)\b")
+
+
+def exclusive_activities(data):
+    """Core activities the user's own words make exclusive, per positive clause."""
+    acts = set()
+    for clause in re.split(r"[.!?;,\n]", _user_text(data)):
+        if _ONLY.search(clause) and not _NEGATED.search(clause):
+            acts.update(_CORE_ACT.findall(clause))
+    return acts
 
 
 def resolved_sex(item, data):
@@ -342,6 +336,9 @@ def position_categories(data, *, include_director=True):
         if name == "kink":
             # Excluding a pet/feet theme or one prop does not exclude all requested kink.
             user_forbids = _mentions(user, _KINK_EXCLUSION)[1]
+        elif name == "props":
+            # "No gag" removes one family through the literal exclusion filter, not every requested prop.
+            user_forbids = _mentions(user, GENERIC_PROPS)[1]
         director_asked, director_forbids = _mentions(director, pattern, ignore_conditional=True)
         if user_asked:
             asked.add(name)
@@ -409,3 +406,95 @@ _ACT_EVIDENCE = {
     "feet": re.compile(r"\b(?:footjob\w*|foot fetish|feet worship|foot worship|"
                        r"(?:lick\w*|suck\w*) (?:the |his |her |their |a partner's )?(?:feet|toes|soles))\b"),
 }
+
+
+# Selected scene facts. A committed position name must appear in the prompt (or one of its few
+# approved synonyms); a descriptive arrangement without a short name must keep most of its content.
+# Each selected activity needs visible evidence. These checks never accept a silent omission.
+POSITION_SYNONYMS = {
+    "doggy style": ("doggystyle", "on all fours from behind", "from behind on all fours", "on hands and knees from behind"),
+    "missionary": ("lying on her back facing him", "lying on his back facing him", "lying on their back face to face"),
+    "cowgirl": ("riding on top", "straddling and riding"),
+    "reverse cowgirl": ("riding facing away", "straddling facing away"),
+    "spooning": ("spoon position", "lying on their sides from behind"),
+    "sixty nine": ("69",),
+    "prone bone": ("lying face down from behind", "lying flat on the stomach from behind"),
+    "standing doggy": ("standing from behind", "bent over standing from behind"),
+}
+_ACTIVITY_EVIDENCE = {
+    "anal": re.compile(r"\b(?:anal\w*|anus|ass(?:hole)?|rectum|rear entry|sodom\w*|rimm\w*)\b"),
+    "oral": re.compile(r"\b(?:oral|blowjob\w*|fellatio|cunnilingus|deepthroat\w*|suck\w*|lick\w*|tongue\w*|mouth\w*|"
+                       r"lips? (?:around|on|against)|69|sixty-nine|face[- ]?sitting)\b"),
+    # Natural penetration wording counts; naming the other act explicitly is caught as a substitution.
+    "vaginal": re.compile(r"\b(?:vaginal\w*|vaginas?|pussy|pussies|vulvas?|labia|clit\w*|inside (?:her|him|them)|"
+                          r"(?:penetrat|enter|thrust|slid|push|sink)\w* (?:deep )?(?:into |inside )?(?:her|him|them))\b"),
+}
+_POSITION_NAME_SPLIT = re.compile(r"\s*(?:[,:;(]|\s[-–—]\s)")
+_STOPWORDS = frozenset("""with from into onto over under their them they this that while each other partner partners
+person people adult adults body bodies another between behind front facing place where which there""".split())
+
+
+def _words(value):
+    return " ".join(re.findall(r"\w+", str(value or "").casefold()))
+
+
+# Leading words that qualify a line rather than name its position ("anal, standing bent over").
+_QUALIFIERS = frozenset("""anal oral vaginal kink kinky bdsm feet foot toy toys props pet furniture finish solo
+aftercare collared bound owned leashed gagged blindfolded restrained and""".split())
+
+
+def position_name(label):
+    """The short name a vocabulary line starts with ("doggy-style, bent over..." -> "doggy-style"), or "".
+
+    Leading qualifier segments are skipped: "anal, standing bent over" is named "standing bent over".
+    """
+    segments = [segment.strip() for segment in _POSITION_NAME_SPLIT.split(str(label or "").strip()) if segment.strip()]
+    while len(segments) > 1 and set(re.findall(r"\w+", segments[0].casefold())) <= _QUALIFIERS:
+        segments.pop(0)
+    words = (segments[0] if segments else "").split()
+    while len(words) > 1 and words[0].casefold().strip("-") in _QUALIFIERS:
+        words.pop(0)  # "anal doggy style" is named "doggy style"; the activity is checked separately
+    head = " ".join(words)
+    return head if 0 < len(words) <= 4 and not set(re.findall(r"\w+", head.casefold())) <= _QUALIFIERS else ""
+
+
+def known_position_names():
+    return tuple(POSITION_SYNONYMS)
+
+
+def _coverage(text, phrase):
+    """Share of a phrase's distinctive words (by stem) that the text keeps."""
+    wanted = {word[:5] for word in re.findall(r"[a-z]{4,}", str(phrase).casefold()) if word not in _STOPWORDS}
+    present = {word[:5] for word in re.findall(r"[a-z]{4,}", str(text).casefold())}
+    return 1.0 if not wanted else len(wanted & present) / len(wanted)
+
+
+def position_present(text, position):
+    """The position survives when its name, an approved synonym or most of the name's words remain;
+    a descriptive line needs a third of its distinctive words. Natural rewording is not a loss."""
+    name = position_name(position)
+    if name:
+        key = _words(name)
+        return (position_phrase_present(text, name) or _coverage(text, name) >= .5
+                or any(position_phrase_present(text, synonym) for synonym in POSITION_SYNONYMS.get(key, ())))
+    return _coverage(text, position) * 3 >= 1
+
+
+def scene_fact_error(text, position="", activities=()):
+    """Why a description loses the selected position or activities, or None."""
+    missing = []
+    if position and not position_present(text, position):
+        name = position_name(position)
+        missing.append(f'the selected position, named "{name}"' if name else f'the selected arrangement ("{position[:160]}")')
+    for activity in dict.fromkeys(activities):
+        if activity in _ACTIVITY_EVIDENCE and not _asked(str(text).casefold(), _ACTIVITY_EVIDENCE[activity]):
+            missing.append(f"the selected {activity} activity")
+    if missing:
+        return ("The description omits " + " and ".join(missing) + ". Keep the accepted scene: name the selected position "
+                "and visibly depict every selected activity between its listed people.")
+    expected = {name for name, pattern in _ACT_EVIDENCE.items() if _asked(str(position).casefold(), pattern)} | set(activities)
+    actual = activity_categories(text)
+    if expected and actual - expected - {"feet"}:
+        return ("The description changes the selected activities (" + ", ".join(sorted(expected)) + ") by adding "
+                + ", ".join(sorted(actual - expected)) + ". Preserve the selected position and activities.")
+    return None

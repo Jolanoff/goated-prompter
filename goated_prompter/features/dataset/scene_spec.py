@@ -1,6 +1,6 @@
 """Immutable, serializable per-image authority for Dataset generation."""
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 import hashlib
 import json
 import re
@@ -20,7 +20,9 @@ CONTACT_PART_PATTERN = r"[a-z]+(_[a-z]+)*"
 BODY_PARTS = {"left_hand", "right_hand", "hand", "shoulder", "waist", "back", "arm", "mouth", "feet",
               "hips", "torso", "genitals", "penis", "vagina", "anus", "paw", "paws", "tail", "wing"}
 PLANNING_CATEGORIES = frozenset({"general", "paired_pose", "solo", "group_pose", "oral", "anal", "vaginal", "feet",
-                                "toys", "finish", "kink", "pet", "furniture", "aftercare"})
+                                "toys", "finish", "kink", "pet", "furniture", "props",
+                                "aftercare"})  # aftercare: saved plans only; no longer selected
+SCENE_ACTIVITIES = frozenset({"anal", "oral", "vaginal"})
 
 
 def valid_part_id(value):
@@ -186,6 +188,49 @@ SUPPORT_LABEL_PATTERN = ("^(|" + "|".join(STANDARD_SUPPORTS)
     + rf"|(?:(?:{_SUPPORT_PARTS})_(?:on|against|in)|{_SUPPORT_VERBS})_{_SUPPORT_TARGET})$")
 
 
+_STANDARD_SUPPORT_EDGES = {"feet_on_floor": ("feet", "floor"), "knees_on_floor": ("knees", "floor"),
+                           "supported_by_chair": ("body", "chair"), "supported_by_bed": ("body", "bed"),
+                           "supported_by_floor": ("body", "floor"), "ground": ("body", "ground"),
+                           "four_paws_on_ground": ("paws", "ground"), "three_paws_on_ground": ("paws", "ground")}
+
+
+def label_support(item, owners):
+    """(body part, owned target) a participant's support label names, or None for no usable label."""
+    if item.support in _STANDARD_SUPPORT_EDGES:
+        part, surface = _STANDARD_SUPPORT_EDGES[item.support]
+        return part, "setting." + surface
+    if re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*\.[a-z]+(?:_[a-z]+)*", item.support or ""):
+        return "body", item.support
+    if match := re.fullmatch(r"supported_at_([a-z_]+)_by_([A-Za-z][A-Za-z0-9_-]*)", item.support or ""):
+        return match[1], match[2] + ".body"
+    if (match := _SUPPORT_LABEL.fullmatch(item.support or "")) and (
+            match["target"] in owners or match["target"].split("_")[-1] not in _PERSON_WORDS):
+        # Open label grammar: "<part>_on_<surface>", "supported_by_<surface|owner>",
+        # "tied_to_<surface>", "suspended_from_<surface>", "held_by_<owner>" and similar.
+        return match["part"] or "body", match["target"] + ".body" if match["target"] in owners else "setting." + match["target"]
+    return None
+
+
+def reconcile_support_labels(participants, relationships, locked=()):
+    """Explicit owned supports take precedence over a participant's summary label (as the planner is told):
+    a label naming another surface for the same body part is rewritten to that support. Locked labels
+    are never rewritten, so a contradiction with an approved label still fails validation."""
+    owners = {item.id for item in participants}
+    result = []
+    for item in participants:
+        labelled = label_support(item, owners) if item.bodied and item.support not in ("", "airborne") else None
+        if labelled and f"participant:{item.id}:support" not in locked:
+            part, target = labelled
+            same_part = [edge for edge in relationships if edge.source == f"{item.id}.{part}"]
+            if same_part and not any(_same_support(edge.target, target) for edge in same_part):
+                owner, _, surface = same_part[0].target.partition(".")
+                label = f"{part}_on_{surface}" if owner == "setting" else f"supported_at_{part}_by_{owner}"
+                if re.fullmatch(SUPPORT_LABEL_PATTERN, label):
+                    item = replace(item, support=label)
+        result.append(item)
+    return result
+
+
 def resolve_supports(participants, relationships=(), *, require_resolved=False):
     """Resolve load-bearing ownership and cycles; this is not a geometry simulator.
 
@@ -204,23 +249,9 @@ def resolve_supports(participants, relationships=(), *, require_resolved=False):
         existing = [edge for edge in result if edge.source.split(".")[0] == item.id]
         if item.support == "airborne":
             continue
-        normalized = {"feet_on_floor": ("feet", "floor"), "knees_on_floor": ("knees", "floor"),
-                      "supported_by_chair": ("body", "chair"), "supported_by_bed": ("body", "bed"),
-                      "supported_by_floor": ("body", "floor"), "ground": ("body", "ground"),
-                      "four_paws_on_ground": ("paws", "ground"), "three_paws_on_ground": ("paws", "ground")}
-        if item.support in normalized:
-            part, surface = normalized[item.support]
-            target = "setting." + surface
-        elif re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*\.[a-z]+(?:_[a-z]+)*", item.support):
-            part, target = "body", item.support
-        elif match := re.fullmatch(r"supported_at_([a-z_]+)_by_([A-Za-z][A-Za-z0-9_-]*)", item.support):
-            part, target = match[1], match[2] + ".body"
-        elif (match := _SUPPORT_LABEL.fullmatch(item.support)) and (
-                match["target"] in owners or match["target"].split("_")[-1] not in _PERSON_WORDS):
-            # Open label grammar: "<part>_on_<surface>", "supported_by_<surface|owner>",
-            # "tied_to_<surface>", "suspended_from_<surface>", "held_by_<owner>" and similar.
-            part = match["part"] or "body"
-            target = match["target"] + ".body" if match["target"] in owners else "setting." + match["target"]
+        labelled = label_support(item, owners)
+        if labelled:
+            part, target = labelled
         elif existing:
             if require_resolved and not item.support:
                 raise ValueError("A support relationship needs an explicit participant support label.")
@@ -317,6 +348,8 @@ def writer_view(value):
     return {**spec,
             "participants": [{key: item for key, item in participant.items() if key != "id"}
                              for participant in spec.get("participants", ())],
+            **({"activities": [{"activity": item["activity"], "participants": [names.get(owner, owner) for owner in item["participants"]]}
+                               for item in spec["activities"]]} if spec.get("activities") else {}),
             "locked": [_named_lock(lock, names) for lock in spec.get("locked", ())],
             **{field: [{"source": _named_endpoint(edge["source"], names), "target": _named_endpoint(edge["target"], names)}
                        for edge in spec.get(field, ())] for field in ("contacts", "supports")}}
@@ -340,6 +373,9 @@ class SceneSpec:
     private_vocabulary: bool = False
     concept: str = ""
     supports: tuple[Contact, ...] = ()
+    # Selected scene facts, chosen once by the planner and preserved by every later stage.
+    position: str = ""
+    activities: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
     @property
     def required_contacts(self):
@@ -347,10 +383,16 @@ class SceneSpec:
                      or f"contact:{contact.source}->{contact.target}" in self.locked)
 
     def to_dict(self):
-        return {**asdict(self), "participants": [asdict(item) for item in self.participants],
+        value = {**asdict(self), "participants": [asdict(item) for item in self.participants],
                 "contacts": [asdict(item) for item in self.contacts], "hard": list(self.hard),
                 "choices": dict(self.choices), "locked": list(self.locked),
-                "supports": [asdict(item) for item in resolve_supports(self.participants, self.supports)]}
+                "supports": [asdict(item) for item in resolve_supports(self.participants, self.supports)],
+                "activities": [{"activity": name, "participants": list(owners)} for name, owners in self.activities]}
+        # Plans without selected facts keep their saved signatures.
+        for field in ("position", "activities"):
+            if not value[field]:
+                del value[field]
+        return value
 
     @property
     def signature(self):
@@ -359,7 +401,7 @@ class SceneSpec:
 
     @classmethod
     def from_dict(cls, value):
-        optional = {"state", "private_vocabulary", "concept", "supports"}
+        optional = {"state", "private_vocabulary", "concept", "supports", "position", "activities"}
         if not isinstance(value, dict) or set(value) - optional != set(cls.__dataclass_fields__) - optional:
             raise ValueError("SceneSpec requires exactly its versioned planning fields.")
         if (type(value["index"]) is not int or not 1 <= value["index"] <= 25
@@ -424,6 +466,21 @@ class SceneSpec:
         if (not isinstance(locked, list) or any(not isinstance(item, str) for item in locked) or set(locked) - allowed_locks
                 or "hard" not in locked):
             raise ValueError("Invalid SceneSpec requirement locks.")
+        position = value.get("position", "")
+        if not isinstance(position, str) or len(position) > 1000:
+            raise ValueError("Invalid SceneSpec position.")
+        activities = value.get("activities", [])
+        if not isinstance(activities, list) or len(activities) > 12:
+            raise ValueError("Invalid SceneSpec activities.")
+        selected = []
+        for item in activities:
+            if (not isinstance(item, dict) or set(item) != {"activity", "participants"} or item["activity"] not in SCENE_ACTIVITIES
+                    or not isinstance(item["participants"], list) or not 1 <= len(item["participants"]) <= len(ids)
+                    or any(owner not in ids for owner in item["participants"])
+                    or len(set(item["participants"])) != len(item["participants"])):
+                raise ValueError("SceneSpec activities need a known activity and distinct known participants.")
+            selected.append((item["activity"], tuple(item["participants"])))
         return cls(value["index"], value["route"], value["action"], participants, tuple(contacts), value["setting"],
                    hard, tuple(choices.items()), value["catalog_id"], tuple(locked), value["version"], value["category"],
-                    value.get("state", "frozen"), value.get("private_vocabulary", False), value.get("concept", ""), supports)
+                    value.get("state", "frozen"), value.get("private_vocabulary", False), value.get("concept", ""), supports,
+                    position, tuple(selected))

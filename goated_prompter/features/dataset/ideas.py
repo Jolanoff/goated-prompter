@@ -17,7 +17,7 @@ from .compatibility import vocabulary_choices
 from .routing import assignment_scope, resolve_route
 from .quality import (ADULTS_ONLY, BROKEN_ANATOMY, adult_content_request, analyze_idea_diversity, broken_anatomy,
                       minor_reference, passive_idea, passive_request,
-                      resolved_sex, sexual_request)
+                      resolved_sex, scene_fact_error, sexual_request)
 from .understanding import (label_replacements, name_owner_ids, numbered_labels, replace_labels, understanding_instruction,
                             unwrap_json_fence, validate_understanding)
 from ...strict_json import reject_duplicate_keys
@@ -46,9 +46,11 @@ such as ropes or a partner holding it. With no owned supports, do not invent a s
 surface, suspension equipment or flight mechanism.
 A kink, dominance or BDSM request sets the power dynamic, not objects: add ropes, restraints, collars,
 leashes, gags, blindfolds, impact tools, toys (except in solo scenes), fetish clothing, body writing, pet roles
-or human-furniture roles only when the request names them. Aftercare is ordinary.
+or human-furniture roles only when the request names them.
+When a scene_spec has a position, name that position in the scene and keep its meaning; depict each
+listed activity between its listed participants. These selected facts are never optional.
 Each selected contact names both owners and their appropriate body parts or object surfaces.
-Use natural synonyms for poses; catalog ids and original vocabulary labels need not appear.
+Use natural synonyms for other poses; catalog ids need not appear.
 Keep approved hard requirements and the selected action visible in the same frozen moment.
 An event seed may add a concrete reaction or circumstance, never change the specification.
 Creative choices may enrich only open details. Do not invent requirements or transfer traits.
@@ -359,6 +361,18 @@ def _reject_sexual_content(row, data, allow_partial):
     return _failed_idea(row, row["index"], reason)
 
 
+def _reject_missing_scene_facts(row, allow_partial):
+    """An idea's scene keeps the selected position and activities; a miss is repaired, never accepted."""
+    if row.get("idea_status") == "failed" or not row.get("scene_spec"):
+        return row
+    spec = SceneSpec.from_dict(row["scene_spec"])
+    if not (reason := scene_fact_error(f"{row['idea']} {row['scene']}", spec.position, [name for name, _ in spec.activities])):
+        return row
+    if not allow_partial:
+        raise ValueError(f"Idea {row['index']}: {reason}")
+    return _failed_idea(row, row["index"], reason)
+
+
 HISTORY_REPEAT = "The idea repeats a recently generated event. Choose a different permitted action or interaction."
 PASSIVE_REPEAT = ("Another idea in this batch already shows the cast just watching or looking at something; "
                   "give this one an activity they do themselves.")
@@ -473,7 +487,8 @@ class DatasetIdeasService:
                 rows = validate_ideas(raw, indexes, allow_partial=allow_partial)
             specifications = {entry["index"]: entry["scene_spec"] for entry in selected}
             rows = [_apply_scene_spec(row, specifications[row["index"]]) for row in rows]
-            rows = [_reject_sexual_content(_reject_unrenderable_pose(row, data, allow_partial), data, allow_partial) for row in rows]
+            rows = [_reject_missing_scene_facts(_reject_sexual_content(_reject_unrenderable_pose(row, data, allow_partial), data,
+                                                                       allow_partial), allow_partial) for row in rows]
             looks = {entry["index"]: (entry.get("creative_direction") or {}).get("random_character_looks")
                      for entry in selected}
             cast = (data.get("_confirmed_intent") or {}).get("characters")
@@ -522,8 +537,8 @@ class DatasetIdeasService:
                     raw = session.generate(retry)
                     self.checkpoint()
                     try:
-                        retried = [_reject_sexual_content(_reject_unrenderable_pose(
-                            _apply_scene_spec(row, specifications[row["index"]]), data, False), data, False)
+                        retried = [_reject_missing_scene_facts(_reject_sexual_content(_reject_unrenderable_pose(
+                            _apply_scene_spec(row, specifications[row["index"]]), data, False), data, False), False)
                             for row in validate_ideas(raw, indexes)]
                     except ValueError:
                         retried = None

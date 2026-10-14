@@ -1,9 +1,12 @@
 """Resolve content profile and approved cast once per scoped Dataset request."""
 
 from dataclasses import dataclass, replace
+import re
 
-from .quality import (POSITION_ACT_CATEGORIES, adult_content_request, position_categories, requested_text, resolved_sex, sexual_request, ownership_request)
+from .quality import (POSITION_ACT_CATEGORIES, adult_content_request, exclusive_activities, position_categories, requested_text,
+                      resolved_sex, sexual_request, ownership_request)
 from .compatibility import participant_anatomy
+from .modules import MODULES_BY_NAME, SWITCHES, resolve_switches
 from ...options.dataset import BODIED_KINDS, DATASET_SUBJECT_KINDS
 
 
@@ -20,6 +23,18 @@ class ContentRoute:
     subjects: tuple = ()
     sexual_action: bool = True
     request_text: str = ""
+    # Core activities the request names: each image of this scope shows them; others stay eligible.
+    required: frozenset[str] = frozenset()
+    # Switches the request asks for; `defaults` are switches eligible without a request (finish, solo toys).
+    asked: frozenset[str] = frozenset()
+    defaults: frozenset[str] = frozenset()
+    # The user's own words only: [requested] patterns and named positions never match model-written facts.
+    user_text: str = ""
+
+    @property
+    def enabled(self):
+        """Every switch and activity this scope may use: requested ones plus eligible defaults."""
+        return self.categories | self.defaults
 
     @property
     def vocabulary_applicable(self):
@@ -80,13 +95,47 @@ def resolve_route(data, scope="all_outputs"):
                          frozenset(excluded), scope, adult and "kink" in categories,
                          adult and ownership_request(data, include_director=False), tuple(cast), sexual_request(data, include_director=False),
                          requested_text(data, include_director=False) + "\n" + "\n".join(image_hard_requirements({"_confirmed_intent": brief}, scope)))
-    if "penetration" in categories:
-        categories.discard("penetration")
-        if not categories & POSITION_ACT_CATEGORIES:
-            categories.add("anal")
-            if any("vagina" in parts for _, parts in participant_anatomy(route)):
-                categories.add("vaginal")
+    modules = brief.get("modules") or {}
+    if adult:
+        # The confirmed Understanding may exclude switches freely, but turns one on only when the user's own
+        # words support it (its pattern or its name); it never opens the adult route.
+        words = requested_text(data, include_director=False)
+        categories.update(name for name in modules.get("enabled", ()) if name in MODULES_BY_NAME and (
+            re.search(rf"\b{name}\b", words) or MODULES_BY_NAME[name].pattern.search(words)))
+        excluded.update(modules.get("excluded", ()))
+    # "Sex", "fucking" or "penetration" are general: every compatible core activity stays eligible.
+    categories.discard("penetration")
     if "penetration" in excluded:
         excluded.update(("anal", "vaginal"))
+    if only := exclusive_activities(data):
+        excluded.update(POSITION_ACT_CATEGORIES - only)
     categories.difference_update(excluded)
-    return replace(route, categories=frozenset(categories), excluded=frozenset(excluded), kink=adult and "kink" in categories)
+    required = frozenset(categories & POSITION_ACT_CATEGORIES)
+    asked = frozenset(categories & set(SWITCHES))
+    count = len(route.position_slots)
+    defaults = resolve_switches((), excluded, count) if adult else set()
+    enabled = resolve_switches(asked, excluded, count) if adult else set(asked)
+    # Requested and implied switches are explicit; untouched defaults stay separate.
+    categories = required | asked | (enabled - defaults) | (categories & {"solo"})
+    return replace(route, categories=frozenset(categories), excluded=frozenset(excluded),
+                   kink=adult and "kink" in categories, required=required, asked=asked,
+                   defaults=frozenset(enabled - categories), user_text=requested_text(data, include_director=False))
+
+
+def routing_clarifications(data, brief):
+    """Contradictory switches or a required activity no participant can perform need the user's answer."""
+    questions = []
+    modules = brief.get("modules") or {}
+    for name in sorted(set(modules.get("enabled", ())) & set(modules.get("excluded", ()))):
+        questions.append(f"The request both asks for and excludes {name}. Should {name} be included?")
+    data = {**data, "_confirmed_intent": brief}
+    assignments = [{"index": index} for index in range(1, max(1, int(data.get("amount") or 1)) + 1)]
+    for scope, route in resolve_routes(data, assignments).items():
+        if route.profile != "adult" or not route.vocabulary_applicable:
+            continue
+        anatomy = participant_anatomy(route)
+        if "vaginal" in route.required and not any("vagina" in parts for _, parts in anatomy):
+            label = "" if scope == "all_outputs" else f" ({scope.replace(':', ' line ')})"
+            questions.append(f"Vaginal activity was requested{label}, but no participant has vaginal anatomy. "
+                             "Should a participant's anatomy be stated, or should the activity change?")
+    return list(dict.fromkeys(questions))

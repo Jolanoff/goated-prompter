@@ -192,6 +192,24 @@ class OwnedSupportTests(unittest.TestCase):
 
 
 class SupportLabelGrammarTests(unittest.TestCase):
+    def test_open_planner_support_is_bounded_without_an_unbounded_pattern(self):
+        from goated_prompter.features.dataset.batch_planner import planning_instruction
+        from goated_prompter.features.dataset.scene_spec import PARTICIPANT_TEXT_LIMIT
+        spec = SceneSpec(1, "general", "An adult repairs a boot.",
+            (Participant("P1", "repairer", "", "", "", ""),), state="provisional")
+        instruction = planning_instruction({}, [spec])
+        support = instruction.json_schema["prefixItems"][0]["properties"]["participants"]["prefixItems"][0]["properties"]["support"]
+        self.assertEqual(support, {"type": "string", "maxLength": PARTICIPANT_TEXT_LIMIT})
+
+    def test_unconstrained_wire_text_still_needs_valid_owned_support_when_freezing(self):
+        spec = SceneSpec(1, "general", "An adult repairs a boot.",
+            (Participant("P1", "repairer", "", "", "", ""),), state="provisional")
+        for label in ("stool_support_surface_is_not_allowed_" * 20, "some unspecified surface", "P9.seat"):
+            candidate = {"index": 1, "action": spec.action, "setting": "workshop", "contacts": [], "supports": [],
+                "participants": [{"id": "P1", "role": "repairer", "pose": "seated", "location": "center", "support": label}]}
+            with self.subTest(label=label), self.assertRaises(ValueError):
+                freeze_scene_spec(spec, candidate)
+
     def test_restraint_furniture_and_partner_labels_resolve_to_owned_supports(self):
         import re
         from goated_prompter.features.dataset.scene_spec import SUPPORT_LABEL_PATTERN

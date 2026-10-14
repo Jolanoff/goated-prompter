@@ -668,6 +668,38 @@ class GreetingBackend:
 
 
 class SceneSpecPipelineTests(unittest.TestCase):
+    def test_planning_repair_receives_the_failed_slots_validation_reason(self):
+        for failure in ("duplicate_contacts", "self_support"):
+            with self.subTest(failure=failure):
+                data, backend = greeting_draft(), GreetingBackend()
+                generate = backend.generate
+                planning_calls = []
+                def respond(instruction):
+                    raw = generate(instruction)
+                    if instruction.diagnostic_stage == "dataset:planning":
+                        planning_calls.append(json.loads(instruction.user_message))
+                        if len(planning_calls) == 1:
+                            candidates = json.loads(raw)
+                            bad = next(row for row in candidates if row["index"] == 2)
+                            if failure == "duplicate_contacts":
+                                bad["contacts"] = [*bad["contacts"], bad["contacts"][0]]
+                            else:
+                                bad["supports"] = [{"source": "P1.body", "target": "P1.hand"}]
+                            return json.dumps(candidates)
+                    return raw
+                backend.generate = respond
+                with patch("goated_prompter.features.dataset.service.create_backend", return_value=backend):
+                    result = DatasetService({"backend": "mock"}, lambda: None).run(
+                        GoatedPrompterRequest(idea=data["subject"]), data, lambda _: None, lambda _: None)
+                self.assertEqual(result["completed"], 3)
+                self.assertEqual(len(planning_calls), 2)
+                self.assertEqual([row["index"] for row in planning_calls[1]["assignments"]], [2])
+                corrections = planning_calls[1]["planning_corrections"]
+                self.assertEqual(set(corrections), {"2"})
+                self.assertEqual(corrections["2"], "Scene planning failed: " + (
+                    "SceneSpec contacts must be distinct." if failure == "duplicate_contacts"
+                    else "Owned support contradicts the participant support label."))
+
     def test_all_25_specs_are_provisional_before_brainstorm_and_frozen_before_five_idea_batches(self):
         data, backend, snapshots = greeting_draft(25), GreetingBackend(), []
         rows = ScenePlanner(lambda: None).plan_batch(session=backend, data=data, assignments=dataset_assignments(data),
@@ -803,16 +835,21 @@ class SceneSpecPipelineTests(unittest.TestCase):
         self.assertNotIn("selected_setting", cleaned)
         self.assertEqual(cleaned["scene_status"], "not_generated")
 
-    def test_broad_records_cannot_satisfy_a_requested_act_category(self):
+    def test_broad_records_stay_eligible_behind_entries_with_the_requested_act(self):
         catalog = parse_vocabulary("[couple positions]\n" + json.dumps({
             "id": "broad", "category": "paired_pose", "participantCount": 2,
             "participants": {"A": {"pose": "seated", "location": "left"}, "B": {"pose": "standing", "location": "right"}},
             "contacts": [], "physicalConstraints": {"A": "supported_by_chair", "B": "feet_on_floor"}}))
-        route = ContentRoute("adult", 2, ("male", "male"), frozenset({"oral"}), frozenset(), "all_outputs", False, False)
+        route = ContentRoute("adult", 2, ("male", "male"), frozenset({"oral"}), frozenset(), "all_outputs", False, False,
+                             required=frozenset({"oral"}))
         eligible, rejected = compatible_arrangements(catalog, route)
-        self.assertEqual(eligible, [])
-        self.assertEqual(rejected[0]["rule"], "requested_category")
-        self.assertEqual(vocabulary_diagnostics(catalog, route)["rejected"], 1)
+        # A requested act is required in the scene (enforced at freeze), not a filter on broad poses.
+        self.assertEqual([record.id for record in eligible], ["broad"])
+        self.assertEqual(vocabulary_diagnostics(catalog, route)["rejected"], 0)
+        from goated_prompter.features.dataset.batch_planner import position_tiers
+        import random
+        named, extras, preferred, rest = position_tiers(eligible, route, random.Random(0))
+        self.assertEqual((named, extras, preferred, [record.id for record in rest]), ([], [], [], ["broad"]))
 
     def test_director_does_not_reroute_a_general_request_or_replace_frozen_geometry(self):
         data = greeting_draft(1)

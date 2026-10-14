@@ -14,6 +14,7 @@ from goated_prompter.features.dataset.assignments import dataset_assignments
 from goated_prompter.features.dataset.batch_planner import plan_scene_specs
 from goated_prompter.features.dataset.ideas import creative_directions, ideas_instruction
 from goated_prompter.features.dataset.private_vocabulary import Vocabulary
+from goated_prompter.features.dataset.quality import activity_categories
 
 REPAIR = "REPAIR:\nThe user requires both an extreme close-up of only his eyes and clearly visible shoes; the eyes-only crop excludes the shoes.\nShould the image show only eyes, or widen the crop to include the shoes?"
 SCENE = "A boxer extends one glove into a training bag, with planted feet and the opposite glove readable in a full-body three-quarter arena view."
@@ -86,6 +87,31 @@ def vocabulary_text(*entries):
 def specified_ideas(rows, data, *, salt=0):
     specs = frozen_specs(data, salt=salt)
     return [{**row, "scene_spec": specs[row["index"]].to_dict()} for row in rows]
+
+
+def planned_facts(row):
+    """A faithful planner's position and activities for a planning assignment with scene facts."""
+    facts = row.get("scene_facts")
+    if facts is None:
+        return {}
+    options = ([facts["required_position"]] if facts.get("required_position") else
+               [line for line in row.get("optional_suggestions", {}).get("position_candidates", "").splitlines() if line.strip()])
+    position = options[0] if options else ""
+    eligible = facts.get("eligible_activities", [])
+    implied = activity_categories(position) | ({row["category"]} if position else set())
+    names = [name for name in eligible if name in set(facts.get("required_activities", [])) | implied]
+    if not names and eligible and len(row["participants"]) > 1:
+        names = eligible[:1]
+    ids = [item["id"] for item in row["participants"]]
+    return {"position": position, "activities": [{"activity": name, "participants": ids} for name in names]}
+
+
+def scene_facts_sentence(spec):
+    """Prose that keeps a scene's selected position and activities, for scripted ideas and writers."""
+    spec = SceneSpec.from_dict(spec) if isinstance(spec, dict) else spec
+    parts = ([f"They hold the {spec.position} position."] if spec.position else []) + [
+        f"They share {name} contact." for name in dict.fromkeys(name for name, _ in spec.activities)]
+    return " ".join(parts)
 
 
 def checked_scene(row, *, spec=None):
@@ -167,13 +193,15 @@ class CaptureBackend(GoatedPrompterBackend):
             context = json.loads(instruction.user_message)
             return json.dumps([{"index": row["index"], "action": row["action"], "setting": row["setting"],
                 "participants": [{key: item[key] for key in ("id", "role", "pose", "location", "support")}
-                                 for item in row["participants"]], "contacts": row["contacts"]}
+                                 for item in row["participants"]], "contacts": row["contacts"], **planned_facts(row)}
                 for row in context["assignments"]])
         if stage == "dataset:ideas":
             context = json.loads(instruction.user_message)
             self.specs.update((row["index"], SceneSpec.from_dict(row["scene_spec"])) for row in context["assignments"])
-            self.scenes.update((row["index"], dataset_idea_fixture(row["index"])["scene"]) for row in context["assignments"])
-            return json.dumps([dataset_idea_fixture(row["index"]) for row in context["assignments"]])
+            ideas = [{**fixture, "scene": " ".join(filter(None, (fixture["scene"], scene_facts_sentence(row["scene_spec"]))))}
+                     for row in context["assignments"] for fixture in (dataset_idea_fixture(row["index"]),)]
+            self.scenes.update((row["index"], row["scene"]) for row in ideas)
+            return json.dumps(ideas)
         if stage == "dataset:ideas:brainstorm":
             context = json.loads(instruction.user_message)
             return json.dumps([{**row, "index": spec["index"]} for row, spec in zip(

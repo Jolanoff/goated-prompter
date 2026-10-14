@@ -36,7 +36,7 @@ SECTIONS = {
     "kink clothing": "clothing states when kink or ownership is requested",
     "pet mood": "moods when pet play is requested",
     "pet interaction": "dynamics when pet play is requested",
-    "props": "compatible props for explicitly requested themes",
+    "props": "equipment and costume props, only when props are requested",
     "solo positions": "one person",
     "couple positions": "two people of any sex",
     "two men positions": "two men",
@@ -47,14 +47,15 @@ SECTIONS = {
     "oral positions": "oral positions compatible with the cast",
     "anal positions": "anal positions compatible with the cast",
     "vaginal positions": "vaginal activities compatible with the participants' actual anatomy",
-    "feet positions": "feet positions compatible with the cast",
-    "toys": "toy positions compatible with the cast",
+    "feet positions": "feet positions for multiple people",
+    "solo feet positions": "feet positions for one person",
+    "toys": "toy positions compatible with the cast; eligible by default in solo scenes",
     "finish positions": "climax and finish moments compatible with the cast",
     "kink positions": "kink positions for multiple people",
     "solo kink positions": "kink positions for one person",
     "pet positions": "cast-compatible positions when human pet roleplay is requested",
     "furniture positions": "cast-compatible positions when a human-furniture theme is requested",
-    "aftercare positions": "aftercare positions compatible with the cast",
+    "aftercare positions": "kept readable for older files; no longer selected",
     "requested": "lines 'pattern => entry': the entry joins the positions when the request matches the pattern",
 }
 
@@ -143,7 +144,7 @@ def compile_arrangement(value, section):
     if (type(count) is not int or not 1 <= count <= 100 or not isinstance(participants, dict)
             or len(participants) != count or not isinstance(supports, dict) or set(supports) != set(participants)):
         raise ValueError("Participant count, owners and physical supports must agree.")
-    required_count = {"solo positions": 1, "solo kink positions": 1, "couple positions": 2,
+    required_count = {"solo positions": 1, "solo kink positions": 1, "solo feet positions": 1, "couple positions": 2,
                       "two men positions": 2, "two women positions": 2, "man and woman positions": 2,
                       "three positions": 3}.get(section)
     if required_count is not None and count != required_count or section == "group positions" and count < 4:

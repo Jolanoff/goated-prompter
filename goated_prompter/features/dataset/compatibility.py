@@ -4,6 +4,8 @@ from dataclasses import dataclass, replace
 import hashlib
 import re
 
+from .modules import ACCESSORY_FAMILIES, EQUIPMENT, GENERIC_PROPS, SECTION_MODULES, SWITCHES
+from .modules import position_sections as module_position_sections, styling_sections as module_styling_sections
 from .quality import POSITION_ACT_CATEGORIES, activity_categories, position_categories, requested_clothing_state
 
 
@@ -17,77 +19,94 @@ class PositionCandidate:
     contacts: tuple = ()
 
 
+_CAST_SECTIONS = {("male", "male"): "two men positions", ("female", "female"): "two women positions",
+                  ("female", "male"): "man and woman positions", ("male", "female"): "man and woman positions"}
+CAST_SEX_SECTIONS = frozenset(_CAST_SECTIONS.values())
+# Person words that tie an entry to a sex; neutral wording can serve any cast of the same size.
+_MALE_WORDS = re.compile(r"\b(?:he|him|his|himself|man|men|male|males|guy|guys|boy|boys|master|husband|boyfriend|king|daddy)\b")
+_FEMALE_WORDS = re.compile(r"\b(?:she|her|hers|herself|woman|women|female|females|girl|girls|lady|ladies|mistress|wife|"
+                           r"girlfriend|queen|dominatrix)\b")
+
+
+# Wording that needs a second person: a partnered position or an act someone else performs.
+# Machines, toys and restraints are not partners.
+_PARTNER_WORDS = re.compile(r"\b(?:missionary|cowgirl|doggy|mating press|prone bone|spooning|spit[- ]?roast\w*|sixty[- ]?nine|"
+                            r"fuck(?:ed|ing)? (?:from|while)|fucked by (?!a (?:\w+ )?machine)|"
+                            r"being (?:fucked|taken|used|licked|kissed|held|spanked|choked)\b(?! by (?:a |the )?(?:\w+ )?(?:machine|toy|rope|strap)s?)|"
+                            r"(?:licking|licked|kissing|kissed|sucking|sucked|worshipp?(?:ed|ing))\b(?! (?:her|his|their) own)|"
+                            r"in (?:his|her|the|a) (?:mouth|lap|hand)s?|toes in mouth|on (?:the|his|her) chest|"
+                            r"(?<!mouth )held (?:open|down|by)\b(?! (?:a |the )?(?:rope|strap|cuff|chain|gag)s?)|"
+                            r"(?:ankles?|wrists?|legs?|hips?|thighs?) (?:held|pinned|grabbed)\b(?! (?:by|with|in) (?:a |the )?(?:rope|strap|cuff|chain|spreader)s?)|"
+                            r"pull(?:s|ed|ing)? out|buried (?:deep|inside)|still (?:thrusting|connected|inside)|"
+                            r"cumming (?:deep )?inside|creampie\w*|facials?|swallow\w*|"
+                            r"during (?:sex|penetration)|with the tongue|"
+                            r"master'?s?|mistress'?s?|owner'?s?|the others?|each other|one (?:man|woman|partner)\b|"
+                            r"both\b(?! (?:hands|feet|legs|knees|soles|ankles|wrists|breasts|nipples|holes|arms))|"
+                            r"being (?:walked|petted|praised|scratched|groomed|shown|fingered|mounted|fed|served|watched|filled|made|teased)|"
+                            r"mounted\b(?! (?:on|onto) (?:a |the )?(?:\w+ )?(?:toy|dildo|machine|sybian)s?)|"
+                            r"\bused\b|leash (?:held|pulled|tugged)|scissor\w*|tribb\w*)")
+# Semen on a lone body must come from that body: its own, or while masturbating or using a toy.
+_SOLO_SEMEN = re.compile(r"\b(?:own|masturbat\w*|stroking|toy|dildo)\b")
+_BREASTS = re.compile(r"\b(?:breasts?|tits|boobs|cleavage)\b")
+# Feminization and chastity cages describe a man.
+_MALE_ONLY = re.compile(r"\b(?:sissy|sissies|feminiz\w*|crossdress\w*|chastity cages?|cage locked|cage on)\b")
+# Semen needs someone with a penis in the cast; "cumming" alone is anyone's orgasm.
+_SEMEN = re.compile(r"\b(?:cum|cumshots?|semen|jizz|creampie\w*)\b")
+# Wording that needs three or more people, without a number.
+_GROUP_WORDS = re.compile(r"\b(?:group|the others|several partners|multiple (?:partners|men|women|people)|"
+                          r"spit[- ]?roast\w*|double[- ]team\w*|gangbang\w*|bukkake\w*|orgy|"
+                          r"cent(?:er|re) (?:partner|receiver)|both partners)\b")
+
+
+def gender_neutral(text):
+    text = str(text).casefold()
+    return not (_MALE_WORDS.search(text) or _FEMALE_WORDS.search(text))
+
+
 def position_sections(route):
     count = len(route.position_slots)
     if not route.vocabulary_applicable:
         return set()
     sections = {"solo positions"} if count == 1 else {"couple positions"} if count == 2 else {
         "three positions" if count == 3 else "group positions"}
-    sexes = [route.sexes[slot] for slot in route.position_slots]
     if count == 2:
-        paired = {("male", "male"): "two men positions", ("female", "female"): "two women positions",
-                  ("female", "male"): "man and woman positions", ("male", "female"): "man and woman positions"}
-        if section := paired.get(tuple(sexes)):
-            sections.add(section)
-    if count > 1:
-        sections.update({"oral positions", "anal positions", "vaginal positions"})
-    for category in route.categories - route.excluded:
-        if category == "kink":
-            sections.add("solo kink positions" if count == 1 else "kink positions")
-        elif category in {"pet", "furniture", "feet", "finish", "aftercare"}:
-            sections.add(category + " positions")
-        elif category == "toys":
-            sections.add("toys")
-        elif count == 1 and category in POSITION_ACT_CATEGORIES:
-            sections.add(category + " positions")
+        # Another cast's section is a hint: only its gender-neutral entries are reused (compatible_arrangements).
+        sections.update(CAST_SEX_SECTIONS)
+    eligible = POSITION_ACT_CATEGORIES - route.excluded
+    sections.update(f"{act} positions" for act in (eligible if count > 1 else route.required & eligible))
+    sections.update(module_position_sections(route.enabled - route.excluded, count))
     return sections
+
+
+def own_cast_section(route):
+    sexes = tuple(route.sexes[slot] for slot in route.position_slots)
+    return _CAST_SECTIONS.get(sexes) if len(sexes) == 2 else None
+
+
+def anatomy_from(sex, traits=""):
+    """Default sex anatomy plus only explicitly supplied exceptions."""
+    parts = {"penis"} if sex == "male" else {"vagina"} if sex == "female" else set()
+    traits = str(traits or "").casefold()
+    for part, pattern in (("penis", r"penis|cock|dick"), ("vagina", r"vagina|vulva|pussy")):
+        if re.search(rf"\b(?:no|without|lacks?) (?:a |an )?(?:{pattern})\b", traits):
+            parts.discard(part)
+        elif re.search(rf"\b(?:{pattern})\b", traits):
+            parts.add(part)
+    return parts
 
 
 def participant_anatomy(route):
     """Default sex anatomy plus only explicitly supplied exceptions, per owner."""
     subjects = [item for item in route.subjects for _ in range(item["count"])]
-    result = []
-    for slot in route.position_slots:
-        parts = {"penis"} if route.sexes[slot] == "male" else {"vagina"} if route.sexes[slot] == "female" else set()
-        traits = subjects[slot].get("traits", "").casefold() if slot < len(subjects) else ""
-        for part, pattern in (("penis", r"penis|cock|dick"), ("vagina", r"vagina|vulva|pussy")):
-            if re.search(rf"\b(?:no|without|lacks?) (?:a |an )?(?:{pattern})\b", traits):
-                parts.discard(part)
-            elif re.search(rf"\b(?:{pattern})\b", traits):
-                parts.add(part)
-        result.append((route.sexes[slot], parts))
-    return result
+    return [(route.sexes[slot], anatomy_from(route.sexes[slot], subjects[slot].get("traits", "") if slot < len(subjects) else ""))
+            for slot in route.position_slots]
 
 
-# Objects and roles a kink request does not imply: each appears only when the request names it.
-ACCESSORY_FAMILIES = {
-    "rope": re.compile(r"\b(?:ropes?|roped|shibari|kinbaku|tied|ties?|tying|hogtie\w*|frogtie|crotch rope|box tie|"
-                       r"takate-kote|karada|ebi|kikkou|shinju|bound|binding)\b"),
-    "restraints": re.compile(r"\b(?:cuff\w*|handcuff\w*|shackle\w*|chain\w*|spreader\w*|armbinder|strappado|restrain\w*|"
-                             r"straps?(?![- ]?ons?\b)|strapped|stirrups|st\.? andrew's cross|cross|stocks|pillory|hooks?|bedposts?|bondage|harness\w*|"
-                             r"wooden pony|bonding chair)\b"),
-    "collar": re.compile(r"\b(?:collar\w*|leash\w*|name tag)\b"),
-    "gag": re.compile(r"\b(?:gag\w*|ballgag|blindfold\w*|muzzle\w*|hood(?:ed)?)\b"),
-    "impact": re.compile(r"\b(?:paddle\w*|crop(?![- ]?tops?\b)|flogger\w*|whip\w*|cane|caning|spank\w*)\b"),
-    "props": re.compile(r"\b(?:nipple clamps?|clamps?|chastity|marker|writing|written|writes|labels?|property of|lipstick|"
-                        r"pedestal|wedge|barrel|medical table|exam table|inspection table|padlock|key held)\b"),
-    "toys": re.compile(r"\b(?:toys?|dildo\w*|vibrator\w*|wand|plugs?|beads|prostate massager|machines?|sybian|pumps?|"
-                       r"tentacle\w*)\b"),
-    "pet": re.compile(r"\b(?:pets?|puppy|kitten|crawl\w*|bowls?|kennel|(?<!chastity )cage|crate|tail|"
-                      r"beg\w* like (?:a )?(?:pet|puppy|dog))\b"),
-    "furniture": re.compile(r"\b(?:human (?:furniture|table|chair|stool|ottoman|bench|carpet|armrest|pillow|footrest|"
-                            r"side table|display piece)|footrest|furniture (?:pose|pet|position)|living furniture|"
-                            r"used as (?:a )?(?:human )?(?:furniture|table|chair|stool|bench|carpet|armrest|pillow|"
-                            r"mounting block|footrest)|objectif\w*)\b"),
-    "clothing": re.compile(r"\b(?:maid|sissy|latex|pvc|catsuit|fishnets?|crossdress\w*|feminiz\w*|whore|"
-                           r"micro[- ](?:skirt|dress)|garter\w*|stockings?|heels|apron|frilly|open-cup|bodysuit|"
-                           r"panties|corset|crop[- ]?tops?|short skirt|lingerie set)\b"),
-}
 # "Bondage" names restraint itself, so it permits rope and restraint hardware.
 _ACCESSORY_ALIASES = {"rope": re.compile(r"\bbondage\b")}
 
 
-def _positive_clauses(text):
+def positive_clauses(text):
     return "\n".join(clause for clause in re.split(r"[.!?;\n,]", str(text).casefold())
                      if not re.search(r"\b(?:no|not|without|avoid|never)\b", clause))
 
@@ -97,11 +116,17 @@ def accessory_families(text):
     return {name for name, pattern in ACCESSORY_FAMILIES.items() if pattern.search(text)}
 
 
-def requested_accessories(route):
-    """Accessory families the request names; toys are ordinary in a solo scene."""
-    positive = _positive_clauses(route.request_text)
-    requested = accessory_families(positive) | {name for name, pattern in _ACCESSORY_ALIASES.items() if pattern.search(positive)}
-    return requested | ({"toys"} if len(route.position_slots) == 1 else set())
+def permitted_accessories(route):
+    """Object families an entry may show. Equipment needs Props and is limited to the families the
+    request names (all of them for a generic request); clothing appears only when named; toys follow Toys."""
+    positive = positive_clauses(route.request_text)
+    named = accessory_families(positive) | {name for name, pattern in _ACCESSORY_ALIASES.items() if pattern.search(positive)}
+    permitted = named & {"clothing"}
+    if "toys" in route.enabled:
+        permitted.add("toys")
+    if "props" in route.enabled:
+        permitted |= named & EQUIPMENT or EQUIPMENT
+    return permitted
 
 
 def compatible_entry(text, route, *, category="general", position=False, clothing_detail=False):
@@ -113,26 +138,27 @@ def compatible_entry(text, route, *, category="general", position=False, clothin
         acts.add(category)
     if categories & route.excluded or acts & route.excluded:
         return False
-    # Aftercare is ordinary; toys are ordinary in a solo scene.
-    themes = {"kink", "pet", "furniture", "feet", "finish"} | ({"toys"} if len(route.position_slots) != 1 else set())
-    if (categories & themes) - route.categories:
+    # Every switch is independent: an entry using a module's content needs that module enabled.
+    if (categories & set(SWITCHES)) - route.enabled:
         return False
-    if accessory_families(text) - requested_accessories(route):
-        return False
-    requested_acts = route.categories & POSITION_ACT_CATEGORIES
-    if requested_acts and acts - requested_acts:
-        return False
-    if position and len(acts) > 1 and not acts <= requested_acts:
+    if accessory_families(text) - permitted_accessories(route):
         return False
     count = len(route.position_slots)
+    if count < 3 and _GROUP_WORDS.search(text):
+        return False
     for match in re.finditer(r"\b(one|two|three|four|five|\d+) (?:adult )?(?:people|persons?|participants?|adults?|partners?)\b", text):
         needed = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5}.get(match[1], int(match[1]) if match[1].isdigit() else 1)
         if needed > count:
             return False
     if count == 1 and (re.search(r"\b(?:partners?|couple|another (?:person|man|woman)|two (?:men|women|people)|69|sixty-nine|face[- ]?sitting)\b", text)
+                       or _PARTNER_WORDS.search(text)
                        or acts and not re.search(r"\b(?:solo|self|own)\b", text)):
         return False
     anatomy = participant_anatomy(route)
+    sexes = {sex for sex, _ in anatomy}
+    if "unspecified" not in sexes and (_MALE_WORDS.search(text) and "male" not in sexes
+                                       or _FEMALE_WORDS.search(text) and "female" not in sexes):
+        return False
     for sex, pattern in (("male", r"men|man|male"), ("female", r"women|woman|female")):
         available = sum(item[0] == sex for item in anatomy)
         if re.search(rf"\banother (?:adult )?(?:{pattern})\b", text) and available < 2:
@@ -141,8 +167,15 @@ def compatible_entry(text, route, *, category="general", position=False, clothin
             needed = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5}.get(match[1], int(match[1]) if (match[1] or "").isdigit() else 1)
             if needed > available and not any(item[0] == "unspecified" for item in anatomy):
                 return False
+    if _SEMEN.search(text) and (not any("penis" in parts for _, parts in anatomy)
+                                or count == 1 and not _SOLO_SEMEN.search(text)):
+        return False
+    if _BREASTS.search(text) and not any(sex in {"female", "unspecified"} for sex, _ in anatomy):
+        return False
+    if _MALE_ONLY.search(text) and not any(sex in {"male", "unspecified"} for sex, _ in anatomy):
+        return False
     for part, pattern in (("penis", r"penis(?:es)?|cocks?|dicks?|fellatio|blowjobs?"),
-                          ("vagina", r"vagina|vulva|pussy|cunnilingus")):
+                          ("vagina", r"vagina|vulva|pussy|cunnilingus|clit\w*|labia|squirt\w*")):
         if re.search(rf"\b(?:{pattern})\b", text) and not any(part in parts for _, parts in anatomy):
             return False
         for sex, owner in (("female", r"her|woman's|female's"), ("male", r"his|man's|male's")):
@@ -180,33 +213,27 @@ def compatible_entry(text, route, *, category="general", position=False, clothin
 
 
 def styling_sections(route):
-    """Universal sections stay universal; each optional theme has its own gate."""
+    """Universal sections stay universal; each optional module adds only its own registry sections."""
     sections = {"setting": ["setting"], "mood": ["mood"], "clothing": ["clothing"]}
     if len(route.position_slots) > 1:
+        # Interaction stays an optional hint; it never overrides the chosen activity or position.
         sections["interaction"] = ["interaction"]
         if len(route.position_slots) >= 3:
             sections["interaction"].append("group interaction")
-    if route.kink:
-        for axis in tuple(sections):
-            sections[axis].append("kink " + axis)
-    if "pet" in route.categories:
-        sections["mood"].append("pet mood")
-        if "interaction" in sections:
-            sections["interaction"].append("pet interaction")
-    if route.categories & {"kink", "pet", "furniture", "feet", "toys"}:
-        sections["prop"] = ["props"]
+    for axis, section in module_styling_sections(route.enabled - route.excluded):
+        if axis in sections or axis == "prop":
+            sections.setdefault(axis, []).append(section)
     return sections
 
 
-def vocabulary_choices(catalog, route, record, candidates, rng, used):
-    """One activity's alternatives and a few compatible details, never whole sections."""
+def vocabulary_choices(catalog, route, record, alternatives, rng, used):
+    """The selected position, the planner's alternatives and a few compatible details, never whole sections."""
     selected_route = replace(route, categories=route.categories | ({record.category} if record else set()))
     choices = {}
     if record:
-        alternatives = [item.label[:240] for item in candidates if item.category == record.category and item.label != record.label]
-        rng.shuffle(alternatives)
-        choices["position_candidates"] = "\n".join([record.label[:240], *alternatives[:2]])
-        if record.category in POSITION_ACT_CATEGORIES | {"toys", "feet", "finish", "aftercare"}:
+        labels = [item.label[:240] for item in alternatives if item.label != record.label]
+        choices["position_candidates"] = "\n".join(dict.fromkeys([record.label[:240], *labels[:2]]))
+        if record.category in POSITION_ACT_CATEGORIES | set(SWITCHES):
             choices["activity"] = record.category
         if record.category == "finish" and len(route.categories & POSITION_ACT_CATEGORIES) == 1:
             choices["activity"] = next(iter(route.categories & POSITION_ACT_CATEGORIES))
@@ -268,31 +295,44 @@ def bind_arrangement(record, route, constraints):
     return replace(record, participants=tuple(record.participants[assigned[slot]] for slot in route.position_slots))
 
 
+def entry_key(text):
+    """Identical vocabulary lines share one identity, whatever section lists them."""
+    return " ".join(re.findall(r"\w+", str(text).casefold()))
+
+
 def compatible_arrangements(catalog, route, *, constraints=()):
     eligible, rejected = [], []
     subjects = [item for item in route.subjects for _ in range(item["count"])]
-    acts = route.categories & POSITION_ACT_CATEGORIES
     anatomy = dict(zip(route.position_slots, (parts for _, parts in participant_anatomy(route))))
     sections = position_sections(route)
+    own = own_cast_section(route)
     records = list(catalog.records)
     legacy = {(item.section, item.label) for item in records}
+    # One entry per distinct line: the same position listed under several sections is offered once.
+    texts = {}
     for section in sorted(sections):
         for text in catalog.get(section, ()):
-            if (section, text) in legacy:
+            if (section, text) in legacy or (section in CAST_SEX_SECTIONS and section != own and not gender_neutral(text)):
                 continue
-            categories = activity_categories(text)
-            category = next(iter(categories)) if len(categories) == 1 else section.removesuffix(" positions")
-            if category not in POSITION_ACT_CATEGORIES | {"solo", "toys", "feet", "kink", "pet", "furniture", "finish", "aftercare"}:
-                category = "paired_pose" if len(route.position_slots) == 2 else "group_pose" if len(route.position_slots) > 2 else "solo"
-            records.append(PositionCandidate(hashlib.sha256((section + text).encode()).hexdigest(), category, text, section))
+            texts.setdefault(entry_key(text), (text, []))[1].append(section)
+    preference = [*sorted(route.required), *sorted(route.asked), *sorted(POSITION_ACT_CATEGORIES), *SWITCHES]
+    for key, (text, found) in texts.items():
+        categories = activity_categories(text)
+        named = [SECTION_MODULES.get(section, section.removesuffix(" positions")) for section in found]
+        named = [name for name in preference if name in named]
+        category = next(iter(categories)) if len(categories) == 1 else named[0] if named else (
+            "paired_pose" if len(route.position_slots) == 2 else "group_pose" if len(route.position_slots) > 2 else "solo")
+        records.append(PositionCandidate(hashlib.sha256(key.encode()).hexdigest(), category, text, found[0]))
     for pattern, text in catalog.get("requested", ()):
-        positive = _positive_clauses(route.request_text)
+        positive = positive_clauses(route.user_text or route.request_text)
         if route.vocabulary_applicable and pattern.search(positive):
             categories = activity_categories(text)
             category = next(iter(categories)) if len(categories) == 1 else "general"
             records.append(PositionCandidate(hashlib.sha256(text.encode()).hexdigest(), category, text, "requested"))
     for number, record in enumerate(records, 1):
-        if record.section not in sections | {"requested"}:
+        if record.section not in sections | {"requested"} or (
+                record.participants and record.section in CAST_SEX_SECTIONS and record.section != own
+                and not gender_neutral(record.label)):
             rejected.append({"record": number, "rule": "inactive_section", "reason": "Section is not active for this request."})
             continue
         if not record.participants:
@@ -310,9 +350,7 @@ def compatible_arrangements(catalog, route, *, constraints=()):
             reason = "participant_count"
         elif record.category in route.excluded:
             reason = "excluded_category"
-        elif acts and record.category not in acts:
-            reason = "requested_category"
-        elif record.category in {"kink", "pet", "furniture", "feet", "toys", "finish", "aftercare"} and record.category not in route.categories:
+        elif record.category in SWITCHES and record.category not in route.enabled:
             reason = "requested_category"
         elif any(item.sex not in {"unspecified", route.sexes[slot]} for item, slot in zip(record.participants, route.position_slots)):
             reason = "participant_sex"

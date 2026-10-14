@@ -222,6 +222,36 @@ class ProcessManagerTests(unittest.TestCase):
 
 
 class OpenAITimeoutTests(unittest.TestCase):
+    def test_repetition_penalty_is_request_local_and_only_sent_to_owned_llama_cpp(self):
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = b'{"choices":[{"message":{"content":"result"},"finish_reason":"stop"}]}'
+        for local, penalty in ((True, 1.1), (True, None), (False, 1.1)):
+            with self.subTest(local=local, penalty=penalty):
+                backend = openai.OpenAICompatibleBackend({"base_url": "http://127.0.0.1:8189/v1",
+                    "model": "test", "_is_llama_cpp": local})
+                instruction = SimpleNamespace(repeat_penalty=penalty, temperature=None, top_p=None,
+                    to_messages=lambda: [{"role": "user", "content": "A clothed boxer holds training pads."}])
+                with patch.object(openai, "urlopen", return_value=response) as send, \
+                        patch.object(openai, "log_request"), patch.object(openai, "log_response"), \
+                        patch.object(openai, "_log_multimodal_messages"):
+                    backend.generate(instruction)
+                payload = json.loads(send.call_args.args[0].data)
+                if local and penalty is not None:
+                    self.assertEqual(payload["repeat_penalty"], 1.1)
+                else:
+                    self.assertNotIn("repeat_penalty", payload)
+
+    def test_invalid_local_repetition_penalty_fails_before_http(self):
+        backend = openai.OpenAICompatibleBackend({"base_url": "http://127.0.0.1:8189/v1",
+            "model": "test", "_is_llama_cpp": True})
+        for penalty in (True, "1.1", float("nan"), float("inf"), -1, 2.1):
+            with self.subTest(penalty=penalty), patch.object(openai, "urlopen") as send:
+                instruction = SimpleNamespace(repeat_penalty=penalty, temperature=None, top_p=None,
+                    to_messages=lambda: [{"role": "user", "content": "A clothed boxer holds training pads."}])
+                with self.assertRaisesRegex(openai.BackendConfigurationError, "repeat_penalty"):
+                    backend.generate(instruction)
+                send.assert_not_called()
+
     def test_timeout_is_passed_to_http_without_shortening_slow_requests(self):
         for requested, expected in ((None, 90), (600, 600), (1800, 1800),
                                     (3600, 3600), (7200, 3600), (0, 1)):

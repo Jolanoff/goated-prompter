@@ -12,6 +12,8 @@ from ...director_profiles import resolve_director_config
 from ...strict_json import reject_duplicate_keys
 from .quality import adults_only_error
 from .scene_spec import UNSET_MECHANIC_LABELS, validate_planning_constraints
+from .modules import SWITCHES
+from .routing import routing_clarifications
 from ...options.dataset import CHARACTER_KINDS, SUBJECT_KINDS
 
 
@@ -77,7 +79,11 @@ ownership or scope differ. Keep choose-once freedoms separate from per-image fre
 UNDERSTANDING identifies open choices; it does not choose their values or how they vary.
 For adult sexual requests, identify each character's sex and explicitly supplied anatomy,
 the total character count, requested activity, exclusions and optional themes. Keep anatomy
-in that owner's traits. Do not plan poses, contacts or detailed scene geometry; retain any
+in that owner's traits. In modules.enabled list only the optional themes the user explicitly
+asks for (kink, toys, feet, props, pet, furniture, finish) and in modules.excluded the ones the
+user forbids; leave both empty otherwise and for non-sexual requests. Ordinary clothing,
+standing barefoot and ordinary furniture never enable props, feet or furniture.
+Do not plan poses, contacts or detailed scene geometry; retain any
 user-supplied mechanics as requirements without expanding them into a scene.
 Do not invent candidate species, outfits, weapons, environments, narrative themes,
 eras, props or transformations merely to illustrate FREE choices.
@@ -309,7 +315,7 @@ def confirmation_summary(brief):
 def validate_understanding(value: dict, scopes: tuple[str, ...], *, historical=False, require_complete_cast=False) -> dict:
     """Validate shape and scopes; fresh model responses require a complete supplied cast."""
     fields = {*SUMMARY_FIELDS, *REQUIREMENT_FIELDS, *CONTRACT_FIELDS, *DETAIL_FIELDS, "physical_conflicts", "clarifications"}
-    if not isinstance(value, dict) or set(value) - {"characters", "subjects", "planning_constraints"} != fields:
+    if not isinstance(value, dict) or set(value) - {"characters", "subjects", "planning_constraints", "modules"} != fields:
         raise ValueError("Understanding must contain exactly the required brief fields.")
     result = {field: _text(value[field], field) for field in SUMMARY_FIELDS}
     count = value["character_count"]
@@ -400,6 +406,8 @@ def validate_understanding(value: dict, scopes: tuple[str, ...], *, historical=F
                 if listed != count:
                     raise CastCountError(f"Subject entries do not match the declared per-image character count in {scope}. "
                                          "Review the scoped inventory against the user source.")
+    if "modules" in value:
+        result["modules"] = validate_modules(value["modules"])
     if "planning_constraints" in value:
         subjects = result.get("subjects", [])
         kinds = {scope: {f"P{index}": item["kind"] for index, item in enumerate(
@@ -407,6 +415,19 @@ def validate_understanding(value: dict, scopes: tuple[str, ...], *, historical=F
             for scope in scopes if scope != "dataset"}
         result["planning_constraints"] = validate_planning_constraints(value["planning_constraints"], scopes,
             None if subjects else count, subject_kinds=kinds)
+    return result
+
+
+def validate_modules(value):
+    """Optional adult switches the user asked for or forbade; older briefs have none."""
+    if not isinstance(value, dict) or set(value) != {"enabled", "excluded"}:
+        raise ValueError("Modules need exactly enabled and excluded lists.")
+    result = {}
+    for key in ("enabled", "excluded"):
+        items = value[key]
+        if not isinstance(items, list) or any(not isinstance(item, str) or item not in SWITCHES for item in items):
+            raise ValueError(f"Modules {key} must list known optional switches.")
+        result[key] = list(dict.fromkeys(items))
     return result
 
 
@@ -441,7 +462,7 @@ def validate_characters(items):
 
 def _expand_understanding(value, data, scopes):
     """Project intent facts into the saved contract; retain previously supported briefs."""
-    if isinstance(value, dict) and set(value) == set(INTENT_FIELDS):
+    if isinstance(value, dict) and set(value) - {"modules"} == set(INTENT_FIELDS):
         subjects = value["subjects"]
         if not isinstance(subjects, list) or len(subjects) > MAX_CHARACTERS:
             raise ValueError("Subjects must be a bounded inventory of principal subjects.")
@@ -481,7 +502,7 @@ def _expand_understanding(value, data, scopes):
         value = {**value, "planning_constraints": constraints}
     if not isinstance(value, dict) or "requirements" not in value:
         return value
-    if set(value) - {"characters", "subjects", "planning_constraints"} != set(COMPACT_FIELDS):
+    if set(value) - {"characters", "subjects", "planning_constraints", "modules"} != set(COMPACT_FIELDS):
         raise ValueError("Compact understanding must contain exactly its required fields.")
     facts = value["requirements"]
     if isinstance(facts, dict):
@@ -504,6 +525,8 @@ def _expand_understanding(value, data, scopes):
         result["characters"] = value["characters"]
     if "planning_constraints" in value:
         result["planning_constraints"] = value["planning_constraints"]
+    if "modules" in value:
+        result["modules"] = value["modules"]
     if "subjects" in value:
         result["subjects"] = value["subjects"]
     result["dataset_contents"] = (f"{data['amount']} image prompts; target: {data['target']}; "
@@ -567,6 +590,9 @@ def _understanding_schema(scopes, *, hard_limit):
             "count": {"type": "integer", "minimum": 1, "maximum": 100},
             "kind": {"type": "string", "enum": list(SUBJECT_KINDS)},
             "sex": {"type": "string", "enum": list(CHARACTER_SEXES)}}}}
+    switches = {"type": "array", "maxItems": len(SWITCHES), "items": {"type": "string", "enum": list(SWITCHES)}}
+    properties["modules"] = {"type": "object", "additionalProperties": False, "required": ["enabled", "excluded"],
+        "properties": {"enabled": switches, "excluded": switches}}
     properties["clarifications"] = {"type": "array", "maxItems": MAX_ITEMS, "items": text}
     return {"type": "object", "additionalProperties": False,
         "required": list(properties), "properties": properties}
@@ -717,6 +743,11 @@ class DatasetUnderstandingService:
                             if len(brief["hard"]) >= MAX_ITEMS:
                                 raise ValueError("Multiple-character understanding must leave one HARD entry for visibility and supplied character facts.")
                             brief["hard"].append(requirement)
+                        brief = validate_understanding(brief, scopes)
+                    # Contradictory switches or an anatomically impossible required activity are asked, not guessed.
+                    if questions := [question for question in routing_clarifications(data, brief)
+                                     if question not in brief["clarifications"]]:
+                        brief["clarifications"] = (brief["clarifications"] + questions)[:MAX_ITEMS]
                         brief = validate_understanding(brief, scopes)
                     return brief
                 except (ValueError, TypeError, RecursionError) as error:

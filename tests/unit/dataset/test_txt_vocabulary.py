@@ -13,7 +13,7 @@ from goated_prompter.features.dataset.compatibility import position_sections, st
 from goated_prompter.features.dataset.private_vocabulary import SECTIONS, load_vocabulary, parse_vocabulary, private_rules
 from goated_prompter.features.dataset.routing import resolve_route
 from tests.helpers import dataset_understanding_fixture
-from tests.support.dataset import valid_draft
+from tests.support.dataset import planned_facts, valid_draft
 
 
 def adult_draft(*sexes, subject="Adults having sex", **changes):
@@ -78,7 +78,8 @@ class TxtVocabularyTests(unittest.TestCase):
                                    ((1, 'museum portrait gallery'), (2, 'museum sculpture hall'))])
             return json.dumps([{'index': row['index'], 'action': 'An adult poses.', 'setting': row['setting'],
                 'participants': [{'id': 'P1', 'role': 'model', 'pose': 'seated', 'location': 'center',
-                                  'support': 'supported_by_chair'}], 'contacts': []} for row in context['assignments']])
+                                  'support': 'supported_by_chair'}], 'contacts': [], **planned_facts(row)}
+                               for row in context['assignments']])
         session.generate.side_effect = generate
         frozen, errors = propose_scene_specs(session, data, list(specs.values()), lambda: None)
         self.assertEqual(errors, {})
@@ -107,7 +108,7 @@ class TxtVocabularyTests(unittest.TestCase):
                 rows = json.loads(instruction.user_message)['assignments']
                 return json.dumps([{'index': row['index'], 'action': 'An adult poses.', 'setting': row['setting'],
                     'participants': [{'id': 'P1', 'role': 'model', 'pose': 'seated', 'location': 'center',
-                                      'support': 'supported_by_chair'}], 'contacts': []} for row in rows])
+                                      'support': 'supported_by_chair'}], 'contacts': [], **planned_facts(row)} for row in rows])
             session.generate.side_effect = generate
             with self.subTest(failure=failure):
                 frozen, errors = propose_scene_specs(session, data, list(specs.values()), lambda: None)
@@ -162,14 +163,17 @@ class TxtVocabularyTests(unittest.TestCase):
     def test_solo_does_not_require_toys_or_add_a_partner(self):
         text = ("[solo positions]\nSeated self-pleasure.\n[oral positions]\nKneeling oral.\n"
                 "[toys]\nSolo vibrator use.\n[couple positions]\nPartners embrace.\n")
+        # Solo toys are eligible by default, never forced; partners and partnered acts stay out.
         self.assertEqual(self.positions(adult_draft("female", subject="One adult woman masturbating"), text),
-                         ("Seated self-pleasure.",))
+                         ("Seated self-pleasure.", "Solo vibrator use."))
 
     def test_character_pools_match_each_cast_size_and_pairing(self):
+        # Every couple reads all cast-sex sections as hints; only gender-neutral entries cross casts.
+        pair = {'couple positions', 'two men positions', 'two women positions', 'man and woman positions'}
         cases = [(('male',), {'solo positions'}),
-                 (('male', 'male'), {'couple positions', 'two men positions'}),
-                 (('female', 'female'), {'couple positions', 'two women positions'}),
-                 (('female', 'male'), {'couple positions', 'man and woman positions'}),
+                 (('male', 'male'), pair),
+                 (('female', 'female'), pair),
+                 (('female', 'male'), pair),
                  (('male', 'female', 'male'), {'three positions'}),
                  (('female',) * 5, {'group positions'})]
         cast_sections = {'solo positions', 'couple positions', 'two men positions', 'two women positions',
@@ -220,11 +224,13 @@ class TxtVocabularyTests(unittest.TestCase):
     def test_each_optional_section_has_an_independent_activation_rule(self):
         broad = resolve_route(adult_draft('male', 'female'))
         active = position_sections(broad) | {section for sections in styling_sections(broad).values() for section in sections} | {'rules'}
+        # Finish is an eligible event by default; every optional module stays off until requested.
         self.assertFalse(active & {'props', 'toys', 'kink positions', 'pet positions', 'furniture positions',
-                                  'feet positions', 'finish positions', 'aftercare positions'})
+                                  'feet positions', 'aftercare positions'})
+        self.assertIn('finish positions', active)
         requests = {'kink': 'sex in bondage', 'pet': 'sex with human pet roleplay',
                     'furniture': 'sex with a human furniture theme', 'feet': 'foot worship',
-                    'toys': 'sex with optional toys', 'finish': 'sex at climax', 'aftercare': 'sexual aftercare'}
+                    'toys': 'sex with optional toys', 'finish': 'sex at climax'}
         covered = set(active)
         for theme, subject in requests.items():
             route = resolve_route(adult_draft('male', 'female', subject=subject))
@@ -233,7 +239,11 @@ class TxtVocabularyTests(unittest.TestCase):
             if theme == 'kink':
                 self.assertFalse(selected & {'pet mood', 'pet interaction', 'pet positions', 'furniture positions', 'feet positions', 'toys'})
             covered.update(selected)
+        aftercare = resolve_route(adult_draft('male', 'female', subject='sexual aftercare'))
+        self.assertNotIn('aftercare positions', position_sections(aftercare))
+        covered.add('aftercare positions')  # parsed for older files, never selected
         covered.update(position_sections(resolve_route(adult_draft('male', subject='Solo adult masturbating in bondage'))))
+        covered.update(position_sections(resolve_route(adult_draft('female', subject='Solo adult masturbating, foot worship'))))
         covered.update({'ownership rules', 'requested'})
         for sexes in [('male', 'male'), ('female', 'female'), ('female', 'male', 'male'), ('female',) * 5]:
             route = resolve_route(adult_draft(*sexes))
@@ -277,7 +287,7 @@ class TxtVocabularyTests(unittest.TestCase):
         instruction = planning_instruction(data, list(specs.values()))
         self.assertLess(instruction.user_message.count('Oral arrangement'), 13)
         self.assertNotIn('Seated anal contact', instruction.user_message)
-        self.assertIn('ONE compatible primary', instruction.system_message)
+        self.assertIn('choose ONE that\nfits', instruction.system_message)
 
     def test_contradictory_actions_are_filtered_in_positions_and_styling(self):
         text = ('[oral positions]\nSeated oral contact.\nOral and anal at once.\n'
@@ -293,7 +303,9 @@ class TxtVocabularyTests(unittest.TestCase):
         text = '[three positions]\nThree adults combine oral and vaginal contact.\n'
         data = adult_draft('male', 'female', 'female', subject='Three adults combine oral and vaginal contact')
         self.assertEqual(len(self.positions(data, text)), 1)
-        self.assertFalse(self.positions(adult_draft('male', 'female', 'female'), text))
+        # Several compatible activities may combine in a group scene without being named.
+        self.assertEqual(len(self.positions(adult_draft('male', 'female', 'female'), text)), 1)
+        self.assertFalse(self.positions(adult_draft('male', 'female', 'female', subject='Three adults, only anal'), text))
 
     def test_universal_setting_and_mood_are_used_for_each_ordinary_activity(self):
         text = ('[oral positions]\nOral contact.\n[anal positions]\nAnal contact.\n'
@@ -331,8 +343,12 @@ class TxtVocabularyTests(unittest.TestCase):
         candidate = {'index': 1, 'action': 'An adult woman chooses standing self-pleasure.',
                      'participants': [{'id': 'P1', 'role': 'participant', 'pose': 'standing',
                                        'location': 'center', 'support': 'feet_on_floor'}],
-                     'contacts': [], 'setting': 'A room.'}
+                     'contacts': [], 'setting': 'A room.', 'position': '', 'activities': []}
+        # The planner may reject the offered position, never substitute an unoffered one.
+        with self.assertRaises(ValueError):
+            freeze_scene_spec(provisional, {**candidate, 'position': 'Standing self-pleasure.'})
         frozen = freeze_scene_spec(provisional, candidate)
+        self.assertEqual(frozen.position, '')
         self.assertEqual(frozen.action, candidate['action'])
         self.assertEqual(frozen.locked, ('hard',))
         self.assertNotIn('position_candidates', dict(frozen.choices))
@@ -374,16 +390,24 @@ class TxtVocabularyTests(unittest.TestCase):
         catalog = parse_vocabulary('[rules]\nUse oral contact.\nUse anal contact.\n')
         with patch('goated_prompter.features.dataset.private_vocabulary.load_vocabulary', return_value=catalog):
             guidance = private_rules(data)
+        # Each line requires its named act; other compatible acts stay eligible, so both rules apply.
+        self.assertIn('Use oral contact. (assignment indexes: 1, 2, 3, 4)', guidance)
+        self.assertIn('Use anal contact. (assignment indexes: 1, 2, 3, 4)', guidance)
+        exclusive = adult_draft('male', 'male', source_mode='guided', inputs='Only oral sex\nOnly anal sex')
+        with patch('goated_prompter.features.dataset.private_vocabulary.load_vocabulary', return_value=catalog):
+            guidance = private_rules(exclusive)
         self.assertIn('Use oral contact. (assignment indexes: 1, 3)', guidance)
         self.assertIn('Use anal contact. (assignment indexes: 2, 4)', guidance)
 
     def test_finish_and_aftercare_guidance_matches_the_requested_moment(self):
         text = ('[oral positions]\nOral contact.\n[finish positions]\nAdults at climax.\n'
                 '[aftercare positions]\nAdults share aftercare.\n')
-        for moment, expected in [('sex at climax', 'finish'), ('sexual aftercare', 'aftercare')]:
-            data = adult_draft('male', 'female', subject=f'Adults sharing {moment}')
-            self.assertTrue(all(spec.category == expected for spec in self.plan(data, text).values()))
-        self.assertEqual(self.positions(adult_draft('male', 'female'), text), ('Oral contact.',))
+        data = adult_draft('male', 'female', subject='Adults sharing sex at climax')
+        self.assertTrue(all(spec.category == 'finish' for spec in self.plan(data, text).values()))
+        # Aftercare is no longer selected automatically or on request; finish stays eligible but unforced.
+        data = adult_draft('male', 'female', subject='Adults sharing sexual aftercare')
+        self.assertFalse(any(spec.category == 'aftercare' for spec in self.plan(data, text).values()))
+        self.assertEqual(set(self.positions(adult_draft('male', 'female'), text)), {'Oral contact.', 'Adults at climax.'})
         oral_finish = self.plan(adult_draft('male', 'female', subject='Adults having oral sex at climax'), text)[1]
         self.assertEqual(oral_finish.category, 'finish')
         self.assertEqual(dict(oral_finish.choices)['activity'], 'oral')

@@ -28,7 +28,11 @@ class DatasetUnderstandingTests(unittest.TestCase):
     def test_confirmation_schema_has_no_scene_mechanics_or_review_tags(self):
         schema = understanding_instruction(valid_draft()).json_schema
         self.assertEqual(set(schema["required"]), {"requested_generation", "character_count",
-            "identity_policy", "subjects", "requirements", "expansion_freedom", "clarifications"})
+            "identity_policy", "subjects", "requirements", "expansion_freedom", "modules", "clarifications"})
+        switches = schema["properties"]["modules"]["properties"]
+        self.assertEqual(set(switches), {"enabled", "excluded"})
+        self.assertEqual(set(switches["enabled"]["items"]["enum"]),
+                         {"kink", "toys", "feet", "props", "pet", "furniture", "finish"})
         buckets = schema["properties"]["requirements"]["properties"]
         self.assertEqual(set(buckets), {"hard", "soft", "free"})
         for bucket in buckets.values():
@@ -1079,7 +1083,7 @@ class DatasetUnderstandingTests(unittest.TestCase):
                 self.assertIsNotNone(schema)
                 self.assertEqual(schema["type"], "object")
                 self.assertIs(schema["additionalProperties"], False)
-                fields = set(self.intent_brief())
+                fields = set(self.intent_brief()) | {"modules"}
                 self.assertEqual(set(schema["required"]), fields)
                 self.assertEqual(set(schema["properties"]), fields)
                 props = schema["properties"]

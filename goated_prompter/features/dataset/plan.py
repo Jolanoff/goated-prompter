@@ -192,7 +192,8 @@ class ScenePlanner:
             catalog = load_vocabulary() if any(route.vocabulary_applicable for route in routes.values()) else Vocabulary()
             planned = plan_scene_specs(data, assignments,
                 directions=creative_directions(data, range(1, data["amount"] + 1), salt, vocabulary={}),
-                seed=seed, catalog=catalog, routes=routes)
+                seed=seed, catalog=catalog, routes=routes,
+                used=[spec.catalog_id for spec in specs.values() if spec.catalog_id])
             specs = {**planned, **specs}
         if spec_update:
             spec_update(specs)
@@ -206,7 +207,9 @@ class ScenePlanner:
                 family=family, progress=progress, checkpoint=self.checkpoint,
                 scene_specs={spec.index: spec for spec in candidates})
         frozen, planning_errors = propose_scene_specs(session, data, candidates, self.checkpoint, family=family,
-            existing=[spec for index, spec in specs.items() if index not in indexes or spec.state == "frozen"], event_seeds=seeds)
+            existing=[spec for index, spec in specs.items() if index not in indexes or spec.state == "frozen"], event_seeds=seeds,
+            corrections={row["index"]: row["failure_reason"] for row in existing
+                if row["index"] in indexes and specs[row["index"]].state == "provisional" and row.get("failure_reason")})
         specs.update(frozen)
         if spec_update:
             spec_update(specs)

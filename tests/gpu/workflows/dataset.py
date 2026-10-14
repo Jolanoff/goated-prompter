@@ -36,6 +36,7 @@ def execute(row, context):
                                                               lambda _partial: None)
     row.update(scene_plan=result["scene_plan"], dataset_type=data["trigger_type"],
                completed_results=result["completed"], prompts=result["prompts"],
-               prompt=result["prompts"][0]["prompt"] if result["prompts"] else "")
+               prompt=result["prompts"][0]["prompt"] if result["prompts"] else "",
+               fidelity_audit=result.get("fidelity_audit"))
     if not result["completed"]:
         row.update(error="Dataset pipeline produced no valid prompt.", completion_state="validation_failed")

@@ -15,6 +15,7 @@ from goated_prompter.features.dataset.private_vocabulary import VOCABULARY_FILE_
 from goated_prompter.features.dataset.plan import ScenePlanner, reusable_scene_plan, scene_plan_signature, validate_saved_scene_plan
 from goated_prompter.features.dataset.prompting import dataset_instruction
 from goated_prompter.features.dataset.quality import kink_request, ownership_request, pet_request, position_categories
+from goated_prompter.features.dataset.routing import resolve_route
 from goated_prompter.features.dataset.service import DatasetService, saved_dataset_draft
 from tests.helpers import dataset_understanding_fixture
 from goated_prompter.features.dataset.scene_spec import SceneSpec, writer_view
@@ -85,12 +86,17 @@ class PositionRoutingTests(unittest.TestCase):
     def write_records(self, *entries):
         self.path.write_text(vocabulary_text(*entries), encoding="utf-8")
 
-    def test_explicit_anal_keeps_male_positions_without_other_acts(self):
-        positions = set(sexual_positions(self.draft("two adult males having anal sex", "male", "male")))
+    def test_explicit_anal_is_required_while_other_compatible_acts_stay_eligible(self):
+        data = self.draft("two adult males having anal sex", "male", "male")
+        positions = set(sexual_positions(data))
         self.assertIn("male pair seated pose", positions)
         self.assertIn("anal supported pose alpha", positions)
-        self.assertFalse(positions & {"oral supported pose", "vaginal supported pose", "kink supported pose",
+        # A named activity is required, not exclusive; oral may accompany it, invented anatomy and themes may not.
+        self.assertIn("oral supported pose", positions)
+        self.assertFalse(positions & {"vaginal supported pose", "kink supported pose",
                                      "feet supported pose", "female pair seated pose", "mixed pair seated pose"})
+        self.assertEqual(resolve_route(data).required, {"anal"})
+        self.assertNotIn("oral supported pose", sexual_positions(self.draft("two adult males having only anal sex", "male", "male")))
 
     def test_generic_male_sex_uses_ordinary_categories_without_specialized_themes(self):
         positions = set(sexual_positions(self.draft("2 males having sex", "male", "male")))
@@ -186,9 +192,10 @@ class PositionRoutingTests(unittest.TestCase):
         for subject in ("2 males fucking", "two adult men in intercourse", "one adult man penetrates another adult man"):
             with self.subTest(subject=subject):
                 positions = set(sexual_positions(self.draft(subject, "male", "male")))
-                self.assertTrue({"anal supported pose alpha", "male pair seated pose"} <= positions)
-                self.assertFalse(positions & {"oral supported pose", "feet supported pose", "kink supported pose",
-                                             "solo toy pose", "finish supported pose", "vaginal supported pose"})
+                # General penetration wording makes every compatible activity eligible, never invented anatomy or themes.
+                self.assertTrue({"anal supported pose alpha", "male pair seated pose", "oral supported pose"} <= positions)
+                self.assertFalse(positions & {"feet supported pose", "kink supported pose",
+                                             "solo toy pose", "vaginal supported pose"})
 
     def test_user_penetration_request_takes_precedence_over_a_kink_director(self):
         data = self.draft("two adult males fucking", "male", "male")
@@ -199,15 +206,15 @@ class PositionRoutingTests(unittest.TestCase):
         self.assertNotIn("kink supported pose", positions)
 
     def test_explicit_oral_penetration_is_not_mistaken_for_anal(self):
-        positions = sexual_positions(self.draft("two adult men face-fucking", "male", "male"))
-        self.assertIn("oral supported pose", positions)
-        self.assertNotIn("anal supported pose alpha", positions)
+        data = self.draft("two adult men face-fucking", "male", "male")
+        self.assertIn("oral supported pose", sexual_positions(data))
+        self.assertEqual(resolve_route(data).required, {"oral"})
 
     def test_mixed_cast_penetration_can_use_anal_or_vaginal_but_not_other_acts(self):
         positions = sexual_positions(self.draft("two adults having intercourse", "male", "female"))
         self.assertIn("anal supported pose alpha", positions)
         self.assertIn("vaginal supported pose", positions)
-        self.assertNotIn("oral supported pose", positions)
+        self.assertIn("oral supported pose", positions)
         self.assertNotIn("kink supported pose", positions)
 
     def test_negated_penetration_does_not_add_it_to_an_oral_request(self):
@@ -222,7 +229,8 @@ class PositionRoutingTests(unittest.TestCase):
         positions = sexual_positions(self.draft("two adult men fucking in bondage", "male", "male"))
         self.assertIn("anal supported pose", positions)
         self.assertIn("bondage anal pose", positions)
-        self.assertNotIn("bondage oral pose", positions)
+        self.assertIn("bondage oral pose", positions)
+        self.assertNotIn("bondage oral pose", sexual_positions(self.draft("two adult men, only anal, in bondage", "male", "male")))
 
     def test_penetrative_wording_reaches_ideas_as_compatible_assignments(self):
         for mode in ("random", "guided"):
@@ -232,7 +240,8 @@ class PositionRoutingTests(unittest.TestCase):
                 context = json.loads(self.instruction(data, direction_salt=1,
                     event_seeds={1: "An unrelated generic scenario."}).user_message)
                 positions = [row["scene_spec"]["catalog_id"] for row in context["assignments"]]
-                self.assertTrue(all(row["scene_spec"]["category"] == "anal" for row in context["assignments"]))
+                self.assertTrue(all(row["scene_spec"]["category"] in {"anal", "oral", "paired_pose", "finish"}
+                                    for row in context["assignments"]))
                 self.assertEqual(len(set(positions)), 3)
 
     def test_routing_preview_reports_resolved_cast_and_penetrative_act(self):
@@ -243,10 +252,12 @@ class PositionRoutingTests(unittest.TestCase):
         self.assertEqual(route["cast"], {"count": 2, "male": 2, "female": 0, "unspecified": 0,
                                         "mode": "pair", "source": "approved_cast"})
         self.assertEqual(route["user_categories"], ["penetration"])
-        self.assertEqual(route["effective_categories"], ["anal"])
+        # General wording requires no specific act; Finish stays eligible without being requested.
+        self.assertEqual(route["effective_categories"], [])
+        self.assertEqual(route["default_categories"], ["finish"])
         self.assertIn("anal", route["position_pools"])
         self.assertNotIn("group", route["position_pools"])
-        self.assertEqual(route["private_position_count"], 4)
+        self.assertEqual(route["private_position_count"], 6)
 
     def test_routing_preview_keeps_broad_requests_distinct_from_eligible_categories(self):
         from goated_prompter.features.dataset.brainstorm import dataset_routing
@@ -496,7 +507,7 @@ class PositionRoutingTests(unittest.TestCase):
         positions = set(sexual_positions(self.draft("two adult males in bondage", "male", "male")))
         self.assertIn("kink supported pose", positions)
         self.assertIn("male pair seated pose", positions)
-        self.assertFalse(positions & {"feet supported pose", "vaginal supported pose", "finish supported pose"})
+        self.assertFalse(positions & {"feet supported pose", "vaginal supported pose", "solo toy pose"})
 
     def test_bound_master_wording_selects_kink_without_a_possessive_prefix(self):
         data = self.draft("master with his bound adult male partner having sex", "unspecified", "unspecified")
@@ -517,9 +528,10 @@ class PositionRoutingTests(unittest.TestCase):
     def test_solo_uses_solo_and_compatible_extras_not_partner_positions(self):
         self.path.write_text(VOCABULARY + "\n[anal positions]\nanal with another partner\n", encoding="utf-8")
         positions = set(sexual_positions(self.draft("one adult male in an NSFW scene", "male")))
-        self.assertEqual(positions, {"solo seated pose"})
+        # Solo toys are eligible by default but never forced.
+        self.assertEqual(positions, {"solo seated pose", "solo toy pose"})
         self.assertFalse(positions & {"male pair seated pose", "mixed pair seated pose", "anal with another partner",
-                                     "solo toy pose", "solo kink supported pose"})
+                                     "solo kink supported pose"})
 
     def test_solo_does_not_get_two_person_acts_just_because_partner_is_not_written(self):
         self.write_records(("solo positions", vocabulary_record("solo supported pose", "solo", sexes=("unspecified",))),
@@ -549,12 +561,14 @@ class PositionRoutingTests(unittest.TestCase):
         self.assertEqual(set(positions), {"solo pose with both knees supported", "solo pose with two hands resting on the seat"})
 
     def test_solo_cast_positions_survive_an_explicit_kink_and_feet_request(self):
-        self.path.write_text(VOCABULARY + vocabulary_text(("feet positions",
+        self.path.write_text(VOCABULARY + vocabulary_text(("solo feet positions",
             vocabulary_record("solo feet pose", "feet", sexes=("unspecified",)))), encoding="utf-8")
-        positions = sexual_positions(self.draft("one adult male masturbating in bondage with a foot fetish", "male"))
+        data = self.draft("one adult male masturbating in bondage with a foot fetish", "male")
+        positions = sexual_positions(data)
         self.assertIn("solo feet pose", positions)
-        self.assertNotIn("solo seated pose", positions)
-        self.assertNotIn("solo kink supported pose", positions)
+        # Requested switches lead the selection; ordinary solo entries stay eligible behind them.
+        self.assertIn("solo kink supported pose", positions)
+        self.assertEqual({"kink", "feet", "props"}, set(resolve_route(data).asked))
         self.assertNotIn("feet supported pose", positions)
         self.assertNotIn("male pair seated pose", positions)
 
@@ -615,7 +629,8 @@ class PositionRoutingTests(unittest.TestCase):
         positions = sexual_positions(self.draft("two adult men having anal sex in bondage", "male", "male"))
         self.assertIn("anal supported pose", positions)
         self.assertIn("bondage anal pose", positions)
-        self.assertNotIn("bondage oral pose", positions)
+        self.assertNotIn("bondage oral pose", sexual_positions(
+            self.draft("two adult men having anal sex only, in bondage", "male", "male")))
 
     def test_grounded_feet_in_a_pose_description_are_not_a_different_sex_act(self):
         self.write_records(("anal positions", vocabulary_record("anal pose with feet planted on the floor", "anal", pose="standing")))
@@ -626,7 +641,9 @@ class PositionRoutingTests(unittest.TestCase):
         data = self.draft("two adult men licking feet", "male", "male")
         positions = sexual_positions(data)
         self.assertIn("feet supported pose", positions)
-        self.assertNotIn("oral supported pose", positions)
+        route = resolve_route(data)
+        self.assertNotIn("oral", route.required)
+        self.assertIn("feet", route.asked)
 
     def test_a_strap_on_does_not_make_an_extra_male_partner_compatible_with_women(self):
         self.write_records(("anal positions", vocabulary_record("anal pose with a man wearing a strap-on", "anal",

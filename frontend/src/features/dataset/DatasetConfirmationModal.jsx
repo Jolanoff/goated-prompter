@@ -45,6 +45,8 @@ export default function DatasetConfirmationModal({ review, busy, onRevise, onCon
         <p className="whitespace-pre-wrap wrap-anywhere">{brief.requested_generation}</p>
         <p className="dataset-review-identity">{brief.character_count != null && `${brief.character_count} characters per image. `}{identityLabels[brief.identity_policy]}</p>
         <SummaryList label="Subjects" items={datasetCharacterLines(brief)} />
+        <SummaryList label="Requested themes" items={brief.modules?.enabled} />
+        <SummaryList label="Excluded themes" items={brief.modules?.excluded} />
       </section>
       <section className="dataset-review-requirements" aria-label="Image requirements">
         {datasetUnderstandingSections(brief).filter(({ items }) => items.length).map(({ label, items }) =>

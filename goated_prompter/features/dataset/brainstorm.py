@@ -91,6 +91,7 @@ def _position_routing(data, *, vocabulary=None, scope="all_outputs"):
                      "mode": "solo" if route.count <= 1 else "pair" if route.count == 2 else "group",
                       "source": "approved_cast" if any((data.get("_confirmed_intent") or {}).get(key) for key in ("characters", "subjects")) else "request_fallback"},
             "effective_categories": sorted(route.categories), "excluded_categories": sorted(route.excluded),
+            "default_categories": sorted(route.defaults),
             "position_pools": list(grouped), "private_position_count": len(eligible),
             "vocabulary": vocabulary_diagnostics(catalog, route, constraints=constraints)}
 

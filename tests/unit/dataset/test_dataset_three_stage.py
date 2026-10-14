@@ -1013,7 +1013,10 @@ class VanillaDefaultTests(SeedVarietyTests):
         catalog = parse_vocabulary(vocabulary_text(("oral positions", vocabulary_record("oral template", "oral")),
             ("anal positions", vocabulary_record("anal template", "anal"))))
         with patch("goated_prompter.features.dataset.brainstorm.load_vocabulary", return_value=catalog):
-            self.assertEqual(sexual_positions(oral), ("oral template",))
+            # The named act is required in planning; other compatible acts stay eligible.
+            self.assertEqual(set(sexual_positions(oral)), {"oral template", "anal template"})
+            self.assertEqual(sexual_positions({**oral, "subject": "a woman giving a man only a blowjob, oral only"}),
+                             ("oral template",))
 
     def test_a_supported_lift_is_allowed_in_sexual_images(self):
         self.data["_confirmed_intent"]["planning_constraints"] = [{"scope": "all_outputs", "action": None, "setting": None,
@@ -1069,9 +1072,9 @@ class CastPositionTests(SeedVarietyTests):
         from goated_prompter.features.dataset.brainstorm import sexual_positions
         from goated_prompter.features.dataset.private_vocabulary import load_vocabulary
         pools = {name.removesuffix(" positions"): set(entries) for name, entries in load_vocabulary().items()}
-        pair = pools["oral"] | pools["anal"]
+        pair = pools["oral"] | pools["anal"] | pools["finish"]  # finish is eligible by default
         solo = set(sexual_positions(self.cast("female", subject="a woman masturbating")))
-        self.assertEqual(solo, pools["solo"])
+        self.assertEqual(solo, pools["solo"] | pools["toys"], "Solo toys are eligible by default, never forced.")
         self.assertFalse(solo & pools["oral"])
         self.assertFalse(solo & pools["two men"])
         men = set(sexual_positions(self.cast("male", "male", subject="two men having sex")))
@@ -1098,11 +1101,15 @@ class CastPositionTests(SeedVarietyTests):
         self.assertNotIn("fixture blindfold position", plain)
         asked = set(sexual_positions(self.cast("male", "male",
             subject="two men, a footjob in bondage while one is blindfolded")))
-        self.assertEqual(asked, pools["feet"] | {"fixture blindfold position"})
-        self.assertFalse(asked & (pools["oral"] | pools["anal"]))
+        # Requested switches join the ordinary compatible pool; nothing unrequested such as toys or pet appears.
+        self.assertTrue(pools["feet"] | {"fixture blindfold position"} | pools["kink"] <= asked)
+        self.assertFalse(asked & (pools["toys"] | pools["two women"] | pools["man and woman"]))
         self.assertIn("fixture blindfold position", asked, "Matching TXT extras are guidance, not frozen mechanics.")
         solo = set(sexual_positions(self.cast("female", subject="a woman masturbating in bondage, showing her feet")))
-        self.assertEqual(solo, set(), "There is no one-subject foot arrangement; planning remains LLM-assisted.")
+        # No one-subject foot arrangement exists, so feet focus stays with the planner; the requested
+        # kink and ordinary solo entries remain available instead of an empty pool.
+        self.assertEqual(solo, pools["solo"] | pools["solo kink"] | pools["toys"])
+        self.assertFalse(solo & pools["feet"])
         self.assertFalse(solo & (pools["kink"] | pools["oral"] | pools["anal"]))
 
     def test_private_entries_that_break_anatomy_or_safety_are_never_used(self):
@@ -1288,10 +1295,12 @@ class PrivateVocabularyTests(unittest.TestCase):
             with self.subTest(subject=subject, cast=bool(cast)):
                 with patch("goated_prompter.features.dataset.brainstorm.load_vocabulary", return_value=catalog):
                     positions = set(sexual_positions(data))
-                    expected = {"feet"} if "footjob" in subject else {"men", "kink"} if "slave" in subject else {"men"}
+                    # Finish is eligible by default; feet and kink only when requested.
+                    expected = ({"feet", "kink", "men", "finish"} if "footjob" in subject
+                                else {"men", "kink", "finish"} if "slave" in subject else {"men", "finish"})
                     self.assertEqual(positions, expected)
                     picks = [pick_position_ideas(position_groups(data), random.Random(seed), POSITION_IDEAS) for seed in range(30)]
-                    self.assertTrue(all(set(pick) == expected for pick in picks))
+                    self.assertTrue(all(set(pick) <= expected for pick in picks))
                 self.assertFalse(set(sexual_positions(data)) & set(private["man and woman positions"]))
 
     def test_a_master_and_his_male_slave_get_two_men_positions_and_two_male_looks(self):
@@ -1309,7 +1318,7 @@ class PrivateVocabularyTests(unittest.TestCase):
             ("oral positions", vocabulary_record("oral", "oral"))))
         with patch("goated_prompter.features.dataset.brainstorm.load_vocabulary", return_value=catalog):
             positions = set(sexual_positions(data))
-        self.assertEqual(positions, {"men", "bound men"})
+        self.assertEqual(positions, {"men", "bound men", "oral"})
         self.assertFalse(positions & set(private["oral positions"]))
         self.assertFalse(positions & set(private["man and woman positions"]))
         for row in creative_directions(data, range(1, 9), 4).values():

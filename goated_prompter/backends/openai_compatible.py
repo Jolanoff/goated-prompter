@@ -223,6 +223,11 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
                 if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= ceiling:
                     raise BackendConfigurationError(f"Request-local {name} must be between 0 and {ceiling}.")
                 payload[name] = value
+        if self.is_llama_cpp and (penalty := getattr(instruction, "repeat_penalty", None)) is not None:
+            if (isinstance(penalty, bool) or not isinstance(penalty, (int, float))
+                    or not math.isfinite(penalty) or not 0 <= penalty <= 2):
+                raise BackendConfigurationError("Request-local repeat_penalty must be between 0 and 2.")
+            payload["repeat_penalty"] = penalty
         seed = getattr(instruction, "seed", None)
         if type(seed) is int and seed >= 0:
             payload["seed"] = seed
