@@ -7,6 +7,7 @@ from .assignments import dataset_assignments
 from .intent import intent_signature
 from ...presets import get_director_preset
 from .plan import reusable_scene_plan, scene_is_usable, scene_unusable_reason
+from .v2.understanding import confirm
 from ...api.common import STATE, active_job_conflict, engine_request, json_object
 
 
@@ -79,8 +80,34 @@ async def dataset_endpoint(request):
              "workflow_revision": payload.get("workflow_revision")}), status=202)
 
 
+async def confirm_endpoint(request):
+    """Rebuild (issue 106): check and log the confirmed brief, then start Section 2 (scene writing)."""
+    state = request.app[STATE]
+    payload = await json_object(request)
+    if set(payload) != {"brief", "settings"}:
+        raise ValueError("Expected the confirmed brief and prompt-engine settings. Rebuild the frontend if it is out of date.")
+    settings = payload["settings"]
+    if not isinstance(settings, dict) or set(settings) - {"director_profile"}:
+        raise ValueError("Invalid Dataset prompt-engine settings.")
+    brief = confirm(payload["brief"])
+    director = get_director_preset(brief["settings"]["director"], strict=True)
+    async with state.admission:
+        if (conflict := active_job_conflict(state, "Wait for the active generation before generating again.")) is not None:
+            return conflict
+        config = state.config()
+        director_request = engine_request(
+            state, config, settings,
+            idea=brief["input"]["request"], mode="Custom", target_model=brief["settings"]["target"],
+            creativity=brief["settings"]["creativity"], style=brief["settings"]["style"],
+            prompt_length=brief["settings"]["length"], director_preset=director.id,
+        )
+        return web.json_response(state.start_job("dataset_v2_scenes", director_request, config, True,
+            {"operation": "dataset_v2_scenes", "brief": brief}), status=202)
+
+
 def register(app):
     app.add_routes([web.post("/api/workspace/dataset", dataset_endpoint),
                     web.post("/api/workspace/dataset/understand", dataset_endpoint),
+                    web.post("/api/workspace/dataset/v2/confirm", confirm_endpoint),
                     web.post("/api/workspace/dataset/scenes", dataset_endpoint),
                     web.post("/api/workspace/dataset/scene", dataset_endpoint)])

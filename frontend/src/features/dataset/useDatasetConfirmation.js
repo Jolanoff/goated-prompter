@@ -1,10 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../api.js";
-import { canConfirmDatasetReview, datasetRequestSignature, reviseDatasetRequest } from "./datasetState.js";
+import { datasetRequestSignature, reviseDatasetRequest } from "./datasetState.js";
+
+const canConfirm = (review, busy) => review?.status === "ready" && !!review.brief && !busy;
 
 export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm, setError }) {
   const [confirmation, setConfirmation] = useState(null);
   const [understanding, setUnderstanding] = useState(null);
+  // Rebuild (issue 106): the run started by Confirm; the tab's Scenes and Dataset pages show it.
+  const [run, setRun] = useState(null);
   const pending = useRef(null);
   const opener = useRef(null);
   const latestDraft = useRef(draft);
@@ -39,6 +43,17 @@ export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm
         error: job.error || "Request analysis stopped. No ideas, scenes or prompts were generated." });
     }
   }, [confirmation, job]);
+
+  // Follow the run's job: scenes arrive first, then each final prompt.
+  useEffect(() => {
+    if (!run?.jobId || job?.id !== run.jobId) return;
+    const result = job.result?.kind === "dataset_v2_scenes" ? job.result : run.result;
+    const status = job.status === "succeeded" ? "done"
+      : ["failed", "cancelled", "interrupted"].includes(job.status) ? "failed" : "running";
+    if (result === run.result && status === run.status) return;
+    setRun((current) => current?.jobId === job.id ? { ...current, result, status,
+      error: status === "failed" ? job.error || "This run stopped. See the console and the debug files." : "" } : current);
+  }, [job, run]);
 
   useEffect(() => () => { pending.current = null; }, []);
 
@@ -81,7 +96,7 @@ export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm
   }
 
   async function confirmRequest() {
-    if (!canConfirmDatasetReview(confirmation, busy)) return;
+    if (!canConfirm(confirmation, busy)) return;
     if (datasetRequestSignature(latestDraft.current) !== confirmation.baseSignature) {
       setConfirmation((current) => current && { ...current, confirmation_token: "",
         error: "Dataset settings changed during review. Cancel and review the updated request." });
@@ -91,15 +106,16 @@ export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm
     setConfirmation({ ...item, status: "confirming", error: "" });
     try {
       const accepted = await onConfirm(item);
-      if (!accepted) throw new Error("Generation did not start. Your previous batch is unchanged; try again.");
+      if (!accepted) throw new Error("Scene writing could not start. Wait for active work and try again.");
       pending.current = null;
       setUnderstanding({ ...item, status: "confirmed" });
       setConfirmation(null);
+      setRun({ jobId: accepted.id, brief: item.brief, status: "running", result: null, error: "" });
     } catch (err) {
       setConfirmation({ ...item, status: "ready", error: err.message });
     }
   }
 
-  return { confirmation, understanding: confirmation || understanding,
+  return { confirmation, understanding: confirmation || understanding, run,
     requestConfirmation, reviseConfirmation, cancelConfirmation, confirmRequest };
 }

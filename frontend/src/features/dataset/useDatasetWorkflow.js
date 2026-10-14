@@ -12,16 +12,16 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, d
   const [error, setError] = useState("");
   const submission = useRef(false);
   const synced = useRef("");
+  // Rebuild (issue 106): Confirm starts Section 2 (scene writing); its scenes are only logged for now.
   const confirmationFlow = useDatasetConfirmation({ draft, job, busy, onGenerate,
-    onConfirm: admitConfirmed, setError });
-  const datasetJob = ["dataset", "dataset_scenes", "dataset_understanding"].includes(job?.kind);
+    onConfirm: (item) => onGenerate("dataset/v2/confirm", { brief: item.brief }), setError });
+  const datasetJob = ["dataset", "dataset_scenes", "dataset_understanding", "dataset_v2_scenes"].includes(job?.kind);
   const workflowActive = datasetJob && active;
   const disabled = busy || starting || preferences.working || !!confirmationFlow.confirmation;
   const guidedLines = draft?.inputs.split("\n").filter((line) => line.trim()).length || 0;
-  const customReady = draft?.trigger_type !== "Custom" || draft.custom_type.trim();
   const sourceReady = draft?.source_mode !== "guided" || guidedLines > 0;
   const canPlanScenes = draft && !disabled && !noEngine && !preferences.conflict &&
-    draft.subject.trim() && customReady && sourceReady;
+    draft.subject.trim() && sourceReady;
   const staleScenePlan = !!draft?.scene_plan_signature &&
     preferences.record?.scene_plan_matches_settings === false &&
     preferences.record?.draft.scene_plan_signature === draft.scene_plan_signature;
@@ -31,13 +31,13 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, d
   const validSceneCount = draft?.scene_plan?.filter(sceneUsable).length || 0;
   const retryStage = (row) => datasetRetryStage(row, { usable: sceneUsable(row) });
   const scenePlanReady = !staleScenePlan && !!draft?.scene_plan_signature && validSceneCount > 0;
-  const canWrite = canPlanScenes && director && draft.trigger.trim();
+  const canWrite = canPlanScenes && director;
   const canContinue = canWrite && scenePlanReady;
   const remainingPromptCount = draft?.scene_plan?.filter((row) => sceneUsable(row) && !hasCompletedDatasetPrompt(row, draft.results)).length || 0;
 
   useEffect(() => {
     if (!datasetJob || !["failed", "interrupted"].includes(job.status)) return;
-    setError(`${job.kind === "dataset_understanding" ? "Request analysis" : job.kind === "dataset_scenes" ? "Scene planning" : "Dataset generation"} failed. ${job.error || "The prompt engine did not return a usable result."}`);
+    setError(`${job.kind === "dataset_understanding" ? "Request analysis" : job.kind === "dataset_v2_scenes" ? "Scene writing" : job.kind === "dataset_scenes" ? "Scene planning" : "Dataset generation"} failed. ${job.error || "The prompt engine did not return a usable result."}`);
   }, [datasetJob, job?.id, job?.revision, job?.status, job?.kind, job?.error]);
 
   useEffect(() => {

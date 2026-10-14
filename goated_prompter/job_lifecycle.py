@@ -10,7 +10,7 @@ TERMINAL_JOB_STATUSES = frozenset(TERMINAL)
 DATASET_CHECKPOINT_KINDS = frozenset({"dataset", "dataset_scenes"})
 JOB_FAMILIES = {
     "builder": {"builder"}, "refine": {"refine"}, "minimax": {"minimax"},
-    "dataset": {"dataset", "dataset_scenes", "dataset_understanding"},
+    "dataset": {"dataset", "dataset_scenes", "dataset_understanding", "dataset_v2_scenes"},
 }
 
 

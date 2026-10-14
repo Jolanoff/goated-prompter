@@ -63,7 +63,7 @@ class SeededSession:
 def default_dataset_draft():
     return {
         "trigger": "", "trigger_type": "Character", "custom_type": "", "subject": "",
-        "trigger_at_start": False, "trigger_connected": True, "expand_trigger": True,
+        "trigger_at_start": False, "trigger_connected": True, "expand_trigger": True, "nsfw": False,
         "amount": 12,
         "source_mode": "random", "inputs": "", "target": "Generic", "length": "Medium",
         "director_preset": "general_director", "constraints": "",
@@ -108,7 +108,7 @@ def validate_dataset_draft(value, *, generation=False, planning=False):
         raise ValueError("Invalid seed mode.")
     if type(result["amount"]) is not int or not 1 <= result["amount"] <= 25:
         raise ValueError("Dataset prompt amount must be between 1 and 25.")
-    for key in ("trigger_at_start", "trigger_connected", "expand_trigger", "plan_scenes_first"):
+    for key in ("trigger_at_start", "trigger_connected", "expand_trigger", "nsfw", "plan_scenes_first"):
         if type(result[key]) is not bool:
             raise ValueError(f"{key} must be enabled or disabled.")
     if result["trigger_type"] == "Custom" and generation and not result["custom_type"].strip():
@@ -200,7 +200,6 @@ class DatasetService:
         spec = SceneSpec.from_dict(plan_item["scene_spec"])
         strategies = validation_strategies(spec)
         original = instruction
-        retry_repeat_penalty = 1.1 if original.model_family == "gemma" else original.repeat_penalty
         warnings = []
         def validate(raw, attempt):
             warnings.clear()
@@ -281,8 +280,7 @@ class DatasetService:
                     system_message=original.system_message + "\nOUTPUT CORRECTION: Write a shorter finite prompt for the accepted scene. Finish without repetition.",
                     max_tokens=max(384, int(original.max_tokens * (.8 ** (attempt + 1)))),
                     hard_max_tokens=max(384, int(original.hard_max_tokens * (.8 ** (attempt + 1)))),
-                    diagnostic_stage=original.diagnostic_stage + f":loop_retry_{attempt + 1}", temperature=.25, top_p=.85,
-                    repeat_penalty=retry_repeat_penalty)
+                    diagnostic_stage=original.diagnostic_stage + f":loop_retry_{attempt + 1}", temperature=.25, top_p=.85)
                 continue
             except BackendGenerationError:
                 self.checkpoint()
@@ -300,8 +298,7 @@ class DatasetService:
                     raise BackendGenerationError(f"Dataset prompt {index} remained invalid after {retries} {label}. {exc}") from exc
                 instruction = replace(instruction,
                     system_message=original.system_message + "\nFINAL OUTPUT CORRECTION: " + str(exc),
-                    diagnostic_stage=original.diagnostic_stage + f":output_retry_{attempt + 1}", temperature=.25, top_p=.85,
-                    repeat_penalty=retry_repeat_penalty)
+                    diagnostic_stage=original.diagnostic_stage + f":output_retry_{attempt + 1}", temperature=.25, top_p=.85)
             else:
                 session.emit_activity("validation", workflow="dataset", attempt=attempt, accepted=True)
                 return prompt, list(warnings)
@@ -331,14 +328,14 @@ class DatasetService:
                                         "status": "valid" if status == "valid" and not warnings else "unverified"}
         for draft, verified in zip(drafts, check(drafts)):
             record = records[draft["index"]] = {"index": draft["index"], "verdict": verified["scene_status"],
-                                                "reason": verified.get("failure_reason", ""), "rewritten": False,
-                                                "first_draft": draft["prompt"]}
+                                                "reason": verified.get("failure_reason", ""), "rewritten": False}
             audit["checked"] += 1
             if verified["scene_status"] not in {"failed", "repair_required"}:
                 audit["passed_unchanged"] += 1
                 keep(draft, draft["prompt"], draft["warnings"], verified)
                 continue
             audit["flagged"] += 1
+            record["first_draft"] = draft["prompt"]
             reason = verified.get("failure_reason", "Essential fidelity conflict.")
             correction = "Repair only these final-prompt fidelity problems, preserving the other details: " + reason
             original = draft["instruction"]
@@ -387,7 +384,6 @@ class DatasetService:
         return outcome["prompt"]
 
     def run(self, request, data, progress, partial, *, scenes_only=False, scene_action=None, valid_only=False, resume=False):
-        self.fidelity_audit = new_fidelity_audit()
         if resume and (scenes_only or scene_action):
             raise ValueError("Continue is only available for batch prompt generation.")
         if scene_action and scene_action[0] not in {"regenerate_idea", "regenerate_prompt", "validate_scene"}:

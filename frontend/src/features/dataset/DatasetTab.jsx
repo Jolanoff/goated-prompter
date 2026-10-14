@@ -9,7 +9,8 @@ import { datasetCopyText, datasetJsonl, datasetGenerationLog } from "./datasetEx
 import { editDatasetPlan } from "./datasetState.js";
 import { useDatasetWorkflow } from "./useDatasetWorkflow.js";
 import DatasetConfirmationModal from "./DatasetConfirmationModal.jsx";
-import { maxSeed, seedModes, triggerTypes } from "./options.js";
+import { RunPrompts, RunScenes } from "./DatasetRunPages.jsx";
+import { maxSeed, seedModes } from "./options.js";
 import { styles } from "../../shared/workflow/options.js";
 
 const datasetPages = [["configure", "Configure"], ["scenes", "Scenes"], ["dataset", "Dataset"]];
@@ -77,7 +78,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
     guidedLines, canPlanScenes, staleScenePlan, sceneUsable, validSceneCount, retryStage,
     canWrite, canContinue, remainingPromptCount, updateSceneSettings, updateWriterSettings,
     sceneAction, generateDataset, generateScenes, continueDataset, editResult, releaseCheckpoints, clearResults,
-    confirmation, understanding, reviseConfirmation, cancelConfirmation, confirmRequest } = useDatasetWorkflow({ preferences, job, busy, active, noEngine,
+    confirmation, understanding, run, cancelConfirmation, confirmRequest } = useDatasetWorkflow({ preferences, job, busy, active, noEngine,
       director, onGenerate: startGeneration, onReleaseJobs });
   const [clock, setClock] = useState(Date.now());
 
@@ -115,9 +116,23 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
       advancingJob.current = "";
     }
   }, [job, active]);
-  const triggerParts = draft?.trigger_connected === false
-    ? draft.trigger.split(/(?:[,\n]+|\s+and\s+)/i).map((part) => part.trim()).filter(Boolean)
-    : draft?.trigger.trim() ? [draft.trigger.trim()] : [];
+
+  // Rebuild (issue 106): after Confirm, show Scenes while scenes are written, then Dataset once prompts arrive.
+  const shownRun = useRef("");
+  const advancedRun = useRef("");
+  useEffect(() => {
+    if (!run) return;
+    if (shownRun.current !== run.jobId) {
+      shownRun.current = run.jobId;
+      setPage("scenes");
+      window.scrollTo({ top: 0 });
+    }
+    if (advancedRun.current !== run.jobId && run.result?.prompts?.length) {
+      advancedRun.current = run.jobId;
+      setPage("dataset");
+      window.scrollTo({ top: 0 });
+    }
+  }, [run]);
 
   function exportDataset(name, content, type) {
     download(name, content, type);
@@ -190,7 +205,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
     <WorkflowSettingsStatus settings={preferences} label="Dataset" className="" />
     <div className={ui.workflowStatus}>
       <span>{noEngine ? "Choose a prompt engine in Builder or Settings to generate." : `Engine: ${engineLabel}`}</span>
-      <span role="status" className="flex items-center gap-2">{workflowActive && <LoaderCircle size={15} className="dataset-loader" aria-hidden="true" />}{workflowActive ? job.status === "cancelling" ? "Ending batch…" : <>{job.progress || "Starting dataset generation…"}{stageSeconds >= 5 && ` · ${elapsedLabel(stageSeconds)}`}</> : `${draft?.results.length || 0} prompts in the current batch${failedItems.length ? ` · ${failedItems.length} failed` : ""}`}</span>
+      <span role="status" className="flex items-center gap-2">{workflowActive && <LoaderCircle size={15} className="dataset-loader" aria-hidden="true" />}{workflowActive ? job.status === "cancelling" ? "Ending batch…" : <>{job.progress || "Starting dataset generation…"}{stageSeconds >= 5 && ` · ${elapsedLabel(stageSeconds)}`}</> : run ? `${run.result?.prompts?.length || 0} prompts in the current batch` : `${draft?.results.length || 0} prompts in the current batch${failedItems.length ? ` · ${failedItems.length} failed` : ""}`}</span>
       {active && <button className={ui.button} onClick={onCancel} disabled={job.status === "cancelling"}>End generation</button>}
     </div>
     </div>
@@ -208,18 +223,18 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
             <h3>Dataset configuration</h3><p>The subject, concept, and rules for your batch.</p>
           </header>
           <fieldset disabled={disabled} className="dataset-config-fields">
-            <label className={ui.field}><span>Dataset idea</span>
-              <textarea className={ui.ideaInput} aria-label="Dataset idea" maxLength={10000}
+            <label className={ui.field}><span>Request</span>
+              <textarea className={ui.ideaInput} aria-label="Request" maxLength={10000}
                 value={draft.subject} onChange={(event) => updateSceneSettings({ subject: event.target.value })}
                 placeholder="A woman doing funny stuff · a dog going on small adventures · a knight doing office work" />
             </label>
-            <div className="dataset-subject-fields">
-              <label className={ui.field}><span>Subject type</span>
-              <select className={ui.select} aria-label="Subject type" value={draft.trigger_type}
-                onChange={(event) => updateSceneSettings({ trigger_type: event.target.value })}>
-                {triggerTypes.map((item) => <option key={item}>{item}</option>)}
-              </select>
+            <label className={ui.choiceCard}>
+              <input type="checkbox" className="mt-0.5" aria-label="NSFW"
+                checked={draft.nsfw === true} onChange={(event) => updateSceneSettings({ nsfw: event.target.checked })} />
+              <span><strong className="block">NSFW</strong>
+                <small className="mt-1 block leading-relaxed text-muted">On: adult characters and your NSFW vocabulary. Off: safe-for-work images.</small></span>
             </label>
+            <div className="dataset-subject-fields">
               <label className={ui.field}><span>Amount</span>
                 <select className={ui.select} aria-label="Number of prompts" value={draft.amount}
                   onChange={(event) => updateSceneSettings({ amount: Number(event.target.value) })}>
@@ -228,23 +243,20 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                 </select>
               </label>
             </div>
-            {draft.trigger_type === "Custom" && <label className={ui.field}><span>Custom subject kind</span>
-              <input className={ui.input} aria-label="Custom subject kind" maxLength={120} value={draft.custom_type}
-                onChange={(event) => updateSceneSettings({ custom_type: event.target.value })} placeholder="e.g. architecture language, mascot, material" />
-            </label>}
-             <label className={ui.field}><span><Tag size={14} aria-hidden="true" />Trigger text</span>
+             <label className={ui.field}><span><Tag size={14} aria-hidden="true" />Trigger text (optional, for LoRA)</span>
               <textarea className={`${ui.notesInput} dataset-trigger-input`} aria-label="Trigger text or terms" maxLength={1000} value={draft.trigger}
                 onChange={(event) => updateWriterSettings({ trigger: event.target.value })} placeholder="e.g. old lady with dark hair · or woman, cake" />
-               <small className={ui.directorDescription}>Exact wording to include in each prompt.</small>
+               <small className={ui.directorDescription}>Exact wording to include in each prompt. Leave empty for no trigger.</small>
              </label>
              <details className="dataset-details dataset-advanced">
                <summary><SlidersHorizontal size={14} aria-hidden="true" /><span>Advanced options</span>
                  {draft.constraints.trim() && <span className="dataset-rules-indicator">Rules added</span>}<ChevronDown size={14} aria-hidden="true" /></summary>
                <div className="dataset-config-fields mt-4">
-                 <label className={ui.field}><span>Consistency and variation rules (optional)</span>
-                   <textarea className={ui.notesInput} aria-label="Consistency and variation rules" maxLength={10000}
+                 <label className={ui.field}><span>Consistency rules (optional)</span>
+                   <textarea className={ui.notesInput} aria-label="Consistency rules" maxLength={10000}
                      value={draft.constraints} onChange={(event) => updateSceneSettings({ constraints: event.target.value })}
-                     placeholder="Same hairstyle and outfit. No outdoor scenes. Each image shows a different mishap…" />
+                     placeholder={"Same hairstyle and outfit\nNo outdoor scenes\nEach image shows a different mishap"} />
+                   <small className={ui.directorDescription}>One rule per line.</small>
                  </label>
                  <div className="dataset-subject-fields">
                    <label className={ui.field}><span>Seed</span>
@@ -268,27 +280,11 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                <div className="mt-4 grid gap-4">
             <div className="grid gap-2">
                <label className={ui.choiceCard}>
-                 <input type="checkbox" className="mt-0.5" aria-label="Allow trigger expansion"
-                  checked={draft.expand_trigger !== false} onChange={(event) => updateWriterSettings({ expand_trigger: event.target.checked })} />
-                 <span title="On: natural articles, capitalization and added descriptors are allowed while each subject stays mentioned. Off: preserve each trigger term exactly as typed and avoid unsolicited identity, appearance, design, material or style details. Explicit concept and rule requirements remain allowed."><strong className="block">Allow trigger expansion</strong>
-                    <small className="mt-1 block leading-relaxed text-muted">On: expand wording; terms stay together or spread out as reads best. Off: keep exact trigger terms.</small></span>
-              </label>
-               <label className={ui.choiceCard}>
                  <input type="checkbox" className="mt-0.5" aria-label="Require trigger at beginning"
                   checked={draft.trigger_at_start === true} onChange={(event) => updateWriterSettings({ trigger_at_start: event.target.checked })} />
-                 <span title="Beginning placement is a preference; it never makes an otherwise usable prompt fail."><strong className="block">Require trigger at beginning</strong>
-                   <small className="mt-1 block leading-relaxed text-muted">Prefer the trigger before other details.</small></span>
+                 <span><strong className="block">Require trigger at start</strong>
+                   <small className="mt-1 block leading-relaxed text-muted">On: every prompt starts with the trigger. Off: the trigger goes wherever it fits naturally in the prompt.</small></span>
               </label>
-               {draft.expand_trigger === false && <label className={ui.choiceCard}>
-                 <input type="checkbox" className="mt-0.5" aria-label="Keep trigger text connected"
-                  checked={draft.trigger_connected !== false} onChange={(event) => updateWriterSettings({ trigger_connected: event.target.checked })} />
-                 <span title="Turn off to distribute comma-, line-, or ‘and’-separated terms. Grouping is a preference; exact wording is required when trigger expansion is off."><strong className="block">Keep trigger connected</strong>
-                   <small className="mt-1 block leading-relaxed text-muted">Keep terms together, or distribute them.</small></span>
-              </label>}
-              {draft.expand_trigger === false && draft.trigger_connected === false && triggerParts.length > 0 && <p className={ui.subtleNote}>
-                {triggerParts.length === 1 ? "One required term detected. Add commas, new lines, or “and” to distribute multiple terms: " : "Required distributed terms: "}
-                {triggerParts.map((part) => `“${part}”`).join(" · ")}
-              </p>}
             </div>
               </div>
              </details>
@@ -370,7 +366,8 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
       </div>
 
       <div id="dataset-scenes" role="tabpanel" aria-labelledby="dataset-tab-scenes" tabIndex={0} hidden={page !== "scenes"}>
-      {page === "scenes" && <section className={`${ui.panel} dataset-scenes-panel`} aria-label="Scene Planner ideas">
+      {page === "scenes" && run && <RunScenes run={run} onCopy={onCopy} onDownload={download} />}
+      {page === "scenes" && !run && <section className={`${ui.panel} dataset-scenes-panel`} aria-label="Scene Planner ideas">
         <header className={ui.panelHeader}>
           <div className={ui.panelIcon}><Layers3 size={21} /></div>
            <div className={ui.panelHeading}><h2>Ideas and scenes</h2>
@@ -452,7 +449,8 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
       </div>
 
       <div id="dataset-dataset" role="tabpanel" aria-labelledby="dataset-tab-dataset" tabIndex={0} hidden={page !== "dataset"}>
-      {page === "dataset" && <section aria-label="Dataset results">
+      {page === "dataset" && run && <RunPrompts run={run} onCopy={onCopy} onDownload={download} />}
+      {page === "dataset" && !run && <section aria-label="Dataset results">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div><h3 className="font-display text-lg font-bold">Generated dataset</h3>
             <p className="mt-1 text-xs text-muted">Completed prompts appear as the batch runs and remain editable.</p></div>
@@ -498,7 +496,8 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
       </section>}
       </div>
     </>}
-    {confirmation && <DatasetConfirmationModal review={confirmation} busy={busy} onRevise={reviseConfirmation}
+    {confirmation && <DatasetConfirmationModal review={confirmation} busy={busy}
+      directorLabel={director ? presetDisplayLabel(director) : ""}
       onConfirm={confirmRequest} onCancel={cancelConfirmation} onExport={exportGenerationLog} />}
   </div>;
 }

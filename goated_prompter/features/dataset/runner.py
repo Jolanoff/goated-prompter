@@ -1,15 +1,43 @@
 """Dataset job execution: understanding, and scene/prompt batches with durable checkpoints."""
 
 from ...backends.base import BackendGenerationError
+from ...backends.factory import create_backend
+from ...director_profiles import resolve_director_config
 from .service import DatasetService
-from .understanding import DatasetUnderstandingService, confirmation_summary
+from .v2.prompts import write_prompts
+from .v2.scenes import write_scenes
+from .v2.understanding import understand
 
 
 def run_dataset_understanding(state, job, request, config, workflow):
-    brief = DatasetUnderstandingService(config, job.checkpoint).run(request, workflow["input"], job.set_progress)
-    job.commit(lambda: {"ok": True, "kind": "dataset_understanding",
-                       "summary": confirmation_summary(brief),
-                       **state.dataset_intents.register(workflow["input"], brief)}, finish=True)
+    # Rebuild (issue 106): the tab's Understand button runs only the new Understanding.
+    brief = understand(config, request, workflow["input"], checkpoint=job.checkpoint, progress=job.set_progress)
+    job.commit(lambda: {"ok": True, "kind": "dataset_understanding", "brief": brief}, finish=True)
+
+
+def run_dataset_v2_scenes(state, job, request, config, workflow):
+    # Rebuild (issue 106): Confirm runs Section 2 (scenes) and Section 3 (final prompts through the Builder).
+    # The scenes are published as soon as they exist, then each final prompt as it is written.
+    def publish(value, message):
+        def apply():
+            with job.lock:
+                job.result = {"ok": True, "kind": "dataset_v2_scenes", **value}
+                job.record_event(message, "result")
+        job.commit(apply)
+    written = []
+    def on_prompt(item):
+        written.append(item)
+        publish({**result, "stage": "prompts", "prompts": list(written)},
+                f"Final prompt {item['index']} of {len(result['scenes'])} is ready.")
+    # One session held for the whole run: the scene steps and every Builder call share the loaded
+    # model instead of each releasing it (a release with no other holder unloads the model).
+    effective, _ = resolve_director_config(config, request)
+    with create_backend(effective).generation_session():
+        result = write_scenes(config, request, workflow["brief"], checkpoint=job.checkpoint, progress=job.set_progress)
+        publish({**result, "stage": "prompts", "prompts": []}, f"{result['written']} scenes are ready; writing final prompts.")
+        prompts = write_prompts(config, request, workflow["brief"], result["scenes"],
+                                checkpoint=job.checkpoint, progress=job.set_progress, on_prompt=on_prompt)
+    job.commit(lambda: {"ok": True, "kind": "dataset_v2_scenes", **result, "stage": "done", "prompts": prompts}, finish=True)
 
 
 def run_dataset(state, job, request, config, workflow):
