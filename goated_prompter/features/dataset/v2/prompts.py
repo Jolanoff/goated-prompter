@@ -18,8 +18,8 @@ from .debug import DebugTrace
 
 SCENE_ORDER = ("subjects", "position", "actions", "space", "lighting", "mood", "camera", "extras")
 
-SCENE_RULES = """DATASET SCENE (fixed)
-The idea is one scene of an image-training dataset, already decided. Write it as one prompt for the
+SCENE_RULES = """
+The idea is one scene of an IMAGE, already decided. Write it as one prompt for the
 target model. Keep every person, their appearance, every placement, orientation, support, contact
 and the action exactly as given; do not move anyone, change the action or add contact. Add only
 wording the target format needs."""
