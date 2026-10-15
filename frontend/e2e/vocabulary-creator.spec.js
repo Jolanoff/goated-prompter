@@ -4,7 +4,7 @@ const id = "ui_creator";
 async function openCreator(page) {
   await page.goto("/");
   await page.getByRole("button", { name: "Vocabulary", exact: true }).click();
-  await page.getByRole("button", { name: "Creator", exact: true }).click();
+  await page.getByRole("button", { name: "Create a pack", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Pack details", exact: true })).toBeVisible();
   await expect(page.getByRole("textbox", { name: "ID", exact: true })).toBeEnabled();
 }
@@ -69,7 +69,7 @@ test("saved editable drafts reopen after reload; unsaved replacement requires co
   await page.getByRole("button", { name: "New pack", exact: true }).click(); await confirm(page);
   await page.reload();
   await page.getByRole("button", { name: "Vocabulary", exact: true }).click();
-  await page.getByRole("button", { name: "Creator", exact: true }).click();
+  await page.getByRole("button", { name: "Create a pack", exact: true }).click();
   await page.getByLabel("Reopen draft", { exact: true }).selectOption({ label: `Persistent visual draft (${id})` });
   await expect(page.getByRole("textbox", { name: "Name", exact: true })).toHaveValue("Persistent visual draft");
   await page.locator(".creator-rail .vocabulary-entry-choice").click();

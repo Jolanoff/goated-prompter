@@ -75,6 +75,34 @@ def terms(text):
     return [stem(word) for word in tokens(text) if word not in STOPWORDS and word not in NEGATIONS]
 
 
+# Prepositions that can say where a scene is ("on a train platform", "in a dark forest").
+LOCATIVES = frozenset("in on at inside outside under beneath near beside across through around atop onto into within "
+                      "along above below over".split())
+
+
+def place_phrases(text):
+    """[(preposition, terms)]: each locative preposition with the first content words after it in its clause
+    (at most two): "hugging on a train platform" -> [("on", ["train", "platform"])]. Whether a phrase names a
+    place the vocabulary knows, a position or a category is for the caller to decide."""
+    found = []
+    for clause in re.split(r"[.,;:!?\n()]+", str(text or "")):
+        words = tokens(clause)
+        for index, word in enumerate(words):
+            if word not in LOCATIVES or (index and words[index - 1] in NEGATIONS):
+                continue
+            following = []
+            for other in words[index + 1:]:
+                if other in LOCATIVES or other in _CLAUSE_END or other in NEGATIONS:
+                    break
+                if other not in STOPWORDS:
+                    following.append(stem(other))
+                    if len(following) == 2:
+                        break
+            if following:
+                found.append((word, following))
+    return found
+
+
 def split_negated(text):
     """(positive terms, negated terms). A negation word rules out the next content words of its clause.
 

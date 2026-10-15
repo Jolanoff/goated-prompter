@@ -19,7 +19,9 @@ PACKS = ROOT / "vocabulary" / "packs"
 CORE = read_pack(BUNDLED_DIRS[0], bundled=True)
 FANTASY = read_pack(PACKS / "fantasy", bundled=False)
 ADULT = read_pack(PACKS / "adult", bundled=False)
-REGISTRY = build_registry([CORE, FANTASY, ADULT])
+# The opt-in kinks pack is not an official pack: it is installed (or not) from vocabulary/optional.
+KINKS = read_pack(ROOT / "vocabulary" / "optional" / "adult_kinks", bundled=False)
+REGISTRY = build_registry([CORE, FANTASY, ADULT, KINKS])
 INDEX = VocabularyIndex(REGISTRY)
 GENERAL_DIRECTOR = ("Act as a disciplined general visual director. Convert the current task into one coherent, production-ready "
                     "prompt whose subject, action or state, environment, spatial relationships, composition, viewpoint, materials, "
@@ -52,17 +54,18 @@ def bodies(found):
 
 class Packs(unittest.TestCase):
     def test_three_packs_load_with_their_dependencies(self):
-        self.assertEqual((CORE.manifest["version"], FANTASY.manifest["version"], ADULT.manifest["version"]),
-                         ("1.1.0", "1.0.0", "1.0.0"))
-        for pack in (FANTASY, ADULT):
-            self.assertEqual(pack.manifest["requires"], {"core": ">=1.1.0 <2.0.0"})
-        self.assertLessEqual(len(REGISTRY.ids()), 150, "a minimal set, not a catalogue")
+        self.assertEqual((CORE.manifest["version"], FANTASY.manifest["version"], ADULT.manifest["version"], KINKS.manifest["version"]),
+                         ("1.1.0", "1.0.0", "2.0.0", "1.0.0"))
+        for pack in (FANTASY, ADULT, KINKS):
+            self.assertEqual(pack.manifest["requires"], {"core": ">=1.1.0 <2.0.0"}, "kinks never depend on the adult pack")
+        self.assertGreaterEqual(len(ADULT.entries), 200)
+        self.assertGreaterEqual(len(KINKS.entries), 100)
 
     def test_ratings(self):
         for entry_id in REGISTRY.ids():
             rating = REGISTRY.resolved(entry_id).get("rating", "general")
             with self.subTest(entry=entry_id):
-                if REGISTRY.owner(entry_id) == "adult" or entry_id == "core:position.from_behind":
+                if REGISTRY.owner(entry_id) in ("adult", "adult_kinks") or entry_id == "core:position.from_behind":
                     self.assertEqual(rating, "adult")
                 else:
                     self.assertEqual(rating, "general")
@@ -140,9 +143,9 @@ class Compatibility(unittest.TestCase):
 
     def test_restrained_hands_cannot_hold(self):
         cast = [{"id": "a", "body": "core:body.human"}]
-        objects = [{"id": "cuffs", "item": "adult:item.handcuffs"}, {"id": "toy", "item": "adult:item.vibrator"}]
+        objects = [{"id": "cuffs", "item": "adult_kinks:item.handcuffs"}, {"id": "toy", "item": "adult:item.vibrator"}]
         both = resolve(REGISTRY, {"cast": cast, "objects": objects, "use": [
-            {"entry": "adult:action.restrained", "bind": {"bound": "a", "restraint": "cuffs"}},
+            {"entry": "adult_kinks:action.restrained", "bind": {"bound": "a", "restraint": "cuffs"}},
             {"entry": "adult:action.toy_play", "bind": {"user": "a", "toy": "toy"}}]})
         self.assertEqual(both.status, "conflict")
         shared = resolve(REGISTRY, {"cast": cast, "objects": objects[1:], "use": [
@@ -232,7 +235,7 @@ class Retrieval(unittest.TestCase):
         ("Doggy style", (WOMAN, MAN), True, {"core:position.from_behind"}),
         ("A woman giving a blowjob", (WOMAN, MAN), True, {"adult:action.oral"}),
         ("A woman using a vibrator", (WOMAN,), True, {"adult:item.vibrator"}),
-        ("A man handcuffed to the bed", (WOMAN, MAN), True, {"adult:action.restrained", "adult:item.handcuffs"}),
+        ("A man handcuffed to the bed", (WOMAN, MAN), True, {"adult_kinks:action.restrained", "adult_kinks:item.handcuffs"}),
         ("Standing from behind against a wall", (WOMAN, MAN), True, {"adult:position.standing_behind", "core:space.wall"}),
         ("Sixty-nine", (WOMAN, MAN), True, {"adult:position.sixty_nine"}),
         ("Two women fingering each other", (WOMAN, {**WOMAN, "label": "woman 2"}), True, {"adult:action.manual"}),
@@ -281,8 +284,8 @@ class Retrieval(unittest.TestCase):
         nsfw_director = ("Describe anatomy, pose, contact, weight distribution and spatial relationships so bodies remain "
                          "credible; keep face, body and genitals logically positioned; one person per attribute block.")
         for text, cast, director, allowed in (
-                ("a woman in lingerie posing on a bed", (WOMAN,), nsfw_director, {"core:space.bed"}),
-                ("a couple making out on the couch", (WOMAN, MAN), nsfw_director, {"core:space.sofa"}),
+                ("a woman in lingerie posing on a bed", (WOMAN,), nsfw_director, {"core:space.bed", "adult:item.lingerie"}),
+                ("a couple making out on the couch", (WOMAN, MAN), nsfw_director, {"core:space.sofa", "adult:action.making_out"}),
                 ("a quiet afternoon", (WOMAN,), GENERAL_DIRECTOR, set())):
             with self.subTest(request=text):
                 found = ask(text, characters=cast, nsfw=True, director=director)
@@ -304,9 +307,9 @@ class Retrieval(unittest.TestCase):
             ("A red sports car on a mountain road at dusk", (), False, set()),
             ("A castle on a hill under a starry sky", (), False, set()),
             ("Two friends hugging after a long trip", (WOMAN, MAN), False, {"core:action.hug"}),
-            ("A woman in lingerie posing on a bed", (WOMAN,), True, {"core:space.bed"}),
-            ("A naked man taking a shower", (MAN,), True, set()),
-            ("A couple making out on the couch", (WOMAN, MAN), True, {"core:space.sofa"}),
+            ("A woman in lingerie posing on a bed", (WOMAN,), True, {"core:space.bed", "adult:item.lingerie"}),
+            ("A naked man taking a shower", (MAN,), True, {"adult:space.shower"}),
+            ("A couple making out on the couch", (WOMAN, MAN), True, {"core:space.sofa", "adult:action.making_out"}),
         ]
         for text, characters, nsfw, allowed in cases:
             with self.subTest(request=text):

@@ -307,11 +307,15 @@ class Section2Vocabulary(Section2Run):
 
     # -- pollution
     def test_unrelated_vocabulary_does_not_reach_scene_planning(self):
-        for request in ("a red sports car on a mountain road at dusk", "a quiet afternoon reading"):
-            with self.subTest(request=request):
-                _, log = self.run_scenes(brief(request, characters=PEOPLE if "afternoon" in request else []))
-                self.assertEqual(log["provided"], [])
-                self.assertFalse([user for user in self.users("concepts") if "vocabulary" in user])
+        _, log = self.run_scenes(brief("a red sports car on a mountain road at dusk", characters=[]))
+        self.assertEqual(log["provided"], [])
+        self.assertFalse([user for user in self.users("concepts") if "vocabulary" in user])
+        # People with an open arrangement and place get ideas for those two only, never unrelated entries.
+        _, log = self.run_scenes(brief("a quiet afternoon reading", characters=PEOPLE))
+        self.assertEqual(log["entries"], [])
+        self.assertEqual({entry["category"] for entry in log["inspiration"]}, {"position", "space"})
+        self.assertTrue(all(entry["pack"] == "core" and entry["rating"] == "general" for entry in log["inspiration"]))
+        self.assertTrue(all(len(entry["binding"] or {}) == 2 or entry["category"] == "space" for entry in log["inspiration"]))
         _, log = self.run_scenes(brief("two friends hugging on a sofa", characters=PEOPLE))
         unrelated = {"scene:action.duel", "scene:position.aerial_carry", "fantasy:action.cast_on", "adult:item.dildo"}
         self.assertFalse(unrelated & set(log["provided"]), log["provided"])
@@ -348,6 +352,86 @@ class ProductionPacks(Section2Run):
         self.assertNotIn("adult:position.cowgirl", log["provided"])
         self.assertEqual(log["allowed_ratings"], ["general", "mature", "adult"])
         self.assertTrue(all(set(scene["subjects"]) == {"woman", "man"} for scene in result["scenes"]))
+
+    # -- inspiration: a broad request, per image, rotated by the seed
+    def broad(self, seed=4, amount=6):
+        men = [{"label": "man 1", "gender": "male", "custom": "", "pronoun": "he"},
+               {"label": "man 2", "gender": "male", "custom": "", "pronoun": "he"}]
+        value = brief("Two adult men having sex", characters=men, nsfw=True, amount=amount)
+        value["randomized"] = "sex positions, location, lighting"
+        value["input"]["seed"] = seed
+        return value
+
+    def test_a_broad_nsfw_brief_gets_ideas_for_each_image(self):
+        result, log = self.run_scenes(self.broad())
+        self.assertTrue(result["complete"])
+        self.assertEqual(log["entries"], [], "the request names no entry")
+        self.assertTrue(log["provided"])
+        self.assertEqual(log["intent"]["content"], "adult")
+        self.assertEqual(len(log["scenes"]), 6)
+        concept = self.users("concepts")[0]["vocabulary"]
+        self.assertIn("optional inspiration", concept)
+        lines = {line.split(": ", 1)[0]: line.split(": ", 1)[1] for line in concept.splitlines() if line.startswith("- concept ")}
+        self.assertEqual(sorted(lines), [f"- concept {number}" for number in range(1, 7)])
+        # Staging is batched by five: the second staging request writes image 6 and gets image 6's ideas as its concept 1.
+        second = self.users("stagings")[1]["vocabulary"]
+        self.assertIn(f"- concept 1: {lines['- concept 6']}", second)
+        self.assertNotIn("- concept 2: ", second)
+        self.assertFalse([user for user in self.users("scenes") if "vocabulary" in user], "description never gets it")
+        names = {entry["id"]: entry["name"] for entry in log["inspiration"]}
+        self.assertEqual(lines["- concept 6"], "; ".join(names[entry_id] for entry_id in log["scenes"][5]["ideas"]))
+
+    def test_each_concept_and_staging_request_gets_its_own_images_ideas(self):
+        with mock.patch.object(scenes, "PLAN_BATCH", 4), mock.patch.object(scenes, "BATCH", 2):
+            result, log = self.run_scenes(self.broad(seed=8, amount=6))
+        self.assertTrue(result["complete"])
+        names = {entry["id"]: entry["name"] for entry in log["inspiration"]}
+        expected = {scene["scene"]: "; ".join(names[entry_id] for entry_id in scene["ideas"]) for scene in log["scenes"]}
+        self.assertTrue(all(expected.values()), "every image has ideas")
+
+        def lines(user):
+            return [line.split(": ", 1)[1] for line in user["vocabulary"].splitlines() if line.startswith("- concept ")]
+        self.assertEqual([lines(user) for user in self.users("concepts")], [[expected[n] for n in (1, 2, 3, 4)], [expected[5], expected[6]]])
+        self.assertEqual([lines(user) for user in self.users("stagings")],
+                         [[expected[1], expected[2]], [expected[3], expected[4]], [expected[5], expected[6]]])
+
+    def test_the_seed_rotates_the_ideas_reproducibly(self):
+        def vocabulary(seed):
+            self.run_scenes(self.broad(seed))
+            return self.users("concepts")[0]["vocabulary"]
+        first = vocabulary(4)
+        self.assertEqual(first, vocabulary(4))
+        self.assertTrue(any(first != vocabulary(other) for other in (5, 6, 7)))
+
+    def test_the_log_is_the_engines_result_for_this_brief(self):
+        from goated_prompter.features.vocabulary.retrieval import RetrievalConfig, RetrievalRequest, retrieve
+        value = self.broad()
+        _, log = self.run_scenes(value)
+        found = retrieve(self.packs.registry(), RetrievalRequest.from_brief(value),
+                         RetrievalConfig(allowed_ratings=("general", "mature", "adult")))
+        self.assertEqual(log["inspiration"], found.to_dict()["inspiration"])
+        self.assertEqual(log["scenes"], found.scenes(6))
+        self.assertEqual(log["seed"], 4)
+
+    def test_a_fixed_action_and_place_get_no_competing_ideas(self):
+        value = brief("A woman and a man hugging goodbye on a train platform", characters=PEOPLE)
+        value["randomized"] = "clothing, facial expression, lighting, weather, train station details, camera angle"
+        _, log = self.run_scenes(value)
+        self.assertEqual(log["provided"], ["core:action.hug"])
+        self.assertEqual(log["inspiration"], [])
+
+    def test_an_incompatible_pack_leaves_section_2_unchanged(self):
+        folder = self.root / "no-installed" / "future"
+        folder.mkdir(parents=True)
+        (folder / "manifest.json").write_text(json.dumps({"spec": 1, "id": "future", "name": "Future", "version": "1.0.0",
+                                                          "rating": "general", "requires": {"core": ">=9.0.0"},
+                                                          "files": ["entries.json"]}), encoding="utf-8")
+        (folder / "entries.json").write_text(json.dumps({"spec": 1, "entries": []}), encoding="utf-8")
+        result, log = self.run_scenes(self.broad())
+        self.assertIn("requires core", log["error"])
+        self.assertEqual(result["vocabulary"], {"enabled": True, "provided": []})
+        self.assertFalse([user for stage in ("concepts", "stagings") for user in self.users(stage) if "vocabulary" in user])
+        self.assertTrue(result["complete"])
 
     def test_a_disabled_official_pack_is_not_offered(self):
         self.packs.set_enabled("adult", False)

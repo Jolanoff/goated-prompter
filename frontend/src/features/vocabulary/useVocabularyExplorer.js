@@ -2,6 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../../api.js";
 
 export const packKey = (pack) => `${pack.origin}:${pack.id}`;
+export const PREVIEW_SCENES = 6;
+const MAX_SEED = 2147483647;
+
+const lines = (text) => String(text || "").split("\n").map((line) => line.trim()).filter(Boolean);
+
+// The sample stands for a confirmed brief: its request, characters, what may vary and what to avoid.
+export function inspectionPayload(sample) {
+  const seed = Number.parseInt(String(sample.seed ?? "0"), 10);
+  return { request: sample.request, nsfw: sample.nsfw, characters: lines(sample.characters),
+    randomized: String(sample.randomized || ""), avoid: lines(sample.avoid),
+    seed: Number.isFinite(seed) && seed >= 0 ? Math.min(seed, MAX_SEED) : 0, scenes: PREVIEW_SCENES };
+}
 
 export function useVocabularyExplorer({ visible, packs, revision }) {
   const [selectedPack, setSelectedPack] = useState("");
@@ -13,7 +25,7 @@ export function useVocabularyExplorer({ visible, packs, revision }) {
   const [detail, setDetail] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
-  const [sample, setSample] = useState({ request: "", characters: "", nsfw: false });
+  const [sample, setSample] = useState({ request: "", characters: "", nsfw: false, randomized: "", avoid: "", seed: "0" });
   const [result, setResult] = useState(null);
   const [inspecting, setInspecting] = useState(false);
   const [inspectionError, setInspectionError] = useState("");
@@ -71,8 +83,7 @@ export function useVocabularyExplorer({ visible, packs, revision }) {
     const controller = new AbortController(); inspection.current = controller;
     setInspecting(true); setInspectionError(""); setResult(null);
     try {
-      const data = await api("/vocabulary/retrieve", { ...sample,
-        characters: sample.characters.split("\n").map((line) => line.trim()).filter(Boolean) }, "POST", { signal: controller.signal });
+      const data = await api("/vocabulary/retrieve", inspectionPayload(sample), "POST", { signal: controller.signal });
       if (!controller.signal.aborted) setResult(data);
     } catch (failure) { if (!controller.signal.aborted) setInspectionError(failure.message); }
     finally { if (!controller.signal.aborted) setInspecting(false); }

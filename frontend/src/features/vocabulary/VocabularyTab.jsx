@@ -71,6 +71,11 @@ export function PackManagerView({ visible, state, heading = true }) {
     <div className="vocabulary-guidance"><Package size={18} aria-hidden="true" />
       <p>Pack changes apply to the <strong>next Dataset run</strong>. Adult entries stay limited to eligible NSFW requests.</p>
     </div>
+    <ul className="vocabulary-explainer" aria-label="How packs work">
+      <li><strong>Enabled</strong><span>The Director can use its entries in the next Dataset run.</span></li>
+      <li><strong>Disabled</strong><span>Kept on disk, but never offered. You can still browse it.</span></li>
+      <li><strong>Optional content</strong><span>Opt-in packs such as Kinks come as a ZIP. Install it below to turn it on; disable or remove it to turn it off.</span></li>
+    </ul>
     <form ref={importer} className="vocabulary-import" onSubmit={async (event) => {
       event.preventDefault();
       const form = event.currentTarget;
@@ -112,18 +117,25 @@ export function PackManagerView({ visible, state, heading = true }) {
   </section>;
 }
 
+const sections = [
+  { id: "packs", title: "Packs", help: "Choose which vocabulary packs the Dataset Director can use, and install new ones." },
+  { id: "test", title: "Test a request", help: "Type a request and see exactly which entries and ideas each Dataset image would be offered." },
+  { id: "browse", title: "Browse", help: "Look up any entry: what it means, what it needs and where it comes from." },
+  { id: "create", title: "Create a pack", help: "Build your own pack visually, test it, then export or install it." },
+];
+
 export default function VocabularyTab({ visible }) {
   const state = useVocabularyPacks(visible);
   const [section, setSection] = useState("packs");
+  const packs = state.snapshot?.packs || [];
   return <div className="vocabulary-shell" hidden={!visible}>
-    <div className={ui.pageHeading}><div><h2>Vocabulary</h2><p>Manage the packs. Explore the definitions. See what a request retrieves.</p></div></div>
+    <div className={ui.pageHeading}><div><h2>Vocabulary</h2><p>The words and ideas the Dataset scene Director draws from. Packs add more; you choose which ones are on.</p></div></div>
     <nav className="vocabulary-sections" aria-label="Vocabulary sections">
-      <button className={ui.button} aria-pressed={section === "packs"} onClick={() => setSection("packs")}>Pack Manager</button>
-      <button className={ui.button} aria-pressed={section === "explorer"} onClick={() => setSection("explorer")}>Explorer</button>
-      <button className={ui.button} aria-pressed={section === "creator"} onClick={() => setSection("creator")}>Creator</button>
+      {sections.map((item) => <button key={item.id} className={ui.button} aria-pressed={section === item.id} onClick={() => setSection(item.id)}>{item.title}</button>)}
     </nav>
+    <p className="vocabulary-section-intro">{sections.find((item) => item.id === section).help}</p>
     <PackManagerView visible={visible && section === "packs"} state={state} heading={false} />
-    <VocabularyExplorer visible={visible && section === "explorer"} packs={state.snapshot?.packs || []} revision={state.snapshot} />
-    <PackCreator visible={visible && section === "creator"} packs={state.snapshot?.packs || []} onInstalled={state.reload} />
+    <VocabularyExplorer visible={visible && (section === "browse" || section === "test")} mode={section} packs={packs} revision={state.snapshot} />
+    <PackCreator visible={visible && section === "create"} packs={packs} onInstalled={state.reload} />
   </div>;
 }

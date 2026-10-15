@@ -16,7 +16,7 @@
     {
       "id": "adult:item.vibrating",
       "category": "capability",
-      "name": "Vibrates",
+      "name": "Vibrating",
       "components": {
         "capability": {
           "implies": [
@@ -26,9 +26,81 @@
       }
     },
     {
-      "id": "adult:item.restraint",
+      "id": "adult:item.sleeve",
       "category": "capability",
-      "name": "Restrains wrists",
+      "name": "Stroker sleeve",
+      "components": {
+        "capability": {
+          "implies": [
+            "core:item"
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:item.ring",
+      "category": "capability",
+      "name": "Worn around the shaft",
+      "components": {
+        "capability": {
+          "implies": [
+            "core:item"
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:item.lubricant",
+      "category": "capability",
+      "name": "Lubricant",
+      "components": {
+        "capability": {
+          "implies": [
+            "core:item"
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:item.protection",
+      "category": "capability",
+      "name": "Barrier protection",
+      "components": {
+        "capability": {
+          "implies": [
+            "core:item"
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:item.anal_safe",
+      "category": "capability",
+      "name": "Flared base for anal use",
+      "components": {
+        "capability": {
+          "implies": [
+            "core:item"
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:item.outfit",
+      "category": "capability",
+      "name": "Revealing outfit",
+      "components": {
+        "capability": {
+          "implies": [
+            "core:item.wearable"
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:item.machine",
+      "category": "capability",
+      "name": "Powered thrusting machine",
       "components": {
         "capability": {
           "implies": [

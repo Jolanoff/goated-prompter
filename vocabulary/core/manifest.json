@@ -28,7 +28,7 @@
     {
       "id": "posture",
       "name": "Postures",
-      "description": "How one body holds itself."
+      "description": "How one body holds itself: poses and stances."
     },
     {
       "id": "position",
@@ -38,17 +38,17 @@
     {
       "id": "action",
       "name": "Actions",
-      "description": "What participants do."
+      "description": "What participants do: activities, acts and interactions."
     },
     {
       "id": "item",
       "name": "Items",
-      "description": "Objects that can be used or held."
+      "description": "Objects that can be used or held: props and accessories."
     },
     {
       "id": "space",
       "name": "Spaces",
-      "description": "Places and the surfaces they offer."
+      "description": "Places and the surfaces they offer: locations, settings and environments."
     }
   ],
   "files": [

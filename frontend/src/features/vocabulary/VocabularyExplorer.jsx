@@ -1,5 +1,5 @@
 import { ArrowLeft, BookOpen, ChevronRight, Search } from "lucide-react";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { ui } from "../../ui.js";
 import { packKey, useVocabularyExplorer } from "./useVocabularyExplorer.js";
 
@@ -60,44 +60,187 @@ export function EntryDetails({ detail, onNavigate, onBack }) {
   </article>;
 }
 
+const stateLabels = { open: "Open", closed: "Closed", "not reached": "Not reached" };
+const stateHints = { open: "ideas are offered here", closed: "the request already decides this", "not reached": "the request doesn't touch this" };
+const scopeLabels = { category: "Category wording", arrangement: "Open arrangement", setting: "Open place", theme: "Pack theme", content: "Content level (ranks only)" };
+const statusLabels = { feasible: "Fits the cast", eligible: "Compatible", unknown: "Unknown fit" };
+const statusHints = { feasible: "Every declared requirement checks out for these characters.",
+  eligible: "Nothing declared rules it out for these characters.",
+  unknown: "The engine can't tell if it fits, usually because a character matches no body entry." };
+const plural = (count, word) => `${count} ${word}${count === 1 ? "" : "s"}`;
+
+function hint(warning) {
+  if (/no vocabulary body matches/.test(warning))
+    return "Describe characters with words a body entry knows, such as man, woman or person, or a pack body like elf or dragon.";
+  if (/no relevant vocabulary/.test(warning))
+    return "Name a position, action, place or item, or list what may vary (for example: positions, location) under brief details.";
+  return "";
+}
+
+function Status({ status }) {
+  return <span className="vocabulary-status" data-status={status} title={statusHints[status]}>{statusLabels[status] || label(status)}</span>;
+}
+
+function Chip({ item, named }) {
+  return <span className="vocabulary-chip" data-source={named ? "direct" : "inspiration"} title={`${item.category} · ${item.pack}`}>
+    <small>{item.categoryName}</small>{item.name}</span>;
+}
+
+function Matches({ items, names, target, onNavigate }) {
+  return <ul className="vocabulary-retrieval-matches">{items.map((item) => <li key={item.id}>
+    <div className="vocabulary-match-heading"><Reference reference={target(item)} onNavigate={onNavigate} />
+      <span className="vocabulary-match-badges"><Status status={item.status} />
+        <span className="vocabulary-rating" data-rating={item.rating}>{label(item.rating)}</span>
+        <span className="vocabulary-source" data-source={item.source || "direct"}>{item.source === "inspiration" ? "Idea" : "Named"}</span></span></div>
+    {item.description && <p className="vocabulary-match-description">{item.description}</p>}
+    {!!item.attach_to?.length && <p className="vocabulary-match-note"><strong>Offered only with</strong> {item.attach_to.map((id) => names[id] || id).join(", ")}</p>}
+    {item.warnings.map((warning, index) => <p className="vocabulary-match-warning" key={index}>{warning}</p>)}
+    <details className="vocabulary-match-more"><summary>Why it was picked</summary>
+      <ul className="vocabulary-match-why">{item.why.map((why, index) => <li key={index}>{why}</li>)}</ul>
+      {!!item.needs.length && <p className="vocabulary-match-note"><strong>Needs</strong> {item.needs.join("; ")}</p>}
+      {item.note && <p className="vocabulary-match-note">{item.note}</p>}
+      <p className="text-muted">{item.pack} · {item.category} · score {item.score}</p>
+      {item.binding && <Fields value={{ binding: item.binding, checked_with: item.checked_with }} references={[]} onNavigate={onNavigate} />}</details>
+  </li>)}</ul>;
+}
+
+function Grouped({ items, categoryName, ...props }) {
+  const groups = [...new Set(items.map((item) => item.category))];
+  return groups.map((category) => <section className="vocabulary-match-group" key={category}>
+    <h5>{categoryName(category)} <small>{items.filter((item) => item.category === category).length}</small></h5>
+    <Matches items={items.filter((item) => item.category === category)} {...props} /></section>);
+}
+
+function Intent({ intent }) {
+  if (!intent?.categories) return null;
+  const fixed = Object.entries(intent.fixed || {}), ruledOut = Object.entries(intent.ruled_out || {});
+  return <section className="vocabulary-intent" aria-label="Detected intent"><h4>How the request was read</h4>
+    <p className="vocabulary-section-help">Detected intent: which categories the request opens for ideas, and which it already decides. To get ideas from a category that isn’t reached, name it under What may vary (for example: acts, toys, outfits).</p>
+    <dl className="vocabulary-intent-facts">
+      <div><dt>Content level</dt><dd>{intent.content ? label(intent.content) : "Not requested"}</dd></div>
+      <div><dt>Pack themes</dt><dd>{intent.themes.length ? intent.themes.map((theme) => `${theme.name} (${theme.why})`).join("; ") : "None"}</dd></div>
+      {!!fixed.length && <div><dt>Fixed by the request</dt><dd>{fixed.map(([group, names]) => `${group}: ${names.join(", ")}`).join("; ")}</dd></div>}
+      {!!ruledOut.length && <div><dt>Ruled out by the request</dt><dd>{ruledOut.map(([key, words]) => `${key} (${words.join(", ")})`).join("; ")}</dd></div>}
+    </dl>
+    <ul className="vocabulary-intent-categories">{intent.categories.map((category) => <li key={category.id} data-state={category.state}>
+      <div><strong>{category.name}</strong><span className="vocabulary-state" data-state={category.state} title={stateHints[category.state]}>{stateLabels[category.state] || category.state}</span>
+        {category.state === "open" && <small>{plural(category.ideas.length, "idea")}</small>}</div>
+      {!!category.reached.length && <ul>{category.reached.map((item, index) =>
+        <li key={index}>{scopeLabels[item.scope] || item.scope}: {item.why}</li>)}</ul>}
+      {category.state === "not reached" ? <p className="text-muted">{category.reason}</p>
+        : category.empty && <p className="text-muted">{category.empty}</p>}
+    </li>)}</ul>
+  </section>;
+}
+
 export function RetrievalResults({ result, onNavigate, packs }) {
   function target(item) {
     const pack = packs.find((pack) => pack.id === (item.pack || item.id.split(":")[0]) && pack.valid);
     return { ...item, origin: pack?.origin, exists: !!pack, name: item.name || item.id };
   }
+  const ideas = result.inspiration || [];
+  const categoryNames = Object.fromEntries((result.intent?.categories || []).map((category) => [category.id, category.name]));
+  const categoryName = (id) => categoryNames[id] || label(id || "other");
+  const known = Object.fromEntries([...result.entries, ...ideas].map((item) => [item.id, { ...item, categoryName: categoryName(item.category) }]));
+  const names = Object.fromEntries(Object.values(known).map((item) => [item.id, item.name]));
+  const scenes = (result.scenes || []).filter((scene) => scene.entries.length || scene.ideas.length);
+  const chip = (id, named) => <li key={id}>{known[id] ? <Chip item={known[id]} named={named} /> : <span className="vocabulary-chip">{id}</span>}</li>;
+  const offered = result.entries.length + ideas.length;
   return <div className="vocabulary-retrieval-results" aria-label="Retrieval results">
-    <p>{result.entries.length} matches · {result.nsfw ? "General, Mature and Adult ratings allowed" : "General and Mature ratings allowed"}</p>
-    <p className="text-muted">Engine statuses describe declared compatibility, not content approval or proof of physical feasibility.</p>
-    {result.warnings.map((warning, index) => <p className="vocabulary-pack-problems" key={index}>{warning}</p>)}
-    {result.entries.length ? <ul className="vocabulary-retrieval-matches">{result.entries.map((item) => <li key={item.id}>
-      <div className="vocabulary-match-heading"><Reference reference={target(item)} onNavigate={onNavigate} />
-        <span className="vocabulary-rating" data-rating={item.rating}>{label(item.rating)}</span><strong>{label(item.status)}</strong></div>
-      <p className="text-muted">{item.pack} · {item.category} · score {item.score}</p><p>{item.description}</p>
-      <ul>{item.why.map((why, index) => <li key={index}>{why}</li>)}</ul>
-      {!!item.needs.length && <p>Needs: {item.needs.join("; ")}</p>}
-      {item.warnings.map((warning, index) => <p key={index}>{warning}</p>)}
-      {item.note && <p>{item.note}</p>}
-      {item.binding && <details><summary>Participant binding and checks</summary>
-        <Fields value={{ binding: item.binding, checked_with: item.checked_with }} references={[]} onNavigate={onNavigate} /></details>}
-    </li>)}</ul> : <p>No entries retrieved for this sample.</p>}
-    {!!result.cast.length && <details><summary>Cast inferred by the engine</summary><Fields value={result.cast} references={[]} onNavigate={onNavigate} /></details>}
-    {[ ["Excluded", result.excluded, "reason"], ["Suppressed", result.suppressed, "because"] ].map(([title, items, reason]) =>
-      !!items.length && <details key={title}><summary>{title} ({items.length})</summary><ul className="vocabulary-reference-list">
-        {items.map((item, index) => <li key={index}><Reference reference={target(item)} onNavigate={onNavigate} /><p>{item[reason]}</p></li>)}</ul></details>)}
+    <header className="vocabulary-results-summary">
+      <h4>What the Director gets</h4>
+      <ul className="vocabulary-stats">
+        <li><strong>{result.entries.length}</strong><span>named by the request</span></li>
+        <li><strong>{ideas.length}</strong><span>{ideas.length === 1 ? "idea" : "ideas"}</span></li>
+        <li><strong>{scenes.length}</strong><span>{scenes.length === 1 ? "scene with suggestions" : "scenes with suggestions"}</span></li>
+      </ul>
+      <p className="text-muted"><strong>{result.nsfw ? "General, Mature and Adult ratings allowed" : "General and Mature ratings allowed"}.</strong> Named entries are what the request asks for. Ideas are optional: the Director may use or ignore them. Engine statuses describe declared compatibility, not content approval or proof of physical feasibility.</p>
+    </header>
+    {result.warnings.map((warning, index) => <div className="vocabulary-pack-problems" key={index}><p>{warning}</p>
+      {hint(warning) && <p className="vocabulary-hint">Try: {hint(warning)}</p>}</div>)}
+    {!offered && !result.warnings.length && <p className="vocabulary-pack-problems">Nothing would be offered. {hint("no relevant vocabulary")}</p>}
+    {!!scenes.length && <section className="vocabulary-rotation" aria-label="Per-scene suggestions">
+      <h4>Per-scene suggestions (seed {result.seed ?? 0})</h4>
+      <p className="vocabulary-section-help">What each Dataset image is offered. Another seed rotates the ideas.
+        <span className="vocabulary-legend"><span className="vocabulary-chip" data-source="direct">Named</span><span className="vocabulary-chip" data-source="inspiration">Idea</span></span></p>
+      <ol className="vocabulary-scenes">{scenes.map((scene) => <li key={scene.scene} aria-label={`Scene ${scene.scene}: ${[...scene.entries, ...scene.ideas].map((id) => names[id] || id).join("; ")}`}>
+        <h5>Scene {scene.scene}</h5><ul>{scene.entries.map((id) => chip(id, true))}{scene.ideas.map((id) => chip(id, false))}</ul></li>)}</ol>
+    </section>}
+    <section className="vocabulary-results-section"><h4>Named by the request</h4>
+      {result.entries.length ? <Grouped items={result.entries} categoryName={categoryName} names={names} target={target} onNavigate={onNavigate} />
+        : <p className="text-muted">No entries retrieved for this sample. The request names no specific entry; any suggestions come from ideas.</p>}</section>
+    {!!ideas.length && <section className="vocabulary-results-section"><h4>Ideas (optional inspiration)</h4>
+      <Grouped items={ideas} categoryName={categoryName} names={names} target={target} onNavigate={onNavigate} /></section>}
+    <Intent intent={result.intent} />
+    <div className="vocabulary-results-more">
+      {!!result.cast.length && <details><summary>Cast inferred by the engine</summary><Fields value={result.cast} references={[]} onNavigate={onNavigate} /></details>}
+      {[ ["Excluded", result.excluded, "reason"], ["Suppressed", result.suppressed, "because"] ].map(([title, items, reason]) =>
+        !!items.length && <details key={title}><summary>{title} ({items.length})</summary><ul className="vocabulary-reference-list">
+          {items.map((item, index) => <li key={index}><Reference reference={target(item)} onNavigate={onNavigate} /><p>{item[reason]}</p></li>)}</ul></details>)}
+    </div>
   </div>;
 }
 
-export function ExplorerView({ visible, packs, state }) {
+const examples = [
+  { title: "Two men, positions vary", sample: { request: "2 men having sex", characters: "adult man\nadult man", nsfw: true, randomized: "sex positions, location", avoid: "" } },
+  { title: "A fantasy scene", sample: { request: "A dragon resting on a cliff", characters: "", nsfw: false, randomized: "", avoid: "" } },
+  { title: "Couple, no toys", sample: { request: "A couple in bed", characters: "adult woman\nadult man", nsfw: true, randomized: "positions", avoid: "no toys" } },
+];
+
+function RequestTester({ state, packs, openEntry }) {
+  const { sample, editSample, result, inspecting, inspectionError, inspect, detail, detailLoading, detailError, clearEntry, reload, entry } = state;
+  const [shown, setShown] = useState({ cast: false, brief: false });
+  const toggle = (key) => (event) => { const open = event.currentTarget.open; setShown((current) => current[key] === open ? current : { ...current, [key]: open }); };
+  function applyExample(example) {
+    editSample({ ...example, seed: sample.seed });
+    setShown({ cast: !!example.characters, brief: !!(example.randomized || example.avoid) });
+  }
+  return <section className="vocabulary-retrieval" aria-label="Retrieval inspection">
+    <div className="vocabulary-tester-intro"><div><h3>Test a request</h3>
+      <p>Type a request like you would in Dataset and see which vocabulary the scene Director would be offered. Uses only enabled packs. No LLM, scene generation or saved changes.</p></div>
+      <div className="vocabulary-examples" aria-label="Example requests"><span>Examples</span>
+        {examples.map((example) => <button type="button" className={ui.textButton} key={example.title} onClick={() => applyExample(example.sample)}>{example.title}</button>)}</div></div>
+    <form onSubmit={(event) => { event.preventDefault(); inspect(); }}>
+      <label className={ui.field}><span>Request</span><textarea className="control textarea" aria-label="Vocabulary sample request"
+        value={sample.request} maxLength={4000} rows={3} onChange={(event) => editSample({ request: event.target.value })} placeholder="A dragon resting on a cliff" required /></label>
+      <details open={shown.cast} onToggle={toggle("cast")}><summary>Optional character descriptions</summary><p className="vocabulary-section-help">One character per line, e.g. “adult man”, “adult woman”, “elf”. Without characters, whether an entry fits stays unknown.</p>
+        <textarea className="control textarea" aria-label="Inspection characters" value={sample.characters} maxLength={8192} rows={2}
+          onChange={(event) => editSample({ characters: event.target.value })} placeholder={"adult man\nadult woman"} /></details>
+      <details open={shown.brief} onToggle={toggle("brief")}><summary>Optional brief details</summary><p className="vocabulary-section-help">As in a confirmed Dataset brief: what may vary opens categories for ideas, avoid rules entries out, and the seed rotates ideas across scenes.</p>
+        <div className="vocabulary-brief-grid">
+          <label className={ui.field}><span>What may vary</span><textarea className="control textarea" aria-label="Inspection randomized" value={sample.randomized ?? ""}
+            maxLength={1200} rows={2} onChange={(event) => editSample({ randomized: event.target.value })} placeholder="sex positions, location, lighting" /></label>
+          <label className={ui.field}><span>Avoid (one per line)</span><textarea className="control textarea" aria-label="Inspection avoid" value={sample.avoid ?? ""}
+            maxLength={4200} rows={2} onChange={(event) => editSample({ avoid: event.target.value })} placeholder="no toys" /></label>
+          <label className={ui.field}><span>Seed</span><input className={ui.input} aria-label="Inspection seed" inputMode="numeric" value={sample.seed ?? "0"}
+            maxLength={10} onChange={(event) => editSample({ seed: event.target.value.replace(/\D/g, "") })} /></label></div></details>
+      <div className="vocabulary-inspection-actions"><label className={ui.toggleRow}>
+        <input type="checkbox" className={ui.toggleInput} role="switch" aria-label="Allow Adult rating in inspection" checked={sample.nsfw}
+          onChange={(event) => editSample({ nsfw: event.target.checked })} /><span className={ui.switch} /><span className={ui.toggleLabel}>Allow Adult rating</span></label>
+        <button className={ui.primaryButton} disabled={inspecting || !sample.request.trim()}><Search size={15} />{inspecting ? "Inspecting…" : "Inspect retrieval"}</button></div>
+      <p className="vocabulary-footer">This rating filter is not Dataset content approval. Normal Dataset eligibility checks still apply.</p>
+    </form>
+    {inspectionError && <div className={ui.message} role="alert">{inspectionError}</div>}
+    {entry && <div className="vocabulary-detail-panel" aria-live="polite">{detailLoading ? <p role="status">Loading entry details…</p>
+      : detailError ? <div className={ui.message} role="alert"><span>{detailError}</span><button className={ui.button} onClick={reload}>Retry entry</button></div>
+        : detail && <EntryDetails detail={detail} onNavigate={openEntry} onBack={clearEntry} />}</div>}
+    {result && <RetrievalResults result={result} onNavigate={openEntry} packs={packs} />}
+  </section>;
+}
+
+export function ExplorerView({ visible, packs, state, mode = "browse" }) {
   const { pack, catalogue, loading, error, filters, filter, selectPack, entry, detail, detailLoading, detailError,
-    navigate, clearEntry, sample, editSample, result, inspecting, inspectionError, inspect, reload } = state;
+    navigate, clearEntry, reload } = state;
   const panel = useRef(null);
   function openEntry(target) {
     navigate(target);
     panel.current?.scrollIntoView({ block: "start" });
     panel.current?.focus({ preventScroll: true });
   }
+  if (mode === "test") return <section className="vocabulary-explorer" hidden={!visible} aria-label="Vocabulary request tester">
+    <div ref={panel} tabIndex={-1} /><RequestTester state={state} packs={packs} openEntry={openEntry} /></section>;
   return <section className="vocabulary-explorer" hidden={!visible} aria-label="Vocabulary explorer">
-    <div className="vocabulary-explorer-intro"><BookOpen size={20} /><div><h3>Explore the vocabulary</h3>
+    <div className="vocabulary-explorer-intro"><BookOpen size={20} /><div><h3>Browse the vocabulary</h3>
       <p>Read the definitions behind the scene Director’s choices. Browsing a pack never enables it.</p></div></div>
     <div className="vocabulary-explorer-filters">
       <label className={ui.field}><span>Pack</span><select className={ui.select} aria-label="Explore pack" value={pack ? packKey(pack) : ""}
@@ -140,27 +283,10 @@ export function ExplorerView({ visible, packs, state }) {
             : <div className="vocabulary-detail-placeholder"><BookOpen size={30} /><h3>Start with an entry</h3><p>Select a definition to inspect its requirements, inheritance and references.</p></div>}
       </div>
     </div>
-    <section className="vocabulary-retrieval" aria-label="Retrieval inspection">
-      <h3>Try a sample request</h3><p>Deterministic inspection of enabled packs. No LLM, scene generation or saved changes.</p>
-      <form onSubmit={(event) => { event.preventDefault(); inspect(); }}>
-        <label className={ui.field}><span>Sample request</span><textarea className="control textarea" aria-label="Vocabulary sample request"
-          value={sample.request} maxLength={4000} rows={3} onChange={(event) => editSample({ request: event.target.value })} placeholder="A dragon resting on a cliff" required /></label>
-        <details><summary>Optional character descriptions</summary><p>One character per line. Without a declared cast, compatibility may be unknown.</p>
-          <textarea className="control textarea" aria-label="Inspection characters" value={sample.characters} maxLength={8192} rows={2}
-            onChange={(event) => editSample({ characters: event.target.value })} placeholder="An adult human\nAn adult elf" /></details>
-        <div className="vocabulary-inspection-actions"><label className={ui.toggleRow}>
-          <input type="checkbox" className={ui.toggleInput} role="switch" aria-label="Allow Adult rating in inspection" checked={sample.nsfw}
-            onChange={(event) => editSample({ nsfw: event.target.checked })} /><span className={ui.switch} /><span className={ui.toggleLabel}>Allow Adult rating</span></label>
-          <button className={ui.primaryButton} disabled={inspecting || !sample.request.trim()}><Search size={15} />{inspecting ? "Inspecting…" : "Inspect retrieval"}</button></div>
-        <p className="vocabulary-footer">This rating filter is not Dataset content approval. Normal Dataset eligibility checks still apply.</p>
-      </form>
-      {inspectionError && <div className={ui.message} role="alert">{inspectionError}</div>}
-      {result && <RetrievalResults result={result} onNavigate={openEntry} packs={packs} />}
-    </section>
   </section>;
 }
 
-export default function VocabularyExplorer({ visible, packs, revision }) {
+export default function VocabularyExplorer({ visible, packs, revision, mode }) {
   const state = useVocabularyExplorer({ visible, packs, revision });
-  return <ExplorerView visible={visible} packs={packs} state={state} />;
+  return <ExplorerView visible={visible} packs={packs} state={state} mode={mode} />;
 }

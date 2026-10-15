@@ -1,0 +1,344 @@
+{
+  "spec": 1,
+  "entries": [
+    {
+      "id": "adult:item.lingerie",
+      "category": "item",
+      "name": "Lingerie set",
+      "description": "Matching lace bra and panties.",
+      "aliases": [
+        "lingerie",
+        "lace underwear"
+      ],
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.wearable",
+            "adult:item.outfit"
+          ],
+          "size": "small",
+          "hands": 0
+        }
+      }
+    },
+    {
+      "id": "adult:item.stockings",
+      "category": "item",
+      "name": "Stockings and garters",
+      "description": "Sheer stockings held by a garter belt.",
+      "aliases": [
+        "garter belt"
+      ],
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.wearable",
+            "adult:item.outfit"
+          ],
+          "size": "small",
+          "hands": 0
+        }
+      }
+    },
+    {
+      "id": "adult:item.bodysuit",
+      "category": "item",
+      "name": "Lace bodysuit",
+      "description": "A sheer one-piece lace bodysuit.",
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.wearable",
+            "adult:item.outfit"
+          ],
+          "size": "small",
+          "hands": 0
+        }
+      }
+    },
+    {
+      "id": "adult:item.babydoll",
+      "category": "item",
+      "name": "Babydoll",
+      "description": "A short, sheer nightie.",
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.wearable",
+            "adult:item.outfit"
+          ],
+          "size": "small",
+          "hands": 0
+        }
+      }
+    },
+    {
+      "id": "adult:item.thong",
+      "category": "item",
+      "name": "Thong",
+      "description": "Minimal underwear with a string back.",
+      "aliases": [
+        "g-string"
+      ],
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.wearable",
+            "adult:item.outfit"
+          ],
+          "size": "small",
+          "hands": 0
+        }
+      }
+    },
+    {
+      "id": "adult:item.jockstrap",
+      "category": "item",
+      "name": "Jockstrap",
+      "description": "Athletic underwear with an open back.",
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.wearable",
+            "adult:item.outfit"
+          ],
+          "size": "small",
+          "hands": 0
+        }
+      }
+    },
+    {
+      "id": "adult:item.briefs",
+      "category": "item",
+      "name": "Tight briefs",
+      "description": "Snug men's briefs.",
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.wearable",
+            "adult:item.outfit"
+          ],
+          "size": "small",
+          "hands": 0
+        }
+      }
+    },
+    {
+      "id": "adult:item.boxer_briefs",
+      "category": "item",
+      "name": "Boxer briefs",
+      "description": "Fitted mid-thigh underwear.",
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.wearable",
+            "adult:item.outfit"
+          ],
+          "size": "small",
+          "hands": 0
+        }
+      }
+    },
+    {
+      "id": "adult:item.harness_top",
+      "category": "item",
+      "name": "Chest harness",
+      "description": "Leather straps crossing the chest.",
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.wearable",
+            "adult:item.outfit"
+          ],
+          "size": "small",
+          "hands": 0
+        }
+      }
+    },
+    {
+      "id": "adult:item.crotchless",
+      "category": "item",
+      "name": "Crotchless panties",
+      "description": "Panties open at the crotch.",
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.wearable",
+            "adult:item.outfit"
+          ],
+          "size": "small",
+          "hands": 0
+        }
+      }
+    },
+    {
+      "id": "adult:item.fishnet",
+      "category": "item",
+      "name": "Fishnet bodystocking",
+      "description": "A full-body fishnet stocking.",
+      "aliases": [
+        "fishnets"
+      ],
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.wearable",
+            "adult:item.outfit"
+          ],
+          "size": "small",
+          "hands": 0
+        }
+      }
+    },
+    {
+      "id": "adult:item.sheer_robe",
+      "category": "item",
+      "name": "Sheer robe",
+      "description": "A loose see-through robe.",
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.wearable",
+            "adult:item.outfit"
+          ],
+          "size": "small",
+          "hands": 0
+        }
+      }
+    },
+    {
+      "id": "adult:item.towel",
+      "category": "item",
+      "name": "Only a towel",
+      "description": "Wrapped in a single towel.",
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.wearable",
+            "adult:item.outfit"
+          ],
+          "size": "small",
+          "hands": 0
+        }
+      }
+    },
+    {
+      "id": "adult:item.unbuttoned_shirt",
+      "category": "item",
+      "name": "Open shirt",
+      "description": "A shirt hanging open over bare skin.",
+      "aliases": [
+        "unbuttoned shirt"
+      ],
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.wearable",
+            "adult:item.outfit"
+          ],
+          "size": "small",
+          "hands": 0
+        }
+      }
+    },
+    {
+      "id": "adult:item.swim_briefs",
+      "category": "item",
+      "name": "Swim briefs",
+      "description": "Small swim briefs.",
+      "aliases": [
+        "speedo"
+      ],
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.wearable",
+            "adult:item.outfit"
+          ],
+          "size": "small",
+          "hands": 0
+        }
+      }
+    },
+    {
+      "id": "adult:item.athletic_shorts",
+      "category": "item",
+      "name": "Gym shorts",
+      "description": "Thin, short athletic shorts.",
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.wearable",
+            "adult:item.outfit"
+          ],
+          "size": "small",
+          "hands": 0
+        }
+      }
+    },
+    {
+      "id": "adult:item.pasties",
+      "category": "item",
+      "name": "Pasties",
+      "description": "Small covers over the nipples only.",
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.wearable",
+            "adult:item.outfit"
+          ],
+          "size": "small",
+          "hands": 0
+        }
+      }
+    },
+    {
+      "id": "adult:item.body_chain",
+      "category": "item",
+      "name": "Body chain",
+      "description": "Fine chains draped over the torso.",
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.wearable",
+            "adult:item.outfit"
+          ],
+          "size": "small",
+          "hands": 0
+        }
+      }
+    },
+    {
+      "id": "adult:item.latex_lingerie",
+      "category": "item",
+      "name": "Latex lingerie",
+      "description": "Shiny latex bra and briefs.",
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.wearable",
+            "adult:item.outfit"
+          ],
+          "size": "small",
+          "hands": 0
+        }
+      }
+    },
+    {
+      "id": "adult:item.socks_only",
+      "category": "item",
+      "name": "Wearing only socks",
+      "description": "Naked except for socks.",
+      "components": {
+        "object": {
+          "provides": [
+            "core:item.wearable",
+            "adult:item.outfit"
+          ],
+          "size": "small",
+          "hands": 0
+        }
+      }
+    }
+  ]
+}

@@ -19,10 +19,13 @@ Locations:
 | `vocabulary/core/` | the core pack | always enabled; read-only |
 | `vocabulary/packs/<pack-id>/` | official packs that ship with the app (`fantasy`, `adult`) | enabled by default; disabled and re-enabled; read-only |
 | `data/vocabulary/packs/<pack-id>/` (Git-ignored) | packs the user installed | enabled by default; disabled, updated and removed |
+| `vocabulary/optional/<pack-id>/` | opt-in packs kept as source (`adult_kinks`); never found automatically | installed as a ZIP of the folder; then as installed packs |
 
 Official and installed packs are found automatically; nothing is copied. `data/vocabulary/state.json`
 keeps which official and installed packs are disabled. A pack id may appear in one location only: a
 duplicate is rejected, never silently overridden, and an archive cannot install over a core or official pack.
+Opt-in content is a separate pack the user installs, never a switch inside a pack: the kinks setting is the
+`adult_kinks` pack installed and enabled (kinks) or disabled or absent (no kinks). It depends only on the core.
 
 ## 1. Packs
 
@@ -30,7 +33,9 @@ A pack is a folder with `manifest.json` and the entry files it lists. `id` is th
 namespace. `requires` maps pack ids to version ranges (`>=1.0.0 <2.0.0`). `categories` declares
 the groupings the pack introduces; any loaded pack may use a category declared by itself or by a
 pack it requires. Categories only group entries for retrieval and the UI: **the engine never
-branches on a category**. Behaviour comes only from an entry's typed components.
+branches on a category**. Behaviour comes only from an entry's typed components. The words of a
+category's name and description, and of a pack's name and description, are how a broad brief reaches
+them for inspiration (section 10), so write them in the words briefs use.
 
 ## 2. Entries
 
@@ -332,13 +337,79 @@ creativity (Strict 0.85, Balanced 0.70, Creative 0.55, Dice 0.45) or `variety`. 
 suppressed, with a reason, when its similarity to a chosen entry reaches `duplicate_similarity` or
 when its category already has `max_per_category` entries.
 
+**Inspiration.** Besides the entries a request names (`source: "direct"`), retrieval offers ideas
+(`source: "inspiration"`) from the categories the brief opens, so a broad request ("two adult men
+having sex", "epic fantasy scenes of a dragon") gets varied, checked suggestions without naming any
+entry, category or place. Intent comes only from the brief's own texts (`request`, `summary`, `must`,
+`rules`, `fixed`, `randomized`) and its cast, never from `director` or `style`, and only from what the
+packs declare; nothing is special-cased for a pack, a category name or a word. These scopes reach
+entries; all but `content` open them:
+
+| Scope | Reached when | Weight |
+|---|---|---|
+| category | a word of the category's declared name, or a description word no other declared category uses ("sex positions" reaches Positions; "location" reaches Spaces through "locations, settings and environments") | 1.0 |
+| arrangement | the brief has people: every image arranges them, so a position (a bindable entry that places its participants without claiming body resources) whose slots hold exactly this cast, or for one person a posture, is open unless the brief fixes the interaction | 1.0 (counted once with category and setting) |
+| setting | the brief has people and sets no place: every image has a place, so spaces are open | 1.0 (counted once) |
+| theme | a pack's own theme: a word of its name, a description word that neither another pack nor the core's description nor any category uses, an entry it declares that the brief names, or a cast body or trait it declares other than the plain human body. A rating word ("adult") is the content level, never a theme. The mandatory core has no theme | 0.75, nothing when the content level also holds |
+| content | an NSFW brief puts entries of the top allowed rating on topic. It never opens a category: it ranks what the other scopes opened, so a broad sexual request gets sexual positions first, and acts, accessories or restraints only when the brief's words or a theme ask for them | 1.0 |
+
+Acts (bindable entries that claim body resources) and items are opened only by the brief's words or a
+theme. An entry of a pack that has a theme (every pack but the core) needs its theme or the content
+level. Without people nothing is opened by the scene's dimensions: a still life gets no invented place.
+What the brief fixes stays fixed, by kind (components), never by category name:
+
+- a position, action or posture the request, summary, must, rules or fixed text names fixes the
+  interaction: no position, action or posture ideas ("in missionary" offers no other position or act);
+- a space it names fixes the place, an item it names fixes the item;
+- so does a place in words the vocabulary does not know: a locative phrase (`in`, `on`, `at`,
+  `inside`, `under`, `near`, … and up to two content words) whose words name no entry the request names
+  or casts and reach no category ("on a train platform", "in a dark forest"). "In missionary" and "on a
+  bed" are explained by their entries; "in different locations" reaches Spaces and opens them instead.
+  A phrase that is not a place ("in the rain") also keeps places closed: the error is to suggest less;
+- a category the `randomized` text reaches is open even next to a named choice ("a couple kissing",
+  randomized "positions": positions open, actions stay fixed);
+- a negated or `avoid` word that reaches a category closes it ("no accessories").
+
+**What the request rules out** reaches through the vocabulary's dependencies. An entry whose name,
+alias or tag a negated or `avoid` word names is ruled out. So is every item that provides a capability
+such an entry requires of its objects (`all_of` or `any_of`, with `implies`), unless an entry the request
+names needs that capability too: "no toys" rules out Toy play and with it the dildo, vibrator and
+strap-on, even next to a named Hold that could take them, while a book stays. And an interaction whose
+required object (at least one) only ruled-out items provide is ruled out ("no fire pit" rules out
+warming hands at it). Named entries are never ruled out by this, and a ruled-out idea is reported in
+`excluded` with the reason.
+
+Candidates are checked like named entries: positions, actions and postures first (conflicts are
+excluded with `source: "inspiration"`), then spaces against the interactions that are offered, and
+items against each offered interaction. An item is kept only for interactions whose requirements it
+meets (`eligible` or `feasible` for that pair) and lists them in `attach_to`. The score is the scope
+weight (plus a little of any partial text match), × the status factor, × 0.6 + 0.4 × the share of the
+cast the idea involves. Equally good candidates are ordered by the seed, never alphabetically. Per category the best `inspiration_shortlist` are checked; ideas below a share of
+the category's best (Strict 0.8, Balanced 0.6, Creative 0.4, Dice 0.25), repeats
+(`duplicate_similarity`) and equivalent descendants are suppressed, and at most `inspiration_pool` are
+kept.
+
+**Rotation.** Each scene gets its own ideas (`ideas(n)`, `scenes(count)`): one idea per open category
+in turn, the first category moving with the scene, each category walking through its own order. The
+order is a score-weighted shuffle seeded by the brief's `seed` and the category, so the same brief and
+seed always give the same ideas per scene, another seed gives others, and a dataset sees every idea.
+Creativity sets the ideas per scene: Strict 2, Balanced 3, Creative 3, Dice 4. A scene never gets the same idea twice; a pool a scene uses whole starts one later in the next scene, so even two ideas alternate. Fewer ideas than scenes simply repeat in turn. An item comes along
+only in a scene that holds an interaction it serves (named or an idea), at most one per scene.
+`offer(numbers)` renders the block for one model request writing those scenes: the named entries for
+every image, the ideas per concept of that request, and each idea described once. Without ideas it
+is exactly `render()`. The Dataset Builder (Section 2) gives each concept and staging request the
+offer of its own images; the Vocabulary inspector shows the same result and a per-scene preview.
+
 **Result.** `entries` (best first: id, name, category, pack, rating, description, status, relevance,
-score, why, warnings, needs, binding, checked_with), the inferred `cast`, `suppressed`, `excluded`,
-`warnings` and `stats`. An empty result carries one warning: no packs are enabled, the request has
-no searchable words, nothing is relevant, or nothing relevant is compatible. `render()` gives a short
-reference block for a prompt, at most `max_chars`, or `""` when nothing was retrieved. It lists each
-entry's name, description, status and up to two needs, says that `feasible` is not proof, and never
-assigns roles or characters.
+score, why, warnings, needs, binding, checked_with, source, scopes, attach_to), `inspiration` (the
+ideas, per category, best first), `intent` (`content`, `themes`, `fixed`, `ruled_out` and every scene
+category with what reached it, whether it is `open`, `closed` or `not reached`, its ideas and, when it
+has none, why), the inferred `cast`, `suppressed`, `excluded`, `warnings` and `stats`. An empty result
+(no entries and no ideas) carries one warning: no packs are enabled, the request has no searchable
+words, nothing is relevant, or nothing relevant is compatible. `render()` gives a short reference
+block of the named entries for a prompt, at most `max_chars`, or `""` when nothing was retrieved. It
+lists each entry's name, description, status and up to two needs, says that `feasible` is not proof,
+and never assigns roles or characters.
 
 | `RetrievalConfig` | Default | `RetrievalConfig` | Default |
 |---|---|---|---|
@@ -346,7 +417,10 @@ assigns roles or characters.
 | `max_chars` | 1200 | `min_relevance` | 1.5 |
 | `max_per_category` | 2 | `duplicate_similarity` | 0.7 |
 | `shortlist` | 24 | `include_unknown` | true |
+| `inspiration` | true | `inspiration_shortlist` | 24 |
+| `inspiration_pool` | 12 | | |
 
 Retrieval matches words, not meaning: a request that describes an entry only in words none of its
-names, aliases, tags, description, notes or links use will not find it. Pack authors should give
-entries the aliases people actually write.
+names, aliases, tags, description, notes or links use will not find it, and a category or pack theme
+is only reached through the words its manifest declares. Pack authors should give entries the aliases
+people actually write, and categories and packs names and descriptions in the words briefs use.

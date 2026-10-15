@@ -1,0 +1,383 @@
+{
+  "spec": 1,
+  "entries": [
+    {
+      "id": "adult:space.shower",
+      "category": "space",
+      "name": "Shower",
+      "description": "A tiled shower with running water.",
+      "aliases": [
+        "shower stall"
+      ],
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.ground",
+            "core:surface.vertical"
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:space.bathtub",
+      "category": "space",
+      "name": "Bathtub",
+      "description": "A filled bath, room for two.",
+      "aliases": [
+        "bath",
+        "tub"
+      ],
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.wide",
+            "core:surface.seat"
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:space.hot_tub",
+      "category": "space",
+      "name": "Hot tub",
+      "description": "A bubbling outdoor hot tub.",
+      "aliases": [
+        "jacuzzi",
+        "spa tub"
+      ],
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.seat"
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:space.hotel_room",
+      "category": "space",
+      "name": "Hotel room",
+      "description": "A hotel room with a large made bed.",
+      "aliases": [
+        "hotel suite"
+      ],
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.wide",
+            "core:surface.seat",
+            "core:surface.vertical"
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:space.locker_room",
+      "category": "space",
+      "name": "Locker room",
+      "description": "Benches and lockers in a gym changing room.",
+      "aliases": [
+        "changing room"
+      ],
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.seat",
+            "core:surface.vertical",
+            "core:surface.ground"
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:space.sauna",
+      "category": "space",
+      "name": "Sauna",
+      "description": "Wooden benches in a hot sauna.",
+      "aliases": [
+        "steam sauna"
+      ],
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.seat",
+            "core:surface.wide"
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:space.steam_room",
+      "category": "space",
+      "name": "Steam room",
+      "description": "Tiled benches in thick steam.",
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.seat",
+            "core:surface.vertical"
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:space.bathhouse",
+      "category": "space",
+      "name": "Bathhouse",
+      "description": "Pools, cabins and steam in a men's bathhouse.",
+      "aliases": [
+        "gay sauna"
+      ],
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.seat",
+            "core:surface.wide",
+            "core:surface.vertical"
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:space.massage_table",
+      "category": "space",
+      "name": "Massage table",
+      "description": "A padded massage table.",
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.wide"
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:space.office_desk",
+      "category": "space",
+      "name": "Office desk",
+      "description": "A large desk in a closed office.",
+      "aliases": [
+        "office"
+      ],
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.wide",
+            "core:surface.seat"
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:space.kitchen_counter",
+      "category": "space",
+      "name": "Kitchen counter",
+      "description": "A counter top in a home kitchen.",
+      "aliases": [
+        "countertop"
+      ],
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.wide",
+            "core:surface.seat"
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:space.car_backseat",
+      "category": "space",
+      "name": "Car back seat",
+      "description": "The back seat of a parked car.",
+      "aliases": [
+        "backseat",
+        "back of the car"
+      ],
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.seat"
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:space.sex_swing",
+      "category": "space",
+      "name": "Sex swing",
+      "description": "A strap swing hung from the ceiling.",
+      "aliases": [
+        "love swing"
+      ],
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.seat"
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:space.wedge",
+      "category": "space",
+      "name": "Sex wedge",
+      "description": "A firm foam wedge that props the hips.",
+      "aliases": [
+        "wedge pillow"
+      ],
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.wide"
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:space.four_poster",
+      "category": "space",
+      "name": "Four-poster bed",
+      "description": "A large bed with a post at each corner.",
+      "aliases": [
+        "canopy bed"
+      ],
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.wide",
+            "core:surface.seat"
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:space.pool_edge",
+      "category": "space",
+      "name": "Pool edge",
+      "description": "The edge of a swimming pool at night.",
+      "aliases": [
+        "poolside"
+      ],
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.seat",
+            "core:surface.ground"
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:space.balcony",
+      "category": "space",
+      "name": "Balcony",
+      "description": "A private balcony with a railing.",
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.ground",
+            "core:surface.vertical"
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:space.dark_room",
+      "category": "space",
+      "name": "Dark room",
+      "description": "A dim club backroom.",
+      "aliases": [
+        "backroom",
+        "darkroom"
+      ],
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.ground",
+            "core:surface.vertical"
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:space.glory_hole",
+      "category": "space",
+      "name": "Glory hole booth",
+      "description": "A booth with a hole in the partition wall.",
+      "aliases": [
+        "gloryhole"
+      ],
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.ground",
+            "core:surface.vertical"
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:space.dorm_bed",
+      "category": "space",
+      "name": "Dorm bed",
+      "description": "A narrow bed in a shared dorm room.",
+      "aliases": [
+        "dorm room"
+      ],
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.wide"
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:space.tent",
+      "category": "space",
+      "name": "Tent",
+      "description": "Inside a small camping tent.",
+      "aliases": [
+        "camping tent"
+      ],
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.wide"
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:space.living_room_rug",
+      "category": "space",
+      "name": "Rug by the fireplace",
+      "description": "A thick rug in front of a fire.",
+      "aliases": [
+        "fireside rug"
+      ],
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.wide",
+            "core:surface.ground"
+          ]
+        }
+      }
+    },
+    {
+      "id": "adult:space.mirror_wall",
+      "category": "space",
+      "name": "Mirrored wall",
+      "description": "A bedroom wall covered in mirrors.",
+      "components": {
+        "environment": {
+          "provides": [
+            "core:surface.vertical"
+          ]
+        }
+      }
+    }
+  ]
+}

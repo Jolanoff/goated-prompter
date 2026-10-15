@@ -128,7 +128,7 @@ for (const width of [1440, 390]) {
 
 async function explore(page) {
   await open(page);
-  await page.getByRole("button", { name: "Explorer", exact: true }).click();
+  await page.getByRole("button", { name: "Browse", exact: true }).click();
   await expect(page.locator(".vocabulary-entry-count")).toContainText("81 of 81");
 }
 
@@ -173,6 +173,8 @@ test("disabled Adult pack remains explorable with cross-pack reference navigatio
 
 test("retrieval inspection reports rating exclusions and unknowns without generation", async ({ page, request }) => {
   await explore(page);
+  await page.getByRole("button", { name: "Test a request", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Test a request", exact: true })).toBeVisible();
   await page.getByLabel("Vocabulary sample request").fill("Reverse cowgirl on a sofa");
   await page.getByText("Optional character descriptions", { exact: true }).click();
   await page.getByLabel("Inspection characters").fill("unidentified being\nunidentified being");
@@ -211,7 +213,7 @@ test("explorer retries a failed catalogue and browses an installed pack", async 
   expect((await request.post("/api/vocabulary/packs", { data: zip("ui_custom") })).ok()).toBe(true);
   await page.route("**/api/vocabulary/packs/core/entries?*", (route) => route.fulfill({ status: 503, json: { error: "Catalogue unavailable" } }));
   await open(page);
-  await page.getByRole("button", { name: "Explorer", exact: true }).click();
+  await page.getByRole("button", { name: "Browse", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("Catalogue unavailable");
   await page.unroute("**/api/vocabulary/packs/core/entries?*");
   await page.getByRole("button", { name: "Retry explorer", exact: true }).click();

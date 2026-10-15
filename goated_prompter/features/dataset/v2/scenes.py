@@ -22,7 +22,8 @@ fixed, must, avoid and the user's rules outrank it.
 
 Before the first concept, the enabled vocabulary packs are searched with the confirmed brief
 (vocabulary_packs.py). Concept and staging receive the result as an optional "vocabulary" field of
-the brief data; with nothing relevant the field is absent and the requests are unchanged.
+the brief data, with the ideas for the images that request writes; with nothing relevant the field
+is absent and the requests are unchanged.
 
 Code checks only the shape of each answer (every section filled, exactly the character labels, no
 phrase from the avoid list) and retries a slot up to ROUNDS times. Slots still empty are listed
@@ -198,9 +199,11 @@ def _brief_for_model(brief):
             "style": brief["settings"]["style"] or "Auto"}
 
 
-def _reference(brief):
-    """The optional vocabulary block for concept and staging; nothing at all when there is none."""
-    return {"vocabulary": brief["_vocabulary"]} if brief.get("_vocabulary") else {}
+def _reference(brief, numbers):
+    """The optional vocabulary block for a concept or staging request writing these images; nothing when there is none."""
+    offer = brief.get("_vocabulary")
+    block = offer(numbers) if callable(offer) else offer
+    return {"vocabulary": block} if block else {}
 
 
 def _keyed(labels, value):
@@ -230,20 +233,22 @@ def concept_instruction(brief, count, earlier, errors=()):
     item = {"type": "object", "additionalProperties": False, "required": list(CONCEPT_FIELDS),
             "properties": {field: _keyed(labels, _text(MAX_CONCEPT)) if field == "looks" else _text(MAX_CONCEPT)
                            for field in CONCEPT_FIELDS}}
-    user = {"concepts_needed": count, **_brief_for_model(brief), **_reference(brief), "earlier_concepts": earlier}
+    numbers = range(len(earlier) + 1, len(earlier) + count + 1)
+    user = {"concepts_needed": count, **_brief_for_model(brief), **_reference(brief, numbers), "earlier_concepts": earlier}
     if brief["input"].get("source_mode") == "guided":
         assignments = guided_assignments(brief)
         user["assignments"] = assignments[len(earlier):len(earlier) + count]
     return _instruction(brief, CONCEPT_SYSTEM, errors, user, "concepts", item, count, 250, [*labels, *CONCEPT_FIELDS])
 
 
-def staging_instruction(brief, concepts, errors=()):
+def staging_instruction(brief, concepts, errors=(), numbers=None):
+    """numbers: the images these concepts are for (default 1..len(concepts))."""
     labels = _labels(brief)
     item = {"type": "object", "additionalProperties": False, "required": ["reach", "position", "actions"],
             "properties": {"reach": _text(MAX_FIELD), "position": _keyed(labels, _text(MAX_FIELD)),
                            "actions": _text(MAX_FIELD)}}
     # A: staging gets no looks, so it cannot copy appearance into the placement.
-    user = {**_brief_for_model(brief), **_reference(brief),
+    user = {**_brief_for_model(brief), **_reference(brief, numbers or range(1, len(concepts) + 1)),
             "concepts": [{key: value for key, value in concept.items() if key != "looks"} for concept in concepts]}
     return _instruction(brief, STAGING_SYSTEM, errors, user, "stagings", item, len(concepts), 300 + 250 * len(labels),
                         [*labels, "reach", "position", "actions"])
@@ -410,7 +415,7 @@ def _round(session, brief, slots, numbers, kind, trace, checkpoint, progress, re
     errors = sorted({reason for number in numbers for reason in slots[number]["reasons"]})
     if kind == "staging":
         progress(f"Staging scenes {numbers[0]}-{numbers[-1]}...")
-        prompt = staging_instruction(brief, [slots[number]["concept"] for number in numbers], errors)
+        prompt = staging_instruction(brief, [slots[number]["concept"] for number in numbers], errors, numbers)
         key, check = "stagings", staging_errors
     else:
         progress(f"Describing scenes {numbers[0]}-{numbers[-1]}...")
@@ -449,7 +454,7 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
         preset = _preset(brief)
         reference = vocabulary_reference(config, brief, director=preset.instructions.strip() if preset else "", manager=packs)
         trace.decide("vocabulary", reference["log"])
-        brief = {**brief, "_vocabulary": reference["block"]}
+        brief = {**brief, "_vocabulary": reference["offer"]}
         with create_backend(effective).generation_session() as session:
             concepts, concept_failure = _concepts(session, brief, total, trace, checkpoint, progress)
             # One slot per concept: a scene always lands in its own concept's place.

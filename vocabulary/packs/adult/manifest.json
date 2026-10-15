@@ -2,8 +2,8 @@
   "spec": 1,
   "id": "adult",
   "name": "Adult",
-  "version": "1.0.0",
-  "description": "Adult-only positions, acts and accessories for NSFW datasets. Reuses core bodies, postures and positions (core's From behind and Spooning are not repeated here). Anatomy is never assumed from gender.",
+  "version": "2.0.0",
+  "description": "NSFW positions, acts, toys, outfits and places. Built on the core bodies.",
   "authors": [
     "Jolanoff"
   ],
@@ -13,9 +13,11 @@
     "core": ">=1.1.0 <2.0.0"
   },
   "files": [
-    "capabilities.json",
-    "positions.json",
+    "accessories.json",
     "acts.json",
-    "accessories.json"
+    "capabilities.json",
+    "outfits.json",
+    "positions.json",
+    "spaces.json"
   ]
 }

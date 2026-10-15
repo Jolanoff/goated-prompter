@@ -25,7 +25,7 @@ const references = [{ id: "core:position.sample", name: "Parent position", kind:
   { id: "core:limb.hand", name: "Hand", kind: "capability", declared: true, exists: true, pack: "core", origin: "core" }];
 const detail = { pack, declared: raw, resolved, references, problems: [] };
 const renderDetail = (value = detail) => renderToStaticMarkup(createElement(EntryDetails, { detail: value, onNavigate: noop, onBack: noop }));
-const renderExplorer = (patch = {}) => renderToStaticMarkup(createElement(ExplorerView, { visible: true, packs: [pack], state: {
+const renderExplorer = (patch = {}, mode = "browse") => renderToStaticMarkup(createElement(ExplorerView, { visible: true, packs: [pack], mode, state: {
   pack, catalogue: { entries: [{ ...resolved, rating: "adult" }], total: 17, matched: 1,
     categories: [{ id: "position", name: "Positions", count: 9 }], ratings: ["general", "mature", "adult"],
     sorts: { name: "Name", id: "ID" }, problems: [] },
@@ -94,7 +94,7 @@ test("retrieval inspection labels unknown status, matching reasons, needs and ex
 });
 
 test("sample form makes non-generation and the rating-filter limitation explicit", () => {
-  const markup = renderExplorer();
+  const markup = renderExplorer({}, "test");
   assert.match(markup, /No LLM, scene generation or saved changes/);
   assert.match(markup, /Normal Dataset eligibility checks still apply/);
   assert.match(markup, /Allow Adult rating in inspection/);
@@ -105,4 +105,74 @@ test("entry and resolver text are escaped rather than rendered as markup", () =>
   const markup = renderDetail({ ...detail, declared: { ...raw, name: "<script>alert(1)</script>" } });
   assert.match(markup, /&lt;script&gt;/);
   assert.doesNotMatch(markup, /<script>/);
+});
+
+test("retrieval inspection shows detected intent, named entries versus ideas, closed categories and per-scene suggestions", () => {
+  const idea = (id, name, category, extra = {}) => ({ id, name, pack: "adult", rating: "adult", category, status: "eligible", score: 2,
+    description: "", why: ["content: the brief asks for adult content"], needs: [], warnings: [], binding: null, checked_with: [],
+    note: "", source: "inspiration", scopes: ["content"], attach_to: [], ...extra });
+  const result = { nsfw: true, cast: [], warnings: [], entries: [], excluded: [], suppressed: [], seed: 7,
+    inspiration: [idea("adult:position.cowgirl", "Cowgirl", "position"), idea("adult:action.restrained", "Wrists restrained", "action"),
+      idea("adult:item.handcuffs", "Handcuffs", "item", { attach_to: ["adult:action.restrained"] })],
+    intent: { content: "adult", themes: [{ pack: "adult", name: "Adult", why: "the brief says \"adult\" (request)" }],
+      fixed: {}, ruled_out: { item: ["accessory"] }, per_scene: 3, categories: [
+        { id: "position", name: "Positions", state: "open", reached: [{ scope: "category", why: "the brief says \"position\" (randomized)" }],
+          ideas: ["adult:position.cowgirl"], empty: null, reason: "" },
+        { id: "space", name: "Spaces", state: "closed", reached: [{ scope: "category", why: "the brief says \"location\" (randomized)" }],
+          ideas: [], empty: "the request fixes the space: Bed", reason: "the request fixes the space: Bed" },
+        { id: "posture", name: "Postures", state: "not reached", reached: [], ideas: [], empty: "not reached by the brief",
+          reason: "nothing in the brief names, implies or randomizes it" }] },
+    scenes: [{ scene: 1, entries: [], ideas: ["adult:position.cowgirl", "adult:action.restrained", "adult:item.handcuffs"] },
+      { scene: 2, entries: [], ideas: [] }] };
+  const markup = renderToStaticMarkup(createElement(RetrievalResults, { result, onNavigate: noop, packs: [pack] }));
+  for (const expected of ["Detected intent", "How the request was read", "What the Director gets", "Content level</dt><dd>Adult</dd>", "Adult (the brief says &quot;adult&quot; (request))",
+    "Category wording: the brief says &quot;position&quot; (randomized)", "Open", "Closed", "Not reached",
+    "the request fixes the space: Bed", "nothing in the brief names, implies or randomizes it", "Ruled out by the request</dt><dd>item (accessory)</dd>",
+    "named by the request", "Ideas (optional inspiration)", "Idea", "Offered only with</strong> Wrists restrained",
+    "Per-scene suggestions (seed 7)", "Scene 1: Cowgirl; Wrists restrained; Handcuffs", "Compatible"]) {
+    assert.ok(markup.includes(expected), expected);
+  }
+  assert.doesNotMatch(markup, /Scene 2/, "a scene with nothing offered is not listed");
+});
+
+test("older results without intent or ideas still render", () => {
+  const result = { nsfw: false, cast: [], warnings: ["no relevant vocabulary for this request"], entries: [], excluded: [], suppressed: [] };
+  const markup = renderToStaticMarkup(createElement(RetrievalResults, { result, onNavigate: noop, packs: [pack] }));
+  assert.match(markup, /No entries retrieved for this sample/);
+  assert.doesNotMatch(markup, /Detected intent|Per-scene suggestions/);
+  assert.match(markup, /Try: Name a position, action, place or item/);
+});
+
+test("the inspection payload carries the optional brief details the engine reads", async () => {
+  const { inspectionPayload, PREVIEW_SCENES } = await import("./useVocabularyExplorer.js");
+  assert.deepEqual(inspectionPayload({ request: "Two adults", nsfw: true, characters: " adult man \n\n adult man ", randomized: "positions",
+    avoid: "no toys\n \nno bondage", seed: "42" }), { request: "Two adults", nsfw: true, characters: ["adult man", "adult man"],
+    randomized: "positions", avoid: ["no toys", "no bondage"], seed: 42, scenes: PREVIEW_SCENES });
+  assert.equal(inspectionPayload({ request: "x", nsfw: false, characters: "", seed: "" }).seed, 0);
+  assert.equal(inspectionPayload({ request: "x", nsfw: false, characters: "", seed: "99999999999" }).seed, 2147483647);
+  assert.deepEqual(inspectionPayload({ request: "x", nsfw: false, characters: "" }).avoid, []);
+});
+
+test("sample form offers what may vary, avoid and seed as optional brief details", () => {
+  const markup = renderExplorer({}, "test");
+  for (const expected of ["Optional brief details", "Inspection randomized", "Inspection avoid", "Inspection seed"]) {
+    assert.ok(markup.includes(expected), expected);
+  }
+});
+
+test("browsing and testing are separate views; the tester offers examples and explains statuses", () => {
+  const browse = renderExplorer();
+  assert.doesNotMatch(browse, /Vocabulary sample request|Inspect retrieval/);
+  const tester = renderExplorer({}, "test");
+  for (const expected of ["Test a request", "Example requests", "Two men, positions vary", "Couple, no toys", "adult man"]) {
+    assert.ok(tester.includes(expected), expected);
+  }
+  assert.doesNotMatch(tester, /Filter entry category/);
+});
+
+test("a cast with no matching body gets an actionable hint", () => {
+  const result = { nsfw: true, cast: [], entries: [], excluded: [], suppressed: [],
+    warnings: ["Character 1: no vocabulary body matches, so compatibility involving them is unknown"] };
+  const markup = renderToStaticMarkup(createElement(RetrievalResults, { result, onNavigate: noop, packs: [pack] }));
+  assert.match(markup, /Try: Describe characters with words a body entry knows, such as man, woman or person/);
 });
