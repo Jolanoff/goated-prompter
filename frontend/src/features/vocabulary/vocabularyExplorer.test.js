@@ -160,13 +160,14 @@ test("sample form offers what may vary, avoid and seed as optional brief details
   }
 });
 
-test("browsing and testing are separate views; the tester offers examples and explains statuses", () => {
+test("browsing and testing are separate views; the tester has no built-in example requests", () => {
   const browse = renderExplorer();
   assert.doesNotMatch(browse, /Vocabulary sample request|Inspect retrieval/);
   const tester = renderExplorer({}, "test");
-  for (const expected of ["Test a request", "Example requests", "Two men, positions vary", "Couple, no toys", "adult man"]) {
+  for (const expected of ["Test a request", "adult man"]) {
     assert.ok(tester.includes(expected), expected);
   }
+  assert.doesNotMatch(tester, /Example requests|Two men, positions vary|Couple, no toys|A fantasy scene/);
   assert.doesNotMatch(tester, /Filter entry category/);
 });
 

@@ -202,8 +202,6 @@
 .vocabulary-tester-intro { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 14px 24px; margin-bottom: 16px; }
 .vocabulary-tester-intro > div:first-child { flex: 1 1 380px; }
 .vocabulary-tester-intro p { color: var(--muted); margin: 0; max-width: 70ch; }
-.vocabulary-examples { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; font-size: 12px; }
-.vocabulary-examples > span { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
 .vocabulary-brief-grid { display: grid; grid-template-columns: 1fr 1fr 120px; gap: 12px; }
 .vocabulary-results-summary { padding-bottom: 6px; }
 .vocabulary-retrieval-results h4 { font-family: var(--font-display); font-size: 17px; margin: 26px 0 6px; }

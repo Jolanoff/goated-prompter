@@ -73,7 +73,7 @@ function hint(warning) {
   if (/no vocabulary body matches/.test(warning))
     return "Describe characters with words a body entry knows, such as man, woman or person, or a pack body like elf or dragon.";
   if (/no relevant vocabulary/.test(warning))
-    return "Name a position, action, place or item, or list what may vary (for example: positions, location) under brief details.";
+    return "Name a position, action, place or item, or list what may vary (for example: location, lighting) under brief details.";
   return "";
 }
 
@@ -115,7 +115,7 @@ function Intent({ intent }) {
   if (!intent?.categories) return null;
   const fixed = Object.entries(intent.fixed || {}), ruledOut = Object.entries(intent.ruled_out || {});
   return <section className="vocabulary-intent" aria-label="Detected intent"><h4>How the request was read</h4>
-    <p className="vocabulary-section-help">Detected intent: which categories the request opens for ideas, and which it already decides. To get ideas from a category that isn’t reached, name it under What may vary (for example: acts, toys, outfits).</p>
+    <p className="vocabulary-section-help">Detected intent: which categories the request opens for ideas, and which it already decides. To get ideas from a category that isn’t reached, name it under What may vary (for example: outfits, props, locations).</p>
     <dl className="vocabulary-intent-facts">
       <div><dt>Content level</dt><dd>{intent.content ? label(intent.content) : "Not requested"}</dd></div>
       <div><dt>Pack themes</dt><dd>{intent.themes.length ? intent.themes.map((theme) => `${theme.name} (${theme.why})`).join("; ") : "None"}</dd></div>
@@ -181,25 +181,13 @@ export function RetrievalResults({ result, onNavigate, packs }) {
   </div>;
 }
 
-const examples = [
-  { title: "Two men, positions vary", sample: { request: "2 men having sex", characters: "adult man\nadult man", nsfw: true, randomized: "sex positions, location", avoid: "" } },
-  { title: "A fantasy scene", sample: { request: "A dragon resting on a cliff", characters: "", nsfw: false, randomized: "", avoid: "" } },
-  { title: "Couple, no toys", sample: { request: "A couple in bed", characters: "adult woman\nadult man", nsfw: true, randomized: "positions", avoid: "no toys" } },
-];
-
 function RequestTester({ state, packs, openEntry }) {
   const { sample, editSample, result, inspecting, inspectionError, inspect, detail, detailLoading, detailError, clearEntry, reload, entry } = state;
   const [shown, setShown] = useState({ cast: false, brief: false });
   const toggle = (key) => (event) => { const open = event.currentTarget.open; setShown((current) => current[key] === open ? current : { ...current, [key]: open }); };
-  function applyExample(example) {
-    editSample({ ...example, seed: sample.seed });
-    setShown({ cast: !!example.characters, brief: !!(example.randomized || example.avoid) });
-  }
   return <section className="vocabulary-retrieval" aria-label="Retrieval inspection">
     <div className="vocabulary-tester-intro"><div><h3>Test a request</h3>
-      <p>Type a request like you would in Dataset and see which vocabulary the scene Director would be offered. Uses only enabled packs. No LLM, scene generation or saved changes.</p></div>
-      <div className="vocabulary-examples" aria-label="Example requests"><span>Examples</span>
-        {examples.map((example) => <button type="button" className={ui.textButton} key={example.title} onClick={() => applyExample(example.sample)}>{example.title}</button>)}</div></div>
+      <p>Type a request like you would in Dataset and see which vocabulary the scene Director would be offered. Uses only enabled packs. No LLM, scene generation or saved changes.</p></div></div>
     <form onSubmit={(event) => { event.preventDefault(); inspect(); }}>
       <label className={ui.field}><span>Request</span><textarea className="control textarea" aria-label="Vocabulary sample request"
         value={sample.request} maxLength={4000} rows={3} onChange={(event) => editSample({ request: event.target.value })} placeholder="A dragon resting on a cliff" required /></label>
@@ -209,9 +197,9 @@ function RequestTester({ state, packs, openEntry }) {
       <details open={shown.brief} onToggle={toggle("brief")}><summary>Optional brief details</summary><p className="vocabulary-section-help">As in a confirmed Dataset brief: what may vary opens categories for ideas, avoid rules entries out, and the seed rotates ideas across scenes.</p>
         <div className="vocabulary-brief-grid">
           <label className={ui.field}><span>What may vary</span><textarea className="control textarea" aria-label="Inspection randomized" value={sample.randomized ?? ""}
-            maxLength={1200} rows={2} onChange={(event) => editSample({ randomized: event.target.value })} placeholder="sex positions, location, lighting" /></label>
+            maxLength={1200} rows={2} onChange={(event) => editSample({ randomized: event.target.value })} placeholder="poses, location, lighting" /></label>
           <label className={ui.field}><span>Avoid (one per line)</span><textarea className="control textarea" aria-label="Inspection avoid" value={sample.avoid ?? ""}
-            maxLength={4200} rows={2} onChange={(event) => editSample({ avoid: event.target.value })} placeholder="no toys" /></label>
+            maxLength={4200} rows={2} onChange={(event) => editSample({ avoid: event.target.value })} placeholder="no text or logos" /></label>
           <label className={ui.field}><span>Seed</span><input className={ui.input} aria-label="Inspection seed" inputMode="numeric" value={sample.seed ?? "0"}
             maxLength={10} onChange={(event) => editSample({ seed: event.target.value.replace(/\D/g, "") })} /></label></div></details>
       <div className="vocabulary-inspection-actions"><label className={ui.toggleRow}>
