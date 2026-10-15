@@ -7,7 +7,8 @@ creativity and style settings and the active Director's instructions (vocabulary
 section 10). Each concept and staging request of Section 2 gets the result as a field of the brief
 data: the entries the request names, for every image, and the ideas for the images that request
 writes, from the categories the brief opens, rotated across the images by the brief's seed. It is
-knowledge, not a template:
+knowledge, not a template. Validated v10 intent contributes grounded wording and optional semantic
+hints; these may find optional ideas but never name a fixed choice. Unusable intent keeps v9 retrieval:
 
 - optional: entries the Director may use, adapt or ignore; the scene is never limited to them;
 - the request, fixed, must, avoid and the user's rules outrank it (the Section 2 prompts already
@@ -29,8 +30,11 @@ Comparison: "dataset_vocabulary": false in config.json turns retrieval off (defa
 for each run, changes nothing else, and every scenes debug trace and result records the state.
 """
 
+from dataclasses import replace
+
 from ...vocabulary.packs import PackDrift, PackManager, VocabularyError
 from ...vocabulary.retrieval import RATINGS, RetrievalConfig, RetrievalRequest, retrieve
+from .intent import search_hints
 
 CONFIG_KEY = "dataset_vocabulary"
 STEPS = ("concept", "staging")  # the Section 2 requests that receive the reference block
@@ -92,7 +96,8 @@ def vocabulary_reference(config, brief, *, director="", manager=None, selection=
                         "provided_to": []}}
     # Ratings follow the path Section 2 writes for, so the vocabulary and the scene rules always agree.
     allowed = RATINGS if brief["path"] == "nsfw_character" else tuple(rating for rating in RATINGS if rating != "adult")
-    found = retrieve(registry, RetrievalRequest.from_brief(brief, director=director), RetrievalConfig(allowed_ratings=allowed))
+    request = replace(RetrievalRequest.from_brief(brief, director=director), hints=search_hints(brief))
+    found = retrieve(registry, request, RetrievalConfig(allowed_ratings=allowed))
     amount = brief["input"].get("amount")
     images = range(1, (amount if type(amount) is int and amount > 0 else 1) + 1)
     provided = list(dict.fromkeys(entry_id for number in images for entry_id in found.offer([number])[1]))

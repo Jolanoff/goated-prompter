@@ -117,6 +117,12 @@ export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm
     }
   }
 
+  // Understanding v10: corrections to the structured details travel with Confirm; the server checks them again.
+  function editIntent(intent) {
+    setConfirmation((current) => current?.status === "ready" && current.brief?.intent
+      ? { ...current, brief: { ...current.brief, intent }, error: "" } : current);
+  }
+
   return { confirmation, understanding: confirmation || understanding, run,
-    requestConfirmation, reviseConfirmation, cancelConfirmation, confirmRequest };
+    requestConfirmation, reviseConfirmation, cancelConfirmation, confirmRequest, editIntent };
 }

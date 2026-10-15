@@ -24,7 +24,8 @@ class RunawayRecoveryTests(unittest.TestCase):
                      "seed_mode": "fixed", "constraints": "Alex has one left hand and one right hand."}
         self.value = {"path": "character", "summary": "Alex reads", "fixed": "Alex's identity and anatomy remain fixed",
                       "randomized": "Location and light", "must": [self.data["constraints"]], "avoid": [],
-                      "characters": [{"label": "Alex", "gender": "custom", "custom": "adult human reader", "pronoun": "it", "count": 1}]}
+                      "characters": [{"label": "Alex", "gender": "custom", "custom": "adult human reader", "pronoun": "it", "count": 1}],
+                      "intent": {"elements": [], "relations": []}}
         self.trace = Mock()
         self.brief = understanding.apply_rules(self.value, self.data, self.trace)
         self.calls, self.scripts = [], defaultdict(list)

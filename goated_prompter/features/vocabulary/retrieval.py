@@ -71,7 +71,7 @@ RATINGS = ("general", "mature", "adult")
 FIELD_WEIGHTS = {"name": 3.0, "alias": 3.0, "tag": 1.5, "category": 0.5, "description": 1.0, "notes": 0.5}
 STRONG_FIELDS = ("name", "alias", "tag")
 SOURCE_WEIGHTS = {"must": 1.2, "request": 1.0, "summary": 0.9, "rules": 0.8, "fixed": 0.7, "randomized": 0.5,
-                  "characters": 0.5, "director": 0.4, "style": 0.3}
+                  "characters": 0.5, "director": 0.4, "style": 0.3, "hint": 0.3}
 STANDING = ("director", "style")  # standing instructions, not this request: their negations rule nothing out
 # Creativity setting -> (weight of relevance against variety, relevance floor relative to the best match).
 CREATIVITY = {"Strict": (0.85, 0.30), "Balanced": (0.70, 0.20), "Creative": (0.55, 0.15), "Dice": (0.45, 0.10)}
@@ -144,10 +144,11 @@ class RetrievalRequest:
     nsfw: bool = False
     cast: tuple = None                # optional explicit resolver cast; replaces inference from characters
     seed: int = 0                     # rotation of ideas across scenes
+    hints: tuple = ()                 # validated optional search evidence; never names a choice or fixes a role
 
     @classmethod
     def from_brief(cls, brief, director="", cast=None):
-        """From a confirmed Dataset brief (v9). Raises ValueError when the brief is not one."""
+        """The authoritative, v9-compatible fields of a confirmed Dataset brief; no inferred intent."""
         try:
             settings, data = brief["settings"], brief["input"]
             seed = data.get("seed", 0)
@@ -165,7 +166,8 @@ class RetrievalRequest:
         return [("request", self.request), ("summary", self.summary), *(("must", item) for item in self.must),
                 *(("rules", item) for item in self.rules), ("fixed", self.fixed), ("randomized", self.randomized),
                 *(("characters", _character_text(item)) for item in self.characters),
-                ("director", self.director), ("style", "" if self.style in ("", "Auto") else self.style)]
+                ("director", self.director), ("style", "" if self.style in ("", "Auto") else self.style),
+                *(("hint", text) for text in self.hints)]
 
 
 @dataclass
@@ -787,7 +789,7 @@ class _Retrieval:
             for term in positive:
                 if weight > query.get(term, (0, ""))[0]:
                     query[term] = (weight, source)
-            for term in [] if source in STANDING else negative:
+            for term in [] if source in (*STANDING, "hint") else negative:
                 negated.setdefault(term, source)
             # Phrases are matched against the words in order with their structural words kept (semantic.STRUCTURAL).
             ordered = [term for term in split_negated(text, structure=True)[0] if not term.isdigit()]
@@ -835,9 +837,13 @@ class _Retrieval:
         single = {phrase[0] for _, _, phrase in self.index.text.documents[entry_id].phrases if len(phrase) == 1}
         whole = {(other, source) for term, other, name, source, _ in matches if name in STRONG_FIELDS and name != "tag"
                  and other in single and (term == other or similarity(term, other) >= TextIndex.FUZZY_MIN)}
-        exact = [hit for hit in hits if hit[4]]
+        # A hint can find an optional idea; it cannot name a choice or close an interaction/place.
+        self.hint_evidence = any(source == "hint" for _, source in whole) or any(hit[2] == "hint" and hit[4] for hit in hits)
+        whole = {(other, source) for other, source in whole if source != "hint"}
+        exact = [hit for hit in hits if hit[4] and hit[2] != "hint"]
         if not exact and sequences is None and hits:
-            exact = [hit for hit in self.index.text.phrase_hits(entry_id, getattr(self, "cast_sequences", [])) if hit[4]]
+            exact = [hit for hit in self.index.text.phrase_hits(entry_id, getattr(self, "cast_sequences", []))
+                     if hit[4] and hit[2] != "hint"]
         self.evidence = (bool(exact or whole),
                          not exact and not whole and bool(self.matched[entry_id]) and len(self.matched[entry_id] | loose) < 2)
         # Which texts name the entry explicitly: a choice when they state one.
@@ -860,10 +866,13 @@ class _Retrieval:
                     self.excluded.append({"id": entry_id, "reason": f"rating {index.resolved[entry_id].get('rating')} is not allowed"})
         direct, linkable, named, isolated = {}, set(), set(), set()
         self.named_by = {}  # entry -> the texts that name it
+        self.hinted = set()
         for entry_id in allowed:
             if index.kind[entry_id] == "body":
                 continue  # bodies describe the cast; they never make scene entries relevant
             direct[entry_id] = self.direct(entry_id)
+            if self.hint_evidence:
+                self.hinted.add(entry_id)
             if self.evidence[0]:
                 named.add(entry_id)
                 self.named_by[entry_id] = set(self.naming)
@@ -942,6 +951,7 @@ class _Retrieval:
         anything else (one word of a longer name, a description word, a capability two entries share)."""
         index, explicit = self.index, [entry_id for entry_id in named if self.named_by.get(entry_id, set()) - set(STANDING)]
         sequences = [(source, words) for source, _, words in self.sequences if source in INTENT_SOURCES]
+        hint_sequences = [(source, words) for source, _, words in self.sequences if source == "hint"]
         needs = {}
         for entry_id in explicit:
             for _, _, all_of, groups in self.object_needs(entry_id):
@@ -955,8 +965,13 @@ class _Retrieval:
                 continue
             entry = index.resolved[entry_id]
             tags = [tag for tag in entry.get("tags", []) if _Themes.found(tuple(phrase_terms(tag.replace("_", " "))), sequences, self.negated)]
+            hinted_tag = any(_Themes.found(tuple(phrase_terms(tag.replace("_", " "))), hint_sequences, self.negated)
+                             for tag in entry.get("tags", []))
             why = None
-            if tags:
+            if entry_id in self.hinted or hinted_tag:
+                why = "matches an optional semantic search hint, not a requirement"
+                self.concepts.add(entry_id)
+            elif tags:
                 why = f'the request asks for the concept "{tags[0]}"'
                 self.concepts.add(entry_id)
             elif raw.get(entry_id, 0) > 0:

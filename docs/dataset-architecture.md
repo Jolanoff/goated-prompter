@@ -39,6 +39,19 @@ reported incompatible and left untouched. `GET /api/workspace/dataset/v2/runs/<r
 run's recorded selection and how the installed packs compare, for the run pages and the Vocabulary
 Inspector.
 
+Structured intent (Understanding v10, Phase 3): the same Understanding call also returns `intent`, the
+request as typed parts (subjects, actions, poses, objects, body parts, attributes, places, look), each
+with its status (every image, varies, allowed, ruled out), whether the request states it or the model
+suggests a dimension to vary, and its links (who does what to whom, what belongs to what, the guided
+input it belongs to), plus relations, notes on what stays unclear, and search words kept apart as
+evidence (`v2/intent.py`). Code checks the structure with the existing single repair; a second invalid
+intent leaves the brief valid with intent marked unavailable. Wording that does not match the request
+and clashes with avoid are reported, never rewritten. At confirmation, links and search words can be
+corrected and the model's own suggestions removed; the server checks every correction again, and
+anything the request states changes only through Revise. Brief version 10 adds `intent`; version 9
+briefs in saved runs stay valid unchanged. Summary, fixed, randomized, must and avoid remain what scene
+writing uses; vocabulary retrieval reads intent only from Phase 4.
+
 ### Phase 7: separate UI stages
 
 - **7A — Pack Manager:** manage installed packs and their enabled state.

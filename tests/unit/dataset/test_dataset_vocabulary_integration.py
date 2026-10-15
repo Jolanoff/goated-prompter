@@ -14,7 +14,7 @@ from types import SimpleNamespace
 from unittest import mock
 
 from goated_prompter.backends.base import GoatedPrompterBackend
-from goated_prompter.features.dataset.v2 import scenes
+from goated_prompter.features.dataset.v2 import intent, scenes, vocabulary_packs
 from goated_prompter.features.vocabulary.packs import BUNDLED_DIRS, PackManager
 
 FIXTURE_PACKS = Path(__file__).resolve().parents[1] / "vocabulary" / "fixtures" / "packs"
@@ -320,6 +320,223 @@ class Section2Vocabulary(Section2Run):
         unrelated = {"scene:action.duel", "scene:position.aerial_carry", "fantasy:action.cast_on", "adult:item.dildo"}
         self.assertFalse(unrelated & set(log["provided"]), log["provided"])
         self.assertLessEqual(len(log["block"]), 1200)
+
+
+class IntentVocabulary(Section2Run):
+    def understood(self, text="Two friends greet each other", terms=("Embrace",)):
+        value = brief(text, characters=PEOPLE)
+        value.update(version=10, fixed=text, randomized="lighting")
+        value["input"]["seed"] = 7
+        value["intent"] = intent.normalize({"elements": [
+            {"id": "s1", "kind": "subject", "text": "woman", "character": "woman", "status": "fixed", "source": "request"},
+            {"id": "s2", "kind": "subject", "text": "man", "character": "man", "status": "fixed", "source": "request"},
+            {"id": "a", "kind": "action", "text": "greet", "by": ["s1"], "to": ["s2"],
+             "status": "fixed", "source": "request", "terms": list(terms)}], "relations": []},
+            value["characters"], value["avoid"], [text])
+        return value
+
+    def reference(self, value, selected=None):
+        selection = vocabulary_packs.select_packs({}, ["scene"] if selected is None else selected, manager=self.packs)
+        return vocabulary_packs.vocabulary_reference({}, value, manager=self.packs, selection=selection)
+
+    def extend_pack(self, entries):
+        path = self.root / "packs/scene/entries.json"
+        value = json.loads(path.read_text(encoding="utf-8"))
+        value["entries"].extend(entries)
+        path.write_text(json.dumps(value), encoding="utf-8")
+
+    def test_semantic_hints_reach_director_only_as_optional_ideas(self):
+        value = self.understood()
+        before = copy.deepcopy(value)
+        result, log = self.run_scenes(value)
+        self.assertIn("scene:action.embrace", log["provided"])
+        self.assertNotIn("scene:action.embrace", [entry["id"] for entry in log["entries"]],
+                         "a semantic hint is not named by the request")
+        self.assertNotIn("Embrace", log["intent"]["fixed"].get("interaction", []))
+        for stage in ("concepts", "stagings"):
+            user = self.users(stage)[0]
+            self.assertIn("Embrace", user["vocabulary"])
+            self.assertIn("optional", user["vocabulary"])
+            self.assertEqual(user["fixed"], value["fixed"])
+            self.assertEqual(user["must"], [])
+        self.assertEqual(value, before, "retrieval cannot rewrite participant links or the brief")
+        self.assertTrue(result["complete"])
+
+    def test_recorded_camera_is_neither_search_evidence_nor_a_vocabulary_constraint(self):
+        from goated_prompter.features.dataset.v2 import understanding
+        from tests.unit.dataset.test_dataset_understanding_v10 import draft
+        cases = json.loads((Path(__file__).parent / "fixtures/understanding_gemma_smoke.json").read_text(encoding="utf-8"))
+        case = cases["two-men-simplified"]
+        value = understanding.apply_rules(copy.deepcopy(case["responses"][0]), draft(case["request"]), mock.Mock())
+        self.extend_pack([
+            {"id": "scene:item.camera", "category": "item", "name": "Camera",
+             "components": {"object": {"hands": 1, "provides": ["core:item.handheld"]}}},
+            {"id": "scene:action.photography", "category": "action", "name": "Photography", "components": {
+                "participants": {"slots": {"actor": being(), "subject": being()}}}},
+        ])
+        # Hints on the ungrounded object must not leak either, even though the model labelled it request/fixed.
+        camera = next(item for item in value["intent"]["elements"] if item["id"] == "o2")
+        camera["terms"] = ["Sword duel"]
+        photo = next(item for item in value["intent"]["elements"] if item["id"] == "a2")
+        photo["terms"] = ["Photography"]
+        before = copy.deepcopy(value)
+        reference = self.reference(value)
+        log = reference["log"]
+        self.assertNotIn("scene:item.camera", reference["provided"])
+        self.assertNotIn("scene:action.duel", reference["provided"])
+        self.assertIn("scene:action.photography", reference["provided"], "grounded photographing remains usable")
+        self.assertNotIn("Camera", json.dumps(log["intent"]["fixed"]))
+        self.assertNotIn("camera", intent.search_hints(value))
+        self.assertEqual(value, before)
+        self.assertEqual((photo["by"], photo["to"]), (["s2"], ["s1"]))
+        playing = next(item for item in value["intent"]["elements"] if item["id"] == "a1")
+        self.assertEqual((playing["by"], playing["to"]), (["s1"], ["o1"]))
+        self.assertEqual([value["intent"]["elements"][n]["cast"] for n in (0, 3)], [["man 1"], ["man 2"]])
+        self.assertEqual(value["must"], [])
+
+    def test_unusable_or_ambiguous_intent_has_exact_v9_retrieval_fallback(self):
+        for mode in ("v9", "unavailable", "unresolved", "truncated", "invalid"):
+            with self.subTest(mode=mode):
+                value = self.understood()
+                baseline = {key: field for key, field in value.items() if key != "intent"}
+                baseline["version"] = 9
+                if mode == "v9":
+                    value["version"] = 9
+                elif mode == "unavailable":
+                    value["intent"] = intent.unavailable("unusable response")
+                elif mode in ("unresolved", "truncated"):
+                    value["intent"][mode] = ["Unclear actor"] if mode == "unresolved" else True
+                else:
+                    value["intent"]["elements"][-1]["to"] = ["missing"]
+                actual, expected = self.reference(value), self.reference(baseline)
+                for field in ("block", "provided"):
+                    self.assertEqual(actual[field], expected[field])
+                self.assertEqual(actual["log"]["scenes"], expected["log"]["scenes"])
+
+    def test_missing_hints_keep_original_wording_and_existing_named_matches(self):
+        value = self.understood("Two friends hug", terms=())
+        value["intent"]["elements"][-1]["text"] = "hug"
+        reference = self.reference(value)
+        self.assertIn("scene:action.embrace", reference["provided"])
+        self.assertIn("scene:action.embrace", [item["id"] for item in reference["log"]["entries"]])
+        self.assertIn("hug", intent.search_hints(value))
+
+    def test_suggestions_scoped_inputs_and_missing_actors_do_not_open_search(self):
+        for mode in ("suggested", "scoped", "unbound", "excluded", "unsupported"):
+            with self.subTest(mode=mode):
+                value = self.understood()
+                action = value["intent"]["elements"][-1]
+                if mode == "suggested":
+                    action.update(source="suggested", status="randomized")
+                elif mode == "scoped":
+                    action["input"] = 1
+                    value["input"]["guided_inputs"] = ["They greet"]
+                elif mode == "unbound":
+                    action["by"] = []
+                elif mode == "excluded":
+                    action["status"] = "excluded"
+                else:
+                    action["text"] = "duel"
+                reference = self.reference(value)
+                self.assertNotIn("scene:action.embrace", reference["provided"])
+
+    def test_hints_obey_pack_selection_dependencies_and_isolation(self):
+        value = self.understood()
+        self.assertNotIn("scene:action.embrace", self.reference(value, selected=[])["provided"])
+        path = self.root / "packs/scene/manifest.json"
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        manifest["requires"]["fantasy"] = ">=0.1.0"
+        path.write_text(json.dumps(manifest), encoding="utf-8")
+        first = self.reference(value)
+        self.assertEqual(first["log"]["packs"], ["core", "fantasy", "scene"])
+        self.assertIn({"id": "fantasy", "role": "dependency"},
+                      [{"id": item["id"], "role": item["role"]} for item in first["log"]["selection"]["packs"]])
+        self.packs.set_enabled("adult", False)
+        second = self.reference(value)
+        self.assertEqual(first["block"], second["block"])
+        self.assertEqual(first["log"]["scenes"], second["log"]["scenes"])
+
+    def test_hints_use_existing_ratings_conflict_and_avoid_checks(self):
+        self.extend_pack([{"id": "scene:action.flourish", "category": "action", "name": "Forbidden flourish", "rating": "adult",
+                           "components": {"participants": {"slots": {"actor": being()}}}}])
+        for terms, avoid, forbidden in [
+            (("Forbidden flourish",), [], "scene:action.flourish"),
+            (("Aerial carry",), [], "scene:position.aerial_carry"),
+            (("Embrace",), ["no hugging"], "scene:action.embrace"),
+        ]:
+            with self.subTest(terms=terms):
+                value = self.understood(terms=terms)
+                value["avoid"] = avoid
+                reference = self.reference(value, selected=["scene", "adult"])
+                self.assertNotIn(forbidden, reference["provided"])
+                if terms == ("Forbidden flourish",):
+                    self.assertTrue(any(item["id"] == forbidden and "rating" in item["reason"]
+                                        for item in reference["log"]["excluded"]))
+                if terms == ("Aerial carry",):
+                    self.assertTrue(any(item["id"] == forbidden and "conflict" in item["reason"]
+                                        for item in reference["log"]["excluded"]))
+
+    def test_retrieval_preserves_valid_ownership_and_target_links(self):
+        value = self.understood("A woman greets a man while holding his hand")
+        value["intent"]["elements"].insert(2, {"id": "b", "kind": "body_part", "text": "hand", "status": "fixed",
+            "source": "request", "character": "", "member": 0, "cast": [], "of": "s2", "by": [], "to": [], "input": 0, "terms": []})
+        value["intent"]["elements"][-1]["to"] = ["b"]
+        before = copy.deepcopy(value)
+        self.reference(value)
+        self.assertEqual(value, before)
+        self.assertEqual(value["intent"]["elements"][-1]["to"], ["b"])
+        self.assertEqual(value["intent"]["elements"][2]["of"], "s2")
+
+    def test_hint_concepts_match_pack_tags_without_becoming_named_entries(self):
+        entry = copy.deepcopy(SCENE_PACK[1])
+        entry.update(id="scene:action.reunion", name="Gathered embrace", aliases=[], tags=["friendly_reunion"])
+        self.extend_pack([entry])
+        reference = self.reference(self.understood(terms=("Friendly reunion",)))
+        self.assertIn("scene:action.reunion", reference["provided"])
+        self.assertNotIn("scene:action.reunion", [entry["id"] for entry in reference["log"]["entries"]])
+        self.assertEqual(reference["log"]["intent"]["fixed"], {})
+
+    def test_hinted_alternatives_do_not_override_a_fixed_interaction(self):
+        value = self.understood("Two friends hug", terms=("Sword duel",))
+        value["intent"]["elements"][-1]["text"] = "hug"
+        reference = self.reference(value)
+        self.assertIn("scene:action.embrace", reference["provided"])
+        self.assertNotIn("scene:action.duel", reference["provided"])
+        self.assertNotIn("Sword duel", json.dumps(reference["log"]["intent"]["fixed"]))
+
+    def test_negated_search_hint_cannot_create_an_exclusion(self):
+        value = self.understood("Two friends hug", terms=("no Embrace",))
+        value["intent"]["elements"][-1]["text"] = "hug"
+        reference = self.reference(value)
+        self.assertIn("scene:action.embrace", reference["provided"])
+        self.assertEqual(value["avoid"], [])
+        self.assertFalse(any(item["id"] == "scene:action.embrace" for item in reference["log"]["excluded"]))
+
+    def test_pack_drift_still_requires_reconfirmation_before_hint_retrieval(self):
+        value = self.understood()
+        selection = vocabulary_packs.select_packs({}, ["scene"], manager=self.packs)
+        self.extend_pack([{"id": "scene:space.hall", "category": "space", "name": "Hall",
+                           "components": {"environment": {"provides": ["core:surface.wide"]}}}])
+        with self.assertRaisesRegex(ValueError, "changed since this run was confirmed"):
+            vocabulary_packs.vocabulary_reference({}, value, manager=self.packs, selection=selection)
+
+    def test_optional_hint_pool_uses_existing_seeded_diversity(self):
+        entries = []
+        for ident, name in [("hello", "Open welcome"), ("farewell", "Warm farewell")]:
+            entries.append({"id": f"scene:action.{ident}", "category": "action", "name": name, "components": {
+                "participants": {"slots": {"actor": being()}},
+                "claims": {"actor": [{"resource": "core:limb.hand", "count": 1, "mode": "shared", "purpose": "use"}]}}})
+        self.extend_pack(entries)
+        value = self.understood(terms=("Open welcome", "Warm farewell"))
+        value["input"]["amount"] = 6
+        first = self.reference(value)
+        repeated = self.reference(value)
+        self.assertEqual(first["log"]["scenes"], repeated["log"]["scenes"])
+        action_ids = {"scene:action.hello", "scene:action.farewell"}
+        offers = [set(scene["ideas"]) & action_ids for scene in first["log"]["scenes"]]
+        self.assertTrue(all(len(items) == 1 for items in offers), offers)
+        self.assertEqual(set.union(*offers), action_ids)
+        self.assertTrue(all(previous != following for previous, following in zip(offers, offers[1:])))
 
 
 class ProductionPacks(Section2Run):

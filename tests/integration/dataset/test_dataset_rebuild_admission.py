@@ -84,6 +84,31 @@ class DatasetRebuildAdmissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(selection["selected"], [])
         self.assertIn("core", [pack["id"] for pack in selection["packs"]])
 
+    async def test_confirm_accepts_allowed_intent_corrections_and_refuses_the_rest(self):
+        self.value["intent"] = {"elements": [
+            {"id": "s1", "kind": "subject", "text": "adults", "status": "fixed", "source": "request", "character": "reader"},
+            {"id": "a1", "kind": "action", "text": "reading", "status": "fixed", "source": "request", "by": ["s1"], "terms": ["read"]},
+            {"id": "k1", "kind": "aspect", "text": "lighting", "status": "randomized", "source": "suggested"}], "relations": []}
+        payload = await self.analyze()
+        self.assertEqual(payload["brief"]["version"], 10)
+        self.assertEqual(payload["brief"]["intent"]["elements"][0]["cast"], ["reader 1", "reader 2"])
+        refused = deepcopy(payload)
+        refused["brief"]["intent"]["elements"][1]["status"] = "optional"
+        response = await self.confirm(refused)
+        self.assertEqual(response.status, 400)
+        self.assertIn("Use Revise", await response.text())
+        edited = deepcopy(payload)
+        edited["brief"]["intent"]["elements"][1]["terms"] = ["read", "book"]
+        edited["brief"]["intent"]["elements"] = edited["brief"]["intent"]["elements"][:2]
+        response = await self.confirm(edited)
+        self.assertEqual(response.status, 202, await response.text())
+        job = await self.terminal(await response.json())
+        self.assertEqual(job["status"], "succeeded", job.get("error"))
+        confirmed = self.scenes.call_args.args[2]
+        self.assertEqual(confirmed["intent"]["elements"][1]["terms"], ["read", "book"])
+        self.assertEqual({key: value for key, value in confirmed.items() if key != "intent"},
+                         {key: value for key, value in payload["brief"].items() if key != "intent"})
+
     async def test_confirm_requires_an_explicit_usable_pack_selection(self):
         payload = await self.analyze()
         missing = {key: value for key, value in payload.items() if key != "vocabulary_packs"}

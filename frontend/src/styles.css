@@ -295,6 +295,7 @@
   .dataset-review-body h3 { color: var(--color-ink); font-size: 14px; font-weight: 650; }
   .dataset-review-concept { padding-bottom: 18px; border-bottom: 1px solid var(--color-line); }
   .dataset-review-concept > p { max-width: 75ch; margin-top: 7px; }
+  .dataset-review-concept > .dataset-review-list { display: flex; flex-wrap: wrap; gap: 6px 24px; margin-top: 7px; }
   .dataset-review-concept .dataset-review-identity { color: var(--color-muted); font-size: 12px; }
   .dataset-review-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; padding-block: 18px; }
   .dataset-review-grid > * { min-width: 0; }
@@ -312,6 +313,29 @@
   .dataset-review-questions { margin-top: 16px; padding: 14px 16px; border-radius: 12px; background: var(--warning-bg); color: var(--color-ink); }
   .dataset-review-details { margin-top: 20px; padding: 12px 14px; border: 1px solid var(--color-line); border-radius: 12px; font-size: 12px; }
   .dataset-review-details .dataset-review-grid { padding-block: 0; }
+  .dataset-review-details > summary { cursor: pointer; font-size: 13px; font-weight: 650; }
+  .dataset-review-details > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
+  .dataset-review-body > .dataset-review-list { padding-block: 16px; }
+  .dataset-review-body > .dataset-review-concept + .dataset-review-concept { padding-top: 16px; }
+  .dataset-review-questions ul { padding-left: 18px; list-style: disc; }
+  .dataset-review-intent { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--color-line); }
+  .dataset-intent-warnings { display: grid; gap: 4px; margin-top: 10px; padding: 10px 14px 10px 30px; border-radius: 10px; background: var(--warning-bg); list-style: disc; font-size: 12px; }
+  .dataset-intent-group { margin-top: 14px; }
+  .dataset-intent-group h4 { font-size: 12px; font-weight: 650; color: var(--color-muted); }
+  .dataset-intent-group > ul { display: grid; gap: 8px; margin-top: 6px; }
+  .dataset-intent-group > ul > li { padding: 8px 12px; border: 1px solid var(--color-line); border-radius: 10px; }
+  .dataset-intent-part { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+  .dataset-intent-part small, .dataset-intent-hint { color: var(--color-muted); font-size: 11px; }
+  .dataset-intent-part .select { width: auto; min-width: 0; max-width: 100%; }
+  .dataset-intent-status, .dataset-intent-suggested { font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--color-line); color: var(--color-muted); }
+  .dataset-intent-status[data-status="excluded"] { color: var(--warning); background: var(--warning-bg); }
+  .dataset-intent-suggested { border-style: dashed; }
+  .dataset-intent-terms { display: grid; gap: 4px; margin-top: 8px; font-size: 11px; color: var(--color-muted); }
+  .dataset-intent-correct { margin-top: 6px; font-size: 12px; }
+  .dataset-intent-correct summary { cursor: pointer; color: var(--color-muted); }
+  .dataset-intent-links { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; border: 0; padding: 0; }
+  .dataset-intent-links legend { font-size: 11px; color: var(--color-muted); }
+  .dataset-intent-links label { display: inline-flex; align-items: center; gap: 5px; }
   .dataset-review-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; padding: 16px 26px; border-top: 1px solid var(--color-line); }
   .dataset-review-actions .button-primary { margin-top: 0; }
 

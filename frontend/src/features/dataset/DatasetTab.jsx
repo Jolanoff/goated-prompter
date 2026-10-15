@@ -81,7 +81,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
     guidedLines, canPlanScenes, staleScenePlan, sceneUsable, validSceneCount, retryStage,
     canWrite, canContinue, remainingPromptCount, updateSceneSettings, updateWriterSettings,
     sceneAction, generateDataset, generateScenes, continueDataset, editResult, releaseCheckpoints, clearResults,
-    confirmation, understanding, run, cancelConfirmation, confirmRequest } = useDatasetWorkflow({ preferences, job, busy, active, noEngine,
+    confirmation, understanding, run, cancelConfirmation, confirmRequest, editIntent } = useDatasetWorkflow({ preferences, job, busy, active, noEngine,
       director, onGenerate: startGeneration, onReleaseJobs, vocabularyPacks: vocabulary.selected, packsReady: vocabulary.ready });
   // A run shows the packs it recorded on the server, never the selector's current choice.
   const runPacks = useRunPacks(run?.result?.run_id);
@@ -512,6 +512,6 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
     </>}
     {confirmation && <DatasetConfirmationModal review={confirmation} busy={busy}
       directorLabel={director ? presetDisplayLabel(director) : ""}
-      onConfirm={confirmRequest} onCancel={cancelConfirmation} onExport={exportGenerationLog} />}
+      onConfirm={confirmRequest} onCancel={cancelConfirmation} onExport={exportGenerationLog} onEditIntent={editIntent} />}
   </div>;
 }

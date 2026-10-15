@@ -10,7 +10,7 @@ from .intent import intent_signature
 from ...presets import get_director_preset
 from .plan import reusable_scene_plan, scene_is_usable, scene_unusable_reason
 from .v2.runs import RunStoreError, recorded_packs
-from .v2.understanding import VERSION, confirm, copied_input, copied_settings
+from .v2.understanding import VERSIONS, confirm, copied_input, copied_settings, reviewed_brief
 from .v2.vocabulary_packs import pack_status, select_packs
 from ...api.common import STATE, active_job_conflict, engine_request, json_object
 
@@ -71,7 +71,7 @@ async def dataset_endpoint(request):
                       if payload.get("confirmation_token") else retained or None)
         else:
             intent = state.dataset_intents.approve(payload.get("confirmation_token"), data)
-        if intent and intent.get("version") == VERSION:
+        if intent and intent.get("version") in VERSIONS:
             raise ValueError("Use the rebuilt Dataset confirmation endpoint for this brief.")
         config = state.config()
         director_request = engine_request(
@@ -98,10 +98,10 @@ async def confirm_endpoint(request):
     settings = payload["settings"]
     if not isinstance(settings, dict) or set(settings) - {"director_profile"}:
         raise ValueError("Invalid Dataset prompt-engine settings.")
-    brief = state.dataset_intents.approve(payload["confirmation_token"], data)
-    if brief != payload["brief"]:
-        raise ValueError("The brief changed after analysis. Review the updated request before generating.")
-    if brief.get("version") != VERSION or brief["input"] != copied_input(data) or brief["settings"] != copied_settings(data):
+    approved = state.dataset_intents.approve(payload["confirmation_token"], data)
+    # Only the structured intent may differ from what was analyzed, and only by allowed corrections (v2/intent.py).
+    brief = reviewed_brief(approved, payload["brief"])
+    if brief.get("version") not in VERSIONS or brief["input"] != copied_input(data) or brief["settings"] != copied_settings(data):
         raise ValueError("Dataset input changed after analysis. Review the updated request before generating.")
     brief = confirm(brief, data)
     director = get_director_preset(brief["settings"]["director"], strict=True)
