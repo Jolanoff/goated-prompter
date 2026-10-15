@@ -78,8 +78,9 @@ class RebuildParityTests(unittest.TestCase):
                 GoatedPrompterRequest(idea="reading"), self.brief, progress=lambda _message: None)
         self.assertEqual([scene["actions"] for scene in result["scenes"]],
                          ["Read on a bench", "Read beside a fountain", "Read on a bench"])
-        self.assertEqual(json.loads(calls[1].user_message)["assignments"], [
-            {"index": 2, "input": "Read beside a fountain"}, {"index": 3, "input": "Read on a bench"}])
+        # Image 3's valid concept is kept at once in image 3; only image 2 is asked for again, with its own input.
+        self.assertEqual(json.loads(calls[1].user_message)["assignments"], [{"index": 2, "input": "Read beside a fountain"}])
+        self.assertEqual(json.loads(calls[1].user_message)["images"], [2])
         self.assertTrue(all(prompt.seed == 73 for prompt in calls))
 
     def test_random_source_does_not_apply_inactive_guided_inputs(self):

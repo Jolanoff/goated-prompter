@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { Download, LoaderCircle, X } from "lucide-react";
 import { ui } from "../../ui.js";
 import { canConfirmDatasetReview } from "./datasetState.js";
+import { visualDirectionSummary } from "./visualDirection.js";
 import { canRemovePart, dismissNote, groupedParts, intentKinds, intentStatus, linkChoices, memberChoices, partName, partSentence,
   removePart, setLinks, setMember, setRelationEnd, setTerms } from "./datasetIntent.js";
 
@@ -177,6 +178,8 @@ export default function DatasetConfirmationModal({ review, busy, directorLabel, 
           <div><dt>Director</dt><dd>{directorLabel || brief.settings.director || "Not specified"}</dd></div>
           {review.vocabulary_packs && <div><dt>Vocabulary packs</dt><dd className="wrap-anywhere">{["Core", ...review.vocabulary_packs].join(", ")}
             <small className="block text-muted">Recorded with this run on Confirm, with any packs they require.</small></dd></div>}
+          {review.visual_direction && <div><dt>Visual direction</dt><dd className="wrap-anywhere">{visualDirectionSummary(review.visual_direction)}
+            <small className="block text-muted">Only for what the request leaves open; your own camera and light wording is kept.</small></dd></div>}
         </dl>
       </section>
       </details>

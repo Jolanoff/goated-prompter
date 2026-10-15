@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../../api.js";
 import { defaultPackSelection, packChoices, selectionProblem, sortedIds } from "../vocabulary/packSelection.js";
+import { defaultVisualDirection, readStoredVisual, writeStoredVisual } from "./visualDirection.js";
 
 // The Dataset tab's own pack choice for its next run. Remembered in this browser only as a convenience;
 // each confirmed run records its resolved selection on the server, which is what that run uses from then on.
@@ -32,6 +33,16 @@ export function useDatasetPacks(visible) {
   const problem = packs && selected ? selectionProblem(packChoices(packs, selected)) : "";
   return { packs: packs || [], selected: selected || [], ready: !!packs && !!selected && !problem, loading: !packs && !error,
     error, problem, choose, reload };
+}
+
+/** The Visual Direction settings for the next run, remembered in this browser only (the run records what it used). */
+export function useVisualDirection() {
+  const [settings, setSettings] = useState(() => readStoredVisual() ?? defaultVisualDirection());
+  function choose(next) {
+    setSettings(next);
+    writeStoredVisual(next);
+  }
+  return { settings, choose };
 }
 
 /** A stored run's recorded selection and how today's packs compare, from the run store (read-only). */

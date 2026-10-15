@@ -90,6 +90,25 @@ POSES = ("standing close together", "seated side by side", "walking arm in arm",
          "kneeling on a rug", "facing the window")
 
 
+def without_arrangements(value, rules=()):
+    """value without the arrangement contract (arrangements.py): its rule lines, fields and options."""
+    if isinstance(value, str):
+        for rule in rules:
+            value = value.replace("\n" + rule, "")
+        return value
+    if isinstance(value, list):
+        return [without_arrangements(item) for item in value]
+    if isinstance(value, dict):
+        return {key: without_arrangements(item) for key, item in value.items()
+                if key not in ("arrangement", "arrangement_options", "placement")}
+    return value
+
+
+def summary(vocabulary):
+    """The two fields every run's vocabulary record has had since Phase 5 (diagnostics are checked separately)."""
+    return {key: vocabulary[key] for key in ("enabled", "provided")}
+
+
 class ScriptedDirector(GoatedPrompterBackend):
     """Answers each Section 2 request with well-formed JSON and keeps every request it saw."""
     name = "scripted-director"
@@ -104,19 +123,43 @@ class ScriptedDirector(GoatedPrompterBackend):
         stage = instruction.diagnostic_stage.split(":")[1]
         if stage == "concepts":
             start = len(user["earlier_concepts"])
-            return json.dumps({"concepts": [{
-                "place": PLACES[start + n], "position_name": POSES[start + n], "position": f"variation {POSES[start + n]}",
+            # The images asked for: those after the earlier ones, or the ones named when others were already kept.
+            numbers = user.get("images") or list(range(start + 1, start + user["concepts_needed"] + 1))
+            concepts = [{
+                "place": PLACES[number - 1], "position_name": POSES[number - 1], "position": f"variation {POSES[number - 1]}",
                 "looks": {label: "warm skin, slim, short hair" for label in labels}, "lighting": "soft daylight",
-                "camera": "medium shot"} for n in range(user["concepts_needed"])]})
+                "camera": "medium shot"} for number in numbers]
+            self.labels = labels
+            for concept, offered in zip(concepts, user.get("arrangement_options", [])):
+                concept["arrangement"] = self.arrangement(offered["options"])
+            return json.dumps({"concepts": concepts})
         if stage == "stagings":
-            return json.dumps({"stagings": [{"reach": "Nothing is against the touched part.",
-                                             "position": {label: f"{label} stands on the floor" for label in labels},
-                                             "actions": "They greet each other."} for _ in user["concepts"]]})
+            stagings = [{"reach": "Nothing is against the touched part.",
+                         "position": {label: f"{label} stands on the floor" for label in labels},
+                         "actions": "They greet each other."} for _ in user["concepts"]]
+            if "placement" in instruction.json_schema["properties"]["stagings"]["items"]["properties"]:
+                for staging, concept in zip(stagings, user["concepts"]):
+                    fixed = (concept.get("arrangement") or {}).get("placement", {})
+                    staging["placement"] = {label: {"posture": "other", "facing": "other", **fixed.get(label, {})}
+                                            for label in labels}
+            return json.dumps({"stagings": stagings})
         return json.dumps({"scenes": [{
             "subjects": {label: {"skin": "warm", "build": "slim", "hair": "short", "detail": "freckles", "clothing": "linen shirt"}
                          for label in labels},
             "space": "a quiet room", "lighting": "soft daylight", "mood": "calm", "camera": "medium shot",
             "extras": "a lamp"} for _ in user["scenes"]]})
+
+
+    def arrangement(self, options):
+        """The first option the request names, with its only valid roles or else the people in order, one per role;
+        none ([]) when nothing is named."""
+        named = [option for option in options if option["named_by_request"]]
+        if not named:
+            return []
+        roles = named[0].get("only_valid_roles") or {role: [label] for role, label in zip(sorted(named[0]["roles"]), self.labels)}
+        if set(roles) != set(named[0]["roles"]):
+            return []
+        return [{"option": named[0]["id"], "roles": [{"role": role, "who": who} for role, who in sorted(roles.items())]}]
 
 
 class RecordingTrace:
@@ -166,7 +209,7 @@ class Section2Vocabulary(Section2Run):
     # -- retrieval reaches the Director
     def test_relevant_vocabulary_reaches_concept_and_staging_only(self):
         result, log = self.run_scenes(brief("two friends hugging on a sofa", characters=PEOPLE))
-        self.assertEqual(result["vocabulary"], {"enabled": True, "provided": log["provided"]})
+        self.assertEqual(summary(result["vocabulary"]), {"enabled": True, "provided": log["provided"]})
         self.assertIn("scene:action.embrace", log["provided"])
         self.assertIn("scene:space.sofa", log["provided"])
         for stage in ("concepts", "stagings"):
@@ -176,6 +219,37 @@ class Section2Vocabulary(Section2Run):
         self.assertFalse([user for user in self.users("scenes") if "vocabulary" in user], "description never gets it")
         self.assertEqual(log["provided_to"], ["concept", "staging"])
         self.assertTrue(result["complete"])
+
+    def test_the_result_keeps_export_safe_diagnostics_by_image(self):
+        result, log = self.run_scenes(brief("a woman doing an aerial carry of a man in her arms, then hugging on a sofa",
+                                            characters=PEOPLE))
+        kept = result["vocabulary"]
+        self.assertEqual([entry["id"] for entry in kept["entries"]], [entry["id"] for entry in log["entries"]])
+        self.assertEqual(set(kept["entries"][0]), set(vocabulary_packs.ENTRY_FIELDS))
+        self.assertEqual([image["slot"] for image in kept["images"]], [1, 2])
+        self.assertEqual(kept["images"][0]["entries"], log["scenes"][0]["entries"])
+        excluded = {item["id"]: item["reason"] for item in kept["excluded"]}
+        self.assertIn("conflict", excluded["scene:position.aerial_carry"])
+        self.assertEqual(kept["allowed_ratings"], ["general", "mature"])
+        self.assertIsNone(kept["selection"], "no recorded selection: the enabled packs were read")
+        text = json.dumps(kept)
+        for private in ('"description"', '"notes"', '"block"', "VOCABULARY ("):
+            self.assertNotIn(private, text, "pack wording stays in the debug trace")
+
+    def test_a_recorded_selection_is_kept_with_versions_and_fingerprints(self):
+        selection = self.packs.resolve_selection(["scene"])
+        self.director = ScriptedDirector()
+        result = scenes.write_scenes({"backend": "mock"}, SimpleNamespace(selected_prompt_model="Default"),
+                                     brief("two friends hugging on a sofa", characters=PEOPLE), progress=lambda _message: None,
+                                     packs=self.packs, vocabulary=selection)
+        kept = result["vocabulary"]["selection"]
+        self.assertEqual(kept["selected"], ["scene"])
+        self.assertEqual({item["id"]: item["fingerprint"] for item in kept["packs"]},
+                         {item["id"]: item["fingerprint"] for item in selection["packs"]})
+        off = vocabulary_packs.vocabulary_reference({"backend": "mock"}, brief("x"), manager=self.packs,
+                                                    selection={**selection, "enabled": False, "selected": [], "packs": []})
+        self.assertEqual(off["diagnostics"]["reason"], "the run's pack selection uses no vocabulary")
+        self.assertFalse(off["diagnostics"]["enabled"])
 
     def test_the_log_records_entries_findings_and_what_was_provided(self):
         _, log = self.run_scenes(brief("two friends hugging on a sofa", characters=PEOPLE))
@@ -228,7 +302,7 @@ class Section2Vocabulary(Section2Run):
         result, log = self.run_scenes(brief("two friends hugging on a sofa", characters=PEOPLE), packs=packs_folder(broken_root, broken=True))
         self.assertTrue(result["complete"])
         self.assertIn("could not be loaded", log["error"])
-        self.assertEqual(result["vocabulary"], {"enabled": True, "provided": []})
+        self.assertEqual(summary(result["vocabulary"]), {"enabled": True, "provided": []})
         self.assertFalse([user for user in self.users("concepts") if "vocabulary" in user])
 
     def test_switching_vocabulary_off_changes_only_the_vocabulary_field(self):
@@ -236,15 +310,18 @@ class Section2Vocabulary(Section2Run):
         result, _ = self.run_scenes(value)
         on = list(self.director.calls)
         off_result, off_log = self.run_scenes(value, config={"dataset_vocabulary": False})
-        self.assertEqual(off_result["vocabulary"], {"enabled": False, "provided": []})
+        self.assertEqual(summary(off_result["vocabulary"]), {"enabled": False, "provided": []})
         self.assertIn("turned off", off_log["reason"])
         self.assertEqual(len(on), len(self.director.calls))
+        rules = (scenes.ARRANGEMENT_CONCEPT_RULE, scenes.ARRANGEMENT_STAGING_RULE, scenes.ARRANGEMENT_DESCRIPTION_RULE)
         for first, second in zip(on, self.director.calls):
-            self.assertEqual(first.system_message, second.system_message)
+            # Besides the vocabulary block, vocabulary on adds only the arrangement contract (its rule and fields).
+            self.assertEqual(without_arrangements(first.system_message, rules), second.system_message)
             with_vocabulary, without = json.loads(first.user_message), json.loads(second.user_message)
             with_vocabulary.pop("vocabulary", None)
-            self.assertEqual(with_vocabulary, without)
-        self.assertEqual(off_result["scenes"], result["scenes"], "the scripted Director answers the same")
+            self.assertEqual(without_arrangements(with_vocabulary), without)
+        self.assertEqual(without_arrangements(off_result["scenes"]), without_arrangements(result["scenes"]),
+                         "the scripted Director answers the same")
 
     def test_the_switch_must_be_a_boolean(self):
         with self.assertRaises(ValueError):
@@ -646,14 +723,14 @@ class ProductionPacks(Section2Run):
         (folder / "entries.json").write_text(json.dumps({"spec": 1, "entries": []}), encoding="utf-8")
         result, log = self.run_scenes(self.broad())
         self.assertIn("requires core", log["error"])
-        self.assertEqual(result["vocabulary"], {"enabled": True, "provided": []})
+        self.assertEqual(summary(result["vocabulary"]), {"enabled": True, "provided": []})
         self.assertFalse([user for stage in ("concepts", "stagings") for user in self.users(stage) if "vocabulary" in user])
         self.assertTrue(result["complete"])
 
     def test_a_disabled_official_pack_is_not_offered(self):
         self.packs.set_enabled("adult", False)
         result, log = self.run_scenes(brief("Reverse cowgirl on a sofa", characters=PEOPLE, nsfw=True))
-        self.assertEqual(log["packs"], ["core", "fantasy"])
+        self.assertEqual(log["packs"], ["core", "fantasy", "visual"], "Visual Direction is an official pack too")
         self.assertFalse([entry_id for entry_id in log["provided"] if entry_id.startswith("adult:")])
         self.assertTrue(result["complete"])
 

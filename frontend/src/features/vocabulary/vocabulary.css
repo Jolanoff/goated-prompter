@@ -280,3 +280,14 @@ section.pack-selector[data-state="drift"] { border-color: var(--warning); }
 .vocabulary-run-loader .control, .vocabulary-run-loader input { min-width: min(100%, 260px); }
 .vocabulary-offered { font-size: 11px; padding: 2px 8px; border-radius: 999px; color: var(--accent); border: 1px solid var(--select-border); background: var(--selected); }
 .vocabulary-more-entries { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin-top: 8px; font-size: 12px; color: var(--muted); }
+
+/* Dataset Visual Direction controls (features/dataset/VisualDirectionControls.jsx). */
+.visual-direction { border: 0; padding: 0; margin: 0; min-width: 0; }
+.visual-direction legend { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding-right: 8px; }
+.visual-direction-help, .visual-direction-note { font-size: 12px; color: var(--muted); margin: 6px 0 0; line-height: 1.5; }
+.visual-direction-note { color: var(--warning); }
+.visual-direction ul { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+.visual-direction li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px;
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; min-width: 0; }
+.visual-direction li[data-enabled="false"] { opacity: .75; }
+.visual-direction li select { width: auto; min-width: min(100%, 200px); }

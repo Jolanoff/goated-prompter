@@ -4,6 +4,11 @@ The scene is fixed: the Builder writes it in the target model's format, style an
 selected Director, and may not move anyone, change the action or add contact. Builder's own target
 formatting and clean-up apply unchanged (Dataset delegates final writing to the Builder).
 
+A scene whose arrangement was chosen from the vocabulary and checked (arrangements.py) also carries its
+established facts: the entries, who takes which role, posture, facing and declared contact. They are added to the
+idea as "arrangement" lines with one more rule to keep them; the Director and the target model still decide the
+wording, emphasis and format. A freeform scene gets neither, so nothing unchecked is presented as checked.
+
 Code checks one thing: when the user gave a trigger, the prompt contains it exactly (and starts
 with it when "Require trigger at start" is on). A prompt that misses it is written once more with
 the reason; if it misses again the item is marked failed, not accepted as a valid prompt.
@@ -25,6 +30,18 @@ and the action exactly as given; do not move anyone, change the action or add co
 wording the target format needs."""
 
 
+ESTABLISHED_RULES = """
+ESTABLISHED SCENE FACTS: the arrangement lines were chosen and checked against the vocabulary before the scene
+was written. Keep who takes which role, each person's posture and facing, and where they are relative to each
+other exactly as listed; write them in the target format's own words."""
+
+
+def established(scene):
+    """A vocabulary-checked arrangement of the scene, or None (freeform scenes and scenes from before arrangements)."""
+    arrangement = scene.get("arrangement")
+    return arrangement if isinstance(arrangement, dict) and arrangement.get("kind") == "vocabulary" else None
+
+
 def scene_text(scene):
     """The scene as plain labelled lines, the Builder's idea."""
     lines = []
@@ -37,6 +54,12 @@ def scene_text(scene):
             lines.extend(f"{key} of {label}: {text}" for label, text in value.items())
         else:
             lines.append(f"{key}: {value}")
+    arrangement = established(scene)
+    if arrangement:
+        for entry in arrangement["entries"]:
+            roles = "; ".join(f"{role}: {', '.join(who)}" for role, who in entry["roles"].items())
+            lines.append(f"arrangement: {entry['name']} ({roles})")
+        lines.extend(f"arrangement fact: {fact}" for fact in arrangement["facts"])
     return "\n".join(lines)
 
 
@@ -87,7 +110,8 @@ def write_prompts(config, request, brief, scenes, *, checkpoint=lambda: None, pr
             recovery = GenerationRecovery("dataset_v2:builder", [number],
                 report=lambda detail: trace.decide("runaway_recovery", detail), progress=progress)
             for attempt in (1, 2):
-                rules = "\n\n".join(part for part in (SCENE_RULES, requirements, _trigger_rule(brief),
+                rules = "\n\n".join(part for part in (SCENE_RULES, ESTABLISHED_RULES if established(scene) else "",
+                                                     requirements, _trigger_rule(brief),
                                                      f"CORRECTION: {problem}" if problem else "") if part)
                 builder_request = replace(request, idea=idea, mode="Enhance", planning_mode="Direct",
                                           target_model=brief["settings"]["target"], prompt_length=brief["settings"]["length"],

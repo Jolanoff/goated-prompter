@@ -490,7 +490,8 @@ class Locations(unittest.TestCase):
         return {pack["id"]: (pack["bundled"], pack["mandatory"], pack["enabled"]) for pack in (manager or self.manager).discover()}
 
     def test_official_packs_are_discovered_without_copying(self):
-        self.assertEqual(self.summary(), {"core": (True, True, True), "fantasy": (True, False, True), "adult": (True, False, True)})
+        self.assertEqual(self.summary(), {"core": (True, True, True), "fantasy": (True, False, True), "adult": (True, False, True),
+                                          "visual": (True, False, True)})
         registry = self.manager.registry()
         self.assertIn("fantasy:body.dragon", registry)
         self.assertIn("adult:position.cowgirl", registry)
@@ -537,7 +538,7 @@ class Locations(unittest.TestCase):
         self.assertIn("requires fantasy", str(caught.exception))
         self.manager.set_enabled("fantasy", True)
         self.manager.remove("wizards")
-        self.assertEqual(set(self.summary()), {"core", "fantasy", "adult"})
+        self.assertEqual(set(self.summary()), {"core", "fantasy", "adult", "visual"})
 
     def test_duplicate_ids_across_locations_are_rejected(self):
         shutil.copytree(OFFICIAL_DIR / "fantasy", self.root / "packs" / "fantasy")  # placed by hand, not installed

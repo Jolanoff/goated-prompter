@@ -160,7 +160,8 @@ export function datasetCharacterLines(brief) {
 
 export function datasetConfirmationPayload(review) {
   return { brief: review.brief, input: review.input, operation: review.operation,
-    confirmation_token: review.confirmation_token, vocabulary_packs: [...(review.vocabulary_packs || [])] };
+    confirmation_token: review.confirmation_token, vocabulary_packs: [...(review.vocabulary_packs || [])],
+    ...(review.visual_direction ? { visual_direction: structuredClone(review.visual_direction) } : {}) };
 }
 
 export function datasetSceneSignature(row) {

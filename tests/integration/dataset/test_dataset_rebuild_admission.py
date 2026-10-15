@@ -14,6 +14,7 @@ import local_app as local
 from goated_prompter.backends.mock import MockBackend
 from goated_prompter.features.dataset.service import default_dataset_draft, validate_dataset_draft
 from goated_prompter.features.dataset.v2.understanding import apply_rules, copied_input
+from goated_prompter.features.vocabulary.visual import default_settings as default_visual_settings
 
 
 class DatasetRebuildAdmissionTests(unittest.IsolatedAsyncioTestCase):
@@ -83,6 +84,8 @@ class DatasetRebuildAdmissionTests(unittest.IsolatedAsyncioTestCase):
         selection = self.scenes.call_args.kwargs["vocabulary"]
         self.assertEqual(selection["selected"], [])
         self.assertIn("core", [pack["id"] for pack in selection["packs"]])
+        self.assertEqual(self.scenes.call_args.kwargs["visual"], default_visual_settings(),
+                         "without visual_direction the run gets the default Visual Direction settings")
 
     async def test_confirm_accepts_allowed_intent_corrections_and_refuses_the_rest(self):
         self.value["intent"] = {"elements": [
@@ -113,8 +116,10 @@ class DatasetRebuildAdmissionTests(unittest.IsolatedAsyncioTestCase):
         payload = await self.analyze()
         missing = {key: value for key, value in payload.items() if key != "vocabulary_packs"}
         for body in (missing, {**payload, "vocabulary_packs": ["no_such_pack_for_this_test"]},
-                     {**payload, "vocabulary_packs": "core"}):
-            with self.subTest(packs=body.get("vocabulary_packs")):
+                     {**payload, "vocabulary_packs": "core"},
+                     {**payload, "visual_direction": {"mood": {"enabled": True}}},
+                     {**payload, "visual_direction": {"lighting": {"variation": "wild"}}}):
+            with self.subTest(packs=body.get("vocabulary_packs"), visual=body.get("visual_direction")):
                 response = await self.confirm(body)
                 self.assertEqual(response.status, 400, await response.text())
         self.scenes.assert_not_called()

@@ -97,9 +97,38 @@ function hasPrivateDiagnostics(draft, job) {
     || JSON.stringify(job?.llm_trace?.messages || []).includes("MORE SEXUAL CONTENT RULES");
 }
 
+const legacyKinds = ["dataset", "dataset_scenes", "dataset_understanding"];
+const v2Kind = "dataset_v2_scenes";
+const v2ResultFields = ["run_id", "stage", "complete", "requested", "written", "missing", "slots", "concepts", "scenes", "prompts"];
+
+/** A V2 run (Confirm -> scenes -> prompts): its status, slots, concepts, scenes and prompts, the vocabulary it used
+ * (pack selection with versions and fingerprints, entries and ideas by id and image, exclusions, Visual Direction)
+ * and the packs its run record holds. The vocabulary block is renamed so the legacy TXT vocabulary filter never
+ * strips it; it carries ids, names and reasons only, never pack wording. */
+function v2RunSnapshot(run, job, runPacks) {
+  const result = run?.result || (job?.kind === v2Kind ? job.result : null);
+  if (!run && !result) return null;
+  return {
+    job_id: run?.jobId || job?.id || null,
+    status: run?.status || job?.status || null,
+    error: run?.error || job?.error || "",
+    brief: run?.brief || null,
+    visual_direction_settings: run?.visual_direction ?? null,
+    ...pick(result, v2ResultFields),
+    vocabulary_retrieval: result?.vocabulary || null,
+    vocabulary_packs: { requested: run?.vocabulary_packs ?? null, recorded: runPacks?.packs ?? null,
+      status: runPacks?.status ?? null, ...(runPacks?.error ? { load_error: runPacks.error } : {}) },
+  };
+}
+
 /** A click-time projection of current state, never a write or a checkpoint release. */
-export function datasetGenerationLog({ draft, review, job, record, state } = {}, exportedAt = new Date()) {
-  const datasetJob = ["dataset", "dataset_scenes", "dataset_understanding"].includes(job?.kind) ? job : null;
+export function datasetGenerationLog({ draft, review, job, record, state, run, runPacks } = {}, exportedAt = new Date()) {
+  const datasetJob = [...legacyKinds, v2Kind].includes(job?.kind) ? job : null;
+  // A V2 job's result is exported once, under v2_run, never through the legacy job projection.
+  const v2 = datasetJob?.kind === v2Kind;
+  const jobSnapshot = v2 ? pick(datasetJob, jobFields.filter((field) => field !== "result"))
+    : datasetJob ? pick(datasetJob, jobFields) : null;
+  const v2Run = v2RunSnapshot(run, datasetJob, runPacks);
   const snapshot = {
     schema_version: 1,
     exported_at: exportedAt.toISOString(),
@@ -109,13 +138,17 @@ export function datasetGenerationLog({ draft, review, job, record, state } = {},
     generated_prompts: draft?.results || [],
     understanding: review ? { ...pick(review, ["operation", "options", "status", "jobId", "brief", "routing", "error", "notice"]),
       input: pick(review.input, settingFields) } : null,
-    job: datasetJob ? pick(datasetJob, jobFields) : null,
+    job: jobSnapshot,
+    v2_run: v2Run,
     state: pick(state, ["active", "starting", "error", "settings_status", "settings_error", "settings_conflict",
       "stale_scene_plan", "valid_scene_count", "novelty_notice"]),
     metadata: { ...pick(record, ["revision", "checkpoint", "scene_eligibility", "scene_plan_matches_settings",
       "idea_limits", "scene_limits"]), ...pick(draft, ["scene_plan_signature", "result_job_id"]) },
   };
   // Also remove credentials repeated in free-form errors or transport messages.
-  const secrets = [...new Set(secretValues({ draft, review, job: datasetJob, record }))].sort((a, b) => b.length - a.length);
+  // V2 results are searched through their export projection: their vocabulary block holds diagnostics, not the
+  // legacy private TXT vocabulary whose every value is treated as a secret.
+  const secrets = [...new Set(secretValues({ draft, review, job: v2 ? jobSnapshot : datasetJob, record,
+    run: run && { ...run, result: undefined }, runPacks, v2_run: v2Run }))].sort((a, b) => b.length - a.length);
   return JSON.stringify(sanitize(snapshot, secrets, "", hasPrivateDiagnostics(draft, datasetJob)), null, 2);
 }

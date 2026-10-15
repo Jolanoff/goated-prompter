@@ -111,3 +111,11 @@ test("incomplete-run notice names images by slot", async () => {
   assert.match(text, /image 2/);
   assert.doesNotMatch(text, /concept 2/);
 });
+
+test("an image's arrangement says whether it was checked against the vocabulary, never more", async () => {
+  const { arrangementLine } = await loadPages();
+  assert.equal(arrangementLine(null), "");
+  assert.equal(arrangementLine({ kind: "freeform", status: "unchecked" }), "Freeform (not checked against the vocabulary)");
+  assert.equal(arrangementLine({ kind: "vocabulary", status: "unknown", entries: [{ name: "Squatting ride",
+    roles: { rider: ["woman"], partner: ["man"] } }] }), "Squatting ride (rider: woman; partner: man) · vocabulary check: unknown");
+});

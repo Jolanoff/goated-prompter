@@ -12,6 +12,7 @@ from .plan import reusable_scene_plan, scene_is_usable, scene_unusable_reason
 from .v2.runs import RunStoreError, recorded_packs
 from .v2.understanding import VERSIONS, confirm, copied_input, copied_settings, reviewed_brief
 from .v2.vocabulary_packs import pack_status, select_packs
+from ..vocabulary.visual import validate_settings as validate_visual_settings
 from ...api.common import STATE, active_job_conflict, engine_request, json_object
 
 
@@ -90,8 +91,11 @@ async def confirm_endpoint(request):
     """Rebuild (issue 106): check and log the confirmed brief, then start Section 2 (scene writing)."""
     state = request.app[STATE]
     payload = await json_object(request)
-    if set(payload) != {"brief", "settings", "input", "operation", "confirmation_token", "vocabulary_packs"}:
+    required = {"brief", "settings", "input", "operation", "confirmation_token", "vocabulary_packs"}
+    if not required <= set(payload) or set(payload) - required - {"visual_direction"}:
         raise ValueError("Expected the confirmed brief, prompt-engine settings and vocabulary packs. Rebuild the frontend if it is out of date.")
+    # Per-dimension Visual Direction settings for this run (vocabulary/visual.py); absent: the defaults.
+    visual = validate_visual_settings(payload.get("visual_direction"))
     if payload["operation"] not in ("dataset", "dataset/scenes"):
         raise ValueError("Choose Dataset generation or scenes only.")
     data = validate_dataset_draft(payload["input"], generation=True, planning=True)
@@ -118,7 +122,7 @@ async def confirm_endpoint(request):
             prompt_length=brief["settings"]["length"], director_preset=director.id,
         )
         return web.json_response(state.start_job("dataset_v2_scenes", director_request, config, True,
-            {"operation": "dataset_v2_scenes", "brief": brief, "vocabulary_packs": packs,
+            {"operation": "dataset_v2_scenes", "brief": brief, "vocabulary_packs": packs, "visual_direction": visual,
              "scenes_only": payload["operation"] == "dataset/scenes"}), status=202)
 
 

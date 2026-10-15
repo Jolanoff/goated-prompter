@@ -230,6 +230,7 @@ class Retrieval:
     sharpness: float = 1.0            # an idea's sampling weight is its score to this power
     cooldown: float = 0.5             # share of its category an offered idea waits before it may come again
     pairing: object = field(default=None, repr=False, compare=False)  # _Pairing: per-image checks (None: attach_to only)
+    named_by: dict = field(default_factory=dict, repr=False, compare=False)  # entry -> the texts that name it (not in to_dict)
 
     @property
     def inspiration(self):
@@ -405,7 +406,16 @@ class VocabularyIndex:
         started = time.perf_counter()
         self.registry = registry
         categories = registry.categories() if registry is not None else {}
-        ids = sorted(registry.ids()) if registry is not None else []
+        every = sorted(registry.ids()) if registry is not None else []
+        # Visual directions (SPEC section 11) say how an image is seen, never what is in it: Visual Direction (visual.py)
+        # chooses them and retrieval never offers or scores them, and a category holding only directions is not one a
+        # brief opens. Without directions this is exactly the registry.
+        directions = {entry_id for entry_id in every if "visual" in registry.resolved(entry_id)["components"]}
+        ids = [entry_id for entry_id in every if entry_id not in directions]
+        if directions:
+            content = {registry.resolved(entry_id)["category"] for entry_id in ids}
+            visual_only = {registry.resolved(entry_id)["category"] for entry_id in directions} - content
+            categories = {key: value for key, value in categories.items() if key not in visual_only}
         self.resolved = {entry_id: registry.resolved(entry_id) for entry_id in ids}
         documents = []
         for entry_id in ids:
@@ -775,7 +785,8 @@ class _Retrieval:
                  "suppressed": len(self.suppressed), "excluded": len(self.excluded)}
         return Retrieval(entries, cast_report, self.suppressed, self.excluded, self.warnings, self.config, stats, self.timings,
                          pools=self.pools, intent=self.intent, seed=self.request.seed, per_scene=self.per_scene,
-                         sharpness=self.sharpness, cooldown=self.cooldown, pairing=self.pairing)
+                         sharpness=self.sharpness, cooldown=self.cooldown, pairing=self.pairing,
+                         named_by={entry_id: sorted(sources) for entry_id, sources in getattr(self, "named_by", {}).items()})
 
     # -- the query
     def build_query(self):

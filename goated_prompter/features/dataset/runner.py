@@ -40,6 +40,26 @@ def _close(recorder, status, error=None):
         logging.exception("Could not record the end of Dataset run %s; it will be marked interrupted on restart", recorder.run_id)
 
 
+def no_scenes(result):
+    """Why a run wrote no scene at all, per distinct reason with the images it stopped."""
+    reasons = {}
+    for item in result["missing"]:
+        for reason in item["reasons"] or ["no reason recorded"]:
+            reasons.setdefault(reason, []).append(item["slot"])
+    detail = "; ".join(f"{reason} (image{'s' if len(slots) > 1 else ''} {', '.join(map(str, slots))})"
+                       for reason, slots in list(reasons.items())[:4])
+    return f"No scene could be written ({result['requested']} requested). {detail}"
+
+
+def incomplete(value):
+    """The job's final message when only some images were written; None when all were."""
+    if value.get("complete", True):
+        return None
+    missing = [item["slot"] for item in value.get("missing", [])]
+    return (f"Generation finished incomplete: {value['written']} of {value['requested']} scenes written; "
+            f"not written: image{'s' if len(missing) > 1 else ''} {', '.join(map(str, missing))}.")
+
+
 def run_dataset_v2_scenes(state, job, request, config, workflow):
     # Confirm runs scenes, then final prompts unless the owner chose scenes only.
     # The scenes are published as soon as they exist, then each final prompt as it is written.
@@ -67,7 +87,7 @@ def run_dataset_v2_scenes(state, job, request, config, workflow):
     def finish(value):
         # The run is marked succeeded only after the job itself has succeeded: a cancellation that
         # lands while the result is delivered makes both the job and the run cancelled.
-        job.commit(lambda: {"ok": True, "kind": "dataset_v2_scenes", **run, **value}, finish=True)
+        job.commit(lambda: {"ok": True, "kind": "dataset_v2_scenes", **run, **value}, finish=True, reason=incomplete(value))
         _close(recorder, "succeeded")
     try:
         # One session held for the whole run: the scene steps and every Builder call share the loaded
@@ -75,9 +95,14 @@ def run_dataset_v2_scenes(state, job, request, config, workflow):
         effective, _ = resolve_director_config(config, request)
         with create_backend(effective).generation_session():
             result = write_scenes(config, request, workflow["brief"], checkpoint=job.checkpoint, progress=job.set_progress,
-                                  on_slot=on_slot, vocabulary=workflow.get("vocabulary_packs"))
+                                  on_slot=on_slot, vocabulary=workflow.get("vocabulary_packs"),
+                                  visual=workflow.get("visual_direction"))
             if recorder:
                 recorder.scenes_finished(result)
+            if not result["written"]:
+                # Nothing to write prompts for: the job fails (its result keeps every image's reasons), never succeeds.
+                publish({**result, "stage": "scenes", "prompts": []}, "No scene could be written.")
+                raise RuntimeError(no_scenes(result))
             if workflow.get("scenes_only"):
                 finish({**result, "stage": "scenes", "prompts": []})
                 return

@@ -277,6 +277,7 @@ def entry_references(entry):
     for condition in [*requirements.get("participants", {}).values(), requirements.get("space", {})]:
         capabilities += [ref for group in condition.get("any_of_groups", []) for ref in group]
     return {"extends": list(entry.get("extends", [])), "capability": capabilities,
+            "visual": list(comp.get("visual", {}).get("conflicts", [])),
             "posture": [placement["posture"] for placement in comp.get("spatial", {}).get("participants", {}).values()
                         if "posture" in placement]}
 
@@ -374,6 +375,16 @@ def _merge_components(parts, own, where, problems):
         out["object"] = merged
     if any("environment" in part for part in [*parts, own]):
         out["environment"] = {"provides": _union(*(part.get("environment", {}).get("provides", []) for part in [*parts, own]))}
+    if any("visual" in part for part in [*parts, own]):
+        # A direction's dimension, section, media and cast size are scalars (parents must agree, the child's own value is
+        # final); conflicts accumulate.
+        sources = [part.get("visual", {}) for part in parts]
+        visual = {}
+        scalars(visual, sources, ("dimension", "section", "media", "people"), own.get("visual", {}))
+        conflicts = _union(*(source.get("conflicts", []) for source in [*sources, own.get("visual", {})]))
+        if conflicts:
+            visual["conflicts"] = conflicts
+        out["visual"] = visual
     return out
 
 
@@ -490,6 +501,8 @@ def build_registry(packs):
                     problems.append(f"{entry_id}: {ref} is used as a capability but is not one")
                 elif kind == "posture" and "self" not in entries[ref]["components"].get("spatial", {}).get("participants", {}):
                     problems.append(f"{entry_id}: {ref} is used as a posture but has no self placement")
+                elif kind == "visual" and "visual" not in entries[ref]["components"]:
+                    problems.append(f"{entry_id}: {ref} is listed as a conflicting visual direction but is not one")
     if problems:
         raise VocabularyError(problems)
     registry = Registry({pack_id: active[pack_id] for pack_id in order}, entries, owners)

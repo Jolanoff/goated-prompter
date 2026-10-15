@@ -52,6 +52,34 @@ anything the request states changes only through Revise. Brief version 10 adds `
 briefs in saved runs stay valid unchanged. Summary, fixed, randomized, must and avoid remain what scene
 writing uses; vocabulary retrieval reads intent only from Phase 4.
 
+Visual Direction: the Configure page also sets, per dimension (framing, camera angle, composition,
+lighting, atmosphere), whether Visual Direction may fill it and how much it varies. Confirm sends these
+settings with the run; scene writing chooses directions per image from the run's selected packs (the
+bundled `visual` pack and any pack with `visual` entries) and gives them to the concept request, whose
+camera and lighting fields carry them (vocabulary/schemas/SPEC.md section 11). It reads no intent or
+semantic hints. The run's vocabulary record and the generation log keep every choice and exclusion.
+
+Vocabulary-backed arrangements (`v2/arrangements.py`): when the selected packs offer a position or action for
+the cast, each concept chooses one (or two that combine) from its image's options and assigns the roles; the
+request's named options are required, the Director's preferences only ranked and marked. The resolver checks
+the choice (slot counts, capabilities, placements, exclusive claims, blocked regions) and a conflict rejects only
+that image. Staging then states each person's posture and facing in a structured `placement`, checked against
+the arrangement, so a contradicting partner posture or a role reversal with different postures is caught and
+that image staged again. The finished scene keeps the arrangement (entries, roles, status, facts) for the run
+pages, the export and the Builder, which must keep those facts while writing in the target's format. Statuses
+stay distinct: `unknown` (the free-text place never proves space requirements), `eligible`, `feasible`; prose
+anchors, contact and anything else in the wording are passed on, not verified. A concept may also stay
+freeform, which is never described as checked; with no option for any image, the requests are unchanged.
+
+Concept recovery is per image: a valid concept is kept in its own image at once, and only images whose
+concept failed are asked for again (with an `images` list and that image's reasons), so one conflicting
+arrangement can no longer discard the other images. An arrangement refused for an image is shown again with
+why (`rejected_before`); if an otherwise valid concept keeps choosing conflicting arrangements and the request
+requires none, it is kept as freeform with what was rejected. Director-only preferences are offered on about
+half the images (by seed); role notes come from each entry's declared postures, facing, anchors and claims, and
+a binding is suggested only when it is the only valid one. A run that writes no scene fails with its reasons;
+a partial run finishes with an "incomplete" message.
+
 ### Phase 7: separate UI stages
 
 - **7A — Pack Manager:** manage installed packs and their enabled state.

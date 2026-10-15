@@ -17,7 +17,7 @@ Locations:
 | Folder | Packs | Can be |
 |---|---|---|
 | `vocabulary/core/` | the core pack | always enabled; read-only |
-| `vocabulary/packs/<pack-id>/` | official packs that ship with the app (`fantasy`, `adult`) | enabled by default; disabled and re-enabled; read-only |
+| `vocabulary/packs/<pack-id>/` | official packs that ship with the app (`fantasy`, `adult`, `visual`) | enabled by default; disabled and re-enabled; read-only |
 | `data/vocabulary/packs/<pack-id>/` (Git-ignored) | packs the user installed | enabled by default; disabled, updated and removed |
 | `vocabulary/optional/<pack-id>/` | opt-in packs kept as source (`adult_kinks`); never found automatically | installed as a ZIP of the folder; then as installed packs |
 
@@ -509,3 +509,36 @@ request (labelled uncertain) still holds the place role, so optional place ideas
 guess is wrong. Prepositions are matched as one interchangeable marker so that "sitting in his lap" and
 "sitting on his lap" both match; the same freedom can match a phrase with the wrong spatial relation
 ("under the table" for "on the table").
+
+## 11. Visual Direction
+
+A `visual` component makes an entry a visual direction: how an image is seen and lit, never what is in it.
+`dimension` is the one choice it fills (`framing`, `camera_angle`, `composition`, `lighting`, `atmosphere`);
+`section` is the concept field it guides (default `lighting` for lighting and atmosphere, `camera` otherwise);
+`media` limits it to these styles (`anime`, `realistic`, `illustration`, `3d`, `product`, `painting`; absent:
+every style); `people` limits it to casts of `min` to `max` people per image; `conflicts` lists directions it never
+shares an image with (they hold both ways and must be directions). The bundled `visual` pack holds the built-in
+directions; any pack may add more, and a run uses only those of its selected packs, within its allowed ratings.
+
+Retrieval (section 10) never indexes, scores or offers a direction, and a category holding only directions is not
+one a brief opens: content retrieval is the same with or without them. Visual Direction (`visual.py`) chooses them
+for each Dataset image, from the confirmed brief alone (no model, no semantic hints):
+
+1. The brief comes first. A direction its request, fixed, must or rules name (by name or alias, the longest match
+   winning) is used in every image (several: they take turns). A dimension it mentions only in general, by the
+   dimension's or its category's name as written ("dramatic lighting"), is left to the brief. Directions the
+   randomized text names are the ones that take turns; a dimension it mentions stays open. Avoid phrases and
+   negations ("no dutch angle") rule directions out.
+2. Per run, each dimension can be off and has a variation: `same` (one direction), `low` (two take turns), `medium`
+   (four), `high` (all that fit) or `auto` (Strict low, Balanced medium, Creative and Dice high).
+3. A direction must suit the style, the cast size and the image's other directions; named directions are placed
+   first, so they win every conflict.
+4. Image N's directions depend only on N, the seed, the brief, the settings and the selected packs, never on other
+   images: each cycle through a dimension's pool uses every direction once, in an order seeded per cycle.
+
+The directions reach the concept request as `visual_direction` (camera and lighting text per concept) and become
+the concept's own `camera` and `lighting` fields, which staging and description already follow; the request,
+fixed, must, avoid and rules outrank them and they never change the place, position, people or actions. While Visual
+Direction is active, what the brief says about the camera or light (the matched names and dimension words) is
+masked out of content retrieval only, so "low camera angle" never finds a Camera prop. Every choice, pool,
+exclusion and reason is kept in the run's vocabulary diagnostics.

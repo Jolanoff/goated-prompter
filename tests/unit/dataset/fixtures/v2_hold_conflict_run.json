@@ -1,0 +1,498 @@
+{
+ "source": "Live GPU run (Gemma, nsfw_director, packs adult_kinks + visual): dataset-generation-log, concept request 3 of 3. Structured fields are verbatim; free text other than position for images 1, 2, 4, 6 and 8 is replaced.",
+ "brief": {
+  "version": 10,
+  "path": "nsfw_character",
+  "summary": "A man dominating a man who is a sex slave.",
+  "people": 2,
+  "characters": [
+   {
+    "label": "man",
+    "gender": "male",
+    "custom": "",
+    "pronoun": "he"
+   },
+   {
+    "label": "sex slave man",
+    "gender": "male",
+    "custom": "",
+    "pronoun": "he"
+   }
+  ],
+  "fixed": "man dominating a sex slave man",
+  "randomized": "pose, camera angle, lighting, setting",
+  "must": [],
+  "avoid": [],
+  "input": {
+   "request": "a man dominating a sex slave man",
+   "trigger": "",
+   "trigger_at_start": false,
+   "rules": [],
+   "amount": 10,
+   "nsfw": true,
+   "source_mode": "random",
+   "guided_inputs": [],
+   "seed": 2569941277,
+   "seed_mode": "randomize"
+  },
+  "settings": {
+   "style": "Realistic",
+   "target": "Krea 2",
+   "director": "nsfw_director",
+   "length": "Maximum Detail",
+   "creativity": "Balanced"
+  },
+  "intent": {
+   "available": true,
+   "elements": [
+    {
+     "id": "s1",
+     "kind": "subject",
+     "text": "man",
+     "status": "fixed",
+     "source": "request",
+     "character": "man",
+     "member": 0,
+     "of": "",
+     "by": [],
+     "to": [],
+     "input": 0,
+     "terms": [],
+     "cast": [
+      "man"
+     ]
+    },
+    {
+     "id": "s2",
+     "kind": "subject",
+     "text": "sex slave man",
+     "status": "fixed",
+     "source": "request",
+     "character": "sex slave man",
+     "member": 0,
+     "of": "",
+     "by": [],
+     "to": [],
+     "input": 0,
+     "terms": [],
+     "cast": [
+      "sex slave man"
+     ]
+    },
+    {
+     "id": "a1",
+     "kind": "action",
+     "text": "dominating",
+     "status": "fixed",
+     "source": "request",
+     "character": "",
+     "member": 0,
+     "of": "",
+     "by": [
+      "s1"
+     ],
+     "to": [
+      "s2"
+     ],
+     "input": 0,
+     "terms": [],
+     "cast": []
+    }
+   ],
+   "relations": [],
+   "unresolved": [],
+   "truncated": false,
+   "warnings": []
+  }
+ },
+ "visual_direction": {
+  "framing": {
+   "enabled": true,
+   "variation": "same"
+  },
+  "camera_angle": {
+   "enabled": true,
+   "variation": "low"
+  },
+  "composition": {
+   "enabled": true,
+   "variation": "same"
+  },
+  "lighting": {
+   "enabled": true,
+   "variation": "low"
+  },
+  "atmosphere": {
+   "enabled": false,
+   "variation": "auto"
+  }
+ },
+ "options": {
+  "1": [
+   "core:action.hold",
+   "core:position.from_behind"
+  ],
+  "2": [
+   "core:action.hold",
+   "core:position.lap_sit"
+  ],
+  "3": [
+   "core:action.hold"
+  ],
+  "4": [
+   "core:action.hold",
+   "core:position.from_behind"
+  ],
+  "5": [
+   "core:action.hold"
+  ],
+  "6": [
+   "core:action.hold",
+   "core:position.lap_sit"
+  ],
+  "7": [
+   "core:action.hold"
+  ],
+  "8": [
+   "core:action.hold",
+   "core:position.from_behind"
+  ],
+  "9": [
+   "core:action.hold"
+  ],
+  "10": [
+   "core:action.hold"
+  ]
+ },
+ "director_prefers": [
+  "core:action.hold"
+ ],
+ "recorded_rejection": "concept 1: man has 2 Hand but 3 are claimed (exclusive claim by Hold an object)",
+ "concepts": [
+  {
+   "place": "a rustic wooden dining table",
+   "position_name": "from behind",
+   "position": "man kneels behind the slave, who is on all fours, as the man holds a heavy leather whip in one hand",
+   "looks": {
+    "man": "recorded look",
+    "sex slave man": "recorded look"
+   },
+   "lighting": "recorded lighting",
+   "camera": "recorded camera",
+   "arrangement": [
+    {
+     "option": "core:position.from_behind",
+     "roles": [
+      {
+       "role": "back",
+       "who": [
+        "sex slave man"
+       ]
+      },
+      {
+       "role": "front",
+       "who": [
+        "man"
+       ]
+      }
+     ]
+    },
+    {
+     "option": "core:action.hold",
+     "roles": [
+      {
+       "role": "holder",
+       "who": [
+        "man"
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "place": "a cozy living room with a large chair",
+   "position_name": "sitting on a lap",
+   "position": "man sits on the chair, the slave is seated across his thighs, with the man holding a heavy collar",
+   "looks": {
+    "man": "recorded look",
+    "sex slave man": "recorded look"
+   },
+   "lighting": "recorded lighting",
+   "camera": "recorded camera",
+   "arrangement": [
+    {
+     "option": "core:position.lap_sit",
+     "roles": [
+      {
+       "role": "base",
+       "who": [
+        "sex slave man"
+       ]
+      },
+      {
+       "role": "seated",
+       "who": [
+        "man"
+       ]
+      }
+     ]
+    },
+    {
+     "option": "core:action.hold",
+     "roles": [
+      {
+       "role": "holder",
+       "who": [
+        "man"
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "place": "a dimly lit bedroom",
+   "position_name": "lying on the back",
+   "position": "recorded variation of lying on the back",
+   "looks": {
+    "man": "recorded look",
+    "sex slave man": "recorded look"
+   },
+   "lighting": "recorded lighting",
+   "camera": "recorded camera",
+   "arrangement": [
+    {
+     "option": "core:action.hold",
+     "roles": [
+      {
+       "role": "holder",
+       "who": [
+        "man"
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "place": "a rustic garden with a bench",
+   "position_name": "from behind",
+   "position": "man kneels behind the slave on a bench, holding a heavy leather whip",
+   "looks": {
+    "man": "recorded look",
+    "sex slave man": "recorded look"
+   },
+   "lighting": "recorded lighting",
+   "camera": "recorded camera",
+   "arrangement": [
+    {
+     "option": "core:position.from_behind",
+     "roles": [
+      {
+       "role": "back",
+       "who": [
+        "sex slave man"
+       ]
+      },
+      {
+       "role": "front",
+       "who": [
+        "man"
+       ]
+      }
+     ]
+    },
+    {
+     "option": "core:action.hold",
+     "roles": [
+      {
+       "role": "holder",
+       "who": [
+        "man"
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "place": "a lush garden with grass",
+   "position_name": "lying prone",
+   "position": "recorded variation of lying prone",
+   "looks": {
+    "man": "recorded look",
+    "sex slave man": "recorded look"
+   },
+   "lighting": "recorded lighting",
+   "camera": "recorded camera",
+   "arrangement": [
+    {
+     "option": "core:action.hold",
+     "roles": [
+      {
+       "role": "holder",
+       "who": [
+        "man"
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "place": "a modern dining room",
+   "position_name": "sitting on a lap",
+   "position": "man sits on the chair, slave is seated across his lap, man holds a leash",
+   "looks": {
+    "man": "recorded look",
+    "sex slave man": "recorded look"
+   },
+   "lighting": "recorded lighting",
+   "camera": "recorded camera",
+   "arrangement": [
+    {
+     "option": "core:position.lap_sit",
+     "roles": [
+      {
+       "role": "base",
+       "who": [
+        "sex slave man"
+       ]
+      },
+      {
+       "role": "seated",
+       "who": [
+        "man"
+       ]
+      }
+     ]
+    },
+    {
+     "option": "core:action.hold",
+     "roles": [
+      {
+       "role": "holder",
+       "who": [
+        "man"
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "place": "a minimalist room",
+   "position_name": "standing",
+   "position": "recorded variation of standing",
+   "looks": {
+    "man": "recorded look",
+    "sex slave man": "recorded look"
+   },
+   "lighting": "recorded lighting",
+   "camera": "recorded camera",
+   "arrangement": [
+    {
+     "option": "core:action.hold",
+     "roles": [
+      {
+       "role": "holder",
+       "who": [
+        "man"
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "place": "a bedroom against a wall",
+   "position_name": "from behind",
+   "position": "man kneels behind the slave against a wall, holding a leather belt",
+   "looks": {
+    "man": "recorded look",
+    "sex slave man": "recorded look"
+   },
+   "lighting": "recorded lighting",
+   "camera": "recorded camera",
+   "arrangement": [
+    {
+     "option": "core:position.from_behind",
+     "roles": [
+      {
+       "role": "back",
+       "who": [
+        "sex slave man"
+       ]
+      },
+      {
+       "role": "front",
+       "who": [
+        "man"
+       ]
+      }
+     ]
+    },
+    {
+     "option": "core:action.hold",
+     "roles": [
+      {
+       "role": "holder",
+       "who": [
+        "man"
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "place": "a garden bench",
+   "position_name": "on all fours",
+   "position": "recorded variation of on all fours",
+   "looks": {
+    "man": "recorded look",
+    "sex slave man": "recorded look"
+   },
+   "lighting": "recorded lighting",
+   "camera": "recorded camera",
+   "arrangement": [
+    {
+     "option": "core:action.hold",
+     "roles": [
+      {
+       "role": "holder",
+       "who": [
+        "man"
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "place": "a bedroom with a large bed",
+   "position_name": "sitting",
+   "position": "recorded variation of sitting",
+   "looks": {
+    "man": "recorded look",
+    "sex slave man": "recorded look"
+   },
+   "lighting": "recorded lighting",
+   "camera": "recorded camera",
+   "arrangement": [
+    {
+     "option": "core:action.hold",
+     "roles": [
+      {
+       "role": "holder",
+       "who": [
+        "man"
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

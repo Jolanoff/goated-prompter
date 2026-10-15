@@ -328,8 +328,9 @@ class Job:
             self.error = error
             self.finished_at = time.time()
 
-    def deliver(self, result):
-        """Deliver a result (or a durable-result factory) at a cancellable checkpoint."""
+    def deliver(self, result, reason=None):
+        """Deliver a result (or a durable-result factory) at a cancellable checkpoint. reason replaces the default
+        success message, e.g. to say that only part of the requested work was produced."""
         with self._commit_lock:
             self.checkpoint()
             # Persistence may finish after cancellation; never publish success then.
@@ -344,17 +345,17 @@ class Job:
                     self.result = value
                     self.status = "succeeded"
                     self.completion_state = "completed"
-                    self.status_reason = "Generation completed successfully."
+                    self.status_reason = reason or "Generation completed successfully."
                     self._append_stage_summary()
                     self._append_event(self.status_reason, "success")
                     self.finished_at = time.time()
                     self.revision += 1
                     return
 
-    def commit(self, operation, finish=False):
+    def commit(self, operation, finish=False, reason=None):
         """Serialize a durable result with cancellation, without waiting under the lock."""
         if finish:
-            return self.deliver(operation)
+            return self.deliver(operation, reason) if reason else self.deliver(operation)
         with self._commit_lock:
             self.checkpoint()
             value = operation()

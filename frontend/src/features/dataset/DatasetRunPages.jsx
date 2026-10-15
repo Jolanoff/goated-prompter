@@ -31,8 +31,18 @@ function Line({ label, children }) {
   return <p className="dataset-scene-source"><strong>{label}:</strong> {children}</p>;
 }
 
+/** How an image's arrangement was decided: checked against the vocabulary (with its status), or freeform. */
+export function arrangementLine(arrangement) {
+  if (!arrangement) return "";
+  if (arrangement.kind !== "vocabulary") return "Freeform (not checked against the vocabulary)";
+  const entries = arrangement.entries.map((entry) => `${entry.name} (${Object.entries(entry.roles)
+    .map(([role, who]) => `${role}: ${who.join(", ")}`).join("; ")})`).join(" + ");
+  return `${entries} · vocabulary check: ${arrangement.status}`;
+}
+
 function SceneDetails({ scene }) {
   return <>
+    {scene.arrangement && <Line label="Arrangement">{arrangementLine(scene.arrangement)}</Line>}
     {Object.entries(scene.position).map(([label, text]) => <Line key={`position-${label}`} label={`Position · ${label}`}>{text}</Line>)}
     <Line label="Action">{scene.actions}</Line>
     {Object.entries(scene.subjects).map(([label, person]) => <Line key={`subject-${label}`} label={label}>

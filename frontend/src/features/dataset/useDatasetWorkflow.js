@@ -6,7 +6,7 @@ import { useDatasetConfirmation } from "./useDatasetConfirmation.js";
 
 /** Dataset requests and job projections; editable-draft revisions stay in useWorkflowSettings. */
 export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, director,
-  onGenerate, onReleaseJobs, vocabularyPacks = [], packsReady = true }) {
+  onGenerate, onReleaseJobs, vocabularyPacks = [], packsReady = true, visualDirection = null }) {
   const { draft, update, refreshGenerated } = preferences;
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState("");
@@ -17,7 +17,7 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, d
       const accepted = await onGenerate("dataset/v2/confirm", datasetConfirmationPayload(item));
       if (accepted) update({ seed: item.input.seed });
       return accepted;
-    }, setError, vocabularyPacks });
+    }, setError, vocabularyPacks, visualDirection });
   const datasetJob = ["dataset", "dataset_scenes", "dataset_understanding", "dataset_v2_scenes"].includes(job?.kind);
   const workflowActive = datasetJob && active;
   const disabled = busy || starting || preferences.working || !!confirmationFlow.confirmation;

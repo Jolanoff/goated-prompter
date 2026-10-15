@@ -52,7 +52,8 @@
         "spatial": { "$ref": "#/$defs/spatial" },
         "claims": { "$ref": "#/$defs/claims" },
         "object": { "$ref": "#/$defs/object" },
-        "environment": { "$ref": "#/$defs/environment" }
+        "environment": { "$ref": "#/$defs/environment" },
+        "visual": { "$ref": "#/$defs/visual" }
       }
     },
 
@@ -255,6 +256,31 @@
       "additionalProperties": false,
       "required": ["provides"],
       "properties": { "provides": { "$ref": "#/$defs/entryIds" } }
+    },
+
+    "visual": {
+      "description": "A visual direction (SPEC.md section 11): how an image is seen, never what is in it. dimension is the one open visual choice it fills; section is the scene field it guides (default: lighting for lighting and atmosphere, camera otherwise); media limits it to these styles (absent: every style); people limits it to casts of this size; conflicts lists directions it never shares an image with.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["dimension"],
+      "properties": {
+        "dimension": { "enum": ["camera_angle", "framing", "composition", "lighting", "atmosphere"] },
+        "section": { "enum": ["camera", "lighting"] },
+        "media": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": { "enum": ["anime", "realistic", "illustration", "3d", "product", "painting"] }
+        },
+        "people": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "min": { "type": "integer", "minimum": 0, "maximum": 64 },
+            "max": { "type": "integer", "minimum": 0, "maximum": 64 }
+          }
+        },
+        "conflicts": { "$ref": "#/$defs/entryIds" }
+      }
     }
   }
 }

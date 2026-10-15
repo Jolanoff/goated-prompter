@@ -1,0 +1,186 @@
+{
+  "spec": 1,
+  "entries": [
+    {
+      "id": "visual:atmosphere.haze",
+      "category": "visual_atmosphere",
+      "name": "Haze",
+      "description": "A light haze in the air that softens distant detail.",
+      "aliases": [
+        "hazy atmosphere",
+        "atmospheric haze"
+      ],
+      "components": {
+        "visual": {
+          "dimension": "atmosphere"
+        }
+      }
+    },
+    {
+      "id": "visual:atmosphere.mist",
+      "category": "visual_atmosphere",
+      "name": "Mist",
+      "description": "Low mist hanging in the air.",
+      "aliases": [
+        "fog",
+        "foggy",
+        "misty"
+      ],
+      "components": {
+        "visual": {
+          "dimension": "atmosphere"
+        }
+      }
+    },
+    {
+      "id": "visual:atmosphere.bokeh",
+      "category": "visual_atmosphere",
+      "name": "Bokeh",
+      "description": "Out-of-focus points of light glow as soft circles behind the subject.",
+      "aliases": [
+        "bokeh lights"
+      ],
+      "components": {
+        "visual": {
+          "dimension": "atmosphere",
+          "section": "camera",
+          "media": [
+            "realistic",
+            "anime",
+            "3d",
+            "product"
+          ],
+          "conflicts": [
+            "visual:framing.establishing_shot"
+          ]
+        }
+      }
+    },
+    {
+      "id": "visual:atmosphere.shallow_depth_of_field",
+      "category": "visual_atmosphere",
+      "name": "Shallow depth of field",
+      "description": "Only the subject is sharp; the background falls softly out of focus.",
+      "aliases": [
+        "shallow focus",
+        "blurred background",
+        "background blur"
+      ],
+      "components": {
+        "visual": {
+          "dimension": "atmosphere",
+          "section": "camera",
+          "conflicts": [
+            "visual:framing.establishing_shot"
+          ]
+        }
+      }
+    },
+    {
+      "id": "visual:atmosphere.deep_focus",
+      "category": "visual_atmosphere",
+      "name": "Deep focus",
+      "description": "Everything from foreground to background is sharp.",
+      "aliases": [
+        "deep depth of field"
+      ],
+      "components": {
+        "visual": {
+          "dimension": "atmosphere",
+          "section": "camera"
+        }
+      }
+    },
+    {
+      "id": "visual:atmosphere.reflections",
+      "category": "visual_atmosphere",
+      "name": "Reflections",
+      "description": "Reflections on wet, glossy or glass surfaces already in the scene.",
+      "aliases": [
+        "reflective surfaces",
+        "wet reflections"
+      ],
+      "components": {
+        "visual": {
+          "dimension": "atmosphere"
+        }
+      }
+    },
+    {
+      "id": "visual:atmosphere.dramatic_shadows",
+      "category": "visual_atmosphere",
+      "name": "Dramatic shadows",
+      "description": "Long, bold shadows shape the scene.",
+      "aliases": [
+        "deep shadows",
+        "long shadows"
+      ],
+      "components": {
+        "visual": {
+          "dimension": "atmosphere",
+          "conflicts": [
+            "visual:lighting.high_key",
+            "visual:lighting.overcast",
+            "visual:lighting.soft"
+          ]
+        }
+      }
+    },
+    {
+      "id": "visual:atmosphere.floating_dust",
+      "category": "visual_atmosphere",
+      "name": "Floating dust",
+      "description": "Fine dust or particles catch the light in the air.",
+      "aliases": [
+        "dust motes",
+        "floating particles"
+      ],
+      "components": {
+        "visual": {
+          "dimension": "atmosphere"
+        }
+      }
+    },
+    {
+      "id": "visual:atmosphere.lens_flare",
+      "category": "visual_atmosphere",
+      "name": "Lens flare",
+      "description": "Streaks or circles of light where a bright source meets the lens.",
+      "aliases": [
+        "sun flare"
+      ],
+      "components": {
+        "visual": {
+          "dimension": "atmosphere",
+          "section": "camera",
+          "media": [
+            "realistic",
+            "anime",
+            "3d"
+          ],
+          "conflicts": [
+            "visual:lighting.overcast"
+          ]
+        }
+      }
+    },
+    {
+      "id": "visual:atmosphere.film_grain",
+      "category": "visual_atmosphere",
+      "name": "Film grain",
+      "description": "A fine grain texture like analogue film.",
+      "aliases": [
+        "grainy film look"
+      ],
+      "components": {
+        "visual": {
+          "dimension": "atmosphere",
+          "section": "camera",
+          "media": [
+            "realistic"
+          ]
+        }
+      }
+    }
+  ]
+}

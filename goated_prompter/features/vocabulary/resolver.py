@@ -5,7 +5,12 @@ A composition binds entries of a Registry to a cast:
     {"cast": [{"id": "ana", "body": "core:body.humanoid", "traits": [...], "complete_for": [...]}],
      "objects": [{"id": "toy", "item": "adult:item.dildo", "complete_for": [...]}],
      "space": "core:space.bed",
-     "use": [{"entry": "core:position.from_behind", "bind": {"front": "ana", "back": "ben"}}]}
+     "use": [{"entry": "core:position.from_behind", "bind": {"front": "ana", "back": "ben"}}],
+     "declared": {"ana": {"posture": "core:posture.all_fours", "facing": ["away_from", "ben"]}}}
+
+declared (optional) is what a scene itself states about a cast member, outside any entry: a posture entry and a
+facing toward or away from another member. It is checked like an entry's placement, so a scene that gives a
+bound participant another posture or facing than the entry declares is a placement conflict.
 
 resolve() reports conflict, unknown, eligible or feasible (SPEC.md section 3) with findings that
 name the entries and participants involved. "feasible" means the declared data supports the
@@ -26,6 +31,7 @@ FEASIBLE_NOTE = ("feasible: every requirement is satisfied and every placement a
                  "proof that the arrangement is physically possible.")
 _REF = re.compile(r"^(?P<slot>[a-z][a-z0-9_]*)(\[(?P<index>-?[0-9]+|\*|[0-9]*:[0-9]*|i|i(?P<rel>[+-][0-9]+))\])?$")
 NO_EVIDENCE = "no_vocabulary_evidence"
+SCENE = "the scene"  # the "entry" of a placement the scene declares itself (composition "declared")
 _KEY_SLOT = re.compile(r"\{([a-z][a-z0-9_]*)\}")
 _OPPOSITE = {"in_front": "behind", "behind": "in_front", "left_of": "right_of", "right_of": "left_of",
              "above": "below", "below": "above", "on": "under", "under": "on"}
@@ -337,6 +343,26 @@ class _Run:
             concrete["anchors"].append((anchor["relation"], others, anchor.get("at"), anchor.get("distance")))
         self.placements.setdefault(ident, []).append(concrete)
 
+    def declare(self, ident, declared):
+        """A scene's own statement about one cast member (composition "declared"), placed like an entry's."""
+        if ident not in self.beings:
+            raise CompositionError(f"declared placement for {ident}, who is not a cast member")
+        posture = declared.get("posture")
+        if posture is not None and (posture not in self.registry or
+                                    "self" not in self.registry.resolved(posture)["components"].get("spatial", {}).get("participants", {})):
+            raise CompositionError(f"{ident}: {posture} is not a posture")
+        if posture and posture not in {item.get("posture") for item in self.placements.get(ident, [])}:
+            self.place(ident, {"posture": posture}, {}, SCENE)  # a posture of its own: its requirements and claims apply
+        else:  # the same posture an entry already gave (its claims count once), or none
+            self.evaluated += 1
+            self.placements.setdefault(ident, []).append({"entry": SCENE, **({"posture": posture} if posture else {}), "anchors": []})
+        facing = declared.get("facing")
+        if facing is not None:
+            kind, other = facing
+            if kind not in ("toward", "away_from") or other not in self.beings or other == ident:
+                raise CompositionError(f"{ident}: facing must be toward or away_from another cast member")
+            self.placements[ident][-1]["facing"] = (kind, (other,))
+
     # -- after every use is applied
     def check_placements(self):
         for ident, placements in self.placements.items():
@@ -440,6 +466,8 @@ def resolve(registry, composition):
     run = _Run(registry, composition)
     for use in run.uses:
         run.apply(use)
+    for ident, declared in composition.get("declared", {}).items():
+        run.declare(ident, declared)
     run.check_placements()
     allocation = run.allocate()
     run.check_access(allocation)

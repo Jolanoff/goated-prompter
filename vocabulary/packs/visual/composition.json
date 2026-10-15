@@ -1,0 +1,130 @@
+{
+  "spec": 1,
+  "entries": [
+    {
+      "id": "visual:composition.rule_of_thirds",
+      "category": "visual_composition",
+      "name": "Rule of thirds",
+      "description": "The main subject sits on a third line, off-centre.",
+      "aliases": [
+        "rule-of-thirds composition"
+      ],
+      "components": {
+        "visual": {
+          "dimension": "composition"
+        }
+      }
+    },
+    {
+      "id": "visual:composition.centered",
+      "category": "visual_composition",
+      "name": "Centered composition",
+      "description": "The main subject sits in the middle of the frame.",
+      "aliases": [
+        "centred composition",
+        "central composition"
+      ],
+      "components": {
+        "visual": {
+          "dimension": "composition"
+        }
+      }
+    },
+    {
+      "id": "visual:composition.symmetrical",
+      "category": "visual_composition",
+      "name": "Symmetrical composition",
+      "description": "The frame balances as two mirrored halves.",
+      "aliases": [
+        "symmetry",
+        "symmetric composition"
+      ],
+      "components": {
+        "visual": {
+          "dimension": "composition",
+          "conflicts": [
+            "visual:camera_angle.dutch_angle"
+          ]
+        }
+      }
+    },
+    {
+      "id": "visual:composition.asymmetrical",
+      "category": "visual_composition",
+      "name": "Asymmetrical balance",
+      "description": "Unequal elements balance each other across the frame.",
+      "aliases": [
+        "asymmetrical composition",
+        "asymmetric composition"
+      ],
+      "components": {
+        "visual": {
+          "dimension": "composition"
+        }
+      }
+    },
+    {
+      "id": "visual:composition.leading_lines",
+      "category": "visual_composition",
+      "name": "Leading lines",
+      "description": "Lines already in the scene, such as edges, paths or railings, lead the eye to the subject.",
+      "aliases": [
+        "leading-line composition"
+      ],
+      "components": {
+        "visual": {
+          "dimension": "composition",
+          "conflicts": [
+            "visual:framing.extreme_close_up"
+          ]
+        }
+      }
+    },
+    {
+      "id": "visual:composition.dynamic",
+      "category": "visual_composition",
+      "name": "Dynamic composition",
+      "description": "Strong diagonals give the frame energy and movement.",
+      "aliases": [
+        "diagonal composition",
+        "dynamic diagonal composition"
+      ],
+      "components": {
+        "visual": {
+          "dimension": "composition"
+        }
+      }
+    },
+    {
+      "id": "visual:composition.frame_within_frame",
+      "category": "visual_composition",
+      "name": "Frame within a frame",
+      "description": "Something already in the scene, such as a doorway, window or arch, frames the subject.",
+      "aliases": [
+        "framed composition"
+      ],
+      "components": {
+        "visual": {
+          "dimension": "composition",
+          "conflicts": [
+            "visual:framing.extreme_close_up"
+          ]
+        }
+      }
+    },
+    {
+      "id": "visual:composition.negative_space",
+      "category": "visual_composition",
+      "name": "Negative space",
+      "description": "Generous empty space around the subject.",
+      "aliases": [
+        "minimalist composition"
+      ],
+      "components": {
+        "visual": {
+          "dimension": "composition"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,115 @@
+{
+  "spec": 1,
+  "entries": [
+    {
+      "id": "visual:framing.extreme_close_up",
+      "category": "visual_framing",
+      "name": "Extreme close-up",
+      "description": "One detail fills the frame, such as the eyes, hands or the point of contact.",
+      "aliases": [
+        "extreme closeup",
+        "extreme close-up shot",
+        "extreme close-ups"
+      ],
+      "components": {
+        "visual": {
+          "dimension": "framing",
+          "people": {
+            "max": 2
+          },
+          "conflicts": [
+            "visual:camera_angle.over_the_shoulder",
+            "visual:composition.frame_within_frame",
+            "visual:composition.leading_lines"
+          ]
+        }
+      }
+    },
+    {
+      "id": "visual:framing.close_up",
+      "category": "visual_framing",
+      "name": "Close-up",
+      "description": "The face or the key interaction fills most of the frame.",
+      "aliases": [
+        "closeup",
+        "close-up shot",
+        "close-ups"
+      ],
+      "components": {
+        "visual": {
+          "dimension": "framing",
+          "people": {
+            "max": 3
+          }
+        }
+      }
+    },
+    {
+      "id": "visual:framing.medium_shot",
+      "category": "visual_framing",
+      "name": "Medium shot",
+      "description": "The subjects are framed from about the waist up.",
+      "aliases": [
+        "mid shot",
+        "waist-up shot",
+        "medium framing"
+      ],
+      "components": {
+        "visual": {
+          "dimension": "framing"
+        }
+      }
+    },
+    {
+      "id": "visual:framing.full_body",
+      "category": "visual_framing",
+      "name": "Full-body shot",
+      "description": "Each subject is shown whole, from head to toe.",
+      "aliases": [
+        "full body shot",
+        "full-length shot",
+        "full shot"
+      ],
+      "components": {
+        "visual": {
+          "dimension": "framing"
+        }
+      }
+    },
+    {
+      "id": "visual:framing.wide_shot",
+      "category": "visual_framing",
+      "name": "Wide shot",
+      "description": "The subjects appear smaller within plenty of their surroundings.",
+      "aliases": [
+        "long shot",
+        "wide framing"
+      ],
+      "components": {
+        "visual": {
+          "dimension": "framing"
+        }
+      }
+    },
+    {
+      "id": "visual:framing.establishing_shot",
+      "category": "visual_framing",
+      "name": "Establishing shot",
+      "description": "A very wide view of the whole location, with the subjects part of it.",
+      "aliases": [
+        "extreme wide shot",
+        "extreme long shot"
+      ],
+      "components": {
+        "visual": {
+          "dimension": "framing",
+          "conflicts": [
+            "visual:atmosphere.bokeh",
+            "visual:atmosphere.shallow_depth_of_field",
+            "visual:camera_angle.over_the_shoulder"
+          ]
+        }
+      }
+    }
+  ]
+}

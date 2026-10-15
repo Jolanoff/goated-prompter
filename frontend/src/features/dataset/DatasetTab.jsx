@@ -9,7 +9,8 @@ import { datasetCopyText, datasetJsonl, datasetGenerationLog } from "./datasetEx
 import { editDatasetPlan } from "./datasetState.js";
 import { useDatasetWorkflow } from "./useDatasetWorkflow.js";
 import DatasetConfirmationModal from "./DatasetConfirmationModal.jsx";
-import { useDatasetPacks, useRunPacks } from "./useDatasetPacks.js";
+import { useDatasetPacks, useRunPacks, useVisualDirection } from "./useDatasetPacks.js";
+import VisualDirectionControls from "./VisualDirectionControls.jsx";
 import { PackSelector, RecordedPacks } from "../vocabulary/PackSelector.jsx";
 import { RunPrompts, RunScenes } from "./DatasetRunPages.jsx";
 import { maxSeed, seedModes } from "./options.js";
@@ -77,12 +78,14 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
   const availablePresets = orderDisplayPresets(presets || []);
   const director = availablePresets.find((item) => item.id === draft?.director_preset);
   const vocabulary = useDatasetPacks(visible);
+  const visualDirection = useVisualDirection();
   const { starting, error, workflowActive, disabled,
     guidedLines, canPlanScenes, staleScenePlan, sceneUsable, validSceneCount, retryStage,
     canWrite, canContinue, remainingPromptCount, updateSceneSettings, updateWriterSettings,
     sceneAction, generateDataset, generateScenes, continueDataset, editResult, releaseCheckpoints, clearResults,
     confirmation, understanding, run, cancelConfirmation, confirmRequest, editIntent } = useDatasetWorkflow({ preferences, job, busy, active, noEngine,
-      director, onGenerate: startGeneration, onReleaseJobs, vocabularyPacks: vocabulary.selected, packsReady: vocabulary.ready });
+      director, onGenerate: startGeneration, onReleaseJobs, vocabularyPacks: vocabulary.selected, packsReady: vocabulary.ready,
+      visualDirection: visualDirection.settings });
   // A run shows the packs it recorded on the server, never the selector's current choice.
   const runPacks = useRunPacks(run?.result?.run_id);
   const packNames = Object.fromEntries(vocabulary.packs.map((pack) => [pack.id, pack.name || pack.id]));
@@ -155,7 +158,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
     .map((item) => ({ ...item, failed: true, prompt: "" }))].sort((left, right) => left.index - right.index);
 
   function exportGenerationLog() {
-    download("dataset-generation-log.json", datasetGenerationLog({ draft, review: understanding, job, record: preferences.record,
+    download("dataset-generation-log.json", datasetGenerationLog({ draft, review: understanding, job, record: preferences.record, run, runPacks,
       state: { active: workflowActive, starting, error, settings_status: preferences.status, settings_error: preferences.error,
         settings_conflict: preferences.conflict, stale_scene_plan: staleScenePlan, valid_scene_count: validSceneCount } }), "application/json;charset=utf-8");
   }
@@ -359,6 +362,9 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
               {vocabulary.loading ? <p className="text-xs text-muted" role="status">Loading vocabulary packs…</p>
                 : <PackSelector packs={vocabulary.packs} selected={vocabulary.selected} onChange={vocabulary.choose}
                   disabled={disabled} error={vocabulary.error} />}
+              {!vocabulary.loading && <div className="mt-4"><VisualDirectionControls settings={visualDirection.settings}
+                onChange={visualDirection.choose} disabled={disabled}
+                packAvailable={!vocabulary.packs.some((pack) => pack.id === "visual") || vocabulary.selected.includes("visual")} /></div>}
             </div>
 
           </fieldset>

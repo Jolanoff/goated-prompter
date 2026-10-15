@@ -17,7 +17,8 @@ Record (schema 2; schema 1 is read as it is, see below):
   error         text or null
   brief         the confirmed Understanding brief (request, rules, settings, seed, amount, guided inputs)
   seed, requested   copies of brief.input.seed and brief.input.amount, checked against the brief
-  vocabulary    {"enabled", "provided"} once scenes are written, else null
+  vocabulary    {"enabled", "provided", ...} once scenes are written, else null: also the export-safe diagnostics of
+                vocabulary_packs.diagnostics (selection, entries and ideas by image, exclusions, Visual Direction)
   packs         the run's vocabulary pack selection, recorded when the run is created, before any inference,
                 and never changed afterwards (update() refuses): {version, enabled, selected, packs: [{id, role,
                 origin, version, fingerprint}]} (vocabulary.packs.validate_selection), or null when the caller gave

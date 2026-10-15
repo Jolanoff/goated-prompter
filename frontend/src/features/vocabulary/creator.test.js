@@ -61,6 +61,7 @@ test("every supported component renders recursive visual controls, not a raw JSO
     spatial: { participants: { actor: { orientation: "upright", facing: { toward: "partner" }, anchors: [{ relation: "on", of: "partner", at: "core:limb.hand", distance: "contact" }] } } },
     claims: { actor: [{ resource: "core:limb.hand", count: 1, mode: "exclusive", purpose: "hold", key: "held_{actor}" }] },
     object: { provides: [], complete_for: [], size: "small", hands: 1 }, environment: { provides: [] },
+    visual: { dimension: "lighting", section: "lighting", media: ["anime"], people: { min: 1, max: 2 }, conflicts: [] },
   };
   assert.deepEqual(Object.keys(samples), Object.keys(schemas.entry.$defs.components.properties));
   for (const [component, value] of Object.entries(samples)) {
