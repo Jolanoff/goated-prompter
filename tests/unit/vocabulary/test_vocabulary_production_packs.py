@@ -9,7 +9,7 @@ import json
 import unittest
 from pathlib import Path
 
-from goated_prompter.features.vocabulary.packs import BUNDLED_DIRS, build_registry, read_pack
+from goated_prompter.features.vocabulary.packs import BUNDLED_DIRS, activation, build_registry, read_pack
 from goated_prompter.features.vocabulary.resolver import candidate_bindings, resolve
 from goated_prompter.features.vocabulary.retrieval import RetrievalConfig, RetrievalRequest, VocabularyIndex, retrieve
 from goated_prompter.features.vocabulary.semantic import terms
@@ -55,7 +55,9 @@ def bodies(found):
 class Packs(unittest.TestCase):
     def test_three_packs_load_with_their_dependencies(self):
         self.assertEqual((CORE.manifest["version"], FANTASY.manifest["version"], ADULT.manifest["version"], KINKS.manifest["version"]),
-                         ("1.1.0", "1.0.0", "2.0.0", "1.0.0"))
+                         ("1.1.0", "1.0.0", "2.1.0", "1.0.0"))
+        self.assertEqual([activation(pack.manifest) for pack in (FANTASY, ADULT, KINKS)], ["theme", "content", "theme"],
+                         "only the general adult pack offers ideas for the content level alone; kinks need their theme")
         for pack in (FANTASY, ADULT, KINKS):
             self.assertEqual(pack.manifest["requires"], {"core": ">=1.1.0 <2.0.0"}, "kinks never depend on the adult pack")
         self.assertGreaterEqual(len(ADULT.entries), 200)
@@ -206,13 +208,20 @@ class IsolatedWords(unittest.TestCase):
         self.assertIn("core:position.riding", ids(ask("a knight riding a dragon",
                                                       characters=(person("knight", "male"), creature("dragon", "dragon")))))
 
-    def test_a_linked_entry_keeps_its_isolated_word(self):
+    def test_a_linked_entry_relates_its_isolated_word(self):
+        # Part C: one word of a longer name names nothing; a declared relation to a named entry makes it related
+        # (an optional idea where its category is open), never named and never a decided constraint.
+        def related(found):
+            return {item["id"] for item in found.intent["related"]}
         found = ask("a mage casting a spell with a staff", characters=(creature("mage", "human mage"),))
-        self.assertIn("fantasy:item.staff", ids(found), "the spell that uses a focus is named")
+        self.assertNotIn("fantasy:item.staff", ids(found))
+        self.assertIn("fantasy:item.staff", related(found), "it provides the focus the named spell needs")
         found = ask("a couple spooning on the side of the bed")
-        self.assertIn("core:posture.lying_side", ids(found), "the spooning that takes the posture is named")
-        cowgirl = [entry_id for entry_id in ids(ask("cowgirl", nsfw=True)) if "cowgirl" in entry_id]
-        self.assertEqual(cowgirl, ["adult:position.cowgirl", "adult:position.reverse_cowgirl"], "a named parent")
+        self.assertNotIn("core:posture.lying_side", ids(found))
+        self.assertIn("core:posture.lying_side", related(found), "it is the posture the named spooning takes")
+        cowgirl = ask("cowgirl", nsfw=True)
+        self.assertEqual([entry_id for entry_id in ids(cowgirl) if "cowgirl" in entry_id], ["adult:position.cowgirl"])
+        self.assertIn("adult:position.reverse_cowgirl", related(cowgirl), "it extends the named cowgirl")
 
 
 class Retrieval(unittest.TestCase):
@@ -228,7 +237,7 @@ class Retrieval(unittest.TestCase):
         ("A dragon breathing fire", (creature("dragon", "dragon"),), False, {"fantasy:action.breathe_fire"}),
         ("A knight riding a dragon", (MAN, creature("dragon", "dragon")), False, {"core:position.riding"}),
         ("A female elf mage casting a spell with a staff in an enchanted forest", (creature("elf", "female elf mage"),), False,
-         {"fantasy:action.cast_spell", "fantasy:item.staff", "fantasy:space.enchanted_woods"}),
+         {"fantasy:action.cast_spell", "fantasy:space.enchanted_woods"}),  # the staff is related: see IsolatedWords
         ("A winged elf flying", (creature("elf", "winged elf"),), False, {"core:posture.flying"}),
         ("Missionary on a bed", (WOMAN, MAN), True, {"adult:position.missionary", "core:space.bed"}),
         ("Cowgirl", (WOMAN, MAN), True, {"adult:position.cowgirl"}),
@@ -265,7 +274,7 @@ class Retrieval(unittest.TestCase):
         self.assertIn("adult:position.reverse_cowgirl", ids(reverse))
         self.assertNotIn("adult:position.cowgirl", ids(reverse))
         plain = [entry_id for entry_id in ids(ask("cowgirl", nsfw=True)) if "cowgirl" in entry_id]
-        self.assertEqual(plain, ["adult:position.cowgirl", "adult:position.reverse_cowgirl"])
+        self.assertEqual(plain, ["adult:position.cowgirl"], "the reverse is related, not named (Part C)")
 
     def test_actions_that_only_share_a_body_part_are_not_related(self):
         found = ask("sixty-nine", nsfw=True)

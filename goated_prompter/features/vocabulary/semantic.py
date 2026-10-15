@@ -24,6 +24,11 @@ whom which what when where why how all any both each few more most other some su
 should would could may might must shall let lets also each every per via
 """.split())
 NEGATIONS = frozenset({"no", "not", "without", "never", "avoid", "except", "nor", "none"})
+# Function words that carry a phrase's structure (prepositions and conjunctions). A name or alias is matched only where
+# the request has the same structure: it never skips one it does not contain ("a book in the corner" is not "Book
+# corner"), while articles, pronouns and possessives may sit between its words ("sitting on her lap"). A closed
+# grammatical class, never a list of subjects.
+STRUCTURAL = frozenset("at by for from in into onto on off out to with within about of and or but".split())
 _CLAUSE_END = frozenset({"and", "but", "while", "with", "then"})
 _ALTERNATIVE = frozenset({"or"})
 _DOUBLE_KEEP = set("lsz")
@@ -103,8 +108,26 @@ def place_phrases(text):
     return found
 
 
-def split_negated(text):
+def marker(word):
+    """How a structural word stands in a phrase: "@", the same for every one, so a name keeps its shape but not its
+    exact preposition ("sitting in a lap" holds "Sitting on a lap"). Markers are never terms: they keep words apart."""
+    return "@"
+
+
+def phrase_terms(text):
+    """The terms of a name, alias, tag or theme with its inner structural words kept as markers:
+    "Sitting on a lap" -> ["sit", "@", "lap"]; leading and trailing ones are dropped ("On top" -> ["top"])."""
+    out = [marker(word) if word in STRUCTURAL else stem(word) for word in tokens(text) if word not in STOPWORDS or word in STRUCTURAL]
+    while out and out[0].startswith("@"):
+        out.pop(0)
+    while out and out[-1].startswith("@"):
+        out.pop()
+    return out
+
+
+def split_negated(text, structure=False):
     """(positive terms, negated terms). A negation word rules out the next content words of its clause.
+    structure: keep the structural words of the positive terms as markers ("@"), for phrase matching.
 
     The scope also ends at a new verb form (-ing, -ed) unless that verb is itself what is negated, directly
     after the negation or after "or": "no shirt, cuddling" and "no shirt cuddling" both keep "cuddling",
@@ -122,6 +145,8 @@ def split_negated(text):
             if word in _ALTERNATIVE:
                 fresh = True
             if word in STOPWORDS:
+                if structure and word in STRUCTURAL and not remaining:
+                    positive.append(marker(word))
                 continue
             term = stem(word)
             if remaining and not fresh and word.endswith(("ing", "ed")) and term != word:
@@ -160,7 +185,10 @@ class TextIndex:
     FUZZY_WEIGHT = 0.6     # a variant counts this much of an exact term
     PREFIX_WEIGHT = 0.5    # a compound that starts with the term ("spell" in "spellcaster")
 
-    def __init__(self, documents, weights):
+    def __init__(self, documents, weights, corpus=None, members=None):
+        """corpus: {key: corpus id} and members: {corpus id: [keys]}: the documents whose statistics (term rarity,
+        average length) score a key. A key is scored against its own corpus only, so documents outside it never
+        change its score. Without them every document shares one corpus."""
         self.weights = dict(weights)
         self.documents = {document.key: document for document in documents}
         self.tf, self.length = {}, {}
@@ -180,11 +208,28 @@ class TextIndex:
         self.idf = {term: math.log(1 + (count - df + .5) / (df + .5)) for term, df in frequency.items()}
         self.average = (sum(self.length.values()) / count) or 1.0
         self.vocabulary = sorted(self.idf)
+        # Statistics per corpus: {corpus id: (idf, average length)}; a key without a corpus uses the global ones.
+        self.corpus = dict(corpus or {})
+        self._stats = {group: self._statistics(keys) for group, keys in sorted((members or {}).items(), key=lambda item: repr(item[0]))}
         self._grams = {}
         for term in self.vocabulary:
             for gram in trigrams(term):
                 self._grams.setdefault(gram, []).append(term)
         self._variants = {}
+
+    def _statistics(self, keys):
+        keys = [key for key in keys if key in self.documents]
+        frequency = {}
+        for key in keys:
+            for term in self.tf[key]:
+                frequency[term] = frequency.get(term, 0) + 1
+        count = max(1, len(keys))
+        idf = {term: math.log(1 + (count - df + .5) / (df + .5)) for term, df in frequency.items()}
+        return idf, (sum(self.length[key] for key in keys) / count) or 1.0
+
+    def stats(self, key):
+        """(idf, average length) that score this key."""
+        return self._stats.get(self.corpus.get(key), (self.idf, self.average))
 
     def variants(self, term):
         """Indexed terms that match term: itself, plus close spelling variants (sorted, deterministic)."""
@@ -209,7 +254,8 @@ class TextIndex:
         exact: the same normalized word only, no spelling variants or compounds ("hand" never matches "handbag").
         """
         bag, total, matches = self.tf.get(key, {}), 0.0, []
-        norm = 1 - self.B + self.B * self.length.get(key, 0) / self.average
+        idf, average = self.stats(key)
+        norm = 1 - self.B + self.B * self.length.get(key, 0) / average
         for term in sorted(query):
             weight, source = query[term]
             best = None
@@ -218,7 +264,7 @@ class TextIndex:
                 if not fields:
                     continue
                 tf = sum(self.weights.get(name, 0) * count for name, count in fields.items())
-                value = weight * closeness * self.idf[other] * tf * (self.K1 + 1) / (tf + self.K1 * norm)
+                value = weight * closeness * idf.get(other, 0.0) * tf * (self.K1 + 1) / (tf + self.K1 * norm)
                 strongest = max(sorted(fields), key=lambda name: self.weights.get(name, 0))
                 if best is None or value > best[4]:
                     best = (term, other, strongest, source, value)
@@ -229,7 +275,7 @@ class TextIndex:
 
     def phrase_hits(self, key, sequences):
         """Multi-word names and aliases found in the query. sequences: [(source, weight, [terms])]."""
-        hits = []
+        hits, idf = [], self.stats(key)[0]
         for label, name, phrase in self.documents[key].phrases:
             if len(phrase) < 2:
                 continue
@@ -237,7 +283,7 @@ class TextIndex:
                 contiguous = any(tuple(sequence[index:index + len(phrase)]) == phrase for index in range(len(sequence) - len(phrase) + 1))
                 present = set(phrase) <= set(sequence)
                 if contiguous or present:
-                    value = weight * (1.0 if contiguous else .5) * sum(self.idf.get(term, 0) for term in phrase)
+                    value = weight * (1.0 if contiguous else .5) * sum(idf.get(term, 0) for term in phrase)
                     hits.append((label, name, source, value, contiguous))
         hits.sort(key=lambda hit: (-hit[3], hit[0], hit[2]))
         return hits

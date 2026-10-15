@@ -117,6 +117,8 @@ async def creator_endpoint(request):
                 if set(payload) - {"document", "sample"}:
                     raise ValueError("Unknown draft validation field.")
                 sample = inspection_sample(payload.get("sample")) if action == "preview" else None
+                if sample and ({"packs", "recorded"} & set(sample)):
+                    raise ValueError("A draft preview always uses the draft and the packs it requires.")
                 result = await asyncio.to_thread(creator.validate, payload["document"], sample)
             elif action == "export":
                 data = await asyncio.to_thread(creator.export, payload["document"])

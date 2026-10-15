@@ -129,21 +129,27 @@ class SemanticRelevance(unittest.TestCase):
         sofa = next(entry for entry in found.entries if entry.id == "studio:space.sofa")
         self.assertTrue(any('"couch"' in reason for reason in sofa.why), sofa.why)
 
-    def test_descriptions_carry_meaning(self):
-        self.assertEqual(ids(ask("arms wrapped around each other"))[0], "studio:action.embrace")
+    def test_descriptions_are_weak_evidence(self):
+        # Part C: words shared with a description name nothing; the match is reported, never used as a request.
+        found = ask("arms wrapped around each other")
+        self.assertNotIn("studio:action.embrace", ids(found))
+        self.assertIn("studio:action.embrace", [item["id"] for item in found.intent["rejected"]])
+        self.assertEqual(ids(ask("two friends hugging"))[0], "studio:action.embrace", "its declared alias still names it")
 
-    def test_capability_links_find_entries_that_never_use_the_words(self):
+    def test_capability_links_alone_name_nothing(self):
+        # Part C: what an entry provides decides compatibility, not what the request asks for.
         found = ask("somewhere wide to lie on")
-        self.assertIn("studio:space.sofa", ids(found), "the sofa provides a wide surface; its text never says so")
-        sofa = next(entry for entry in found.entries if entry.id == "studio:space.sofa")
-        self.assertTrue(any(reason.startswith("related: uses") for reason in sofa.why), sofa.why)
+        self.assertNotIn("studio:space.sofa", ids(found), "the sofa provides a wide surface, but nothing names it")
+        self.assertEqual(found.intent["fixed"], {})
 
-    def test_compounds_and_shared_capabilities_relate_entries(self):
-        found = ask("a mage casting a spell", characters=({"label": "Mage", "gender": "custom", "custom": "spellcaster"},
-                                                          {"label": "Foe", "gender": "custom", "custom": "dragon"}))
-        self.assertEqual(ids(found)[0], "fantasy:action.cast_on")
+    def test_partial_names_and_shared_capabilities_name_nothing(self):
+        # Part C: "casting a spell" is part of "Cast a spell on someone", not the whole name; the full name names it.
+        cast = ({"label": "Mage", "gender": "custom", "custom": "spellcaster"}, {"label": "Foe", "gender": "custom", "custom": "dragon"})
+        self.assertNotIn("fantasy:action.cast_on", ids(ask("a mage casting a spell", characters=cast)))
+        self.assertEqual(ids(ask("a mage, cast a spell on someone", characters=cast))[0], "fantasy:action.cast_on")
         toys = ask("a woman using a dildo on her partner", nsfw=True)
-        self.assertEqual(set(ids(toys)) >= {"adult:item.dildo", "adult:action.toy_insert"}, True, ids(toys))
+        self.assertIn("adult:item.dildo", ids(toys))
+        self.assertNotIn("adult:action.toy_insert", ids(toys), "an object is no requested action")
 
     def test_morphology(self):
         self.assertEqual({stem(word) for word in ("kneel", "kneels", "kneeling", "kneeled")}, {"kneel"})
@@ -156,7 +162,7 @@ class SemanticRelevance(unittest.TestCase):
         self.assertEqual({stem(word) for word in ("speed", "speeds", "speeding")}, {stem("speed")})
         self.assertEqual({stem(word) for word in ("bleed", "bleeds", "bleeding")}, {stem("bleed")})
         self.assertEqual(stem("seated"), stem("seat"))
-        self.assertIn("studio:space.sofa", ids(ask("somewhere wide for lying on")))
+        self.assertIn("studio:space.sofa", ids(ask("lying on a settee")), "an alias in another word form names it")
 
     def test_negation_scope_ends_at_a_new_verb(self):
         self.assertEqual(split_negated("a man with no shirt cuddling a woman"), (["man", "cuddl", "woman"], ["shirt"]))
@@ -168,7 +174,7 @@ class SemanticRelevance(unittest.TestCase):
 
 class CrossPack(unittest.TestCase):
     def test_one_request_draws_on_several_packs(self):
-        found = ask("a winged woman flies while carrying a man, then they hug",
+        found = ask("a winged woman in an aerial carry of a man, then they hug",
                     characters=({"label": "Woman 1", "gender": "female", "custom": "winged woman"}, PEOPLE[1]))
         packs = {entry.pack for entry in found.entries}
         self.assertIn("studio", packs)
@@ -214,7 +220,7 @@ class Ratings(unittest.TestCase):
 
 
 class Compatibility(unittest.TestCase):
-    CARRY = "a woman flies while carrying a man in her arms"
+    CARRY = "a woman doing an aerial carry of a man in her arms"
 
     def test_confirmed_conflicts_are_excluded(self):
         found = ask(self.CARRY)
@@ -296,20 +302,28 @@ class Duplicates(unittest.TestCase):
         found = ask("sitting on a lap")
         self.assertIn("studio:position.lap_sit", ids(found))
         self.assertNotIn("studio:position.lap_sit_reverse", ids(found))
-        self.assertIn({"id": "studio:position.lap_sit_reverse",
-                       "because": "inherited duplicate of studio:position.lap_sit (declares nothing more)"}, found.suppressed)
+        # Part C: one word of "Reverse lap sit" names nothing; it extends the named entry, so it is related, not named.
+        self.assertIn({"id": "studio:position.lap_sit_reverse", "why": "it extends Sitting on a lap, which the request names"},
+                      found.intent["related"])
+        both = ask("sitting on a lap, then a reverse lap sit")
+        self.assertEqual(len([entry_id for entry_id in ids(both) if entry_id.startswith("studio:position.lap_sit")]), 1,
+                         "naming both still keeps one of two equivalents")
+        self.assertTrue(any("inherited duplicate" in item["because"] for item in both.suppressed), both.suppressed)
 
     def test_a_more_specific_descendant_is_not_suppressed_by_its_parent(self):
         # The deep bow extends the bow and declares more (a hand on the heart).
         found = ask("a polite bow to show respect, bending forward at the waist, then a deep bow")
         self.assertLess(ids(found).index("studio:gesture.bow"), ids(found).index("studio:gesture.deep_bow"), "the parent ranks first")
         self.assertFalse([item for item in found.suppressed if "bow" in item["id"]], found.suppressed)
-        self.assertEqual({"studio:gesture.bow", "studio:gesture.deep_bow"} - set(ids(ask("a bow"))), set())
+        generic = ask("a bow")
+        self.assertEqual([entry_id for entry_id in ids(generic) if "bow" in entry_id], ["studio:gesture.bow"])
+        self.assertIn({"id": "studio:gesture.deep_bow", "why": "it extends Bow, which the request names"}, generic.intent["related"],
+                      "the deeper variant is related to the named bow, not named itself")
 
     def test_a_generic_request_ranks_the_parent_first(self):
         def bows(text):
             return [entry_id for entry_id in ids(ask(text)) if entry_id.startswith("studio:gesture.") and "bow" in entry_id]
-        self.assertEqual(bows("a bow"), ["studio:gesture.bow", "studio:gesture.deep_bow"])
+        self.assertEqual(bows("a bow"), ["studio:gesture.bow"], "one word of Deep bow names only the bow")
         self.assertEqual(bows("a deep bow"), ["studio:gesture.deep_bow"])
         self.assertEqual(set(bows("a polite bow and a deep bow")), {"studio:gesture.bow", "studio:gesture.deep_bow"},
                          "the request names the bow on its own as well")

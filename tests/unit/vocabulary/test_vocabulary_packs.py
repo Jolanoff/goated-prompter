@@ -10,7 +10,8 @@ import zipfile
 from pathlib import Path
 
 from goated_prompter.features.vocabulary.packs import (
-    BUNDLED_DIRS, MAX_FILE_BYTES, OFFICIAL_DIR, PackManager, VocabularyError, build_registry, read_pack, satisfies)
+    BUNDLED_DIRS, MAX_FILE_BYTES, OFFICIAL_DIR, PackDrift, PackManager, VocabularyError, build_registry, read_pack, satisfies,
+    validate_selection)
 from goated_prompter.features.vocabulary.retrieval import RetrievalRequest, retrieve
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "packs"
@@ -41,10 +42,15 @@ def fixture(name, **changes):
     return files
 
 
-def tiny_pack(pack_id, entries, requires=None, version="1.0.0", conflicts=None, categories=None, rating="general"):
+def tiny_pack(pack_id, entries, requires=None, version="1.0.0", conflicts=None, categories=None, rating="general",
+              activation=None, themes=None):
     manifest = {"spec": 1, "id": pack_id, "name": pack_id.title(), "version": version, "rating": rating,
                 "requires": requires if requires is not None else {"core": ">=1.0.0 <2.0.0"},
                 "files": ["entries.json"]}
+    if activation:
+        manifest["activation"] = activation
+    if themes:
+        manifest["themes"] = themes
     if conflicts:
         manifest["conflicts"] = conflicts
     if categories:
@@ -215,6 +221,144 @@ class Install(ManagerTest):
         toys["entries"][1]["rating"] = "general"
         loose["toys.json"] = toys
         self.assertRejected(archive(loose), "rated looser than its pack")
+
+
+    def test_activation_defaults_to_theme_and_is_validated(self):
+        self.assertEqual(self.manager.install_archive(archive(tiny_pack("plain", [], rating="adult")))["activation"], "theme",
+                         "a pack that declares nothing needs its theme")
+        summary = self.manager.install_archive(archive(tiny_pack("general_adult", [], rating="adult", activation="content")))
+        self.assertEqual(summary["activation"], "content")
+        self.assertEqual(self.manager.install_archive(archive(tiny_pack("niche", [], rating="mature", activation="theme")))["activation"],
+                         "theme")
+        self.assertRejected(archive(tiny_pack("loose", [], activation="content")), "content activation needs a Mature or Adult pack rating")
+        self.assertRejected(archive(tiny_pack("always", [], rating="adult", activation="always")), "activation")
+        self.assertEqual({pack["id"]: pack["activation"] for pack in self.manager.discover()},
+                         {"core": "always", "plain": "theme", "general_adult": "content", "niche": "theme"})
+
+
+    def test_theme_phrases_are_validated(self):
+        self.assertEqual(self.manager.install_archive(archive(tiny_pack("themed", [], themes=["bondage play", "BDSM"])))["id"], "themed")
+        self.assertRejected(archive(tiny_pack("ratings", [], rating="adult", themes=["Adult"])), "needs a word that is not a rating")
+        self.assertRejected(archive(tiny_pack("empty", [], themes=["the and"])), "needs a word that is not a rating")
+        self.assertRejected(archive(tiny_pack("long", [], themes=["x" * 81])), "themes")
+
+
+class Selection(ManagerTest):
+    """Per-run pack selection (Phase 2): resolved from the user's choice, never from or into the global enabled state."""
+
+    def setUp(self):
+        super().setUp()
+        place = {"id": "harbor:space.quay", "category": "space", "name": "Stone quay", "description": "A quay of old stone.",
+                 "components": {"environment": {"provides": ["core:surface.ground"]}}}
+        boat = {"id": "boats:space.deck", "category": "space", "name": "Boat deck", "description": "The deck of a small boat.",
+                "components": {"environment": {"provides": ["core:surface.ground"]}}}
+        self.manager.install_archive(archive(tiny_pack("harbor", [place])))
+        self.manager.install_archive(archive(tiny_pack("boats", [boat], requires={"core": ">=1.0.0 <2.0.0", "harbor": ">=1.0.0"})))
+
+    def ids(self, selection):
+        return [(item["id"], item["role"]) for item in selection["packs"]]
+
+    def test_the_core_is_always_in_and_cannot_be_left_out(self):
+        self.assertEqual(self.ids(self.manager.resolve_selection([])), [("core", "core")])
+        self.assertEqual(self.ids(self.manager.resolve_selection(["core"])), [("core", "core")], "selecting the core changes nothing")
+
+    def test_selected_packs_and_their_dependencies_are_told_apart(self):
+        selection = self.manager.resolve_selection(["boats"])
+        self.assertEqual(selection["selected"], ["boats"])
+        self.assertEqual(self.ids(selection), [("boats", "selected"), ("core", "core"), ("harbor", "dependency")])
+        both = self.manager.resolve_selection(["harbor", "boats"])
+        self.assertEqual(self.ids(both), [("boats", "selected"), ("core", "core"), ("harbor", "selected")])
+        self.assertEqual(self.manager.resolve_selection(["boats", "harbor"]), both, "order of choice changes nothing")
+
+    def test_unknown_invalid_and_dependency_blocked_packs_are_refused(self):
+        with self.assertRaises(VocabularyError) as caught:
+            self.manager.resolve_selection(["nowhere"])
+        self.assertIn("nowhere is not installed", str(caught.exception))
+        folder = self.root / "packs" / "lonely"
+        folder.mkdir()
+        for name, content in tiny_pack("lonely", [], requires={"core": ">=1.0.0", "ghost": ">=1.0.0"}).items():
+            (folder / name).write_text(json.dumps(content), encoding="utf-8")
+        with self.assertRaises(VocabularyError) as caught:
+            self.manager.resolve_selection(["lonely"])
+        self.assertIn("lonely requires ghost, which is not installed", str(caught.exception))
+        broken = self.root / "packs" / "broken"
+        broken.mkdir()
+        (broken / "manifest.json").write_text("{not json", encoding="utf-8")
+        with self.assertRaises(VocabularyError) as caught:
+            self.manager.resolve_selection(["broken"])
+        self.assertIn("broken", str(caught.exception))
+        self.assertEqual(self.ids(self.manager.resolve_selection(["harbor"])), [("core", "core"), ("harbor", "selected")],
+                         "a broken pack nobody selected blocks nothing")
+
+    def test_the_global_enabled_state_is_neither_read_nor_written(self):
+        self.manager.set_enabled("boats", False)
+        self.manager.set_enabled("harbor", False)
+        state = (self.root / "state.json").read_bytes()
+        selection = self.manager.resolve_selection(["boats"])
+        self.assertIn(("harbor", "dependency"), self.ids(selection), "a globally disabled pack can still be selected for a run")
+        registry = self.manager.registry_for(selection)
+        self.assertIn("harbor:space.quay", registry.ids())
+        self.assertEqual((self.root / "state.json").read_bytes(), state, "selection never writes the global state")
+        self.assertNotIn("harbor:space.quay", self.manager.registry().ids(), "the global registry still leaves it out")
+        self.assertEqual(self.manager.selection_status(selection)["disabled_globally"], ["boats", "harbor"])
+        self.assertTrue(self.manager.selection_status(selection)["exact"], "a global disable is no drift")
+
+    def test_only_the_selected_packs_take_part(self):
+        registry = self.manager.registry_for(self.manager.resolve_selection(["harbor"]))
+        self.assertEqual({registry.owner(entry_id) for entry_id in registry.ids()}, {"core", "harbor"})
+        self.assertNotIn("boats:space.deck", registry.ids(), "an installed, globally enabled pack nobody selected is out")
+
+    def test_the_fingerprint_follows_the_content_not_the_version(self):
+        selection = self.manager.resolve_selection(["harbor"])
+        harbor = next(item for item in selection["packs"] if item["id"] == "harbor")
+        self.assertRegex(harbor["fingerprint"], r"^sha256:[0-9a-f]{64}$")
+        self.assertEqual(self.manager.resolve_selection(["harbor"]), selection, "the same content gives the same record")
+        (self.root / "packs" / "harbor" / "README.md").write_text("Notes nobody retrieves.", encoding="utf-8")
+        self.assertEqual(self.manager.resolve_selection(["harbor"]), selection, "supporting text is not retrieved or hashed")
+        entries = self.root / "packs" / "harbor" / "entries.json"
+        data = json.loads(entries.read_text(encoding="utf-8"))
+        data["entries"][0]["name"] = "Granite quay"
+        entries.write_text(json.dumps(data), encoding="utf-8")
+        edited = self.manager.resolve_selection(["harbor"])
+        self.assertEqual(next(item for item in edited["packs"] if item["id"] == "harbor")["version"], "1.0.0")
+        self.assertNotEqual(edited, selection, "an edit without a version bump is still detected")
+
+    def test_drift_is_reported_never_hidden(self):
+        selection = self.manager.resolve_selection(["boats"])
+        self.assertEqual(self.manager.selection_drift(selection), [])
+        entries = self.root / "packs" / "harbor" / "entries.json"
+        original = entries.read_bytes()
+        entries.write_text(entries.read_text(encoding="utf-8").replace("Stone quay", "Granite quay"), encoding="utf-8")
+        self.assertEqual([(item["id"], item["problem"]) for item in self.manager.selection_drift(selection)], [("harbor", "changed")])
+        with self.assertRaises(PackDrift) as caught:
+            self.manager.registry_for(selection)
+        self.assertIn("content changed since it was recorded (still version 1.0.0)", str(caught.exception))
+        entries.write_bytes(original)
+        self.assertEqual(self.manager.selection_drift(selection), [], "the original content is exact again")
+        self.manager.install_archive(archive(tiny_pack("harbor", json.loads(original)["entries"], version="1.1.0")), replace=True)
+        self.assertEqual([(item["id"], item["problem"]) for item in self.manager.selection_drift(selection)], [("harbor", "version")])
+        self.manager.install_archive(archive(tiny_pack("harbor", json.loads(original)["entries"])), replace=True, allow_downgrade=True)
+        self.manager.install_archive(archive(tiny_pack("ropes", [])))
+        boats = json.loads((self.root / "packs" / "boats" / "manifest.json").read_text(encoding="utf-8"))
+        boats["requires"]["ropes"] = ">=1.0.0"
+        (self.root / "packs" / "boats" / "manifest.json").write_text(json.dumps(boats), encoding="utf-8")
+        problems = {(item["id"], item["problem"]) for item in self.manager.selection_drift(selection)}
+        self.assertEqual(problems, {("boats", "changed"), ("boats", "dependency")}, "a new requirement outside the record")
+        self.manager.remove("boats")
+        self.assertEqual([(item["id"], item["problem"]) for item in self.manager.selection_drift(selection)], [("boats", "missing")])
+
+    def test_a_disabled_vocabulary_records_no_packs(self):
+        self.assertEqual(self.manager.resolve_selection(["harbor"], enabled=False),
+                         {"version": 1, "enabled": False, "selected": [], "packs": []})
+
+    def test_malformed_records_are_refused(self):
+        selection = self.manager.resolve_selection(["harbor"])
+        for broken in ({**selection, "version": 2}, {**selection, "selected": ["boats"]},
+                       {**selection, "packs": list(reversed(selection["packs"]))},
+                       {**selection, "packs": [{**selection["packs"][0], "fingerprint": "md5:00"}, selection["packs"][1]]}):
+            with self.subTest(broken=broken):
+                with self.assertRaises(VocabularyError):
+                    validate_selection(broken)
 
 
 class UnsafeArchives(ManagerTest):

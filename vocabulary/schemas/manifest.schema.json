@@ -15,6 +15,18 @@
     "authors": { "type": "array", "items": { "type": "string", "minLength": 1, "maxLength": 120 }, "uniqueItems": true },
     "license": { "type": "string", "maxLength": 80 },
     "rating": { "$ref": "#/$defs/rating" },
+    "activation": {
+      "enum": ["theme", "content"],
+      "default": "theme",
+      "description": "When the pack's entries may be offered as ideas the request did not name. theme (default): only when the request reaches the pack's theme. content: also when an NSFW request's content level matches an entry's rating (not for General packs). Named entries are always found."
+    },
+    "themes": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1, "maxLength": 80 },
+      "uniqueItems": true,
+      "maxItems": 24,
+      "description": "Words and phrases a brief uses to ask for this pack's theme as a whole, besides its name (e.g. \"dragons\", \"fantasy creature\"). Matched as ordered phrases. A specific concept belongs on entries (names, aliases, tags), not here. The description is never used to find the pack."
+    },
     "requires": {
       "type": "object",
       "propertyNames": { "$ref": "#/$defs/packId" },

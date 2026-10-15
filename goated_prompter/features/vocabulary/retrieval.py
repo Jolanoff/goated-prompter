@@ -16,6 +16,10 @@ How an entry is found (SPEC.md section 10):
               imply, postures a position uses, and inheritance. "avoid" and negated phrases
               ("no toys") of the request's own texts count against an entry, and rule it out when they
               name it; negations in the director and style texts are standing instructions and do not.
+  classes     only an explicit match (a whole name or alias, in order) is named and decides anything; a
+              contextual one (a tag, or a declared relation to an explicit entry) is an optional idea;
+              a weak one (one word of a longer name, a description, a shared capability) is reported
+              as not used (Retrieval.intent: related, rejected).
   eligibility the entry's resolved rating must be allowed (NSFW off: general and mature).
   compatibility the Phase 3 resolver, against a cast inferred from the characters through the
               vocabulary's own body entries (never by gender rules in code). Confirmed conflicts
@@ -27,30 +31,41 @@ How an entry is found (SPEC.md section 10):
               drops near-duplicate entries.
   inspiration entries the request does not name, from the categories the brief opens: the brief's own
               words reach a category through its declared name and description (often the randomized
-              dimensions: "sex positions, location"), a pack through its declared name and description or
-              an entry it names or casts (the mandatory core has no theme; a rating word is no theme), and
+              dimensions: "sex positions, location"), a pack as a whole through its name or a declared theme
+              phrase, and only part of it through a tag its entries carry or an entry it names or casts
+              (with what that entry explicitly extends or is extended by); a pack's description never
+              reaches anything (the mandatory core has no theme; a rating word is no theme), and
               a brief with people leaves its arrangement (positions for exactly this cast) and its place
               open unless it fixes them. The content level (an NSFW brief's top rating) only ranks; it
-              opens nothing, so acts and accessories need the brief's words or a theme. Director and style
+              opens nothing, so acts and accessories need the brief's words or a theme. A pack (other than
+              the core) offers ideas only when the brief reaches its theme, or, for a pack whose manifest
+              declares activation "content", when the content level matches the entry's rating; named
+              entries are found whatever their pack's activation. Director and style
               texts never open anything. What the request fixes stays fixed: naming a position, action or
               posture fixes the interaction, naming a space or an item fixes that, and so does a place in
               words the vocabulary does not know ("on a train platform"); the randomized text re-opens a
               category. What the request rules out takes along what depends on it (dependencies()).
               Items need an interaction in the pool that they serve. Every idea passes the same rating,
-              avoid and resolver checks; each scene gets its own ideas by a seeded, score-weighted rotation
-              across the open categories (Retrieval.ideas).
+              avoid and resolver checks, and the whole eligible pool stays available (no top-N, no cutoff
+              relative to the best): each scene draws its own ideas from that pool, weighted by relevance,
+              with a cooldown against repeats (_Rotation), at most one per role (an interaction, an
+              arrangement, a place: from components, never the category), asked-for roles first and the open
+              place last (Retrieval.ideas). A place or an item is checked with the interactions it is actually
+              combined with in that image (_Pairing).
 
 The engine never branches on category names: what an entry is comes from its components.
 """
 
 from dataclasses import dataclass, field
+import hashlib
+import math
 import random
 import re
 import time
 
-from .packs import _capability_refs
+from .packs import _capability_refs, activation
 from .resolver import FEASIBLE_NOTE, RANK, _Run, candidate_bindings, implied
-from .semantic import Document, TextIndex, place_phrases, split_negated, terms
+from .semantic import Document, TextIndex, phrase_terms, place_phrases, similarity, split_negated, terms
 
 RATINGS = ("general", "mature", "adult")
 FIELD_WEIGHTS = {"name": 3.0, "alias": 3.0, "tag": 1.5, "category": 0.5, "description": 1.0, "notes": 0.5}
@@ -76,15 +91,23 @@ CHOICE_SOURCES = ("request", "summary", "must", "rules", "fixed")
 OPENING_SOURCE = "randomized"
 SCENE_KINDS = ("bindable", "self", "item", "space")
 INTERACTION_KINDS = ("bindable", "self")
-# Creativity setting -> (ideas per scene, pool floor relative to the best idea of a category).
-INSPIRATION = {"Strict": (2, 0.8), "Balanced": (3, 0.6), "Creative": (3, 0.4), "Dice": (4, 0.25)}
+# Creativity setting -> (ideas per scene, sharpness: the power of an idea's score that is its sampling weight, cooldown:
+# the share of its category an idea waits after being offered; see _Rotation). Stricter settings weight relevance more
+# and rest ideas less, so the best ones come more often; looser ones spread the pool more evenly.
+INSPIRATION = {"Strict": (2, 3.0, 0.25), "Balanced": (3, 2.0, 0.50), "Creative": (3, 1.5, 0.65), "Dice": (4, 1.0, 0.80)}
+PER_IMAGE = "checked per image with the position or act it is combined with"
 DECLARED = ("feasible", "eligible")  # an item is offered with a partner whose requirements it declares it meets
-# What reached an idea, as weight. A theme says the same as the content level when both hold, so it adds nothing then.
-SCOPE_WEIGHTS = {"category": 1.0, "theme": 0.75, "content": 1.0}
+# What reached an idea, as weight. A theme (the brief asks for this pack, concept or entry) adds to the content level:
+# what is requested ranks above what is merely allowed.
+SCOPE_WEIGHTS = {"category": 1.0, "theme": 0.75, "content": 1.0, "related": 0.75}
 # What opens a category. The content level (the rating an NSFW brief allows) never opens anything on its own: it
 # only ranks what the brief's own words, its theme or the scene's open dimensions opened.
 OPENING = ("category", "arrangement", "setting", "theme")
 DIMENSIONS = ("category", "arrangement", "setting")  # the same signal, an open dimension: counted once
+# What an idea is in one image, from its components (never its category), in the order an image lists them. An image
+# gets at most one idea per role, so its ideas combine (an act, a pose, a place) instead of competing (three places).
+ROLES = ("interaction", "arrangement", "space")
+ASKED = ("category", "theme", "related")  # scopes that are the brief's own words (or its theme), not an open dimension
 IDEA_HEADER = ("VOCABULARY (optional inspiration from installed packs: use, adapt or ignore. The request, fixed, must, "
                "avoid and rules always come first; an idea never replaces what the brief fixes. \"feasible\" means the "
                "declared data supports it for this cast, never that it is proven possible):")
@@ -103,8 +126,6 @@ class RetrievalConfig:
     allowed_ratings: tuple = None     # overrides the NSFW switch when given
     variety: float = None             # overrides the creativity setting's relevance weight (0..1)
     inspiration: bool = True          # ideas from the categories the brief opens (False: named entries only)
-    inspiration_shortlist: int = 24   # candidates per category checked with the resolver
-    inspiration_pool: int = 12        # ideas kept per category for rotation
 
 
 @dataclass(frozen=True)
@@ -165,7 +186,8 @@ class RetrievedEntry:
     checked_with: list = field(default_factory=list)
     source: str = "direct"            # direct: the request names it; inspiration: a category the brief opens
     scopes: list = field(default_factory=list)     # inspiration: what reached it (category, theme, content)
-    attach_to: list = field(default_factory=list)  # inspiration items: the interactions it serves; offered only with one
+    attach_to: list = field(default_factory=list)  # inspiration items: interactions it could serve; offered only with one it is checked to serve
+    role: str = ""                    # inspiration: what it is in an image, from its components (ROLES); balances the ideas
 
     @property
     def note(self):
@@ -203,6 +225,9 @@ class Retrieval:
     intent: dict = field(default_factory=dict)    # what the brief opened, fixed or left out, and why
     seed: int = 0
     per_scene: int = 0                # ideas offered to one scene
+    sharpness: float = 1.0            # an idea's sampling weight is its score to this power
+    cooldown: float = 0.5             # share of its category an offered idea waits before it may come again
+    pairing: object = field(default=None, repr=False, compare=False)  # _Pairing: per-image checks (None: attach_to only)
 
     @property
     def inspiration(self):
@@ -227,66 +252,88 @@ class Retrieval:
             lines.append(line)
         return "\n".join(lines) if len(lines) > 1 else ""
 
-    # -- rotation of ideas across scenes
-    def _orders(self, seed):
-        """Each pool in a seeded order that favours higher scores (weighted sampling without replacement)."""
-        orders = []
-        for category, pool in self.pools:
-            rng = random.Random(f"{seed}:{category}")
-            keys = [rng.random() ** (1.0 / max(entry.score, 1e-6)) for entry in pool]
-            orders.append([entry for _, entry in sorted(zip(keys, pool), key=lambda item: (-item[0], item[1].id))])
-        return orders
+    # -- ideas across scenes: complete, seeded, relevance-weighted cycles through the whole eligible pool
+    def weight(self, entry):
+        return max(entry.score, 1e-9) ** self.sharpness
 
     def ideas(self, number, seed=None):
-        """The ideas for scene number (1-based): one per open category in turn, the starting category moving with
-        the scene, and each category walking through its own seeded order, so a dataset sees all of them. An item
-        comes along only with an interaction it serves in the same scene (a named one or an idea), at most one."""
+        """The ideas for scene number (1-based): at most one per role (ROLES: an interaction, an arrangement, a place),
+        each role walking through complete cycles of its whole eligible pool so a dataset sees all of them. Roles the
+        brief's own words ask for come first, then the open arrangement, then the open place; ideas are never added
+        just to fill the creativity's count. An item comes along only with an interaction it serves in the same scene
+        (a named one or an idea), at most one."""
         if number < 1:
             return []
         return self._plan(number, self.seed if seed is None else seed)[number - 1]
 
     def _plan(self, count, seed):
-        """The ideas of scenes 1..count in one pass (kept per seed, extended when a later scene is asked for)."""
+        """The ideas of scenes 1..count, computed from scene 1 for these inputs alone: a scene's ideas never depend on
+        which scenes were asked for before, in what order, or which images failed (the memo only saves work).
+
+        Each role is one _Rotation over its pools (categories): every scene draws one of its eligible entries,
+        likelier the more relevant and the longer unused, never one still resting from a recent offer while another
+        fits, and never the previous one while another fits. A place must fit the interactions of its scene and an
+        item must serve one of them (_Pairing); nothing that does not fit is ever offered to make up variety."""
         memo = self.__dict__.setdefault("_plans", {})
         if len(memo.get(seed, [])) >= count:
             return memo[seed]
-        orders = self._orders(seed)
-        main = [order for order in ([entry for entry in order if not entry.attach_to] for order in orders) if order]
-        attached = [order for order in ([entry for entry in order if entry.attach_to] for order in orders) if order]
-        if self.per_scene < 1 or not (main or attached):
+        parts, attached = {}, []
+        for category, pool in self.pools:
+            for role, entries in _by_role(entry for entry in pool if not entry.attach_to):
+                parts.setdefault(role, []).append((category, entries))
+            items = [entry for entry in pool if entry.attach_to]
+            if items:
+                attached.append(_Rotation([(category, items)], self.weight, seed, f"item:{category}", self.cooldown))
+        groups = []
+        for role, lists in parts.items():
+            entries = [entry for _, part in lists for entry in part]
+            # Tier 0: the brief asks for it in its own words; 1: an open arrangement; 2: an open place.
+            tier = 0 if any(set(entry.scopes) & set(ASKED) for entry in entries) else 2 if role == "space" else 1
+            rank = ROLES.index(role) if role in ROLES else ROLES.index("space") - 0.5  # another role: before the place
+            groups.append({"rotation": _Rotation(lists, self.weight, seed, role, self.cooldown), "tier": tier, "rank": rank,
+                           "place": role == "space"})
+        groups.sort(key=lambda group: (group["tier"], group["rank"]))
+        if self.per_scene < 1 or not (groups or attached):
             memo[seed] = [[] for _ in range(count)]
             return memo[seed]
-        want = min(self.per_scene, sum(len(order) for order in main))
-        visits, extra, plan = [0] * len(main), [0] * len(attached), []
-        named = {entry.id for entry in self.entries}
+        want = min(self.per_scene, len(groups))
+        plan = []
+        named = [entry.id for entry in self.entries]
+        tiers = sorted({group["tier"] for group in groups})
         for scene in range(1, count + 1):
-            picked, step = [], 0
-            while len(picked) < want:
-                category = (scene - 1 + step) % len(main)
-                step += 1
-                order = main[category]
-                for _ in range(len(order)):  # the category's next idea this scene does not have yet
-                    entry = order[visits[category] % len(order)]
-                    visits[category] += 1
-                    if entry not in picked:
-                        picked.append(entry)
-                        break
-            for category, order in enumerate(main):
-                if len(order) > 1 and all(entry in picked for entry in order):
-                    visits[category] += 1  # a pool a scene uses whole starts one later next time
-            anchors = named | {entry.id for entry in picked}
+            chosen = []
+            for tier in tiers:
+                members = [group for group in groups if group["tier"] == tier]
+                room = min(want - len(chosen), len(members))
+                start = (scene - 1) % len(members)  # roles of one tier that do not all fit take turns
+                for step in range(max(room, 0)):
+                    chosen.append(members[(start + step) % len(members)])
+            chosen.sort(key=lambda group: (group["place"], group["tier"], group["rank"]))  # the place is listed last
+            picked = []
+            for group in chosen:
+                context = [*named, *(entry.id for entry in picked)]
+                fits = (lambda entry, context=context: self.place_fits(entry, context)) if group["place"] else None
+                entry = group["rotation"].pick(scene, fits)
+                if entry is not None:  # no place fits these interactions: the scene goes without one, never a forced one
+                    picked.append(entry)
+            anchors = [*named, *(entry.id for entry in picked)]
             for step in range(len(attached)):
-                category = (scene - 1 + step) % len(attached)
-                order = attached[category]
-                found = next((offset for offset in range(len(order))
-                              if set(order[(extra[category] + offset) % len(order)].attach_to) & anchors), None)
-                if found is not None:
-                    picked.append(order[(extra[category] + found) % len(order)])
-                    extra[category] += found + 1
+                entry = attached[(scene - 1 + step) % len(attached)].pick(scene, lambda entry: self.item_fits(entry, anchors))
+                if entry is not None:
+                    picked.append(entry)
                     break
             plan.append(picked)
         memo[seed] = plan
         return plan
+
+    def place_fits(self, entry, context):
+        return self.pairing is None or self.pairing.space(entry.id, context)
+
+    def item_fits(self, entry, anchors):
+        """An item comes along only with an interaction of the scene it is declared to serve (attach_to), and, with
+        the resolver at hand, one it is checked to serve (its requirements, as at retrieval)."""
+        partners = [anchor for anchor in anchors if anchor in entry.attach_to]
+        return bool(partners) and (self.pairing is None or any(self.pairing.item(entry.id, partner) for partner in partners))
 
     def scenes(self, count, seed=None):
         """[{scene, entries, ideas}] for scenes 1..count: what each would be offered (ids)."""
@@ -367,27 +414,38 @@ class VocabularyIndex:
                       "category": terms(f"{entry['category'].replace('_', ' ')} {category.get('name', '')}"),
                       "description": terms(entry.get("description", "")),
                       "notes": [t for note in entry.get("notes", []) for t in terms(note)]}
-            phrases = [(entry["name"], "name", tuple(terms(entry["name"])))]
-            phrases += [(alias, "alias", tuple(terms(alias))) for alias in entry.get("aliases", [])]
+            phrases = [(entry["name"], "name", tuple(phrase_terms(entry["name"])))]
+            phrases += [(alias, "alias", tuple(phrase_terms(alias))) for alias in entry.get("aliases", [])]
             documents.append(Document(entry_id, fields, [phrase for phrase in phrases if phrase[2]]))
-        self.text = TextIndex(documents, FIELD_WEIGHTS)
+        # Each entry is scored against the entries of its own pack and the packs it requires (its pack's closure),
+        # never against unrelated packs: installing a pack the request does not reach changes no existing score.
+        packs = getattr(registry, "packs", None) or {}
+        closure = self.closure = {pack_id: _closure(packs, pack_id) for pack_id in packs}
+        corpus = {entry_id: closure.get(registry.owner(entry_id)) for entry_id in ids} if packs else {}
+        members = {group: [entry_id for entry_id in ids if registry.owner(entry_id) in group]
+                   for group in set(corpus.values()) if group}
+        self.text = TextIndex(documents, FIELD_WEIGHTS, corpus=corpus, members=members)
         self.kind = {entry_id: _kind(self.resolved[entry_id]["components"]) for entry_id in ids}
         # What a brief's own words can reach for inspiration: the declared categories of scene entries, and the
         # theme of every pack except the mandatory core (the shared base, not a theme).
         # Every declared category takes part, so a word shared with a non-scene category ("body") is not distinctive.
         self.scene_categories = sorted({self.resolved[entry_id]["category"] for entry_id in ids if self.kind[entry_id] in SCENE_KINDS})
         every = sorted(set(self.scene_categories) | set(categories))
+        # A category's description words are distinctive against the categories its own pack and the packs it requires
+        # declare, never against unrelated packs: another pack's category wording cannot stop it being reached.
+        declared_by = {key: categories.get(key, {}).get("pack") for key in every}
+        peers = {key: [other for other in every if declared_by[other] is None or declared_by[other] in closure.get(declared_by[key], ())]
+                 for key in every}
         self.category_labels = _Labels([(key, f"{categories.get(key, {}).get('name', '')} {key.replace('_', ' ')}",
                                          categories.get(key, {}).get("name", key.replace("_", " ").capitalize()),
-                                         categories.get(key, {}).get("description", "")) for key in every], description_terms=1)
-        packs = getattr(registry, "packs", None) or {}
-        # A theme word is one only this pack's own name or description uses: the core's description and every
-        # category's name and description are the shared background ("places", "positions", "bodies").
-        background = [pack.manifest.get("description", "") for pack in packs.values() if getattr(pack, "mandatory", False)]
-        background += [f"{item.get('name', '')} {item.get('description', '')}" for item in categories.values()]
-        self.theme_labels = _Labels([(pack_id, pack.manifest.get("name", pack_id), pack.manifest.get("name", pack_id),
-                                      pack.manifest.get("description", "")) for pack_id, pack in sorted(packs.items())
-                                     if not getattr(pack, "mandatory", False)], description_terms=1, background=background)
+                                         categories.get(key, {}).get("description", "")) for key in every], description_terms=1,
+                                       peers=peers)
+        # What a brief can ask of a pack (SPEC section 10, theme): its theme as a whole by its name or a declared
+        # theme phrase, or one concept by a tag its entries carry. A pack's description is never read for this.
+        self.theme_labels = _Themes(packs, ids, self.resolved, self.kind, registry)
+        # Themed packs whose manifest lets the content level stand in for their theme (SPEC section 1, activation).
+        self.content_activated = {pack_id for pack_id, pack in packs.items()
+                                  if not getattr(pack, "mandatory", False) and activation(pack.manifest) == "content"}
         self._links(ids)
         self.features = {entry_id: self._features(entry_id) for entry_id in ids}
         self.build_ms = (time.perf_counter() - started) * 1000
@@ -431,16 +489,39 @@ class VocabularyIndex:
                 for ref in self.uses[entry_id]:
                     if self.kind.get(ref) == "concept":
                         users.setdefault(ref, []).append(entry_id)
+        closure = getattr(self, "closure", {})
         for ref, group in sorted(users.items()):
-            if 1 < len(group) <= SHARED_MAX:
-                for entry_id in group:
-                    # An item or space and what uses what it provides. Two actions, an action and a posture
-                    # (both use a mouth or a back) or two spaces (both have a floor) are alternatives, not
-                    # related knowledge.
-                    self.neighbours[entry_id] += [(other, "shares") for other in group if other != entry_id
-                                                  and (self.kind[other] in ("item", "space")) != (self.kind[entry_id] in ("item", "space"))]
+            # How common a capability is, counted among the packs the two entries belong to and require only:
+            # an unrelated pack using it too never cuts (or makes) a link between them.
+            by_pack = {}
+            for entry_id in group:
+                by_pack.setdefault(self.registry.owner(entry_id), []).append(entry_id)
+            for pack_id, entries in sorted(by_pack.items(), key=lambda item: str(item[0])):
+                for other_pack, others in sorted(by_pack.items(), key=lambda item: str(item[0])):
+                    if pack_id in closure and other_pack in closure:
+                        count = sum(len(by_pack.get(member, [])) for member in closure[pack_id] | closure[other_pack])
+                    else:
+                        count = len(group)
+                    if not 1 < count <= SHARED_MAX:
+                        continue
+                    for entry_id in entries:
+                        # An item or space and what uses what it provides. Two actions, an action and a posture
+                        # (both use a mouth or a back) or two spaces (both have a floor) are alternatives, not
+                        # related knowledge.
+                        self.neighbours[entry_id] += [(other, "shares") for other in others if other != entry_id
+                                                      and (self.kind[other] in ("item", "space")) != (self.kind[entry_id] in ("item", "space"))]
         for entry_id in ids:
             self.neighbours[entry_id] = sorted(set(self.neighbours[entry_id]))
+
+    def lineage(self, entries, pack_id):
+        """The entries, with the entries of the same pack they explicitly extend or that extend them (never their
+        siblings: a shared parent relates nothing). Capabilities decide compatibility, not relevance, so they add none."""
+        found = set(entries)
+        for entry_id in entries:
+            found.update(parent for parent in self.ancestors.get(entry_id, []) if self.registry.owner(parent) == pack_id)
+        found.update(entry_id for entry_id, parents in self.ancestors.items()
+                     if self.registry.owner(entry_id) == pack_id and set(parents) & set(entries))
+        return found
 
     def _features(self, entry_id):
         entry = self.resolved[entry_id]
@@ -449,13 +530,14 @@ class VocabularyIndex:
 
 
 class _Labels:
-    """Declared labels (categories, pack themes) that the brief's own words can reach.
+    """Declared labels (categories) that the brief's own words can reach.
 
-    A label is reached by a word of its name, or by description words that no other label and no background
-    text uses (description_terms of them): prose shared with others ("reuses core bodies", "places") says
-    nothing about intent."""
+    A label is reached by a word of its name, or by description words that no peer label uses (description_terms
+    of them): prose shared with others ("reuses core bodies", "places") says nothing about intent. A label's peers
+    are the labels declared by its own pack and the packs that pack requires (every label without peers given), so
+    a label's meaning never depends on which unrelated packs are installed."""
 
-    def __init__(self, items, description_terms, background=()):
+    def __init__(self, items, description_terms, peers=None):
         self.names, self.minimum = {}, description_terms
         documents = []
         for key, name_text, name, description in items:
@@ -463,11 +545,8 @@ class _Labels:
             documents.append(Document(key, {"name": terms(name_text), "description": terms(description)},
                                       [(name, "name", tuple(terms(name)))] if terms(name) else []))
         self.text = TextIndex(documents, {"name": 3.0, "description": 1.0})
-        self.df = {}
-        for words in [{term for words in document.fields.values() for term in words} for document in documents] + \
-                [set(terms(text)) for text in background]:
-            for term in words:
-                self.df[term] = self.df.get(term, 0) + 1
+        self.words = {document.key: {term for words in document.fields.values() for term in words} for document in documents}
+        self.peers = {key: list((peers or {}).get(key, self.words)) for key in self.words}
 
     def keys(self):
         return sorted(self.names)
@@ -476,10 +555,138 @@ class _Labels:
         """The query words that reach the label: [(word, source)], or [] when it is not reached."""
         _, matches = self.text.score(key, query)
         named = [(term, source) for term, other, name, source, _ in matches if name == "name"]
-        described = [(term, source) for term, other, name, source, _ in matches if name != "name" and self.df.get(other) == 1]
+        described = [(term, source) for term, other, name, source, _ in matches
+                     if name != "name" and sum(other in self.words[peer] for peer in self.peers[key]) == 1]
         if named or len({term for term, _ in described}) >= self.minimum:
             return sorted(set(named + described))
         return []
+
+
+class _Themes:
+    """What a brief can ask of each pack but the mandatory core, from declared metadata only.
+
+    A theme phrase (the pack's name, or one of its manifest "themes") asks for the pack as a whole; a tag carried by
+    some of its scene entries asks for just those entries. Both match as ordered, contiguous phrases of the brief's
+    own words (stopwords aside), and never when one of their words is negated or avoided. A rating word alone is the
+    content level, never a theme. Descriptions are informational and never match."""
+
+    def __init__(self, packs, ids, resolved, kinds, registry):
+        self.names, self.phrases, self.tags = {}, {}, {}
+        for pack_id, pack in sorted(packs.items()):
+            if getattr(pack, "mandatory", False):
+                continue
+            manifest = pack.manifest
+            self.names[pack_id] = manifest.get("name", pack_id)
+            phrases = [(label, tuple(phrase_terms(label))) for label in [self.names[pack_id], *manifest.get("themes", [])]]
+            self.phrases[pack_id] = [(label, words) for label, words in phrases if words and not set(words) <= set(RATINGS)]
+        for entry_id in ids:
+            pack_id = registry.owner(entry_id)
+            if pack_id in self.names and kinds[entry_id] in SCENE_KINDS:
+                for tag in resolved[entry_id].get("tags", []):
+                    words = tuple(phrase_terms(tag.replace("_", " ")))
+                    if words and not set(words) <= set(RATINGS):
+                        self.tags.setdefault(pack_id, {}).setdefault(words, (tag, []))[1].append(entry_id)
+
+    def keys(self):
+        return sorted(self.names)
+
+    @staticmethod
+    def found(words, sequences, negated):
+        """The source whose words hold the phrase in order, or None; a negated or avoided word blocks it."""
+        if set(words) & set(negated):
+            return None
+        for source, sequence in sequences:
+            if any(tuple(sequence[index:index + len(words)]) == words for index in range(len(sequence) - len(words) + 1)):
+                return source
+        return None
+
+    def reached(self, pack_id, sequences, negated):
+        """[(theme phrase, source)] the brief uses for this pack as a whole."""
+        return [(label, source) for label, words in self.phrases.get(pack_id, [])
+                if (source := self.found(words, sequences, negated))]
+
+    def concepts(self, pack_id, sequences, negated):
+        """[(tag, source, [entry ids])]: tags of this pack's scene entries the brief uses."""
+        return [(tag, source, sorted(entries)) for words, (tag, entries) in sorted(self.tags.get(pack_id, {}).items())
+                if (source := self.found(words, sequences, negated))]
+
+
+def _closure(packs, pack_id):
+    """The pack and every pack it requires, directly or not (only those loaded): a fixed set it declares itself."""
+    found, stack = set(), [pack_id]
+    while stack:
+        current = stack.pop()
+        if current in found or current not in packs:
+            continue
+        found.add(current)
+        stack.extend(packs[current].manifest.get("requires", {}))
+    return frozenset(found)
+
+
+def _by_role(entries):
+    """[(role, [entries])] in first-seen order, keeping each entry's order. An entry without a role (hand-made pools)
+    takes its category, so it is balanced like before."""
+    groups = {}
+    for entry in entries:
+        groups.setdefault(entry.role or entry.category, []).append(entry)
+    return list(groups.items())
+
+
+def _unit(*parts):
+    """A number in (0, 1) from a stable hash of parts: the same everywhere, never Python's per-process hash()."""
+    digest = hashlib.blake2b("\x1f".join(map(str, parts)).encode("utf-8"), digest_size=8).digest()
+    return (int.from_bytes(digest, "big") + 0.5) / 2.0 ** 64
+
+
+class _Rotation:
+    """One role's ideas across scenes: a relevance-weighted draw per scene, with a cooldown against repeats.
+
+    Every entry of the role's pools (categories) competes in one draw: each draws an exponential key -ln(u) / (weight *
+    staleness), u from a stable hash of the seed, role, scene and id, and the lowest key wins, so an entry wins with
+    probability weight * staleness / total. weight is the idea's score to the creativity's sharpness (Retrieval.weight);
+    staleness is 1 + (picks since it was last offered) / (its category's size), at most 2, and 2 for one never offered,
+    so among comparable ideas the least recent is likelier. After being offered, an idea rests for a share (cooldown) of
+    its own category's size, at least one pick in a category of two or more and none in a category of one; its own
+    category, so a small category is not held to a large one's rest. In order, a scene takes the first entry by key
+    that fits: rested and not the previous pick; else any but the previous pick; else any. Only when nothing fits is
+    there no idea: a cooldown never empties a scene, and fitting is never relaxed for variety."""
+
+    def __init__(self, parts, weight, seed, role, cooldown):
+        self.weight, self.seed, self.role = weight, seed, role
+        self.entries, self.rest, self.size, self.used = [], {}, {}, {}
+        for _, entries in parts:
+            for entry in entries:
+                if entry.id not in self.size:
+                    self.entries.append(entry)
+                    self.size[entry.id] = len(entries)
+                    self.rest[entry.id] = 0 if len(entries) <= 1 else max(1, int(cooldown * (len(entries) - 1)))
+        self.picks, self.previous = 0, None
+
+    def pick(self, scene, fits=None):
+        if not self.entries:
+            return None
+        since = {entry.id: self.picks - self.used[entry.id] for entry in self.entries if entry.id in self.used}
+
+        def key(entry):
+            size = self.size[entry.id]
+            stale = 1 + min(since.get(entry.id, size), size) / size
+            return (-math.log(_unit(self.seed, self.role, scene, entry.id)) / (self.weight(entry) * stale), entry.id)
+        ordered = sorted(self.entries, key=key)
+        checked = {}
+
+        def ok(entry):
+            if entry.id not in checked:
+                checked[entry.id] = fits is None or fits(entry)
+            return checked[entry.id]
+        rested = lambda entry: since.get(entry.id, self.rest[entry.id] + 1) > self.rest[entry.id]
+        for allowed in (lambda entry: rested(entry) and entry.id != self.previous, lambda entry: entry.id != self.previous,
+                        lambda entry: True):
+            found = next((entry for entry in ordered if allowed(entry) and ok(entry)), None)
+            if found is not None:
+                self.used[found.id], self.previous = self.picks, found.id
+                self.picks += 1
+                return found
+        return None
 
 
 def _kind(comp):
@@ -525,15 +732,21 @@ class _Retrieval:
             self.relevance_weight = config.variety
         self.excluded, self.suppressed, self.warnings, self.timings = [], [], [], {}
         self.matched, self.named_by, self.partial, self.usable, self.dependent = {}, {}, {}, [], {}
+        self.context, self.rejected, self.concepts = {}, [], set()  # contextual {entry: why} (by tag: concepts); weak [{id, why}]
         self.pools, self.intent = [], {}
-        self.per_scene, pool_floor = INSPIRATION.get(request.creativity, INSPIRATION["Balanced"])
-        self.pool_floor = pool_floor
+        self.per_scene, self.sharpness, self.cooldown = INSPIRATION.get(request.creativity, INSPIRATION["Balanced"])
+        self.pairing = None
 
     def run(self):
         started = time.perf_counter()
         if not self.index or not self.index.resolved:
             return self.result([], [], "no vocabulary packs are enabled", started)
         self.query, self.sequences, self.negated = self.build_query()
+        # The brief's own cast words ("man", "woman", a label): inside a name they stand for a participant, so
+        # "sitting on a man's lap" holds "Sitting on a lap" in order (the structured characters, never a word list).
+        cast_words = {term for item in self.request.characters for term in terms(_character_text(item))}
+        self.cast_sequences = [(source, weight, [term for term in words if term not in cast_words])
+                               for source, weight, words in self.sequences]
         if not self.query:
             return self.result([], [], "the request has no searchable words", started)
         self.cast, cast_report = self.infer_cast()
@@ -545,7 +758,7 @@ class _Retrieval:
             self.timings["compatibility_ms"] = (time.perf_counter() - started) * 1000 - self.timings["relevance_ms"]
             selected = self.select(checked)
         if self.config.inspiration:
-            self.inspire({entry_id for _, entry_id, _ in relevant}, cast_report)
+            self.inspire({entry_id for _, entry_id, _ in relevant}, cast_report, {entry.id for entry in selected})
         empty = None if selected or self.pools else (
             "no relevant vocabulary for this request" if not relevant else "no compatible vocabulary for this request")
         return self.result(selected, cast_report, empty, started)
@@ -556,9 +769,11 @@ class _Retrieval:
         self.timings["total_ms"] = (time.perf_counter() - started) * 1000
         stats = {"indexed": len(self.index.resolved) if self.index else 0, "returned": len(entries),
                  "ideas": sum(len(pool) for _, pool in self.pools),
+                 "eligible": {category: len(pool) for category, pool in self.pools},
                  "suppressed": len(self.suppressed), "excluded": len(self.excluded)}
         return Retrieval(entries, cast_report, self.suppressed, self.excluded, self.warnings, self.config, stats, self.timings,
-                         pools=self.pools, intent=self.intent, seed=self.request.seed, per_scene=self.per_scene)
+                         pools=self.pools, intent=self.intent, seed=self.request.seed, per_scene=self.per_scene,
+                         sharpness=self.sharpness, cooldown=self.cooldown, pairing=self.pairing)
 
     # -- the query
     def build_query(self):
@@ -574,8 +789,10 @@ class _Retrieval:
                     query[term] = (weight, source)
             for term in [] if source in STANDING else negative:
                 negated.setdefault(term, source)
+            # Phrases are matched against the words in order with their structural words kept (semantic.STRUCTURAL).
+            ordered = [term for term in split_negated(text, structure=True)[0] if not term.isdigit()]
             if positive:
-                sequences.append((source, weight, positive))
+                sequences.append((source, weight, ordered))
         for item in self.request.avoid:
             positive, negative = split_negated(item)
             for term in [*positive, *negative]:
@@ -611,19 +828,24 @@ class _Retrieval:
                 why.append((value, f'{name} "{label}" {"in" if contiguous else "matches"} the {source}'))
         self.matched[entry_id] = {other for _, other, name, _, _ in matches if name in STRONG_FIELDS}
         loose = {other for _, other, name, _, _ in matches if name not in STRONG_FIELDS}
-        # Named: a tag, a whole one-word name or alias, or a multi-word name found in full. Isolated: only
-        # single words of longer names ("staff" of "Magic staff") and at most one other word.
+        # Explicit (SPEC section 10, match classes): a multi-word name or alias found in full, in order, or a whole
+        # one-word name or alias in the same word or a close spelling ("kissing": Kiss), never a compound ("play" is
+        # not "playroom"). A tag is a concept, not a name. Isolated: only single words of longer names ("staff" of
+        # "Magic staff") and at most one other word.
         single = {phrase[0] for _, _, phrase in self.index.text.documents[entry_id].phrases if len(phrase) == 1}
-        whole = {other for _, other, name, _, _ in matches if name == "tag" or name in STRONG_FIELDS and other in single}
-        self.evidence = (bool(hits or whole),
-                         not hits and not whole and bool(self.matched[entry_id]) and len(self.matched[entry_id] | loose) < 2)
-        # Which texts name the entry (a phrase, a tag, a whole one-word name or alias): a choice when they state one.
-        self.naming = ({hit[2] for hit in hits} | {source for _, other, name, source, _ in matches
-                                                    if name == "tag" or name in STRONG_FIELDS and other in single})
+        whole = {(other, source) for term, other, name, source, _ in matches if name in STRONG_FIELDS and name != "tag"
+                 and other in single and (term == other or similarity(term, other) >= TextIndex.FUZZY_MIN)}
+        exact = [hit for hit in hits if hit[4]]
+        if not exact and sequences is None and hits:
+            exact = [hit for hit in self.index.text.phrase_hits(entry_id, getattr(self, "cast_sequences", [])) if hit[4]]
+        self.evidence = (bool(exact or whole),
+                         not exact and not whole and bool(self.matched[entry_id]) and len(self.matched[entry_id] | loose) < 2)
+        # Which texts name the entry explicitly: a choice when they state one.
+        self.naming = {hit[2] for hit in exact} | {source for _, source in whole}
         if not hits and not self.matched[entry_id] and len(loose) < 2:
             return 0.0, []  # one shared word in a description is not meaning
         for term, other, name, source, value in matches:
-            where = "name" if name in STRONG_FIELDS else name
+            where = name  # the field that matched: name, alias, tag, description, category or notes
             shown = term if term == other else f"{term} ~ {other}"
             why.append((value, f'{where} matches "{shown}" ({source})'))
         why.sort(key=lambda item: -item[0])
@@ -655,6 +877,7 @@ class _Retrieval:
         # Only what the brief itself names vouches for an isolated word: a director naming "anatomy" (linked to
         # nearly everything) must not turn "bed" into "Tied to the bed".
         vouching = {entry_id for entry_id in named if self.named_by.get(entry_id, set()) - set(STANDING)}
+        raw = {entry_id: value[0] for entry_id, value in direct.items()}  # text evidence before isolation
         for entry_id in sorted(isolated):
             if not any(other in vouching for other, _ in index.neighbours[entry_id]):
                 direct[entry_id] = (0.0, [])
@@ -697,6 +920,10 @@ class _Retrieval:
                     why.append((0, "partly matches what the request rules out (lowered)"))
             why.sort(key=lambda item: -item[0])
             scored[entry_id] = (score, [text for _, text in why[:3]])
+        # Match classes (SPEC section 10): only explicit matches are named; a contextual one becomes an optional
+        # idea; a weak one is reported as not used.
+        self.context, self.rejected = self.classify(scored, raw, named, isolated)
+        scored = {entry_id: value for entry_id, value in scored.items() if entry_id in named}
         if not scored:
             return []
         top = max(score for score, _ in scored.values())
@@ -704,6 +931,55 @@ class _Retrieval:
         relevant = sorted(((score, entry_id, why) for entry_id, (score, why) in scored.items() if score >= floor),
                           key=lambda item: (-item[0], item[1]))
         return relevant
+
+    def classify(self, scored, raw, named, isolated):
+        """({entry: why} contextual, [{id, why}] weak) for the matches that name nothing explicitly.
+
+        Contextual: what the pack declares ties the match to the request: a tag of the entry the request uses in
+        full, in order; or a word of the entry's text together with an explicit entry it extends or that extends
+        it, whose declared object requirement it provides ("casting a spell with a staff"), or whose declared
+        posture it is ("spooning on the side": Lying on the side). Weak:
+        anything else (one word of a longer name, a description word, a capability two entries share)."""
+        index, explicit = self.index, [entry_id for entry_id in named if self.named_by.get(entry_id, set()) - set(STANDING)]
+        sequences = [(source, words) for source, _, words in self.sequences if source in INTENT_SOURCES]
+        needs = {}
+        for entry_id in explicit:
+            for _, _, all_of, groups in self.object_needs(entry_id):
+                needs.setdefault(entry_id, set()).update(all_of, *groups)
+        takes = {entry_id: {placement["posture"] for placement in index.resolved[entry_id]["components"].get("spatial", {})
+                            .get("participants", {}).values() if "posture" in placement} for entry_id in explicit}
+        context, weak, self.concepts = {}, [], set()
+        candidates = sorted({entry_id for entry_id, value in raw.items() if value > 0} | set(scored), key=lambda item: item)
+        for entry_id in candidates:
+            if entry_id in named or index.kind[entry_id] not in SCENE_KINDS or any(item["id"] == entry_id for item in self.excluded):
+                continue
+            entry = index.resolved[entry_id]
+            tags = [tag for tag in entry.get("tags", []) if _Themes.found(tuple(phrase_terms(tag.replace("_", " "))), sequences, self.negated)]
+            why = None
+            if tags:
+                why = f'the request asks for the concept "{tags[0]}"'
+                self.concepts.add(entry_id)
+            elif raw.get(entry_id, 0) > 0:
+                provided = set(implied(self.registry, entry["components"].get("object", {}).get("provides", [])))
+                for other in explicit:
+                    name = index.resolved[other]["name"]
+                    if other in index.ancestors.get(entry_id, []) or entry_id in index.ancestors.get(other, []):
+                        why = f"it {'extends' if other in index.ancestors.get(entry_id, []) else 'is extended by'} {name}, which the request names"
+                    elif provided & needs.get(other, set()):
+                        why = f"it provides what {name}, which the request names, needs"
+                    elif entry_id in takes.get(other, set()):
+                        why = f"it is the posture {name}, which the request names, takes"
+                    if why:
+                        break
+            if why:
+                context[entry_id] = why
+            else:
+                reason = ("only one word of a longer name or alias" if entry_id in isolated
+                          else "only related to the request through shared capabilities or links" if raw.get(entry_id, 0) <= 0
+                          else "a partial match that nothing the pack declares ties to the request")
+                weak.append((scored.get(entry_id, (raw.get(entry_id, 0), []))[0], entry_id, reason))
+        weak.sort(key=lambda item: (-item[0], item[1]))
+        return context, [{"id": entry_id, "why": reason} for _, entry_id, reason in weak[:12]]
 
     # -- what the request rules out, through the vocabulary's own dependencies
     def object_needs(self, entry_id):
@@ -1060,8 +1336,11 @@ class _Retrieval:
                         query.setdefault(term, (1.0, source))
         return query
 
-    def inspire(self, relevant, cast_report):
-        """Ideas from the categories the brief opens, checked like named entries, as pools per category."""
+    def inspire(self, relevant, cast_report, selected=frozenset()):
+        """Ideas from the categories the brief opens, checked like named entries, as pools per category.
+
+        A relevant entry is not an idea, except one of a concept or entry the brief asks of a themed pack that the
+        named entries left out (over the per-category limit): it stays on offer as a close alternative."""
         index, registry = self.index, self.registry
         intent, opening = self.intent_query(INTENT_SOURCES), self.intent_query((OPENING_SOURCE,))
         negative = {term: (1.0, source) for term, source in self.negated.items()}
@@ -1072,17 +1351,23 @@ class _Retrieval:
         ordered = sorted(RATINGS.index(rating) for rating in self.allowed if rating in RATINGS)
         top = RATINGS[ordered[-1]] if ordered else None
         content = top if self.request.nsfw and top not in (None, "general") else None
-        themes = {}
-        # A rating word ("adult") is the content level, which the brief's path already sets, not a theme.
-        thematic = {term: value for term, value in intent.items() if term not in RATINGS}
+        # What the brief asks of each themed pack (SPEC section 10, theme): the whole pack (broad), or only some of
+        # its entries (a concept tag, an entry it names or casts) with what they explicitly extend or are extended by.
+        themes, seeds = {}, {}  # pack -> (scope, why); pack -> entries the brief asks for
+        sequences = [(source, words) for source, _, words in self.sequences if source in INTENT_SOURCES]
         for pack_id in index.theme_labels.keys():
-            words = index.theme_labels.reached(pack_id, thematic)
-            if words:
-                themes[pack_id] = "the brief says " + ", ".join(f'"{term}" ({source})' for term, source in words[:3])
+            phrases = index.theme_labels.reached(pack_id, sequences, self.negated)
+            if phrases:
+                themes[pack_id] = ("broad", "the brief says " + ", ".join(f'"{label}" ({source})' for label, source in phrases[:3]))
+                continue
+            for tag, source, entries in index.theme_labels.concepts(pack_id, sequences, self.negated):
+                seeds.setdefault(pack_id, set()).update(entries)
+                themes.setdefault(pack_id, ("concept", f'the brief asks for "{tag}" ({source})'))
         for entry_id, sources in sorted(self.named_by.items()):
             pack_id = registry.owner(entry_id)
             if sources & set(INTENT_SOURCES) and pack_id in index.theme_labels.names:
-                themes.setdefault(pack_id, f"the brief names {index.resolved[entry_id]['name']}")
+                seeds.setdefault(pack_id, set()).add(entry_id)
+                themes.setdefault(pack_id, ("entry", f"the brief names {index.resolved[entry_id]['name']}"))
         # A cast body or trait reaches its pack's theme, except the plain human body: being human is no theme.
         bodies = [entry_id for entry_id in sorted(index.resolved) if index.kind[entry_id] == "body" and self.allowed_entry(entry_id)]
         plain = {item[1] for item in self.bodies_named("human", bodies)[:1]}
@@ -1092,17 +1377,35 @@ class _Retrieval:
                     continue
                 pack_id = registry.owner(entry_id) if entry_id in index.resolved else None
                 if pack_id in index.theme_labels.names:
-                    themes.setdefault(pack_id, f"{member['character']} is cast as {index.resolved[entry_id]['name']}")
-        # What the request fixes: an entry it names in a text that states a choice.
+                    seeds.setdefault(pack_id, set()).add(entry_id)
+                    themes.setdefault(pack_id, ("entry", f"{member['character']} is cast as {index.resolved[entry_id]['name']}"))
+        # A contextual match reaches a themed pack only as a declared concept (a tag); one supported by a relation to
+        # a named entry counts only inside a pack the request already reaches.
+        for entry_id, why in sorted(self.context.items()):
+            pack_id = registry.owner(entry_id)
+            if entry_id in self.concepts and pack_id in index.theme_labels.names and themes.get(pack_id, ("",))[0] != "broad":
+                themes.setdefault(pack_id, ("concept", why))
+        asked = {pack_id: index.lineage(entries, pack_id) for pack_id, entries in seeds.items() if themes[pack_id][0] != "broad"}
+        for entry_id in self.context:
+            pack_id = registry.owner(entry_id)
+            if pack_id in asked or (pack_id in themes and themes[pack_id][0] != "broad"):
+                asked.setdefault(pack_id, set()).add(entry_id)
+        # What the request decides for the ideas: an entry it names explicitly in a text that states a choice and that
+        # survived the checks (rating, exclusions, compatibility). It decides which ideas are offered; the brief's
+        # own fixed and must texts stay the user's requirements whatever the vocabulary matched.
+        excluded = {item["id"] for item in self.excluded}  # already ruled out or in conflict as a named entry
         fixed = {}
         for entry_id, sources in sorted(self.named_by.items()):
+            if entry_id in excluded:
+                continue
             kind = index.kind[entry_id]
             if sources & set(CHOICE_SOURCES) and kind in SCENE_KINDS:
                 group = "interaction" if kind in INTERACTION_KINDS else kind
                 fixed.setdefault(group, []).append(index.resolved[entry_id]["name"])
+        # A place guessed from the request's words (a locative phrase the vocabulary does not know) is uncertain: it
+        # keeps place ideas back (offering less is the safe error) but is reported as a guess, never as decided.
         places = self.fixed_places(cast_report)
-        if places:
-            fixed.setdefault("place", places)
+        guessed = {"place": places} if places else {}
         report = {key: {"id": key, "name": labels.names[key], "reached": [], "state": "not reached", "reason": "", "ideas": [],
                         "counts": {}} for key in scene}
         for key, words in reached.items():
@@ -1110,24 +1413,37 @@ class _Retrieval:
                 f'"{term}" ({source})' for term, source in words[:3])})
         for key in ruled_out:
             report[key]["state"], report[key]["reason"] = "closed", self.closed(None, key, [], set(), {}, ruled_out)
-        candidates = {}
+        candidates, held, by_content = {}, set(), set()
         for entry_id in sorted(index.resolved):
             kind = index.kind[entry_id]
-            if kind not in SCENE_KINDS or entry_id in relevant:
+            pack_id = registry.owner(entry_id)
+            if kind not in SCENE_KINDS or entry_id in selected or entry_id in excluded or (
+                    entry_id in relevant and entry_id not in asked.get(pack_id, ())):
                 continue
             category, rating = index.resolved[entry_id]["category"], index.resolved[entry_id].get("rating", "general")
-            pack_id = registry.owner(entry_id)
             scopes = ([("category", report[category]["reached"][0]["why"])] if category in reached else []) + \
                 ([("arrangement", "every image arranges its people and the brief leaves how open")]
                  if self.arrangement(entry_id) else []) + \
                 ([("setting", "every image with people has a place and the brief leaves it open")]
                  if kind == "space" and self.cast else []) + \
-                ([("theme", f"{index.theme_labels.names[pack_id]}: {themes[pack_id]}")] if pack_id in themes else []) + \
-                ([("content", f"the brief asks for {content} content")] if content and rating == content else [])
-            if category not in report or not any(scope in OPENING for scope, _ in scopes):
+                ([("theme", f"{index.theme_labels.names[pack_id]}: {themes[pack_id][1]}")]
+                 if pack_id in themes and (themes[pack_id][0] == "broad" or entry_id in asked.get(pack_id, ())) else []) + \
+                ([("content", f"the brief asks for {content} content")] if content and rating == content else []) + \
+                ([("related", self.context[entry_id])] if entry_id in self.context else [])
+            # A contextual match ("related") offers its own entry as an optional idea; what the request decides still
+            # closes it (closed() below), and it never becomes a named entry or a decided constraint.
+            if category not in report or not any(scope in OPENING or scope == "related" for scope, _ in scopes):
                 continue  # the content level alone opens nothing
-            if pack_id in index.theme_labels.names and not any(scope in ("theme", "content") for scope, _ in scopes):
-                continue  # a themed pack's entries belong to briefs that reach its theme (or its content level)
+            if pack_id in index.theme_labels.names and not any(scope == "theme" for scope, _ in scopes):
+                # A themed pack's entries belong to briefs that ask for them (its theme, or a concept or entry of it);
+                # the content level stands in for that only in a pack whose manifest declares content activation.
+                # Named entries never pass here.
+                by_rating = any(scope == "content" for scope, _ in scopes)
+                if pack_id not in index.content_activated or not by_rating:
+                    if by_rating:
+                        held.add(pack_id)  # the content level would offer it, but the pack needs its theme
+                    continue
+                by_content.add(pack_id)
             entry_report = report[category]
             for scope, why in scopes:
                 if not any(item["scope"] == scope for item in entry_report["reached"]):
@@ -1136,7 +1452,7 @@ class _Retrieval:
             if not self.allowed_entry(entry_id):
                 counts["rating"] = counts.get("rating", 0) + 1
                 continue
-            reason = self.closed(kind, category, scopes, reopened, fixed, ruled_out)
+            reason = self.closed(kind, category, scopes, reopened, {**fixed, **guessed}, ruled_out)
             if reason:
                 entry_report["state"], entry_report["reason"] = "closed", reason
                 continue
@@ -1150,8 +1466,11 @@ class _Retrieval:
                 against, _ = self.direct(entry_id, negative, [(source, 1.0, [term]) for term, source in self.negated.items()], exact=True)
                 lowered = against > 0
             kinds = {scope for scope, _ in scopes}
+            # What the brief asks for (its theme, a concept or entry of it) ranks above what its content level merely
+            # allows, so a general pack's content bonus never crowds out the entries actually requested.
             weight = (SCOPE_WEIGHTS["category"] if kinds & set(DIMENSIONS) else 0.0) + \
-                (SCOPE_WEIGHTS["content"] if "content" in kinds else SCOPE_WEIGHTS["theme"] if "theme" in kinds else 0.0)
+                (SCOPE_WEIGHTS["content"] if "content" in kinds else 0.0) + \
+                (SCOPE_WEIGHTS["theme"] if "theme" in kinds else SCOPE_WEIGHTS["related"] if "related" in kinds else 0.0)
             score = (weight + min(0.5, 0.1 * self.partial.get(entry_id, 0.0))) * (0.5 if lowered else 1.0)
             candidates.setdefault(category, []).append((score, entry_id, scopes))
         for key, item in report.items():
@@ -1162,12 +1481,34 @@ class _Retrieval:
             item["empty"] = self.empty_reason(item) if not item["ideas"] else None
             if item["state"] == "not reached":
                 item["reason"] = "nothing in the brief names, implies or randomizes it"
-        self.intent = {"content": content, "themes": [{"pack": pack_id, "name": index.theme_labels.names[pack_id], "why": why}
-                                                       for pack_id, why in sorted(themes.items())],
+        self.intent = {"content": content, "themes": [{"pack": pack_id, "name": index.theme_labels.names[pack_id], "why": why,
+                                                        "scope": scope} for pack_id, (scope, why) in sorted(themes.items())],
+                       # Themed packs and why they did or did not offer ideas (SPEC section 1, activation).
+                       "activation": [{"pack": pack_id, "name": index.theme_labels.names[pack_id],
+                                       "state": "theme" if pack_id in themes else "content" if pack_id in by_content else "inactive",
+                                       "why": themes[pack_id][1] if pack_id in themes
+                                       else f"the brief asks for {content} content" if pack_id in by_content
+                                       else "needs its theme: the content level alone does not offer this pack"}
+                                      for pack_id in sorted(set(themes) | by_content | held)],
                        "fixed": {group: sorted(names) for group, names in sorted(fixed.items())},
+                       # Guesses from the request's words alone (SPEC section 10): uncertain, never decided.
+                       "uncertain": {group: sorted(values) for group, values in sorted(guessed.items())},
+                       # Matches that name nothing explicitly: contextual ones (offered as optional ideas where open) and
+                       # weak ones (not used), each with why (SPEC section 10, match classes).
+                       "related": [{"id": entry_id, "why": why} for entry_id, why in sorted(self.context.items())],
+                       "rejected": list(self.rejected),
                        "ruled_out": {key: [term for term, _ in words] for key, words in sorted(ruled_out.items())},
                        "categories": sorted(report.values(), key=lambda item: (not item["ideas"], item["state"] != "open", item["id"])),
                        "per_scene": self.per_scene}
+
+    def role(self, entry_id):
+        """What an idea is in one image (ROLES), from its components: a space is the place; a posture, or a bindable
+        entry that places its participants without claiming body resources, is the arrangement; any other bindable
+        entry is an interaction. Items keep their own role (they come along with an interaction)."""
+        kind, comp = self.index.kind[entry_id], self.index.resolved[entry_id]["components"]
+        if kind in ("space", "item"):
+            return kind
+        return "arrangement" if kind == "self" or ("claims" not in comp and comp.get("spatial")) else "interaction"
 
     def arrangement(self, entry_id):
         """Whether an entry arranges the cast, which every image with people does: a bindable entry that places its
@@ -1214,37 +1555,47 @@ class _Retrieval:
             what = "the interaction" if group == "interaction" else f"the {group}"
             return f"the request fixes {what}: " + ", ".join(fixed[group])
         if kind == "space" and fixed.get("place"):
-            return "the request sets the place: " + ", ".join(f'"{phrase}"' for phrase in fixed["place"])
+            return ("the request may set the place (uncertain text guess): "
+                    + ", ".join(f'"{phrase}"' for phrase in fixed["place"]))
         return None
 
     def check_ideas(self, candidates, report):
-        """The resolver on the best candidates of each category: interactions first, then the spaces and items
-        checked with the interactions that are offered (named, or ideas that made a pool)."""
-        shortlist = {key: sorted(items, key=lambda item: (-item[0], self.tie(item[1])))[:self.config.inspiration_shortlist]
-                     for key, items in candidates.items()}
+        """The resolver on every candidate interaction (one check each, so the cost grows with the packs, not their
+        square). A space is checked here with the interactions the request names, and per image with the ones it is
+        combined with (_Pairing), so the whole pool stays available without all-pairs checks. An item is kept when it
+        is checked to serve one interaction of the pool; attach_to lists every interaction it could fill the object
+        of (may_hold: nothing that object slot asks for is missing), and a scene offers it only with one it is
+        checked to serve (Retrieval.item_fits)."""
+        ordered = {key: sorted(items, key=lambda item: (-item[0], self.tie(item[1]))) for key, items in candidates.items()}
         checked = {}
-        for key in sorted(shortlist):
-            for score, entry_id, scopes in shortlist[key]:
+        for key in sorted(ordered):
+            for score, entry_id, scopes in ordered[key]:
                 kind = self.index.kind[entry_id]
                 if kind in INTERACTION_KINDS:
                     verdict = self.check_bindable(entry_id) if kind == "bindable" else self.check_self(entry_id)
                     checked.setdefault(key, []).append((score, entry_id, scopes, verdict))
         pools = self.pool(checked, report)
-        partners = list(dict.fromkeys([*self.usable, *(entry.id for _, _, pool in pools for entry in pool
-                                                       if self.index.kind[entry.id] == "bindable")]))
+        self.pairing = _Pairing(self)
+        named = [partner for partner in self.usable if self.index.kind[partner] == "bindable"]
+        ideas = [entry.id for _, _, pool in pools for entry in pool if self.index.kind[entry.id] == "bindable" and entry.id not in named]
         checked = {}
-        for key in sorted(shortlist):
-            for score, entry_id, scopes in shortlist[key]:
+        for key in sorted(ordered):
+            for score, entry_id, scopes in ordered[key]:
                 kind = self.index.kind[entry_id]
-                if kind == "space":  # a setting stands on its own; positions that need a space check it
-                    checked.setdefault(key, []).append((score, entry_id, scopes, self.check_space(entry_id, partners)))
+                if kind == "space":  # a setting stands on its own; what a named interaction needs of it is checked now
+                    verdicts = [self.pairing.space_verdict(entry_id, partner) for partner in named if self.pairing.uses_space(partner)]
+                    verdict = max(verdicts, key=lambda item: RANK[item["status"]]) if verdicts else {
+                        "status": "eligible", "warnings": [PER_IMAGE]}
+                    checked.setdefault(key, []).append((score, entry_id, scopes, verdict))
                 elif kind == "item":  # an item serves an interaction whose requirements it declares it meets
-                    serves = [partner for partner in partners if self.check_item(entry_id, [partner])["status"] in DECLARED]
-                    if not serves:
+                    could = [partner for partner in [*named, *ideas] if self.may_hold(entry_id, partner)]
+                    serves = next((partner for partner in could if self.pairing.item(entry_id, partner)), None)
+                    if serves is None:
                         counts = report[key]["counts"]
                         counts["unused"] = counts.get("unused", 0) + 1
                         continue
-                    verdict = {**self.check_item(entry_id, serves), "attach_to": serves}
+                    # Checked to serve one interaction; the others it could fill are checked when a scene combines them.
+                    verdict = {**self.pairing.verdicts[("item", entry_id, serves)], "attach_to": could}
                     checked.setdefault(key, []).append((score, entry_id, scopes, verdict))
         merged = {}  # a category may hold interactions and items alike
         for best, key, pool in pools + self.pool(checked, report):
@@ -1252,8 +1603,20 @@ class _Retrieval:
         self.pools = [(key, sorted(pool, key=lambda entry: (-entry.score, entry.id)))
                       for key, (best, pool) in sorted(merged.items(), key=lambda item: (-item[1][0], item[0]))]
 
+    def may_hold(self, item_id, partner):
+        """Whether an item can fill the object slot check_item gives it (the partner's first): everything that slot
+        requires of all objects, and one of each group it needs one of, is among what the item provides. A necessary
+        condition only, so it skips hopeless resolver checks and never a pairing the resolver would accept."""
+        needs = self.object_needs(partner)
+        if not needs:
+            return False
+        _, _, all_of, groups = needs[0]
+        provided = set(self.provides(item_id))
+        return all_of <= provided and all(group & provided for group in groups)
+
     def pool(self, checked, report):
-        """[(best score, category, [RetrievedEntry])] from checked candidates: conflicts out, the floor, no repeats."""
+        """[(best score, category, [RetrievedEntry])] from checked candidates: conflicts out, no repeats. No count limit and
+        no cutoff relative to the best: relevance already decided what is a candidate, and the score only weights it."""
         pools = []
         for key in sorted(checked):
             counts, kept = report[key]["counts"], []
@@ -1270,25 +1633,22 @@ class _Retrieval:
                 value = score * STATUS_FACTOR[status] * (0.6 + 0.4 * self.fit(entry_id, verdict))
                 kept.append((value, entry_id, scopes, verdict))
             kept.sort(key=lambda item: (-item[0], self.tie(item[1])))
-            pool = []
+            pool, ids, sharing = [], set(), {}  # sharing: feature -> pool entries that have it (only they can be similar)
             for value, entry_id, scopes, verdict in kept:
-                if value < self.pool_floor * kept[0][0]:
-                    self.suppressed.append({"id": entry_id, "because": f"idea below the pool floor of {key}", "source": "inspiration"})
-                    counts["below the floor"] = counts.get("below the floor", 0) + 1
-                    continue
-                same = next((chosen for chosen in pool if self.index.resolved[entry_id]["components"] ==
-                             self.index.resolved[chosen.id]["components"] and chosen.id in self.index.ancestors[entry_id]), None)
-                similar = max(((_jaccard(self.index.features[entry_id], self.index.features[chosen.id]), chosen.id) for chosen in pool),
-                              default=(0, None))
+                components = self.index.resolved[entry_id]["components"]
+                same = next((ancestor for ancestor in sorted(self.index.ancestors[entry_id])
+                             if ancestor in ids and self.index.resolved[ancestor]["components"] == components), None)
+                features = self.index.features[entry_id]
+                near = {chosen for feature in features for chosen in sharing.get(feature, ())}
+                similar = max(((_jaccard(features, self.index.features[chosen]), chosen) for chosen in near), default=(0, None))
                 if same or similar[0] >= self.config.duplicate_similarity:
-                    because = f"inherited duplicate of {same.id}" if same else f"repeats {similar[1]} (similarity {similar[0]:.2f})"
+                    because = f"inherited duplicate of {same}" if same else f"repeats {similar[1]} (similarity {similar[0]:.2f})"
                     self.suppressed.append({"id": entry_id, "because": because, "source": "inspiration"})
                     continue
-                if len(pool) >= self.config.inspiration_pool:
-                    self.suppressed.append({"id": entry_id, "because": f"beyond the {key} pool of {self.config.inspiration_pool}",
-                                            "source": "inspiration"})
-                    continue
                 pool.append(self.idea(entry_id, value, scopes, verdict))
+                ids.add(entry_id)
+                for feature in features:
+                    sharing.setdefault(feature, []).append(entry_id)
             if pool:
                 pools.append((pool[0].score, key, pool))
                 report[key]["ideas"] += [entry.id for entry in pool]
@@ -1315,7 +1675,7 @@ class _Retrieval:
             relevance=float(len(scopes)), score=value, why=[f"{scope}: {why}" for scope, why in scopes],
             warnings=list(dict.fromkeys(warnings)), needs=verdict.get("needs", []), binding=verdict.get("binding"),
             checked_with=verdict.get("checked_with", []), source="inspiration", scopes=[scope for scope, _ in scopes],
-            attach_to=list(verdict.get("attach_to", [])))
+            attach_to=list(verdict.get("attach_to", [])), role=self.role(entry_id))
 
     @staticmethod
     def empty_reason(item):
@@ -1344,6 +1704,41 @@ class _Retrieval:
             rating=resolved.get("rating", "general"), description=resolved.get("description", ""), status=verdict["status"],
             relevance=score, score=adjusted, why=why, warnings=list(dict.fromkeys(verdict.get("warnings", []))),
             needs=verdict.get("needs", []), binding=verdict.get("binding"), checked_with=verdict.get("checked_with", []))
+
+
+class _Pairing:
+    """Per-image compatibility of an idea place or item with the interactions it is combined with: the same resolver
+    checks as at retrieval, one pair at a time, cached (a verdict depends only on the pair, so the cache never changes
+    a result). Used by Retrieval._plan."""
+
+    def __init__(self, retrieval):
+        self.retrieval, self.verdicts = retrieval, {}
+
+    def uses_space(self, partner):
+        index = self.retrieval.index
+        return index.kind.get(partner) == "bindable" and bool(
+            index.resolved[partner]["components"].get("requirements", {}).get("space"))
+
+    def space_verdict(self, space_id, partner):
+        key = ("space", space_id, partner)
+        if key not in self.verdicts:
+            self.verdicts[key] = self.retrieval.check_space(space_id, [partner])
+        return self.verdicts[key]
+
+    def acceptable(self, status):
+        return status != "conflict" and (status != "unknown" or self.retrieval.config.include_unknown)
+
+    def space(self, space_id, context):
+        """A place fits a scene when no interaction of it that needs a space conflicts with it."""
+        return all(self.acceptable(self.space_verdict(space_id, partner)["status"])
+                   for partner in context if self.uses_space(partner))
+
+    def item(self, item_id, partner):
+        """An item serves an interaction when it is declared to meet what the interaction asks of its object."""
+        key = ("item", item_id, partner)
+        if key not in self.verdicts:
+            self.verdicts[key] = self.retrieval.check_item(item_id, [partner])
+        return self.verdicts[key]["status"] in DECLARED
 
 
 def _jaccard(a, b):

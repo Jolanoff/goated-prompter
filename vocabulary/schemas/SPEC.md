@@ -27,6 +27,21 @@ duplicate is rejected, never silently overridden, and an archive cannot install 
 Opt-in content is a separate pack the user installs, never a switch inside a pack: the kinks setting is the
 `adult_kinks` pack installed and enabled (kinks) or disabled or absent (no kinks). It depends only on the core.
 
+Per-run selection. A Dataset run chooses its own packs; the enabled state above is only the default the
+Dataset tab starts from, and choosing packs for a run never changes it. On Confirm, before any inference,
+the chosen pack ids are resolved (`PackManager.resolve_selection`) into the core, the selected packs and
+every pack they require, directly or not (each marked `core`, `selected` or `dependency`), whatever their
+global enabled state. An unknown, invalid or dependency-blocked choice is refused with every problem named.
+The run records the result with each pack's version and content fingerprint: SHA-256 over `manifest.json`
+and the entry files it lists, by name, so an edit without a version change is still a different
+fingerprint. Only the recorded packs take part in that run's retrieval, scoring, activation, categories and
+links; isolation and every rule below apply within them. Against a recorded selection
+(`PackManager.selection_drift`), a pack that is missing, invalid, at another version, changed at the same
+version, or now requiring a pack outside the selection is drift: the run, or an inspection of it, is refused
+with the differences, never served by another version or the global selection. A pack disabled globally
+since is not drift: the run keeps it. Runs saved before selections were recorded show theirs as not
+recorded; nothing is inferred from current settings.
+
 ## 1. Packs
 
 A pack is a folder with `manifest.json` and the entry files it lists. `id` is the pack's
@@ -34,8 +49,22 @@ namespace. `requires` maps pack ids to version ranges (`>=1.0.0 <2.0.0`). `categ
 the groupings the pack introduces; any loaded pack may use a category declared by itself or by a
 pack it requires. Categories only group entries for retrieval and the UI: **the engine never
 branches on a category**. Behaviour comes only from an entry's typed components. The words of a
-category's name and description, and of a pack's name and description, are how a broad brief reaches
-them for inspiration (section 10), so write them in the words briefs use.
+category's name and description are how a broad brief opens it for inspiration (section 10), so write
+them in the words briefs use. A pack's theme is its `name` plus the optional `themes`: words and phrases a
+brief uses to ask for the pack as a whole ("BDSM", "bondage play"), each matched as an ordered phrase and
+needing a word that is not a rating. A pack's `description` is informational and never reaches anything.
+A specific concept of a pack belongs on its entries (names, aliases, tags), not in `themes`.
+
+Migration: before `themes` existed, a word only a pack's description used reached its theme.
+It no longer does; a pack that relied on one ("Cyberpunk: neon cities") declares it in `themes`. The
+pack's name still reaches its theme without any declaration.
+
+`activation` says when a pack's entries may be offered as ideas the brief did not name (section 10).
+`"theme"`, the default, offers them only to briefs that reach the pack's theme. `"content"` also offers
+them when an NSFW brief's content level equals an entry's rating, for a pack of general content at its
+level (the bundled Adult pack); a General-rated pack cannot declare it. Opt-in or specialised packs
+(kinks) keep the default, so the content level alone never offers them. The rating still decides what is
+allowed, and an entry the brief names is found whatever its pack's activation. The core is always open.
 
 ## 2. Entries
 
@@ -337,6 +366,18 @@ creativity (Strict 0.85, Balanced 0.70, Creative 0.55, Dice 0.45) or `variety`. 
 suppressed, with a reason, when its similarity to a chosen entry reaches `duplicate_similarity` or
 when its category already has `max_per_category` entries.
 
+**Match classes.** Every match is classified, and only the class decides what it may do:
+
+| Class | Evidence | What it may do |
+|---|---|---|
+| explicit | an entry's whole name or alias in the brief's own words, in order and adjacent: articles, pronouns and possessives may sit between its words and the brief's own cast words stand for a participant ("sitting on a man's lap" holds "Sitting on a lap"), but a preposition or conjunction (`STRUCTURAL`: at, by, for, from, in, into, onto, on, off, out, to, with, within, about, of, and, or, but) is structure: the name must have one in the same place, any one ("sitting in his lap" holds it too), so "a book in the corner" does not hold "Book corner". Theme and tag phrases are matched the same way, or a whole one-word name or alias in the same word or a close spelling, never a compound ("play" is not "playroom") | named for every image; decides the interaction, place or item for the ideas when the request states a choice and the entry survives rating, exclusions and compatibility; reaches its pack's theme as an entry; found whatever its pack's activation |
+| contextual | a tag of the entry used in full and in order (a concept), or a word of the entry's text plus a relation the packs declare to an explicit entry: it extends it or is extended by it, it provides what the explicit entry requires of an object, or it is the posture the explicit entry takes | an optional idea (scope `related`) where its category is open or for itself; never named, never deciding; a tag reaches its pack's theme as a concept, other relations count only inside a pack already reached; listed in `intent.related` with why |
+| weak | anything else: one word of a longer name, alias or tag, a compound, description words, a capability two entries share | nothing; the best are listed in `intent.rejected` with why |
+
+A tag is a concept, never a name. Capabilities decide compatibility, not what the request asks for.
+The brief's own `fixed`, `must` and `avoid` texts stay the user's requirements whatever the vocabulary
+matched: what the vocabulary decides only closes categories of optional ideas.
+
 **Inspiration.** Besides the entries a request names (`source: "direct"`), retrieval offers ideas
 (`source: "inspiration"`) from the categories the brief opens, so a broad request ("two adult men
 having sex", "epic fantasy scenes of a dragon") gets varied, checked suggestions without naming any
@@ -350,22 +391,25 @@ entries; all but `content` open them:
 | category | a word of the category's declared name, or a description word no other declared category uses ("sex positions" reaches Positions; "location" reaches Spaces through "locations, settings and environments") | 1.0 |
 | arrangement | the brief has people: every image arranges them, so a position (a bindable entry that places its participants without claiming body resources) whose slots hold exactly this cast, or for one person a posture, is open unless the brief fixes the interaction | 1.0 (counted once with category and setting) |
 | setting | the brief has people and sets no place: every image has a place, so spaces are open | 1.0 (counted once) |
-| theme | a pack's own theme: a word of its name, a description word that neither another pack nor the core's description nor any category uses, an entry it declares that the brief names, or a cast body or trait it declares other than the plain human body. A rating word ("adult") is the content level, never a theme. The mandatory core has no theme | 0.75, nothing when the content level also holds |
-| content | an NSFW brief puts entries of the top allowed rating on topic. It never opens a category: it ranks what the other scopes opened, so a broad sexual request gets sexual positions first, and acts, accessories or restraints only when the brief's words or a theme ask for them | 1.0 |
+| theme | what the brief asks of a pack. **Broad**: its name or a declared `themes` phrase, as an ordered phrase of the brief's own words that nothing negates or avoids; it reaches every entry of the pack. **Concept**: a tag (as an ordered phrase, `_` as a space) carried by some of its scene entries; it reaches just those entries. **Entry**: an entry it declares that the brief names, or a cast body or trait other than the plain human body; it reaches that entry and the entries of the same pack it explicitly extends or that extend it, never siblings under a shared parent. Capabilities decide compatibility, not relevance, so a shared capability reaches nothing. A pack's description never reaches anything. A rating word ("adult") is the content level, never a theme. The mandatory core has no theme | 0.75, added to the content level: what the brief asks for ranks above what it merely allows |
+| content | an NSFW brief puts entries of the top allowed rating on topic. It never opens a category: it ranks what the other scopes opened, so a broad sexual request gets sexual positions first (only from packs with content activation, section 1), and acts, accessories or restraints only when the brief's words or a theme ask for them | 1.0 |
 
 Acts (bindable entries that claim body resources) and items are opened only by the brief's words or a
-theme. An entry of a pack that has a theme (every pack but the core) needs its theme or the content
-level. Without people nothing is opened by the scene's dimensions: a still life gets no invented place.
+theme. An entry of a pack that has a theme (every pack but the core) needs the brief to reach it through
+that theme (broad, or its concept or entry), or the content level when its pack declares
+`activation: "content"` (section 1). A relevant entry the named entries leave out (over the
+per-category limit) stays on offer as an idea when the brief asks for it as a concept or entry. Without people nothing is opened by the scene's dimensions: a still life gets no invented place.
 What the brief fixes stays fixed, by kind (components), never by category name:
 
 - a position, action or posture the request, summary, must, rules or fixed text names fixes the
   interaction: no position, action or posture ideas ("in missionary" offers no other position or act);
 - a space it names fixes the place, an item it names fixes the item;
-- so does a place in words the vocabulary does not know: a locative phrase (`in`, `on`, `at`,
+- a place in words the vocabulary does not know is only a guess: a locative phrase (`in`, `on`, `at`,
   `inside`, `under`, `near`, … and up to two content words) whose words name no entry the request names
-  or casts and reach no category ("on a train platform", "in a dark forest"). "In missionary" and "on a
-  bed" are explained by their entries; "in different locations" reaches Spaces and opens them instead.
-  A phrase that is not a place ("in the rain") also keeps places closed: the error is to suggest less;
+  or casts and reach no category ("on a train platform", "in a dark forest"). It keeps place ideas back
+  (the error is to suggest less) but is reported in `intent.uncertain` as an uncertain text guess, never
+  in `intent.fixed`: text alone cannot tell "in a garden" from "at play" or "in love". "In missionary"
+  and "on a bed" are explained by their entries; "in different locations" reaches Spaces and opens them;
 - a category the `randomized` text reaches is open even next to a named choice ("a couple kissing",
   randomized "positions": positions open, actions stay fixed);
 - a negated or `avoid` word that reaches a category closes it ("no accessories").
@@ -379,21 +423,43 @@ required object (at least one) only ruled-out items provide is ruled out ("no fi
 warming hands at it). Named entries are never ruled out by this, and a ruled-out idea is reported in
 `excluded` with the reason.
 
-Candidates are checked like named entries: positions, actions and postures first (conflicts are
-excluded with `source: "inspiration"`), then spaces against the interactions that are offered, and
-items against each offered interaction. An item is kept only for interactions whose requirements it
-meets (`eligible` or `feasible` for that pair) and lists them in `attach_to`. The score is the scope
-weight (plus a little of any partial text match), × the status factor, × 0.6 + 0.4 × the share of the
-cast the idea involves. Equally good candidates are ordered by the seed, never alphabetically. Per category the best `inspiration_shortlist` are checked; ideas below a share of
-the category's best (Strict 0.8, Balanced 0.6, Creative 0.4, Dice 0.25), repeats
-(`duplicate_similarity`) and equivalent descendants are suppressed, and at most `inspiration_pool` are
-kept.
+Every candidate is checked like a named entry, with no top-N: every position, action and posture first
+(conflicts are excluded with `source: "inspiration"`), then the spaces and items. A space is checked
+here with the interactions the request names (a conflict excludes it), and otherwise `eligible` with
+the note that it is checked per image. An item is kept when it is checked to serve at least one
+interaction of the pool (`eligible` or `feasible` for that pair); `attach_to` lists every interaction
+whose object slot asks for nothing the item lacks (a necessary condition, so no pairing the resolver
+would accept is missed). The score is the scope weight (plus a little of any partial text match),
+× the status factor, × 0.6 + 0.4 × the share of the cast the idea involves. Repeats
+(`duplicate_similarity`) and equivalent descendants are suppressed; everything else stays in the pool,
+whatever its size and however far below the best it scores (`stats.eligible` counts it per category).
+Relevance decides what is a candidate; the score only weights it.
 
-**Rotation.** Each scene gets its own ideas (`ideas(n)`, `scenes(count)`): one idea per open category
-in turn, the first category moving with the scene, each category walking through its own order. The
-order is a score-weighted shuffle seeded by the brief's `seed` and the category, so the same brief and
-seed always give the same ideas per scene, another seed gives others, and a dataset sees every idea.
-Creativity sets the ideas per scene: Strict 2, Balanced 3, Creative 3, Dice 4. A scene never gets the same idea twice; a pool a scene uses whole starts one later in the next scene, so even two ideas alternate. Fewer ideas than scenes simply repeat in turn. An item comes along
+**Rotation.** Each scene gets its own ideas (`ideas(n)`, `scenes(count)`), a coherent set rather than
+competing alternatives: at most one idea per role. The role comes from components, never the category:
+a space is the place; a posture, or a bindable entry that places its participants without claiming body
+resources, is the arrangement; any other bindable entry is an interaction. So places from several packs
+and categories share one slot, and one image gets at most one place. Each scene draws one idea per role
+from the role's whole pool (all its categories together): each entry draws an exponential key,
+−ln(u) / (weight × staleness), where u comes from a stable hash of the seed, role, scene and entry id, and
+the lowest key wins, so an entry wins with probability weight × staleness ÷ total. The weight is the score
+to the creativity's power (Strict 3, Balanced 2, Creative 1.5, Dice 1); staleness is 1 + (picks since it
+was last offered) ÷ (its category's size), at most 2, and 2 for one never offered, so among comparable
+ideas the least recent is likelier. After being offered an idea rests for ⌊cooldown × (size − 1)⌋ picks
+of its role, at least one, where size is its own category's size (a category of one does not rest) and
+the cooldown comes from creativity (Strict 0.25, Balanced 0.50, Creative 0.65, Dice 0.80). A scene takes
+the first entry by key that fits: rested and not the previous pick; else any but the previous pick; else
+any. So a better-matched idea comes more often, not only earlier (an idea can come at most once per rest
++ 1 picks), every eligible idea keeps a chance, two compatible ideas alternate, a single one repeats, and
+a scene is never left without an idea because of a cooldown. A place must fit the interactions of its
+scene (no conflict with any that needs a space) and an item must be checked to serve one of them; these
+per-image checks are cached by pair, and fitting is never relaxed for variety (no fitting entry, no
+idea). A scene's ideas depend only on the brief, the packs, the seed and its number, computed from scene
+1: never on which scenes were asked for before, in what order, or which images failed. Creativity sets the most ideas per scene (Strict 2, Balanced 3, Creative 3,
+Dice 4); a scene never gets more than one per open role, so fewer roles give fewer ideas, never filler.
+Roles the brief's own words (or its theme) reach come first, then the open arrangement, then the open
+place; roles of one rank that do not all fit take turns by scene. A scene lists its interaction, then its
+arrangement, then its place. Fewer ideas than scenes simply repeat. An item comes along
 only in a scene that holds an interaction it serves (named or an idea), at most one per scene.
 `offer(numbers)` renders the block for one model request writing those scenes: the named entries for
 every image, the ideas per concept of that request, and each idea described once. Without ideas it
@@ -417,10 +483,29 @@ and never assigns roles or characters.
 | `max_chars` | 1200 | `min_relevance` | 1.5 |
 | `max_per_category` | 2 | `duplicate_similarity` | 0.7 |
 | `shortlist` | 24 | `include_unknown` | true |
-| `inspiration` | true | `inspiration_shortlist` | 24 |
-| `inspiration_pool` | 12 | | |
+| `inspiration` | true | | |
+
+Paraphrases are not understood: a request reaches an entry only through words its pack declares.
+A structured interpretation of the request (mapping its meaning onto declared concepts) would be a
+separate step; text-only retrieval stays the fallback.
 
 Retrieval matches words, not meaning: a request that describes an entry only in words none of its
 names, aliases, tags, description, notes or links use will not find it, and a category or pack theme
 is only reached through the words its manifest declares. Pack authors should give entries the aliases
-people actually write, and categories and packs names and descriptions in the words briefs use.
+and tags people actually write, categories names and descriptions in the words briefs use, and packs a
+name and `themes` that ask for the pack as a whole.
+
+Pack isolation: a pack a request does not reach changes neither its named entries nor its ideas, their
+scores, the categories the request opens or the links between entries; disabling it again restores the
+same results. Everything an entry's retrieval depends on is computed within its own pack's closure (the
+pack and the packs it requires, directly or not): an entry is scored (BM25 term rarity and average length)
+against the entries of that closure; a category's description word is distinctive when no other category
+declared in its pack's closure uses it; and a capability is common (more than six users, so it relates
+nothing) when counted among the entries of the two packs' closures. A pack whose entries the request does
+match competes as before, and two matching packs both contribute.
+
+Known limitations, kept for the later semantic integration. A place the engine only guesses from the
+request (labelled uncertain) still holds the place role, so optional place ideas are suppressed even when the
+guess is wrong. Prepositions are matched as one interchangeable marker so that "sitting in his lap" and
+"sitting on his lap" both match; the same freedom can match a phrase with the wrong spatial relation
+("under the table" for "on the table").

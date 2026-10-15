@@ -1,7 +1,9 @@
 import { ArrowLeft, BookOpen, ChevronRight, Search } from "lucide-react";
 import { useRef, useState } from "react";
 import { ui } from "../../ui.js";
-import { packKey, useVocabularyExplorer } from "./useVocabularyExplorer.js";
+import { PREVIEW_CHOICES, PREVIEW_SCENES, packKey, scopeProblem, useVocabularyExplorer } from "./useVocabularyExplorer.js";
+import { PackSelector, RecordedPacks } from "./PackSelector.jsx";
+import { defaultPackSelection } from "./packSelection.js";
 
 const label = (text) => text.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
 const componentLabels = { capability: "Capability implications", body: "Body resources and capabilities",
@@ -86,10 +88,10 @@ function Chip({ item, named }) {
     <small>{item.categoryName}</small>{item.name}</span>;
 }
 
-function Matches({ items, names, target, onNavigate }) {
+function Matches({ items, names, target, onNavigate, offered }) {
   return <ul className="vocabulary-retrieval-matches">{items.map((item) => <li key={item.id}>
     <div className="vocabulary-match-heading"><Reference reference={target(item)} onNavigate={onNavigate} />
-      <span className="vocabulary-match-badges"><Status status={item.status} />
+      <span className="vocabulary-match-badges">{offered?.has(item.id) && <span className="vocabulary-offered">Offered in preview</span>}<Status status={item.status} />
         <span className="vocabulary-rating" data-rating={item.rating}>{label(item.rating)}</span>
         <span className="vocabulary-source" data-source={item.source || "direct"}>{item.source === "inspiration" ? "Idea" : "Named"}</span></span></div>
     {item.description && <p className="vocabulary-match-description">{item.description}</p>}
@@ -104,21 +106,56 @@ function Matches({ items, names, target, onNavigate }) {
   </li>)}</ul>;
 }
 
-function Grouped({ items, categoryName, ...props }) {
+const PAGE = 12; // entries shown per category at first; display only, never the selection pool
+
+function CategoryGroup({ category, title, items, counts, ...props }) {
+  const [shown, setShown] = useState(PAGE);
+  const left = items.length - shown;
+  return <section className="vocabulary-match-group" aria-label={`${title} entries`}>
+    <h5>{title} <small>{counts ? `${counts.eligible} eligible · ${counts.offered} offered in the preview` : items.length}</small></h5>
+    <Matches items={items.slice(0, shown)} {...props} />
+    {left > 0 && <div className="vocabulary-more-entries"><span>{left} more eligible {left === 1 ? "entry" : "entries"} not shown here; still in the pool.</span>
+      <button type="button" className={ui.textButton} onClick={() => setShown(shown + PAGE)}>Show {Math.min(PAGE, left)} more</button>
+      <button type="button" className={ui.textButton} onClick={() => setShown(items.length)}>Show all {items.length}</button></div>}
+  </section>;
+}
+
+function Grouped({ items, categoryName, coverage, ...props }) {
   const groups = [...new Set(items.map((item) => item.category))];
-  return groups.map((category) => <section className="vocabulary-match-group" key={category}>
-    <h5>{categoryName(category)} <small>{items.filter((item) => item.category === category).length}</small></h5>
-    <Matches items={items.filter((item) => item.category === category)} {...props} /></section>);
+  return groups.map((category) => {
+    const members = items.filter((item) => item.category === category);
+    const counts = coverage && { eligible: coverage.eligible?.[category] ?? members.length, offered: coverage.offered?.[category] ?? 0 };
+    return <CategoryGroup key={category} category={category} title={categoryName(category)} items={members} counts={counts} {...props} />;
+  });
+}
+
+/** The preview's counts, from the inspector's coverage or, for an older result, from its scenes. */
+function previewCoverage(result, ideas) {
+  if (result.coverage) return result.coverage;
+  const offered = (result.scenes || []).flatMap((scene) => scene.ideas);
+  const category = Object.fromEntries(ideas.map((item) => [item.id, item.category]));
+  const distinct = [...new Set(offered)];
+  const eligible = {}, used = {};
+  for (const item of ideas) eligible[item.category] = (eligible[item.category] || 0) + 1;
+  for (const id of distinct) used[category[id]] = (used[category[id]] || 0) + 1;
+  return { images: (result.scenes || []).length, named_per_image: result.entries.length, eligible, offered: used,
+    distinct: distinct.length, suggestions: offered.length, offered_ids: distinct };
 }
 
 function Intent({ intent }) {
   if (!intent?.categories) return null;
   const fixed = Object.entries(intent.fixed || {}), ruledOut = Object.entries(intent.ruled_out || {});
+  const byContent = (intent.activation || []).filter((pack) => pack.state === "content"), inactive = (intent.activation || []).filter((pack) => pack.state === "inactive");
   return <section className="vocabulary-intent" aria-label="Detected intent"><h4>How the request was read</h4>
     <p className="vocabulary-section-help">Detected intent: which categories the request opens for ideas, and which it already decides. To get ideas from a category that isn’t reached, name it under What may vary (for example: outfits, props, locations).</p>
     <dl className="vocabulary-intent-facts">
       <div><dt>Content level</dt><dd>{intent.content ? label(intent.content) : "Not requested"}</dd></div>
       <div><dt>Pack themes</dt><dd>{intent.themes.length ? intent.themes.map((theme) => `${theme.name} (${theme.why})`).join("; ") : "None"}</dd></div>
+      {!!byContent.length && <div><dt>Packs offered by content level</dt><dd>{byContent.map((pack) => pack.name).join(", ")}</dd></div>}
+      {!!inactive.length && <div><dt>Packs not offered (need their theme)</dt><dd>{inactive.map((pack) => pack.name).join(", ")}</dd></div>}
+      {!!intent.uncertain?.place?.length && <div><dt>Possible place (uncertain text guess)</dt><dd>{intent.uncertain.place.join(", ")}</dd></div>}
+      {!!intent.related?.length && <div><dt>Related to the request (optional)</dt><dd>{intent.related.map((item) => `${item.id} (${item.why})`).join("; ")}</dd></div>}
+      {!!intent.rejected?.length && <div><dt>Partial matches not used</dt><dd>{intent.rejected.map((item) => `${item.id} (${item.why})`).join("; ")}</dd></div>}
       {!!fixed.length && <div><dt>Fixed by the request</dt><dd>{fixed.map(([group, names]) => `${group}: ${names.join(", ")}`).join("; ")}</dd></div>}
       {!!ruledOut.length && <div><dt>Ruled out by the request</dt><dd>{ruledOut.map(([key, words]) => `${key} (${words.join(", ")})`).join("; ")}</dd></div>}
     </dl>
@@ -146,14 +183,20 @@ export function RetrievalResults({ result, onNavigate, packs }) {
   const scenes = (result.scenes || []).filter((scene) => scene.entries.length || scene.ideas.length);
   const chip = (id, named) => <li key={id}>{known[id] ? <Chip item={known[id]} named={named} /> : <span className="vocabulary-chip">{id}</span>}</li>;
   const offered = result.entries.length + ideas.length;
+  const coverage = previewCoverage(result, ideas);
+  const offeredIds = new Set(coverage.offered_ids || []);
+  const images = plural(coverage.images, "image");
   return <div className="vocabulary-retrieval-results" aria-label="Retrieval results">
     <header className="vocabulary-results-summary">
       <h4>What the Director gets</h4>
-      <ul className="vocabulary-stats">
-        <li><strong>{result.entries.length}</strong><span>named by the request</span></li>
-        <li><strong>{ideas.length}</strong><span>{ideas.length === 1 ? "idea" : "ideas"}</span></li>
-        <li><strong>{scenes.length}</strong><span>{scenes.length === 1 ? "scene with suggestions" : "scenes with suggestions"}</span></li>
+      <ul className="vocabulary-stats" aria-label="Preview counts">
+        <li><strong>{result.entries.length}</strong><span>named by the request (every image)</span></li>
+        <li><strong>{ideas.length}</strong><span>eligible {ideas.length === 1 ? "idea" : "ideas"} in the pool</span></li>
+        <li><strong>{coverage.distinct}</strong><span>different ideas offered in {images}</span></li>
+        <li><strong>{coverage.suggestions}</strong><span>suggestions across {images}</span></li>
       </ul>
+      {!!ideas.length && <p className="vocabulary-section-help">Every eligible idea can be offered; the preview shows the first {images} of a run.
+        A longer run offers more of the pool.</p>}
       <p className="text-muted"><strong>{result.nsfw ? "General, Mature and Adult ratings allowed" : "General and Mature ratings allowed"}.</strong> Named entries are what the request asks for. Ideas are optional: the Director may use or ignore them. Engine statuses describe declared compatibility, not content approval or proof of physical feasibility.</p>
     </header>
     {result.warnings.map((warning, index) => <div className="vocabulary-pack-problems" key={index}><p>{warning}</p>
@@ -170,7 +213,8 @@ export function RetrievalResults({ result, onNavigate, packs }) {
       {result.entries.length ? <Grouped items={result.entries} categoryName={categoryName} names={names} target={target} onNavigate={onNavigate} />
         : <p className="text-muted">No entries retrieved for this sample. The request names no specific entry; any suggestions come from ideas.</p>}</section>
     {!!ideas.length && <section className="vocabulary-results-section"><h4>Ideas (optional inspiration)</h4>
-      <Grouped items={ideas} categoryName={categoryName} names={names} target={target} onNavigate={onNavigate} /></section>}
+      <p className="vocabulary-section-help">Each category lists its whole eligible pool, best first. Long lists show {PAGE} at a time; hidden entries stay in the pool.</p>
+      <Grouped items={ideas} categoryName={categoryName} coverage={coverage} offered={offeredIds} names={names} target={target} onNavigate={onNavigate} /></section>}
     <Intent intent={result.intent} />
     <div className="vocabulary-results-more">
       {!!result.cast.length && <details><summary>Cast inferred by the engine</summary><Fields value={result.cast} references={[]} onNavigate={onNavigate} /></details>}
@@ -181,13 +225,41 @@ export function RetrievalResults({ result, onNavigate, packs }) {
   </div>;
 }
 
+const packScopes = { enabled: "enabled in Pack Manager", choose: "chosen for this test", run: "a stored Dataset run's" };
+
+/** Which packs an inspection uses, matching what a Dataset run would use. Never changes the global settings. */
+function InspectionPacks({ state, packs }) {
+  const { editScope, loadRun } = state;
+  const scope = state.scope || { mode: "enabled", selected: null, runId: "", run: null };
+  const names = Object.fromEntries(packs.map((pack) => [pack.id, pack.name || pack.id]));
+  const problem = scopeProblem(scope);
+  return <div className="vocabulary-inspection-packs">
+    <div role="radiogroup" aria-label="Inspection packs" className="vocabulary-inspection-scopes">
+      {Object.keys(packScopes).map((mode) => <label key={mode}><input type="radio" name="inspection-packs" value={mode}
+        checked={scope.mode === mode} onChange={() => editScope({ mode })} />{mode === "enabled" ? "Packs enabled in Pack Manager" : mode === "choose" ? "Choose packs, as in Dataset" : "A stored Dataset run's recorded packs"}</label>)}
+    </div>
+    {scope.mode === "choose" && <PackSelector packs={packs} selected={scope.selected ?? defaultPackSelection(packs)}
+      onChange={(selected) => editScope({ selected })} label="Packs for this test" />}
+    {scope.mode === "run" && <>
+      <div className="vocabulary-run-loader">
+        <label className={ui.field}><span>Dataset run ID</span><input className={ui.input} aria-label="Dataset run ID" value={scope.runId}
+          maxLength={200} onChange={(event) => editScope({ runId: event.target.value, run: null, runError: "" })} /></label>
+        <button type="button" className={ui.button} disabled={!scope.runId.trim() || scope.runLoading} onClick={loadRun}>{scope.runLoading ? "Loading…" : "Load run"}</button>
+      </div>
+      {scope.runError && <p className={ui.message} role="alert">{scope.runError}</p>}
+      {scope.run && <RecordedPacks recorded={scope.run.packs} status={scope.run.status} names={names} title={`Run ${scope.run.run_id}`} />}
+      {problem && scope.run && <p className="vocabulary-section-help" role="note">{problem}</p>}
+    </>}
+  </div>;
+}
+
 function RequestTester({ state, packs, openEntry }) {
   const { sample, editSample, result, inspecting, inspectionError, inspect, detail, detailLoading, detailError, clearEntry, reload, entry } = state;
-  const [shown, setShown] = useState({ cast: false, brief: false });
+  const [shown, setShown] = useState({ cast: false, brief: false, packs: false });
   const toggle = (key) => (event) => { const open = event.currentTarget.open; setShown((current) => current[key] === open ? current : { ...current, [key]: open }); };
   return <section className="vocabulary-retrieval" aria-label="Retrieval inspection">
     <div className="vocabulary-tester-intro"><div><h3>Test a request</h3>
-      <p>Type a request like you would in Dataset and see which vocabulary the scene Director would be offered. Uses only enabled packs. No LLM, scene generation or saved changes.</p></div></div>
+      <p>Type a request like you would in Dataset and see which vocabulary the scene Director would be offered. Uses the enabled packs unless you choose packs or a stored run below. No LLM, scene generation or saved changes.</p></div></div>
     <form onSubmit={(event) => { event.preventDefault(); inspect(); }}>
       <label className={ui.field}><span>Request</span><textarea className="control textarea" aria-label="Vocabulary sample request"
         value={sample.request} maxLength={4000} rows={3} onChange={(event) => editSample({ request: event.target.value })} placeholder="A dragon resting on a cliff" required /></label>
@@ -201,17 +273,24 @@ function RequestTester({ state, packs, openEntry }) {
           <label className={ui.field}><span>Avoid (one per line)</span><textarea className="control textarea" aria-label="Inspection avoid" value={sample.avoid ?? ""}
             maxLength={4200} rows={2} onChange={(event) => editSample({ avoid: event.target.value })} placeholder="no text or logos" /></label>
           <label className={ui.field}><span>Seed</span><input className={ui.input} aria-label="Inspection seed" inputMode="numeric" value={sample.seed ?? "0"}
-            maxLength={10} onChange={(event) => editSample({ seed: event.target.value.replace(/\D/g, "") })} /></label></div></details>
+            maxLength={10} onChange={(event) => editSample({ seed: event.target.value.replace(/\D/g, "") })} /></label>
+          <label className={ui.field}><span>Preview images</span><select className={ui.select} aria-label="Inspection preview images"
+            value={String(sample.previewImages ?? PREVIEW_SCENES)} onChange={(event) => editSample({ previewImages: event.target.value })}>
+            {PREVIEW_CHOICES.map((count) => <option key={count} value={count}>{count}</option>)}</select></label></div></details>
+      <details open={shown.packs} onToggle={toggle("packs")}><summary>Packs: {packScopes[state.scope?.mode || "enabled"]}</summary>
+        <InspectionPacks state={state} packs={packs} /></details>
       <div className="vocabulary-inspection-actions"><label className={ui.toggleRow}>
         <input type="checkbox" className={ui.toggleInput} role="switch" aria-label="Allow Adult rating in inspection" checked={sample.nsfw}
           onChange={(event) => editSample({ nsfw: event.target.checked })} /><span className={ui.switch} /><span className={ui.toggleLabel}>Allow Adult rating</span></label>
-        <button className={ui.primaryButton} disabled={inspecting || !sample.request.trim()}><Search size={15} />{inspecting ? "Inspecting…" : "Inspect retrieval"}</button></div>
+        <button className={ui.primaryButton} disabled={inspecting || !sample.request.trim() || !!(state.scope && scopeProblem(state.scope))}><Search size={15} />{inspecting ? "Inspecting…" : "Inspect retrieval"}</button></div>
       <p className="vocabulary-footer">This rating filter is not Dataset content approval. Normal Dataset eligibility checks still apply.</p>
     </form>
     {inspectionError && <div className={ui.message} role="alert">{inspectionError}</div>}
     {entry && <div className="vocabulary-detail-panel" aria-live="polite">{detailLoading ? <p role="status">Loading entry details…</p>
       : detailError ? <div className={ui.message} role="alert"><span>{detailError}</span><button className={ui.button} onClick={reload}>Retry entry</button></div>
         : detail && <EntryDetails detail={detail} onNavigate={openEntry} onBack={clearEntry} />}</div>}
+    {result?.selection && <p className="vocabulary-section-help" aria-label="Packs used">Packs used: {result.selection.packs.map((pack) =>
+      `${pack.id} v${pack.version}${pack.role === "dependency" ? " (dependency)" : ""}`).join(", ")}</p>}
     {result && <RetrievalResults result={result} onNavigate={openEntry} packs={packs} />}
   </section>;
 }

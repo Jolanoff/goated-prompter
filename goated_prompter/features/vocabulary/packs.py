@@ -16,6 +16,7 @@ than the pack. No compatibility resolution, retrieval or scene logic lives here.
 """
 
 from dataclasses import dataclass, field, replace
+import hashlib
 import io
 import json
 import os
@@ -30,6 +31,7 @@ import zipfile
 import jsonschema
 
 from ...config import PROJECT_ROOT
+from .semantic import terms
 
 SCHEMA_DIR = PROJECT_ROOT / "vocabulary" / "schemas"
 BUNDLED_DIRS = (PROJECT_ROOT / "vocabulary" / "core",)  # mandatory
@@ -47,6 +49,11 @@ MAX_FILES = 500
 MAX_RATIO = 100  # largest allowed uncompressed / compressed size of one archive member
 _VERSION = re.compile(r"^([0-9]+)\.([0-9]+)\.([0-9]+)$")
 _RANGE_PART = re.compile(r"^(>=|>|<=|<|=)?([0-9]+\.[0-9]+\.[0-9]+)$")
+
+
+def activation(manifest):
+    """When a pack's entries may be offered as unrequested ideas (SPEC section 1): "theme" (the default) or "content"."""
+    return manifest.get("activation", "theme")
 
 
 class VocabularyError(ValueError):
@@ -71,7 +78,8 @@ class Pack:
         return {"id": self.id, "name": self.manifest["name"], "version": self.manifest["version"],
                 "description": self.manifest.get("description", ""),
                 "origin": "core" if self.mandatory else "bundled" if self.bundled else "installed",
-                "rating": self.manifest["rating"], "bundled": self.bundled, "mandatory": self.mandatory,
+                "rating": self.manifest["rating"], "activation": "always" if self.mandatory else activation(self.manifest),
+                "bundled": self.bundled, "mandatory": self.mandatory,
                 "enabled": self.enabled, "requires": dict(self.manifest.get("requires", {})), "entries": len(self.entries)}
 
 
@@ -125,6 +133,61 @@ def schema_issues(name, data, prefix=()):
             for error in _validator(name).iter_errors(data)]
 
 
+class PackDrift(VocabularyError):
+    """A recorded pack selection no longer matches the packs on disk. drift lists each difference."""
+
+    def __init__(self, drift):
+        self.drift = list(drift)
+        super().__init__([f"{item['id']}: {item['detail']}" for item in self.drift])
+
+
+# ---------------------------------------------------------------- per-run pack selection
+
+SELECTION_VERSION = 1
+SELECTION_ROLES = ("core", "selected", "dependency")
+SELECTION_ORIGINS = ("core", "bundled", "installed")
+_FINGERPRINT = re.compile(r"^sha256:[0-9a-f]{64}$")
+
+
+def pack_fingerprint(pack):
+    """What retrieval reads of a pack, hashed: manifest.json and every entry file it lists, byte for byte, in name
+    order. Any edit changes it, with or without a version bump. Supporting text (README...) is not read and not hashed."""
+    digest = hashlib.sha256()
+    for name in ["manifest.json", *sorted(pack.manifest["files"])]:
+        data = (Path(pack.path) / name).read_bytes()
+        digest.update(f"{name}\0{len(data)}\0".encode("utf-8"))
+        digest.update(data)
+    return "sha256:" + digest.hexdigest()
+
+
+def validate_selection(value):
+    """A recorded selection: {version, enabled, selected, packs}. Raises VocabularyError when malformed."""
+    if (not isinstance(value, dict) or set(value) != {"version", "enabled", "selected", "packs"}
+            or value["version"] != SELECTION_VERSION or type(value["enabled"]) is not bool):
+        raise VocabularyError("A pack selection needs exactly version 1, enabled, selected and packs.")
+    if not isinstance(value["selected"], list) or not isinstance(value["packs"], list):
+        raise VocabularyError("A pack selection lists its selected ids and its packs.")
+    for pack_id in value["selected"]:
+        validate_pack_id(pack_id)
+    ids = []
+    for item in value["packs"]:
+        if (not isinstance(item, dict) or set(item) != {"id", "role", "origin", "version", "fingerprint"}
+                or item["role"] not in SELECTION_ROLES or item["origin"] not in SELECTION_ORIGINS
+                or not isinstance(item["version"], str) or not _VERSION.match(item["version"])
+                or not isinstance(item["fingerprint"], str) or not _FINGERPRINT.match(item["fingerprint"])):
+            raise VocabularyError("Each selected pack needs id, role, origin, version and a sha256 fingerprint.")
+        validate_pack_id(item["id"])
+        ids.append(item["id"])
+    if ids != sorted(set(ids)) or sorted(value["selected"]) != value["selected"] or len(set(value["selected"])) != len(value["selected"]):
+        raise VocabularyError("A pack selection lists each pack once, in id order.")
+    if value["enabled"] and (not any(item["role"] == "core" for item in value["packs"])
+                             or {item["id"] for item in value["packs"] if item["role"] == "selected"} != set(value["selected"])):
+        raise VocabularyError("An enabled pack selection holds the core and exactly the selected packs.")
+    if not value["enabled"] and (value["packs"] or value["selected"]):
+        raise VocabularyError("A disabled vocabulary selection holds no packs.")
+    return value
+
+
 def validate_pack_id(pack_id):
     schema = _validator("manifest").schema["$defs"]["packId"]
     if not isinstance(pack_id, str) or not jsonschema.Draft202012Validator(schema).is_valid(pack_id):
@@ -150,6 +213,12 @@ def read_pack(folder, *, bundled, enabled=True):
     pack_id = manifest["id"]
     if not bundled and folder.name != pack_id:
         problems.append(f"{pack_id}: the folder must be named after the pack id")
+    for theme in manifest.get("themes", []):
+        words = terms(theme)
+        if not words or set(words) <= set(RATINGS):
+            problems.append(f"{pack_id}: theme \"{theme}\" needs a word that is not a rating (a rating is the content level)")
+    if activation(manifest) == "content" and manifest["rating"] == "general":
+        problems.append(f"{pack_id}: content activation needs a Mature or Adult pack rating (a General pack has no content level)")
     listed = set(manifest["files"])
     for path in folder.iterdir():
         if path.is_symlink() or not path.is_file():
@@ -647,6 +716,119 @@ class PackManager:
         """The merged registry of every enabled pack."""
         with self._lock:
             return build_registry(self._packs())
+
+    # -- per-run selection (never changes the global enabled state)
+    def _inventory(self):
+        """({id: (Pack, origin)} for every pack that reads on its own, {id: problems} for the rest), whatever the
+        global enabled state."""
+        available, broken, seen = {}, {}, {}
+        for where, folders in (("core", self.bundled_dirs), ("official", self._official_folders()),
+                               ("installed", self._installed_folders())):
+            for folder in folders:
+                folder = Path(folder)
+                if problem := self._duplicate(folder.name, where, seen):
+                    broken[folder.name] = [problem]
+                    continue
+                try:
+                    pack = (read_pack(folder, bundled=True) if where == "core" else
+                            self._optional(folder, bundled=where == "official", enabled=True))
+                    pack.mandatory = where == "core"
+                    available[pack.id] = (pack, "bundled" if where == "official" else where)
+                except (VocabularyError, OSError) as error:
+                    broken[folder.name] = list(getattr(error, "problems", [str(error)]))
+        return available, broken
+
+    def resolve_selection(self, selected, *, enabled=True):
+        """The pack configuration of one Dataset run or Inspector sample: the core, the packs the user selected and
+        every pack they require, resolved in id order whatever the global enabled state, with each pack's version
+        and content fingerprint. Raises VocabularyError naming every unknown, invalid or dependency-blocked pack."""
+        if not isinstance(selected, (list, tuple)) or any(not isinstance(pack_id, str) for pack_id in selected):
+            raise VocabularyError("Select vocabulary packs by their ids.")
+        for pack_id in selected:
+            validate_pack_id(pack_id)
+        if not enabled:
+            return {"version": SELECTION_VERSION, "enabled": False, "selected": [], "packs": []}
+        with self._lock:
+            available, broken = self._inventory()
+            roles = {pack_id: "core" for pack_id, (pack, _) in available.items() if pack.mandatory}
+            chosen, problems = sorted(set(selected) - set(roles)), []
+            for pack_id in chosen:
+                if pack_id in broken:
+                    problems.extend(f"{pack_id}: {problem}" for problem in broken[pack_id])
+                elif pack_id not in available:
+                    problems.append(f"{pack_id} is not installed")
+                else:
+                    roles[pack_id] = "selected"
+            pending = [pack_id for pack_id in chosen if pack_id in available]
+            while pending:
+                current = pending.pop(0)
+                for required in sorted(available[current][0].manifest.get("requires", {})):
+                    if required in roles:
+                        continue
+                    if required in available:
+                        roles[required] = "dependency"
+                        pending.append(required)
+                    else:
+                        problems.append(f"{current} requires {required}, which is {'invalid' if required in broken else 'not installed'}")
+            if not problems:
+                try:
+                    build_registry([replace(available[pack_id][0], enabled=True) for pack_id in sorted(roles)])
+                except VocabularyError as error:
+                    problems.extend(error.problems)
+            if problems:
+                raise VocabularyError(list(dict.fromkeys(problems)))
+            return validate_selection({
+                "version": SELECTION_VERSION, "enabled": True, "selected": chosen,
+                "packs": [{"id": pack_id, "role": roles[pack_id], "origin": available[pack_id][1],
+                           "version": available[pack_id][0].manifest["version"], "fingerprint": pack_fingerprint(available[pack_id][0])}
+                          for pack_id in sorted(roles)]})
+
+    def selection_drift(self, selection):
+        """[{id, problem, detail}] for every way the packs on disk differ from a recorded selection: missing, invalid,
+        another version, the same version with other content, or a requirement outside the recorded set. A pack
+        disabled globally is not drift: a run's selection never depends on the global enabled state."""
+        validate_selection(selection)
+        with self._lock:
+            available, broken = self._inventory()
+        recorded, drift = {item["id"] for item in selection["packs"]}, []
+        for item in selection["packs"]:
+            pack_id = item["id"]
+            if pack_id not in available:
+                drift.append({"id": pack_id, "problem": "invalid" if pack_id in broken else "missing",
+                              "detail": "; ".join(broken[pack_id]) if pack_id in broken else "the pack is no longer installed"})
+                continue
+            pack = available[pack_id][0]
+            if pack.manifest["version"] != item["version"]:
+                drift.append({"id": pack_id, "problem": "version",
+                              "detail": f"recorded version {item['version']}, now {pack.manifest['version']}"})
+            elif pack_fingerprint(pack) != item["fingerprint"]:
+                drift.append({"id": pack_id, "problem": "changed",
+                              "detail": f"its content changed since it was recorded (still version {item['version']})"})
+            for required in sorted(pack.manifest.get("requires", {})):
+                if required not in recorded:
+                    drift.append({"id": pack_id, "problem": "dependency",
+                                  "detail": f"now requires {required}, which the recorded selection does not hold"})
+        return drift
+
+    def selection_status(self, selection):
+        """{exact, drift, disabled_globally} for a recorded selection, for display. Nothing is changed."""
+        drift = self.selection_drift(selection)
+        with self._lock:
+            disabled = self._disabled()
+        return {"exact": not drift, "drift": drift,
+                "disabled_globally": sorted(item["id"] for item in selection["packs"] if item["id"] in disabled)}
+
+    def registry_for(self, selection):
+        """The registry of exactly a recorded selection's packs. Raises PackDrift when any of them no longer holds the
+        recorded content: there is no silent fallback to another version or to the global selection."""
+        if not validate_selection(selection)["enabled"]:
+            raise VocabularyError("This selection uses no vocabulary.")
+        with self._lock:
+            drift = self.selection_drift(selection)
+            if drift:
+                raise PackDrift(drift)
+            available, _ = self._inventory()
+            return build_registry([replace(available[item["id"]][0], enabled=True) for item in selection["packs"]])
 
     def inspect_pack(self, pack_id, origin=None):
         """Read one pack and resolve its dependency closure without enabling or writing anything.

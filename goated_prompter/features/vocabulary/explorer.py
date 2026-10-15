@@ -1,11 +1,11 @@
 """Read-only catalogue projections; resolution and retrieval stay with their existing owners."""
 
 from ...options.vocabulary import CATALOGUE_SORTS
-from .packs import RATINGS, VocabularyError, entry_references
+from .packs import RATINGS, VocabularyError, entry_references, validate_selection
 from .retrieval import RetrievalRequest, retrieve
 
 
-SAMPLE_KEYS = {"request", "nsfw", "characters", "randomized", "avoid", "seed", "scenes"}
+SAMPLE_KEYS = {"request", "nsfw", "characters", "randomized", "avoid", "seed", "scenes", "packs", "recorded"}
 MAX_SEED, MAX_SCENES = 2**31 - 1, 20
 
 
@@ -28,8 +28,18 @@ def inspection_sample(payload):
         raise ValueError("Use up to 20 avoid phrases of 1–200 characters each.")
     if type(seed) is not int or not 0 <= seed <= MAX_SEED or type(scenes) is not int or not 1 <= scenes <= MAX_SCENES:
         raise ValueError(f"The seed must be a whole number from 0 to {MAX_SEED} and the scene count 1–{MAX_SCENES}.")
-    return {"request": text, "nsfw": nsfw, "characters": characters, "randomized": randomized, "avoid": avoid,
-            "seed": seed, "scenes": scenes}
+    sample = {"request": text, "nsfw": nsfw, "characters": characters, "randomized": randomized, "avoid": avoid,
+              "seed": seed, "scenes": scenes}
+    # Which packs answer: the selected pack ids (resolved like a Dataset run's), or a stored run's recorded selection.
+    if "packs" in payload and "recorded" in payload:
+        raise ValueError("Inspect either selected packs or a run's recorded selection, not both.")
+    if "packs" in payload:
+        if not isinstance(payload["packs"], list) or len(payload["packs"]) > 200 or any(not isinstance(item, str) for item in payload["packs"]):
+            raise ValueError("Selected packs must be a list of pack ids.")
+        sample["packs"] = payload["packs"]
+    if "recorded" in payload:
+        sample["recorded"] = validate_selection(payload["recorded"])
+    return sample
 
 
 def catalogue(manager, pack_id, *, origin=None, query="", category="", rating="", sort="name"):
@@ -81,8 +91,15 @@ def entry_detail(manager, entry_id, *, origin=None):
             "references": references, "problems": view["problems"]}
 
 
-def inspect_retrieval(manager, request, **sample):
-    # No Understanding, model call or scene generation: only the existing deterministic engine.
+def inspect_retrieval(manager, request, packs=None, recorded=None, **sample):
+    """No Understanding, model call or scene generation: only the existing deterministic engine, on the packs a Dataset
+    run would use: selected pack ids resolved the same way, a stored run's recorded selection exactly (refused with the
+    differences when the packs changed since), or, without either, the globally enabled packs."""
+    if recorded is not None or packs is not None:
+        selection = recorded if recorded is not None else manager.resolve_selection(packs)
+        if not selection["enabled"]:
+            raise VocabularyError("This selection uses no vocabulary.")
+        return {**inspect_registry(manager.registry_for(selection), request, **sample), "selection": selection}
     return inspect_registry(manager.registry(), request, **sample)
 
 
@@ -98,4 +115,17 @@ def inspect_registry(registry, request, *, nsfw=False, characters=(), randomized
     result = found.to_dict()
     for kind in ("excluded", "suppressed"):
         result[kind] = [{**item, "pack": registry.owner(item["id"])} for item in result[kind]]
-    return {"nsfw": nsfw, **result, "seed": seed, "scenes": found.scenes(scenes)}
+    plan = found.scenes(scenes)
+    return {"nsfw": nsfw, **result, "seed": seed, "scenes": plan, "coverage": coverage(found, plan)}
+
+
+def coverage(found, plan):
+    """What the previewed images use of the pool: every eligible idea per category, the distinct ideas offered across
+    those images and every suggestion (one idea offered to one image). The pool itself is never limited by a preview."""
+    category = {entry.id: entry.category for entry in found.inspiration}
+    offered = [entry_id for scene in plan for entry_id in scene["ideas"]]
+    distinct = list(dict.fromkeys(offered))
+    return {"images": len(plan), "named_per_image": len(found.entries),
+            "eligible": {key: len(pool) for key, pool in found.pools},
+            "offered": {key: sum(category.get(entry_id) == key for entry_id in distinct) for key, _ in found.pools},
+            "distinct": len(distinct), "suggestions": len(offered), "offered_ids": distinct}

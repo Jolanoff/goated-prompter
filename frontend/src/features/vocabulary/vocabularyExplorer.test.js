@@ -1,16 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { transformWithEsbuild } from "vite";
+import { compileView } from "./testSupport.js";
 
-const source = new URL("./VocabularyExplorer.jsx", import.meta.url);
-const { code } = await transformWithEsbuild(await readFile(source, "utf8"), source.pathname,
-  { loader: "jsx", jsx: "automatic", sourcemap: false });
-const linked = code.replace(/from (["'])([^"']+)\1/g, (_match, _quote, specifier) =>
-  `from ${JSON.stringify(specifier.startsWith(".") ? new URL(specifier, source).href : import.meta.resolve(specifier))}`);
-const { EntryDetails, ExplorerView, RetrievalResults } = await import(`data:text/javascript;base64,${Buffer.from(linked).toString("base64")}`);
+// compileView also compiles the JSX views the explorer imports (PackSelector.jsx).
+const { EntryDetails, ExplorerView, RetrievalResults } = await import(await compileView(new URL("./VocabularyExplorer.jsx", import.meta.url)));
 const noop = () => {};
 const pack = { id: "adult", name: "Adult", origin: "bundled", rating: "adult", enabled: false, valid: true };
 const raw = { id: "adult:position.sample", name: "Sample position", category: "position", aliases: ["Direct alias"],
@@ -135,6 +130,31 @@ test("retrieval inspection shows detected intent, named entries versus ideas, cl
   assert.doesNotMatch(markup, /Scene 2/, "a scene with nothing offered is not listed");
 });
 
+test("retrieval inspection says which packs the content level offered and which need their theme", () => {
+  const intent = (activation) => ({ nsfw: true, cast: [], warnings: [], entries: [], excluded: [], suppressed: [], inspiration: [],
+    intent: { content: "adult", themes: [], fixed: {}, ruled_out: {}, per_scene: 3, categories: [], activation } });
+  const markup = renderToStaticMarkup(createElement(RetrievalResults, { result: intent([
+    { pack: "adult", name: "Adult", state: "content", why: "the brief asks for adult content" },
+    { pack: "niche", name: "Niche", state: "inactive", why: "needs its theme: the content level alone does not offer this pack" }]),
+  onNavigate: noop, packs: [pack] }));
+  assert.ok(markup.includes("Packs offered by content level</dt><dd>Adult</dd>"));
+  assert.ok(markup.includes("Packs not offered (need their theme)</dt><dd>Niche</dd>"));
+  const without = renderToStaticMarkup(createElement(RetrievalResults, { result: intent(undefined), onNavigate: noop, packs: [pack] }));
+  assert.doesNotMatch(without, /Packs offered by content level|Packs not offered/, "results from before activation still render");
+});
+
+test("retrieval inspection explains related and unused partial matches", () => {
+  const result = { nsfw: true, cast: [], warnings: [], entries: [], excluded: [], suppressed: [], inspiration: [],
+    intent: { content: null, themes: [], fixed: {}, ruled_out: {}, per_scene: 3, categories: [],
+      related: [{ id: "x:item.guitar", why: "it provides what Strum a song, which the request names, needs" }],
+      rejected: [{ id: "x:space.play_room", why: "only one word of a longer name or alias" }], uncertain: { place: ["at play"] } } };
+  const markup = renderToStaticMarkup(createElement(RetrievalResults, { result, onNavigate: noop, packs: [pack] }));
+  assert.ok(markup.includes("Related to the request (optional)</dt><dd>x:item.guitar (it provides what Strum a song, which the request names, needs)"));
+  assert.ok(markup.includes("Partial matches not used</dt><dd>x:space.play_room (only one word of a longer name or alias)"));
+  assert.ok(markup.includes("Possible place (uncertain text guess)</dt><dd>at play</dd>"));
+  assert.doesNotMatch(markup, /Fixed by the request/, "a guess is never shown as fixed");
+});
+
 test("older results without intent or ideas still render", () => {
   const result = { nsfw: false, cast: [], warnings: ["no relevant vocabulary for this request"], entries: [], excluded: [], suppressed: [] };
   const markup = renderToStaticMarkup(createElement(RetrievalResults, { result, onNavigate: noop, packs: [pack] }));
@@ -176,4 +196,74 @@ test("a cast with no matching body gets an actionable hint", () => {
     warnings: ["Character 1: no vocabulary body matches, so compatibility involving them is unknown"] };
   const markup = renderToStaticMarkup(createElement(RetrievalResults, { result, onNavigate: noop, packs: [pack] }));
   assert.match(markup, /Try: Describe characters with words a body entry knows, such as man, woman or person/);
+});
+
+test("inspection sends the same pack scope a Dataset run uses: chosen ids or a run's recorded selection", async () => {
+  const { inspectionPayload, scopeProblem } = await import("./useVocabularyExplorer.js");
+  const sample = { request: "A boat", nsfw: false, characters: "" };
+  assert.equal("packs" in inspectionPayload(sample), false);
+  assert.equal("recorded" in inspectionPayload(sample), false);
+  assert.deepEqual(inspectionPayload(sample, { mode: "choose", selected: ["boats"] }).packs, ["boats"]);
+  const recorded = { version: 1, enabled: true, selected: [], packs: [] };
+  const fromRun = inspectionPayload(sample, { mode: "run", run: { packs: recorded } });
+  assert.equal(fromRun.recorded, recorded);
+  assert.equal("packs" in fromRun, false);
+  assert.match(scopeProblem({ mode: "run", run: null }), /Load a stored Dataset run/);
+  assert.match(scopeProblem({ mode: "run", run: { packs: { recorded: false } } }), /not recorded/);
+  assert.match(scopeProblem({ mode: "run", run: { packs: { ...recorded, enabled: false } } }), /no vocabulary/);
+  assert.equal(scopeProblem({ mode: "run", run: { packs: recorded } }), "");
+  assert.equal(scopeProblem({ mode: "choose", selected: [] }), "");
+});
+
+test("inspecting a stored run shows that run's recorded packs, not the global selection", () => {
+  const recorded = { version: 1, enabled: true, selected: [], packs: [
+    { id: "core", role: "core", origin: "core", version: "2.0.0", fingerprint: `sha256:${"d".repeat(64)}` }] };
+  const markup = renderExplorer({ scope: { mode: "run", selected: null, runId: "run-1", run: { run_id: "run-1", packs: recorded,
+    status: { exact: true, drift: [], disabled_globally: [] } }, runError: "", runLoading: false }, editScope: noop, loadRun: noop }, "test");
+  assert.match(markup, /Packs: a stored Dataset run&#x27;s/);
+  assert.match(markup, /Run run-1: Recorded packs unchanged/);
+  assert.match(markup, /v2\.0\.0/);
+  assert.doesNotMatch(markup, /aria-label="Use Adult"/);
+  const chosen = renderExplorer({ scope: { mode: "choose", selected: ["adult"], runId: "", run: null }, editScope: noop, loadRun: noop }, "test");
+  assert.match(chosen, /aria-label="Use Adult"[^>]*checked=""/);
+  assert.match(chosen, /Off in Pack Manager; used for this run only/);
+  const legacy = renderExplorer({ scope: { mode: "run", selected: null, runId: "old", run: { run_id: "old", packs: { recorded: false }, status: null } },
+    editScope: noop, loadRun: noop }, "test");
+  assert.match(legacy, /Not recorded/);
+  assert.match(legacy.match(/<button[^>]*>[^<]*(<svg[^]*?<\/svg>)?Inspect retrieval<\/button>/)[0], /disabled=""/);
+});
+
+test("results name the packs that answered", () => {
+  const markup = renderExplorer({ result: { nsfw: false, entries: [], ideas: [], scenes: [], warnings: [], cast: [], excluded: [], suppressed: [],
+    intent: null, seed: 0, selection: { version: 1, enabled: true, selected: ["boats"], packs: [
+      { id: "boats", role: "selected", origin: "installed", version: "1.0.0", fingerprint: "" },
+      { id: "harbor", role: "dependency", origin: "bundled", version: "1.0.0", fingerprint: "" }] } } }, "test");
+  assert.match(markup, /Packs used: boats v1\.0\.0, harbor v1\.0\.0 \(dependency\)/);
+});
+
+test("the preview counts eligible ideas, distinct offers and suggestions, and long pools page without shrinking", () => {
+  const idea = (n) => ({ id: `adult:position.p${n}`, name: `Pose ${n}`, pack: "adult", rating: "adult", category: "position", status: "eligible",
+    score: 2, description: "", why: [], needs: [], warnings: [], binding: null, checked_with: [], note: "", source: "inspiration",
+    scopes: ["category"], attach_to: [] });
+  const inspiration = Array.from({ length: 30 }, (_, n) => idea(n));
+  const scenes = Array.from({ length: 6 }, (_, n) => ({ scene: n + 1, entries: [], ideas: [`adult:position.p${n % 4}`] }));
+  const result = { nsfw: true, cast: [], warnings: [], entries: [], excluded: [], suppressed: [], seed: 1, inspiration, scenes,
+    coverage: { images: 6, named_per_image: 0, eligible: { position: 30 }, offered: { position: 4 }, distinct: 4, suggestions: 6,
+      offered_ids: ["adult:position.p0", "adult:position.p1", "adult:position.p2", "adult:position.p3"] } };
+  const markup = renderToStaticMarkup(createElement(RetrievalResults, { result, onNavigate: noop, packs: [pack] }));
+  for (const expected of ["eligible ideas in the pool", "different ideas offered in 6 images", "suggestions across 6 images",
+    "30 eligible · 4 offered in the preview", "18 more eligible entries not shown here; still in the pool.", "Show 12 more", "Show all 30", "Offered in preview"]) {
+    assert.ok(markup.includes(expected), expected);
+  }
+  assert.equal((markup.match(/vocabulary-match-heading/g) || []).length, 12, "12 shown at first; the other 18 stay in the pool");
+  const older = renderToStaticMarkup(createElement(RetrievalResults, { result: { ...result, coverage: undefined }, onNavigate: noop, packs: [pack] }));
+  assert.ok(older.includes("different ideas offered in 6 images"), "older results count from their scenes");
+  assert.ok(older.includes("30 eligible · 4 offered in the preview"));
+});
+
+test("the preview size goes into the payload and the form offers it", async () => {
+  const { inspectionPayload, PREVIEW_SCENES } = await import("./useVocabularyExplorer.js");
+  assert.equal(inspectionPayload({ request: "x", nsfw: false, characters: "", previewImages: "20" }).scenes, 20);
+  assert.equal(inspectionPayload({ request: "x", nsfw: false, characters: "", previewImages: "999" }).scenes, PREVIEW_SCENES);
+  assert.match(renderExplorer({}, "test"), /Inspection preview images/);
 });
