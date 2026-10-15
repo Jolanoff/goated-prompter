@@ -1,5 +1,7 @@
 """Dataset understanding, scene planning, per-scene and batch prompt admission."""
 
+import asyncio
+
 from aiohttp import web
 
 from .service import validate_dataset_draft
@@ -7,7 +9,9 @@ from .assignments import dataset_assignments
 from .intent import intent_signature
 from ...presets import get_director_preset
 from .plan import reusable_scene_plan, scene_is_usable, scene_unusable_reason
+from .v2.runs import RunStoreError, recorded_packs
 from .v2.understanding import VERSION, confirm, copied_input, copied_settings
+from .v2.vocabulary_packs import pack_status, select_packs
 from ...api.common import STATE, active_job_conflict, engine_request, json_object
 
 
@@ -86,8 +90,8 @@ async def confirm_endpoint(request):
     """Rebuild (issue 106): check and log the confirmed brief, then start Section 2 (scene writing)."""
     state = request.app[STATE]
     payload = await json_object(request)
-    if set(payload) != {"brief", "settings", "input", "operation", "confirmation_token"}:
-        raise ValueError("Expected the confirmed brief and prompt-engine settings. Rebuild the frontend if it is out of date.")
+    if set(payload) != {"brief", "settings", "input", "operation", "confirmation_token", "vocabulary_packs"}:
+        raise ValueError("Expected the confirmed brief, prompt-engine settings and vocabulary packs. Rebuild the frontend if it is out of date.")
     if payload["operation"] not in ("dataset", "dataset/scenes"):
         raise ValueError("Choose Dataset generation or scenes only.")
     data = validate_dataset_draft(payload["input"], generation=True, planning=True)
@@ -101,6 +105,8 @@ async def confirm_endpoint(request):
         raise ValueError("Dataset input changed after analysis. Review the updated request before generating.")
     brief = confirm(brief, data)
     director = get_director_preset(brief["settings"]["director"], strict=True)
+    # The run's own pack selection, resolved and fingerprinted now, before any inference (v2/vocabulary_packs.py).
+    packs = await asyncio.to_thread(select_packs, state.config(), payload["vocabulary_packs"])
     async with state.admission:
         if (conflict := active_job_conflict(state, "Wait for the active generation before generating again.")) is not None:
             return conflict
@@ -112,11 +118,24 @@ async def confirm_endpoint(request):
             prompt_length=brief["settings"]["length"], director_preset=director.id,
         )
         return web.json_response(state.start_job("dataset_v2_scenes", director_request, config, True,
-            {"operation": "dataset_v2_scenes", "brief": brief,
+            {"operation": "dataset_v2_scenes", "brief": brief, "vocabulary_packs": packs,
              "scenes_only": payload["operation"] == "dataset/scenes"}), status=202)
 
 
+async def run_packs_endpoint(request):
+    """A stored V2 run's recorded pack selection and how the packs on disk compare with it (read-only)."""
+    state = request.app[STATE]
+    try:
+        record = await asyncio.to_thread(state.dataset_runs.get, request.match_info["run_id"])
+    except RunStoreError as error:
+        return web.json_response({"ok": False, "error": str(error)}, status=404)
+    packs = recorded_packs(record)
+    status = await asyncio.to_thread(pack_status, packs) if packs.get("recorded", True) else None
+    return web.json_response({"ok": True, "run_id": record["run_id"], "schema": record["schema"], "packs": packs, "status": status})
+
+
 def register(app):
+    app.add_routes([web.get("/api/workspace/dataset/v2/runs/{run_id}/packs", run_packs_endpoint)])
     app.add_routes([web.post("/api/workspace/dataset", dataset_endpoint),
                     web.post("/api/workspace/dataset/understand", dataset_endpoint),
                     web.post("/api/workspace/dataset/v2/confirm", confirm_endpoint),

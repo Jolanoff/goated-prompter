@@ -9,6 +9,8 @@ import { datasetCopyText, datasetJsonl, datasetGenerationLog } from "./datasetEx
 import { editDatasetPlan } from "./datasetState.js";
 import { useDatasetWorkflow } from "./useDatasetWorkflow.js";
 import DatasetConfirmationModal from "./DatasetConfirmationModal.jsx";
+import { useDatasetPacks, useRunPacks } from "./useDatasetPacks.js";
+import { PackSelector, RecordedPacks } from "../vocabulary/PackSelector.jsx";
 import { RunPrompts, RunScenes } from "./DatasetRunPages.jsx";
 import { maxSeed, seedModes } from "./options.js";
 import { styles } from "../../shared/workflow/options.js";
@@ -74,12 +76,18 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
   const navigatedJob = useRef("");
   const availablePresets = orderDisplayPresets(presets || []);
   const director = availablePresets.find((item) => item.id === draft?.director_preset);
+  const vocabulary = useDatasetPacks(visible);
   const { starting, error, workflowActive, disabled,
     guidedLines, canPlanScenes, staleScenePlan, sceneUsable, validSceneCount, retryStage,
     canWrite, canContinue, remainingPromptCount, updateSceneSettings, updateWriterSettings,
     sceneAction, generateDataset, generateScenes, continueDataset, editResult, releaseCheckpoints, clearResults,
     confirmation, understanding, run, cancelConfirmation, confirmRequest } = useDatasetWorkflow({ preferences, job, busy, active, noEngine,
-      director, onGenerate: startGeneration, onReleaseJobs });
+      director, onGenerate: startGeneration, onReleaseJobs, vocabularyPacks: vocabulary.selected, packsReady: vocabulary.ready });
+  // A run shows the packs it recorded on the server, never the selector's current choice.
+  const runPacks = useRunPacks(run?.result?.run_id);
+  const packNames = Object.fromEntries(vocabulary.packs.map((pack) => [pack.id, pack.name || pack.id]));
+  const recordedPacks = run && (runPacks ? runPacks.error ? <p className={ui.warningNote} role="alert">Could not load this run's recorded packs. {runPacks.error}</p>
+    : <RecordedPacks recorded={runPacks.packs} status={runPacks.status} names={packNames} /> : null);
   const [clock, setClock] = useState(Date.now());
 
   const stageSeconds = workflowActive
@@ -347,17 +355,23 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
               </label>}
             </fieldset>
 
+            <div className="mt-5 border-t border-line pt-4">
+              {vocabulary.loading ? <p className="text-xs text-muted" role="status">Loading vocabulary packs…</p>
+                : <PackSelector packs={vocabulary.packs} selected={vocabulary.selected} onChange={vocabulary.choose}
+                  disabled={disabled} error={vocabulary.error} />}
+            </div>
+
           </fieldset>
         </section>
       </div>
         <footer className="dataset-config-actions">
-          <button className={ui.button} disabled={!canPlanScenes} onClick={generateScenes}>
+          <button className={ui.button} disabled={!canPlanScenes || !vocabulary.ready} onClick={generateScenes}>
             <Layers3 size={15} />Generate {draft.amount} {draft.amount === 1 ? "scene" : "scenes"} only
           </button>
           <div>
             {showContinue && <button className={ui.button} disabled={!canContinue}
               onClick={continueToDataset}><ArrowRight size={15} />Continue</button>}
-            <button className={ui.primaryButton} disabled={!canWrite} onClick={generateDataset}>
+            <button className={ui.primaryButton} disabled={!canWrite || !vocabulary.ready} onClick={generateDataset}>
               <Sparkles size={17} />{generationBusy ? "Generating" : "Generate"} {draft.amount} {generationUnit}{generationBusy ? "…" : ""}
             </button>
           </div>
@@ -366,7 +380,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
       </div>
 
       <div id="dataset-scenes" role="tabpanel" aria-labelledby="dataset-tab-scenes" tabIndex={0} hidden={page !== "scenes"}>
-      {page === "scenes" && run && <RunScenes run={run} onCopy={onCopy} onDownload={download} />}
+      {page === "scenes" && run && <>{recordedPacks}<RunScenes run={run} onCopy={onCopy} onDownload={download} /></>}
       {page === "scenes" && !run && <section className={`${ui.panel} dataset-scenes-panel`} aria-label="Scene Planner ideas">
         <header className={ui.panelHeader}>
           <div className={ui.panelIcon}><Layers3 size={21} /></div>
@@ -440,7 +454,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
         <div className="mt-4 flex flex-wrap gap-3">
           {showContinue && <button className={ui.primaryButton} disabled={!canContinue}
             onClick={continueToDataset}><ArrowRight size={15} />Continue</button>}
-          <button className={ui.button} disabled={!canPlanScenes} onClick={generateScenes}><RefreshCw size={14} />Generate new scenes</button>
+          <button className={ui.button} disabled={!canPlanScenes || !vocabulary.ready} onClick={generateScenes}><RefreshCw size={14} />Generate new scenes</button>
           <button className={ui.button} disabled={!draft.scene_plan.length}
              onClick={() => exportDataset("dataset-scenes.json", JSON.stringify(draft.scene_plan, null, 2), "application/json")}><FileJson size={14} />Scenes JSON</button>
         </div>
@@ -449,7 +463,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
       </div>
 
       <div id="dataset-dataset" role="tabpanel" aria-labelledby="dataset-tab-dataset" tabIndex={0} hidden={page !== "dataset"}>
-      {page === "dataset" && run && <RunPrompts run={run} onCopy={onCopy} onDownload={download} />}
+      {page === "dataset" && run && <>{recordedPacks}<RunPrompts run={run} onCopy={onCopy} onDownload={download} /></>}
       {page === "dataset" && !run && <section aria-label="Dataset results">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div><h3 className="font-display text-lg font-bold">Generated dataset</h3>

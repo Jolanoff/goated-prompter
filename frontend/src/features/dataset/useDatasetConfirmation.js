@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../../api.js";
 import { canConfirmDatasetReview, datasetRequestSignature, reviseDatasetRequest } from "./datasetState.js";
 
-export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm, setError }) {
+export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm, setError, vocabularyPacks = [] }) {
   const [confirmation, setConfirmation] = useState(null);
   const [understanding, setUnderstanding] = useState(null);
   // Rebuild (issue 106): the run started by Confirm; the tab's Scenes and Dataset pages show it.
@@ -11,6 +11,9 @@ export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm
   const opener = useRef(null);
   const latestDraft = useRef(draft);
   latestDraft.current = draft;
+  // The pack choice is frozen into each review when it starts and sent with Confirm (Phase 2).
+  const latestPacks = useRef(vocabularyPacks);
+  latestPacks.current = vocabularyPacks;
 
   async function analyze(item) {
     pending.current = item;
@@ -70,7 +73,7 @@ export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm
     // The review lock disables the launcher before showModal can remember it.
     opener.current = document.activeElement;
     setError("");
-    void analyze({ input, operation, options, baseSignature: datasetRequestSignature(draft) });
+    void analyze({ input, operation, options, baseSignature: datasetRequestSignature(draft), vocabulary_packs: [...latestPacks.current] });
   }
 
   function cancelConfirmation() {
@@ -87,7 +90,7 @@ export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm
     if (!confirmation || busy || ["analyzing", "confirming"].includes(confirmation.status)) return;
     const input = reviseDatasetRequest(confirmation.input, additions);
     const needsReplan = input !== confirmation.input;
-    void analyze({ input, baseSignature: confirmation.baseSignature,
+    void analyze({ input, baseSignature: confirmation.baseSignature, vocabulary_packs: confirmation.vocabulary_packs,
       operation: confirmation.operation === "dataset/scenes" ? "dataset/scenes" : needsReplan ? "dataset" : confirmation.operation,
       options: needsReplan ? {} : confirmation.options,
       notice: needsReplan ? "Understanding will use your corrections. Fresh scenes will be planned after confirmation." : confirmation.notice });
@@ -108,7 +111,7 @@ export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm
       pending.current = null;
       setUnderstanding({ ...item, status: "confirmed" });
       setConfirmation(null);
-      setRun({ jobId: accepted.id, brief: item.brief, status: "running", result: null, error: "" });
+      setRun({ jobId: accepted.id, brief: item.brief, vocabulary_packs: item.vocabulary_packs, status: "running", result: null, error: "" });
     } catch (err) {
       setConfirmation({ ...item, status: "ready", error: err.message });
     }

@@ -20,6 +20,25 @@ workflow must demonstrate these retained capabilities:
 
 These are requirements for final migration, not implemented rebuilt features.
 
+Progress so far (Phase 9B): each requested image keeps its slot number through every stage, and
+every V2 run is saved to `data/dataset_v2_runs/<run_id>.json` (`v2/runs.py`) as concepts,
+stagings, scenes and final prompts complete. A run left unfinished by a stopped backend is marked
+interrupted on the next start; nothing is regenerated. Saved runs are user work and are never
+deleted automatically; the store only reports runs outside the newest 20 complete and 20 incomplete
+ones as candidates for a future, explicit cleanup. A run's final status always matches its job's
+(cancellation, then server stop, then failure; succeeded only after the job succeeded). Reload
+recovery in the app, editing, regeneration and continuation are still to come.
+
+Per-run vocabulary packs (Phase 2): the Configure page chooses the packs a run uses, independent of
+the Pack Manager's enabled state. Confirm resolves the choice with the core and every required pack and
+saves it in the new run (schema 2, field `packs`: selected ids, each pack's role, version and content
+fingerprint) before any inference; the field never changes afterwards. Scene writing reads exactly those
+packs and fails before inference when any has drifted (vocabulary/schemas/SPEC.md). Schema 1 runs stay
+readable as they are, show their packs as not recorded, and are never rewritten; an unknown schema is
+reported incompatible and left untouched. `GET /api/workspace/dataset/v2/runs/<run_id>/packs` returns a
+run's recorded selection and how the installed packs compare, for the run pages and the Vocabulary
+Inspector.
+
 ### Phase 7: separate UI stages
 
 - **7A — Pack Manager:** manage installed packs and their enabled state.

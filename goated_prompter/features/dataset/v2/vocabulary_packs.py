@@ -19,11 +19,17 @@ knowledge, not a template:
 With nothing relevant, the switch off or a pack that cannot be loaded, nothing is added: the
 requests are byte-for-byte those of a run without vocabulary.
 
+Pack selection (Phase 2): each run uses the packs its owner selected for it, plus the core and every pack those
+require (select_packs, PackManager.resolve_selection), never the global enabled state. The selection is resolved and
+recorded with each pack's version and content fingerprint when the run is confirmed, before any inference; retrieval
+then reads exactly those packs (PackManager.registry_for) and stops the run, before the first concept, when one of
+them changed since: there is no silent fallback to another version or to the global packs.
+
 Comparison: "dataset_vocabulary": false in config.json turns retrieval off (default on). It is read
 for each run, changes nothing else, and every scenes debug trace and result records the state.
 """
 
-from ...vocabulary.packs import PackManager, VocabularyError
+from ...vocabulary.packs import PackDrift, PackManager, VocabularyError
 from ...vocabulary.retrieval import RATINGS, RetrievalConfig, RetrievalRequest, retrieve
 
 CONFIG_KEY = "dataset_vocabulary"
@@ -41,7 +47,26 @@ def _nothing(numbers=()):
     return ""
 
 
-def vocabulary_reference(config, brief, *, director="", manager=None):
+def select_packs(config, selected, *, manager=None):
+    """The pack selection to record for a new run: the user's selected pack ids resolved with the core and their
+    dependencies (vocabulary off in config.json: an empty, disabled selection). Raises ValueError naming every
+    unknown, invalid or dependency-blocked pack."""
+    if not isinstance(selected, list) or any(not isinstance(pack_id, str) for pack_id in selected):
+        raise ValueError("Select the Dataset vocabulary packs as a list of pack ids.")
+    try:
+        return (manager or PackManager()).resolve_selection(selected, enabled=enabled(config))
+    except VocabularyError as error:
+        raise ValueError("The selected vocabulary packs cannot be used: " + "; ".join(error.problems)) from None
+
+
+def pack_status(selection, *, manager=None):
+    """How the packs on disk compare with a recorded selection: {exact, drift, disabled_globally}. Read-only."""
+    if not selection["enabled"]:
+        return {"exact": True, "drift": [], "disabled_globally": []}
+    return (manager or PackManager()).selection_status(selection)
+
+
+def vocabulary_reference(config, brief, *, director="", manager=None, selection=None):
     """The vocabulary for this brief and what was logged about it.
 
     Returns {"enabled", "offer", "block", "provided", "log"}: offer(numbers) is the block for one request that
@@ -51,8 +76,15 @@ def vocabulary_reference(config, brief, *, director="", manager=None):
     if not enabled(config):
         return {"enabled": False, "offer": _nothing, "block": "", "provided": [],
                 "log": {"enabled": False, "reason": f'turned off in config.json ("{CONFIG_KEY}": false)'}}
+    if selection is not None and not selection["enabled"]:
+        return {"enabled": False, "offer": _nothing, "block": "", "provided": [],
+                "log": {"enabled": False, "reason": "the run's pack selection uses no vocabulary", "packs": selection}}
     try:
-        registry = (manager or PackManager()).registry()
+        # A recorded selection reads exactly its packs; without one (older callers) the enabled packs are read.
+        registry = (manager or PackManager()).registry_for(selection) if selection is not None else (manager or PackManager()).registry()
+    except PackDrift as drift:
+        raise ValueError("The selected vocabulary packs changed since this run was confirmed; review and confirm again: "
+                         + "; ".join(drift.problems)) from None
     except (VocabularyError, OSError) as error:
         problems = getattr(error, "problems", None) or [str(error)]
         return {"enabled": True, "offer": _nothing, "block": "", "provided": [],
@@ -69,7 +101,7 @@ def vocabulary_reference(config, brief, *, director="", manager=None):
     def offer(numbers):
         return found.offer(list(numbers))[0]
 
-    log = {"enabled": True, "packs": sorted({registry.owner(entry_id) for entry_id in registry.ids()}),
+    log = {"enabled": True, "packs": sorted({registry.owner(entry_id) for entry_id in registry.ids()}), "selection": selection,
            "allowed_ratings": list(allowed), **found.to_dict(), "scenes": found.scenes(len(images)), "seed": found.seed,
            "provided": provided, "provided_to": list(STEPS) if provided else [], "block": block}
     return {"enabled": True, "offer": offer, "block": block, "provided": provided, "log": log}

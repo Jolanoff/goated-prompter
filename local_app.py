@@ -28,6 +28,7 @@ from goated_prompter.features.dataset import routes as dataset_routes
 from goated_prompter.features.dataset.checkpoints import DatasetCheckpointStore
 from goated_prompter.features.dataset.idea_history import RecentIdeaHistory
 from goated_prompter.features.dataset.intent import DatasetIntentTickets
+from goated_prompter.features.dataset.v2.runs import DatasetRunStore
 from goated_prompter.features.minimax import routes as minimax_routes
 from goated_prompter.features.presets import routes as presets_routes
 from goated_prompter.features.prompt_library import routes as prompt_library_routes
@@ -82,6 +83,10 @@ class LocalState:
         self.dataset_checkpoints = DatasetCheckpointStore(checkpoint_path, read_store, atomic_json)
         self.dataset_checkpoints.recover()
         self.workflow_settings.dataset_checkpoints = self.dataset_checkpoints
+        # Dataset V2 runs: one file per run. Startup marks unfinished runs interrupted, keeps their
+        # completed work and starts no generation; unreadable files are reported and left alone.
+        self.dataset_runs = DatasetRunStore(self.settings_path.parent / "dataset_v2_runs")
+        self.dataset_run_recovery = self.dataset_runs.recover()
         self.jobs = OrderedDict()
         fingerprint_path = self.settings_path.parent / "idea_fingerprints.json"
         if fingerprint_path in {self.settings_path, self.prompts_path}:

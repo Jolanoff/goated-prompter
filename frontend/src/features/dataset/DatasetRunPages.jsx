@@ -4,6 +4,28 @@ import { datasetCopyText } from "./datasetExport.js";
 
 // Rebuild (issue 106): the Scenes and Dataset pages for a run started by Confirm.
 const pad = (number) => String(number).padStart(2, "0");
+const STAGES = { concepts: "concept", staging: "staging", description: "description" };
+
+const slotOf = (item, position) => (Number.isInteger(item?.slot) && item.slot > 0 ? item.slot
+  : Number.isInteger(item?.index) && item.index > 0 ? item.index : position + 1);
+
+/** One record per requested image, by its stable slot: status, guided input, scene and prompt.
+ * Older results without slots fall back to list positions. */
+export function runSlots(result) {
+  if (!result) return [];
+  const scenes = new Map((result.scenes || []).map((scene, position) => [slotOf(scene, position), scene]));
+  const prompts = new Map((result.prompts || []).map((item, position) => [slotOf(item, position), item]));
+  const records = result.slots?.length ? result.slots
+    : [...new Set([...scenes.keys(), ...prompts.keys(), ...(result.missing || []).map((item) => item.slot)])].sort((a, b) => a - b)
+      .map((slot) => ({ slot, status: scenes.has(slot) || prompts.has(slot) ? "written" : "failed", input: "",
+        ...(result.missing || []).find((item) => item.slot === slot) }));
+  return records.map((record) => ({ ...record, scene: scenes.get(record.slot) || null, prompt: prompts.get(record.slot) || null }));
+}
+
+/** Final prompts in slot order; failed or empty prompts are left out, never written as blank lines. */
+export function writtenPrompts(result) {
+  return runSlots(result).map((record) => record.prompt).filter((item) => item?.prompt?.trim());
+}
 
 function Line({ label, children }) {
   return <p className="dataset-scene-source"><strong>{label}:</strong> {children}</p>;
@@ -34,12 +56,19 @@ function RunNotes({ run }) {
   return <>
     {run.error && <p className={`${ui.warningNote} mt-3`} role="alert">{run.error}</p>}
     {result && !result.complete && <p className={`${ui.warningNote} mt-3`} role="status">
-      Incomplete: {result.written} of {result.requested} scenes written. Not written: {result.missing.map((item) => `concept ${item.slot}`).join(", ")}. The debug file says why.</p>}
+      Incomplete: {result.written} of {result.requested} scenes written. Not written: {(result.missing || []).map((item) => `image ${item.slot}`).join(", ")}. The debug file says why.</p>}
   </>;
+}
+
+function NotWritten({ record }) {
+  return <p className={`${ui.warningNote} mt-2`}>
+    Not written{record.stage ? ` (${STAGES[record.stage] || record.stage} failed)` : ""}.
+    {record.reasons?.length ? ` ${record.reasons.join(" ")}` : ""}</p>;
 }
 
 export function RunScenes({ run, onCopy, onDownload }) {
   const scenes = run.result?.scenes || [];
+  const records = runSlots(run.result);
   return <section className={`${ui.panel} dataset-scenes-panel`} aria-label="Scenes">
     <header className={ui.panelHeader}>
       <div className={ui.panelIcon}><Layers3 size={21} /></div>
@@ -54,12 +83,15 @@ export function RunScenes({ run, onCopy, onDownload }) {
         <button className={ui.button} onClick={() => onDownload("dataset-scenes.json", JSON.stringify(scenes, null, 2), "application/json")}><FileJson size={14} />Scenes JSON</button>
       </div>
       <div className="dataset-card-grid mt-4">
-        {scenes.map((scene, index) => <article key={index} className="dataset-card dataset-scene-card" aria-label={`Scene ${index + 1}`}>
+        {records.map((record) => <article key={record.slot} className="dataset-card dataset-scene-card" aria-label={`Image ${record.slot}`}>
           <header className="dataset-card-header dataset-scene-header">
-            <div className="dataset-scene-title"><Layers3 size={18} aria-hidden="true" /><h3>Scene <span>{pad(index + 1)}</span></h3></div>
-            <button className={ui.button} onClick={() => onCopy(JSON.stringify(scene, null, 2))}><Copy size={14} aria-hidden="true" />Copy</button>
+            <div className="dataset-scene-title"><Layers3 size={18} aria-hidden="true" /><h3>Image <span>{pad(record.slot)}</span></h3></div>
+            {record.scene && <button className={ui.button} onClick={() => onCopy(JSON.stringify(record.scene, null, 2))}><Copy size={14} aria-hidden="true" />Copy</button>}
           </header>
-          <div className="dataset-scene-body"><SceneDetails scene={scene} /></div>
+          <div className="dataset-scene-body">
+            {record.input && <Line label="Input">{record.input}</Line>}
+            {record.scene ? <SceneDetails scene={record.scene} /> : <NotWritten record={record} />}
+          </div>
         </article>)}
       </div>
     </>}
@@ -70,16 +102,18 @@ export function RunPrompts({ run, onCopy, onDownload }) {
   const result = run.result;
   const prompts = result?.prompts || [];
   const total = result?.scenes?.length || 0;
-  const text = prompts.map((item) => item.prompt).join("\n\n");
+  const records = runSlots(result).filter((record) => record.prompt || record.status === "failed");
+  const written = writtenPrompts(result);
+  const text = written.map((item) => item.prompt).join("\n\n");
   const json = JSON.stringify({ brief: run.brief, ...result }, null, 2);
   return <section aria-label="Dataset results">
     <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
       <div><h3 className="font-display text-lg font-bold">Generated dataset</h3>
         <p className="mt-1 text-xs text-muted">{run.status === "running" && total
-          ? `Final prompts appear as they are written: ${prompts.length} of ${total}.` : `${prompts.length} final prompts.`}</p></div>
+          ? `Final prompts appear as they are written: ${prompts.length} of ${total}.` : `${written.length} final prompt${written.length === 1 ? "" : "s"}${written.length < prompts.length ? `, ${prompts.length - written.length} failed` : ""}.`}</p></div>
       <div className="flex flex-wrap gap-2">
-        <button className={ui.button} disabled={!prompts.length} onClick={() => onCopy(datasetCopyText({ results: prompts }))}><Copy size={15} />Copy all</button>
-        <button className={ui.button} disabled={!prompts.length} onClick={() => onDownload("dataset-prompts.txt", text, "text/plain;charset=utf-8")}><Download size={15} />TXT</button>
+        <button className={ui.button} disabled={!written.length} onClick={() => onCopy(datasetCopyText({ results: written }))}><Copy size={15} />Copy all</button>
+        <button className={ui.button} disabled={!written.length} onClick={() => onDownload("dataset-prompts.txt", text, "text/plain;charset=utf-8")}><Download size={15} />TXT</button>
         <button className={ui.button} disabled={!result} onClick={() => onDownload("dataset.json", json, "application/json")}><FileJson size={15} />JSON</button>
       </div>
     </div>
@@ -88,22 +122,23 @@ export function RunPrompts({ run, onCopy, onDownload }) {
       ? <Waiting icon={LoaderCircle} title={total ? "Writing final prompts…" : "Writing scenes…"} text="Each final prompt appears here as soon as it is written." />
       : <Waiting icon={Database} title="No prompts" text="This run stopped before any final prompt was written." />)
       : <div className="dataset-card-grid">
-        {prompts.map((item) => {
-          const scene = result.scenes[item.index - 1];
-          return <article className="dataset-card dataset-result-card panel" key={item.index}>
-            <div className="dataset-card-header">
-              <span className="text-sm font-semibold text-accent">Prompt {item.index}</span>
-              <button className={ui.button} onClick={() => onCopy(item.prompt)}><Copy size={14} aria-hidden="true" />Copy</button>
-            </div>
-            {!item.trigger_ok && <p className={`${ui.warningNote} mt-2`}>The trigger is missing or not at the start.</p>}
-            <textarea className={ui.outputInput} style={{ minHeight: 220 }} aria-label={`Dataset prompt ${item.index}`}
+        {records.map(({ slot, prompt: item, scene, ...record }) => <article className="dataset-card dataset-result-card panel" key={slot} aria-label={`Image ${slot}`}>
+          <div className="dataset-card-header">
+            <span className="text-sm font-semibold text-accent">Image {slot}</span>
+            {item?.prompt && <button className={ui.button} onClick={() => onCopy(item.prompt)}><Copy size={14} aria-hidden="true" />Copy</button>}
+          </div>
+          {record.input && <Line label="Input">{record.input}</Line>}
+          {!item ? <NotWritten record={record} /> : <>
+            {item.error ? <p className={`${ui.warningNote} mt-2`}>The final prompt failed. {item.error}</p>
+              : !item.trigger_ok && <p className={`${ui.warningNote} mt-2`}>The trigger is missing or not at the start.</p>}
+            <textarea className={ui.outputInput} style={{ minHeight: 220 }} aria-label={`Dataset prompt ${slot}`}
               value={item.prompt} readOnly />
-            {scene && <details className="dataset-details rounded-lg border border-line p-3 text-xs">
-              <summary><Layers3 size={14} aria-hidden="true" /><span>Scene {item.index}</span><ChevronDown size={14} aria-hidden="true" /></summary>
-              <div className="mt-2"><SceneDetails scene={scene} /></div>
-            </details>}
-          </article>;
-        })}
+          </>}
+          {scene && <details className="dataset-details rounded-lg border border-line p-3 text-xs">
+            <summary><Layers3 size={14} aria-hidden="true" /><span>Scene {slot}</span><ChevronDown size={14} aria-hidden="true" /></summary>
+            <div className="mt-2"><SceneDetails scene={scene} /></div>
+          </details>}
+        </article>)}
       </div>}
   </section>;
 }

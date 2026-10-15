@@ -361,9 +361,28 @@ test("the current brief renders constraints, cast and settings safely and blocks
 
 test("confirmation submission preserves scenes-only choice, source, approval and chosen seed", () => {
   const review = { brief: brief(), input: { seed: 73, seed_mode: "fixed", inputs: "Read\nWalk" },
-    operation: "dataset/scenes", confirmation_token: "synthetic" };
+    operation: "dataset/scenes", confirmation_token: "synthetic", vocabulary_packs: ["fantasy"] };
   assert.deepEqual(datasetConfirmationPayload(review), review);
   assert.equal(datasetConfirmationPayload({ ...review, operation: "dataset" }).operation, "dataset");
+});
+
+test("confirmation sends the pack choice frozen into the review, never an extra field", () => {
+  const review = { brief: brief(), input: {}, operation: "dataset", confirmation_token: "synthetic",
+    vocabulary_packs: ["adult", "fantasy"], status: "ready", baseSignature: "x" };
+  const payload = datasetConfirmationPayload(review);
+  assert.deepEqual(Object.keys(payload).sort(), ["brief", "confirmation_token", "input", "operation", "vocabulary_packs"]);
+  assert.deepEqual(payload.vocabulary_packs, ["adult", "fantasy"]);
+  assert.notEqual(payload.vocabulary_packs, review.vocabulary_packs);
+  // Only core: an empty choice is still sent explicitly.
+  assert.deepEqual(datasetConfirmationPayload({ ...review, vocabulary_packs: [] }).vocabulary_packs, []);
+});
+
+test("review shows the packs the run will record", async () => {
+  const Modal = await loadReviewModal();
+  const markup = renderToStaticMarkup(createElement(Modal, { review: { status: "ready", input: {},
+    confirmation_token: "synthetic", brief: brief(), vocabulary_packs: ["fantasy", "my_pack"] } }));
+  assert.match(markup, /Vocabulary packs/);
+  assert.match(markup, /Core, fantasy, my_pack/);
 });
 
 test("extra instructions create an isolated revised request without discarding old results", () => {

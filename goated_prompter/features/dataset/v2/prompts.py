@@ -59,8 +59,16 @@ def trigger_problem(prompt, brief):
     return None
 
 
+def scene_slot(scene, position):
+    """The image a scene belongs to: its "slot" (write_scenes sets it), else its 1-based position."""
+    slot = scene.get("slot")
+    return slot if type(slot) is int and slot > 0 else position
+
+
 def write_prompts(config, request, brief, scenes, *, checkpoint=lambda: None, progress=print, on_prompt=lambda item: None):
     """One final prompt per scene, in scene order; on_prompt gets each one as it is written.
+    Each item is keyed by the scene's slot ("slot", and "index" with the same value), never by its
+    position in the list, so a failed earlier image never renumbers a later one.
     One debug JSON file per run."""
     trace = DebugTrace("prompts", amount=len(scenes), target=brief["settings"]["target"], trigger=brief["input"]["trigger"],
                        trigger_at_start=brief["input"]["trigger_at_start"])
@@ -71,8 +79,9 @@ def write_prompts(config, request, brief, scenes, *, checkpoint=lambda: None, pr
         "must": brief["must"], "avoid": brief["avoid"]}, ensure_ascii=False)
     results = []
     try:
-        for number, scene in enumerate(scenes, 1):
-            progress(f"Writing final prompt {number} of {len(scenes)}...")
+        for position, scene in enumerate(scenes, 1):
+            number = scene_slot(scene, position)
+            progress(f"Writing final prompt {position} of {len(scenes)} (image {number})...")
             idea = scene_text(scene)
             problem = None
             recovery = GenerationRecovery("dataset_v2:builder", [number],
@@ -88,7 +97,7 @@ def write_prompts(config, request, brief, scenes, *, checkpoint=lambda: None, pr
                     prompt = service.generate_text_only(builder_request, seed=brief["input"].get("seed"), recovery=recovery).prompt
                 except RunawayRecoveryError as error:
                     recovery.finish("failed")
-                    results.append({"index": number, "prompt": "", "trigger_ok": False, "error": str(error),
+                    results.append({"slot": number, "index": number, "prompt": "", "trigger_ok": False, "error": str(error),
                                     "stage": error.stage, "attempts": error.attempts, "reason": error.reason})
                     trace.decide("prompt_failed", results[-1])
                     on_prompt(results[-1])
@@ -97,10 +106,10 @@ def write_prompts(config, request, brief, scenes, *, checkpoint=lambda: None, pr
                 trace.attempt(scene=number, attempt=attempt, idea=idea, rules=rules, prompt=prompt, problem=problem)
                 if not problem:
                     break
-            if results and results[-1]["index"] == number:
+            if results and results[-1]["slot"] == number:
                 continue
             recovery.finish("succeeded" if not problem else "failed")
-            results.append({"index": number, "prompt": "" if problem else prompt, "trigger_ok": problem is None})
+            results.append({"slot": number, "index": number, "prompt": "" if problem else prompt, "trigger_ok": problem is None})
             if problem:
                 results[-1].update(error=problem, stage="dataset_v2:builder", attempts=recovery.attempts)
                 trace.decide("trigger_missing", {"scene": number, "problem": problem})

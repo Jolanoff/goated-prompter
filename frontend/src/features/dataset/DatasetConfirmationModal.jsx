@@ -67,6 +67,8 @@ export default function DatasetConfirmationModal({ review, busy, directorLabel, 
           <div><dt>Style</dt><dd>{brief.settings.style || "Not specified"}</dd></div>
           <div><dt>Target model</dt><dd>{brief.settings.target || "Not specified"}</dd></div>
           <div><dt>Director</dt><dd>{directorLabel || brief.settings.director || "Not specified"}</dd></div>
+          {review.vocabulary_packs && <div><dt>Vocabulary packs</dt><dd className="wrap-anywhere">{["Core", ...review.vocabulary_packs].join(", ")}
+            <small className="block text-muted">Recorded with this run on Confirm, with any packs they require.</small></dd></div>}
         </dl>
       </section>
     </>}

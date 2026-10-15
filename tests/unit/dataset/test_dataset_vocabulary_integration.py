@@ -190,7 +190,7 @@ class Section2Vocabulary(Section2Run):
 
     # -- conflicts and unknowns
     def test_confirmed_conflicts_are_never_offered(self):
-        _, log = self.run_scenes(brief("a woman flies while carrying a man in her arms", characters=PEOPLE))
+        _, log = self.run_scenes(brief("a woman doing an aerial carry of a man in her arms", characters=PEOPLE))
         self.assertNotIn("scene:position.aerial_carry", log["provided"])
         reason = next(item["reason"] for item in log["excluded"] if item["id"] == "scene:position.aerial_carry")
         self.assertIn("conflict", reason)

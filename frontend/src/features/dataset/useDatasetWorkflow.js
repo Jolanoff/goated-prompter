@@ -6,7 +6,7 @@ import { useDatasetConfirmation } from "./useDatasetConfirmation.js";
 
 /** Dataset requests and job projections; editable-draft revisions stay in useWorkflowSettings. */
 export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, director,
-  onGenerate, onReleaseJobs }) {
+  onGenerate, onReleaseJobs, vocabularyPacks = [], packsReady = true }) {
   const { draft, update, refreshGenerated } = preferences;
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState("");
@@ -17,7 +17,7 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, d
       const accepted = await onGenerate("dataset/v2/confirm", datasetConfirmationPayload(item));
       if (accepted) update({ seed: item.input.seed });
       return accepted;
-    }, setError });
+    }, setError, vocabularyPacks });
   const datasetJob = ["dataset", "dataset_scenes", "dataset_understanding", "dataset_v2_scenes"].includes(job?.kind);
   const workflowActive = datasetJob && active;
   const disabled = busy || starting || preferences.working || !!confirmationFlow.confirmation;
@@ -93,12 +93,12 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, d
   }
 
   function generateDataset() {
-    if (!canWrite || submission.current) return;
+    if (!canWrite || !packsReady || submission.current) return;
     confirmationFlow.requestConfirmation("dataset", {}, { ...freshDatasetRequest(draft), seed: nextDatasetSeed(draft) });
   }
 
   function generateScenes() {
-    if (!canPlanScenes || submission.current) return;
+    if (!canPlanScenes || !packsReady || submission.current) return;
     confirmationFlow.requestConfirmation("dataset/scenes", {}, { ...freshDatasetRequest(draft), seed: nextDatasetSeed(draft) });
   }
 

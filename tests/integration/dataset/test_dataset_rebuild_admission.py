@@ -31,9 +31,10 @@ class DatasetRebuildAdmissionTests(unittest.IsolatedAsyncioTestCase):
         self.enterContext(patch("goated_prompter.features.dataset.v2.understanding.DebugTrace"))
         self.enterContext(patch("goated_prompter.features.dataset.runner.create_backend", return_value=self.backend))
         self.scenes = self.enterContext(patch("goated_prompter.features.dataset.runner.write_scenes", return_value={
-            "scenes": [{"actions": "reading"}], "requested": 1, "written": 1, "complete": True, "missing": []}))
+            "scenes": [{"slot": 1, "actions": "reading"}], "requested": 1, "written": 1, "complete": True, "missing": [],
+            "slots": [{"slot": 1, "status": "written", "input": "", "concept": None, "stage": None, "reasons": [], "tries": 1}]}))
         self.prompts = self.enterContext(patch("goated_prompter.features.dataset.runner.write_prompts", return_value=[
-            {"index": 1, "prompt": "reader reading", "trigger_ok": True}]))
+            {"slot": 1, "index": 1, "prompt": "reader reading", "trigger_ok": True}]))
         self.enterContext(patch("local_app.get_process_manager"))
         self.app = local.create_app(config_loader=lambda: {"backend": "mock"},
                                     settings_path=Path(self.temp.name) / "settings.json")
@@ -60,7 +61,8 @@ class DatasetRebuildAdmissionTests(unittest.IsolatedAsyncioTestCase):
         job = await self.terminal(await response.json())
         self.assertEqual(job["status"], "succeeded", job.get("error"))
         return {"input": deepcopy(self.data), "brief": job["result"]["brief"],
-                "confirmation_token": job["result"]["confirmation_token"], "settings": {}, "operation": "dataset"}
+                "confirmation_token": job["result"]["confirmation_token"], "settings": {}, "operation": "dataset",
+                "vocabulary_packs": []}
 
     async def confirm(self, payload):
         return await self.client.post("/api/workspace/dataset/v2/confirm", json=payload)
@@ -77,6 +79,20 @@ class DatasetRebuildAdmissionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(self.prompts.call_count, expected_calls)
                 self.assertEqual(job["result"]["stage"], "scenes" if operation.endswith("scenes") else "done")
         self.assertEqual(self.scenes.call_args.args[2], payload["brief"])
+        # The run's own resolved selection (core only here) reaches scene writing; nothing global is read later.
+        selection = self.scenes.call_args.kwargs["vocabulary"]
+        self.assertEqual(selection["selected"], [])
+        self.assertIn("core", [pack["id"] for pack in selection["packs"]])
+
+    async def test_confirm_requires_an_explicit_usable_pack_selection(self):
+        payload = await self.analyze()
+        missing = {key: value for key, value in payload.items() if key != "vocabulary_packs"}
+        for body in (missing, {**payload, "vocabulary_packs": ["no_such_pack_for_this_test"]},
+                     {**payload, "vocabulary_packs": "core"}):
+            with self.subTest(packs=body.get("vocabulary_packs")):
+                response = await self.confirm(body)
+                self.assertEqual(response.status, 400, await response.text())
+        self.scenes.assert_not_called()
 
     async def test_missing_expired_or_fabricated_approval_never_starts_scenes(self):
         payload = await self.analyze()
@@ -120,7 +136,8 @@ class DatasetRebuildAdmissionTests(unittest.IsolatedAsyncioTestCase):
                 brief = apply_rules(value, safe, Mock())
                 brief.update(path="nsfw_character" if data["nsfw"] else "sfw_character", input=copied_input(data))
                 reviewed = self.app[local.STATE].dataset_intents.register(data, brief)
-                response = await self.confirm({**reviewed, "input": data, "settings": {}, "operation": "dataset"})
+                response = await self.confirm({**reviewed, "input": data, "settings": {}, "operation": "dataset",
+                                               "vocabulary_packs": []})
                 self.assertEqual(response.status, 400, await response.text())
         self.scenes.assert_not_called()
 

@@ -28,6 +28,18 @@ is absent and the requests are unchanged.
 Code checks only the shape of each answer (every section filled, exactly the character labels, no
 phrase from the avoid list) and retries a slot up to ROUNDS times. Slots still empty are listed
 under "missing" and the result says complete: false. Physical plausibility is the model's job.
+
+Slot identity: image N of the request is slot N from start to finish. Its guided input, concept,
+staging, scene, Builder prompt and failure all carry that number; a failed slot never shifts its
+siblings. result["slots"] has one record per requested image, written or not:
+  {"slot": N, "status": "written" | "failed", "input": guided input or "", "concept": dict or None,
+   "stage": None or the stage that failed ("concepts", "staging", "description"),
+   "reasons": [...], "tries": N}
+and every scene in result["scenes"] (written slots only, in slot order) has "slot": N.
+
+Progress: on_slot(event, slot, value) is called the moment a slot's "concept", "staging" or
+"description" (the finished scene) passes its checks, before the rest of its batch is done, so a
+caller can save completed work as it appears. It changes nothing about generation.
 """
 
 import json
@@ -171,6 +183,14 @@ def _director(brief):
 
 def _labels(brief):
     return [item["label"] for item in brief["characters"]]
+
+
+def slot_inputs(brief):
+    """{slot: guided input}, fixed before generation; "" for every slot when the source is random."""
+    total = brief["input"]["amount"]
+    if brief["input"].get("source_mode") != "guided" or not brief["input"].get("guided_inputs"):
+        return {number: "" for number in range(1, total + 1)}
+    return {row["index"]: row["input"] for row in guided_assignments(brief)}
 
 
 def guided_assignments(brief):
@@ -364,7 +384,13 @@ def _ask(session, prompt, key, trace, stage, slots, checkpoint, recovery):
     return answer, error
 
 
-def _concepts(session, brief, total, trace, checkpoint, progress):
+def _scene(number, slot):
+    """The finished scene of a slot: its description with the staging's position and actions."""
+    scene = {**slot["description"], "position": slot["staging"]["position"], "actions": slot["staging"]["actions"]}
+    return {"slot": number, **{key: scene[key] for key in SECTIONS}}
+
+
+def _concepts(session, brief, total, trace, checkpoint, progress, on_slot=lambda *_: None):
     """One concept per image, literal repeats dropped; up to ROUNDS tries per chunk."""
     concepts, labels, failure = [], _labels(brief), None
     while len(concepts) < total:
@@ -388,6 +414,7 @@ def _concepts(session, brief, total, trace, checkpoint, progress):
                     if brief["input"].get("source_mode") == "guided":
                         concept["input"] = guided_assignments(brief)[len(concepts)]["input"]
                     concepts.append(concept)
+                    on_slot("concept", len(concepts), concept)
                     missing -= 1
             if rejected:
                 trace.decide("concepts_rejected", rejected)
@@ -409,7 +436,7 @@ def _concepts(session, brief, total, trace, checkpoint, progress):
     return concepts, failure
 
 
-def _round(session, brief, slots, numbers, kind, trace, checkpoint, progress, recovery):
+def _round(session, brief, slots, numbers, kind, trace, checkpoint, progress, recovery, on_slot=lambda *_: None):
     """One staging or description call for the given slots; fills what passes the shape check."""
     labels, avoid = _labels(brief), brief["_avoid"]
     errors = sorted({reason for number in numbers for reason in slots[number]["reasons"]})
@@ -433,18 +460,22 @@ def _round(session, brief, slots, numbers, kind, trace, checkpoint, progress, re
             trace.decide(f"{kind}_rejected", {"slot": number, "reasons": problems})
         else:
             slots[number][kind], slots[number]["reasons"] = item, []
+            on_slot(kind, number, item if kind == "staging" else _scene(number, slots[number]))
 
 
-def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=print, packs=None):
+def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=print, packs=None, on_slot=lambda *_: None,
+                 vocabulary=None):
     """Concept -> staging -> description, one scene per image. One debug JSON file per run.
 
-    packs: the vocabulary PackManager (default: the app's bundled and installed packs)."""
+    packs: the vocabulary PackManager (default: the app's bundled and installed packs).
+    vocabulary: the run's recorded pack selection (vocabulary_packs.select_packs); None reads the enabled packs."""
     brief = validate_brief(brief)
     total = brief["input"]["amount"]
     trace = DebugTrace("scenes", amount=total, people=brief["people"], path=brief["path"], settings=brief["settings"])
     try:
         if type(total) is not int or total < 1:
             raise ValueError("The brief has no image amount.")
+        inputs = slot_inputs(brief)  # image N is slot N from here on, written or not
         effective, profile = resolve_director_config(config, request)
         brief = {**brief, "_family": effective_model_family(request, profile, effective), "_avoid": _avoid_patterns(brief)}
         trace.decide("director", _director(brief)[0] or "none (no instructions, or not for this target)")
@@ -452,11 +483,12 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
         # After Understanding, before the first concept: optional knowledge from the enabled packs.
         progress("Searching vocabulary packs...")
         preset = _preset(brief)
-        reference = vocabulary_reference(config, brief, director=preset.instructions.strip() if preset else "", manager=packs)
+        reference = vocabulary_reference(config, brief, director=preset.instructions.strip() if preset else "", manager=packs,
+                                         selection=vocabulary)
         trace.decide("vocabulary", reference["log"])
         brief = {**brief, "_vocabulary": reference["offer"]}
         with create_backend(effective).generation_session() as session:
-            concepts, concept_failure = _concepts(session, brief, total, trace, checkpoint, progress)
+            concepts, concept_failure = _concepts(session, brief, total, trace, checkpoint, progress, on_slot)
             # One slot per concept: a scene always lands in its own concept's place.
             slots = {number: {"concept": concept, "staging": None, "description": None, "reasons": [], "tries": 0}
                      for number, concept in enumerate(concepts, 1)}
@@ -470,22 +502,28 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
                                    and (kind == "staging" or slots[number]["staging"] is not None)]
                         if not pending or recovery.exhausted:
                             break
-                        _round(session, brief, slots, pending, kind, trace, checkpoint, progress, recovery)
+                        _round(session, brief, slots, pending, kind, trace, checkpoint, progress, recovery, on_slot)
                     recovery.finish("succeeded" if all(slots[number][kind] is not None for number in batch) else "failed")
         done = [number for number, slot in slots.items() if slot["description"] is not None]
         missing = [{"slot": number, "tries": slot["tries"], "reasons": slot["reasons"],
-                    "stage": "staging" if slot["staging"] is None else "description"}
+                    "stage": "staging" if slot["staging"] is None else "description", "input": inputs[number]}
                    for number, slot in slots.items() if slot["description"] is None]
-        missing += [{"slot": number, "stage": "concepts", **concept_failure}
+        missing += [{"slot": number, "stage": "concepts", **(concept_failure or {"tries": 0, "reasons": []}),
+                     "input": inputs[number]}
                     for number in range(len(slots) + 1, total + 1)]
         trace.decide("slots", {number: {"concept": slot["concept"], "staging": slot["staging"]} for number, slot in slots.items()})
         scenes = []
         for number in done:
-            slot = slots[number]
-            scene = {**slot["description"], "position": slot["staging"]["position"], "actions": slot["staging"]["actions"]}
-            scenes.append({key: scene[key] for key in SECTIONS})
+            scenes.append(_scene(number, slots[number]))
+        failed = {item["slot"]: item for item in missing}
+        records = [{"slot": number, "status": "failed" if number in failed else "written", "input": inputs[number],
+                    "concept": slots[number]["concept"] if number in slots else None,
+                    "stage": failed[number]["stage"] if number in failed else None,
+                    "reasons": list(failed[number]["reasons"]) if number in failed else [],
+                    "tries": failed[number]["tries"] if number in failed else slots[number]["tries"]}
+                   for number in range(1, total + 1)]
         result = {"complete": len(done) == total, "requested": total, "written": len(done), "missing": missing,
-                  "scenes": scenes, "concepts": concepts,
+                  "slots": records, "scenes": scenes, "concepts": concepts,
                   "vocabulary": {"enabled": reference["enabled"], "provided": reference["provided"]}}
     except Exception as error:
         trace.finish(error=f"{type(error).__name__}: {error}")
