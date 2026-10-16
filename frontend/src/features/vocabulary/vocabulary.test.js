@@ -28,16 +28,16 @@ test("pack cards display full metadata and General, Mature and Adult ratings wit
   assert.match(markup, /eligible NSFW requests/);
 });
 
-test("Core is locked on and bundled optional packs have toggles but never destructive actions", () => {
+test("Core stays internal and bundled content packs have toggles but never destructive actions", () => {
   const markup = render({ snapshot: snapshot([
     pack("core", { mandatory: true, bundled: true, origin: "core" }),
     pack("fantasy", { bundled: true, origin: "bundled", enabled: false }),
     pack("adult", { bundled: true, origin: "bundled", rating: "adult" }),
   ]) });
-  assert.match(markup, /aria-label="Enable core pack"[^>]*disabled=""[^>]*checked=""/);
+  assert.doesNotMatch(markup, /aria-label="Enable core pack"/);
   assert.match(markup, /aria-label="Enable fantasy pack"/);
-  assert.match(markup, /Always enabled/);
-  assert.match(markup, /Mandatory Core/);
+  assert.match(markup, /Core interfaces load internally/);
+  assert.doesNotMatch(markup, /Mandatory Core/);
   assert.doesNotMatch(markup, /Update ZIP|>Remove<|Confirm removal/);
 });
 
@@ -72,7 +72,7 @@ test("loading, empty, request errors and successful operations have distinct fee
   assert.match(render(), /No packs found/);
   assert.match(render({ error: "ZIP is unsafe" }), /role="alert"><span>ZIP is unsafe/);
   assert.match(render({ notice: "Pack installed" }), /role="status">.*Pack installed/);
-  assert.match(render(), /Restore the bundled vocabulary files/);
+  assert.match(render(), /Install a content pack or restore the bundled packs/);
 });
 
 test("update mode identifies the expected pack and keeps import disabled without a ZIP", () => {

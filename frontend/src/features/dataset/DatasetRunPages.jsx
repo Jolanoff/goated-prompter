@@ -4,7 +4,8 @@ import { datasetCopyText } from "./datasetExport.js";
 
 // Rebuild (issue 106): the Scenes and Dataset pages for a run started by Confirm.
 const pad = (number) => String(number).padStart(2, "0");
-const STAGES = { concepts: "concept", staging: "staging", description: "description" };
+const STAGES = { composition: "composition", concepts: "concept", staging: "staging", description: "description",
+  finishing: "finishing" };
 
 const slotOf = (item, position) => (Number.isInteger(item?.slot) && item.slot > 0 ? item.slot
   : Number.isInteger(item?.index) && item.index > 0 ? item.index : position + 1);
@@ -34,10 +35,14 @@ function Line({ label, children }) {
 /** How an image's arrangement was decided: checked against the vocabulary (with its status), or freeform. */
 export function arrangementLine(arrangement) {
   if (!arrangement) return "";
-  if (arrangement.kind !== "vocabulary") return "Freeform (not checked against the vocabulary)";
+  if (arrangement.kind !== "vocabulary") return "Freeform (not checked against the vocabulary)"
+    + (arrangement.reason ? `: ${arrangement.reason}` : "");
   const entries = arrangement.entries.map((entry) => `${entry.name} (${Object.entries(entry.roles)
     .map(([role, who]) => `${role}: ${who.join(", ")}`).join("; ")})`).join(" + ");
-  return `${entries} · vocabulary check: ${arrangement.status}`;
+  const extras = [arrangement.space ? `place: ${arrangement.space.name}` : "",
+    ...(arrangement.items || []).map((item) => `item: ${item.name}`)].filter(Boolean);
+  return `${arrangement.composed ? "Composed: " : ""}${entries || "no interaction"}${extras.length ? ` · ${extras.join(" · ")}` : ""}`
+    + ` · vocabulary check: ${arrangement.status}`;
 }
 
 function SceneDetails({ scene }) {
@@ -65,8 +70,10 @@ function RunNotes({ run }) {
   const result = run.result;
   return <>
     {run.error && <p className={`${ui.warningNote} mt-3`} role="alert">{run.error}</p>}
-    {result && !result.complete && <p className={`${ui.warningNote} mt-3`} role="status">
+    {result && !result.complete && result.written < result.requested && <p className={`${ui.warningNote} mt-3`} role="status">
       Incomplete: {result.written} of {result.requested} scenes written. Not written: {(result.missing || []).map((item) => `image ${item.slot}`).join(", ")}. The debug file says why.</p>}
+    {run.status !== "running" && result?.prompt_summary?.missing.length > 0 && <p className={`${ui.warningNote} mt-3`} role="status">
+      Incomplete: {result.prompt_summary.written} of {result.requested} final prompts written. Not written: {result.prompt_summary.missing.map((slot) => `image ${slot}`).join(", ")}. Per-image errors are shown below.</p>}
   </>;
 }
 

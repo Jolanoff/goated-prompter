@@ -2,18 +2,19 @@
   "name": "solo",
   "description": "One person standing alone.",
   "packs": [
+    "general",
     "core"
   ],
   "cast": [
     {
       "id": "ana",
-      "body": "core:body.humanoid"
+      "body": "general:body.humanoid"
     }
   ],
-  "space": "core:space.floor",
+  "space": "general:space.floor",
   "use": [
     {
-      "entry": "core:position.standing_alone",
+      "entry": "general:position.standing_alone",
       "bind": {
         "person": "ana"
       }

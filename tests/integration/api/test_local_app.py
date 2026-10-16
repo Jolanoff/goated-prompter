@@ -240,6 +240,21 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse((await response.json())["director"]["modified"])
         self.assertEqual(Path(library.__file__).read_bytes(), source)
 
+    async def test_director_routes_preserve_and_validate_vocabulary_preferences(self):
+        block = {"prefer": {"entries": ["core:action.hug"]}, "priorities": ["space"]}
+        response = await self.client.post("/api/presets", json={"name": "Scene preferences", "instructions": "Use variety",
+                                                              "vocabulary": block})
+        self.assertEqual(response.status, 200)
+        director = (await response.json())["director"]
+        self.assertEqual(director["vocabulary"], block)
+        body = {"id": director["id"], "name": director["label"], "instructions": "Edited behavior"}
+        response = await self.client.put("/api/presets", json=body)
+        self.assertEqual((await response.json())["director"]["vocabulary"], block)
+        response = await self.client.put("/api/presets", json={**body, "vocabulary": {"priorities": ["unknown"]}})
+        self.assertEqual(response.status, 400)
+        response = await self.client.put("/api/presets", json={**body, "vocabulary": {}})
+        self.assertEqual((await response.json())["director"].get("vocabulary", {}), {})
+
     async def test_all_director_mutations_reject_paused_jobs(self):
         job = local.Job()
         job.status = "paused"

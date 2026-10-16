@@ -2,7 +2,88 @@
   "spec": 1,
   "entries": [
     {
-      "id": "core:action.hold",
+      "id": "general:action.object_interaction",
+      "category": "action",
+      "name": "Object interaction template",
+      "abstract": true,
+      "components": {
+        "participants": {"slots": {"actor": {"count": 1, "kind": "being"}, "item": {"count": 1, "kind": "object"}}}
+      }
+    },
+    {
+      "id": "general:action.wear",
+      "category": "action",
+      "name": "Wear an item",
+      "description": "An item worn by its actor; descendants can declare the occupied body regions.",
+      "abstract": true,
+      "extends": ["general:action.object_interaction"],
+      "components": {"requirements": {"participants": {"item": {"all_of": ["core:item.wearable"]}}}}
+    },
+    {
+      "id": "general:action.attach",
+      "category": "action",
+      "name": "Attach an item",
+      "description": "An actor attaches an item; descendants declare the attachment point and resources they need.",
+      "abstract": true,
+      "extends": ["general:action.object_interaction"],
+      "components": {}
+    },
+    {
+      "id": "general:action.insert",
+      "category": "action",
+      "name": "Insert an item",
+      "description": "An actor inserts an item; descendants declare the destination, access and occupied resources.",
+      "abstract": true,
+      "extends": ["general:action.object_interaction"],
+      "components": {}
+    },
+    {
+      "id": "general:action.wield",
+      "category": "action",
+      "name": "Wield a handheld item",
+      "description": "An actor uses one hand to wield an item; holding that same item shares the allocation key.",
+      "abstract": true,
+      "extends": ["general:action.object_interaction"],
+      "components": {
+        "requirements": {"participants": {"actor": {"all_of": ["core:limb.hand"]}, "item": {"all_of": ["core:item.handheld"]}}},
+        "claims": {"actor": [{"resource": "core:limb.hand", "count": 1, "mode": "exclusive", "purpose": "wield", "key": "hold:{item}"}]}
+      }
+    },
+    {
+      "id": "general:action.support",
+      "category": "action",
+      "name": "Use an item for support",
+      "description": "An actor is supported by an item; descendants declare posture, attachment and load where known.",
+      "abstract": true,
+      "extends": ["general:action.object_interaction"],
+      "components": {"requirements": {"participants": {"item": {"all_of": ["core:surface"]}}}}
+    },
+    {
+      "id": "general:action.sit_on",
+      "category": "action",
+      "name": "Sit on an item",
+      "description": "An actor sits on an item's seating surface.",
+      "abstract": true,
+      "extends": ["general:action.object_interaction"],
+      "components": {
+        "requirements": {"participants": {"item": {"all_of": ["core:surface.seat"]}}},
+        "spatial": {"participants": {"actor": {"posture": "general:posture.sitting", "anchors": [{"relation": "on", "of": "item"}]}}}
+      }
+    },
+    {
+      "id": "general:action.lie_on",
+      "category": "action",
+      "name": "Lie on an item",
+      "description": "An actor lies on a wide supporting surface; the body orientation is left open.",
+      "abstract": true,
+      "extends": ["general:action.object_interaction"],
+      "components": {
+        "requirements": {"participants": {"item": {"all_of": ["core:surface.wide"]}}},
+        "spatial": {"participants": {"actor": {"anchors": [{"relation": "on", "of": "item"}]}}}
+      }
+    },
+    {
+      "id": "general:action.hold",
       "category": "action",
       "name": "Hold an object",
       "description": "Held in one hand; any other action on the same item uses that same hand.",
@@ -46,11 +127,20 @@
               "key": "hold:{item}"
             }
           ]
+        },
+        "visibility": {
+          "participants": {
+            "holder": {
+              "regions": [
+                "core:limb.hand"
+              ]
+            }
+          }
         }
       }
     },
     {
-      "id": "core:action.hug",
+      "id": "general:action.hug",
       "category": "action",
       "name": "Hug",
       "description": "Arms wrapped around each other's back, chests close, facing each other.",
@@ -147,7 +237,7 @@
       }
     },
     {
-      "id": "core:action.kiss",
+      "id": "general:action.kiss",
       "category": "action",
       "name": "Kiss",
       "description": "Lips meet; faces turned toward each other at close range.",
@@ -227,11 +317,14 @@
               "purpose": "contact"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
     {
-      "id": "core:action.hold_hands",
+      "id": "general:action.hold_hands",
       "category": "action",
       "name": "Holding hands",
       "description": "One hand of each clasped together; the free hands stay free.",
@@ -292,6 +385,9 @@
               "purpose": "contact"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     }

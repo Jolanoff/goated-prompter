@@ -1,0 +1,182 @@
+{
+  "spec": 1,
+  "entries": [
+    {
+      "id": "general:framing.extreme_close_up",
+      "category": "visual_framing",
+      "name": "Extreme close-up",
+      "description": "One detail fills the frame, such as the eyes, hands or the point of contact.",
+      "aliases": [
+        "extreme closeup",
+        "extreme close-up shot",
+        "extreme close-ups"
+      ],
+      "replaces": [
+        "visual:framing.extreme_close_up"
+      ],
+      "components": {
+        "visual": {
+          "dimension": "framing",
+          "conflicts": [
+            "general:camera_angle.over_the_shoulder",
+            "general:composition.frame_within_frame",
+            "general:composition.leading_lines"
+          ],
+          "shows": {
+            "whole": false,
+            "max_regions": 1,
+            "space": false
+          }
+        }
+      }
+    },
+    {
+      "id": "general:framing.close_up",
+      "category": "visual_framing",
+      "name": "Close-up",
+      "description": "The face or the key interaction fills most of the frame.",
+      "aliases": [
+        "closeup",
+        "close-up shot",
+        "close-ups"
+      ],
+      "replaces": [
+        "visual:framing.close_up"
+      ],
+      "components": {
+        "visual": {
+          "dimension": "framing",
+          "shows": {
+            "whole": false,
+            "regions": [
+              "core:anatomy.head",
+              "core:anatomy.mouth",
+              "core:anatomy.shoulders"
+            ],
+            "space": false,
+            "complete": true
+          }
+        }
+      }
+    },
+    {
+      "id": "general:framing.medium_shot",
+      "category": "visual_framing",
+      "name": "Medium shot",
+      "description": "The subjects are framed from about the waist up.",
+      "aliases": [
+        "mid shot",
+        "waist-up shot",
+        "medium framing"
+      ],
+      "replaces": [
+        "visual:framing.medium_shot"
+      ],
+      "components": {
+        "visual": {
+          "dimension": "framing",
+          "shows": {
+            "whole": false,
+            "regions": [
+              "core:anatomy.head",
+              "core:anatomy.mouth",
+              "core:anatomy.shoulders",
+              "core:anatomy.chest",
+              "core:anatomy.breasts",
+              "core:anatomy.torso",
+              "core:anatomy.back",
+              "core:limb.arm",
+              "core:limb.hand"
+            ],
+            "complete": true
+          }
+        }
+      }
+    },
+    {
+      "id": "general:framing.full_body",
+      "category": "visual_framing",
+      "name": "Full-body shot",
+      "description": "Each subject is shown whole, from head to toe.",
+      "aliases": [
+        "full body shot",
+        "full-length shot",
+        "full shot"
+      ],
+      "replaces": [
+        "visual:framing.full_body"
+      ],
+      "components": {
+        "visual": {
+          "dimension": "framing",
+          "shows": {
+            "whole": true
+          }
+        }
+      }
+    },
+    {
+      "id": "general:framing.wide_shot",
+      "category": "visual_framing",
+      "name": "Wide shot",
+      "description": "The subjects appear smaller within plenty of their surroundings.",
+      "aliases": [
+        "long shot",
+        "wide framing"
+      ],
+      "replaces": [
+        "visual:framing.wide_shot"
+      ],
+      "components": {
+        "visual": {
+          "dimension": "framing",
+          "shows": {
+            "whole": true,
+            "space": true
+          }
+        }
+      }
+    },
+    {
+      "id": "general:framing.two_shot",
+      "category": "visual_framing",
+      "name": "Two-shot",
+      "description": "Frame the interacting subjects together so their relationship and shared action read clearly.",
+      "aliases": ["two shot", "paired framing"],
+      "components": {"visual": {"dimension": "framing"}}
+    },
+    {
+      "id": "general:framing.group_shot",
+      "category": "visual_framing",
+      "name": "Group shot",
+      "description": "Frame the participants together as a readable group, keeping their full bodies in view.",
+      "aliases": ["group framing"],
+      "components": {"visual": {"dimension": "framing", "shows": {"whole": true}}}
+    },
+    {
+      "id": "general:framing.establishing_shot",
+      "category": "visual_framing",
+      "name": "Establishing shot",
+      "description": "A very wide view of the whole location, with the subjects part of it.",
+      "aliases": [
+        "extreme wide shot",
+        "extreme long shot"
+      ],
+      "replaces": [
+        "visual:framing.establishing_shot"
+      ],
+      "components": {
+        "visual": {
+          "dimension": "framing",
+          "conflicts": [
+            "general:camera_angle.over_the_shoulder"
+          ],
+          "shows": {
+            "whole": true,
+            "space": true
+          }
+        }
+      }
+    }
+  ]
+}

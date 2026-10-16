@@ -8,13 +8,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from goated_prompter.features.vocabulary.packs import BUNDLED_DIRS, build_registry, read_pack
+from goated_prompter.features.vocabulary.packs import BUNDLED_DIRS, OFFICIAL_DIR, build_registry, read_pack, read_foundation
 from goated_prompter.features.vocabulary.resolver import (
     NO_EVIDENCE, RANK, CompositionError, candidate_bindings, implied, resolve)
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 SCENARIOS = sorted((FIXTURES / "scenarios").glob("*.json"))
-H = "core:body.humanoid"
+H = "general:body.humanoid"
 
 
 def slot(count=1, kind="being", topology=None):
@@ -31,7 +31,7 @@ def placement(posture, **extra):
 LAB = [
     {"id": "lab:position.line", "category": "position", "name": "Line", "components": {
         "participants": {"slots": {"member": slot({"min": 2, "max": 8}, topology="chain")}},
-        "spatial": {"participants": {"member[*]": placement("core:posture.standing")},
+        "spatial": {"participants": {"member[*]": placement("general:posture.standing")},
                     "access": [{"from": "member[i]", "using": "core:limb.hand", "to": "member[i+1]",
                                 "regions": ["core:anatomy.shoulders"], "kind": "touch"}]}}},
     {"id": "lab:position.ranks", "category": "position", "name": "Ranks", "components": {
@@ -49,8 +49,8 @@ LAB = [
         "claims": {"actor": [{"resource": "core:limb.hand", "count": 1, "mode": "shared", "purpose": "contact"}]}}},
     {"id": "lab:position.seated_front", "category": "position", "name": "Seated, other in front", "components": {
         "participants": {"slots": {"seated": slot(), "other": slot()}},
-        "spatial": {"participants": {"seated": placement("core:posture.sitting", facing={"toward": "other"}),
-                                     "other": placement("core:posture.kneeling", facing={"toward": "seated"},
+        "spatial": {"participants": {"seated": placement("general:posture.sitting", facing={"toward": "other"}),
+                                     "other": placement("general:posture.kneeling", facing={"toward": "seated"},
                                                         anchors=[{"relation": "in_front", "of": "seated", "distance": "arm"}])},
                     "access": [{"from": "other", "using": "core:limb.hand", "to": "seated",
                                 "regions": ["core:anatomy.ass", "core:anatomy.chest"], "kind": "touch"}]}}},
@@ -65,7 +65,7 @@ LAB = [
         "participants": {"slots": {"front": slot(), "back": slot()}},
         "requirements": {"participants": {"front": {"any_of": ["core:locomotion.flight", "core:locomotion.quadruped"]}}}}},
     {"id": "lab:position.from_behind_winged", "category": "position", "name": "From behind, winged front",
-     "extends": ["core:position.from_behind", "lab:mixin.small_back", "lab:mixin.winged_front"], "components": {}},
+     "extends": ["general:position.from_behind", "lab:mixin.small_back", "lab:mixin.winged_front"], "components": {}},
     {"id": "lab:position.across", "category": "position", "name": "Across from each other", "components": {
         "participants": {"slots": {"a": slot(), "b": slot()}},
         "spatial": {"participants": {"a": {"anchors": [{"relation": "in_front", "of": "b"}, {"relation": "behind", "of": "b"}]}}}}},
@@ -87,10 +87,10 @@ def lab_registry():
         folder = root / "lab"
         folder.mkdir()
         manifest = {"spec": 1, "id": "lab", "name": "Lab", "version": "1.0.0", "rating": "general",
-                    "requires": {"core": ">=1.0.0", "fantasy": ">=0.1.0", "adult": ">=0.1.0"}, "files": ["entries.json"]}
+                    "requires": {"core": ">=1.0.0", "general": ">=1.0.0", "fantasy": ">=0.1.0", "adult": ">=0.1.0"}, "files": ["entries.json"]}
         (folder / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
         (folder / "entries.json").write_text(json.dumps({"spec": 1, "entries": LAB}), encoding="utf-8")
-        return build_registry([read_pack(BUNDLED_DIRS[0], bundled=True),
+        return build_registry([read_foundation(), read_pack(OFFICIAL_DIR / "general", bundled=True),
                                read_pack(FIXTURES / "packs" / "fantasy", bundled=False),
                                read_pack(FIXTURES / "packs" / "adult", bundled=False),
                                read_pack(folder, bundled=False)])
@@ -124,8 +124,8 @@ class PhaseOneScenarios(unittest.TestCase):
         result = resolve(REGISTRY, scenario("conflict_hand"))
         finding = result.findings_with("over_allocated")[0]
         self.assertEqual(finding.participants, ("receiver",))
-        self.assertIn("core:posture.all_fours", finding.entries)
-        self.assertIn("core:action.hold", finding.entries)
+        self.assertIn("general:posture.all_fours", finding.entries)
+        self.assertIn("general:action.hold", finding.entries)
         self.assertIn("2 core:limb.hand but 3", finding.message)
 
     def test_unknown_and_missing_differ_as_declared(self):
@@ -140,7 +140,7 @@ class PhaseOneScenarios(unittest.TestCase):
         pairs = {(fact["from"], fact["to"]) for fact in result.access}
         self.assertEqual(pairs, {(f"p{n}", f"p{n % 6 + 1}") for n in range(1, 7)})
         self.assertEqual({ident: item["posture"] for ident, item in result.placements.items()},
-                         {f"p{n}": "core:posture.kneeling" for n in range(1, 7)})
+                         {f"p{n}": "general:posture.kneeling" for n in range(1, 7)})
 
     def test_shared_key_uses_one_hand_for_hold_and_use(self):
         for name, holder, key in (("object_shared_hand", "giver", "hold:toy"), ("magic", "mage", "hold:staff")):
@@ -159,14 +159,29 @@ class PhaseOneScenarios(unittest.TestCase):
 
 
 class ConflictingPositions(unittest.TestCase):
+    def test_confirmed_relationships_check_direct_and_reciprocal_placements(self):
+        composition = {"cast": [human("a"), human("b")], "space": "general:space.floor",
+                       "use": [{"entry": "general:position.from_behind", "bind": {"front": "a", "back": "b"}}]}
+        for a, relation, b in (("b", "behind", "a"), ("a", "in_front", "b")):
+            result = resolve(REGISTRY, {**composition, "relationships": [{"a": [a], "relation": relation, "b": [b]}]})
+            self.assertNotIn("relationship_conflict", codes(result))
+            self.assertNotIn("relationship_undeclared", codes(result))
+        conflict = resolve(REGISTRY, {**composition, "relationships": [{"a": ["a"], "relation": "behind", "b": ["b"]}]})
+        self.assertEqual(conflict.status, "conflict")
+        self.assertIn("relationship_conflict", codes(conflict))
+        unknown = resolve(REGISTRY, {**composition, "use": [],
+                                    "relationships": [{"a": ["a"], "relation": "behind", "b": ["b"]}]})
+        self.assertEqual(unknown.status, "unknown")
+        self.assertIn("relationship_undeclared", codes(unknown))
+
     def test_two_postures_for_one_person(self):
-        result = resolve(REGISTRY, {"cast": [human("ana"), human("ben")], "space": "core:space.floor",
-                                    "use": [{"entry": "core:position.standing_alone", "bind": {"person": "ana"}},
-                                            {"entry": "core:position.from_behind", "bind": {"front": "ana", "back": "ben"}}]})
+        result = resolve(REGISTRY, {"cast": [human("ana"), human("ben")], "space": "general:space.floor",
+                                    "use": [{"entry": "general:position.standing_alone", "bind": {"person": "ana"}},
+                                            {"entry": "general:position.from_behind", "bind": {"front": "ana", "back": "ben"}}]})
         self.assertEqual(result.status, "conflict")
         finding = result.findings_with("placement_conflict")[0]
-        self.assertIn("core:posture.standing", finding.message)
-        self.assertIn("core:posture.all_fours", finding.message)
+        self.assertIn("general:posture.standing", finding.message)
+        self.assertIn("general:posture.all_fours", finding.message)
 
     def test_opposite_anchors(self):
         result = resolve(REGISTRY, {"cast": [human("a"), human("b")], "use": [{"entry": "lab:position.across", "bind": {"a": "a", "b": "b"}}]})
@@ -180,10 +195,10 @@ class ConflictingPositions(unittest.TestCase):
             {"entry": "lab:action.touch_ass", "bind": {"actor": "other", "target": "seat"}}]})
         self.assertEqual(result.status, "conflict")
         finding = result.findings_with("region_blocked")[0]
-        self.assertIn("core:posture.sitting", finding.entries)
+        self.assertIn("general:posture.sitting", finding.entries)
 
     def test_one_person_cannot_fill_two_slots(self):
-        result = resolve(REGISTRY, {"cast": [human("ana")], "use": [{"entry": "core:position.from_behind", "bind": {"front": "ana", "back": "ana"}}]})
+        result = resolve(REGISTRY, {"cast": [human("ana")], "use": [{"entry": "general:position.from_behind", "bind": {"front": "ana", "back": "ana"}}]})
         self.assertIn("bound_twice", codes(result))
 
 
@@ -194,14 +209,14 @@ class ResourceSharing(unittest.TestCase):
     def test_different_objects_do_not_share(self):
         cast, toys = self.cast_and_toys(2)
         result = resolve(REGISTRY, {"cast": cast, "objects": toys, "use": [
-            {"entry": "core:action.hold", "bind": {"holder": "giver", "item": "toy1"}},
+            {"entry": "general:action.hold", "bind": {"holder": "giver", "item": "toy1"}},
             {"entry": "adult:action.toy_insert", "bind": {"user": "giver", "receiver": "receiver", "toy": "toy2"}}]})
         self.assertEqual(sorted(name for name in result.allocation["giver"] if name.startswith("hand")), ["hand.left", "hand.right"])
         self.assertNotIn("over_allocated", codes(result))
 
     def test_three_held_objects_need_three_hands(self):
         cast, toys = self.cast_and_toys(3)
-        uses = [{"entry": "core:action.hold", "bind": {"holder": "giver", "item": toy["id"]}} for toy in toys]
+        uses = [{"entry": "general:action.hold", "bind": {"holder": "giver", "item": toy["id"]}} for toy in toys]
         result = resolve(REGISTRY, {"cast": cast, "objects": toys, "use": uses})
         self.assertEqual(result.status, "conflict")
         self.assertIn("over_allocated", codes(result))
@@ -218,7 +233,7 @@ class ResourceSharing(unittest.TestCase):
         shared = [{"entry": "lab:action.rest_hand", "bind": {"actor": "giver"}}] * 3
         result = resolve(REGISTRY, {"cast": cast, "use": shared})
         self.assertNotIn("over_allocated", codes(result))
-        holds = [{"entry": "core:action.hold", "bind": {"holder": "giver", "item": toy["id"]}} for toy in toys]
+        holds = [{"entry": "general:action.hold", "bind": {"holder": "giver", "item": toy["id"]}} for toy in toys]
         result = resolve(REGISTRY, {"cast": cast, "objects": toys, "use": [*holds, shared[0]]})
         self.assertIn("over_allocated", codes(result), "both hands hold exclusively; a shared rest has no hand left")
 
@@ -233,19 +248,19 @@ class ResourceSharing(unittest.TestCase):
 
 class IncompleteInformation(unittest.TestCase):
     def test_a_character_without_vocabulary_is_unknown_never_conflict(self):
-        result = resolve(REGISTRY, {"cast": [{"id": "x", "body": None}, human("y")], "space": "core:space.bed",
-                                    "use": [{"entry": "core:position.from_behind", "bind": {"front": "x", "back": "y"}}]})
+        result = resolve(REGISTRY, {"cast": [{"id": "x", "body": None}, human("y")], "space": "general:space.bed",
+                                    "use": [{"entry": "general:position.from_behind", "bind": {"front": "x", "back": "y"}}]})
         self.assertEqual(result.status, "unknown")
         self.assertFalse(codes(result) & {"missing_capability", "forbidden_capability", "over_allocated"})
 
     def test_undeclared_anatomy_is_unknown_and_declared_absence_is_conflict(self):
         composition = {"cast": [human("giver"), human("receiver")], "objects": [{"id": "toy", "item": "adult:item.dildo"}],
-                       "space": "core:space.bed",
-                       "use": [{"entry": "core:position.from_behind", "bind": {"front": "receiver", "back": "giver"}},
+                       "space": "general:space.bed",
+                       "use": [{"entry": "general:position.from_behind", "bind": {"front": "receiver", "back": "giver"}},
                                {"entry": "adult:action.toy_insert", "bind": {"user": "giver", "receiver": "receiver", "toy": "toy"}}]}
         self.assertEqual(resolve(REGISTRY, composition).status, "feasible", "the humanoid's ass satisfies any_of")
         bare = copy.deepcopy(composition)
-        bare["cast"][1] = {"id": "receiver", "body": "core:body.vertebrate"}
+        bare["cast"][1] = {"id": "receiver", "body": "general:body.vertebrate"}
         self.assertEqual(resolve(REGISTRY, bare).status, "unknown")
         closed = copy.deepcopy(bare)
         closed["cast"][1]["complete_for"] = ["core:anatomy", "core:limb"]
@@ -280,7 +295,7 @@ class NoEvidence(unittest.TestCase):
         self.assertEqual(result.note, "")
 
     def test_described_cast_without_uses_is_still_unknown(self):
-        result = resolve(REGISTRY, {"cast": [human("a"), human("b")], "space": "core:space.bed", "use": []})
+        result = resolve(REGISTRY, {"cast": [human("a"), human("b")], "space": "general:space.bed", "use": []})
         self.assertEqual(result.status, "unknown")
         self.assertEqual(codes(result), {NO_EVIDENCE})
 
@@ -360,7 +375,7 @@ class DeclaredReach(unittest.TestCase):
         self.assertIn("declared reach", finding.message)
 
     def test_reach_with_an_undeclared_capability_is_unknown(self):
-        result = self.reach({"id": "beast", "body": "core:body.vertebrate"})
+        result = self.reach({"id": "beast", "body": "general:body.vertebrate"})
         self.assertEqual(result.status, "unknown")
         self.assertEqual(result.findings_with("undeclared_capability")[0].participants, ("beast",))
 
@@ -373,8 +388,8 @@ class MultiPersonBinding(unittest.TestCase):
     def test_group_size_must_fit(self):
         for size, ok in ((2, False), (3, True), (12, True), (13, False)):
             cast = [human(f"p{n}") for n in range(size)]
-            result = resolve(REGISTRY, {"cast": cast, "space": "core:space.floor",
-                                        "use": [{"entry": "core:position.circle", "bind": {"member": [m["id"] for m in cast]}}]})
+            result = resolve(REGISTRY, {"cast": cast, "space": "general:space.floor",
+                                        "use": [{"entry": "general:position.circle", "bind": {"member": [m["id"] for m in cast]}}]})
             with self.subTest(size=size):
                 self.assertEqual("slot_count" not in codes(result), ok)
 
@@ -392,11 +407,11 @@ class MultiPersonBinding(unittest.TestCase):
         self.assertIn("undeclared_capability", codes(swapped), "a human's flight is undeclared")
 
     def test_candidate_bindings_use_capabilities_not_gender(self):
-        cast = [human("a", "core:trait.vagina", "core:trait.breasts"), human("b", "core:trait.penis")]
-        results = candidate_bindings(REGISTRY, "core:position.from_behind", cast, space="core:space.bed")
+        cast = [human("a", "general:trait.vagina", "general:trait.breasts"), human("b", "general:trait.penis")]
+        results = candidate_bindings(REGISTRY, "general:position.from_behind", cast, space="general:space.bed")
         self.assertEqual(sorted((binding["front"], result.status) for binding, result in results), [("a", "feasible"), ("b", "feasible")])
-        with_dragon = candidate_bindings(REGISTRY, "core:position.from_behind",
-                                         [human("a"), {"id": "drake", "body": "fantasy:creature.dragon"}], space="core:space.bed")
+        with_dragon = candidate_bindings(REGISTRY, "general:position.from_behind",
+                                         [human("a"), {"id": "drake", "body": "fantasy:creature.dragon"}], space="general:space.bed")
         self.assertTrue(all(result.status == "conflict" for _, result in with_dragon), "a dragon has no hands to support or reach with")
 
     def test_candidate_bindings_fill_groups_and_optional_objects(self):
@@ -412,7 +427,7 @@ class CandidateSearch(unittest.TestCase):
     CAST = [human(f"p{n}") for n in range(5)]
 
     def test_group_slots_take_every_subset_that_fits(self):
-        found = candidate_bindings(REGISTRY, "core:position.circle", self.CAST, space="core:space.floor")
+        found = candidate_bindings(REGISTRY, "general:position.circle", self.CAST, space="general:space.floor")
         groups = [tuple(binding["member"]) for binding, _ in found]
         expected = [combo for size in (5, 4, 3) for combo in itertools.combinations([m["id"] for m in self.CAST], size)]
         self.assertEqual(sorted(groups), sorted(expected), "every subset of 3 to 5, each once, in cast order")
@@ -423,41 +438,41 @@ class CandidateSearch(unittest.TestCase):
     def test_subsets_respect_the_group_maximum_and_minimum(self):
         line = candidate_bindings(REGISTRY, "lab:position.ranks", [human(f"p{n}") for n in range(7)])
         self.assertEqual({len(binding["member"]) for binding, _ in line}, {3, 4, 5, 6})
-        too_few = candidate_bindings(REGISTRY, "core:position.circle", self.CAST[:2])
+        too_few = candidate_bindings(REGISTRY, "general:position.circle", self.CAST[:2])
         self.assertEqual((too_few.bindings, too_few.truncated, too_few.viable), ([], False, False))
 
     def test_single_slots_and_groups_never_share_a_member(self):
-        for binding, _ in candidate_bindings(REGISTRY, "core:position.from_behind", self.CAST[:3]):
+        for binding, _ in candidate_bindings(REGISTRY, "general:position.from_behind", self.CAST[:3]):
             self.assertNotEqual(binding["front"], binding["back"])
-        self.assertEqual(len(list(candidate_bindings(REGISTRY, "core:position.from_behind", self.CAST[:3]))), 6)
+        self.assertEqual(len(list(candidate_bindings(REGISTRY, "general:position.from_behind", self.CAST[:3]))), 6)
 
     def test_truncation_is_reported(self):
-        found = candidate_bindings(REGISTRY, "core:position.circle", self.CAST, space="core:space.floor", limit=5)
+        found = candidate_bindings(REGISTRY, "general:position.circle", self.CAST, space="general:space.floor", limit=5)
         self.assertTrue(found.truncated)
         self.assertEqual((found.searched, found.limit, len(found.bindings)), (5, 5, 5))
         self.assertIn("not proof", found.note)
         self.assertTrue(found.to_dict()["truncated"])
-        exact = candidate_bindings(REGISTRY, "core:position.circle", self.CAST, space="core:space.floor", limit=16)
+        exact = candidate_bindings(REGISTRY, "general:position.circle", self.CAST, space="general:space.floor", limit=16)
         self.assertFalse(exact.truncated, "reaching the limit with nothing left is a complete search")
 
     def test_an_incomplete_search_never_proves_that_nothing_works(self):
         dragons = [{"id": f"d{n}", "body": "fantasy:creature.dragon"} for n in range(3)]
-        partial = candidate_bindings(REGISTRY, "core:position.from_behind", dragons, space="core:space.bed", limit=2)
+        partial = candidate_bindings(REGISTRY, "general:position.from_behind", dragons, space="general:space.bed", limit=2)
         self.assertTrue(all(result.status == "conflict" for _, result in partial))
         self.assertTrue(partial.truncated)
         self.assertIsNone(partial.viable, "unsearched bindings remain")
-        complete = candidate_bindings(REGISTRY, "core:position.from_behind", dragons, space="core:space.bed")
+        complete = candidate_bindings(REGISTRY, "general:position.from_behind", dragons, space="general:space.bed")
         self.assertFalse(complete.truncated)
         self.assertIs(complete.viable, False)
 
     def test_limit_must_be_positive(self):
         with self.assertRaises(ValueError):
-            candidate_bindings(REGISTRY, "core:position.circle", self.CAST, limit=0)
+            candidate_bindings(REGISTRY, "general:position.circle", self.CAST, limit=0)
 
 
 class Inheritance(unittest.TestCase):
     def composition(self, front):
-        return {"cast": [front, human("back")], "space": "core:space.bed",
+        return {"cast": [front, human("back")], "space": "general:space.bed",
                 "use": [{"entry": "lab:position.from_behind_winged", "bind": {"front": front["id"], "back": "back"}}]}
 
     def test_every_inherited_any_of_group_must_hold(self):
@@ -465,7 +480,7 @@ class Inheritance(unittest.TestCase):
         self.assertEqual(len(groups["front"]["any_of_groups"]), 1)
         self.assertEqual(len(groups["back"]["any_of_groups"]), 1)
         self.assertEqual(REGISTRY.resolved("lab:position.from_behind_winged")["components"]["spatial"]["participants"]["front"]["posture"],
-                         "core:posture.all_fours", "spatial facts are inherited from core")
+                         "general:posture.all_fours", "spatial facts are inherited from General")
         self.assertEqual(resolve(REGISTRY, self.composition(human("front"))).status, "unknown", "a human's flight is undeclared")
         self.assertEqual(resolve(REGISTRY, self.composition(human("front", complete_for=["core:locomotion"]))).status, "conflict")
         self.assertEqual(resolve(REGISTRY, self.composition(human("front", "fantasy:trait.wings"))).status, "feasible")
@@ -474,7 +489,7 @@ class Inheritance(unittest.TestCase):
         result = resolve(REGISTRY, {**self.composition(human("front", "fantasy:trait.wings")),
                                     "objects": [{"id": "toy", "item": "adult:item.dildo"}],
                                     "use": [*self.composition(human("front", "fantasy:trait.wings"))["use"],
-                                            {"entry": "core:action.hold", "bind": {"holder": "front", "item": "toy"}}]})
+                                            {"entry": "general:action.hold", "bind": {"holder": "front", "item": "toy"}}]})
         self.assertIn("over_allocated", codes(result))
 
 
@@ -482,9 +497,9 @@ class Errors(unittest.TestCase):
     def test_malformed_compositions_raise(self):
         cast = [human("a"), human("b")]
         for composition in ({"cast": cast, "use": [{"entry": "core:nope", "bind": {}}]},
-                            {"cast": cast, "use": [{"entry": "core:position.from_behind", "bind": {"front": "a", "middle": "b"}}]},
+                            {"cast": cast, "use": [{"entry": "general:position.from_behind", "bind": {"front": "a", "middle": "b"}}]},
                             {"cast": cast, "objects": [{"id": "toy", "item": "adult:item.dildo"}],
-                             "use": [{"entry": "core:position.from_behind", "bind": {"front": "toy", "back": "b"}}]},
+                             "use": [{"entry": "general:position.from_behind", "bind": {"front": "toy", "back": "b"}}]},
                             {"cast": [human("a"), human("a")], "use": []},
                             {"cast": [{"id": "a", "body": "core:nope"}], "use": []}):
             with self.subTest(composition=composition):
@@ -493,7 +508,7 @@ class Errors(unittest.TestCase):
 
     def test_missing_required_slot_is_a_conflict(self):
         # Decision 3: an unfilled required slot is a conflict; only malformed input raises.
-        for entry, bind in (("core:position.from_behind", {"front": "a"}), ("core:position.circle", {})):
+        for entry, bind in (("general:position.from_behind", {"front": "a"}), ("general:position.circle", {})):
             with self.subTest(entry=entry):
                 result = resolve(REGISTRY, {"cast": [human("a")], "use": [{"entry": entry, "bind": bind}]})
                 self.assertEqual(result.status, "conflict")

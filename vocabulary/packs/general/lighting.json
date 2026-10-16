@@ -2,7 +2,7 @@
   "spec": 1,
   "entries": [
     {
-      "id": "visual:lighting.soft",
+      "id": "general:lighting.soft",
       "category": "visual_lighting",
       "name": "Soft light",
       "description": "Diffused light with gentle, gradual shadows.",
@@ -11,17 +11,17 @@
         "diffused light",
         "diffuse lighting"
       ],
+      "replaces": [
+        "visual:lighting.soft"
+      ],
       "components": {
         "visual": {
-          "dimension": "lighting",
-          "conflicts": [
-            "visual:atmosphere.dramatic_shadows"
-          ]
+          "dimension": "lighting"
         }
       }
     },
     {
-      "id": "visual:lighting.hard",
+      "id": "general:lighting.hard",
       "category": "visual_lighting",
       "name": "Hard light",
       "description": "Direct light with crisp, defined shadows.",
@@ -29,6 +29,9 @@
         "hard lighting",
         "harsh light"
       ],
+      "replaces": [
+        "visual:lighting.hard"
+      ],
       "components": {
         "visual": {
           "dimension": "lighting"
@@ -36,7 +39,7 @@
       }
     },
     {
-      "id": "visual:lighting.rim",
+      "id": "general:lighting.rim",
       "category": "visual_lighting",
       "name": "Rim light",
       "description": "A bright outline of light along the subject's edges, from behind or the side.",
@@ -44,6 +47,9 @@
         "rim lighting",
         "edge light"
       ],
+      "replaces": [
+        "visual:lighting.rim"
+      ],
       "components": {
         "visual": {
           "dimension": "lighting"
@@ -51,7 +57,7 @@
       }
     },
     {
-      "id": "visual:lighting.backlight",
+      "id": "general:lighting.backlight",
       "category": "visual_lighting",
       "name": "Backlighting",
       "description": "The main light is behind the subject and glows through hair and edges.",
@@ -59,6 +65,9 @@
         "backlit",
         "back lighting"
       ],
+      "replaces": [
+        "visual:lighting.backlight"
+      ],
       "components": {
         "visual": {
           "dimension": "lighting"
@@ -66,7 +75,7 @@
       }
     },
     {
-      "id": "visual:lighting.golden_hour",
+      "id": "general:lighting.golden_hour",
       "category": "visual_lighting",
       "name": "Golden hour",
       "description": "Low, warm sunlight shortly after sunrise or before sunset.",
@@ -74,19 +83,8 @@
         "golden hour light",
         "golden-hour light"
       ],
-      "components": {
-        "visual": {
-          "dimension": "lighting"
-        }
-      }
-    },
-    {
-      "id": "visual:lighting.moonlight",
-      "category": "visual_lighting",
-      "name": "Moonlight",
-      "description": "Cool, dim night light from the moon.",
-      "aliases": [
-        "moonlit"
+      "replaces": [
+        "visual:lighting.golden_hour"
       ],
       "components": {
         "visual": {
@@ -95,7 +93,24 @@
       }
     },
     {
-      "id": "visual:lighting.neon",
+      "id": "general:lighting.moonlight",
+      "category": "visual_lighting",
+      "name": "Moonlight",
+      "description": "Cool, dim night light from the moon.",
+      "aliases": [
+        "moonlit"
+      ],
+      "replaces": [
+        "visual:lighting.moonlight"
+      ],
+      "components": {
+        "visual": {
+          "dimension": "lighting"
+        }
+      }
+    },
+    {
+      "id": "general:lighting.neon",
       "category": "visual_lighting",
       "name": "Neon light",
       "description": "Saturated coloured light from neon signs or tubes.",
@@ -104,19 +119,8 @@
         "neon glow",
         "neon lights"
       ],
-      "components": {
-        "visual": {
-          "dimension": "lighting"
-        }
-      }
-    },
-    {
-      "id": "visual:lighting.window",
-      "category": "visual_lighting",
-      "name": "Window light",
-      "description": "Daylight falling in through a window from one side.",
-      "aliases": [
-        "natural window light"
+      "replaces": [
+        "visual:lighting.neon"
       ],
       "components": {
         "visual": {
@@ -125,7 +129,24 @@
       }
     },
     {
-      "id": "visual:lighting.candlelight",
+      "id": "general:lighting.window",
+      "category": "visual_lighting",
+      "name": "Window light",
+      "description": "Daylight falling in through a window from one side.",
+      "aliases": [
+        "natural window light"
+      ],
+      "replaces": [
+        "visual:lighting.window"
+      ],
+      "components": {
+        "visual": {
+          "dimension": "lighting"
+        }
+      }
+    },
+    {
+      "id": "general:lighting.candlelight",
       "category": "visual_lighting",
       "name": "Candlelight",
       "description": "Warm, flickering low light from candles.",
@@ -133,6 +154,9 @@
         "candle light",
         "candlelit"
       ],
+      "replaces": [
+        "visual:lighting.candlelight"
+      ],
       "components": {
         "visual": {
           "dimension": "lighting"
@@ -140,7 +164,7 @@
       }
     },
     {
-      "id": "visual:lighting.chiaroscuro",
+      "id": "general:lighting.chiaroscuro",
       "category": "visual_lighting",
       "name": "Chiaroscuro",
       "description": "Strong contrast between light and deep shadow.",
@@ -149,6 +173,9 @@
         "low-key lighting",
         "low key lighting"
       ],
+      "replaces": [
+        "visual:lighting.chiaroscuro"
+      ],
       "components": {
         "visual": {
           "dimension": "lighting"
@@ -156,7 +183,7 @@
       }
     },
     {
-      "id": "visual:lighting.high_key",
+      "id": "general:lighting.high_key",
       "category": "visual_lighting",
       "name": "High-key light",
       "description": "Bright, even light with few shadows.",
@@ -164,17 +191,17 @@
         "high-key lighting",
         "high key lighting"
       ],
+      "replaces": [
+        "visual:lighting.high_key"
+      ],
       "components": {
         "visual": {
-          "dimension": "lighting",
-          "conflicts": [
-            "visual:atmosphere.dramatic_shadows"
-          ]
+          "dimension": "lighting"
         }
       }
     },
     {
-      "id": "visual:lighting.volumetric",
+      "id": "general:lighting.volumetric",
       "category": "visual_lighting",
       "name": "Volumetric light",
       "description": "Visible beams or shafts of light through the air.",
@@ -183,6 +210,9 @@
         "god rays",
         "light shafts"
       ],
+      "replaces": [
+        "visual:lighting.volumetric"
+      ],
       "components": {
         "visual": {
           "dimension": "lighting"
@@ -190,7 +220,7 @@
       }
     },
     {
-      "id": "visual:lighting.overcast",
+      "id": "general:lighting.overcast",
       "category": "visual_lighting",
       "name": "Overcast daylight",
       "description": "Even, shadowless daylight under a cloudy sky.",
@@ -198,24 +228,26 @@
         "overcast light",
         "overcast sky"
       ],
+      "replaces": [
+        "visual:lighting.overcast"
+      ],
       "components": {
         "visual": {
-          "dimension": "lighting",
-          "conflicts": [
-            "visual:atmosphere.dramatic_shadows",
-            "visual:atmosphere.lens_flare"
-          ]
+          "dimension": "lighting"
         }
       }
     },
     {
-      "id": "visual:lighting.studio",
+      "id": "general:lighting.studio",
       "category": "visual_lighting",
       "name": "Studio light",
       "description": "Controlled light from studio lamps and softboxes.",
       "aliases": [
         "studio lighting",
         "softbox lighting"
+      ],
+      "replaces": [
+        "visual:lighting.studio"
       ],
       "components": {
         "visual": {

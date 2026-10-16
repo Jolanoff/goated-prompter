@@ -26,15 +26,15 @@ def being():
 
 SCENE_PACK = [
     {"id": "scene:body.person", "category": "body", "name": "Person", "aliases": ["person", "human", "man", "woman"],
-     "description": "An ordinary adult human.", "extends": ["core:body.humanoid"],
+     "description": "An ordinary adult human.", "extends": ["general:body.humanoid"],
      "components": {"body": {"complete_for": ["core:locomotion"]}}},
     {"id": "scene:action.embrace", "category": "action", "name": "Embrace", "aliases": ["hug", "cuddle"],
      "description": "Two people with their arms wrapped around each other.", "components": {
          "participants": {"slots": {"holder": being(), "held": being()}},
          "requirements": {"participants": {"holder": {"all_of": ["core:limb.arm"]}, "held": {"all_of": ["core:limb.arm"]}}},
-         "spatial": {"participants": {"holder": {"posture": "core:posture.standing", "facing": {"toward": "held"},
+         "spatial": {"participants": {"holder": {"posture": "general:posture.standing", "facing": {"toward": "held"},
                                                  "anchors": [{"relation": "in_front", "of": "held", "distance": "contact"}]},
-                                      "held": {"posture": "core:posture.standing", "facing": {"toward": "holder"}}},
+                                      "held": {"posture": "general:posture.standing", "facing": {"toward": "holder"}}},
                      "access": [{"from": "holder", "using": "core:limb.hand", "to": "held", "regions": ["core:anatomy.back"],
                                  "kind": "touch"}]}}},
     {"id": "scene:space.sofa", "category": "space", "name": "Sofa", "aliases": ["couch", "settee"],
@@ -54,12 +54,13 @@ def packs_folder(root, *, broken=False):
     """core (bundled) plus fantasy, adult and a small scene pack installed in a temporary folder."""
     install = root / "packs"
     install.mkdir()
-    for name in ("fantasy", "adult"):
-        shutil.copytree(FIXTURE_PACKS / name, install / name)
+    for name in ("fantasy", "adult", "general"):
+        source = Path(__file__).resolve().parents[3] / "vocabulary/packs/general" if name == "general" else FIXTURE_PACKS / name
+        shutil.copytree(source, install / name)
     scene = install / "scene"
     scene.mkdir()
     manifest = {"spec": 1, "id": "scene", "name": "Scene", "version": "1.0.0", "rating": "general",
-                "requires": {"core": ">=1.0.0"}, "files": ["entries.json"]}
+                "requires": {"core": ">=1.0.0", "general": ">=1.0.0"}, "files": ["entries.json"]}
     (scene / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     (scene / "entries.json").write_text(json.dumps({"spec": 1, "entries": SCENE_PACK}), encoding="utf-8")
     if broken:
@@ -90,20 +91,6 @@ POSES = ("standing close together", "seated side by side", "walking arm in arm",
          "kneeling on a rug", "facing the window")
 
 
-def without_arrangements(value, rules=()):
-    """value without the arrangement contract (arrangements.py): its rule lines, fields and options."""
-    if isinstance(value, str):
-        for rule in rules:
-            value = value.replace("\n" + rule, "")
-        return value
-    if isinstance(value, list):
-        return [without_arrangements(item) for item in value]
-    if isinstance(value, dict):
-        return {key: without_arrangements(item) for key, item in value.items()
-                if key not in ("arrangement", "arrangement_options", "placement")}
-    return value
-
-
 def summary(vocabulary):
     """The two fields every run's vocabulary record has had since Phase 5 (diagnostics are checked separately)."""
     return {key: vocabulary[key] for key in ("enabled", "provided")}
@@ -129,37 +116,19 @@ class ScriptedDirector(GoatedPrompterBackend):
                 "place": PLACES[number - 1], "position_name": POSES[number - 1], "position": f"variation {POSES[number - 1]}",
                 "looks": {label: "warm skin, slim, short hair" for label in labels}, "lighting": "soft daylight",
                 "camera": "medium shot"} for number in numbers]
-            self.labels = labels
-            for concept, offered in zip(concepts, user.get("arrangement_options", [])):
-                concept["arrangement"] = self.arrangement(offered["options"])
             return json.dumps({"concepts": concepts})
         if stage == "stagings":
             stagings = [{"reach": "Nothing is against the touched part.",
                          "position": {label: f"{label} stands on the floor" for label in labels},
                          "actions": "They greet each other."} for _ in user["concepts"]]
-            if "placement" in instruction.json_schema["properties"]["stagings"]["items"]["properties"]:
-                for staging, concept in zip(stagings, user["concepts"]):
-                    fixed = (concept.get("arrangement") or {}).get("placement", {})
-                    staging["placement"] = {label: {"posture": "other", "facing": "other", **fixed.get(label, {})}
-                                            for label in labels}
             return json.dumps({"stagings": stagings})
+        finishing = "open" in instruction.json_schema["properties"]["scenes"]["items"]["properties"]
         return json.dumps({"scenes": [{
             "subjects": {label: {"skin": "warm", "build": "slim", "hair": "short", "detail": "freckles", "clothing": "linen shirt"}
                          for label in labels},
             "space": "a quiet room", "lighting": "soft daylight", "mood": "calm", "camera": "medium shot",
-            "extras": "a lamp"} for _ in user["scenes"]]})
-
-
-    def arrangement(self, options):
-        """The first option the request names, with its only valid roles or else the people in order, one per role;
-        none ([]) when nothing is named."""
-        named = [option for option in options if option["named_by_request"]]
-        if not named:
-            return []
-        roles = named[0].get("only_valid_roles") or {role: [label] for role, label in zip(sorted(named[0]["roles"]), self.labels)}
-        if set(roles) != set(named[0]["roles"]):
-            return []
-        return [{"option": named[0]["id"], "roles": [{"role": role, "who": who} for role, who in sorted(roles.items())]}]
+            "extras": "a lamp", **({"open": {label: "a relaxed expression" for label in labels}} if finishing else {})}
+            for _ in user["scenes"]]})
 
 
 class RecordingTrace:
@@ -207,17 +176,16 @@ class Section2Run(unittest.TestCase):
 class Section2Vocabulary(Section2Run):
 
     # -- retrieval reaches the Director
-    def test_relevant_vocabulary_reaches_concept_and_staging_only(self):
+    def test_relevant_vocabulary_is_composed_before_finishing(self):
         result, log = self.run_scenes(brief("two friends hugging on a sofa", characters=PEOPLE))
         self.assertEqual(summary(result["vocabulary"]), {"enabled": True, "provided": log["provided"]})
         self.assertIn("scene:action.embrace", log["provided"])
         self.assertIn("scene:space.sofa", log["provided"])
-        for stage in ("concepts", "stagings"):
-            for user in self.users(stage):
-                self.assertIn("- Embrace", user["vocabulary"])
-                self.assertIn("optional reference", user["vocabulary"])
-        self.assertFalse([user for user in self.users("scenes") if "vocabulary" in user], "description never gets it")
-        self.assertEqual(log["provided_to"], ["concept", "staging"])
+        self.assertFalse(self.users("concepts") or self.users("stagings"))
+        self.assertTrue(self.users("scenes"))
+        self.assertFalse([user for user in self.users("scenes") if "vocabulary" in user], "finishing gets checked facts, not suggestions")
+        self.assertTrue(all(scene["arrangement"]["kind"] == "vocabulary" for scene in result["scenes"]))
+        self.assertEqual(log["provided_to"], ["composition"])
         self.assertTrue(result["complete"])
 
     def test_the_result_keeps_export_safe_diagnostics_by_image(self):
@@ -253,7 +221,7 @@ class Section2Vocabulary(Section2Run):
 
     def test_the_log_records_entries_findings_and_what_was_provided(self):
         _, log = self.run_scenes(brief("two friends hugging on a sofa", characters=PEOPLE))
-        self.assertEqual(log["packs"], ["adult", "core", "fantasy", "scene"])
+        self.assertEqual(log["packs"], ["adult", "core", "fantasy", "general", "scene"])
         self.assertEqual(log["allowed_ratings"], ["general", "mature"])
         embrace = next(entry for entry in log["entries"] if entry["id"] == "scene:action.embrace")
         self.assertEqual(embrace["status"], "feasible")
@@ -276,8 +244,8 @@ class Section2Vocabulary(Section2Run):
         _, log = self.run_scenes(brief("two robots hugging", characters=robots))
         embrace = next(entry for entry in log["entries"] if entry["id"] == "scene:action.embrace")
         self.assertEqual(embrace["status"], "unknown")
-        self.assertIn("Embrace", self.users("concepts")[0]["vocabulary"])
-        self.assertIn("(unknown)", self.users("concepts")[0]["vocabulary"])
+        composed = log["composer"]["images"]
+        self.assertTrue(all(image["status"] == "unknown" for image in composed))
 
     # -- no vocabulary
     def test_nothing_relevant_changes_nothing(self):
@@ -305,23 +273,18 @@ class Section2Vocabulary(Section2Run):
         self.assertEqual(summary(result["vocabulary"]), {"enabled": True, "provided": []})
         self.assertFalse([user for user in self.users("concepts") if "vocabulary" in user])
 
-    def test_switching_vocabulary_off_changes_only_the_vocabulary_field(self):
+    def test_switching_vocabulary_off_uses_the_freeform_flow(self):
         value = brief("two friends hugging on a sofa", characters=PEOPLE)
         result, _ = self.run_scenes(value)
         on = list(self.director.calls)
         off_result, off_log = self.run_scenes(value, config={"dataset_vocabulary": False})
         self.assertEqual(summary(off_result["vocabulary"]), {"enabled": False, "provided": []})
         self.assertIn("turned off", off_log["reason"])
-        self.assertEqual(len(on), len(self.director.calls))
-        rules = (scenes.ARRANGEMENT_CONCEPT_RULE, scenes.ARRANGEMENT_STAGING_RULE, scenes.ARRANGEMENT_DESCRIPTION_RULE)
-        for first, second in zip(on, self.director.calls):
-            # Besides the vocabulary block, vocabulary on adds only the arrangement contract (its rule and fields).
-            self.assertEqual(without_arrangements(first.system_message, rules), second.system_message)
-            with_vocabulary, without = json.loads(first.user_message), json.loads(second.user_message)
-            with_vocabulary.pop("vocabulary", None)
-            self.assertEqual(without_arrangements(with_vocabulary), without)
-        self.assertEqual(without_arrangements(off_result["scenes"]), without_arrangements(result["scenes"]),
-                         "the scripted Director answers the same")
+        self.assertEqual(len(on), 1)
+        self.assertEqual([call.diagnostic_stage for call in self.director.calls],
+                         ["dataset_v2:concepts", "dataset_v2:stagings", "dataset_v2:scenes"])
+        self.assertTrue(all(scene["arrangement"]["kind"] == "freeform" for scene in off_result["scenes"]))
+        self.assertTrue(all(scene["arrangement"]["kind"] == "vocabulary" for scene in result["scenes"]))
 
     def test_the_switch_must_be_a_boolean(self):
         with self.assertRaises(ValueError):
@@ -340,11 +303,11 @@ class Section2Vocabulary(Section2Run):
     def test_the_request_and_rules_stay_in_the_brief_above_the_vocabulary(self):
         value = brief("two friends hugging on a sofa", characters=PEOPLE, must=["outdoors"], rules=["keep it playful"])
         self.run_scenes(value)
-        user = self.users("concepts")[0]
+        user = self.users("scenes")[0]
         for key in ("request", "rules", "fixed", "randomized", "must", "avoid"):
             self.assertIn(key, user)
         self.assertEqual(user["request"], value["input"]["request"])
-        self.assertEqual(list(user).index("vocabulary"), list(user).index("style") + 1, "after the brief, as reference")
+        self.assertTrue(user["scenes"][0]["facts"], "checked facts accompany the unchanged brief")
         self.assertIn("outrank everything else", self.director.calls[0].system_message)
 
     # -- characters
@@ -391,7 +354,7 @@ class Section2Vocabulary(Section2Run):
         _, log = self.run_scenes(brief("a quiet afternoon reading", characters=PEOPLE))
         self.assertEqual(log["entries"], [])
         self.assertEqual({entry["category"] for entry in log["inspiration"]}, {"position", "space"})
-        self.assertTrue(all(entry["pack"] == "core" and entry["rating"] == "general" for entry in log["inspiration"]))
+        self.assertTrue(all(entry["pack"] == "general" and entry["rating"] == "general" for entry in log["inspiration"]))
         self.assertTrue(all(len(entry["binding"] or {}) == 2 or entry["category"] == "space" for entry in log["inspiration"]))
         _, log = self.run_scenes(brief("two friends hugging on a sofa", characters=PEOPLE))
         unrelated = {"scene:action.duel", "scene:position.aerial_carry", "fantasy:action.cast_on", "adult:item.dildo"}
@@ -430,12 +393,10 @@ class IntentVocabulary(Section2Run):
         self.assertNotIn("scene:action.embrace", [entry["id"] for entry in log["entries"]],
                          "a semantic hint is not named by the request")
         self.assertNotIn("Embrace", log["intent"]["fixed"].get("interaction", []))
-        for stage in ("concepts", "stagings"):
-            user = self.users(stage)[0]
-            self.assertIn("Embrace", user["vocabulary"])
-            self.assertIn("optional", user["vocabulary"])
+        for user in self.users("scenes"):
             self.assertEqual(user["fixed"], value["fixed"])
             self.assertEqual(user["must"], [])
+        self.assertNotIn("scene:action.embrace", log["composer"]["required"])
         self.assertEqual(value, before, "retrieval cannot rewrite participant links or the brief")
         self.assertTrue(result["complete"])
 
@@ -525,7 +486,7 @@ class IntentVocabulary(Section2Run):
         manifest["requires"]["fantasy"] = ">=0.1.0"
         path.write_text(json.dumps(manifest), encoding="utf-8")
         first = self.reference(value)
-        self.assertEqual(first["log"]["packs"], ["core", "fantasy", "scene"])
+        self.assertEqual(first["log"]["packs"], ["core", "fantasy", "general", "scene"])
         self.assertIn({"id": "fantasy", "role": "dependency"},
                       [{"id": item["id"], "role": item["role"]} for item in first["log"]["selection"]["packs"]])
         self.packs.set_enabled("adult", False)
@@ -627,18 +588,18 @@ class ProductionPacks(Section2Run):
 
     def test_the_ab_cases_now_receive_vocabulary(self):
         dragon = [{"label": "dragon", "gender": "custom", "custom": "dragon", "pronoun": "it"}]
-        cases = [(brief("A woman and a man hugging goodbye on a train platform", characters=PEOPLE), {"core:action.hug"}),
-                 (brief("A dragon resting on a cliff above a stormy sea", characters=dragon), {"core:space.cliff"}),
+        cases = [(brief("A woman and a man hugging goodbye on a train platform", characters=PEOPLE), {"general:action.hug"}),
+                 (brief("A dragon resting on a cliff above a stormy sea", characters=dragon), {"general:space.cliff"}),
                  (brief("A woman holding a lantern while walking through a dark forest", characters=PEOPLE[:1]),
-                  {"core:action.hold", "core:item.lantern"})]
+                  {"general:action.hold", "general:item.lantern"})]
         for value, expected in cases:
             with self.subTest(request=value["input"]["request"]):
                 result, log = self.run_scenes(value)
                 self.assertEqual(expected - set(log["provided"]), set(), log["provided"])
                 self.assertTrue(result["complete"])
-                self.assertIn("vocabulary", self.users("concepts")[0])
+                self.assertTrue(result["vocabulary"]["composer"]["images"])
                 self.assertFalse([entry for entry in log["entries"] if entry["rating"] == "adult"])
-        self.assertEqual([member["body"] for member in log["cast"]], ["core:body.human"])
+        self.assertEqual([member["body"] for member in log["cast"]], ["general:body.human"])
 
     def test_nsfw_brief_receives_adult_entries_and_keeps_its_cast(self):
         result, log = self.run_scenes(brief("Reverse cowgirl on a sofa", characters=PEOPLE, nsfw=True))
@@ -659,40 +620,30 @@ class ProductionPacks(Section2Run):
     def test_a_broad_nsfw_brief_gets_ideas_for_each_image(self):
         result, log = self.run_scenes(self.broad())
         self.assertTrue(result["complete"])
-        self.assertEqual(log["entries"], [], "the request names no entry")
+        self.assertIn("adult:action.sex", {entry["id"] for entry in log["entries"]})
+        self.assertTrue(all("adult:action.sex" in image["entries"] for image in log["composer"]["images"]),
+                        "position inspiration cannot replace the requested activity")
         self.assertTrue(log["provided"])
         self.assertEqual(log["intent"]["content"], "adult")
         self.assertEqual(len(log["scenes"]), 6)
-        concept = self.users("concepts")[0]["vocabulary"]
-        self.assertIn("optional inspiration", concept)
-        lines = {line.split(": ", 1)[0]: line.split(": ", 1)[1] for line in concept.splitlines() if line.startswith("- concept ")}
-        self.assertEqual(sorted(lines), [f"- concept {number}" for number in range(1, 7)])
-        # Staging is batched by five: the second staging request writes image 6 and gets image 6's ideas as its concept 1.
-        second = self.users("stagings")[1]["vocabulary"]
-        self.assertIn(f"- concept 1: {lines['- concept 6']}", second)
-        self.assertNotIn("- concept 2: ", second)
-        self.assertFalse([user for user in self.users("scenes") if "vocabulary" in user], "description never gets it")
-        names = {entry["id"]: entry["name"] for entry in log["inspiration"]}
-        self.assertEqual(lines["- concept 6"], "; ".join(names[entry_id] for entry_id in log["scenes"][5]["ideas"]))
+        self.assertEqual([image["kind"] for image in log["composer"]["images"]], ["vocabulary"] * 6)
+        self.assertFalse(self.users("concepts") or self.users("stagings"))
+        self.assertEqual([len(user["scenes"]) for user in self.users("scenes")], [5, 1])
 
-    def test_each_concept_and_staging_request_gets_its_own_images_ideas(self):
+    def test_each_finishing_request_gets_its_own_images_facts(self):
         with mock.patch.object(scenes, "PLAN_BATCH", 4), mock.patch.object(scenes, "BATCH", 2):
             result, log = self.run_scenes(self.broad(seed=8, amount=6))
         self.assertTrue(result["complete"])
-        names = {entry["id"]: entry["name"] for entry in log["inspiration"]}
-        expected = {scene["scene"]: "; ".join(names[entry_id] for entry_id in scene["ideas"]) for scene in log["scenes"]}
-        self.assertTrue(all(expected.values()), "every image has ideas")
-
-        def lines(user):
-            return [line.split(": ", 1)[1] for line in user["vocabulary"].splitlines() if line.startswith("- concept ")]
-        self.assertEqual([lines(user) for user in self.users("concepts")], [[expected[n] for n in (1, 2, 3, 4)], [expected[5], expected[6]]])
-        self.assertEqual([lines(user) for user in self.users("stagings")],
-                         [[expected[1], expected[2]], [expected[3], expected[4]], [expected[5], expected[6]]])
+        self.assertEqual([len(user["scenes"]) for user in self.users("scenes")], [2, 2, 2])
+        offered = [scene for user in self.users("scenes") for scene in user["scenes"]]
+        for scene, slot in zip(offered, result["scenes"]):
+            self.assertEqual(scene["facts"], slot["arrangement"]["facts"])
+        self.assertEqual([row["slot"] for row in log["composer"]["images"]], list(range(1, 7)))
 
     def test_the_seed_rotates_the_ideas_reproducibly(self):
         def vocabulary(seed):
             self.run_scenes(self.broad(seed))
-            return self.users("concepts")[0]["vocabulary"]
+            return [scene for user in self.users("scenes") for scene in user["scenes"]]
         first = vocabulary(4)
         self.assertEqual(first, vocabulary(4))
         self.assertTrue(any(first != vocabulary(other) for other in (5, 6, 7)))
@@ -711,7 +662,7 @@ class ProductionPacks(Section2Run):
         value = brief("A woman and a man hugging goodbye on a train platform", characters=PEOPLE)
         value["randomized"] = "clothing, facial expression, lighting, weather, train station details, camera angle"
         _, log = self.run_scenes(value)
-        self.assertEqual(log["provided"], ["core:action.hug"])
+        self.assertEqual(log["provided"], ["general:action.hug"])
         self.assertEqual(log["inspiration"], [])
 
     def test_an_incompatible_pack_leaves_section_2_unchanged(self):
@@ -730,7 +681,7 @@ class ProductionPacks(Section2Run):
     def test_a_disabled_official_pack_is_not_offered(self):
         self.packs.set_enabled("adult", False)
         result, log = self.run_scenes(brief("Reverse cowgirl on a sofa", characters=PEOPLE, nsfw=True))
-        self.assertEqual(log["packs"], ["core", "fantasy", "visual"], "Visual Direction is an official pack too")
+        self.assertEqual(log["packs"], ["core", "fantasy", "general", "visual"], "General and Visual are official packs too")
         self.assertFalse([entry_id for entry_id in log["provided"] if entry_id.startswith("adult:")])
         self.assertTrue(result["complete"])
 

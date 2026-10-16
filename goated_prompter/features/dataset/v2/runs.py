@@ -27,7 +27,8 @@ Record (schema 2; schema 1 is read as it is, see below):
     slot, revision (this slot's own change counter), input (guided input or ""),
     concept, staging, scene     each null until completed, then never overwritten by generation
     scene_status  pending | written | failed
-    failure       null or {"stage": "concepts" | "staging" | "description", "reasons": [...], "tries": n}
+    failure       null or {"stage": "composition" | "concepts" | "staging" | "description" | "finishing", "reasons": [...],
+                  "tries": n}; a composed image's concept is {"composition": ...} and it has no staging
     prompt        null, or {"status": "written" | "failed", "text", "trigger_ok", "error", "stage", "attempts"}
 
 Schema 1 runs (written before pack selection) are read and updated as schema 1: they have no packs field and
@@ -74,7 +75,7 @@ STATUSES = ("running", "succeeded", "failed", "cancelled", "interrupted")
 TERMINAL = frozenset(STATUSES[1:])
 STAGES = ("concepts", "staging", "description", "prompts", "done")
 SCENE_STATUSES = ("pending", "written", "failed")
-FAILED_STAGES = ("concepts", "staging", "description")
+FAILED_STAGES = ("concepts", "staging", "description", "composition", "finishing")
 RETAIN_COMPLETE = 20
 RETAIN_INCOMPLETE = 20
 RUN_ID = re.compile(r"^[0-9a-f]{32}$")

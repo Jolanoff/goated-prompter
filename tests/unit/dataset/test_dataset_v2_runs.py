@@ -45,6 +45,7 @@ class RunStoreHarness(unittest.TestCase):
         self.failing = {"concepts": set(), "staging": set(), "description": set()}
         self.on_call = None  # hook(stage, instruction) before each model answer
         self.calls = []
+        self.finishing_pending = []
         self.backend = MockBackend()
         self.enterContext(patch.object(self.backend, "generate", side_effect=self.generate))
         for module in (understanding, scenes):
@@ -91,12 +92,20 @@ class RunStoreHarness(unittest.TestCase):
                 for concept in user["concepts"]]})
         if stage == "dataset_v2:scenes":
             out = []
-            for row in user["scenes"]:
-                number = self.image(row["concept"])
+            finishing = "open" in instruction.json_schema["properties"]["scenes"]["items"]["properties"]
+            if finishing and not self.finishing_pending:
+                self.finishing_pending = list(range(1, self.brief["input"]["amount"] + 1))
+            numbers = self.finishing_pending[:len(user["scenes"])] if finishing else []
+            for index, row in enumerate(user["scenes"], 1):
+                number = numbers[index - 1] if finishing else self.image(row["concept"])
                 described = {"subjects": {("Nobody" if number in self.failing["description"] else "Alex"):
                                           {field: f"visible {field}" for field in scenes.SUBJECT_FIELDS}},
-                             "space": f"location{number}", "lighting": "daylight", "mood": "calm", "camera": "wide", "extras": "books"}
+                             "space": f"location{number}", "lighting": "daylight", "mood": "calm", "camera": "wide", "extras": "books",
+                             **({"open": {"Alex": "reading a book"}} if finishing else {})}
                 out.append(described)
+            if finishing:
+                self.finishing_pending = [number for number in self.finishing_pending
+                                           if number not in numbers or number in self.failing["description"]]
             return json.dumps({"scenes": out})
         found = PLACE.search(instruction.user_message or "") or PLACE.search(instruction.system_message or "")
         return f"Alex reads a book at location{found.group(1)}." if found else "Alex reads a book."
@@ -114,9 +123,97 @@ class RunStoreHarness(unittest.TestCase):
 
 
 class Persistence(RunStoreHarness):
+    def test_builder_validation_rejection_keeps_other_images_and_records_failed_slot(self):
+        with patch("goated_prompter.features.builder.service.pick_references", return_value=("A reader by a window.",)), \
+             patch("goated_prompter.features.builder.service.copied_reference",
+                   side_effect=lambda text, references: "location2" in text):
+            job = self.run_job()
+        self.assertEqual(job.result["prompt_summary"], {"written": 2, "missing": [2]})
+        self.assertFalse(job.result["complete"])
+        self.assertEqual([item["slot"] for item in job.result["prompts"]], [1, 2, 3])
+        failed = job.result["prompts"][1]
+        self.assertEqual(failed["prompt"], "")
+        self.assertIn("copied wording", failed["error"])
+        self.assertEqual(failed["stage"], "dataset_v2:builder")
+        self.assertEqual(failed["attempts"], 2)
+        record = self.only_run()
+        self.assertEqual([slot["prompt"]["status"] for slot in record["slots"]], ["written", "failed", "written"])
+        self.assertEqual(record["stage"], "done")
+
+    def test_all_rejected_prompts_fail_the_job_and_keep_scenes_and_errors(self):
+        from goated_prompter.backends.base import GoatedPrompterError
+
+        self.brief["input"]["trigger"] = "reader_token"
+        job = Job()
+        with self.assertRaisesRegex(GoatedPrompterError, "No final prompt could be written"):
+            self.run_job(job=job)
+        self.assertNotEqual(job.status, "succeeded")
+        self.assertFalse(job.result["complete"])
+        self.assertEqual(job.result["written"], 3, "scene counts stay separate from prompt counts")
+        self.assertEqual(job.result["prompt_summary"], {"written": 0, "missing": [1, 2, 3]})
+        self.assertTrue(all(not item["prompt"] and item["error"] for item in job.result["prompts"]))
+        record = self.only_run()
+        self.assertEqual(record["status"], "failed")
+        self.assertTrue(all(slot["scene"] and slot["prompt"]["status"] == "failed" for slot in record["slots"]))
+
+    def test_provider_error_still_stops_prompt_generation_and_preserves_completed_images(self):
+        from goated_prompter.backends.base import BackendGenerationError
+
+        def fail(stage, instruction):
+            if stage == "final" and "location2" in instruction.user_message:
+                raise BackendGenerationError("provider unavailable")
+
+        self.on_call = fail
+        with self.assertRaisesRegex(BackendGenerationError, "provider unavailable"):
+            self.run_job()
+        record = self.only_run()
+        self.assertEqual(record["status"], "failed")
+        self.assertEqual(record["slots"][0]["prompt"]["status"], "written")
+        self.assertIsNone(record["slots"][1]["prompt"])
+        self.assertIsNone(record["slots"][2]["prompt"])
+
+    def test_all_builder_validation_rejections_are_saved_before_the_job_fails(self):
+        from goated_prompter.backends.base import GoatedPrompterError
+
+        job = Job()
+        with patch("goated_prompter.features.builder.service.pick_references", return_value=("A reader by a window.",)), \
+             patch("goated_prompter.features.builder.service.copied_reference", return_value=True), \
+             self.assertRaisesRegex(GoatedPrompterError, "No final prompt could be written"):
+            self.run_job(job=job)
+        self.assertNotEqual(job.status, "succeeded")
+        self.assertFalse(job.result["complete"])
+        self.assertEqual(job.result["written"], 3, "scene counts stay separate from prompt counts")
+        self.assertEqual(job.result["prompt_summary"], {"written": 0, "missing": [1, 2, 3]})
+        self.assertTrue(all(not item["prompt"] and item["error"] for item in job.result["prompts"]))
+        record = self.only_run()
+        self.assertEqual(record["status"], "failed")
+        self.assertTrue(all(slot["scene"] and slot["prompt"]["status"] == "failed" for slot in record["slots"]))
+
+    def test_partial_prompt_completion_reports_only_usable_prompts(self):
+        self.brief["input"]["trigger"] = "reader_token"
+        self.failing["description"] = {3}
+
+        def generated(instruction):
+            text = self.generate(instruction)
+            if instruction.diagnostic_stage == "final" and "location2" in text:
+                return "reader_token " + text
+            return text
+
+        with patch.object(self.backend, "generate", side_effect=generated):
+            job = self.run_job()
+        self.assertFalse(job.result["complete"])
+        self.assertEqual(job.result["prompt_summary"], {"written": 1, "missing": [1, 3]})
+        self.assertIn("1 of 3 final prompts written", job.status_reason)
+        self.assertIn("images 1, 3", job.status_reason)
+        self.assertEqual(job.result["written"], 2)
+        self.assertEqual(job.result["missing"][0]["slot"], 3)
+        self.assertFalse(runs.is_complete(self.only_run()))
+
     def test_full_generation_is_saved_and_complete(self):
         job = self.run_job()
         record = self.only_run()
+        self.assertTrue(job.result["complete"])
+        self.assertEqual(job.result["prompt_summary"], {"written": 3, "missing": []})
         self.assertEqual(job.result["run_id"], record["run_id"])
         self.assertEqual((record["status"], record["stage"], record["job_id"]), ("succeeded", "done", job.id))
         self.assertEqual((record["schema"], record["requested"], record["seed"]), (2, 3, 73))
@@ -184,8 +281,10 @@ class Persistence(RunStoreHarness):
                                  sorted({1, 2, 3} - failed))
 
     def test_scenes_only_run_is_complete_without_prompts(self):
-        self.run_job(scenes_only=True)
+        job = self.run_job(scenes_only=True)
         record = self.only_run()
+        self.assertTrue(job.result["complete"])
+        self.assertNotIn("prompt_summary", job.result)
         self.assertEqual((record["status"], record["stage"], record["scenes_only"]), ("succeeded", "done", True))
         self.assertTrue(all(slot["prompt"] is None for slot in record["slots"]))
         self.assertTrue(runs.is_complete(record))
@@ -696,7 +795,7 @@ class PackSelection(RunStoreHarness):
         self.assertEqual(job.status, "succeeded")
         cancelled = Job()
         def cancel(stage, instruction):
-            if stage == "dataset_v2:stagings":
+            if stage == "dataset_v2:scenes":
                 cancelled.cancel_requested = True
                 raise JobCancelled()
         self.on_call = cancel

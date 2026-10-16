@@ -61,8 +61,8 @@ class ConceptAndStaging(VisualRun):
         result = self.run_scenes(brief("two friends hugging on a sofa", characters=PEOPLE, amount=6), visual=default_settings())
         record = result["vocabulary"]["visual"]
         self.assertTrue(record["enabled"])
-        offered = self.users("concepts")[0]["visual_direction"]
-        self.assertEqual([item["concept"] for item in offered], [1, 2, 3, 4, 5, 6])
+        offered = [scene for user in self.users("scenes") for scene in user["scenes"]]
+        self.assertEqual(len(offered), 6)
         registry = self.packs.registry_for(self.packs.resolve_selection(["visual"]))
         for item, slot in zip(offered, record["slots"]):
             for dimension, entry_id in slot["directions"].items():
@@ -72,22 +72,16 @@ class ConceptAndStaging(VisualRun):
 
     def test_the_rules_ride_on_the_existing_camera_and_lighting_fields(self):
         self.run_scenes(brief("two friends hugging on a sofa", characters=PEOPLE, amount=3), visual=default_settings())
-        self.assertIn("visual_direction, when given", self.calls("concepts")[0].system_message)
-        self.assertIn("never the place, the position, the people or what they do", self.calls("concepts")[0].system_message)
-        self.assertIn("is where the image is seen from", self.calls("stagings")[0].system_message)
-        self.assertIn("camera and lighting keep the concept's camera and lighting", self.calls("scenes")[0].system_message)
-        for stage in ("stagings", "scenes"):
-            self.assertFalse([user for user in self.users(stage) if "visual_direction" in user], "only the concept is directed")
-        concepts = [{key: value for key, value in concept.items() if key != "looks"} for concept in self.users("stagings")[0]["concepts"]]
-        self.assertTrue(all("camera" in concept and "lighting" in concept for concept in concepts),
-                        "staging sees the concept's camera and lighting, as before")
+        self.assertFalse(self.calls("concepts") or self.calls("stagings"))
+        self.assertIn("come from Visual Direction", self.calls("scenes")[0].system_message)
+        self.assertTrue(all("camera" in scene and "lighting" in scene for scene in self.users("scenes")[0]["scenes"]))
 
     def test_a_retried_concept_keeps_its_images_directions(self):
-        result = self.run_scenes(brief("two friends hugging on a sofa", characters=PEOPLE, amount=6), visual=default_settings(),
+        result = self.run_scenes(brief("a perfume bottle on marble", characters=[], amount=6), visual=default_settings(),
                                  director=ShortFirstDirector())
         first, second = self.users("concepts")[:2]
         self.assertEqual(len(second["earlier_concepts"]), 4)
-        again = self.run_scenes(brief("two friends hugging on a sofa", characters=PEOPLE, amount=6), visual=default_settings())
+        again = self.run_scenes(brief("a perfume bottle on marble", characters=[], amount=6), visual=default_settings())
         whole = self.users("concepts")[0]["visual_direction"]
         self.assertEqual([{**item, "concept": index} for index, item in enumerate(whole[4:], 1)], second["visual_direction"])
         self.assertEqual(first["visual_direction"][:4], whole[:4])
@@ -96,31 +90,32 @@ class ConceptAndStaging(VisualRun):
     def test_a_fixed_camera_is_kept_for_every_image_and_masked_from_content_retrieval(self):
         value = brief("low angle shots of two friends hugging on a sofa", characters=PEOPLE, amount=4)
         result = self.run_scenes(value, visual=default_settings())
-        self.assertTrue(all(item["camera"].count("Low angle") == 1 for item in self.users("concepts")[0]["visual_direction"]))
+        self.assertTrue(all(item["camera"].count("Low angle") == 1 for item in self.users("scenes")[0]["scenes"]))
         dimensions = result["vocabulary"]["visual"]["dimensions"]
         self.assertEqual((dimensions["camera_angle"]["status"], dimensions["camera_angle"]["source"]), ("fixed", "request"))
         self.assertIn("low angl", result["vocabulary"]["visual"]["masked"])
-        self.assertEqual(self.users("concepts")[0]["request"], value["input"]["request"], "the Director still reads the brief as written")
+        self.assertEqual(self.users("scenes")[0]["request"], value["input"]["request"], "the Director still reads the brief as written")
 
     def test_nsfw_and_larger_casts(self):
         trio = PEOPLE + [{"label": "partner", "gender": "female", "custom": "woman", "pronoun": "she"}]
         result = self.run_scenes(brief("three adults on a bed", characters=trio, nsfw=True, amount=4), visual=default_settings())
         record = result["vocabulary"]["visual"]
         self.assertEqual(record["people"], 3)
-        self.assertIn({"id": "visual:framing.extreme_close_up", "reason": "not for 3 people per image"}, record["excluded"])
-        self.assertFalse([slot for slot in record["slots"] if slot["directions"].get("framing") == "visual:framing.extreme_close_up"])
-        self.assertIn("This dataset is sexual and explicit", self.calls("concepts")[0].system_message)
-        self.assertTrue(self.users("concepts")[0]["visual_direction"])
+        self.assertNotIn({"id": "general:framing.extreme_close_up", "reason": "not for 3 people per image"}, record["excluded"])
+        self.assertIn("This dataset is sexual and explicit", self.calls("scenes")[0].system_message)
+        self.assertTrue(self.users("scenes")[0]["scenes"][0]["camera"])
 
 
 class WithoutVisualDirection(VisualRun):
-    def test_not_requested_or_not_selected_changes_no_request(self):
+    def test_core_directions_need_no_visual_pack_and_all_disabled_changes_no_request(self):
         value = brief("low angle shots of two friends hugging on a sofa", characters=PEOPLE, amount=3)
         self.run_scenes(value, visual=None)
         baseline = [(call.system_message, call.user_message) for call in self.director.calls]
         self.run_scenes(value, visual=default_settings(), selected=())
-        self.assertEqual([(call.system_message, call.user_message) for call in self.director.calls], baseline,
-                         "without the Visual Direction pack, byte-for-byte the requests of a run without it")
+        self.assertNotEqual([(call.system_message, call.user_message) for call in self.director.calls], baseline,
+                            "Core owns framing, camera, composition and light even without the Visual pack")
+        self.assertFalse(any("atmosphere" in row["directions"] for row in self.run_scenes(
+            value, visual=default_settings(), selected=())["vocabulary"]["visual"]["slots"]))
         self.run_scenes(value, visual={dimension: {"enabled": False} for dimension in default_settings()})
         self.assertEqual([(call.system_message, call.user_message) for call in self.director.calls], baseline)
         self.assertFalse([user for user in self.users("concepts") if "visual_direction" in user])
@@ -148,7 +143,7 @@ class Diagnostics(VisualRun):
         self.assertEqual(kept, json.loads(json.dumps(result["vocabulary"]["visual"])))
         self.assertEqual([slot["slot"] for slot in kept["slots"]], [1, 2, 3])
         excluded = {item["id"]: item["reason"] for item in kept["excluded"]}
-        self.assertEqual(excluded["visual:camera_angle.dutch_angle"], "ruled out by the brief")
+        self.assertEqual(excluded["general:camera_angle.dutch_angle"], "ruled out by the brief")
         self.assertIn("Anime", excluded["visual:atmosphere.film_grain"])
         self.assertEqual(kept["style"], "Anime")
         self.assertEqual(set(kept["dimensions"]), {"framing", "camera_angle", "composition", "lighting", "atmosphere"})

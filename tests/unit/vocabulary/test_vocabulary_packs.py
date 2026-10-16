@@ -11,7 +11,7 @@ from pathlib import Path
 
 from goated_prompter.features.vocabulary.packs import (
     BUNDLED_DIRS, MAX_FILE_BYTES, OFFICIAL_DIR, PackDrift, PackManager, VocabularyError, build_registry, read_pack, satisfies,
-    validate_selection)
+    validate_selection, read_foundation)
 from goated_prompter.features.vocabulary.retrieval import RetrievalRequest, retrieve
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "packs"
@@ -64,11 +64,15 @@ def capability(entry_id, implies=None):
 
 
 class ManagerTest(unittest.TestCase):
+    content = False
+
     def setUp(self):
         self.root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.root, True)
         # Installed fixture packs only: an empty official folder keeps vocabulary/packs out of these tests.
         self.manager = PackManager(self.root / "packs", self.root / "state.json", official_dir=self.root / "official")
+        if self.content:
+            shutil.copytree(OFFICIAL_DIR / "general", self.root / "official/general")
 
     def installed(self):
         folder = self.root / "packs"
@@ -89,7 +93,8 @@ class Discovery(ManagerTest):
         self.assertEqual([(pack["id"], pack["bundled"], pack["enabled"]) for pack in packs], [("core", True, True)])
         self.assertFalse((self.root / "packs").exists(), "discovery never creates the install folder")
         registry = self.manager.registry()
-        self.assertIn("core:body.humanoid", registry)
+        self.assertIn("core:limb", registry)
+        self.assertFalse(any(i.startswith("core:body.") for i in registry.ids()))
 
     def test_core_cannot_be_disabled_removed_or_replaced(self):
         for action in (lambda: self.manager.set_enabled("core", False), lambda: self.manager.remove("core")):
@@ -107,6 +112,7 @@ class Discovery(ManagerTest):
 
 
 class Install(ManagerTest):
+    content = True
     def test_install_merges_entries_and_resolves_inheritance(self):
         summary = self.manager.install_archive(archive(fixture("fantasy")))
         self.assertEqual((summary["id"], summary["enabled"], summary["bundled"]), ("fantasy", True, False))
@@ -119,7 +125,7 @@ class Install(ManagerTest):
         self.assertIn("core:locomotion.flight", dragon["provides"])
         self.assertEqual(registry.owner("fantasy:creature.dragon"), "fantasy")
         self.assertIn("fantasy:creature.dragon", registry.by_category("creature"))
-        self.assertIn("core:position.from_behind", registry.find("kneeling behind"))
+        self.assertIn("general:position.from_behind", registry.find("kneeling behind"))
 
     def test_downgrade_needs_its_own_flag(self):
         self.manager.install_archive(archive(fixture("fantasy", manifest={"version": "0.5.0"})))
@@ -163,7 +169,7 @@ class Install(ManagerTest):
 
     def test_missing_dependency_and_unsatisfied_version_are_rejected(self):
         self.assertRejected(archive(fixture("fantasy", manifest={"requires": {"elves": ">=1.0.0"}})), "requires elves")
-        core = json.loads((BUNDLED_DIRS[0] / "manifest.json").read_text(encoding="utf-8"))["version"]
+        core = read_foundation().manifest["version"]
         self.assertRejected(archive(fixture("fantasy", manifest={"requires": {"core": ">=2.0.0"}})), f"{core} is enabled")
 
     def test_declared_conflicts_are_rejected(self):
@@ -204,7 +210,8 @@ class Install(ManagerTest):
                      "components": {"object": {"provides": ["core:item.handheld"], "complete_for": complete_for}}}
             return {**entry, "extends": extends} if extends else entry
         self.assertRejected(archive(tiny_pack("rods", [item("rods:rod", ["core:limb.tentacle"])])), "core:limb.tentacle does not exist")
-        self.assertRejected(archive(tiny_pack("rods", [item("rods:rod", ["core:posture.sitting"])])), "is used as a capability but is not one")
+        self.assertRejected(archive(tiny_pack("rods", [item("rods:rod", ["general:posture.sitting"])],
+                                              requires={"core": ">=1.0.0", "general": ">=1.0.0"})), "is used as a capability but is not one")
         self.manager.install_archive(archive(tiny_pack("rods", [
             item("rods:rod", ["core:anatomy"]),
             {"id": "rods:long_rod", "category": "item", "name": "Long rod", "extends": ["rods:rod"],
@@ -231,9 +238,9 @@ class Install(ManagerTest):
         self.assertEqual(self.manager.install_archive(archive(tiny_pack("niche", [], rating="mature", activation="theme")))["activation"],
                          "theme")
         self.assertRejected(archive(tiny_pack("loose", [], activation="content")), "content activation needs a Mature or Adult pack rating")
-        self.assertRejected(archive(tiny_pack("always", [], rating="adult", activation="always")), "activation")
+        self.assertRejected(archive(tiny_pack("unknown", [], rating="adult", activation="unsupported")), "activation")
         self.assertEqual({pack["id"]: pack["activation"] for pack in self.manager.discover()},
-                         {"core": "always", "plain": "theme", "general_adult": "content", "niche": "theme"})
+                          {"core": "always", "general": "always", "plain": "theme", "general_adult": "content", "niche": "theme"})
 
 
     def test_theme_phrases_are_validated(self):
@@ -362,6 +369,7 @@ class Selection(ManagerTest):
 
 
 class UnsafeArchives(ManagerTest):
+    content = True
     def raw(self, members):
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as zipped:
@@ -409,6 +417,7 @@ class UnsafeArchives(ManagerTest):
 
 
 class EnableDisableRemove(ManagerTest):
+    content = True
     def setUp(self):
         super().setUp()
         self.manager.install_archive(archive(fixture("fantasy")))
@@ -491,7 +500,7 @@ class Locations(unittest.TestCase):
 
     def test_official_packs_are_discovered_without_copying(self):
         self.assertEqual(self.summary(), {"core": (True, True, True), "fantasy": (True, False, True), "adult": (True, False, True),
-                                          "visual": (True, False, True)})
+                                          "general": (True, False, True), "visual": (True, False, True)})
         registry = self.manager.registry()
         self.assertIn("fantasy:body.dragon", registry)
         self.assertIn("adult:position.cowgirl", registry)
@@ -538,7 +547,7 @@ class Locations(unittest.TestCase):
         self.assertIn("requires fantasy", str(caught.exception))
         self.manager.set_enabled("fantasy", True)
         self.manager.remove("wizards")
-        self.assertEqual(set(self.summary()), {"core", "fantasy", "adult", "visual"})
+        self.assertEqual(set(self.summary()), {"core", "general", "fantasy", "adult", "visual"})
 
     def test_duplicate_ids_across_locations_are_rejected(self):
         shutil.copytree(OFFICIAL_DIR / "fantasy", self.root / "packs" / "fantasy")  # placed by hand, not installed
@@ -561,7 +570,7 @@ class Locations(unittest.TestCase):
             found = retrieve(manager.registry(), RetrievalRequest(request="reverse cowgirl on a sofa", characters=cast, nsfw=nsfw))
             return [entry.id for entry in found.entries]
         self.assertNotIn("adult:position.reverse_cowgirl", offered(False))
-        self.assertIn("core:space.sofa", offered(False))
+        self.assertIn("general:space.sofa", offered(False))
         self.assertIn("adult:position.reverse_cowgirl", offered(True))
         self.manager.set_enabled("adult", False)
         self.assertFalse([entry_id for entry_id in offered(True) if entry_id.startswith("adult:")], "a disabled pack offers nothing")

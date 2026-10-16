@@ -2,20 +2,21 @@
   "name": "magic",
   "description": "A mage holding a staff casts a spell on someone facing them across a room.",
   "packs": [
+    "general",
     "core",
     "fantasy"
   ],
   "cast": [
     {
       "id": "mage",
-      "body": "core:body.humanoid",
+      "body": "general:body.humanoid",
       "traits": [
         "fantasy:trait.spellcaster"
       ]
     },
     {
       "id": "foe",
-      "body": "core:body.humanoid"
+      "body": "general:body.humanoid"
     }
   ],
   "objects": [
@@ -24,17 +25,17 @@
       "item": "fantasy:item.staff"
     }
   ],
-  "space": "core:space.floor",
+  "space": "general:space.floor",
   "use": [
     {
-      "entry": "core:position.facing_apart",
+      "entry": "general:position.facing_apart",
       "bind": {
         "a": "mage",
         "b": "foe"
       }
     },
     {
-      "entry": "core:action.hold",
+      "entry": "general:action.hold",
       "bind": {
         "holder": "mage",
         "item": "staff"

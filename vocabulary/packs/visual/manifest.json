@@ -1,38 +1,19 @@
 {
   "spec": 1,
   "id": "visual",
-  "name": "Visual Direction",
-  "version": "1.0.0",
-  "description": "Camera angles, framing, composition, lighting and atmosphere that Visual Direction chooses per Dataset image for what the brief leaves open. Directions say how an image is seen and lit, never what is in it; retrieval never offers them as scene content.",
+  "name": "Atmosphere",
+  "version": "2.0.0",
+  "description": "Air, focus and surface effects Visual Direction chooses per Dataset image for what the brief leaves open. Framing, camera angles, composition and lighting are part of the core.",
   "authors": [
     "Jolanoff"
   ],
   "license": "Goated Prompter Source-Available License 1.0",
   "rating": "general",
   "requires": {
-    "core": ">=1.1.0 <2.0.0"
+    "core": ">=1.2.0 <2.0.0",
+    "general": ">=1.0.0 <2.0.0"
   },
   "categories": [
-    {
-      "id": "visual_camera",
-      "name": "Camera angles",
-      "description": "Where the image is seen from."
-    },
-    {
-      "id": "visual_framing",
-      "name": "Framing",
-      "description": "How much of the subjects and their surroundings the image shows."
-    },
-    {
-      "id": "visual_composition",
-      "name": "Composition",
-      "description": "How the subjects are arranged within the frame."
-    },
-    {
-      "id": "visual_lighting",
-      "name": "Lighting",
-      "description": "Where the light comes from and its quality."
-    },
     {
       "id": "visual_atmosphere",
       "name": "Atmosphere",
@@ -40,10 +21,6 @@
     }
   ],
   "files": [
-    "camera.json",
-    "framing.json",
-    "composition.json",
-    "lighting.json",
     "atmosphere.json"
   ]
 }

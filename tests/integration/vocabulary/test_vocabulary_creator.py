@@ -7,7 +7,7 @@ import zipfile
 from unittest.mock import patch
 
 from goated_prompter.features.vocabulary.creator import PackCreator
-from goated_prompter.features.vocabulary.packs import BUNDLED_DIRS, OFFICIAL_DIR, read_pack
+from goated_prompter.features.vocabulary.packs import OFFICIAL_DIR, read_pack, read_foundation
 from tests.integration.vocabulary.test_vocabulary_api import VocabularyAPIBase
 from tests.unit.vocabulary.test_vocabulary_packs import archive, capability, tiny_pack
 
@@ -32,7 +32,7 @@ class VocabularyCreatorTests(VocabularyAPIBase):
     async def test_schemas_are_the_real_complete_schemas_and_selectors_include_adult_and_disabled_packs(self):
         data = await self.call("schemas")
         self.assertEqual(set(data["entry"]["$defs"]["components"]["properties"]),
-                         {"capability", "body", "participants", "requirements", "spatial", "claims", "object", "environment"})
+                         {"capability", "body", "participants", "requirements", "spatial", "claims", "object", "environment", "visual", "visibility", "capacity"})
         await self.enabled("adult", False)
         refs = await self.call("references")
         self.assertTrue(any(row["pack"] == "adult" for row in refs["entries"]))
@@ -42,19 +42,19 @@ class VocabularyCreatorTests(VocabularyAPIBase):
 
     async def test_new_pack_metadata_and_all_supported_components_categories_validate(self):
         seen_components, seen_categories = set(), set()
-        for folder in [*BUNDLED_DIRS, OFFICIAL_DIR / "fantasy", OFFICIAL_DIR / "adult"]:
-            source = read_pack(folder, bundled=True)
+        for source in [read_foundation(), *[read_pack(OFFICIAL_DIR / name, bundled=True) for name in ("general", "fantasy", "adult")]]:
             entries = []
             for _name, entry in source.entries:
                 clone = deepcopy(entry)
                 clone["id"] = "studio:" + entry["id"].split(":", 1)[1]
+                clone.pop("replaces", None)  # clones are new entries, not a second owner of the source's retired ids
                 entries.append(clone)
                 seen_components.update(entry["components"])
                 seen_categories.add(entry["category"])
             requires = {"core": ">=1.0.0", **({source.id: ">=1.0.0"} if source.id != "core" else {})}
             result = await self.validate(document(entries, requires=requires, rating=source.manifest["rating"]))
             self.assertTrue(result["valid"], result)
-        self.assertEqual(seen_components, {"capability", "body", "participants", "requirements", "spatial", "claims", "object", "environment"})
+        self.assertEqual(seen_components, {"capability", "body", "participants", "requirements", "spatial", "claims", "object", "environment", "visual", "visibility"})
         self.assertGreater(len(seen_categories), 5)
 
     async def test_custom_schema_category_and_multiple_entry_files_are_supported(self):

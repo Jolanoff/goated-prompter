@@ -9,19 +9,18 @@ import json
 import unittest
 from pathlib import Path
 
-from goated_prompter.features.vocabulary.packs import BUNDLED_DIRS, activation, build_registry, read_pack
+from goated_prompter.features.vocabulary.packs import BUNDLED_DIRS, activation, build_registry, read_pack, read_foundation
 from goated_prompter.features.vocabulary.resolver import candidate_bindings, resolve
 from goated_prompter.features.vocabulary.retrieval import RetrievalConfig, RetrievalRequest, VocabularyIndex, retrieve
 from goated_prompter.features.vocabulary.semantic import terms
 
 ROOT = Path(__file__).resolve().parents[3]
 PACKS = ROOT / "vocabulary" / "packs"
-CORE = read_pack(BUNDLED_DIRS[0], bundled=True)
+CORE = read_foundation()
+GENERAL = read_pack(PACKS / "general", bundled=True)
 FANTASY = read_pack(PACKS / "fantasy", bundled=False)
 ADULT = read_pack(PACKS / "adult", bundled=False)
-# The opt-in kinks pack is not an official pack: it is installed (or not) from vocabulary/optional.
-KINKS = read_pack(ROOT / "vocabulary" / "optional" / "adult_kinks", bundled=False)
-REGISTRY = build_registry([CORE, FANTASY, ADULT, KINKS])
+REGISTRY = build_registry([CORE, GENERAL, FANTASY, ADULT])
 INDEX = VocabularyIndex(REGISTRY)
 GENERAL_DIRECTOR = ("Act as a disciplined general visual director. Convert the current task into one coherent, production-ready "
                     "prompt whose subject, action or state, environment, spatial relationships, composition, viewpoint, materials, "
@@ -54,20 +53,19 @@ def bodies(found):
 
 class Packs(unittest.TestCase):
     def test_three_packs_load_with_their_dependencies(self):
-        self.assertEqual((CORE.manifest["version"], FANTASY.manifest["version"], ADULT.manifest["version"], KINKS.manifest["version"]),
-                         ("1.1.0", "1.0.0", "2.1.0", "1.0.0"))
-        self.assertEqual([activation(pack.manifest) for pack in (FANTASY, ADULT, KINKS)], ["theme", "content", "theme"],
-                         "only the general adult pack offers ideas for the content level alone; kinks need their theme")
-        for pack in (FANTASY, ADULT, KINKS):
-            self.assertEqual(pack.manifest["requires"], {"core": ">=1.1.0 <2.0.0"}, "kinks never depend on the adult pack")
+        self.assertEqual(set(REGISTRY.packs), {"core", "general", "fantasy", "adult"})
+        for pack in (GENERAL, FANTASY, ADULT):
+            self.assertIn("core", pack.manifest["requires"])
+        self.assertIn("general", ADULT.manifest["requires"])
+        self.assertEqual(activation(ADULT.manifest), "content")
         self.assertGreaterEqual(len(ADULT.entries), 200)
-        self.assertGreaterEqual(len(KINKS.entries), 100)
+        self.assertTrue(GENERAL.entries)
 
     def test_ratings(self):
         for entry_id in REGISTRY.ids():
             rating = REGISTRY.resolved(entry_id).get("rating", "general")
             with self.subTest(entry=entry_id):
-                if REGISTRY.owner(entry_id) in ("adult", "adult_kinks") or entry_id == "core:position.from_behind":
+                if REGISTRY.owner(entry_id) == "adult" or entry_id == "general:position.from_behind":
                     self.assertEqual(rating, "adult")
                 else:
                     self.assertEqual(rating, "general")
@@ -75,7 +73,7 @@ class Packs(unittest.TestCase):
     def test_no_duplicate_names_or_aliases(self):
         seen = {}
         for entry_id in sorted(REGISTRY.ids()):
-            if INDEX.kind[entry_id] == "concept":
+            if entry_id not in INDEX.kind or INDEX.kind[entry_id] == "concept":
                 continue  # a capability shares the words of what provides it and is never offered
             entry = REGISTRY.entry(entry_id)
             for text in [entry["name"], *entry.get("aliases", [])]:
@@ -94,7 +92,7 @@ class Packs(unittest.TestCase):
 
 class Inheritance(unittest.TestCase):
     def test_bodies_reuse_core_body_plans(self):
-        human = REGISTRY.resolved("core:body.human")["components"]["body"]
+        human = REGISTRY.resolved("general:body.human")["components"]["body"]
         self.assertIn("hand.left", human["resources"])
         self.assertIn("core:locomotion.biped", human["provides"])
         elf = REGISTRY.resolved("fantasy:body.elf")["components"]["body"]
@@ -104,18 +102,18 @@ class Inheritance(unittest.TestCase):
         self.assertNotIn("hand.left", dragon["resources"])
 
     def test_identity_is_independent_of_anatomy(self):
-        human = REGISTRY.resolved("core:body.human")["components"]["body"]
+        human = REGISTRY.resolved("general:body.human")["components"]["body"]
         self.assertFalse({"penis", "vagina", "breasts"} & set(human["resources"]))
         self.assertNotIn("core:anatomy", human["complete_for"], "anatomy stays undeclared, never absent")
         for word in ("male", "female"):
-            self.assertNotIn(word, REGISTRY.entry("core:body.human")["aliases"],
+            self.assertNotIn(word, REGISTRY.entry("general:body.human")["aliases"],
                              "a 'female dragon' must not gain a human body")
 
     def test_reverse_cowgirl_inherits_and_overrides(self):
         resolved = REGISTRY.resolved("adult:position.reverse_cowgirl")["components"]
         self.assertEqual(set(resolved["participants"]["slots"]), {"rider", "partner"})
         rider = resolved["spatial"]["participants"]["rider"]
-        self.assertEqual(rider["posture"], "core:posture.straddling")
+        self.assertEqual(rider["posture"], "general:posture.straddling")
         self.assertEqual(rider["facing"], {"away_from": "partner"})
         self.assertEqual(REGISTRY.resolved("adult:position.reverse_cowgirl")["rating"], "adult")
 
@@ -124,34 +122,34 @@ class Compatibility(unittest.TestCase):
     """What the data lets the resolver say, and what it deliberately leaves unknown."""
 
     def test_a_human_rides_a_dragon(self):
-        cast = [{"id": "knight", "body": "core:body.human"}, {"id": "dragon", "body": "fantasy:body.dragon"}]
-        found = list(candidate_bindings(REGISTRY, "core:position.riding", cast))
+        cast = [{"id": "knight", "body": "general:body.human"}, {"id": "dragon", "body": "fantasy:body.dragon"}]
+        found = list(candidate_bindings(REGISTRY, "general:position.riding", cast))
         verdicts = {bind["rider"]: result.status for bind, result in found}
         self.assertEqual(verdicts["knight"], "feasible")
         self.assertEqual(verdicts["dragon"], "conflict", "a human is not a mount")
 
     def test_humans_do_not_fly_but_winged_ones_do(self):
         human = ask("a man flying over the city", characters=(MAN,))
-        self.assertNotIn("core:posture.flying", ids(human))
-        self.assertTrue(any(item["id"] == "core:posture.flying" and "conflict" in item["reason"] for item in human.excluded))
+        self.assertNotIn("general:posture.flying", ids(human))
+        self.assertTrue(any(item["id"] == "general:posture.flying" and "conflict" in item["reason"] for item in human.excluded))
         winged = ask("a winged elf flying over the city", characters=(creature("elf", "winged elf"),))
-        self.assertEqual(status(winged, "core:posture.flying"), "feasible")
+        self.assertEqual(status(winged, "general:posture.flying"), "feasible")
 
     def test_unstated_anatomy_is_unknown_never_conflict(self):
         found = ask("a woman giving a blowjob", nsfw=True)
         self.assertEqual(status(found, "adult:action.oral"), "unknown")
         found = ask("a dragon holding a sword", characters=(creature("dragon", "dragon"),))
-        self.assertEqual(status(found, "core:action.hold"), "unknown", "claws are undeclared, not handless")
+        self.assertEqual(status(found, "general:action.hold"), "unknown", "claws are undeclared, not handless")
 
-    def test_restrained_hands_cannot_hold(self):
-        cast = [{"id": "a", "body": "core:body.human"}]
-        objects = [{"id": "cuffs", "item": "adult_kinks:item.handcuffs"}, {"id": "toy", "item": "adult:item.vibrator"}]
+    def test_supporting_hands_cannot_hold_and_shared_items_reuse_a_hand(self):
+        cast = [{"id": "a", "body": "general:body.human"}, {"id": "b", "body": "general:body.human"}]
+        objects = [{"id": "toy", "item": "adult:item.vibrator"}]
         both = resolve(REGISTRY, {"cast": cast, "objects": objects, "use": [
-            {"entry": "adult_kinks:action.restrained", "bind": {"bound": "a", "restraint": "cuffs"}},
+            {"entry": "general:position.from_behind", "bind": {"front": "a", "back": "b"}},
             {"entry": "adult:action.toy_play", "bind": {"user": "a", "toy": "toy"}}]})
         self.assertEqual(both.status, "conflict")
-        shared = resolve(REGISTRY, {"cast": cast, "objects": objects[1:], "use": [
-            {"entry": "core:action.hold", "bind": {"holder": "a", "item": "toy"}},
+        shared = resolve(REGISTRY, {"cast": cast, "objects": objects, "use": [
+            {"entry": "general:action.hold", "bind": {"holder": "a", "item": "toy"}},
             {"entry": "adult:action.toy_play", "bind": {"user": "a", "toy": "toy"}}]})
         self.assertNotEqual(shared.status, "conflict", "holding the toy and using it share one hand")
 
@@ -174,11 +172,11 @@ class CastFromTheBrief(unittest.TestCase):
 
     def test_a_human_named_by_role_or_name_gets_the_human_body(self):
         self.assertEqual(self.cast(person("knight", "male"), person("Ana", "female")),
-                         [("core:body.human", []), ("core:body.human", [])])
+                         [("general:body.human", []), ("general:body.human", [])])
 
     def test_explicit_species_and_traits_come_first(self):
-        self.assertEqual(self.cast(person("winged knight", "male")), [("core:body.human", ["fantasy:trait.wings"])])
-        self.assertEqual(self.cast(person("wizard", "male")), [("core:body.human", ["fantasy:trait.spellcaster"])])
+        self.assertEqual(self.cast(person("winged knight", "male")), [("general:body.human", ["fantasy:trait.wings"])])
+        self.assertEqual(self.cast(person("wizard", "male")), [("general:body.human", ["fantasy:trait.spellcaster"])])
         self.assertEqual(self.cast(person("elf", "female")), [("fantasy:body.elf", [])], "the named species wins")
 
     def test_gender_never_makes_a_nonhuman_human(self):
@@ -189,7 +187,7 @@ class CastFromTheBrief(unittest.TestCase):
     def test_gender_is_independent_of_anatomy(self):
         for gender in ("male", "female"):
             body, traits = self.cast(person("Sam", gender))[0]
-            self.assertEqual((body, traits), ("core:body.human", []), "no anatomy trait from gender")
+            self.assertEqual((body, traits), ("general:body.human", []), "no anatomy trait from gender")
         found = ask("a woman giving a blowjob", characters=(person("Ana", "female"), person("Ben", "male")), nsfw=True)
         self.assertEqual(status(found, "adult:action.oral"), "unknown", "anatomy stays undeclared")
 
@@ -199,13 +197,13 @@ class IsolatedWords(unittest.TestCase):
 
     def test_an_isolated_word_does_not_retrieve_an_entry(self):
         self.assertNotIn("fantasy:item.staff", ids(ask("hotel staff at the reception desk")))
-        self.assertNotIn("core:posture.lying_side", ids(ask("a man standing by the side of a road", characters=(MAN,))))
+        self.assertNotIn("general:posture.lying_side", ids(ask("a man standing by the side of a road", characters=(MAN,))))
 
     def test_exact_names_and_aliases_still_retrieve(self):
         self.assertIn("fantasy:item.staff", ids(ask("a mage with a magic staff", characters=(creature("mage", "human mage"),))))
-        self.assertIn("core:posture.lying_side", ids(ask("a woman lying on the side", characters=(WOMAN,))))
-        self.assertIn("core:action.hold", ids(ask("a woman holding a lantern", characters=(WOMAN,))))
-        self.assertIn("core:position.riding", ids(ask("a knight riding a dragon",
+        self.assertIn("general:posture.lying_side", ids(ask("a woman lying on the side", characters=(WOMAN,))))
+        self.assertIn("general:action.hold", ids(ask("a woman holding a lantern", characters=(WOMAN,))))
+        self.assertIn("general:position.riding", ids(ask("a knight riding a dragon",
                                                       characters=(person("knight", "male"), creature("dragon", "dragon")))))
 
     def test_a_linked_entry_relates_its_isolated_word(self):
@@ -217,8 +215,8 @@ class IsolatedWords(unittest.TestCase):
         self.assertNotIn("fantasy:item.staff", ids(found))
         self.assertIn("fantasy:item.staff", related(found), "it provides the focus the named spell needs")
         found = ask("a couple spooning on the side of the bed")
-        self.assertNotIn("core:posture.lying_side", ids(found))
-        self.assertIn("core:posture.lying_side", related(found), "it is the posture the named spooning takes")
+        self.assertNotIn("general:posture.lying_side", ids(found))
+        self.assertIn("general:posture.lying_side", related(found), "it is the posture the named spooning takes")
         cowgirl = ask("cowgirl", nsfw=True)
         self.assertEqual([entry_id for entry_id in ids(cowgirl) if "cowgirl" in entry_id], ["adult:position.cowgirl"])
         self.assertIn("adult:position.reverse_cowgirl", related(cowgirl), "it extends the named cowgirl")
@@ -226,26 +224,25 @@ class IsolatedWords(unittest.TestCase):
 
 class Retrieval(unittest.TestCase):
     REQUESTS = [  # request, characters, nsfw, entries that must be offered
-        ("A woman and a man hugging goodbye on a train platform", (WOMAN, MAN), False, {"core:action.hug"}),
-        ("A couple kissing on a park bench", (WOMAN, MAN), False, {"core:action.kiss", "core:space.bench"}),
-        ("Two friends sitting side by side on a sofa", (WOMAN, MAN), False, {"core:position.side_by_side", "core:space.sofa"}),
-        ("A man and a woman holding hands on the beach", (WOMAN, MAN), False, {"core:action.hold_hands"}),
-        ("A woman sitting on a man's lap in an armchair", (WOMAN, MAN), False, {"core:position.lap_sit", "core:space.chair"}),
-        ("A couple spooning in bed", (WOMAN, MAN), False, {"core:position.spooning", "core:space.bed"}),
-        ("A woman holding a lantern while walking through a dark forest", (WOMAN,), False, {"core:action.hold", "core:item.lantern"}),
-        ("A dragon resting on a cliff above a stormy sea", (creature("dragon", "dragon"),), False, {"core:space.cliff"}),
+        ("A woman and a man hugging goodbye on a train platform", (WOMAN, MAN), False, {"general:action.hug"}),
+        ("A couple kissing on a park bench", (WOMAN, MAN), False, {"general:action.kiss", "general:space.bench"}),
+        ("Two friends sitting side by side on a sofa", (WOMAN, MAN), False, {"general:position.side_by_side", "general:space.sofa"}),
+        ("A man and a woman holding hands on the beach", (WOMAN, MAN), False, {"general:action.hold_hands"}),
+        ("A woman sitting on a man's lap in an armchair", (WOMAN, MAN), False, {"general:position.lap_sit", "general:space.chair"}),
+        ("A couple spooning in bed", (WOMAN, MAN), False, {"general:position.spooning", "general:space.bed"}),
+        ("A woman holding a lantern while walking through a dark forest", (WOMAN,), False, {"general:action.hold", "general:item.lantern"}),
+        ("A dragon resting on a cliff above a stormy sea", (creature("dragon", "dragon"),), False, {"general:space.cliff"}),
         ("A dragon breathing fire", (creature("dragon", "dragon"),), False, {"fantasy:action.breathe_fire"}),
-        ("A knight riding a dragon", (MAN, creature("dragon", "dragon")), False, {"core:position.riding"}),
+        ("A knight riding a dragon", (MAN, creature("dragon", "dragon")), False, {"general:position.riding"}),
         ("A female elf mage casting a spell with a staff in an enchanted forest", (creature("elf", "female elf mage"),), False,
          {"fantasy:action.cast_spell", "fantasy:space.enchanted_woods"}),  # the staff is related: see IsolatedWords
-        ("A winged elf flying", (creature("elf", "winged elf"),), False, {"core:posture.flying"}),
-        ("Missionary on a bed", (WOMAN, MAN), True, {"adult:position.missionary", "core:space.bed"}),
+        ("A winged elf flying", (creature("elf", "winged elf"),), False, {"general:posture.flying"}),
+        ("Missionary on a bed", (WOMAN, MAN), True, {"adult:position.missionary", "general:space.bed"}),
         ("Cowgirl", (WOMAN, MAN), True, {"adult:position.cowgirl"}),
-        ("Doggy style", (WOMAN, MAN), True, {"core:position.from_behind"}),
+        ("Doggy style", (WOMAN, MAN), True, {"general:position.from_behind"}),
         ("A woman giving a blowjob", (WOMAN, MAN), True, {"adult:action.oral"}),
         ("A woman using a vibrator", (WOMAN,), True, {"adult:item.vibrator"}),
-        ("A man handcuffed to the bed", (WOMAN, MAN), True, {"adult_kinks:action.restrained", "adult_kinks:item.handcuffs"}),
-        ("Standing from behind against a wall", (WOMAN, MAN), True, {"adult:position.standing_behind", "core:space.wall"}),
+        ("Standing from behind against a wall", (WOMAN, MAN), True, {"adult:position.standing_behind", "general:space.wall"}),
         ("Sixty-nine", (WOMAN, MAN), True, {"adult:position.sixty_nine"}),
         ("Two women fingering each other", (WOMAN, {**WOMAN, "label": "woman 2"}), True, {"adult:action.manual"}),
     ]
@@ -257,7 +254,7 @@ class Retrieval(unittest.TestCase):
                 self.assertEqual(expected - set(ids(found)), set(), ids(found))
 
     def test_casts_resolve_to_pack_bodies(self):
-        self.assertEqual(bodies(ask("two friends hugging")), ["core:body.human", "core:body.human"])
+        self.assertEqual(bodies(ask("two friends hugging")), ["general:body.human", "general:body.human"])
         self.assertEqual(bodies(ask("a dragon", characters=(creature("dragon", "female dragon"),))), ["fantasy:body.dragon"])
         mage = ask("a mage", characters=(creature("elf", "female elf mage"),)).cast[0]
         self.assertEqual((mage["body"], mage["traits"]), ("fantasy:body.elf", ["fantasy:trait.spellcaster"]))
@@ -279,7 +276,7 @@ class Retrieval(unittest.TestCase):
     def test_actions_that_only_share_a_body_part_are_not_related(self):
         found = ask("sixty-nine", nsfw=True)
         self.assertNotIn("fantasy:action.breathe_fire", ids(found))
-        self.assertNotIn("core:action.kiss", ids(found))
+        self.assertNotIn("general:action.kiss", ids(found))
 
     def test_spaces_that_only_share_a_surface_are_not_related(self):
         found = ask("a dragon breathing fire over a great hall", characters=(creature("dragon", "dragon"),))
@@ -293,8 +290,8 @@ class Retrieval(unittest.TestCase):
         nsfw_director = ("Describe anatomy, pose, contact, weight distribution and spatial relationships so bodies remain "
                          "credible; keep face, body and genitals logically positioned; one person per attribute block.")
         for text, cast, director, allowed in (
-                ("a woman in lingerie posing on a bed", (WOMAN,), nsfw_director, {"core:space.bed", "adult:item.lingerie"}),
-                ("a couple making out on the couch", (WOMAN, MAN), nsfw_director, {"core:space.sofa", "adult:action.making_out"}),
+                ("a woman in lingerie posing on a bed", (WOMAN,), nsfw_director, {"general:space.bed", "adult:item.lingerie"}),
+                ("a couple making out on the couch", (WOMAN, MAN), nsfw_director, {"general:space.sofa", "adult:action.making_out"}),
                 ("a quiet afternoon", (WOMAN,), GENERAL_DIRECTOR, set())):
             with self.subTest(request=text):
                 found = ask(text, characters=cast, nsfw=True, director=director)
@@ -307,18 +304,18 @@ class Retrieval(unittest.TestCase):
             ("A man drinking coffee in a cafe", (MAN,), False, set()),
             ("A woman laughing at a dinner party with friends", (WOMAN,), False, set()),
             ("A man playing guitar on stage", (MAN,), False, set()),
-            ("Hotel staff at the reception desk", (WOMAN, MAN), False, {"core:space.table"}),
-            ("A man standing by the side of a road", (MAN,), False, {"core:posture.standing", "core:position.standing_alone"}),
+            ("Hotel staff at the reception desk", (WOMAN, MAN), False, {"general:space.table"}),
+            ("A man standing by the side of a road", (MAN,), False, {"general:posture.standing", "general:position.standing_alone"}),
             ("A woman in a tank top doing yoga", (WOMAN,), False, set()),
             ("A man carrying a box up the stairs", (MAN,), False, set()),
             ("A couple drinking wine in their living room", (WOMAN, MAN), False, set()),
             ("A woman facing the camera with a smile", (WOMAN,), False, set()),
             ("A red sports car on a mountain road at dusk", (), False, set()),
             ("A castle on a hill under a starry sky", (), False, set()),
-            ("Two friends hugging after a long trip", (WOMAN, MAN), False, {"core:action.hug"}),
-            ("A woman in lingerie posing on a bed", (WOMAN,), True, {"core:space.bed", "adult:item.lingerie"}),
+            ("Two friends hugging after a long trip", (WOMAN, MAN), False, {"general:action.hug"}),
+            ("A woman in lingerie posing on a bed", (WOMAN,), True, {"general:space.bed", "adult:item.lingerie"}),
             ("A naked man taking a shower", (MAN,), True, {"adult:space.shower"}),
-            ("A couple making out on the couch", (WOMAN, MAN), True, {"core:space.sofa", "adult:action.making_out"}),
+            ("A couple making out on the couch", (WOMAN, MAN), True, {"general:space.sofa", "adult:action.making_out"}),
         ]
         for text, characters, nsfw, allowed in cases:
             with self.subTest(request=text):

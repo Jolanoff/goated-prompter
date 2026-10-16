@@ -51,7 +51,7 @@
             "product"
           ],
           "conflicts": [
-            "visual:framing.establishing_shot"
+            "general:framing.establishing_shot"
           ]
         }
       }
@@ -71,7 +71,7 @@
           "dimension": "atmosphere",
           "section": "camera",
           "conflicts": [
-            "visual:framing.establishing_shot"
+            "general:framing.establishing_shot"
           ]
         }
       }
@@ -119,9 +119,9 @@
         "visual": {
           "dimension": "atmosphere",
           "conflicts": [
-            "visual:lighting.high_key",
-            "visual:lighting.overcast",
-            "visual:lighting.soft"
+            "general:lighting.high_key",
+            "general:lighting.overcast",
+            "general:lighting.soft"
           ]
         }
       }
@@ -159,7 +159,7 @@
             "3d"
           ],
           "conflicts": [
-            "visual:lighting.overcast"
+            "general:lighting.overcast"
           ]
         }
       }

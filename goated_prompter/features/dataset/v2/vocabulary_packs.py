@@ -1,24 +1,12 @@
-"""Section 2 input — installed vocabulary packs as optional knowledge for the Director (Phase 5).
+"""Dataset vocabulary integration: retrieval, Director preferences, composition and Visual Direction.
 
-After Understanding is confirmed and before the first scene concept, the enabled packs (the core, the
-enabled official packs in vocabulary/packs and the enabled installed packs) are searched once with the
-confirmed brief: its request, summary, fixed, randomized, must, avoid, rules and characters, the
-creativity and style settings and the active Director's instructions (vocabulary/schemas/SPEC.md
-section 10). Each concept and staging request of Section 2 gets the result as a field of the brief
-data: the entries the request names, for every image, and the ideas for the images that request
-writes, from the categories the brief opens, rotated across the images by the brief's seed. It is
-knowledge, not a template. Validated v10 intent contributes grounded wording and optional semantic
-hints; these may find optional ideas but never name a fixed choice. Unusable intent keeps v9 retrieval:
-
-- optional: entries the Director may use, adapt or ignore; the scene is never limited to them;
-- the request, fixed, must, avoid and the user's rules outrank it (the Section 2 prompts already
-  say so, retrieval drops what the request rules out and offers no idea against what it fixes);
-- confirmed conflicts with this cast are never offered; unknown entries are offered with that status;
-- ratings follow the brief's path: only nsfw_character allows adult-rated entries;
-- it never assigns roles: no character label or slot binding reaches the Director.
-
-With nothing relevant, the switch off or a pack that cannot be loaded, nothing is added: the
-requests are byte-for-byte those of a run without vocabulary.
+After Understanding is confirmed, the run's selected packs are searched with its brief and Director.
+Core composes images and binds roles before any scene inference. Named entries are requirements;
+ideas remain optional and unknown data is never treated as incompatibility. Composed images receive
+checked facts in a lightweight finisher. Unsupported images retain the freeform concept, staging and
+description path, with retrieval suggestions in the first two calls. Validated v10 intent supplies
+grounded search hints and performer/target links; unusable intent retains v9 retrieval. Ratings follow
+the brief's path: only nsfw_character allows adult entries. The user's requirements always win.
 
 Pack selection (Phase 2): each run uses the packs its owner selected for it, plus the core and every pack those
 require (select_packs, PackManager.resolve_selection), never the global enabled state. The selection is resolved and
@@ -29,6 +17,15 @@ them changed since: there is no silent fallback to another version or to the glo
 Visual Direction (vocabulary/visual.py): with visual settings, the same packs' visual directions are chosen per
 image; while it is active, the brief's camera and light wording is masked out of content retrieval only.
 
+Composition (vocabulary/composer.py, SPEC.md section 13): after retrieval, Core composes each image in code from the
+same packs: the arrangement, interactions with their items, and the place, checked together with the resolver while
+choosing, with each person's role assigned. What a composed image must show narrows its Visual Direction. An image no
+entry fits is freeform (the concept, staging and description requests, with the inspiration block above).
+
+The Director (preferences.py): its instructions are a retrieval source; its structured vocabulary block, when the preset
+has one, adds the names it prefers to that source, weights the ideas it prefers, drops the ones it avoids (never what
+the request names), orders the roles the composer fills and steers Visual Direction.
+
 Comparison: "dataset_vocabulary": false in config.json turns retrieval off (default on). It is read
 for each run, changes nothing else, and every scenes debug trace and result records the state.
 """
@@ -38,8 +35,9 @@ from dataclasses import replace
 from ...vocabulary.packs import PackDrift, PackManager, VocabularyError
 from ...vocabulary.retrieval import RATINGS, RetrievalConfig, RetrievalRequest, retrieve
 from ...vocabulary import visual as visual_direction
+from ...vocabulary.composer import Composer, SceneContract
+from ...vocabulary.preferences import PREFER_WEIGHT, Preferences
 from .intent import search_hints
-from .arrangements import Arrangements
 
 CONFIG_KEY = "dataset_vocabulary"
 STEPS = ("concept", "staging")  # the Section 2 requests that receive the reference block
@@ -62,7 +60,7 @@ def diagnostics(log):
     private pack's wording stays in the debug trace only."""
     out = {"enabled": log.get("enabled", False), "selection": _selection_summary(log.get("selection"))}
     for key in ("reason", "error", "allowed_ratings", "seed", "warnings", "stats", "provided", "provided_to", "visual",
-                "arrangements"):
+                "composer"):
         if key in log:
             out[key] = log[key]
     if "entries" in log:
@@ -97,7 +95,7 @@ def _without(log, visual=None):
     plan = visual_direction.off("no vocabulary packs are read for this run", visual)
     log = {**log, "visual": plan.record(0)}
     return {"enabled": log["enabled"], "offer": _nothing, "block": "", "provided": [], "log": log,
-            "diagnostics": diagnostics(log), "visual": plan, "arrangements": None, "per_image": False}
+            "diagnostics": diagnostics(log), "visual": plan, "composer": None, "per_image": False}
 
 
 def select_packs(config, selected, *, manager=None):
@@ -119,13 +117,15 @@ def pack_status(selection, *, manager=None):
     return (manager or PackManager()).selection_status(selection)
 
 
-def vocabulary_reference(config, brief, *, director="", manager=None, selection=None, visual=None):
+def vocabulary_reference(config, brief, *, director="", manager=None, selection=None, visual=None, preferences=None):
     """The vocabulary for this brief and what was logged about it.
 
     Returns {"enabled", "offer", "block", "provided", "log"}: offer(numbers) is the block for one request that
     writes those images (1-based, in order), "" when nothing is given; block is the block of image 1 alone;
     provided lists every id offered to any image; log is the full record for the debug trace; visual is the run's
-    Visual Direction (vocabulary/visual.py Plan), from the same packs, when visual settings are given (None: off).
+    Visual Direction (vocabulary/visual.py Plan), from the same packs, when visual settings are given (None: off);
+    composer is the run's Composer (compose(n): image n's composed scene, or why it is freeform or failed).
+    preferences: the active Director's vocabulary block (preferences.py), or None.
     """
     if not enabled(config):
         return _without({"enabled": False, "reason": f'turned off in config.json ("{CONFIG_KEY}": false)'}, visual)
@@ -143,29 +143,48 @@ def vocabulary_reference(config, brief, *, director="", manager=None, selection=
                          "selection": selection, "provided_to": []}, visual)
     # Ratings follow the path Section 2 writes for, so the vocabulary and the scene rules always agree.
     allowed = RATINGS if brief["path"] == "nsfw_character" else tuple(rating for rating in RATINGS if rating != "adult")
+    try:
+        prefs = Preferences(preferences, registry)
+        preference_error = None
+    except ValueError as error:  # a stored block is validated when saved; an unreadable one steers nothing
+        prefs, preference_error = Preferences(None, registry), str(error)
     amount = brief["input"].get("amount")
+    contract = SceneContract.build(registry, brief, prefs, director)
     images = range(1, (amount if type(amount) is int and amount > 0 else 1) + 1)
     # Visual Direction reads the same packs; what the brief says about camera and light is masked out of content
     # retrieval only while it is active, so "low camera angle" never finds a Camera prop. Off: the request is unchanged.
-    plan = (visual_direction.plan(registry, brief, visual, allowed=allowed) if visual is not None
+    plan = (visual_direction.plan(registry, brief, visual, allowed=allowed, preferences=prefs.visual) if visual is not None
             else visual_direction.off("Visual Direction was not requested for this run"))
     searched = visual_direction.masked_brief(brief, plan.mask) if plan.active else brief
-    request = replace(RetrievalRequest.from_brief(searched, director=director), hints=search_hints(brief))
+    director_text = "\n".join(part for part in (director, prefs.text()) if part)
+    request = replace(RetrievalRequest.from_brief(searched, director=director_text), hints=search_hints(brief))
+    request = replace(request, must=(*request.must, *(row["text"] for row in contract.requirements if row["source"] == "user")),
+                      director="\n".join([request.director, *(registry.resolved(ident)["name"]
+                                           for row in contract.requirements if row["source"] == "director"
+                                           for ident in row["entries"])]))
     found = retrieve(registry, request, RetrievalConfig(allowed_ratings=allowed))
+    if prefs:
+        found.steer(boost={entry.id: PREFER_WEIGHT for entry in found.inspiration if prefs.prefers(entry.id)},
+                    drop={entry.id: "the Director avoids it" for entry in found.inspiration if prefs.avoids(entry.id)})
+    # Core composes every image before anything is offered or recorded, so each image's Visual Direction already
+    # knows what its scene must show.
+    composer = Composer(registry, found, brief, preferences=prefs, plan=plan if plan.active else None, allowed=allowed,
+                        contract=contract)
+    composition = composer.summary()
     provided = list(dict.fromkeys(entry_id for number in images for entry_id in found.offer([number])[1]))
     block = found.offer([1])[0]
 
     def offer(numbers):
         return found.offer(list(numbers))[0]
 
+    provided_to = ["composition"] if provided else []
+    if provided and any(image["kind"] == "freeform" for image in composition["images"]):
+        provided_to.extend(STEPS)
     log = {"enabled": True, "packs": sorted({registry.owner(entry_id) for entry_id in registry.ids()}), "selection": selection,
            "allowed_ratings": list(allowed), **found.to_dict(), "scenes": found.scenes(len(images)), "seed": found.seed,
-           "provided": provided, "provided_to": list(STEPS) if provided else [], "block": block,
-           "visual": plan.record(len(images))}
-    # Bindable entries (positions, actions) as per-image arrangement options the concept chooses and the resolver
-    # checks (arrangements.py); none for a run whose packs offer no interaction for its cast.
-    arrangements = Arrangements(registry, found, brief, allowed=allowed)
-    log["arrangements"] = arrangements.record()
+           "provided": provided, "provided_to": provided_to, "block": block,
+           "visual": plan.record(len(images)), "composer": composition}
+    if preference_error:
+        log["composer"]["director_error"] = preference_error
     return {"enabled": True, "offer": offer, "block": block, "provided": provided, "log": log, "diagnostics": diagnostics(log),
-            "visual": plan, "arrangements": arrangements if arrangements.active else None,
-            "per_image": any(scene["ideas"] for scene in log["scenes"])}
+            "visual": plan, "composer": composer, "per_image": any(scene["ideas"] for scene in log["scenes"])}

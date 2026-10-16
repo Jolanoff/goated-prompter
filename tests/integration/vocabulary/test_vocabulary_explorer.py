@@ -23,11 +23,11 @@ class VocabularyExplorerTests(VocabularyAPIBase):
         return await response.json()
 
     async def test_listing_uses_real_categories_counts_and_deterministic_sort(self):
-        data = await self.query("packs/core/entries")
-        self.assertEqual(data["total"], 81)
+        data = await self.query("packs/general/entries")
+        self.assertEqual(data["total"], 96)
         self.assertEqual(sum(item["count"] for item in data["categories"]), data["total"])
         self.assertEqual([entry["name"].casefold() for entry in data["entries"]], sorted(entry["name"].casefold() for entry in data["entries"]))
-        filtered = await self.query("packs/core/entries?category=body&sort=id")
+        filtered = await self.query("packs/general/entries?category=body&sort=id")
         self.assertTrue(filtered["entries"])
         self.assertTrue(all(entry["category"] == "body" for entry in filtered["entries"]))
         self.assertEqual(filtered["total"], data["total"])
@@ -46,20 +46,20 @@ class VocabularyExplorerTests(VocabularyAPIBase):
 
     async def test_details_preserve_direct_and_inherited_fields_and_cross_pack_navigation(self):
         raw = {"id": "custom:body.reader", "category": "body", "name": "Reader", "aliases": ["bookworm"],
-               "extends": ["core:body.human"], "components": {"body": {"provides": ["core:limb.hand"]}}}
-        await self.upload(tiny_pack("custom", [raw]))
+               "extends": ["general:body.human"], "components": {"body": {"provides": ["core:limb.hand"]}}}
+        await self.upload(tiny_pack("custom", [raw], requires={"core": ">=1.0.0", "general": ">=1.0.0"}))
         detail = await self.query("entries/custom:body.reader")
         self.assertEqual(detail["declared"], raw)
         self.assertNotIn("resources", detail["declared"]["components"]["body"])
         self.assertTrue(detail["resolved"]["components"]["body"]["resources"])
         self.assertEqual(detail["pack"]["id"], "custom")
-        parent = next(ref for ref in detail["references"] if ref["id"] == "core:body.human" and ref["kind"] == "extends")
+        parent = next(ref for ref in detail["references"] if ref["id"] == "general:body.human" and ref["kind"] == "extends")
         self.assertTrue(parent["declared"])
         self.assertTrue(parent["exists"])
-        self.assertEqual(parent["origin"], "core")
+        self.assertEqual(parent["origin"], "bundled")
         self.assertTrue(any(not ref["declared"] for ref in detail["references"]))
         parent_detail = await self.query(f"entries/{parent['id']}?origin={parent['origin']}")
-        self.assertEqual(parent_detail["pack"]["id"], "core")
+        self.assertEqual(parent_detail["pack"]["id"], "general")
 
     async def test_disabled_adult_pack_is_browsable_without_enabling_it(self):
         await self.enabled("adult", False)

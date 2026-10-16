@@ -2,17 +2,18 @@
   "name": "object_shared_hand",
   "description": "From behind: the back person holds a toy and uses it on the front person.",
   "packs": [
+    "general",
     "core",
     "adult"
   ],
   "cast": [
     {
       "id": "giver",
-      "body": "core:body.humanoid"
+      "body": "general:body.humanoid"
     },
     {
       "id": "receiver",
-      "body": "core:body.humanoid"
+      "body": "general:body.humanoid"
     }
   ],
   "objects": [
@@ -21,17 +22,17 @@
       "item": "adult:item.dildo"
     }
   ],
-  "space": "core:space.bed",
+  "space": "general:space.bed",
   "use": [
     {
-      "entry": "core:position.from_behind",
+      "entry": "general:position.from_behind",
       "bind": {
         "front": "receiver",
         "back": "giver"
       }
     },
     {
-      "entry": "core:action.hold",
+      "entry": "general:action.hold",
       "bind": {
         "holder": "giver",
         "item": "toy"

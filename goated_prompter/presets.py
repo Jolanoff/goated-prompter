@@ -11,6 +11,7 @@ import threading
 import unicodedata
 
 from .config import PROJECT_ROOT
+from .features.vocabulary.preferences import validate as validate_vocabulary
 
 
 USER_DIRECTOR_DIR_ENV = "GOATED_PROMPTER_USER_DIR"
@@ -54,6 +55,14 @@ def _canonical_director_name(value):
     return _LEGACY_DIRECTOR_ALIASES.get(raw.casefold(), raw)
 
 
+def _vocabulary(value, where):
+    """A Director's optional vocabulary preferences (vocabulary/preferences.py), validated; {} when absent."""
+    try:
+        return validate_vocabulary(value)
+    except ValueError as exc:
+        raise DirectorLibraryError(f"{where}: {exc}") from None
+
+
 def _read_user_director(path):
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -79,6 +88,7 @@ def _read_user_director(path):
         instructions=instructions,
         recommended_mode=recommended_mode,
         source="user",
+        vocabulary=_vocabulary(payload.get("vocabulary"), f"User Director '{name}'"),
     )
 
 
@@ -137,8 +147,9 @@ def _safe_filename(name):
 
 
 @_serialized
-def save_user_director(name, instructions, recommended_mode="", directory=None):
-    """Persist a new user Director without ever overwriting a built-in or user file."""
+def save_user_director(name, instructions, recommended_mode="", directory=None, vocabulary=None):
+    """Persist a new user Director without ever overwriting a built-in or user file. vocabulary: optional structured
+    preferences for the Dataset composer (vocabulary/preferences.py)."""
     if not isinstance(name, str) or not isinstance(instructions, str):
         raise DirectorLibraryError("Director name and Behavior must be strings.")
     clean_name = str(name or "").strip()
@@ -155,6 +166,7 @@ def save_user_director(name, instructions, recommended_mode="", directory=None):
         raise DirectorLibraryError("A user Director with that name already exists; choose a new name.")
     if clean_mode not in _VALID_MODES:
         clean_mode = ""
+    clean_vocabulary = _vocabulary(vocabulary, "Director vocabulary")
 
     library_dir = Path(directory).resolve() if directory is not None else resolve_user_director_directory()
     library_dir.mkdir(parents=True, exist_ok=True)
@@ -166,6 +178,7 @@ def save_user_director(name, instructions, recommended_mode="", directory=None):
         "name": clean_name,
         "instructions": clean_instructions,
         "recommended_mode": clean_mode,
+        **({"vocabulary": clean_vocabulary} if clean_vocabulary else {}),
     }
     temporary = None
     try:
@@ -240,13 +253,15 @@ def _effective_builtin(builtin, directory):
                 or not 1 <= len(payload["instructions"].strip()) <= 100000
                 or not isinstance(payload.get("recommended_mode"), str) or payload.get("recommended_mode") not in modes):
             raise ValueError("invalid override fields")
-        return replace(builtin, instructions=payload["instructions"].strip(), modified=True), ""
+        vocabulary = validate_vocabulary(payload["vocabulary"]) if "vocabulary" in payload else builtin.vocabulary
+        return replace(builtin, instructions=payload["instructions"].strip(), modified=True, vocabulary=vocabulary), ""
     except (OSError, ValueError) as exc:
         return builtin, f"Cannot read Director override '{path.name}': {exc}. Repair it or Reset explicitly."
 
 
 @_serialized
-def update_director(value, name, instructions, recommended_mode=None, directory=None):
+def update_director(value, name, instructions, recommended_mode=None, directory=None, vocabulary=None):
+    """vocabulary: None keeps the Director's current vocabulary preferences; a block replaces them ({} clears)."""
     director = get_director_preset(value, directory, strict=True)
     if not isinstance(name, str) or not 1 <= len(name.strip()) <= 80:
         raise DirectorLibraryError("Director name must contain 1 to 80 characters.")
@@ -272,7 +287,13 @@ def update_director(value, name, instructions, recommended_mode=None, directory=
         mode = director.recommended_mode if recommended_mode is None else recommended_mode
         if mode and mode not in _VALID_MODES:
             raise DirectorLibraryError("Invalid recommended_mode.")
+    kept = director.vocabulary if vocabulary is None else _vocabulary(vocabulary, "Director vocabulary")
     payload = {"version": 1, "id": director.id, "name": name, "instructions": instructions, "recommended_mode": mode}
+    if director.source == "builtin":
+        if kept != builtin.vocabulary:  # an override stores preferences only when they differ from the built-in ones
+            payload["vocabulary"] = kept
+    elif kept:
+        payload["vocabulary"] = kept
     temporary = None
     try:
         path.parent.mkdir(parents=True, exist_ok=True)

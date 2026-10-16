@@ -1,6 +1,6 @@
 """Built-in Director definitions and prompt-engine labels."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 
 # Prompt engine names. Runtime discovery and model-family resolution remain in
 # director_profiles.py because they depend on the local filesystem.
@@ -16,6 +16,8 @@ class DirectorPreset:
     source: str = "builtin"
     modified: bool = False
     supported_targets: tuple = ()
+    # Structured vocabulary preferences for the Dataset composer and Visual Direction (vocabulary/preferences.py).
+    vocabulary: dict = field(default_factory=dict, hash=False, compare=False)
 
     @property
     def base_system_prompt(self):
@@ -39,6 +41,7 @@ class DirectorPreset:
             "protected": self.source == "builtin",
             "modified": self.modified,
             "supported_targets": list(self.supported_targets),
+            "vocabulary": dict(self.vocabulary),
         }
 
 
@@ -285,6 +288,36 @@ DirectorPreset(
 ),
 
 )
+
+# Built-in Directors' vocabulary preferences (vocabulary/preferences.py): data for the Dataset composer and Visual
+# Direction, read only against the packs a run selects; an id a run's packs do not have is unused. They follow each
+# Director's own instructions, and the request always outranks them.
+_F, _C, _P, _L, _A = "general:framing.", "general:camera_angle.", "general:composition.", "general:lighting.", "visual:atmosphere."
+DIRECTOR_VOCABULARY = {
+    "photography_director": {"visual": {"prefer": [_L + "window", _L + "golden_hour", _P + "rule_of_thirds"]}},
+    "smartphone_realism": {"visual": {"prefer": [_C + "eye_level", _C + "high_angle", _F + "medium_shot"],
+                                      "avoid": [_A + "film_grain", _L + "studio", _L + "chiaroscuro", _C + "dutch_angle"]}},
+    "arms_length_selfie": {"visual": {"prefer": [_F + "close_up", _F + "medium_shot", _C + "high_angle", _C + "eye_level"],
+                                      "avoid": [_F + "full_body", _F + "wide_shot", _F + "establishing_shot", _C + "pov",
+                                                _C + "over_the_shoulder", _C + "birds_eye", _C + "worms_eye"]}},
+    "mirror_selfie": {"require": ["general:action.mirror_selfie"],
+                       "visual": {"prefer": [_F + "medium_shot", _F + "full_body", _C + "eye_level"],
+                                 "avoid": [_F + "extreme_close_up", _F + "establishing_shot", _C + "pov",
+                                           _C + "over_the_shoulder", _C + "birds_eye", _C + "worms_eye"]}},
+    "first_person_pov": {"visual": {"prefer": [_C + "pov"], "avoid": [_C + "over_the_shoulder", _F + "establishing_shot"]}},
+    "fashion_editorial": {"visual": {"prefer": [_F + "full_body", _F + "medium_shot", _L + "studio", _L + "rim", _L + "hard"]}},
+    "vintage_analog": {"visual": {"prefer": [_A + "film_grain"]}},
+    "boudoir_intimate": {"visual": {"prefer": [_L + "window", _L + "soft", _L + "candlelight", _F + "medium_shot"]}},
+    "anime_director": {"visual": {"avoid": [_A + "film_grain", _A + "lens_flare", _A + "shallow_depth_of_field"]}},
+    "archviz_director": {"priorities": ["space", "arrangement", "interaction"],
+                         "visual": {"prefer": [_F + "wide_shot", _F + "establishing_shot", _P + "leading_lines", _P + "symmetrical"]}},
+    "product_director": {"priorities": ["space", "interaction", "arrangement"],
+                         "visual": {"prefer": [_L + "studio", _P + "centered", _P + "negative_space"]}},
+    "character_director": {"priorities": ["arrangement", "interaction", "space"],
+                           "visual": {"prefer": [_F + "full_body", _F + "medium_shot"]}},
+    "nsfw_director": {"priorities": ["arrangement", "interaction", "space"], "visual": {"avoid": [_F + "extreme_close_up"]}},
+}
+DIRECTOR_PRESETS = tuple(replace(preset, vocabulary=DIRECTOR_VOCABULARY.get(preset.id, {})) for preset in DIRECTOR_PRESETS)
 
 DEFAULT_DIRECTOR_PRESET = "General Director"
 DIRECTOR_PRESET_NAMES = tuple(preset.label for preset in DIRECTOR_PRESETS)

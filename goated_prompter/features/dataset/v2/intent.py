@@ -45,7 +45,7 @@ and only where it matters: a part required in every image (or ruled out) that th
 from collections import Counter
 import re
 
-from ...vocabulary.semantic import NEGATIONS, STOPWORDS, split_negated, stem
+from ...vocabulary.semantic import NEGATIONS, STOPWORDS, grounded, split_negated, stem
 
 KINDS = ("subject", "action", "pose", "object", "body_part", "attribute", "environment", "aspect")
 STATUSES = ("fixed", "randomized", "optional", "excluded")
@@ -476,18 +476,12 @@ def search_hints(brief):
         return ()
     texts = [brief["input"]["request"], *brief["input"].get("rules", []), brief["fixed"],
              brief["randomized"], *brief["must"]]
-    positive = {word for text in texts for word in split_negated(text)[0]}
-
-    def grounded(text):
-        words, negative = split_negated(text)
-        return bool(words) and set(words) <= positive and not negative
-
     subjects = [item for item in value["elements"] if item["kind"] == "subject"]
     bindings = Counter(label for item in subjects for label in item["cast"])
     usable = {item["id"]: item for item in value["elements"]
               if item["source"] == "request" and item["status"] != "excluded" and not item["input"]
               and (bool(item["cast"]) and all(bindings[label] == 1 for label in item["cast"])
-                   if item["kind"] == "subject" else grounded(item["text"]))
+                    if item["kind"] == "subject" else grounded(item["text"], texts))
               and (item["kind"] not in ("action", "pose") or item["by"])}
     # A usable link must keep all its endpoints, never guess a replacement or silently broaden its scope.
     while missing := {ident for ident, item in usable.items()
@@ -495,7 +489,7 @@ def search_hints(brief):
         usable = {ident: item for ident, item in usable.items() if ident not in missing}
     hints = [text for item in usable.values() if item["kind"] != "subject" for text in [item["text"], *item["terms"]]]
     hints += [item["rel"] for item in value["relations"] if item["status"] != "excluded"
-              and item["a"] in usable and item["b"] in usable and grounded(item["rel"])]
+               and item["a"] in usable and item["b"] in usable and grounded(item["rel"], texts)]
     return tuple(_unique(hints))
 
 

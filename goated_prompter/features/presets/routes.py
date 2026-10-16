@@ -34,10 +34,11 @@ async def presets(request):
             if request.path == "/api/presets/reset":
                 director, path = reset_director(payload.get("id"))
             elif request.method == "PUT":
-                director, path = update_director(payload.get("id"), payload.get("name"), payload.get("instructions"))
+                director, path = update_director(payload.get("id"), payload.get("name"), payload.get("instructions"),
+                                                 vocabulary=payload.get("vocabulary"))
             elif request.method == "POST":
                 director, path = save_user_director(payload.get("name"), payload.get("instructions"),
-                                                    payload.get("recommended_mode", "Custom"))
+                                                    payload.get("recommended_mode", "Custom"), vocabulary=payload.get("vocabulary"))
             else:
                 director, path = delete_user_director(payload.get("id") or payload.get("name"))
     return web.json_response({"ok": True, "director": director.to_public_mapping(), "file": path.name})

@@ -64,7 +64,7 @@ import re
 import time
 
 from .packs import _capability_refs, activation
-from .resolver import FEASIBLE_NOTE, RANK, _Run, candidate_bindings, implied
+from .resolver import FEASIBLE_NOTE, RANK, _Run, candidate_bindings, implied, object_satisfies
 from .semantic import Document, TextIndex, phrase_terms, place_phrases, similarity, split_negated, terms
 
 RATINGS = ("general", "mature", "adult")
@@ -231,6 +231,7 @@ class Retrieval:
     cooldown: float = 0.5             # share of its category an offered idea waits before it may come again
     pairing: object = field(default=None, repr=False, compare=False)  # _Pairing: per-image checks (None: attach_to only)
     named_by: dict = field(default_factory=dict, repr=False, compare=False)  # entry -> the texts that name it (not in to_dict)
+    boost: dict = field(default_factory=dict, repr=False, compare=False)     # entry -> weight factor (a Director's preferences)
 
     @property
     def inspiration(self):
@@ -257,7 +258,22 @@ class Retrieval:
 
     # -- ideas across scenes: complete, seeded, relevance-weighted cycles through the whole eligible pool
     def weight(self, entry):
-        return max(entry.score, 1e-9) ** self.sharpness
+        return max(entry.score, 1e-9) ** self.sharpness * self.boost.get(entry.id, 1.0)
+
+    def steer(self, boost=None, drop=None):
+        """A Director's structured preferences (preferences.py), applied before any scene's ideas are drawn: boost
+        multiplies an idea's draw weight, so it comes more often; drop {id: reason} takes ideas out of the pools
+        (reported as excluded). Named entries are never dropped here: the request outranks the Director."""
+        self.boost = dict(boost or {})
+        pooled = {entry.id for _, pool in self.pools for entry in pool}
+        drop = {entry_id: reason for entry_id, reason in (drop or {}).items()
+                if entry_id in pooled and entry_id not in {entry.id for entry in self.entries}}
+        if drop:
+            self.pools = [(category, [entry for entry in pool if entry.id not in drop]) for category, pool in self.pools]
+            self.pools = [(category, pool) for category, pool in self.pools if pool]
+            self.excluded = [*self.excluded, *({"id": entry_id, "reason": reason, "source": "inspiration"}
+                                               for entry_id, reason in sorted(drop.items()))]
+        self.__dict__.pop("_plans", None)
 
     def ideas(self, number, seed=None):
         """The ideas for scene number (1-based): at most one per role (ROLES: an interaction, an arrangement, a place),
@@ -410,8 +426,11 @@ class VocabularyIndex:
         # Visual directions (SPEC section 11) say how an image is seen, never what is in it: Visual Direction (visual.py)
         # chooses them and retrieval never offers or scores them, and a category holding only directions is not one a
         # brief opens. Without directions this is exactly the registry.
-        directions = {entry_id for entry_id in every if "visual" in registry.resolved(entry_id)["components"]}
-        ids = [entry_id for entry_id in every if entry_id not in directions]
+        directions = {entry_id for entry_id in every if "visual" in registry.resolved(entry_id)["components"]
+                      and not registry.resolved(entry_id)["components"].get("participants")}
+        # Abstract entries (SPEC section 7) are templates other entries inherit from: never found or offered themselves.
+        abstract = {entry_id for entry_id in every if registry.entry(entry_id).get("abstract") is True}
+        ids = [entry_id for entry_id in every if entry_id not in directions and entry_id not in abstract]
         if directions:
             content = {registry.resolved(entry_id)["category"] for entry_id in ids}
             visual_only = {registry.resolved(entry_id)["category"] for entry_id in directions} - content
@@ -493,6 +512,8 @@ class VocabularyIndex:
                 links += [(other, "broader") for other in broader.get(ref, [])]
                 links += [(other, "narrower") for other in sorted(narrower.get(ref, []))]
             for parent in self.ancestors[entry_id]:
+                if parent not in self.resolved:  # an abstract template or a direction: inherited, never related
+                    continue
                 links.append((parent, "parent"))
                 self.neighbours[parent].append((entry_id, "child"))
         users = {}
@@ -530,7 +551,8 @@ class VocabularyIndex:
         siblings: a shared parent relates nothing). Capabilities decide compatibility, not relevance, so they add none."""
         found = set(entries)
         for entry_id in entries:
-            found.update(parent for parent in self.ancestors.get(entry_id, []) if self.registry.owner(parent) == pack_id)
+            found.update(parent for parent in self.ancestors.get(entry_id, [])
+                         if self.registry.owner(parent) == pack_id and parent in self.resolved)
         found.update(entry_id for entry_id, parents in self.ancestors.items()
                      if self.registry.owner(entry_id) == pack_id and set(parents) & set(entries))
         return found
@@ -585,7 +607,7 @@ class _Themes:
     def __init__(self, packs, ids, resolved, kinds, registry):
         self.names, self.phrases, self.tags = {}, {}, {}
         for pack_id, pack in sorted(packs.items()):
-            if getattr(pack, "mandatory", False):
+            if getattr(pack, "mandatory", False) or activation(pack.manifest) == "always":
                 continue
             manifest = pack.manifest
             self.names[pack_id] = manifest.get("name", pack_id)
@@ -1428,6 +1450,8 @@ class _Retrieval:
             if sources & set(CHOICE_SOURCES) and kind in SCENE_KINDS:
                 group = "interaction" if kind in INTERACTION_KINDS else kind
                 fixed.setdefault(group, []).append(index.resolved[entry_id]["name"])
+                if kind in INTERACTION_KINDS and index.resolved[entry_id]["components"].get("spatial", {}).get("participants"):
+                    fixed.setdefault("arrangement", []).append(index.resolved[entry_id]["name"])
         # A place guessed from the request's words (a locative phrase the vocabulary does not know) is uncertain: it
         # keeps place ideas back (offering less is the safe error) but is reported as a guess, never as decided.
         places = self.fixed_places(cast_report)
@@ -1442,6 +1466,8 @@ class _Retrieval:
         candidates, held, by_content = {}, set(), set()
         for entry_id in sorted(index.resolved):
             kind = index.kind[entry_id]
+            if "visual" in index.resolved[entry_id]["components"]:
+                continue  # camera mechanics enter through explicit requirements, never random activity inspiration
             pack_id = registry.owner(entry_id)
             if kind not in SCENE_KINDS or entry_id in selected or entry_id in excluded or (
                     entry_id in relevant and entry_id not in asked.get(pack_id, ())):
@@ -1576,7 +1602,8 @@ class _Retrieval:
             return "the request rules it out (" + ", ".join(f'"{term}"' for term, _ in ruled_out[category]) + ")"
         if category in reopened:
             return None  # what may vary re-opens it, even next to a named choice
-        group = "interaction" if kind in INTERACTION_KINDS else kind
+        group = ("arrangement" if kind == "self" or any(scope == "arrangement" for scope, _ in scopes)
+                 else "interaction") if kind in INTERACTION_KINDS else kind
         if fixed.get(group):
             what = "the interaction" if group == "interaction" else f"the {group}"
             return f"the request fixes {what}: " + ", ".join(fixed[group])
@@ -1637,8 +1664,7 @@ class _Retrieval:
         if not needs:
             return False
         _, _, all_of, groups = needs[0]
-        provided = set(self.provides(item_id))
-        return all_of <= provided and all(group & provided for group in groups)
+        return object_satisfies(self.registry, item_id, {"all_of": all_of, "any_of_groups": groups})
 
     def pool(self, checked, report):
         """[(best score, category, [RetrievedEntry])] from checked candidates: conflicts out, no repeats. No count limit and

@@ -2,12 +2,15 @@
   "spec": 1,
   "entries": [
     {
-      "id": "visual:composition.rule_of_thirds",
+      "id": "general:composition.rule_of_thirds",
       "category": "visual_composition",
       "name": "Rule of thirds",
       "description": "The main subject sits on a third line, off-centre.",
       "aliases": [
         "rule-of-thirds composition"
+      ],
+      "replaces": [
+        "visual:composition.rule_of_thirds"
       ],
       "components": {
         "visual": {
@@ -16,7 +19,7 @@
       }
     },
     {
-      "id": "visual:composition.centered",
+      "id": "general:composition.centered",
       "category": "visual_composition",
       "name": "Centered composition",
       "description": "The main subject sits in the middle of the frame.",
@@ -24,6 +27,9 @@
         "centred composition",
         "central composition"
       ],
+      "replaces": [
+        "visual:composition.centered"
+      ],
       "components": {
         "visual": {
           "dimension": "composition"
@@ -31,7 +37,7 @@
       }
     },
     {
-      "id": "visual:composition.symmetrical",
+      "id": "general:composition.symmetrical",
       "category": "visual_composition",
       "name": "Symmetrical composition",
       "description": "The frame balances as two mirrored halves.",
@@ -39,17 +45,20 @@
         "symmetry",
         "symmetric composition"
       ],
+      "replaces": [
+        "visual:composition.symmetrical"
+      ],
       "components": {
         "visual": {
           "dimension": "composition",
           "conflicts": [
-            "visual:camera_angle.dutch_angle"
+            "general:camera_angle.dutch_angle"
           ]
         }
       }
     },
     {
-      "id": "visual:composition.asymmetrical",
+      "id": "general:composition.asymmetrical",
       "category": "visual_composition",
       "name": "Asymmetrical balance",
       "description": "Unequal elements balance each other across the frame.",
@@ -57,6 +66,9 @@
         "asymmetrical composition",
         "asymmetric composition"
       ],
+      "replaces": [
+        "visual:composition.asymmetrical"
+      ],
       "components": {
         "visual": {
           "dimension": "composition"
@@ -64,24 +76,27 @@
       }
     },
     {
-      "id": "visual:composition.leading_lines",
+      "id": "general:composition.leading_lines",
       "category": "visual_composition",
       "name": "Leading lines",
       "description": "Lines already in the scene, such as edges, paths or railings, lead the eye to the subject.",
       "aliases": [
         "leading-line composition"
       ],
+      "replaces": [
+        "visual:composition.leading_lines"
+      ],
       "components": {
         "visual": {
           "dimension": "composition",
           "conflicts": [
-            "visual:framing.extreme_close_up"
+            "general:framing.extreme_close_up"
           ]
         }
       }
     },
     {
-      "id": "visual:composition.dynamic",
+      "id": "general:composition.dynamic",
       "category": "visual_composition",
       "name": "Dynamic composition",
       "description": "Strong diagonals give the frame energy and movement.",
@@ -89,6 +104,9 @@
         "diagonal composition",
         "dynamic diagonal composition"
       ],
+      "replaces": [
+        "visual:composition.dynamic"
+      ],
       "components": {
         "visual": {
           "dimension": "composition"
@@ -96,29 +114,35 @@
       }
     },
     {
-      "id": "visual:composition.frame_within_frame",
+      "id": "general:composition.frame_within_frame",
       "category": "visual_composition",
       "name": "Frame within a frame",
       "description": "Something already in the scene, such as a doorway, window or arch, frames the subject.",
       "aliases": [
         "framed composition"
       ],
+      "replaces": [
+        "visual:composition.frame_within_frame"
+      ],
       "components": {
         "visual": {
           "dimension": "composition",
           "conflicts": [
-            "visual:framing.extreme_close_up"
+            "general:framing.extreme_close_up"
           ]
         }
       }
     },
     {
-      "id": "visual:composition.negative_space",
+      "id": "general:composition.negative_space",
       "category": "visual_composition",
       "name": "Negative space",
       "description": "Generous empty space around the subject.",
       "aliases": [
         "minimalist composition"
+      ],
+      "replaces": [
+        "visual:composition.negative_space"
       ],
       "components": {
         "visual": {

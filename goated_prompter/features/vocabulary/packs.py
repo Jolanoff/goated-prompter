@@ -1,7 +1,7 @@
 """Vocabulary pack manager (Phase 2): data-only packs, validated and merged into one registry.
 
 Three locations:
-  vocabulary/core/            the core pack: mandatory, always enabled, read-only
+  vocabulary/core/            internal abstract foundation, never a content pack
   vocabulary/packs/<id>/      official packs that ship with the app (Fantasy, Adult): read-only, optional,
                               enabled by default
   data/vocabulary/packs/<id>/ packs the user installed: optional, enabled by default, removable
@@ -32,6 +32,7 @@ import jsonschema
 
 from ...config import PROJECT_ROOT
 from .semantic import terms
+from .interfaces import ComponentTypes
 
 SCHEMA_DIR = PROJECT_ROOT / "vocabulary" / "schemas"
 BUNDLED_DIRS = (PROJECT_ROOT / "vocabulary" / "core",)  # mandatory
@@ -153,7 +154,7 @@ def pack_fingerprint(pack):
     """What retrieval reads of a pack, hashed: manifest.json and every entry file it lists, byte for byte, in name
     order. Any edit changes it, with or without a version bump. Supporting text (README...) is not read and not hashed."""
     digest = hashlib.sha256()
-    for name in ["manifest.json", *sorted(pack.manifest["files"])]:
+    for name in ["foundation.json" if pack.mandatory else "manifest.json", *sorted(pack.manifest["files"])]:
         data = (Path(pack.path) / name).read_bytes()
         digest.update(f"{name}\0{len(data)}\0".encode("utf-8"))
         digest.update(data)
@@ -205,9 +206,23 @@ def _read_json(path, where):
 
 def read_pack(folder, *, bundled, enabled=True):
     """Read and validate one pack folder on its own (schemas, files, ids, categories, ratings)."""
+    return _read_bundle(folder, bundled=bundled, enabled=enabled, descriptor="manifest.json")
+
+
+def read_foundation(folder=BUNDLED_DIRS[0]):
+    """Load internal definitions. Concrete content is forbidden even if it would be a valid pack."""
+    foundation = _read_bundle(folder, bundled=True, enabled=True, descriptor="foundation.json")
+    for _, entry in foundation.entries:
+        if set(entry["components"]) != {"capability"}:
+            raise VocabularyError(f"{entry['id']}: Core contains only capability definitions; content templates belong in packs")
+    foundation.mandatory = True
+    return foundation
+
+
+def _read_bundle(folder, *, bundled, enabled, descriptor):
     folder = Path(folder)
-    manifest = _read_json(folder / "manifest.json", f"{folder.name}/manifest.json")
-    problems = _schema_problems("manifest", manifest, f"{folder.name}/manifest.json")
+    manifest = _read_json(folder / descriptor, f"{folder.name}/{descriptor}")
+    problems = _schema_problems("manifest", manifest, f"{folder.name}/{descriptor}")
     if problems:
         raise VocabularyError(problems)
     pack_id = manifest["id"]
@@ -223,7 +238,7 @@ def read_pack(folder, *, bundled, enabled=True):
     for path in folder.iterdir():
         if path.is_symlink() or not path.is_file():
             problems.append(f"{pack_id}: {path.name} is not a plain file")
-        elif path.name != "manifest.json" and path.name not in listed and not EXTRA_FILES.match(path.name):
+        elif path.name != descriptor and path.name not in listed and not EXTRA_FILES.match(path.name):
             problems.append(f"{pack_id}: {path.name} is not listed in the manifest (packs are data only)")
     entries, seen = [], set()
     pack_rating = RATINGS.index(manifest["rating"])
@@ -265,7 +280,9 @@ def _capability_refs(comp):
         refs += [anchor["at"] for anchor in placement.get("anchors", []) if "at" in anchor]
     refs += [claim["resource"] for claims in comp.get("claims", {}).values() for claim in claims]
     refs += comp.get("object", {}).get("provides", []) + comp.get("object", {}).get("complete_for", [])
-    refs += comp.get("environment", {}).get("provides", [])
+    refs += comp.get("environment", {}).get("provides", []) + comp.get("environment", {}).get("complete_for", [])
+    refs += [ref for need in comp.get("visibility", {}).get("participants", {}).values() for ref in need.get("regions", [])]
+    refs += comp.get("visual", {}).get("shows", {}).get("regions", [])
     return refs
 
 
@@ -371,10 +388,32 @@ def _merge_components(parts, own, where, problems):
         complete = _union(*(source.get("complete_for", []) for source in [*sources, own.get("object", {})]))
         if complete:
             merged["complete_for"] = complete
-        scalars(merged, sources, ("size", "hands"), own.get("object", {}))
+        scalars(merged, sources, ("size", "hands", "capacity"), own.get("object", {}))
         out["object"] = merged
+    if any("capacity" in part for part in [*parts, own]):
+        scalars(out, parts, ("capacity",), own)
     if any("environment" in part for part in [*parts, own]):
-        out["environment"] = {"provides": _union(*(part.get("environment", {}).get("provides", []) for part in [*parts, own]))}
+        environment = {"provides": _union(*(part.get("environment", {}).get("provides", []) for part in [*parts, own]))}
+        complete = _union(*(part.get("environment", {}).get("complete_for", []) for part in [*parts, own]))
+        if complete:
+            environment["complete_for"] = complete
+        scalars(environment, [part.get("environment", {}) for part in parts], ("capacity",), own.get("environment", {}))
+        out["environment"] = environment
+    if any("visibility" in part for part in [*parts, own]):
+        # What must be visible only grows through inheritance: regions unite, whole, contact and space hold if any says so.
+        needs, flags = {}, {}
+        for part in [*parts, own]:
+            visibility = part.get("visibility", {})
+            for ref, need in visibility.get("participants", {}).items():
+                target = needs.setdefault(ref, {})
+                if need.get("regions"):
+                    target["regions"] = _union(target.get("regions", []), need["regions"])
+                if need.get("whole"):
+                    target["whole"] = True
+            for key in ("contact", "space"):
+                if visibility.get(key):
+                    flags[key] = True
+        out["visibility"] = {**({"participants": needs} if needs else {}), **flags}
     if any("visual" in part for part in [*parts, own]):
         # A direction's dimension, section, media and cast size are scalars (parents must agree, the child's own value is
         # final); conflicts accumulate.
@@ -384,6 +423,14 @@ def _merge_components(parts, own, where, problems):
         conflicts = _union(*(source.get("conflicts", []) for source in [*sources, own.get("visual", {})]))
         if conflicts:
             visual["conflicts"] = conflicts
+        shown = [source.get("shows", {}) for source in sources]
+        if any(shown) or own.get("visual", {}).get("shows"):
+            shows = {}
+            scalars(shows, shown, ("whole", "max_regions", "space", "complete"), own.get("visual", {}).get("shows", {}))
+            regions = _union(*(item.get("regions", []) for item in [*shown, own.get("visual", {}).get("shows", {})]))
+            if regions:
+                shows["regions"] = regions
+            visual["shows"] = shows
         out["visual"] = visual
     return out
 
@@ -391,12 +438,21 @@ def _merge_components(parts, own, where, problems):
 class Registry:
     """The merged, validated vocabulary of the enabled packs. Read-only once built."""
 
-    def __init__(self, packs, entries, owners):
+    def __init__(self, packs, entries, owners, moved=None):
         self.packs = packs          # {pack id: Pack}, in load order
-        self._entries = entries     # {entry id: entry as written}
+        self._entries = entries     # {entry id: normalized component types and redirected references, before inheritance}
         self._owners = owners       # {entry id: pack id}
+        self.moved = dict(moved or {})  # {replaced id: the entry that replaces it} (SPEC.md section 9)
         self._resolved = {}
         self._by_category, self._by_tag = {}, {}
+
+    def canonical(self, entry_id):
+        """The live id for an id an entry replaces (a run record or Director written before a move); else unchanged."""
+        return self.moved.get(entry_id, entry_id)
+
+    def is_abstract(self, entry_id):
+        """A template entry: inherited only, never retrieved, composed or chosen (SPEC.md section 7)."""
+        return self._entries[entry_id].get("abstract") is True
 
     def __contains__(self, entry_id):
         return entry_id in self._entries
@@ -408,7 +464,7 @@ class Registry:
         return list(self._entries)
 
     def entry(self, entry_id):
-        """The entry exactly as written in its pack."""
+        """The entry before inheritance, with component types normalized and retired references redirected."""
         return self._entries[entry_id]
 
     def owner(self, entry_id):
@@ -436,6 +492,18 @@ class Registry:
         return [entry_id for entry_id, entry in self._entries.items()
                 if needle in entry["name"].casefold() or any(needle in alias.casefold() for alias in entry.get("aliases", []))
                 or any(needle in tag for tag in entry.get("tags", []))]
+
+
+def _redirect(value, moved):
+    """value with every reference to a replaced id pointing at its replacement (ids contain ":", so no other text
+    in a component can equal one)."""
+    if isinstance(value, str):
+        return moved.get(value, value)
+    if isinstance(value, list):
+        return [_redirect(item, moved) for item in value]
+    if isinstance(value, dict):
+        return {key: _redirect(item, moved) for key, item in value.items()}
+    return value
 
 
 def _reachable(packs, pack_id):
@@ -480,12 +548,37 @@ def build_registry(packs):
     if problems:
         raise VocabularyError(problems)
     # Entries: unique ids, declared categories, references into reachable packs only.
+    interfaces = ComponentTypes(active.values(), _validator("entry").schema,
+                                {pack_id: _reachable(active, pack_id) for pack_id in active})
     entries, owners = {}, {}
     for pack_id in order:
         for name, entry in active[pack_id].entries:
             if entry["id"] in entries:
                 problems.append(f"{pack_id}/{name}: duplicate id {entry['id']} (also in {owners[entry['id']]})")
-            entries[entry["id"]], owners[entry["id"]] = entry, pack_id
+            fragments = interfaces.parts(entry["components"], pack_id, entry["id"])
+            canonical = {}
+            for fragment in fragments:
+                for base, value in fragment.items():
+                    if base in canonical:
+                        canonical[base] = _merge_components([{base: canonical[base]}, {base: value}], {}, entry["id"], problems)[base]
+                    else:
+                        canonical[base] = value
+            entries[entry["id"]], owners[entry["id"]] = {**entry, "components": canonical}, pack_id
+    problems.extend(interfaces.problems)
+    # Moved entries (SPEC.md section 9): an id an entry replaces resolves to that entry, so packs written against the old
+    # id keep loading. A replaced id may not also exist, and two entries may not replace the same id.
+    moved = {}
+    for entry_id, entry in entries.items():
+        for old in entry.get("replaces", []):
+            if old in entries:
+                problems.append(f"{entry_id}: replaces {old}, which still exists")
+            elif moved.get(old, entry_id) != entry_id:
+                problems.append(f"{old} is replaced by both {moved[old]} and {entry_id}")
+            else:
+                moved[old] = entry_id
+    if moved:
+        entries = {entry_id: {**entry, **({"extends": _redirect(entry["extends"], moved)} if "extends" in entry else {}),
+                              "components": _redirect(entry["components"], moved)} for entry_id, entry in entries.items()}
     for entry_id, entry in entries.items():
         reachable = _reachable(active, owners[entry_id])
         categories = {category["id"] for pack_id in reachable for category in active[pack_id].manifest.get("categories", [])}
@@ -505,7 +598,7 @@ def build_registry(packs):
                     problems.append(f"{entry_id}: {ref} is listed as a conflicting visual direction but is not one")
     if problems:
         raise VocabularyError(problems)
-    registry = Registry({pack_id: active[pack_id] for pack_id in order}, entries, owners)
+    registry = Registry({pack_id: active[pack_id] for pack_id in order}, entries, owners, moved)
     # Inheritance: cycles and contradictions are rejected, never overridden.
     resolving = set()
     def resolve(entry_id, trail):
@@ -532,7 +625,13 @@ def build_registry(packs):
         ratings += [parent["rating"] for parent in parents]
         merged["rating"] = max(ratings, key=RATINGS.index)
         merged["components"] = _merge_components([parent["components"] for parent in parents], entry["components"],
-                                                 entry_id, problems)
+                                                  entry_id, problems)
+        comp = merged["components"]
+        capacities = [comp[name]["capacity"] for name in ("object", "environment") if "capacity" in comp.get(name, {})]
+        if "capacity" in comp:
+            capacities.append(comp["capacity"])
+        if capacities and any(value != capacities[0] for value in capacities[1:]):
+            problems.append(f"{entry_id}: conflicting occupancy capacities")
         registry._resolved[entry_id] = merged
         return merged
     for entry_id in entries:
@@ -644,7 +743,7 @@ class PackManager:
     # -- discovery
     def _bundled(self):
         """The mandatory core pack(s)."""
-        packs = [read_pack(path, bundled=True) for path in self.bundled_dirs]
+        packs = [read_foundation(path) for path in self.bundled_dirs]
         for pack in packs:
             pack.mandatory = True
         return packs
@@ -693,7 +792,7 @@ class PackManager:
                         found.append(fallback | {"enabled": False, "problems": [problem]})
                         continue
                     try:
-                        pack = (read_pack(folder, bundled=True) if where == "core" else
+                        pack = (read_foundation(folder) if where == "core" else
                                 self._optional(folder, bundled=where == "official", enabled=folder.name not in disabled))
                         pack.mandatory = where == "core"
                         loaded.append(pack)
@@ -743,7 +842,7 @@ class PackManager:
                     broken[folder.name] = [problem]
                     continue
                 try:
-                    pack = (read_pack(folder, bundled=True) if where == "core" else
+                    pack = (read_foundation(folder) if where == "core" else
                             self._optional(folder, bundled=where == "official", enabled=True))
                     pack.mandatory = where == "core"
                     available[pack.id] = (pack, "bundled" if where == "official" else where)
@@ -909,7 +1008,7 @@ class PackManager:
     def _require_optional(self, pack_id):
         """An official or installed pack can be enabled and disabled; the core cannot."""
         validate_pack_id(pack_id)
-        if any(read_pack(path, bundled=True).id == pack_id for path in self.bundled_dirs):
+        if any(read_foundation(path).id == pack_id for path in self.bundled_dirs):
             raise VocabularyError(f"{pack_id} is bundled with the app and cannot be changed")
         if not ((self.install_dir / pack_id).is_dir()
                 or self.official_dir is not None and (self.official_dir / pack_id).is_dir()):

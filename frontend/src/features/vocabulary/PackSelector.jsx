@@ -7,7 +7,7 @@ export function PackSelector({ packs, selected, onChange, disabled, label = "Voc
   const problem = selectionProblem(rows);
   return <fieldset className="pack-selector" aria-label={label} disabled={disabled}>
     <legend>{label}</legend>
-    <p className="pack-selector-help">Only these packs are used for this run. Core is always included; packs a selected pack needs are added automatically. Your global Pack Manager settings are not changed.</p>
+    <p className="pack-selector-help">Choose content packs for this run. Core interfaces load internally; packs a selected pack needs are added automatically. Your global Pack Manager settings are not changed.</p>
     {error && <p className="pack-selector-problem" role="alert">{error}</p>}
     <ul>
       {rows.map((row) => {

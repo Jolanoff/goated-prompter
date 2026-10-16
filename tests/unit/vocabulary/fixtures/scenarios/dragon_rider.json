@@ -2,13 +2,14 @@
   "name": "dragon_rider",
   "description": "A person riding a dragon. Nothing in core mentions dragons.",
   "packs": [
+    "general",
     "core",
     "fantasy"
   ],
   "cast": [
     {
       "id": "rider",
-      "body": "core:body.humanoid"
+      "body": "general:body.humanoid"
     },
     {
       "id": "drake",
@@ -17,7 +18,7 @@
   ],
   "use": [
     {
-      "entry": "core:position.riding",
+      "entry": "general:position.riding",
       "bind": {
         "rider": "rider",
         "mount": "drake"

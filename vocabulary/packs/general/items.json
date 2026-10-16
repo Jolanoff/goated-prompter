@@ -2,7 +2,7 @@
   "spec": 1,
   "entries": [
     {
-      "id": "core:item.book",
+      "id": "general:item.book",
       "category": "item",
       "name": "Book",
       "components": {
@@ -16,7 +16,7 @@
       }
     },
     {
-      "id": "core:item.cup",
+      "id": "general:item.cup",
       "category": "item",
       "name": "Cup",
       "aliases": [
@@ -34,7 +34,7 @@
       }
     },
     {
-      "id": "core:item.umbrella",
+      "id": "general:item.umbrella",
       "category": "item",
       "name": "Umbrella",
       "components": {
@@ -48,7 +48,7 @@
       }
     },
     {
-      "id": "core:item.lantern",
+      "id": "general:item.lantern",
       "category": "item",
       "name": "Lantern",
       "components": {
@@ -62,7 +62,7 @@
       }
     },
     {
-      "id": "core:item.phone",
+      "id": "general:item.phone",
       "category": "item",
       "name": "Phone",
       "aliases": [
@@ -72,7 +72,8 @@
       "components": {
         "object": {
           "provides": [
-            "core:item.handheld"
+            "core:item.handheld",
+            "general:item.camera_device"
           ],
           "size": "tiny",
           "hands": 1
@@ -80,7 +81,7 @@
       }
     },
     {
-      "id": "core:item.sword",
+      "id": "general:item.sword",
       "category": "item",
       "name": "Sword",
       "components": {

@@ -2,7 +2,7 @@
   "spec": 1,
   "entries": [
     {
-      "id": "core:posture.standing",
+      "id": "general:posture.standing",
       "category": "posture",
       "name": "Standing",
       "components": {
@@ -35,7 +35,7 @@
       }
     },
     {
-      "id": "core:posture.standing_four",
+      "id": "general:posture.standing_four",
       "category": "posture",
       "name": "Standing on four legs",
       "components": {
@@ -68,7 +68,7 @@
       }
     },
     {
-      "id": "core:posture.kneeling",
+      "id": "general:posture.kneeling",
       "category": "posture",
       "name": "Kneeling",
       "components": {
@@ -101,7 +101,7 @@
       }
     },
     {
-      "id": "core:posture.all_fours",
+      "id": "general:posture.all_fours",
       "category": "posture",
       "name": "On all fours",
       "description": "Weight on both hands and both knees; both hands are busy supporting.",
@@ -142,7 +142,7 @@
       }
     },
     {
-      "id": "core:posture.sitting",
+      "id": "general:posture.sitting",
       "category": "posture",
       "name": "Sitting",
       "description": "Weight on the seat; the ass is against the surface.",
@@ -176,7 +176,7 @@
       }
     },
     {
-      "id": "core:posture.straddling",
+      "id": "general:posture.straddling",
       "category": "posture",
       "name": "Straddling",
       "description": "Seated astride something, one leg on each side.",
@@ -217,7 +217,7 @@
       }
     },
     {
-      "id": "core:position.standing_alone",
+      "id": "general:position.standing_alone",
       "category": "position",
       "name": "Standing alone",
       "components": {
@@ -239,7 +239,7 @@
         "spatial": {
           "participants": {
             "person": {
-              "posture": "core:posture.standing",
+              "posture": "general:posture.standing",
               "facing": {
                 "world": "level"
               }
@@ -249,7 +249,7 @@
       }
     },
     {
-      "id": "core:position.from_behind",
+      "id": "general:position.from_behind",
       "category": "position",
       "name": "From behind",
       "rating": "adult",
@@ -282,13 +282,13 @@
         "spatial": {
           "participants": {
             "front": {
-              "posture": "core:posture.all_fours",
+              "posture": "general:posture.all_fours",
               "facing": {
                 "away_from": "back"
               }
             },
             "back": {
-              "posture": "core:posture.kneeling",
+              "posture": "general:posture.kneeling",
               "facing": {
                 "toward": "front"
               },
@@ -315,11 +315,21 @@
               "kind": "touch"
             }
           ]
+        },
+        "visibility": {
+          "participants": {
+            "front": {
+              "whole": true
+            },
+            "back": {
+              "whole": true
+            }
+          }
         }
       }
     },
     {
-      "id": "core:position.circle",
+      "id": "general:position.circle",
       "category": "position",
       "name": "Circle",
       "description": "A group kneeling in a ring, each within reach of the next.",
@@ -346,7 +356,7 @@
         "spatial": {
           "participants": {
             "member[*]": {
-              "posture": "core:posture.kneeling",
+              "posture": "general:posture.kneeling",
               "facing": {
                 "toward": "center"
               },
@@ -370,11 +380,18 @@
               "kind": "touch"
             }
           ]
+        },
+        "visibility": {
+          "participants": {
+            "member[*]": {
+              "whole": true
+            }
+          }
         }
       }
     },
     {
-      "id": "core:position.riding",
+      "id": "general:position.riding",
       "category": "position",
       "name": "Riding a mount",
       "aliases": [
@@ -414,10 +431,10 @@
         "spatial": {
           "participants": {
             "mount": {
-              "posture": "core:posture.standing_four"
+              "posture": "general:posture.standing_four"
             },
             "rider": {
-              "posture": "core:posture.straddling",
+              "posture": "general:posture.straddling",
               "facing": {
                 "same_as": "mount"
               },
@@ -442,11 +459,21 @@
               "kind": "touch"
             }
           ]
+        },
+        "visibility": {
+          "participants": {
+            "rider": {
+              "whole": true
+            },
+            "mount": {
+              "whole": true
+            }
+          }
         }
       }
     },
     {
-      "id": "core:position.facing_apart",
+      "id": "general:position.facing_apart",
       "category": "position",
       "name": "Facing each other at a distance",
       "components": {
@@ -472,7 +499,7 @@
         "spatial": {
           "participants": {
             "a": {
-              "posture": "core:posture.standing",
+              "posture": "general:posture.standing",
               "facing": {
                 "toward": "b"
               },
@@ -485,7 +512,7 @@
               ]
             },
             "b": {
-              "posture": "core:posture.standing",
+              "posture": "general:posture.standing",
               "facing": {
                 "toward": "a"
               }
@@ -515,7 +542,7 @@
       }
     },
     {
-      "id": "core:posture.lying_back",
+      "id": "general:posture.lying_back",
       "category": "posture",
       "name": "Lying on the back",
       "description": "Face up; the back rests on the surface, so it cannot be reached.",
@@ -549,7 +576,7 @@
       }
     },
     {
-      "id": "core:posture.lying_front",
+      "id": "general:posture.lying_front",
       "category": "posture",
       "name": "Lying prone",
       "description": "Face down; chest and belly rest on the surface.",
@@ -583,7 +610,7 @@
       }
     },
     {
-      "id": "core:posture.lying_side",
+      "id": "general:posture.lying_side",
       "category": "posture",
       "name": "Lying on the side",
       "description": "Resting on one shoulder and hip; front and back both stay free.",
@@ -607,7 +634,7 @@
       }
     },
     {
-      "id": "core:posture.flying",
+      "id": "general:posture.flying",
       "category": "posture",
       "name": "Flying",
       "description": "Airborne under its own power, with no surface supporting it.",
@@ -637,7 +664,7 @@
       }
     },
     {
-      "id": "core:position.side_by_side",
+      "id": "general:position.side_by_side",
       "category": "position",
       "name": "Sitting side by side",
       "description": "Seated next to each other on the same seat, facing the same way.",
@@ -664,7 +691,7 @@
         "spatial": {
           "participants": {
             "a": {
-              "posture": "core:posture.sitting",
+              "posture": "general:posture.sitting",
               "facing": {
                 "same_as": "b"
               },
@@ -677,14 +704,14 @@
               ]
             },
             "b": {
-              "posture": "core:posture.sitting"
+              "posture": "general:posture.sitting"
             }
           }
         }
       }
     },
     {
-      "id": "core:position.lap_sit",
+      "id": "general:position.lap_sit",
       "category": "position",
       "name": "Sitting on a lap",
       "description": "Seated across the thighs of a seated partner.",
@@ -711,10 +738,10 @@
         "spatial": {
           "participants": {
             "base": {
-              "posture": "core:posture.sitting"
+              "posture": "general:posture.sitting"
             },
             "seated": {
-              "posture": "core:posture.sitting",
+              "posture": "general:posture.sitting",
               "anchors": [
                 {
                   "relation": "on",
@@ -729,7 +756,7 @@
       }
     },
     {
-      "id": "core:position.spooning",
+      "id": "general:position.spooning",
       "category": "position",
       "name": "Spooning",
       "description": "Both on their sides facing the same way, the back partner curled against the front partner.",
@@ -756,10 +783,10 @@
         "spatial": {
           "participants": {
             "front": {
-              "posture": "core:posture.lying_side"
+              "posture": "general:posture.lying_side"
             },
             "back": {
-              "posture": "core:posture.lying_side",
+              "posture": "general:posture.lying_side",
               "facing": {
                 "same_as": "front"
               },

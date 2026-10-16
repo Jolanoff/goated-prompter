@@ -23,7 +23,7 @@ test("defaults start from the globally enabled usable optional packs and never l
 
 test("core is required, selected packs are distinct from dependencies, and nothing else participates", () => {
   const rows = Object.fromEntries(packChoices(library, ["boats"]).map((row) => [row.id, row]));
-  assert.equal(rows.core.role, "core");
+  assert.equal(rows.core, undefined);
   assert.equal(rows.boats.role, "selected");
   assert.equal(rows.harbor.role, "dependency");
   assert.equal(rows.adult.role, "off");
@@ -44,11 +44,11 @@ test("multiple and globally disabled packs can be chosen for one run; broken cho
   assert.deepEqual(togglePack(["adult", "boats"], "adult"), ["boats"]);
 });
 
-test("the selector locks core, shows versions and states, and never offers unusable packs", () => {
+test("the selector hides internal core, shows versions and states, and never offers unusable packs", () => {
   const markup = renderToStaticMarkup(createElement(PackSelector, { packs: library, selected: ["adult", "boats"], onChange: () => {} }));
-  assert.match(markup, /aria-label="Use core pack"[^>]*disabled=""/);
+  assert.doesNotMatch(markup, /aria-label="Use core pack"/);
   assert.match(markup, /v1\.0\.0/);
-  assert.match(markup, /Required/);
+  assert.match(markup, /Core interfaces load internally/);
   assert.match(markup, /Added as dependency/);
   assert.match(markup, /Off in Pack Manager; used for this run only/);
   assert.match(markup, /aria-label="Use broken pack"[^>]*disabled=""/);

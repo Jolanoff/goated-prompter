@@ -6,7 +6,7 @@
   "description": "Test fixture: one toy and one toy action.",
   "rating": "adult",
   "requires": {
-    "core": ">=1.0.0 <2.0.0"
+    "core": ">=1.0.0 <2.0.0", "general": ">=1.0.0"
   },
   "files": [
     "toys.json",

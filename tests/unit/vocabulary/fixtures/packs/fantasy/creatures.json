@@ -41,7 +41,7 @@
       "name": "Dragon",
       "description": "A huge winged, tailed quadruped. Its magic is not declared either way.",
       "extends": [
-        "core:body.quadruped",
+        "general:body.quadruped",
         "fantasy:trait.wings",
         "fantasy:trait.tail"
       ],

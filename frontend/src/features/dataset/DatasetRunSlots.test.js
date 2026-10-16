@@ -112,10 +112,28 @@ test("incomplete-run notice names images by slot", async () => {
   assert.doesNotMatch(text, /concept 2/);
 });
 
+test("prompt failures are reported separately from completed scenes", async () => {
+  const { RunPrompts } = await loadPages();
+  const result = { ...partial, requested: 3, written: 3, missing: [],
+    prompt_summary: { written: 0, missing: [1, 2, 3] } };
+  const page = RunPrompts({ run: { status: "error", result }, onCopy: () => {}, onDownload: () => {} });
+  const notes = elements(page).find((element) => element.props?.run);
+  const rendered = notes.type(notes.props);
+  const text = JSON.stringify(elements(rendered).map((element) => element.props?.children));
+  assert.match(text, /final prompts written/);
+  assert.match(text, /image 1, image 2, image 3/);
+  assert.doesNotMatch(text, /scenes written/);
+});
+
 test("an image's arrangement says whether it was checked against the vocabulary, never more", async () => {
   const { arrangementLine } = await loadPages();
   assert.equal(arrangementLine(null), "");
   assert.equal(arrangementLine({ kind: "freeform", status: "unchecked" }), "Freeform (not checked against the vocabulary)");
   assert.equal(arrangementLine({ kind: "vocabulary", status: "unknown", entries: [{ name: "Squatting ride",
     roles: { rider: ["woman"], partner: ["man"] } }] }), "Squatting ride (rider: woman; partner: man) · vocabulary check: unknown");
+  assert.equal(arrangementLine({ kind: "freeform", status: "unchecked", reason: "no vocabulary entry places these people in this image" }),
+    "Freeform (not checked against the vocabulary): no vocabulary entry places these people in this image");
+  assert.equal(arrangementLine({ kind: "vocabulary", composed: true, status: "eligible", space: { name: "Bed" },
+    items: [{ name: "Book" }], entries: [{ name: "Kiss", roles: { a: ["ana"], b: ["ben"] } }] }),
+  "Composed: Kiss (a: ana; b: ben) · place: Bed · item: Book · vocabulary check: eligible");
 });

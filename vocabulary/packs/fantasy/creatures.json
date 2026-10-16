@@ -11,7 +11,7 @@
         "wyrm"
       ],
       "extends": [
-        "core:body.vertebrate"
+        "general:body.vertebrate"
       ],
       "components": {
         "body": {
@@ -72,7 +72,7 @@
         "elven"
       ],
       "extends": [
-        "core:body.humanoid"
+        "general:body.humanoid"
       ],
       "components": {
         "body": {

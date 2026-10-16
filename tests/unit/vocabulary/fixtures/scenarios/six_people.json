@@ -2,38 +2,39 @@
   "name": "six_people",
   "description": "Six people kneeling in a ring, each touching the next one's shoulders.",
   "packs": [
+    "general",
     "core"
   ],
   "cast": [
     {
       "id": "p1",
-      "body": "core:body.humanoid"
+      "body": "general:body.humanoid"
     },
     {
       "id": "p2",
-      "body": "core:body.humanoid"
+      "body": "general:body.humanoid"
     },
     {
       "id": "p3",
-      "body": "core:body.humanoid"
+      "body": "general:body.humanoid"
     },
     {
       "id": "p4",
-      "body": "core:body.humanoid"
+      "body": "general:body.humanoid"
     },
     {
       "id": "p5",
-      "body": "core:body.humanoid"
+      "body": "general:body.humanoid"
     },
     {
       "id": "p6",
-      "body": "core:body.humanoid"
+      "body": "general:body.humanoid"
     }
   ],
-  "space": "core:space.floor",
+  "space": "general:space.floor",
   "use": [
     {
-      "entry": "core:position.circle",
+      "entry": "general:position.circle",
       "bind": {
         "member": [
           "p1",

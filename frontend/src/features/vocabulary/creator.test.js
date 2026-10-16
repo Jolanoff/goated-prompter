@@ -60,8 +60,10 @@ test("every supported component renders recursive visual controls, not a raw JSO
     requirements: { participants: { actor: { all_of: ["core:limb.hand"], any_of: ["core:limb.hand", "core:limb.leg"], none_of: [] } }, access: [] },
     spatial: { participants: { actor: { orientation: "upright", facing: { toward: "partner" }, anchors: [{ relation: "on", of: "partner", at: "core:limb.hand", distance: "contact" }] } } },
     claims: { actor: [{ resource: "core:limb.hand", count: 1, mode: "exclusive", purpose: "hold", key: "held_{actor}" }] },
-    object: { provides: [], complete_for: [], size: "small", hands: 1 }, environment: { provides: [] },
-    visual: { dimension: "lighting", section: "lighting", media: ["anime"], people: { min: 1, max: 2 }, conflicts: [] },
+    object: { provides: [], complete_for: [], size: "small", hands: 1, capacity: { beings: 2 } }, environment: { provides: [], capacity: { beings: 4 } },
+    visual: { dimension: "lighting", section: "lighting", media: ["anime"], people: { min: 1, max: 2 }, conflicts: [], shows: { whole: true, space: true } },
+    visibility: { participants: { actor: { regions: ["core:limb.hand"], whole: true } }, contact: true, space: true },
+    capacity: { beings: 2 },
   };
   assert.deepEqual(Object.keys(samples), Object.keys(schemas.entry.$defs.components.properties));
   for (const [component, value] of Object.entries(samples)) {
@@ -69,6 +71,16 @@ test("every supported component renders recursive visual controls, not a raw JSO
     assert.match(markup, /<fieldset/);
     assert.doesNotMatch(markup, /&quot;components&quot;/);
     assert.ok(markup.includes("Test field"), component);
+  }
+});
+
+test("boolean declarations use typed controls rather than string inputs", () => {
+  for (const schema of [schemas.entry.$defs.entry.properties.abstract, schemas.entry.$defs.visibility.properties.contact]) {
+    assert.equal(schemaDefault(schema, schemas.entry), false);
+    const markup = form(schema, true);
+    assert.match(markup, /type="checkbox"/);
+    assert.match(markup, /checked=""/);
+    assert.doesNotMatch(form(schema, false), /checked=""/);
   }
 });
 

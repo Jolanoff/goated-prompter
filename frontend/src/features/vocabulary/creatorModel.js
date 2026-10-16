@@ -14,6 +14,7 @@ export function schemaDefault(source, root) {
   if (schema.type === "object") return Object.fromEntries((schema.required || []).map((key) => [key, schemaDefault(schema.properties[key], root)]));
   if (schema.type === "array") return [];
   if (schema.type === "integer") return schema.minimum || 0;
+  if (schema.type === "boolean") return false;
   return "";
 }
 

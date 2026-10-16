@@ -2,7 +2,7 @@
   "spec": 1,
   "entries": [
     {
-      "id": "core:body.vertebrate",
+      "id": "general:body.vertebrate",
       "category": "body",
       "name": "Vertebrate",
       "description": "Shared base of bodies with a head, mouth, torso, back and hips.",
@@ -32,12 +32,12 @@
       }
     },
     {
-      "id": "core:body.humanoid",
+      "id": "general:body.humanoid",
       "category": "body",
       "name": "Humanoid",
       "description": "A generic human body: two arms, two hands, two legs, two feet. No sex-specific anatomy; add traits.",
       "extends": [
-        "core:body.vertebrate"
+        "general:body.vertebrate"
       ],
       "components": {
         "body": {
@@ -87,12 +87,12 @@
       }
     },
     {
-      "id": "core:body.quadruped",
+      "id": "general:body.quadruped",
       "category": "body",
       "name": "Quadruped",
       "description": "A four-legged body.",
       "extends": [
-        "core:body.vertebrate"
+        "general:body.vertebrate"
       ],
       "components": {
         "body": {
@@ -132,7 +132,7 @@
       }
     },
     {
-      "id": "core:trait.penis",
+      "id": "general:trait.penis",
       "category": "trait",
       "name": "Penis",
       "components": {
@@ -146,7 +146,7 @@
       }
     },
     {
-      "id": "core:trait.vagina",
+      "id": "general:trait.vagina",
       "category": "trait",
       "name": "Vagina",
       "components": {
@@ -160,7 +160,7 @@
       }
     },
     {
-      "id": "core:trait.breasts",
+      "id": "general:trait.breasts",
       "category": "trait",
       "name": "Breasts",
       "components": {
@@ -170,31 +170,6 @@
               "type": "core:anatomy.breasts"
             }
           }
-        }
-      }
-    },
-    {
-      "id": "core:body.human",
-      "category": "body",
-      "name": "Human",
-      "description": "An adult human body: arms, hands, legs and feet; walks, does not fly. Identity and gender belong to the character; sex-specific anatomy is added only where stated.",
-      "aliases": [
-        "person",
-        "people",
-        "man",
-        "men",
-        "woman",
-        "women",
-        "adult"
-      ],
-      "extends": [
-        "core:body.humanoid"
-      ],
-      "components": {
-        "body": {
-          "complete_for": [
-            "core:locomotion"
-          ]
         }
       }
     }

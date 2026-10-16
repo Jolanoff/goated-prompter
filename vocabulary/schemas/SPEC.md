@@ -1,9 +1,11 @@
 # Vocabulary specification, version 1
 
-Vocabulary packs are optional, declarative knowledge for the Dataset director: bodies, postures,
-positions, actions, objects, spaces and the capabilities that connect them. A pack never
-prescribes a scene, never decides whether a request is NSFW, and never contains code. With no
-packs installed, generation works exactly as without vocabulary.
+Vocabulary packs declare reusable bodies, postures, positions, actions, objects, spaces and visual
+directions. Core combines their optional components into scenes, checking compatibility during
+selection. The Director steers selection and presentation; a lightweight Scene Builder fills open
+details, and the target controls final prompt wording. User requirements take precedence. A pack
+never decides whether a request is NSFW and never contains code. Unsupported images use the clearly
+labelled freeform path. Core remains available without installed packs.
 
 Files:
 
@@ -16,16 +18,14 @@ Locations:
 
 | Folder | Packs | Can be |
 |---|---|---|
-| `vocabulary/core/` | the core pack | always enabled; read-only |
-| `vocabulary/packs/<pack-id>/` | official packs that ship with the app (`fantasy`, `adult`, `visual`) | enabled by default; disabled and re-enabled; read-only |
+| `vocabulary/core/` | internal interfaces and capability definitions, loaded through `foundation.json` | always loaded; no selectable content |
+| `vocabulary/packs/<pack-id>/` | official content packs (`general`, `fantasy`, `adult`, `visual`) | enabled by default; disabled and re-enabled; read-only |
 | `data/vocabulary/packs/<pack-id>/` (Git-ignored) | packs the user installed | enabled by default; disabled, updated and removed |
-| `vocabulary/optional/<pack-id>/` | opt-in packs kept as source (`adult_kinks`); never found automatically | installed as a ZIP of the folder; then as installed packs |
 
 Official and installed packs are found automatically; nothing is copied. `data/vocabulary/state.json`
 keeps which official and installed packs are disabled. A pack id may appear in one location only: a
 duplicate is rejected, never silently overridden, and an archive cannot install over a core or official pack.
-Opt-in content is a separate pack the user installs, never a switch inside a pack: the kinks setting is the
-`adult_kinks` pack installed and enabled (kinks) or disabled or absent (no kinks). It depends only on the core.
+Additional content is a separate pack the user installs, never a hardcoded engine switch.
 
 Per-run selection. A Dataset run chooses its own packs; the enabled state above is only the default the
 Dataset tab starts from, and choosing packs for a run never changes it. On Confirm, before any inference,
@@ -64,12 +64,15 @@ pack's name still reaches its theme without any declaration.
 them when an NSFW brief's content level equals an entry's rating, for a pack of general content at its
 level (the bundled Adult pack); a General-rated pack cannot declare it. Opt-in or specialised packs
 (kinks) keep the default, so the content level alone never offers them. The rating still decides what is
-allowed, and an entry the brief names is found whatever its pack's activation. The core is always open.
+allowed, and an entry the brief names is found whatever its pack's activation. `"always"` offers a
+pack's general-purpose ideas without a theme match, but only within the selected packs and allowed
+ratings. General uses this mode; disabling or deselecting it removes its content, not Core interfaces.
 
 ## 2. Entries
 
-Every entry has the same header (`id`, `category`, `name`, `description`, `aliases`, `tags`,
-`rating`, `extends`, `notes`) and a `components` object. Unknown keys are rejected everywhere.
+Every entry has a header (`id`, `category`, `name`, optional `description`, `aliases`, `tags`,
+`rating`, `extends`, `notes`, `abstract`, `replaces`) and a `components` object. Every component
+is optional: `components: {}` is valid. Unknown fields and undeclared component types are rejected.
 
 - `id` is `pack:local.name`, unique across all loaded packs, and its prefix is the pack's id.
 - References to other entries use the full id (`core:limb.hand`).
@@ -86,9 +89,61 @@ Every entry has the same header (`id`, `category`, `name`, `description`, `alias
 | `claims` | resources a participant uses (support, holding, contact), exclusive or shared |
 | `object` | what an item provides, how many hands it takes, and capabilities it declares complete |
 | `environment` | the surfaces and supports a space provides |
+| `visual` | framing, camera angle, composition, lighting or atmosphere; optionally what it can show |
+| `visibility` | what this entry requires in view: participants, body regions, contact and place |
+| `capacity` | independently reusable occupancy limit (`beings`), also accepted inside object/environment |
 
 A capability is provided by a body through the types of its resource instances, its `provides`
 list, and everything those capabilities imply (transitively).
+
+### Core interfaces and pack inheritance
+
+`core/foundation.json` declares the 17 public interfaces below. These are executable contracts, not
+entry names: `ComponentTypes` validates interface payloads against `entry.schema.json`, resolves
+pack-defined types through their dependency closure, and normalizes them to the existing runtime
+components before inheritance and reference checking. The canonical lower-case components remain
+valid too. No interface is mandatory on an entry; absence supplies no evidence of compatibility.
+
+| Interface | Canonical contract | Runtime behavior |
+|---|---|---|
+| Actor | `participants` | being/object bindings, exact/range counts, group topology, duplicate-binding checks |
+| Anatomy | `body` | resource instances, provided/implied capabilities and explicit completeness |
+| Object | `object` | provided capabilities, completeness, object eligibility and optional capacity |
+| Space | `environment` | surface/support capabilities, completeness and optional capacity |
+| PostureBase | `spatial` | reusable self placement; referenced postures retain requirements, claims and visibility |
+| PositionBase | `spatial` | participant placements, orientation, facing, access and placement conflicts |
+| ActionBase | `requirements` | participant/space eligibility and required touch/sight access; compose with Actor and claims |
+| RelationshipBase | `spatial` | relative anchors/facing and contradictory relationship checks |
+| Framing | `visual`, dimension `framing` | crop/region visibility fitting, media/cast limits and conflicts |
+| CameraAngle | `visual`, dimension `camera_angle` | camera selection, media/cast limits and conflicts |
+| Composition | `visual`, dimension `composition` | layout selection, media/cast limits and conflicts |
+| LightingBase | `visual`, dimension `lighting` | lighting selection, media/cast limits and conflicts |
+| CapabilityCompatibility | `requirements` | all/any/none conditions against transitive `capability.implies`, unknown versus declared absence |
+| BodyResourceUsage | `claims` | exclusive/shared allocation, shared keys and over-allocation checks |
+| VisibilityRequirements | `visibility` | bound participant/region/contact/place needs collected for visual fitting |
+| SupportSurfaceRequirements | `requirements` | required surfaces on the space or bound objects; missing/undeclared support checks |
+| OccupancyCapacity | `capacity` | cast occupancy and beings on/astride objects; absent limits are not invented |
+
+MODPACKs can declare a reusable type in their manifest:
+
+```json
+"component_types": {"my_pack:grip": {"base": "BodyResourceUsage"}}
+```
+
+An entry can then use `"components": {"my_pack:grip": {"actor": [...]}}`. Another pack requiring
+`my_pack` can derive another named type from `my_pack:grip` and inherit its entries. Names must use
+the declaring pack's namespace. Unknown bases, cycles, undeclared dependency access and incompatible
+visual dimensions are rejected. Combining interfaces that share a canonical component merges their
+constraints with the same contradiction checks as entry inheritance. Extensions reuse known mechanics;
+they cannot introduce executable code or silently add unsupported fields.
+
+Core contains no body plans, poses, actions, objects, environments or visual presets, even marked
+abstract. Human, Humanoid, Quadruped and anatomical traits belong to General; Fantasy and Adult
+require General only where they reference its content. Concrete visual directions and everyday
+interactions also belong to General. General's abstract object-interaction templates are pack content,
+not Core interfaces. Packs needing none of that content can require Core alone.
+Packs written against the former `core:body.*`, `core:trait.*` or scene-content ids must use their
+`general:` ids and declare the General dependency. No content is copied back into Core to satisfy them.
 
 ## 3. Status and precedence
 
@@ -213,10 +268,11 @@ Directional relations are evaluated in a fixed frame per relation:
 | `around` | centred on `of` (`center` or a participant), members spread evenly |
 | `between` | between the two participants listed in `of` |
 | `astride` | on top of `of`, one leg on each side of the named region |
+| `beside` | alongside `of`, without selecting its left or right side |
 
 `facing` is `toward`, `away_from` or `same_as` another reference (body frames), or a world value:
 `up` (face up), `down` (face down), `level`. Left and right always mean the participant's own
-sides, never the viewer's. Camera framing is not part of vocabulary; it belongs to the director.
+sides, never the viewer's. Camera framing is a separate visual component (section 11), not a body relation.
 Distance is `contact`, `arm`, `near` or `far`.
 
 `access` appears in two places with one shape. In `spatial` it is a declared fact: `from` can reach
@@ -239,8 +295,16 @@ A declared access presupposes its capability: the `from` participant is checked 
 | `claims` | concatenated, then checked for over-allocation at composition |
 | header text (`name`, `description`, `notes`) | the child's own value wins. A child without a `description` takes the first parent's (in `extends` order) that has one |
 | `rating` | the resolved entry takes the **strictest** rating of itself and every entry it inherits from, so content never becomes less restricted through inheritance |
+| `visibility` | participant regions unite; `whole`, `contact` and `space` hold if any source requires them |
+| object and environment `capacity` | parents must agree; an explicit child value is final |
+| `visual` | dimension, section, media and people are scalars; parents must agree unless the child sets one. Conflicts and shown regions unite. `shows.whole`, `max_regions`, `space` and `complete` are scalars with the same rule |
 
 Conflicting inheritance is always rejected, never silently overridden.
+
+`abstract: true` marks an inheritance-only template. It remains addressable by descendants but is
+excluded from retrieval, composition and Visual Direction. The flag is not inherited: a concrete
+child can use the template's components without repeating them. Missing components are unspecified,
+not incompatible and not evidence of feasibility.
 
 ## 8. Rating
 
@@ -251,15 +315,21 @@ generation: the NSFW switch decided in step 1 controls which ratings are eligibl
 
 ## 9. Versioning
 
-`spec` is the specification version (1). Packs carry their own semantic `version`. New behaviour
-arrives as new components in a later spec version; a loader rejects a spec version it does not know.
+`spec` is the specification version (1). Packs carry their own semantic `version`. These optional
+fields extend spec 1 additively; existing packs remain valid. A loader rejects a spec version it does not know.
+
+`replaces: [old ids]` lets an entry take over retired ids. Registry construction redirects references
+in `extends` and components before validation, and `Registry.canonical(id)` resolves stored preferences.
+The old id must no longer exist, and two entries cannot replace the same id. Dependencies are checked
+against the replacement's actual owner: a pack still must require every owner it references. General's
+visual entries replace their former `visual:` ids; the Visual pack keeps atmosphere only.
 
 ## 10. Retrieval
 
 Retrieval (`retrieval.py`, text matching in `semantic.py`) picks a small, relevant, checked set of
-entries from the enabled packs for one request. It assists and never decides: it does not choose a
-scene, position, cast or role, and an empty result is normal. The director then writes an original
-scene exactly as without vocabulary. Retrieval is local and deterministic: no model, service or
+entries from the run's selected packs for one request. It supplies candidates, not a scene or role
+assignment; the composer (section 13) makes those decisions, and an empty result is normal.
+Retrieval is local and deterministic: no model, service or
 download, and the same request with the same enabled packs gives the same result whatever order the
 packs are read in and whatever the hash seed.
 
@@ -463,8 +533,9 @@ arrangement, then its place. Fewer ideas than scenes simply repeat. An item come
 only in a scene that holds an interaction it serves (named or an idea), at most one per scene.
 `offer(numbers)` renders the block for one model request writing those scenes: the named entries for
 every image, the ideas per concept of that request, and each idea described once. Without ideas it
-is exactly `render()`. The Dataset Builder (Section 2) gives each concept and staging request the
-offer of its own images; the Vocabulary inspector shows the same result and a per-scene preview.
+is exactly `render()`. Freeform images receive their own offer during concept and staging requests.
+Composed images instead receive authoritative scene facts in the finisher; the Vocabulary inspector
+shows retrieval results and a per-scene preview.
 
 **Result.** `entries` (best first: id, name, category, pack, rating, description, status, relevance,
 score, why, warnings, needs, binding, checked_with, source, scopes, attach_to), `inspiration` (the
@@ -514,11 +585,17 @@ guess is wrong. Prepositions are matched as one interchangeable marker so that "
 
 A `visual` component makes an entry a visual direction: how an image is seen and lit, never what is in it.
 `dimension` is the one choice it fills (`framing`, `camera_angle`, `composition`, `lighting`, `atmosphere`);
-`section` is the concept field it guides (default `lighting` for lighting and atmosphere, `camera` otherwise);
+`section` is the scene field it guides (default `lighting` for lighting and atmosphere, `camera` otherwise);
 `media` limits it to these styles (`anime`, `realistic`, `illustration`, `3d`, `product`, `painting`; absent:
-every style); `people` limits it to casts of `min` to `max` people per image; `conflicts` lists directions it never
-shares an image with (they hold both ways and must be directions). The bundled `visual` pack holds the built-in
-directions; any pack may add more, and a run uses only those of its selected packs, within its allowed ratings.
+every style); `people` can limit non-framing directions to casts of `min` to `max` people per image;
+framing is never rejected solely by head count. `conflicts` lists directions it never shares an image
+with (they hold both ways and must be directions). General owns concrete framing, camera angles, composition and
+lighting; the official `visual` pack owns atmosphere. Any selected pack may add directions within its allowed ratings.
+
+`shows` optionally declares visibility capabilities: `whole` (whole bodies), `regions` (capability ids),
+`max_regions` (a detail crop's region limit), `space` (place in view), and `complete` (the regions list is
+exhaustive). Missing fields leave that capability unknown. `visual.fit` compares these declarations with
+the composed scene's visibility (section 12); it does not infer geometry, occlusion or physical plausibility.
 
 Retrieval (section 10) never indexes, scores or offers a direction, and a category holding only directions is not
 one a brief opens: content retrieval is the same with or without them. Visual Direction (`visual.py`) chooses them
@@ -531,14 +608,100 @@ for each Dataset image, from the confirmed brief alone (no model, no semantic hi
    negations ("no dutch angle") rule directions out.
 2. Per run, each dimension can be off and has a variation: `same` (one direction), `low` (two take turns), `medium`
    (four), `high` (all that fit) or `auto` (Strict low, Balanced medium, Creative and Dice high).
-3. A direction must suit the style, the cast size and the image's other directions; named directions are placed
-   first, so they win every conflict.
+3. A direction must suit the style, any non-framing cast limits and the image's other directions; named
+   directions are placed first. Open dimensions exclude directions whose `shows` contradicts the composed
+   scene's visibility. Unknown visibility capabilities remain eligible. User-named directions are kept even
+   against visibility requirements; the brief wins. Director preferences rank pools and avoid directions,
+   but never overrule a user-named choice.
 4. Image N's directions depend only on N, the seed, the brief, the settings and the selected packs, never on other
    images: each cycle through a dimension's pool uses every direction once, in an order seeded per cycle.
 
-The directions reach the concept request as `visual_direction` (camera and lighting text per concept) and become
-the concept's own `camera` and `lighting` fields, which staging and description already follow; the request,
+For composed images, directions accompany each scene's checked facts in the finishing request. Freeform
+images receive `visual_direction` in the concept request and carry camera and lighting through staging and description; the request,
 fixed, must, avoid and rules outrank them and they never change the place, position, people or actions. While Visual
 Direction is active, what the brief says about the camera or light (the matched names and dimension words) is
 masked out of content retrieval only, so "low camera angle" never finds a Camera prop. Every choice, pool,
 exclusion and reason is kept in the run's vocabulary diagnostics.
+
+## 12. Visibility and capacity
+
+`visibility` describes what an entry needs in view, without choosing a camera:
+
+```json
+{"participants": {"actor": {"regions": ["core:limb.hand"], "whole": true}},
+ "contact": true, "space": true}
+```
+
+Participant references use section 4's slot and group grammar. `contact` adds both sides of each declared
+or required access: the source's `using` part and the target's regions. `space` requires the place in view.
+The resolver collects these into `Resolution.visibility`, bound to individual cast ids; it does not
+claim they are visible. The composer passes them to `Plan.see(image, visibility)` before visual selection.
+
+Objects and environments may declare `capacity: {"beings": N}`. A space's capacity counts the cast; an
+item's capacity counts distinct beings anchored `on` or `astride` that item. Exceeding a declared capacity
+is `over_capacity`, a conflict. An absent capacity imposes no limit. No room size, body size, distance,
+surface load or occlusion is inferred from prose.
+
+## 13. Scene composition and Directors
+
+Dataset V2 follows Understanding → structured scene contract → vocabulary retrieval and joint composition → finishing → target-specific Builder
+prompt. `features/vocabulary/composer.py` composes each image deterministically from the confirmed brief,
+retrieval result, selected packs, Director preferences and seed. It never calls a model.
+
+Roles come from components, not category names: an environment is a space, an object an item, a self
+placement a posture, and a bindable entry with spatial data but no claims an arrangement; other bindable
+entries are interactions. Items fill interaction object slots. The default selection order is arrangement,
+interaction, space; Director priorities can reorder it. Every trial binding is resolved with the scene so
+far, including placements, resources, access, surfaces and capacity. Conflicting trials are never selected.
+Search backtracks across entry choices, role assignments, objects and spaces; it does not lock the first
+nonconflicting binding. Complete feasible results outrank eligible and unknown results. Search is bounded;
+exhaustion is reported as unchecked, not proof of incompatibility. Unknown results have no verified claim.
+
+The brief's named entries are established before optional choices can consume their resources.
+Names matched by the same words are alternatives, even across
+roles; unrelated named actions are separate requirements. A longer matched name is not an invitation to
+substitute its shorter substring. Guided images require the entries their own input names and keep shared
+fixed, must and rule requirements. An unsatisfied requirement fails that image with its reason rather than silently substituting an
+unrelated scene. Grounded Understanding performer/target links constrain bindings when the entry declares
+those sides through access, participant `role: "performer" | "target"`, or a sole being slot; an incompatible
+assignment cannot silently swap people. Multiple performer slots support symmetric activities. Confirmed
+pairwise spatial relations are compared with direct and reciprocal anchors. Missing mechanics
+stay open. Images unsupported by vocabulary use concept → staging → description, marked `freeform` and
+`unchecked`, not described as vocabulary-verified. A failed image never shifts later slot numbers.
+
+The finisher receives selected names, roles, declared facts, items, place and visual direction. It adds
+appearance, open per-person details, place detail, lighting, mood, camera and background. It cannot replace
+the structured mechanics: code renders positions and actions from the composition and retains its
+established place and camera/light fields. Final scenes keep
+entries, roles, facts, status and the limits of checking. The Builder receives those facts and keeps them
+as verbatim locked clauses while writing the surrounding prompt in the selected target's format.
+Missing clauses trigger a retry, then a failed prompt, not silent acceptance. Added prose is not semantically validated; passing a
+contract check does not prove that a model's prose obeys every instruction.
+
+A Director preset may carry an optional `vocabulary` block:
+
+```json
+{"require": ["general:action.hold"],
+ "prefer": {"entries": ["general:action.hug"], "tags": ["friendly"], "categories": ["position"]},
+ "avoid": {"entries": [], "tags": [], "categories": []},
+ "visual": {"prefer": ["general:lighting.soft"], "avoid": []},
+ "priorities": ["interaction", "arrangement", "space"],
+ "themes": ["quiet afternoons"]}
+```
+
+All keys are optional. `require` declares mandatory entry ids, not weighting. Missing required ids are
+reported as unsupported in an unchecked fallback. Grounded fixed Understanding actions must match
+activity names/aliases, not related descriptions, tags or semantic hints. A noun cannot satisfy an action.
+An explicit opening imperative in Director prose can name pack-defined requirements; arbitrary prose
+is not a general-purpose constraint language. Use `require` for reliable mechanical obligations.
+Entries combining `visual` with participant/resource/object components enter joint composition only
+when required, not random activity inspiration. Their inherited mechanics and visual coverage are
+resolved together; purely visual entries remain Visual Direction choices.
+
+Preferences are validated data: ids, tags and categories to favour or avoid;
+visual ids; composition role priorities; and short theme phrases. Preferred ideas get increased draw
+weight. Avoided ideas are omitted unless the request names them. Preferences never enable unselected
+packs or bypass ratings, exclusions or compatibility. Unknown preference ids are unused and reported. Retired ids
+are canonicalized. Presets without a block still steer retrieval through their text. Saving and editing
+preserves the block; an omitted update keeps it, `{}` clears it. Built-in Directors use the same format,
+not engine conditionals keyed by Director id.

@@ -46,30 +46,43 @@ writing uses; vocabulary retrieval reads intent only from Phase 4.
 
 Visual Direction: the Configure page also sets, per dimension (framing, camera angle, composition,
 lighting, atmosphere), whether Visual Direction may fill it and how much it varies. Confirm sends these
-settings with the run; scene writing chooses directions per image from the run's selected packs (the
-bundled `visual` pack and any pack with `visual` entries) and gives them to the concept request, whose
-camera and lighting fields carry them (vocabulary/schemas/SPEC.md section 11). It reads no intent or
-semantic hints. The run's vocabulary record and the generation log keep every choice and exclusion.
+settings with the run. Core defines reusable visual interfaces; General provides concrete framing,
+camera angles, composition and lighting choices; the optional
+`visual` pack provides atmosphere. Other selected packs can add directions. Composition tells Visual
+Direction what must be visible, so open choices cannot contradict declared visibility. Framing is not
+restricted solely by head count. Composed scenes receive directions in the finishing request; freeform
+scenes receive them through the concept's camera and lighting fields (SPEC.md sections 11–12). The run
+record and generation log keep choices, exclusions and visibility requirements.
 
-Vocabulary-backed arrangements (`v2/arrangements.py`): when the selected packs offer a position or action for
-the cast, each concept chooses one (or two that combine) from its image's options and assigns the roles; the
-request's named options are required, the Director's preferences only ranked and marked. The resolver checks
-the choice (slot counts, capabilities, placements, exclusive claims, blocked regions) and a conflict rejects only
-that image. Staging then states each person's posture and facing in a structured `placement`, checked against
-the arrangement, so a contradicting partner posture or a role reversal with different postures is caught and
-that image staged again. The finished scene keeps the arrangement (entries, roles, status, facts) for the run
-pages, the export and the Builder, which must keep those facts while writing in the target's format. Statuses
-stay distinct: `unknown` (the free-text place never proves space requirements), `eligible`, `feasible`; prose
-anchors, contact and anything else in the wording are passed on, not verified. A concept may also stay
-freeform, which is never described as checked; with no option for any image, the requests are unchanged.
+Universal Vocabulary composition (`features/vocabulary/composer.py`): before retrieval, a structured
+scene contract combines grounded confirmed Understanding requirements and required Director mechanics,
+separately from soft preferences. Retrieval finds relevant entries in the run's selected packs; code selects compatible arrangements,
+actions with items, and places, assigning roles and resources. Every trial is checked jointly by the
+resolver while choosing. Entries may declare any subset of components, including none. Missing data is
+unspecified, never automatically incompatible or verified. Named requirements cannot silently disappear;
+cross-role aliases are alternatives, and guided requirements belong to their own images. Unsatisfied
+requirements fail with reasons. Structured performer/target intent constrains bindings where entries
+declare those sides through access or explicit participant `role` fields; incompatibility cannot silently
+reverse the people. Bounded joint search revisits earlier bindings, arrangements, object instances and
+spaces when later requirements conflict. Feasible complete compositions outrank unknown ones.
 
-Concept recovery is per image: a valid concept is kept in its own image at once, and only images whose
-concept failed are asked for again (with an `images` list and that image's reasons), so one conflicting
-arrangement can no longer discard the other images. An arrangement refused for an image is shown again with
-why (`rejected_before`); if an otherwise valid concept keeps choosing conflicting arrangements and the request
-requires none, it is kept as freeform with what was rejected. Director-only preferences are offered on about
-half the images (by seed); role notes come from each entry's declared postures, facing, anchors and claims, and
-a binding is suggested only when it is the only valid one. A run that writes no scene fails with its reasons;
+Directors can carry a structured `vocabulary` block (`features/vocabulary/preferences.py`): preferred or
+avoided entries, tags and categories, visual preferences, role priorities and themes. `require: [entry ids]`
+sets mandatory mechanics; a missing required id yields an explicitly unchecked fallback. Built-ins and user
+presets share this format; presets without a block use their text. User requirements, selected packs,
+ratings and compatibility remain authoritative. Preferences are preserved through preset save/update.
+
+For composed images, Scene Builder makes one lightweight finishing call per batch, adding appearance and
+open details instead of regenerating mechanics. Code renders positions and actions from the composition;
+the scene's `arrangement` record retains selected entries, roles, facts, place, items, status and checking
+limits. Code retains established place and visual fields rather than accepting rewritten copies from the
+finisher. Builder must preserve locked activity, role/resource facts, objects and visual clauses verbatim;
+omissions are retried once, then fail the prompt. Target formatting applies around those fixed clauses.
+Freeform images retain concept → staging → description and are labelled `freeform` / `unchecked`.
+Statuses remain `unknown`, `eligible` or `feasible`, never proof of physical geometry or model prose.
+Only `feasible` records set `verified: true`; unresolved findings reach the finisher and run record.
+Only failed slots are retried; valid slots and guided inputs stay in place. Failures distinguish
+`composition`, `finishing`, `concepts`, `staging` and `description`. A run with no scenes fails with reasons;
 a partial run finishes with an "incomplete" message.
 
 ### Phase 7: separate UI stages
@@ -102,7 +115,8 @@ not generated-output quality.
 | Adults-only and safety checks on the request | `v2/safety.py` |
 | Source-bound, expiring approval tickets | `v2/tickets.py` |
 | Guided input assignment and the active Director | `v2/assignments.py`, `v2/director.py` |
-| Concepts, arrangements, staging and scenes | `v2/scenes.py`, `v2/arrangements.py`, `v2/vocabulary_packs.py` |
+| Scene composition, compatibility, visibility and Director preferences | `features/vocabulary/composer.py`, `resolver.py`, `visual.py`, `preferences.py` |
+| Vocabulary integration, finishing and freeform scenes | `v2/scenes.py`, `v2/vocabulary_packs.py` |
 | Final prompts through the Builder | `v2/prompts.py` |
 | Durable runs | `v2/runs.py` |
 

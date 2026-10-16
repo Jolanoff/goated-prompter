@@ -16,7 +16,7 @@
     "license": { "type": "string", "maxLength": 80 },
     "rating": { "$ref": "#/$defs/rating" },
     "activation": {
-      "enum": ["theme", "content"],
+      "enum": ["theme", "content", "always"],
       "default": "theme",
       "description": "When the pack's entries may be offered as ideas the request did not name. theme (default): only when the request reaches the pack's theme. content: also when an NSFW request's content level matches an entry's rating (not for General packs). Named entries are always found."
     },
@@ -33,6 +33,17 @@
       "additionalProperties": { "$ref": "#/$defs/versionRange" }
     },
     "conflicts": { "type": "array", "items": { "$ref": "#/$defs/packId" }, "uniqueItems": true },
+    "component_types": {
+      "description": "Reusable interfaces derived from existing Core contracts. Pack-defined names use pack_id:name; dependencies may extend them without engine code.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object", "additionalProperties": false, "required": ["base"],
+        "properties": {
+          "base": {"type": "string", "minLength": 1, "maxLength": 120},
+          "dimension": {"enum": ["framing", "camera_angle", "composition", "lighting", "atmosphere"]}
+        }
+      }
+    },
     "categories": {
       "type": "array",
       "items": {

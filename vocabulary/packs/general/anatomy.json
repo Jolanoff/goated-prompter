@@ -1,0 +1,12 @@
+{
+  "spec": 1,
+  "entries": [{
+    "id": "general:body.human",
+    "category": "body",
+    "name": "Human",
+    "description": "An adult human body: arms, hands, legs and feet; walks, does not fly. Identity and gender belong to the character; sex-specific anatomy is added only where stated.",
+    "aliases": ["person", "people", "man", "men", "woman", "women", "adult"],
+    "extends": ["general:body.humanoid"],
+    "components": {"body": {"complete_for": ["core:locomotion"]}}
+  }]
+}

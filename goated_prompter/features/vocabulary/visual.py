@@ -14,8 +14,15 @@ Rules, in order:
    randomized mentions stays open. Avoid phrases and negations ("no dutch angle") rule directions out.
 2. Each dimension can be turned off, and its variation set: same (one direction for the dataset), low, medium or
    high (more directions take turns); auto follows the creativity setting.
-3. A direction must suit the dataset's style (media), the cast size (people) and the directions already chosen for
-   the image (conflicts, both ways). Directions named by the brief are placed first, so they always win a conflict.
+3. A direction must suit the dataset's style (media), its declared cast limits (people, for a direction that needs a
+   person, never a framing limited by head count alone) and the directions already chosen for the image (conflicts,
+   both ways). Directions named by the brief are placed first, so they always win a conflict.
+3b. What the image's composed scene must show (SPEC.md section 12, see(n, visibility)): a direction whose declared
+   shows cannot keep those regions, whole bodies or the place in view is not chosen for an open dimension. A direction
+   that declares nothing about what it shows is not ruled out (unspecified is not incompatible). The brief's own
+   named directions are kept even then: the user's words come first.
+3c. The Director's structured preferences (preferences): directions it prefers enter a dimension's pool first, so a
+   small variation keeps them; directions it avoids are left out unless the brief names them.
 4. Image N's directions depend only on N, the seed, the brief, the settings and the selected packs: never on other
    images, so a failed or regenerated image changes no other. Within a dimension, each cycle through its pool uses
    every direction once, in an order seeded per cycle and dimension, so images differ and combinations vary.
@@ -28,6 +35,7 @@ import hashlib
 import re
 
 from .packs import RATINGS
+from .resolver import implied
 from .semantic import NEGATIONS, STOPWORDS, STRUCTURAL, marker, phrase_terms, split_negated, stem
 
 DIMENSIONS = ("framing", "camera_angle", "composition", "lighting", "atmosphere")  # the order an image is decided in
@@ -68,7 +76,47 @@ def validate_settings(value):
 
 
 def is_direction(entry):
-    return "visual" in entry.get("components", {})
+    return ("visual" in entry.get("components", {}) and entry.get("abstract") is not True
+            and not entry["components"].get("participants"))
+
+
+def fit(registry, shows, visibility):
+    """(status, reason) of a direction that declares shows (its visual.shows, {} when undeclared) for what a composed
+    image must show (resolver Resolution.visibility, or None): "feasible", "unknown" (the direction does not say) or
+    "conflict" (it declares it cannot). Nothing to show is always feasible."""
+    participants = (visibility or {}).get("participants", {})
+    whole = sorted(who for who, need in participants.items() if need.get("whole"))
+    regions = [(who, region) for who, need in participants.items() for region in dict.fromkeys(need.get("regions", []))]
+    space = bool((visibility or {}).get("space"))
+    if not (whole or regions or space):
+        return "feasible", ""
+    statuses, reasons = [], []
+    if whole:
+        if shows.get("whole") is False:
+            statuses.append("conflict")
+            reasons.append(f"it does not show {', '.join(whole)} whole")
+        elif "whole" not in shows:
+            statuses.append("unknown")
+    if regions and not shows.get("whole"):
+        limit = shows.get("max_regions")
+        if limit is not None and len(regions) > limit:
+            statuses.append("conflict")
+            reasons.append(f"it shows {limit} {'region' if limit == 1 else 'regions'}, the scene needs {len(regions)} in view")
+        declared = set(shows.get("regions", []))
+        missing = sorted({region for _, region in regions if not implied(registry, [region]) & declared})
+        if missing and shows.get("complete"):
+            statuses.append("conflict")
+            reasons.append(f"it does not show {', '.join(missing)}")
+        elif missing and limit is None:
+            statuses.append("unknown")
+    if space:
+        if shows.get("space") is False:
+            statuses.append("conflict")
+            reasons.append("it does not show the place")
+        elif "space" not in shows:
+            statuses.append("unknown")
+    status = "conflict" if "conflict" in statuses else "unknown" if "unknown" in statuses else "feasible"
+    return status, "; ".join(reasons)
 
 
 # -- the brief's words, matched the way retrieval matches names (semantic.phrase_terms), with their spans
@@ -125,6 +173,10 @@ class Direction:
     section: str
     pack: str
     conflicts: frozenset = field(default_factory=frozenset)
+    shows: tuple = ()  # the declared visual.shows as sorted (key, value) pairs; () when undeclared
+
+    def showing(self):
+        return {key: list(value) if isinstance(value, tuple) else value for key, value in self.shows}
 
     def text(self):
         description = self.description.strip().rstrip(".")
@@ -143,6 +195,20 @@ class Plan:
         self.log = log or {}
         self.mask = ([], [])  # (phrases, patterns) masked out of content retrieval while active
         self._memo = {}
+        self.registry = None
+        self.visibility = {}  # image number -> what its composed scene must show (see())
+        self.required = {}
+
+    def see(self, number, visibility, directions=()):
+        """What image number's composed scene must show (resolver visibility): open dimensions then choose only
+        directions that can show it. Set before the image's directions are read; changing it recomputes them."""
+        if visibility:
+            self.visibility[number] = visibility
+        else:
+            self.visibility.pop(number, None)
+        self._memo.pop(number, None)
+        self.required[number] = {direction(self.registry, ident).dimension: direction(self.registry, ident)
+                                 for ident in directions} if self.registry else {}
 
     @property
     def active(self):
@@ -158,21 +224,30 @@ class Plan:
         """{dimension: Direction} for image number (1-based) and [notes] on what could not be placed."""
         if number in self._memo:
             return self._memo[number]
-        chosen, notes = {}, []
+        chosen, notes = dict(self.required.get(number, {})), []
         fixed = [dimension for dimension in DIMENSIONS if self.dimensions.get(dimension, {}).get("status") == "fixed"]
         order = fixed + [dimension for dimension in DIMENSIONS if dimension in self.pools and dimension not in fixed]
+        visibility = self.visibility.get(number)
         for dimension in order:
+            if dimension in chosen:
+                continue
             pool = self.pools[dimension]
             cycle, position = divmod(number - 1, len(pool))
             ranked = self._order(dimension, cycle)
             ranked = ranked[position:] + ranked[:position]
-            pick = next((item for item in ranked if self._fits(item, chosen)), None)
+            if visibility and self.registry:
+                ranked.sort(key=lambda item: {"feasible": 0, "unknown": 1, "conflict": 2}[
+                    fit(self.registry, item.showing(), visibility)[0]])
+            # The brief's own directions are kept whatever the scene needs; open ones must be able to show it.
+            visible = (lambda item: True) if self.dimensions[dimension]["status"] == "fixed" else (
+                lambda item: self.shows_enough(item, visibility))
+            pick = next((item for item in ranked if self._fits(item, chosen) and visible(item)), None)
             if pick is None and self.dimensions[dimension]["status"] == "open":
                 rest = sorted((item for item in self.every.get(dimension, []) if item not in pool),
                               key=lambda item: _hash(self.seed, dimension, "rest", item.id))
-                pick = next((item for item in rest if self._fits(item, chosen)), None)
+                pick = next((item for item in rest if self._fits(item, chosen) and visible(item)), None)
                 if pick is not None:
-                    notes.append(f"{dimension}: {pick.id} from outside the pool, every pooled direction conflicts")
+                    notes.append(f"{dimension}: {pick.id} from outside the pool, no pooled direction fits the image")
             if pick is None:
                 notes.append(f"{dimension}: none, every candidate conflicts with "
                              + ", ".join(item.id for item in chosen.values()))
@@ -184,6 +259,9 @@ class Plan:
     @staticmethod
     def _fits(item, chosen):
         return all(item.id not in other.conflicts and other.id not in item.conflicts for other in chosen.values())
+
+    def shows_enough(self, item, visibility):
+        return not visibility or self.registry is None or fit(self.registry, item.showing(), visibility)[0] != "conflict"
 
     def concept(self, number):
         """The visual_direction item for one concept request: camera and lighting text, in the concept's own fields."""
@@ -208,6 +286,7 @@ class Plan:
             for number in range(1, count + 1):
                 chosen, notes = self.directions(number)
                 slots.append({"slot": number, "directions": {dimension: item.id for dimension, item in chosen.items()},
+                              **({"visibility": self.visibility[number]} if number in self.visibility else {}),
                               **({"notes": notes} if notes else {})})
         return {**self.log, "enabled": self.active, **({"reason": self.reason} if self.reason else {}), "slots": slots}
 
@@ -216,9 +295,27 @@ def off(reason, settings=None):
     return Plan(False, reason=reason, log={"settings": settings})
 
 
-def plan(registry, brief, settings, *, allowed=RATINGS):
-    """The Visual Direction for a confirmed brief from the directions in registry (the run's selected packs)."""
+def _shows(visual):
+    shows = visual.get("shows", {})
+    return tuple(sorted((key, tuple(value) if isinstance(value, list) else value) for key, value in shows.items()))
+
+
+def direction(registry, ident):
+    entry = registry.resolved(ident)
+    visual = entry["components"]["visual"]
+    return Direction(ident, entry["name"], entry.get("description", ""), visual["dimension"],
+                     visual.get("section", DEFAULT_SECTION[visual["dimension"]]), registry.owner(ident),
+                     frozenset(visual.get("conflicts", [])), _shows(visual))
+
+
+def plan(registry, brief, settings, *, allowed=RATINGS, preferences=None):
+    """The Visual Direction for a confirmed brief from the directions in registry (the run's selected packs).
+
+    preferences: the Director's {"prefer": [ids], "avoid": [ids]} (ids may be replaced ids; unknown ones are ignored)."""
     settings = validate_settings(settings)
+    preferences = preferences or {}
+    prefer = [registry.canonical(item) for item in preferences.get("prefer", [])]
+    avoid = {registry.canonical(item) for item in preferences.get("avoid", [])}
     if not any(item["enabled"] for item in settings.values()):
         return off("every Visual Direction dimension is turned off", settings)
     directions = {}
@@ -245,9 +342,7 @@ def plan(registry, brief, settings, *, allowed=RATINGS):
     every = {dimension: [] for dimension in DIMENSIONS}
     for entry_id, entry in directions.items():
         visual = entry["components"]["visual"]
-        item = Direction(entry_id, entry["name"], entry.get("description", ""), visual["dimension"],
-                         visual.get("section", DEFAULT_SECTION[visual["dimension"]]), registry.owner(entry_id),
-                         frozenset(visual.get("conflicts", [])))
+        item = direction(registry, entry_id)
         reason = None
         if entry.get("rating") not in allowed:
             reason = f"rating {entry.get('rating')} is not allowed"
@@ -256,8 +351,10 @@ def plan(registry, brief, settings, *, allowed=RATINGS):
         elif "media" in visual and medium not in visual["media"]:
             reason = (f"only for {', '.join(visual['media'])} styles, the style is {style}" if medium
                       else f"only for {', '.join(visual['media'])} styles, the style is left to the request")
-        elif not _cast_fits(visual.get("people", {}), people):
+        elif item.dimension != "framing" and not _cast_fits(visual.get("people", {}), people):
             reason = f"not for {people} {'person' if people == 1 else 'people'} per image"
+        elif entry_id in avoid:
+            reason = "the Director avoids it"
         if reason:
             excluded.append({"id": entry_id, "reason": reason})
         else:
@@ -276,7 +373,9 @@ def plan(registry, brief, settings, *, allowed=RATINGS):
         if not setting["enabled"]:
             info["status"] = "off"
         elif named:
-            usable = [item for item in named if item in candidates[dimension]]
+            # What the brief names is used even when the Director avoids it: the user's words come first.
+            usable = [item for item in named if item in candidates[dimension] or
+                      (item.id in avoid and any(row["id"] == item.id and row["reason"] == "the Director avoids it" for row in excluded))]
             info.update(status="fixed" if usable else "kept", source=source, named=[item.id for item in named])
             if usable:
                 pools[dimension] = usable
@@ -292,9 +391,15 @@ def plan(registry, brief, settings, *, allowed=RATINGS):
             info["status"] = "unavailable"
         else:
             variation = AUTO.get(creativity, "medium") if setting["variation"] == "auto" else setting["variation"]
-            ranked = sorted(candidates[dimension], key=lambda item: _hash(seed, dimension, "pool", item.id))
+            # The Director's preferred directions come first (in its order), so a small variation keeps them.
+            ranked = sorted(candidates[dimension], key=lambda item: (item.id not in prefer,
+                                                                    prefer.index(item.id) if item.id in prefer else 0,
+                                                                    _hash(seed, dimension, "pool", item.id)))
             pools[dimension] = ranked[:POOL[variation]] if POOL[variation] else ranked
             info.update(status="open", effective_variation=variation)
+            preferred = [item.id for item in pools[dimension] if item.id in prefer]
+            if preferred:
+                info["director_prefers"] = preferred
         if dimension in pools:
             info["pool"] = [item.id for item in pools[dimension]]
         dimensions[dimension] = info
@@ -302,9 +407,14 @@ def plan(registry, brief, settings, *, allowed=RATINGS):
             masked += _phrases(directions[item.id])
     log = {"settings": settings, "style": style, "people": people, "seed": seed, "dimensions": dimensions,
            "excluded": excluded, "masked": [" ".join(phrase) for phrase in _unique(masked)] + list(dict.fromkeys(patterns))}
+    if prefer or avoid:
+        log["director"] = {"prefer": [item for item in prefer if item in directions],
+                           "avoid": sorted(item for item in avoid if item in directions),
+                           "unknown": sorted({*prefer, *avoid} - set(directions))}
     if not pools:
         return Plan(False, reason="no dimension is open for Visual Direction", dimensions=dimensions, log=log)
     plan_ = Plan(True, dimensions=dimensions, pools=pools, every=candidates, seed=seed, log=log)
+    plan_.registry = registry
     plan_.mask = (_unique(masked), list(dict.fromkeys(patterns)))
     return plan_
 

@@ -2,15 +2,21 @@
 
 A composition binds entries of a Registry to a cast:
 
-    {"cast": [{"id": "ana", "body": "core:body.humanoid", "traits": [...], "complete_for": [...]}],
+    {"cast": [{"id": "ana", "body": "general:body.humanoid", "traits": [...], "complete_for": [...]}],
      "objects": [{"id": "toy", "item": "adult:item.dildo", "complete_for": [...]}],
-     "space": "core:space.bed",
-     "use": [{"entry": "core:position.from_behind", "bind": {"front": "ana", "back": "ben"}}],
-     "declared": {"ana": {"posture": "core:posture.all_fours", "facing": ["away_from", "ben"]}}}
+     "space": "general:space.bed",
+     "use": [{"entry": "general:position.from_behind", "bind": {"front": "ana", "back": "ben"}}],
+     "declared": {"ana": {"posture": "general:posture.all_fours", "facing": ["away_from", "ben"]}}}
 
 declared (optional) is what a scene itself states about a cast member, outside any entry: a posture entry and a
 facing toward or away from another member. It is checked like an entry's placement, so a scene that gives a
 bound participant another posture or facing than the entry declares is a placement conflict.
+
+Occupancy (SPEC.md section 12): a space that declares a capacity holds at most that many cast members, and an item that
+declares one carries at most that many beings on it or astride it. Exceeding a declared capacity is a conflict; an
+undeclared capacity is never checked. Visibility (section 12) is collected, never judged here: Resolution.visibility
+says which regions or whole bodies of which participants, and whether the place, must be visible, for the framing
+and camera choices made afterwards.
 
 resolve() reports conflict, unknown, eligible or feasible (SPEC.md section 3) with findings that
 name the entries and participants involved. "feasible" means the declared data supports the
@@ -61,6 +67,7 @@ class Resolution:
     allocation: dict = field(default_factory=dict)   # {participant: {instance: [claim]}}
     placements: dict = field(default_factory=dict)   # {participant: {"posture", "orientation", "facing", "anchors", "entries"}}
     access: list = field(default_factory=list)       # declared access facts, expanded to participants
+    visibility: dict = field(default_factory=dict)   # {"participants": {participant: {"regions", "whole"}}, "space": bool}
 
     @property
     def note(self):
@@ -71,7 +78,8 @@ class Resolution:
 
     def to_dict(self):
         return {"status": self.status, "note": self.note, "findings": [finding.to_dict() for finding in self.findings],
-                "allocation": self.allocation, "placements": self.placements, "access": self.access}
+                "allocation": self.allocation, "placements": self.placements, "access": self.access,
+                "visibility": self.visibility}
 
 
 # ---------------------------------------------------------------- subjects (beings, objects, the space)
@@ -147,8 +155,8 @@ def _space(registry, space_id):
         return Subject(registry, "space", described=False)
     if space_id not in registry:
         raise CompositionError(f"unknown space {space_id}")
-    provides = registry.resolved(space_id)["components"].get("environment", {}).get("provides", [])
-    return Subject(registry, "space", provides, entries=[space_id])
+    declared = registry.resolved(space_id)["components"].get("environment", {})
+    return Subject(registry, "space", declared.get("provides", []), declared.get("complete_for", []), entries=[space_id])
 
 
 # ---------------------------------------------------------------- the resolver
@@ -170,6 +178,8 @@ class _Run:
         self.placements = {}       # participant -> list of (entry, placement with concrete refs)
         self.bound_beings = set()
         self.evaluated = 0         # vocabulary rules that applied to a bound participant or the space
+        self.seen = {}             # participant -> {"regions": [...], "whole": bool}: what must be visible
+        self.seen_space = False
 
     def add(self, status, code, message, entries=(), participants=()):
         finding = Finding(status, code, message, tuple(dict.fromkeys(entries)), tuple(dict.fromkeys(participants)))
@@ -305,6 +315,18 @@ class _Run:
                 # A declared reach presupposes the capability it uses (SPEC.md section 6).
                 self.check(self.subject(a), {"all_of": [access["using"]]}, entry_id, f"{entry_id} (declared reach with {access['using']})")
                 self.facts.append((a, access["using"], b, tuple(access["regions"]), access["kind"], entry_id))
+        visibility = comp.get("visibility", {})
+        for ref, need in visibility.get("participants", {}).items():
+            for ident in self.members(ref, bindings):
+                self.must_see(ident, need.get("regions", []), need.get("whole", False))
+        if visibility.get("contact"):
+            # The declared contact of this entry: both the part that touches and the region it touches.
+            for access in [*spatial.get("access", []), *requirements.get("access", [])]:
+                for a, b in self.pairs(access["from"], access["to"], bindings, topologies):
+                    self.must_see(a, [access["using"]])
+                    self.must_see(b, access["regions"])
+        if visibility.get("space"):
+            self.seen_space = True
         for ref, claims in comp.get("claims", {}).items():
             for ident in self.members(ref, bindings):
                 for claim in claims:
@@ -316,6 +338,37 @@ class _Run:
                     self.evaluated += 1
                     self.claims.append({**claim, "key": key, "participant": ident, "entry": entry_id})
 
+    def must_see(self, ident, regions, whole=False):
+        need = self.seen.setdefault(ident, {"regions": [], "whole": False})
+        need["regions"] += [region for region in regions if region not in need["regions"]]
+        need["whole"] = need["whole"] or bool(whole)
+
+    def check_capacity(self, space_id):
+        """Declared occupancy (SPEC.md section 12): the cast in the space, beings on or astride an item."""
+        if space_id:
+            comp = self.registry.resolved(space_id)["components"]
+            capacity = comp.get("capacity", comp.get("environment", {}).get("capacity"))
+            if capacity is not None:
+                self.evaluated += 1
+                if len(self.beings) > capacity["beings"]:
+                    self.add("conflict", "over_capacity", f"{space_id} holds {capacity['beings']} "
+                             f"{'being' if capacity['beings'] == 1 else 'beings'}, the scene has {len(self.beings)}",
+                             [space_id], sorted(self.beings))
+        for ident, subject in self.objects.items():
+            if not subject.entries:
+                continue
+            comp = self.registry.resolved(subject.entries[0])["components"]
+            capacity = comp.get("capacity", comp.get("object", {}).get("capacity"))
+            if capacity is None:
+                continue
+            self.evaluated += 1
+            on = sorted(being for being, placements in self.placements.items() if being in self.beings and any(
+                relation in ("on", "astride") and ident in others for placement in placements
+                for relation, others, _, _ in placement["anchors"]))
+            if len(on) > capacity["beings"]:
+                self.add("conflict", "over_capacity", f"{ident} ({subject.entries[0]}) carries {capacity['beings']}, "
+                         f"{len(on)} are on it: {', '.join(on)}", [subject.entries[0]], on)
+
     def place(self, ident, placement, bindings, entry_id):
         self.evaluated += 1
         concrete = {"entry": entry_id}
@@ -324,11 +377,19 @@ class _Run:
             posture = self.registry.resolved(posture_id)["components"]
             concrete["posture"] = posture_id
             self_placement = posture.get("spatial", {}).get("participants", {}).get("self", {})
-            if "orientation" in self_placement:
-                concrete["orientation"] = self_placement["orientation"]
+            placement = {**self_placement, **placement,
+                         "anchors": [*self_placement.get("anchors", []), *placement.get("anchors", [])]}
             condition = posture.get("requirements", {}).get("participants", {}).get("self")
             if condition:
                 self.check(self.subject(ident), condition, posture_id, f"{posture_id} (taken by {ident} in {entry_id})")
+            space = posture.get("requirements", {}).get("space")
+            if space:
+                self.check(self.space, space, posture_id, f"{posture_id} (space)")
+            visibility = posture.get("visibility", {})
+            need = visibility.get("participants", {}).get("self", {})
+            if need:
+                self.must_see(ident, need.get("regions", []), need.get("whole", False))
+            self.seen_space = self.seen_space or visibility.get("space", False)
             for claim in posture.get("claims", {}).get("self", []):
                 self.claims.append({**claim, "key": claim.get("key", ""), "participant": ident, "entry": posture_id})
         if "orientation" in placement:
@@ -386,6 +447,37 @@ class _Run:
         for ident in sorted(self.bound_beings - {ident for ident, placements in self.placements.items()
                                                  if any("posture" in placement or "orientation" in placement for placement in placements)}):
             self.add("eligible", "placement_undeclared", f"no used entry declares how {ident} is placed", [], [ident])
+
+    def check_relationships(self, requirements):
+        """Compare confirmed pairwise relations with both directions of declared anchors."""
+        def between(a, b):
+            direct = {relation for placement in self.placements.get(a, [])
+                      for relation, others, _, _ in placement["anchors"] if b in others}
+            inverse = {_OPPOSITE[relation] for placement in self.placements.get(b, [])
+                       for relation, others, _, _ in placement["anchors"] if a in others and relation in _OPPOSITE}
+            return direct | inverse
+
+        for a in self.placements:
+            for b in self.placements:
+                if a >= b:
+                    continue
+                relations = between(a, b)
+                if any(_OPPOSITE.get(relation) in relations for relation in relations):
+                    self.add("conflict", "placement_conflict", f"{a} and {b} have contradictory reciprocal placements",
+                             participants=[a, b])
+        for requirement in requirements:
+            relation = requirement["relation"]
+            for a in requirement["a"]:
+                for b in requirement["b"]:
+                    if a not in self.beings or b not in self.beings or a == b:
+                        raise CompositionError("a required relationship needs two distinct cast members")
+                    found = between(a, b)
+                    if _OPPOSITE.get(relation) in found:
+                        self.add("conflict", "relationship_conflict", f"{a} cannot be {relation} {b} in this arrangement",
+                                 participants=[a, b])
+                    elif relation not in found:
+                        self.add("unknown", "relationship_undeclared", f"the composition does not establish {a} {relation} {b}",
+                                 participants=[a, b])
 
     def allocate(self):
         allocation = {}
@@ -469,6 +561,8 @@ def resolve(registry, composition):
     for ident, declared in composition.get("declared", {}).items():
         run.declare(ident, declared)
     run.check_placements()
+    run.check_relationships(composition.get("relationships", []))
+    run.check_capacity(composition.get("space"))
     allocation = run.allocate()
     run.check_access(allocation)
     if not run.evaluated:
@@ -488,7 +582,21 @@ def resolve(registry, composition):
         placements[ident] = summary
     access = [{"from": a, "using": using, "to": b, "regions": list(regions), "kind": kind, "entry": entry}
               for a, using, b, regions, kind, entry in run.facts]
-    return Resolution(status, sorted(run.findings, key=lambda finding: -RANK[finding.status]), allocation, placements, access)
+    visibility = {"participants": {ident: {"regions": list(need["regions"]), "whole": need["whole"]}
+                                   for ident, need in sorted(run.seen.items())}, "space": run.seen_space}
+    return Resolution(status, sorted(run.findings, key=lambda finding: -RANK[finding.status]), allocation, placements, access,
+                       visibility)
+
+
+def object_satisfies(registry, item_id, condition):
+    """Whether an item declares complete support for a slot's capability conditions.
+
+    Retrieval and composition use the same condition evaluator as full resolution;
+    unknown support is not sufficient for this provider prefilter.
+    """
+    run = _Run(registry, {"objects": [{"id": "item", "item": item_id}]})
+    run.check(run.objects["item"], condition, item_id, "object slot")
+    return not run.findings
 
 
 @dataclass
@@ -531,7 +639,7 @@ def _count_range(spec):
     return (count["min"], count["max"]) if isinstance(count, dict) else (count, count)
 
 
-def _bindings(slots, cast_ids, object_ids):
+def enumerate_bindings(slots, cast_ids, object_ids):
     """Every binding of the slots: each slot takes a subset (size within its count) of the members of
     its kind that earlier slots left free, in the cast's order. Larger subsets come first."""
     names = list(slots)
@@ -569,7 +677,7 @@ def candidate_bindings(registry, entry_id, cast, objects=(), space=None, limit=2
     if limit < 1:
         raise ValueError("limit must be at least 1")
     slots = registry.resolved(entry_id)["components"].get("participants", {}).get("slots", {})
-    generator = _bindings(slots, [member["id"] for member in cast], [item["id"] for item in objects])
+    generator = enumerate_bindings(slots, [member["id"] for member in cast], [item["id"] for item in objects])
     results = []
     for bind in generator:
         composition = {"cast": list(cast), "objects": list(objects), "space": space, "use": [{"entry": entry_id, "bind": bind}]}

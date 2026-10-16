@@ -58,6 +58,7 @@ export function PackManagerView({ visible, state, heading = true }) {
     setFile, chooseUpdate, setRemoving, toggle, remove } = state;
   const importer = useRef(null);
   const busy = loading || saving;
+  const packs = (snapshot?.packs || []).filter((pack) => !pack.mandatory);
   function update(pack) {
     chooseUpdate(pack);
     importer.current?.scrollIntoView({ block: "center" });
@@ -74,7 +75,7 @@ export function PackManagerView({ visible, state, heading = true }) {
     <ul className="vocabulary-explainer" aria-label="How packs work">
       <li><strong>Enabled</strong><span>The Director can use its entries in the next Dataset run.</span></li>
       <li><strong>Disabled</strong><span>Kept on disk, but never offered. You can still browse it.</span></li>
-      <li><strong>Optional content</strong><span>Opt-in packs such as Kinks come as a ZIP. Install it below to turn it on; disable or remove it to turn it off.</span></li>
+      <li><strong>Optional content</strong><span>Install additional content packs as a ZIP; disable or remove them to turn them off. Core interfaces load internally.</span></li>
     </ul>
     <form ref={importer} className="vocabulary-import" onSubmit={async (event) => {
       event.preventDefault();
@@ -105,13 +106,13 @@ export function PackManagerView({ visible, state, heading = true }) {
     </div>}
     {snapshot && <>
       <div className="vocabulary-library-heading"><h3>Pack library</h3>
-        <span>{snapshot.packs.filter((pack) => pack.enabled).length} enabled / {snapshot.packs.length} available</span></div>
-      {snapshot.packs.length ? <ul className="vocabulary-packs" aria-label="Available vocabulary packs">
-        {snapshot.packs.map((pack) => <PackCard key={`${pack.origin}-${pack.id}`} pack={pack} busy={busy}
+        <span>{packs.filter((pack) => pack.enabled).length} enabled / {packs.length} available</span></div>
+      {packs.length ? <ul className="vocabulary-packs" aria-label="Available vocabulary packs">
+        {packs.map((pack) => <PackCard key={`${pack.origin}-${pack.id}`} pack={pack} busy={busy}
           removing={removing?.id === pack.id && removing?.origin === pack.origin} onToggle={toggle} onUpdate={update}
           onRemove={setRemoving} onCancelRemove={() => setRemoving(null)} onConfirmRemove={remove} />)}
       </ul> : <div className={ui.emptyState}><Package size={28} /><h3>No packs found</h3>
-        <p>Core should ship with the app. Restore the bundled vocabulary files, then refresh packs.</p></div>}
+        <p>Install a content pack or restore the bundled packs, then refresh.</p></div>}
     </>}
     <footer className="vocabulary-footer">Creating a pack with your AI assistant? Keep using <code>vocabulary/SKILL.md</code>, then install its ZIP here.</footer>
   </section>;

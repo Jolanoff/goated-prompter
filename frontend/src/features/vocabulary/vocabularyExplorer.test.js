@@ -12,7 +12,7 @@ const raw = { id: "adult:position.sample", name: "Sample position", category: "p
   tags: ["direct_tag"], extends: ["core:position.sample"], components: {
     participants: { slots: { actor: { count: 1, kind: "being" } } },
     requirements: { participants: { actor: { all_of: ["core:limb.hand"] } } },
-    spatial: { participants: { actor: { posture: "core:posture.standing" } } },
+    spatial: { participants: { actor: { posture: "general:posture.standing" } } },
     claims: { actor: [{ resource: "core:limb.hand", count: 1, mode: "exclusive", purpose: "hold" }] } } };
 const resolved = { ...raw, rating: "adult", description: "Inherited description", aliases: ["Direct alias", "Parent alias"],
   tags: ["direct_tag", "parent_tag"], components: { ...raw.components, body: { provides: ["core:limb.hand"] } } };

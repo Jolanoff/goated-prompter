@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from goated_prompter.features.vocabulary.packs import BUNDLED_DIRS, build_registry, read_pack
+from goated_prompter.features.vocabulary.packs import BUNDLED_DIRS, OFFICIAL_DIR, build_registry, read_pack, read_foundation
 from goated_prompter.features.vocabulary.retrieval import (
     RetrievalConfig, RetrievalRequest, VocabularyIndex, retrieve)
 from goated_prompter.features.vocabulary.semantic import split_negated, stem
@@ -23,12 +23,12 @@ def being(count=1):
 
 
 def standing(**extra):
-    return {"posture": "core:posture.standing", **extra}
+    return {"posture": "general:posture.standing", **extra}
 
 
 STUDIO = [
     {"id": "studio:body.person", "category": "body", "name": "Person", "aliases": ["person", "human", "man", "woman"],
-     "description": "An ordinary adult human.", "extends": ["core:body.humanoid"],
+     "description": "An ordinary adult human.", "extends": ["general:body.humanoid"],
      "components": {"body": {"complete_for": ["core:locomotion"]}}},
     {"id": "studio:action.embrace", "category": "action", "name": "Embrace", "aliases": ["hug", "cuddle"],
      "description": "Two people with their arms wrapped around each other.", "components": {
@@ -55,9 +55,9 @@ STUDIO = [
     {"id": "studio:position.lap_sit", "category": "position", "name": "Sitting on a lap", "aliases": ["lap sitting"],
      "description": "One person sits across the other's thighs, facing them.", "components": {
          "participants": {"slots": {"seated": being(), "base": being()}},
-         "spatial": {"participants": {"seated": {"posture": "core:posture.sitting", "facing": {"toward": "base"},
+         "spatial": {"participants": {"seated": {"posture": "general:posture.sitting", "facing": {"toward": "base"},
                                                  "anchors": [{"relation": "on", "of": "base", "distance": "contact"}]},
-                                      "base": {"posture": "core:posture.sitting"}}}}},
+                                      "base": {"posture": "general:posture.sitting"}}}}},
     {"id": "studio:position.lap_sit_reverse", "category": "position", "name": "Reverse lap sit",
      "description": "Sitting on a lap, facing away.", "extends": ["studio:position.lap_sit"], "components": {}},
     {"id": "studio:position.aerial_carry", "category": "position", "name": "Aerial carry",
@@ -79,7 +79,7 @@ def studio_folder(root):
     folder = root / "studio"
     folder.mkdir()
     manifest = {"spec": 1, "id": "studio", "name": "Studio", "version": "1.0.0", "rating": "general",
-                "requires": {"core": ">=1.0.0", "fantasy": ">=0.1.0", "adult": ">=0.1.0"},
+                "requires": {"core": ">=1.0.0", "general": ">=1.0.0", "fantasy": ">=0.1.0", "adult": ">=0.1.0"},
                 "categories": [{"id": "gesture", "name": "Gestures"}], "files": ["entries.json"]}
     (folder / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     (folder / "entries.json").write_text(json.dumps({"spec": 1, "entries": STUDIO}), encoding="utf-8")
@@ -92,7 +92,7 @@ def registry(*names, order=None):
     try:
         folders = {"fantasy": FIXTURES / "fantasy", "adult": FIXTURES / "adult", "studio": studio_folder(root)}
         packs = [read_pack(folders[name], bundled=False) for name in (order or names)]
-        return build_registry([read_pack(BUNDLED_DIRS[0], bundled=True), *packs])
+        return build_registry([read_foundation(), read_pack(OFFICIAL_DIR / "general", bundled=True), *packs])
     finally:
         shutil.rmtree(root, ignore_errors=True)
 
@@ -169,7 +169,7 @@ class SemanticRelevance(unittest.TestCase):
         self.assertEqual(split_negated("no kneeling"), ([], [stem("kneeling")]))
         self.assertEqual(split_negated("no toys or kneeling"), ([], ["toy", stem("kneeling")]))
         self.assertEqual(ids(ask("a woman without shoes hugging a man"))[0], "studio:action.embrace")
-        self.assertNotIn("core:position.from_behind", ids(ask("two people hugging, no toys or kneeling from behind")))
+        self.assertNotIn("general:position.from_behind", ids(ask("two people hugging, no toys or kneeling from behind")))
 
 
 class CrossPack(unittest.TestCase):
@@ -255,8 +255,8 @@ class Compatibility(unittest.TestCase):
 
     def test_unchosen_space_is_a_need_not_an_unknown_about_the_cast(self):
         found = ask("two people kneeling, one on all fours from behind", nsfw=True)
-        behind = next(entry for entry in found.entries if entry.id == "core:position.from_behind")
-        self.assertNotIn("core:position.from_behind", ids(ask("two people kneeling, one on all fours from behind")),
+        behind = next(entry for entry in found.entries if entry.id == "general:position.from_behind")
+        self.assertNotIn("general:position.from_behind", ids(ask("two people kneeling, one on all fours from behind")),
                          "the position is rated adult")
         self.assertEqual(behind.status, "feasible", behind.warnings)
         self.assertEqual(behind.needs, ["a space with: wide surface to kneel or lie on"])
@@ -396,7 +396,7 @@ class Guidance(unittest.TestCase):
         # General words of a director's instructions match descriptions and categories of everything.
         director = "Describe the subject, the action and the composition, with one clear position for each person."
         self.assertEqual(ids(ask("a quiet afternoon", director=director)), [])
-        self.assertEqual(set(ids(ask("two friends hugging", director=director))), {"studio:action.embrace", "core:action.hug"},
+        self.assertEqual(set(ids(ask("two friends hugging", director=director))), {"studio:action.embrace", "general:action.hug"},
                          "only what the request names")
         self.assertIn("studio:action.embrace", ids(ask("two companions at a party", director="Favour hugs.")),
                       "a director that names an entry still guides retrieval")
@@ -427,7 +427,8 @@ class Guidance(unittest.TestCase):
         # A director's standing "never"/"do not" instructions are not this request's exclusions.
         found = ask("a sword duel", director="Never add a duel or fight the user did not ask for.")
         self.assertEqual(ids(found)[0], "studio:action.duel")
-        self.assertFalse(found.excluded)
+        self.assertEqual(found.excluded, ask("a sword duel").excluded,
+                         "standing negations must not add exclusions; ordinary cast conflicts still apply")
         self.assertIn("studio:action.embrace", ids(ask("two friends hugging", style="no exaggerated hugs")))
         self.assertNotIn("studio:action.duel", ids(ask("two people together, no sword duel", director="Favour duels.")))
 
@@ -445,7 +446,7 @@ class EmptyFallback(unittest.TestCase):
                 self.assertEqual((found.entries, found.render()), ([], ""))
 
     def test_core_only_and_non_character_briefs(self):
-        core = VocabularyIndex(build_registry([read_pack(BUNDLED_DIRS[0], bundled=True)]))
+        core = VocabularyIndex(build_registry([read_foundation(), read_pack(OFFICIAL_DIR / "general", bundled=True)]))
         found = retrieve(core, RetrievalRequest.from_brief(brief("a perfume bottle on marble", path="non_character", characters=[], people=0)))
         self.assertEqual(found.render(), "")
 

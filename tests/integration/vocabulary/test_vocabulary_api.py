@@ -84,12 +84,12 @@ class VocabularyAPITests(VocabularyAPIBase):
 
     async def test_core_is_immutable_and_bundled_optional_files_cannot_be_removed_or_updated(self):
         await self.enabled("core", False, 400)
-        for pack_id in ("core", "fantasy", "adult"):
+        for pack_id in ("core", "fantasy", "adult", "visual"):
             response = await self.client.delete(f"/api/vocabulary/packs/{pack_id}")
             self.assertEqual(response.status, 400)
             await self.upload(tiny_pack(pack_id, []), pack_id, 400)
             await self.upload(tiny_pack(pack_id, []), expected=400)
-        self.assertEqual({pack["id"] for pack in (await self.get())["packs"]}, {"core", "fantasy", "adult"})
+        self.assertEqual({pack["id"] for pack in (await self.get())["packs"]}, {"core", "general", "fantasy", "adult", "visual"})
 
     async def test_install_update_and_remove_keep_disabled_state_and_protect_other_packs(self):
         await self.upload(tiny_pack("custom", [capability("custom:knowledge")]))

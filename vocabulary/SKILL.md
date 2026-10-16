@@ -9,7 +9,7 @@ description: Create, extend, review, and package Goated Prompter vocabulary modp
 
 Create **data-only, installable vocabulary packs** that extend Goated Prompter's reusable knowledge without changing its engine or forcing the Scene Director to follow canned prompts.
 
-Vocabulary provides concepts, capabilities, requirements, resources, and declared spatial facts. It does **not** guarantee physical plausibility. The Director decides how to use relevant knowledge. Unknown information is not an implicit prohibition.
+Vocabulary provides concepts, capabilities, requirements, resources and declared spatial facts. Core composes compatible scenes from these declarations during selection; Directors steer selection and presentation. The Scene Builder fills open details, not declared mechanics. Vocabulary does **not** guarantee physical plausibility. Unknown information is not an implicit prohibition.
 
 ## Mandatory sources (read before writing anything)
 
@@ -18,7 +18,7 @@ Read the **actual current repository files** in this order:
 1. `vocabulary/schemas/SPEC.md` — normative semantics, statuses, inheritance, ratings, and references.
 2. `vocabulary/schemas/manifest.schema.json` — the accepted pack manifest contract.
 3. `vocabulary/schemas/entry.schema.json` — permitted entry fields, typed components, and their exact shapes.
-4. `vocabulary/core/manifest.json` and representative core entries.
+4. `vocabulary/core/foundation.json`, the interface contracts in `vocabulary/schemas/entry.schema.json`, and representative content in `vocabulary/packs/general/`.
 5. Representative working packs in `vocabulary/packs/` and their manifests.
 6. Applicable tests under `tests/unit/vocabulary/` and the installed pack loader's API where necessary.
 
@@ -60,6 +60,9 @@ All content must be **declarative JSON or explicitly loader-allowed documentatio
 9. **Use correct ratings.** Match `general`, `mature`, or `adult` as defined by the spec. An entry must never loosen inherited or pack-level restrictions. Rating labels control eligibility, not user intent classification. Leave the manifest's `activation` at its default (`theme`) unless the pack is general content for its rating that every NSFW brief may draw on (SPEC.md section 1); specialised or opt-in packs keep `theme`.
 10. **Visual directions are not scene content.** Camera angles, framing, composition, lighting and atmosphere go in a `visual` component (SPEC.md section 11), never as items or spaces: a camera angle is not a Camera prop. Write their descriptions without photographic terms unless `media` limits them to photographic styles.
 11. **Prefer a small coherent pack over a giant untested list.** Add entries incrementally, with meaningful constraints and realistic retrieval cases.
+12. **Components are optional and composable.** `components: {}` is valid; roles, claims, postures and visibility can be declared independently. Use `abstract: true` for inheritance-only templates. Do not invent engine branches for a pack or genre.
+13. **Declare visibility and capacity only when known.** `visibility` can require whole participants, regions, contact points or the place; `visual.shows` declares what a direction can show. Framing is selected by visibility, never solely by head count. Object/environment `capacity.beings` limits occupants; omitted capacity is unspecified.
+14. **Extend Core interfaces instead of copying mechanics.** Core defines the 17 optional interfaces in SPEC.md section 2; it contains no concrete bodies, poses, actions or visual presets. General owns everyday bodies and content, Visual owns atmosphere. Declare reusable namespaced `component_types` derived from Core or dependency-provided types, and inherit pack entries only through declared dependencies. `replaces` redirects retired ids, never live ones. Director `vocabulary` preferences are preset data (SPEC.md section 13), not special-case compatibility logic.
 
 ## Build workflow
 
@@ -118,4 +121,4 @@ A pack is ready when its files obey the current schema and loader rules, its ref
 - New components or fields not defined in the current schema.
 - More than a small initial pack added before validating a realistic retrieval sample.
 
-**Core principle:** Packs declare reusable knowledge; the resolver evaluates declared constraints; retrieval suggests relevant entries; the Director remains creative and the user's latest request remains authoritative.
+**Core principle:** Packs declare reusable knowledge; retrieval finds candidates; Core composes while checking declared constraints; the Director steers creativity; the finisher fills gaps; the target writes the prompt. The user's requirements remain authoritative, and unsupported scenes are explicitly freeform.

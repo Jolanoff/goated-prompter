@@ -15,12 +15,15 @@ from goated_prompter.backends.mock import MockBackend
 from goated_prompter.features.dataset.v2.draft import default_dataset_draft, validate_dataset_draft
 from goated_prompter.features.dataset.v2.understanding import apply_rules, copied_input
 from goated_prompter.features.vocabulary.visual import default_settings as default_visual_settings
+from goated_prompter.features.vocabulary.packs import PackManager
 
 
 class DatasetRebuildAdmissionTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
+        packs = PackManager(Path(self.temp.name) / "packs", Path(self.temp.name) / "pack-state.json")
+        self.enterContext(patch("goated_prompter.features.dataset.v2.vocabulary_packs.PackManager", return_value=packs))
         self.value = {"path": "character", "summary": "Two adults reading", "fixed": "Two readers",
                       "randomized": "Light and framing", "must": [], "avoid": [], "characters": [
                           {"label": "reader", "gender": "custom", "custom": "adult human", "pronoun": "it", "count": 2}]}

@@ -40,6 +40,14 @@ from ...workflow_output import WorkflowFormatError, normalize_workflow_output, s
 from ...contracts import GenerationResult, PromptInstruction, _reference_role, effective_model_family
 
 
+class PromptValidationError(BackendGenerationError):
+    """Builder exhausted its repairs for one output; the provider itself remained available."""
+
+    def __init__(self, message, *, attempts):
+        super().__init__(message)
+        self.attempts = attempts
+
+
 def _qwen21_source_tokens(request, reference_map=None, text_only=False):
     """Use selected sources even when the final compiler receives evidence, not images."""
     if text_only:
@@ -521,7 +529,9 @@ class GoatedPrompterService:
                     if attempt:
                         if recovery is not None and recovery.had_runaway:
                             raise recovery.invalid_output() from exc
-                        raise BackendGenerationError(f"{request.target_model} returned an invalid prompt after one format-repair attempt: {exc}") from exc
+                        raise PromptValidationError(
+                            f"{request.target_model} returned an invalid prompt after one format-repair attempt: {exc}",
+                            attempts=attempt + 1) from exc
                     accepted_facts = getattr(exc, "accepted_facts", ()) or accepted_facts
                     semantic_contract.update(previous_response=raw_candidate, listed_defect=str(exc))
                     instruction = replace(instruction,

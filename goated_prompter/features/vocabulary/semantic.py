@@ -38,6 +38,13 @@ def tokens(text):
     return _WORD.findall(str(text or "").casefold().replace("'s ", " ").replace("'", ""))
 
 
+def grounded(text, sources):
+    """Whether an annotation's positive wording is supported by authoritative source texts."""
+    positive = {word for source in sources for word in split_negated(source)[0]}
+    words, negative = split_negated(text)
+    return bool(words) and set(words) <= positive and not negative
+
+
 @lru_cache(maxsize=65536)
 def stem(word):
     """A light, deterministic suffix stripper: plurals, -ing, -ed, -ly and a final e."""

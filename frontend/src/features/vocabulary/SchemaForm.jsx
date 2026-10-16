@@ -64,6 +64,10 @@ export default function SchemaForm({ schema: source, root, value, onChange, path
         onClick={() => onChange([...list, schemaDefault(schema.items, root)])}>Add {title.toLowerCase()}</button>
     </fieldset>;
   }
+  if (schema.type === "boolean") return <div className={ui.field}>
+    <label className={ui.toggleRow}><input id={id} type="checkbox" className={ui.toggleInput} role="switch" aria-label={title}
+      aria-invalid={errors.length ? true : undefined} checked={value === true} onChange={(event) => onChange(event.target.checked)} />
+      <span className={ui.switch} /><span className={ui.toggleLabel}>{title}</span></label>{feedback}</div>;
   const isReference = source.$ref === "#/$defs/entryId" && path.at(-1) !== "id";
   const referenceKind = path.includes("extends") ? "all" : path.at(-1) === "posture" ? "posture" : "capability";
   const choices = isReference ? references.filter((entry) => referenceKind === "all" || entry[referenceKind]) : path.at(-1) === "category" ? categories.map((category) => ({ ...category, id: category.id })) : [];

@@ -50,7 +50,7 @@ export function packChoices(packs, selected) {
     if (!known.has(id)) rows.push({ id, name: id, version: null, origin: null, mandatory: false, enabledGlobally: false,
       problems: [], missing: [], role: "dependency", status: "unavailable" });
   }
-  return rows;
+  return rows.filter((row) => !row.mandatory);
 }
 
 /** Why this selection cannot be used, or "" when every participating pack is usable. */

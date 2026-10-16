@@ -433,7 +433,7 @@
         "spatial": {
           "participants": {
             "bottom": {
-              "posture": "core:posture.lying_back"
+              "posture": "general:posture.lying_back"
             },
             "top": {
               "facing": {
@@ -479,7 +479,7 @@
         "spatial": {
           "participants": {
             "top": {
-              "posture": "core:posture.kneeling",
+              "posture": "general:posture.kneeling",
               "facing": {
                 "toward": "bottom"
               },
@@ -493,7 +493,7 @@
               ]
             },
             "bottom": {
-              "posture": "core:posture.lying_back"
+              "posture": "general:posture.lying_back"
             }
           }
         },
@@ -584,7 +584,7 @@
         "spatial": {
           "participants": {
             "standing": {
-              "posture": "core:posture.standing",
+              "posture": "general:posture.standing",
               "facing": {
                 "toward": "lying"
               },
@@ -598,7 +598,7 @@
               ]
             },
             "lying": {
-              "posture": "core:posture.lying_back"
+              "posture": "general:posture.lying_back"
             }
           }
         },
@@ -642,10 +642,10 @@
         "spatial": {
           "participants": {
             "partner": {
-              "posture": "core:posture.lying_back"
+              "posture": "general:posture.lying_back"
             },
             "rider": {
-              "posture": "core:posture.straddling",
+              "posture": "general:posture.straddling",
               "facing": {
                 "toward": "partner"
               },
@@ -709,7 +709,7 @@
         "spatial": {
           "participants": {
             "rider": {
-              "posture": "core:posture.straddling",
+              "posture": "general:posture.straddling",
               "facing": {
                 "toward": "partner"
               },
@@ -723,7 +723,7 @@
               ]
             },
             "partner": {
-              "posture": "core:posture.lying_back"
+              "posture": "general:posture.lying_back"
             }
           }
         },
@@ -774,7 +774,7 @@
               ]
             },
             "partner": {
-              "posture": "core:posture.lying_back"
+              "posture": "general:posture.lying_back"
             }
           }
         },
@@ -825,7 +825,7 @@
               ]
             },
             "partner": {
-              "posture": "core:posture.lying_back"
+              "posture": "general:posture.lying_back"
             }
           }
         },
@@ -859,13 +859,13 @@
         "spatial": {
           "participants": {
             "front": {
-              "posture": "core:posture.standing",
+              "posture": "general:posture.standing",
               "facing": {
                 "away_from": "back"
               }
             },
             "back": {
-              "posture": "core:posture.standing",
+              "posture": "general:posture.standing",
               "facing": {
                 "toward": "front"
               },
@@ -890,6 +890,9 @@
               "kind": "touch"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -923,7 +926,7 @@
               }
             },
             "back": {
-              "posture": "core:posture.standing",
+              "posture": "general:posture.standing",
               "facing": {
                 "toward": "front"
               },
@@ -956,6 +959,9 @@
               "core:surface.seat"
             ]
           }
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -997,7 +1003,7 @@
               ]
             },
             "bottom": {
-              "posture": "core:posture.lying_front"
+              "posture": "general:posture.lying_front"
             }
           }
         },
@@ -1037,7 +1043,7 @@
               }
             },
             "back": {
-              "posture": "core:posture.kneeling",
+              "posture": "general:posture.kneeling",
               "facing": {
                 "toward": "front"
               },
@@ -1085,10 +1091,10 @@
         "spatial": {
           "participants": {
             "front": {
-              "posture": "core:posture.lying_side"
+              "posture": "general:posture.lying_side"
             },
             "back": {
-              "posture": "core:posture.lying_side",
+              "posture": "general:posture.lying_side",
               "facing": {
                 "same_as": "front"
               },
@@ -1136,13 +1142,13 @@
         "spatial": {
           "participants": {
             "a": {
-              "posture": "core:posture.lying_side",
+              "posture": "general:posture.lying_side",
               "facing": {
                 "toward": "b"
               }
             },
             "b": {
-              "posture": "core:posture.lying_side",
+              "posture": "general:posture.lying_side",
               "facing": {
                 "toward": "a"
               },
@@ -1190,7 +1196,7 @@
         "spatial": {
           "participants": {
             "lap": {
-              "posture": "core:posture.sitting",
+              "posture": "general:posture.sitting",
               "facing": {
                 "toward": "base"
               },
@@ -1204,7 +1210,7 @@
               ]
             },
             "base": {
-              "posture": "core:posture.sitting"
+              "posture": "general:posture.sitting"
             }
           }
         },
@@ -1241,7 +1247,7 @@
         "spatial": {
           "participants": {
             "lap": {
-              "posture": "core:posture.sitting",
+              "posture": "general:posture.sitting",
               "facing": {
                 "same_as": "base"
               },
@@ -1255,7 +1261,7 @@
               ]
             },
             "base": {
-              "posture": "core:posture.sitting"
+              "posture": "general:posture.sitting"
             }
           }
         },
@@ -1292,7 +1298,7 @@
         "spatial": {
           "participants": {
             "rider": {
-              "posture": "core:posture.straddling",
+              "posture": "general:posture.straddling",
               "facing": {
                 "toward": "seated"
               },
@@ -1306,7 +1312,7 @@
               ]
             },
             "seated": {
-              "posture": "core:posture.sitting"
+              "posture": "general:posture.sitting"
             }
           }
         },
@@ -1343,7 +1349,7 @@
         "spatial": {
           "participants": {
             "front": {
-              "posture": "core:posture.standing",
+              "posture": "general:posture.standing",
               "facing": {
                 "toward": "wall_side"
               },
@@ -1357,7 +1363,7 @@
               ]
             },
             "wall_side": {
-              "posture": "core:posture.standing"
+              "posture": "general:posture.standing"
             }
           }
         },
@@ -1395,7 +1401,7 @@
         "spatial": {
           "participants": {
             "carrier": {
-              "posture": "core:posture.standing",
+              "posture": "general:posture.standing",
               "facing": {
                 "toward": "carried"
               }
@@ -1426,6 +1432,9 @@
               "kind": "touch"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -1456,7 +1465,7 @@
               }
             },
             "back": {
-              "posture": "core:posture.standing",
+              "posture": "general:posture.standing",
               "facing": {
                 "toward": "front"
               },
@@ -1488,6 +1497,9 @@
               "core:surface.ground"
             ]
           }
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -1526,7 +1538,7 @@
               ]
             },
             "bottom": {
-              "posture": "core:posture.lying_back"
+              "posture": "general:posture.lying_back"
             }
           }
         },
@@ -1563,7 +1575,7 @@
         "spatial": {
           "participants": {
             "top": {
-              "posture": "core:posture.kneeling",
+              "posture": "general:posture.kneeling",
               "facing": {
                 "toward": "bottom"
               },
@@ -1614,7 +1626,7 @@
         "spatial": {
           "participants": {
             "a": {
-              "posture": "core:posture.kneeling",
+              "posture": "general:posture.kneeling",
               "facing": {
                 "toward": "b"
               },
@@ -1628,7 +1640,7 @@
               ]
             },
             "b": {
-              "posture": "core:posture.kneeling",
+              "posture": "general:posture.kneeling",
               "facing": {
                 "toward": "a"
               }
@@ -1668,13 +1680,13 @@
         "spatial": {
           "participants": {
             "front": {
-              "posture": "core:posture.kneeling",
+              "posture": "general:posture.kneeling",
               "facing": {
                 "away_from": "back"
               }
             },
             "back": {
-              "posture": "core:posture.kneeling",
+              "posture": "general:posture.kneeling",
               "facing": {
                 "toward": "front"
               },
@@ -1707,6 +1719,9 @@
               "core:surface.wide"
             ]
           }
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -1740,7 +1755,7 @@
               }
             },
             "back": {
-              "posture": "core:posture.standing",
+              "posture": "general:posture.standing",
               "facing": {
                 "toward": "front"
               },
@@ -1791,7 +1806,7 @@
         "spatial": {
           "participants": {
             "standing": {
-              "posture": "core:posture.standing",
+              "posture": "general:posture.standing",
               "facing": {
                 "toward": "lying"
               },
@@ -1842,13 +1857,13 @@
         "spatial": {
           "participants": {
             "front": {
-              "posture": "core:posture.standing",
+              "posture": "general:posture.standing",
               "facing": {
                 "away_from": "back"
               }
             },
             "back": {
-              "posture": "core:posture.standing",
+              "posture": "general:posture.standing",
               "facing": {
                 "toward": "front"
               },
@@ -1896,7 +1911,7 @@
         "spatial": {
           "participants": {
             "dancer": {
-              "posture": "core:posture.sitting",
+              "posture": "general:posture.sitting",
               "facing": {
                 "toward": "seated"
               },
@@ -1910,7 +1925,7 @@
               ]
             },
             "seated": {
-              "posture": "core:posture.sitting"
+              "posture": "general:posture.sitting"
             }
           }
         },
@@ -1960,7 +1975,7 @@
               ]
             },
             "bottom": {
-              "posture": "core:posture.lying_back"
+              "posture": "general:posture.lying_back"
             }
           },
           "access": [
@@ -1990,6 +2005,9 @@
               "core:surface.wide"
             ]
           }
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -2017,10 +2035,10 @@
         "spatial": {
           "participants": {
             "a": {
-              "posture": "core:posture.lying_side"
+              "posture": "general:posture.lying_side"
             },
             "b": {
-              "posture": "core:posture.lying_side",
+              "posture": "general:posture.lying_side",
               "facing": {
                 "away_from": "a"
               }
@@ -2053,6 +2071,9 @@
               "core:surface.wide"
             ]
           }
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -2080,7 +2101,7 @@
         "spatial": {
           "participants": {
             "kneeling": {
-              "posture": "core:posture.kneeling",
+              "posture": "general:posture.kneeling",
               "facing": {
                 "toward": "standing"
               },
@@ -2094,7 +2115,7 @@
               ]
             },
             "standing": {
-              "posture": "core:posture.standing",
+              "posture": "general:posture.standing",
               "facing": {
                 "toward": "kneeling"
               }
@@ -2120,6 +2141,9 @@
               "kind": "touch"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -2147,7 +2171,7 @@
         "spatial": {
           "participants": {
             "giver": {
-              "posture": "core:posture.lying_front",
+              "posture": "general:posture.lying_front",
               "facing": {
                 "toward": "receiver"
               },
@@ -2182,6 +2206,9 @@
               "core:surface.wide"
             ]
           }
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -2209,7 +2236,7 @@
         "spatial": {
           "participants": {
             "kneeling": {
-              "posture": "core:posture.kneeling",
+              "posture": "general:posture.kneeling",
               "facing": {
                 "toward": "seated"
               },
@@ -2244,6 +2271,9 @@
               "core:surface.seat"
             ]
           }
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -2271,7 +2301,7 @@
         "spatial": {
           "participants": {
             "standing": {
-              "posture": "core:posture.standing"
+              "posture": "general:posture.standing"
             },
             "held": {
               "facing": {
@@ -2324,10 +2354,10 @@
         "spatial": {
           "participants": {
             "middle": {
-              "posture": "core:posture.all_fours"
+              "posture": "general:posture.all_fours"
             },
             "front": {
-              "posture": "core:posture.kneeling",
+              "posture": "general:posture.kneeling",
               "facing": {
                 "toward": "middle"
               },
@@ -2341,7 +2371,7 @@
               ]
             },
             "back": {
-              "posture": "core:posture.kneeling",
+              "posture": "general:posture.kneeling",
               "facing": {
                 "toward": "middle"
               },
@@ -2382,6 +2412,9 @@
               "core:surface.wide"
             ]
           }
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -2416,7 +2449,7 @@
               "posture": "adult:posture.bent_over"
             },
             "front": {
-              "posture": "core:posture.standing",
+              "posture": "general:posture.standing",
               "facing": {
                 "toward": "middle"
               },
@@ -2430,7 +2463,7 @@
               ]
             },
             "back": {
-              "posture": "core:posture.standing",
+              "posture": "general:posture.standing",
               "facing": {
                 "toward": "middle"
               },
@@ -2483,7 +2516,7 @@
         "spatial": {
           "participants": {
             "front": {
-              "posture": "core:posture.lying_back"
+              "posture": "general:posture.lying_back"
             },
             "middle": {
               "facing": {
@@ -2549,10 +2582,10 @@
         "spatial": {
           "participants": {
             "middle": {
-              "posture": "core:posture.standing"
+              "posture": "general:posture.standing"
             },
             "front": {
-              "posture": "core:posture.standing",
+              "posture": "general:posture.standing",
               "facing": {
                 "toward": "middle"
               },
@@ -2565,7 +2598,7 @@
               ]
             },
             "back": {
-              "posture": "core:posture.standing",
+              "posture": "general:posture.standing",
               "facing": {
                 "toward": "middle"
               },
@@ -2613,7 +2646,7 @@
         "spatial": {
           "participants": {
             "member_ring[*]": {
-              "posture": "core:posture.lying_side",
+              "posture": "general:posture.lying_side",
               "anchors": [
                 {
                   "relation": "around",
@@ -2641,6 +2674,9 @@
               "core:surface.wide"
             ]
           }
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -2667,7 +2703,7 @@
         "spatial": {
           "participants": {
             "car[i+1]": {
-              "posture": "core:posture.kneeling",
+              "posture": "general:posture.kneeling",
               "facing": {
                 "toward": "car[i]"
               },
@@ -2681,7 +2717,7 @@
               ]
             },
             "car[0]": {
-              "posture": "core:posture.all_fours"
+              "posture": "general:posture.all_fours"
             }
           }
         },
@@ -2722,10 +2758,10 @@
         "spatial": {
           "participants": {
             "centre": {
-              "posture": "core:posture.lying_back"
+              "posture": "general:posture.lying_back"
             },
             "around[*]": {
-              "posture": "core:posture.kneeling",
+              "posture": "general:posture.kneeling",
               "facing": {
                 "toward": "centre"
               },
@@ -2757,6 +2793,9 @@
               "core:surface.wide"
             ]
           }
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -2787,10 +2826,10 @@
         "spatial": {
           "participants": {
             "standing": {
-              "posture": "core:posture.standing"
+              "posture": "general:posture.standing"
             },
             "kneeling[*]": {
-              "posture": "core:posture.kneeling",
+              "posture": "general:posture.kneeling",
               "facing": {
                 "toward": "standing"
               },
@@ -2837,10 +2876,10 @@
         "spatial": {
           "participants": {
             "middle": {
-              "posture": "core:posture.lying_back"
+              "posture": "general:posture.lying_back"
             },
             "side[*]": {
-              "posture": "core:posture.kneeling",
+              "posture": "general:posture.kneeling",
               "facing": {
                 "toward": "middle"
               },
@@ -2872,6 +2911,9 @@
               "core:surface.wide"
             ]
           }
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -2900,10 +2942,10 @@
         "spatial": {
           "participants": {
             "bottom": {
-              "posture": "core:posture.lying_back"
+              "posture": "general:posture.lying_back"
             },
             "top": {
-              "posture": "core:posture.lying_front",
+              "posture": "general:posture.lying_front",
               "facing": {
                 "toward": "bottom"
               },
@@ -2916,7 +2958,7 @@
               ]
             },
             "behind": {
-              "posture": "core:posture.kneeling",
+              "posture": "general:posture.kneeling",
               "facing": {
                 "toward": "top"
               },
@@ -3004,7 +3046,7 @@
         "spatial": {
           "participants": {
             "member_ring[*]": {
-              "posture": "core:posture.lying_side",
+              "posture": "general:posture.lying_side",
               "anchors": [
                 {
                   "relation": "around",
@@ -3032,6 +3074,9 @@
               "core:surface.wide"
             ]
           }
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -3063,10 +3108,10 @@
         "spatial": {
           "participants": {
             "seated": {
-              "posture": "core:posture.sitting"
+              "posture": "general:posture.sitting"
             },
             "lap": {
-              "posture": "core:posture.sitting",
+              "posture": "general:posture.sitting",
               "facing": {
                 "same_as": "seated"
               },
@@ -3080,7 +3125,7 @@
               ]
             },
             "kneeling": {
-              "posture": "core:posture.kneeling",
+              "posture": "general:posture.kneeling",
               "facing": {
                 "toward": "lap"
               },
@@ -3128,13 +3173,13 @@
         "spatial": {
           "participants": {
             "front": {
-              "posture": "core:posture.all_fours",
+              "posture": "general:posture.all_fours",
               "facing": {
                 "away_from": "back"
               }
             },
             "back": {
-              "posture": "core:posture.standing",
+              "posture": "general:posture.standing",
               "facing": {
                 "toward": "front"
               },
@@ -3198,7 +3243,7 @@
               ]
             },
             "bottom": {
-              "posture": "core:posture.lying_back"
+              "posture": "general:posture.lying_back"
             }
           }
         },
@@ -3235,7 +3280,7 @@
         "spatial": {
           "participants": {
             "rider": {
-              "posture": "core:posture.sitting",
+              "posture": "general:posture.sitting",
               "anchors": [
                 {
                   "relation": "on",
@@ -3246,7 +3291,7 @@
               ]
             },
             "partner": {
-              "posture": "core:posture.lying_back"
+              "posture": "general:posture.lying_back"
             }
           }
         },
@@ -3283,10 +3328,10 @@
         "spatial": {
           "participants": {
             "front": {
-              "posture": "core:posture.lying_front"
+              "posture": "general:posture.lying_front"
             },
             "back": {
-              "posture": "core:posture.kneeling",
+              "posture": "general:posture.kneeling",
               "facing": {
                 "same_as": "front"
               },
@@ -3333,7 +3378,7 @@
         "spatial": {
           "participants": {
             "rider": {
-              "posture": "core:posture.kneeling",
+              "posture": "general:posture.kneeling",
               "facing": {
                 "toward": "seated"
               },
@@ -3347,7 +3392,7 @@
               ]
             },
             "seated": {
-              "posture": "core:posture.kneeling"
+              "posture": "general:posture.kneeling"
             }
           }
         },
@@ -3384,7 +3429,7 @@
         "spatial": {
           "participants": {
             "a": {
-              "posture": "core:posture.sitting",
+              "posture": "general:posture.sitting",
               "facing": {
                 "toward": "b"
               },
@@ -3398,7 +3443,7 @@
               ]
             },
             "b": {
-              "posture": "core:posture.sitting",
+              "posture": "general:posture.sitting",
               "facing": {
                 "toward": "a"
               }
@@ -3438,7 +3483,7 @@
         "spatial": {
           "participants": {
             "a": {
-              "posture": "core:posture.standing",
+              "posture": "general:posture.standing",
               "facing": {
                 "toward": "b"
               },
@@ -3451,7 +3496,7 @@
               ]
             },
             "b": {
-              "posture": "core:posture.standing",
+              "posture": "general:posture.standing",
               "facing": {
                 "toward": "a"
               }
@@ -3495,10 +3540,10 @@
         "spatial": {
           "participants": {
             "bottom": {
-              "posture": "core:posture.lying_back"
+              "posture": "general:posture.lying_back"
             },
             "face_rider": {
-              "posture": "core:posture.straddling",
+              "posture": "general:posture.straddling",
               "anchors": [
                 {
                   "relation": "astride",
@@ -3509,7 +3554,7 @@
               ]
             },
             "hip_rider": {
-              "posture": "core:posture.straddling",
+              "posture": "general:posture.straddling",
               "anchors": [
                 {
                   "relation": "astride",
@@ -3554,7 +3599,7 @@
         "spatial": {
           "participants": {
             "member_ring[*]": {
-              "posture": "core:posture.standing",
+              "posture": "general:posture.standing",
               "facing": {
                 "toward": "center"
               },

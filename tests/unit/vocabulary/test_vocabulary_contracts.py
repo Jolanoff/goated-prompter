@@ -15,7 +15,7 @@ import jsonschema  # required (requirements-local.txt): schema validation is man
 ROOT = Path(__file__).resolve().parents[3]
 SCHEMAS = ROOT / "vocabulary" / "schemas"
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
-PACK_DIRS = [ROOT / "vocabulary" / "core", FIXTURES / "packs" / "fantasy", FIXTURES / "packs" / "adult"]
+PACK_DIRS = [ROOT / "vocabulary" / "core", ROOT / "vocabulary/packs/general", FIXTURES / "packs" / "fantasy", FIXTURES / "packs" / "adult"]
 SCENARIOS = sorted((FIXTURES / "scenarios").glob("*.json"))
 RATINGS = ["general", "mature", "adult"]
 REF = re.compile(r"^(?P<slot>[a-z][a-z0-9_]*)(\[(?P<index>-?[0-9]+|\*|[0-9]*:[0-9]*|i|i(?P<rel>[+-][0-9]+))\])?$")
@@ -31,7 +31,7 @@ def load():
     """{pack_id: manifest}, {entry_id: (entry, pack_id)}, {pack_id: folder}."""
     manifests, entries, folders = {}, {}, {}
     for folder in PACK_DIRS:
-        manifest = read(folder / "manifest.json")
+        manifest = read(folder / ("foundation.json" if folder == ROOT / "vocabulary/core" else "manifest.json"))
         manifests[manifest["id"]], folders[manifest["id"]] = manifest, folder
         for name in manifest["files"]:
             for entry in read(folder / name)["entries"]:
@@ -177,7 +177,7 @@ class PackContracts(unittest.TestCase):
     def test_manifest_files_match_the_pack_folder(self):
         for pack_id, folder in FOLDERS.items():
             listed = set(MANIFESTS[pack_id]["files"])
-            present = {path.name for path in folder.glob("*.json")} - {"manifest.json"}
+            present = {path.name for path in folder.glob("*.json")} - {"manifest.json", "foundation.json"}
             self.assertEqual(listed, present, pack_id)
 
     def test_dependencies_exist_and_versions_satisfy(self):

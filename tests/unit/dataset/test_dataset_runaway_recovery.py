@@ -154,7 +154,9 @@ class RunawayRecoveryTests(unittest.TestCase):
                    "looks": {"Alex": "short hair"}, "lighting": "daylight", "camera": "wide"}
         self.scripts["dataset_v2:concepts"] = [json.dumps({"concepts": [concept]}), self.loop(), self.loop()]
         result = self.write_scenes()
-        self.assertEqual(result["concepts"], [concept])
+        self.assertEqual([{key: value for key, value in item.items() if key != "arrangement"}
+                          for item in result["concepts"]], [concept])
+        self.assertEqual(result["concepts"][0]["arrangement"]["kind"], "freeform")
         self.assertEqual(result["written"], 1)
         self.assertEqual(result["missing"][0]["slot"], 2)
         calls = [json.loads(call.user_message)["concepts_needed"] for call in self.calls

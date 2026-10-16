@@ -2,6 +2,7 @@
   "name": "unknown_dragon_caster",
   "description": "Unknown: a dragon casts a spell. The dragon never declares whether it has magic.",
   "packs": [
+    "general",
     "core",
     "fantasy"
   ],
@@ -12,7 +13,7 @@
     },
     {
       "id": "foe",
-      "body": "core:body.humanoid"
+      "body": "general:body.humanoid"
     }
   ],
   "use": [

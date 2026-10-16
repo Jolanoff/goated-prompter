@@ -2,7 +2,7 @@
   "spec": 1,
   "entries": [
     {
-      "id": "core:space.floor",
+      "id": "general:space.floor",
       "category": "space",
       "name": "Floor",
       "components": {
@@ -16,7 +16,7 @@
       }
     },
     {
-      "id": "core:space.bed",
+      "id": "general:space.bed",
       "category": "space",
       "name": "Bed",
       "components": {
@@ -29,7 +29,7 @@
       }
     },
     {
-      "id": "core:space.wall",
+      "id": "general:space.wall",
       "category": "space",
       "name": "Wall",
       "components": {
@@ -42,7 +42,7 @@
       }
     },
     {
-      "id": "core:space.sofa",
+      "id": "general:space.sofa",
       "category": "space",
       "name": "Sofa",
       "aliases": [
@@ -59,7 +59,7 @@
       }
     },
     {
-      "id": "core:space.bench",
+      "id": "general:space.bench",
       "category": "space",
       "name": "Bench",
       "components": {
@@ -72,7 +72,7 @@
       }
     },
     {
-      "id": "core:space.chair",
+      "id": "general:space.chair",
       "category": "space",
       "name": "Chair",
       "aliases": [
@@ -87,7 +87,7 @@
       }
     },
     {
-      "id": "core:space.table",
+      "id": "general:space.table",
       "category": "space",
       "name": "Table",
       "aliases": [
@@ -102,7 +102,7 @@
       }
     },
     {
-      "id": "core:space.grass",
+      "id": "general:space.grass",
       "category": "space",
       "name": "Grass",
       "aliases": [
@@ -120,7 +120,7 @@
       }
     },
     {
-      "id": "core:space.cliff",
+      "id": "general:space.cliff",
       "category": "space",
       "name": "Cliff",
       "description": "A sheer rock face; its top is a narrow, exposed ledge with a long drop below.",

@@ -2,6 +2,18 @@
   "spec": 1,
   "entries": [
     {
+      "id": "adult:action.sex", "category": "action", "name": "Sex",
+      "aliases": ["fucking", "sexual intercourse"],
+      "description": "Two adult partners having sex, with their genitals in contact. A specific form of penetration is not fixed by this broad activity.",
+      "components": {
+        "participants": {"slots": {"a": {"kind": "being", "count": 1, "role": "performer"}, "b": {"kind": "being", "count": 1, "role": "performer"}}},
+        "requirements": {"participants": {"a": {"all_of": ["core:anatomy.genitals"]}, "b": {"all_of": ["core:anatomy.genitals"]}}},
+        "spatial": {"access": [{"from": "a", "using": "core:anatomy.genitals", "to": "b", "regions": ["core:anatomy.genitals"], "kind": "touch"}]},
+        "claims": {"a": [{"resource": "core:anatomy.hips", "count": 1, "mode": "exclusive", "purpose": "contact"}], "b": [{"resource": "core:anatomy.hips", "count": 1, "mode": "exclusive", "purpose": "contact"}]},
+        "visibility": {"contact": true}
+      }
+    },
+    {
       "id": "adult:action.oral",
       "category": "action",
       "name": "Oral",
@@ -61,6 +73,9 @@
               "purpose": "contact"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -124,6 +139,9 @@
               "purpose": "contact"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -184,6 +202,9 @@
               "purpose": "contact"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -245,6 +266,9 @@
               "purpose": "contact"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -292,10 +316,10 @@
         "spatial": {
           "participants": {
             "giver": {
-              "posture": "core:posture.lying_back"
+              "posture": "general:posture.lying_back"
             },
             "receiver": {
-              "posture": "core:posture.straddling",
+              "posture": "general:posture.straddling",
               "anchors": [
                 {
                   "relation": "astride",
@@ -383,6 +407,9 @@
               "purpose": "contact"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -446,6 +473,9 @@
               "purpose": "contact"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -506,6 +536,9 @@
               "purpose": "contact"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -564,6 +597,9 @@
               "purpose": "contact"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -684,6 +720,9 @@
               "purpose": "contact"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -753,6 +792,9 @@
               "purpose": "contact"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -821,6 +863,9 @@
               "purpose": "contact"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -944,6 +989,9 @@
               "purpose": "contact"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -1005,6 +1053,9 @@
               "purpose": "contact"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -1132,6 +1183,9 @@
               "purpose": "contact"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -1194,6 +1248,9 @@
               "purpose": "contact"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -1330,6 +1387,9 @@
               "purpose": "contact"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -1385,6 +1445,9 @@
               "purpose": "contact"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -1445,6 +1508,9 @@
               "purpose": "contact"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -1505,6 +1571,9 @@
               "purpose": "contact"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -1562,6 +1631,9 @@
               "purpose": "contact"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -1814,6 +1886,9 @@
               "purpose": "contact"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -1872,6 +1947,9 @@
               "purpose": "contact"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -1975,6 +2053,9 @@
               "purpose": "contact"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -2045,6 +2126,9 @@
               "purpose": "contact"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -2105,6 +2189,9 @@
               "purpose": "contact"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -2165,6 +2252,9 @@
               "purpose": "contact"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -2227,6 +2317,9 @@
               "purpose": "contact"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -2372,6 +2465,9 @@
               "purpose": "contact"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -2428,6 +2524,9 @@
               "purpose": "contact"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -2484,6 +2583,9 @@
               "purpose": "contact"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -2594,6 +2696,9 @@
               "key": "hold:{toy}"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },
@@ -3021,6 +3126,9 @@
               "purpose": "use"
             }
           ]
+        },
+        "visibility": {
+          "contact": true
         }
       }
     },

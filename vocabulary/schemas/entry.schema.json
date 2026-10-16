@@ -36,6 +36,8 @@
         "tags": { "type": "array", "items": { "$ref": "#/$defs/name" }, "uniqueItems": true },
         "rating": { "$ref": "#/$defs/rating" },
         "extends": { "$ref": "#/$defs/entryIds" },
+        "abstract": { "type": "boolean", "description": "A template: inherited by other entries, never retrieved, composed or chosen itself (SPEC.md section 7)." },
+        "replaces": { "$ref": "#/$defs/entryIds", "description": "Ids this entry used to have; references to them resolve to this entry (SPEC.md section 9)." },
         "notes": { "type": "array", "items": { "$ref": "#/$defs/text" } },
         "components": { "$ref": "#/$defs/components" }
       }
@@ -43,7 +45,9 @@
 
     "components": {
       "type": "object",
+      "description": "Canonical contracts or interfaces declared by Core/the pack's dependency closure. Unknown names are rejected during registry validation.",
       "additionalProperties": false,
+      "patternProperties": {"^(?:[A-Z][A-Za-z]+|[a-z][a-z0-9_]*:[a-z][a-z0-9_]*)$": {"type": "object"}},
       "properties": {
         "capability": { "$ref": "#/$defs/capability" },
         "body": { "$ref": "#/$defs/body" },
@@ -53,7 +57,9 @@
         "claims": { "$ref": "#/$defs/claims" },
         "object": { "$ref": "#/$defs/object" },
         "environment": { "$ref": "#/$defs/environment" },
-        "visual": { "$ref": "#/$defs/visual" }
+        "visual": { "$ref": "#/$defs/visual" },
+        "visibility": { "$ref": "#/$defs/visibility" },
+        "capacity": { "$ref": "#/$defs/capacity" }
       }
     },
 
@@ -115,6 +121,7 @@
             "properties": {
               "count": { "$ref": "#/$defs/count" },
               "kind": { "enum": ["being", "object"] },
+              "role": { "enum": ["performer", "target"], "description": "Optional semantic side for confirmed action bindings; symmetric activities can declare multiple performer slots." },
               "topology": { "enum": ["ring", "chain"] }
             }
           }
@@ -178,7 +185,7 @@
       "additionalProperties": false,
       "required": ["relation", "of"],
       "properties": {
-        "relation": { "enum": ["in_front", "behind", "left_of", "right_of", "above", "below", "on", "under", "around", "between", "astride"] },
+        "relation": { "enum": ["in_front", "behind", "left_of", "right_of", "above", "below", "on", "under", "around", "between", "astride", "beside"] },
         "of": {
           "oneOf": [
             { "$ref": "#/$defs/participantRef" },
@@ -231,7 +238,7 @@
             "resource": { "$ref": "#/$defs/entryId" },
             "count": { "type": "integer", "minimum": 1, "maximum": 16 },
             "mode": { "enum": ["exclusive", "shared"] },
-            "purpose": { "enum": ["support", "hold", "contact", "use"] },
+            "purpose": { "enum": ["support", "hold", "contact", "use", "wear", "attach", "insert", "wield"] },
             "key": { "type": "string", "pattern": "^[a-z0-9_:.-]*(\\{[a-z][a-z0-9_]*\\}[a-z0-9_:.-]*)*$", "minLength": 1, "maxLength": 80 }
           }
         }
@@ -247,7 +254,8 @@
         "provides": { "$ref": "#/$defs/entryIds" },
         "complete_for": { "$ref": "#/$defs/entryIds" },
         "size": { "enum": ["tiny", "small", "medium", "large", "huge"] },
-        "hands": { "type": "integer", "minimum": 0, "maximum": 4 }
+        "hands": { "type": "integer", "minimum": 0, "maximum": 4 },
+        "capacity": { "$ref": "#/$defs/capacity" }
       }
     },
 
@@ -255,7 +263,43 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["provides"],
-      "properties": { "provides": { "$ref": "#/$defs/entryIds" } }
+      "properties": {
+        "provides": { "$ref": "#/$defs/entryIds" },
+        "complete_for": { "$ref": "#/$defs/entryIds" },
+        "capacity": { "$ref": "#/$defs/capacity" }
+      }
+    },
+
+    "capacity": {
+      "description": "Occupancy (SPEC.md section 12): how many beings the space holds, or how many beings can be on the item at once. Absent: not declared.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["beings"],
+      "properties": { "beings": { "type": "integer", "minimum": 0, "maximum": 64 } }
+    },
+
+    "visibility": {
+      "description": "What must be visible when the entry is used (SPEC.md section 12): regions or the whole body of participants, the regions its declared contact touches, the place.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "participants": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/participantRef" },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+              "regions": { "$ref": "#/$defs/entryIds" },
+              "whole": { "type": "boolean" }
+            }
+          }
+        },
+        "contact": { "type": "boolean" },
+        "space": { "type": "boolean" }
+      }
     },
 
     "visual": {
@@ -279,7 +323,20 @@
             "max": { "type": "integer", "minimum": 0, "maximum": 64 }
           }
         },
-        "conflicts": { "$ref": "#/$defs/entryIds" }
+        "conflicts": { "$ref": "#/$defs/entryIds" },
+        "shows": {
+          "description": "What this direction keeps in view (SPEC.md section 12): whole bodies, these regions, at most max_regions kinds of region, the place. complete: nothing else is shown. Absent: not declared.",
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "whole": { "type": "boolean" },
+            "regions": { "$ref": "#/$defs/entryIds" },
+            "max_regions": { "type": "integer", "minimum": 1, "maximum": 64 },
+            "space": { "type": "boolean" },
+            "complete": { "type": "boolean" }
+          }
+        }
       }
     }
   }
