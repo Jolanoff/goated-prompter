@@ -7,11 +7,7 @@ from .features.refine.prompting import builtin_refine_instructions
 from .options.targets import TARGET_MODEL_NAMES, canonical_target
 from .workspace_store import WorkspaceConflict, locks, text
 from .features.minimax.contract import default_minimax_draft, validate_minimax_draft
-from .features.dataset.service import default_dataset_draft, validate_dataset_draft, saved_dataset_draft
-from .features.dataset.assignments import dataset_assignments
-from .features.dataset.plan import invalidate_scene_edit, reusable_scene_plan
-from .features.dataset.eligibility import scene_eligibility
-from .features.dataset.ideas import MAX_IDEA_CHARACTERS, MAX_SCENE_CHARACTERS
+from .features.dataset.v2.draft import default_dataset_draft, validate_dataset_draft, saved_dataset_draft
 
 
 def default_draft(operation):
@@ -83,7 +79,6 @@ class WorkflowSettingsStore:
     def __init__(self, path, read, write):
         self.path, self.read, self.write = path, read, write
         self.lock = threading.RLock()
-        self.dataset_checkpoints = None
 
     def _read(self):
         return self.read(self.path, empty_settings(), validate_settings_store)
@@ -91,44 +86,11 @@ class WorkflowSettingsStore:
     def _public(self, operation, record):
         defaults = builtin_refine_instructions() if operation == "refine" else {}
         draft = validate_draft(operation, record["draft"])
-        scene_state = ({"scene_plan_current": reusable_scene_plan(draft, dataset_assignments(draft)) is not None,
-                         "idea_plan_current": reusable_scene_plan(draft, dataset_assignments(draft), require_scenes=False) is not None,
-                         "scene_plan_matches_settings": reusable_scene_plan(draft, dataset_assignments(draft), require_scenes=False, allow_pending=True) is not None,
-                         "scene_limits": {"characters": MAX_SCENE_CHARACTERS},
-                         "idea_limits": {"characters": MAX_IDEA_CHARACTERS},
-                         "scene_eligibility": {str(row["index"]): scene_eligibility(row, draft).to_dict() for row in draft["scene_plan"]}}
-                       if operation == "dataset" else {})
-        return {**record, "draft": draft, "defaults": defaults, **scene_state,
-                "instructions": {**defaults, **record["overrides"]}}
+        return {**record, "draft": draft, "defaults": defaults, "instructions": {**defaults, **record["overrides"]}}
 
     def snapshot(self, operation):
         with self.lock:
-            record = self._read()[operation]
-            if operation == "dataset" and self.dataset_checkpoints is not None:
-                record = self.dataset_checkpoints.project(record)
-            return self._public(operation, record)
-
-    def checkpoint_dataset(self, job, *, snapshot=None, approved_intent=None):
-        # Never acquire a job lock while holding the settings lock.
-        snapshot = job.snapshot() if snapshot is None else snapshot
-        with self.lock:
-            if self.dataset_checkpoints is not None:
-                self.dataset_checkpoints.save(job, self._read()["dataset"], snapshot=snapshot,
-                                              approved_intent=approved_intent)
-
-    def begin_dataset(self, job, data, revision=None):
-        with self.lock:
-            current = self._read()["dataset"]
-            if revision is not None and (type(revision) is not int or revision != current["revision"]):
-                raise WorkspaceConflict("Dataset input changed before generation started. Reload and retry.")
-            # Older API callers may supply an unsaved draft. Persist that exact
-            # configuration at admission, never again from a running job.
-            if current["draft"] != data:
-                self.update("dataset", current["revision"], draft=data)
-                current = self._read()["dataset"]
-            record = self.dataset_checkpoints.begin(job, data, current["revision"])
-            job.workflow_revision = record["workflow_revision"]
-            job.input_signature = record["input_signature"]
+            return self._public(operation, self._read()[operation])
 
     def update(self, operation, revision, *, draft=None, instructions=None, reset=False):
         with self.lock:
@@ -137,22 +99,7 @@ class WorkflowSettingsStore:
             if type(revision) is not int or revision != record["revision"]:
                 raise WorkspaceConflict("These workflow settings changed in another tab. Reload saved settings before saving again.")
             if draft is not None:
-                updated = validate_draft(operation, draft)
-                if operation == "dataset":
-                    previous = (self.dataset_checkpoints.project(record)["draft"]
-                                if self.dataset_checkpoints is not None else record["draft"])
-                    by_index = {row["index"]: row for row in previous["scene_plan"]}
-                    invalidated = set()
-                    dependencies = ("input", "idea", "scene")
-                    for slot, row in enumerate(updated["scene_plan"]):
-                        old = by_index.get(row["index"])
-                        if old and (any(row.get(field) != old.get(field) for field in dependencies)
-                                    or row["self_check"] == "PASS" and old["self_check"] != "PASS"):
-                            stage = "idea" if row.get("idea") != old.get("idea") else "scene"
-                            updated["scene_plan"][slot] = invalidate_scene_edit(row, stage)
-                            invalidated.add(row["index"])
-                    updated["results"] = [item for item in updated["results"] if item["index"] not in invalidated]
-                record["draft"] = updated
+                record["draft"] = validate_draft(operation, draft)
             if instructions is not None or reset:
                 record["overrides"] = {} if reset else validate_instructions(operation, instructions)
             record["revision"] += 1

@@ -96,7 +96,7 @@ def plan(fixture, batch, selected=None):
 
 
 def draft(case, seed, amount):
-    from goated_prompter.features.dataset.service import default_dataset_draft
+    from goated_prompter.features.dataset.v2.draft import default_dataset_draft
     data = {**default_dataset_draft(), "subject": case["request"], "amount": amount, "seed": seed, "seed_mode": "fixed",
             "nsfw": case.get("nsfw") is True, "constraints": "\n".join(case.get("rules", []))}
     if case.get("guided_inputs"):

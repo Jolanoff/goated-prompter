@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { AlignLeft, ArrowRight, ChevronDown, Circle, CircleAlert, CircleCheck, CircleHelp, Copy, Cpu, Database, Download, FileJson, Layers3, Lightbulb, LoaderCircle, RefreshCw, SlidersHorizontal, Sparkles, Tag, Trash2, WandSparkles } from "lucide-react";
+import { AlignLeft, ChevronDown, CircleHelp, Cpu, Database, Download, Layers3, LoaderCircle, SlidersHorizontal, Sparkles, Tag, WandSparkles } from "lucide-react";
 import { ui } from "../../ui.js";
 import { orderDisplayPresets, presetDisplayLabel } from "../../presetPresentation.js";
 import { TargetSelect } from "../../shared/workflow/WorkflowControls.jsx";
 import { useWorkflowSettings } from "../../shared/workflow/useWorkflowSettings.js";
 import WorkflowSettingsStatus from "../../shared/workflow/WorkflowSettingsStatus.jsx";
-import { datasetCopyText, datasetJsonl, datasetGenerationLog } from "./datasetExport.js";
-import { editDatasetPlan } from "./datasetState.js";
+import { datasetGenerationLog } from "./datasetExport.js";
 import { useDatasetWorkflow } from "./useDatasetWorkflow.js";
 import DatasetConfirmationModal from "./DatasetConfirmationModal.jsx";
 import { useDatasetPacks, useRunPacks, useVisualDirection } from "./useDatasetPacks.js";
@@ -22,35 +21,11 @@ const sceneSources = [
   ["guided", "Use my scene ideas", "Provide my own scene ideas", "One idea per line; the action stays fixed."],
 ];
 
-function StatusChip({ label, status }) {
-  const state = status === "valid" ? "success"
-    : status === "failed" ? "failed"
-    : ["unverified", "repair_required", "duplicate_warning"].includes(status) ? "warning" : "pending";
-  const Icon = state === "success" ? CircleCheck : state === "pending" ? Circle : CircleAlert;
-  return <span className="dataset-status-chip" data-state={state} aria-label={`${label}: ${state}`}>
-    <Icon size={13} aria-hidden="true" />{label}{status === "unverified" ? " · unverified" : ""}
-  </span>;
-}
-
 function HelpDetails({ children }) {
   return <details className="dataset-help dataset-details">
     <summary><CircleHelp size={14} aria-hidden="true" />Learn more<ChevronDown size={14} aria-hidden="true" /></summary>
     <p className="mt-2 text-xs leading-relaxed text-muted">{children}</p>
   </details>;
-}
-
-function FailureReason({ item }) {
-  return <>
-  {item.batch_validation?.valid === false && <p className={`${ui.warningNote} mt-2`} role="note">
-    <strong>Dataset constraints unresolved: </strong>{item.batch_validation.errors.join(" ")}
-  </p>}
-  {!!item.quality_warnings?.length && <p className={`${ui.warningNote} mt-2`} role="note" aria-label={`Prompt ${item.index} quality warnings`}>
-    <strong>Unverified: </strong>{item.quality_warnings.join(" ")}
-  </p>}
-  {(item.failure_reason || item.scene_status === "failed" || item.prompt_status === "failed") && <p className={`${ui.warningNote} mt-2`} role="note" aria-label={`Prompt ${item.index} failure reason`}>
-    <strong>{item.failure_stage === "prompt" ? "Prompt failed: " : "Scene planning failed: "}</strong>{item.failure_reason || "No failure details were recorded. Retry this item to get a fresh result."}
-  </p>}
-  </>;
 }
 
 function elapsedLabel(seconds) {
@@ -69,22 +44,17 @@ function download(name, content, type) {
 }
 
 export default function DatasetTab({ visible, job, busy, active, noEngine, engineLabel, presets,
-  targets, lengths, onGenerate, onCancel, onCopy, onReleaseJobs }) {
+  targets, lengths, onGenerate, onCancel, onCopy }) {
   const preferences = useWorkflowSettings("dataset");
   const { draft, update } = preferences;
   const [page, setPage] = useState("configure");
-  const advancingJob = useRef("");
-  const navigatedJob = useRef("");
   const availablePresets = orderDisplayPresets(presets || []);
   const director = availablePresets.find((item) => item.id === draft?.director_preset);
   const vocabulary = useDatasetPacks(visible);
   const visualDirection = useVisualDirection();
-  const { starting, error, workflowActive, disabled,
-    guidedLines, canPlanScenes, staleScenePlan, sceneUsable, validSceneCount, retryStage,
-    canWrite, canContinue, remainingPromptCount, updateSceneSettings, updateWriterSettings,
-    sceneAction, generateDataset, generateScenes, continueDataset, editResult, releaseCheckpoints, clearResults,
+  const { error, workflowActive, disabled, guidedLines, canPlanScenes, canWrite, generateDataset, generateScenes,
     confirmation, understanding, run, cancelConfirmation, confirmRequest, editIntent } = useDatasetWorkflow({ preferences, job, busy, active, noEngine,
-      director, onGenerate: startGeneration, onReleaseJobs, vocabularyPacks: vocabulary.selected, packsReady: vocabulary.ready,
+      director, onGenerate, vocabularyPacks: vocabulary.selected, packsReady: vocabulary.ready,
       visualDirection: visualDirection.settings });
   // A run shows the packs it recorded on the server, never the selector's current choice.
   const runPacks = useRunPacks(run?.result?.run_id);
@@ -104,29 +74,8 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
     return () => clearInterval(timer);
   }, [workflowActive, job?.id, job?.progress_at]);
 
-  const isGenerating = active && job?.kind === "dataset";
-  const scenePlannerBusy = active && job?.kind === "dataset_scenes";
-  const generationBusy = starting || isGenerating || scenePlannerBusy;
+  const runActive = active && job?.kind === "dataset_v2_scenes";
   const generationUnit = `prompt${draft?.amount === 1 ? "" : "s"}`;
-  const showContinue = !!draft?.scene_plan.length && (draft.plan_scenes_first || remainingPromptCount > 0);
-
-  useEffect(() => {
-    if (active && job?.kind === "dataset" && navigatedJob.current !== job.id) {
-      navigatedJob.current = job.id;
-      advancingJob.current = job.id;
-      setPage("scenes");
-    }
-    if (!advancingJob.current || job?.id !== advancingJob.current) return;
-    const scenes = job.result?.scene_plan || [];
-    if (job.status === "succeeded" || job.result?.completed > 0 || (scenes.length && scenes.every((row) =>
-      ["valid", "unverified", "failed", "repair_required"].includes(row.scene_status)))) {
-      advancingJob.current = "";
-      setPage("dataset");
-      window.scrollTo({ top: 0 });
-    } else if (["failed", "cancelled", "interrupted"].includes(job.status)) {
-      advancingJob.current = "";
-    }
-  }, [job, active]);
 
   // Rebuild (issue 106): after Confirm, show Scenes while scenes are written, then Dataset once prompts arrive.
   const shownRun = useRef("");
@@ -145,32 +94,15 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
     }
   }, [run]);
 
-  function exportDataset(name, content, type) {
-    download(name, content, type);
-    if (!workflowActive) void releaseCheckpoints();
-  }
-
-  const allText = draft?.results.map((item) => item.prompt).join("\n\n") || "";
-  const jsonl = datasetJsonl(draft);
-  const failedItems = draft?.scene_plan?.filter((item) => item.scene_status === "failed" || item.prompt_status === "failed") || [];
-  const displayedResults = [...(draft?.results || []).map((item) => ({ ...draft.scene_plan.find((row) => row.index === item.index), ...item })),
-    ...failedItems.filter((item) => !draft.results.some((result) => result.index === item.index))
-    .map((item) => ({ ...item, failed: true, prompt: "" }))].sort((left, right) => left.index - right.index);
-
   function exportGenerationLog() {
     download("dataset-generation-log.json", datasetGenerationLog({ draft, review: understanding, job, record: preferences.record, run, runPacks,
-      state: { active: workflowActive, starting, error, settings_status: preferences.status, settings_error: preferences.error,
-        settings_conflict: preferences.conflict, stale_scene_plan: staleScenePlan, valid_scene_count: validSceneCount } }), "application/json;charset=utf-8");
+      state: { active: workflowActive, error, settings_status: preferences.status, settings_error: preferences.error,
+        settings_conflict: preferences.conflict } }), "application/json;charset=utf-8");
   }
 
   function goToStep(step) {
     setPage(step);
     window.scrollTo({ top: 0 });
-  }
-
-  function continueToDataset() {
-    if (remainingPromptCount) void continueDataset();
-    else goToStep("dataset");
   }
 
   function navigateTabs(event, index) {
@@ -182,19 +114,6 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
     const nextPage = datasetPages[nextIndex][0];
     goToStep(nextPage);
     document.getElementById(`dataset-tab-${nextPage}`)?.focus();
-  }
-
-  async function startGeneration(operation, input) {
-    const accepted = await onGenerate(operation, input);
-    if (accepted && operation === "dataset/scene") navigatedJob.current = accepted.id;
-    if (accepted && operation === "dataset/scenes") goToStep("scenes");
-    if (accepted && operation === "dataset") {
-      const planning = !input.input.scene_plan.length;
-      navigatedJob.current = accepted.id;
-      advancingJob.current = planning ? accepted.id : "";
-      goToStep(planning ? "scenes" : "dataset");
-    }
-    return accepted;
   }
 
   return <div className="dataset-view" hidden={!visible}>
@@ -216,12 +135,12 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
     <WorkflowSettingsStatus settings={preferences} label="Dataset" className="" />
     <div className={ui.workflowStatus}>
       <span>{noEngine ? "Choose a prompt engine in Builder or Settings to generate." : `Engine: ${engineLabel}`}</span>
-      <span role="status" className="flex items-center gap-2">{workflowActive && <LoaderCircle size={15} className="dataset-loader" aria-hidden="true" />}{workflowActive ? job.status === "cancelling" ? "Ending batch…" : <>{job.progress || "Starting dataset generation…"}{stageSeconds >= 5 && ` · ${elapsedLabel(stageSeconds)}`}</> : run ? `${run.result?.prompts?.length || 0} prompts in the current batch` : `${draft?.results.length || 0} prompts in the current batch${failedItems.length ? ` · ${failedItems.length} failed` : ""}`}</span>
+      <span role="status" className="flex items-center gap-2">{workflowActive && <LoaderCircle size={15} className="dataset-loader" aria-hidden="true" />}{workflowActive ? job.status === "cancelling" ? "Ending batch…" : <>{job.progress || "Starting dataset generation…"}{stageSeconds >= 5 && ` · ${elapsedLabel(stageSeconds)}`}</> : run ? `${run.result?.prompts?.length || 0} prompts in the current batch` : "No batch yet"}</span>
       {active && <button className={ui.button} onClick={onCancel} disabled={job.status === "cancelling"}>End generation</button>}
     </div>
     </div>
     {workflowActive && stageSeconds >= 45 && <p className={`${ui.subtleNote} mb-5`} role="status">
-      {job.kind === "dataset" && !job.result?.completed ? "No prompt has completed yet. " : "The current model request is still running. "}
+      The current model request is still running.{" "}
       A local model may still be loading or generating. If the engine stops responding, its configured timeout will produce an error here; you can end generation now without waiting.
     </p>}
 
@@ -236,19 +155,19 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
           <fieldset disabled={disabled} className="dataset-config-fields">
             <label className={ui.field}><span>Request</span>
               <textarea className={ui.ideaInput} aria-label="Request" maxLength={10000}
-                value={draft.subject} onChange={(event) => updateSceneSettings({ subject: event.target.value })}
+                value={draft.subject} onChange={(event) => update({ subject: event.target.value })}
                 placeholder="A woman doing funny stuff · a dog going on small adventures · a knight doing office work" />
             </label>
             <label className={ui.choiceCard}>
               <input type="checkbox" className="mt-0.5" aria-label="NSFW"
-                checked={draft.nsfw === true} onChange={(event) => updateSceneSettings({ nsfw: event.target.checked })} />
+                checked={draft.nsfw === true} onChange={(event) => update({ nsfw: event.target.checked })} />
               <span><strong className="block">NSFW</strong>
                 <small className="mt-1 block leading-relaxed text-muted">On: adult characters and your NSFW vocabulary. Off: safe-for-work images.</small></span>
             </label>
             <div className="dataset-subject-fields">
               <label className={ui.field}><span>Amount</span>
                 <select className={ui.select} aria-label="Number of prompts" value={draft.amount}
-                  onChange={(event) => updateSceneSettings({ amount: Number(event.target.value) })}>
+                  onChange={(event) => update({ amount: Number(event.target.value) })}>
                   {Array.from({ length: 25 }, (_, index) => index + 1).map((amount) =>
                     <option key={amount} value={amount}>{amount}</option>)}
                 </select>
@@ -256,7 +175,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
             </div>
              <label className={ui.field}><span><Tag size={14} aria-hidden="true" />Trigger text (optional, for LoRA)</span>
               <textarea className={`${ui.notesInput} dataset-trigger-input`} aria-label="Trigger text or terms" maxLength={1000} value={draft.trigger}
-                onChange={(event) => updateWriterSettings({ trigger: event.target.value })} placeholder="e.g. old lady with dark hair · or woman, cake" />
+                onChange={(event) => update({ trigger: event.target.value })} placeholder="e.g. old lady with dark hair · or woman, cake" />
                <small className={ui.directorDescription}>Exact wording to include in each prompt. Leave empty for no trigger.</small>
              </label>
              <details className="dataset-details dataset-advanced">
@@ -265,7 +184,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                <div className="dataset-config-fields mt-4">
                  <label className={ui.field}><span>Consistency rules (optional)</span>
                    <textarea className={ui.notesInput} aria-label="Consistency rules" maxLength={10000}
-                     value={draft.constraints} onChange={(event) => updateSceneSettings({ constraints: event.target.value })}
+                     value={draft.constraints} onChange={(event) => update({ constraints: event.target.value })}
                      placeholder={"Same hairstyle and outfit\nNo outdoor scenes\nEach image shows a different mishap"} />
                    <small className={ui.directorDescription}>One rule per line.</small>
                  </label>
@@ -285,21 +204,20 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                    </label>
                  </div>
                  <small className={ui.directorDescription}>Shows the seed of the last batch. Each new batch keeps it (Fixed), adds one (Increment) or picks a new one (Randomize). Regenerating one image stays random.</small>
-               <p className={ui.subtleNote}>NSFW vocabulary uses your existing <code>data/vocabulary/sexual.txt</code> directly. No conversion or entry approval is needed; only a few compatible choices guide each scene.</p>
               <details className="dataset-details rounded-lg border border-line p-3">
                <summary><Tag size={14} aria-hidden="true" /><span>Training trigger & controls</span><ChevronDown size={14} aria-hidden="true" /></summary>
                <div className="mt-4 grid gap-4">
             <div className="grid gap-2">
                <label className={ui.choiceCard}>
                  <input type="checkbox" className="mt-0.5" aria-label="Require trigger at beginning"
-                  checked={draft.trigger_at_start === true} onChange={(event) => updateWriterSettings({ trigger_at_start: event.target.checked })} />
+                  checked={draft.trigger_at_start === true} onChange={(event) => update({ trigger_at_start: event.target.checked })} />
                  <span><strong className="block">Require trigger at start</strong>
                    <small className="mt-1 block leading-relaxed text-muted">On: every prompt starts with the trigger. Off: the trigger goes wherever it fits naturally in the prompt.</small></span>
               </label>
             </div>
               </div>
              </details>
-                    <HelpDetails>Generate prompts starts fresh: confirm the request once, then ideas, scenes and prompts run automatically in order. Generate scenes only pauses for manual review; Continue keeps your approved plan and completed prompts, and generates only missing prompts. Repeated or invalid ideas are repaired once after valid work finishes, without discarding good results. Changed settings or expired approval need a new review. Scene edits are used as written. Ideas uses temporary recent-event history to avoid repeats; prompts follow the accepted scene.</HelpDetails>
+                    <HelpDetails>Generate starts a fresh batch: confirm the request once, then scenes and prompts are written in order. Generate scenes only stops after the scenes. Changed settings need a new review.</HelpDetails>
                </div>
              </details>
           </fieldset>
@@ -311,15 +229,15 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
           </header>
           <fieldset disabled={disabled}>
             <label className={ui.field}><span><SlidersHorizontal size={14} aria-hidden="true" />Director preset</span>
-              <select className={ui.select} aria-label="Dataset director preset" value={draft.director_preset} onChange={(event) => updateWriterSettings({ director_preset: event.target.value })}>
+              <select className={ui.select} aria-label="Dataset director preset" value={draft.director_preset} onChange={(event) => update({ director_preset: event.target.value })}>
                 {!director && <option value={draft.director_preset}>Unavailable — choose a preset</option>}
                 {availablePresets.map((item) => <option key={item.id} value={item.id}>{presetDisplayLabel(item)}</option>)}
               </select>
             </label>
             <div className="mt-4 grid grid-cols-2 gap-4 tiny:grid-cols-1">
-              <TargetSelect label="Target model" ariaLabel="Dataset target model" icon={<Cpu size={14} aria-hidden="true" />} value={draft.target} targets={targets} disabled={disabled} onChange={(target) => updateWriterSettings({ target })} />
+              <TargetSelect label="Target model" ariaLabel="Dataset target model" icon={<Cpu size={14} aria-hidden="true" />} value={draft.target} targets={targets} disabled={disabled} onChange={(target) => update({ target })} />
               <label className={ui.field}><span><AlignLeft size={14} aria-hidden="true" />Prompt length</span>
-                <select className={ui.select} aria-label="Dataset prompt length" value={draft.length} onChange={(event) => updateWriterSettings({ length: event.target.value })}>
+                <select className={ui.select} aria-label="Dataset prompt length" value={draft.length} onChange={(event) => update({ length: event.target.value })}>
                   {lengths.map((item) => <option key={item}>{item}</option>)}
                 </select>
               </label>
@@ -327,13 +245,13 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
 
             <div className="mt-4 grid grid-cols-2 gap-4 tiny:grid-cols-1">
               <label className={ui.field}><span><Sparkles size={14} aria-hidden="true" />Creativity</span>
-                <select className={ui.select} aria-label="Dataset descriptive creativity" value={draft.creativity || "Balanced"} onChange={(event) => updateWriterSettings({ creativity: event.target.value })}>
+                <select className={ui.select} aria-label="Dataset descriptive creativity" value={draft.creativity || "Balanced"} onChange={(event) => update({ creativity: event.target.value })}>
                   {["Strict", "Balanced", "Creative", "Dice"].map((item) => <option key={item}>{item}</option>)}
                 </select>
                 <small className="text-xs leading-relaxed text-muted">Changes visual treatment, not the planned action.</small>
               </label>
               <label className={ui.field}><span><WandSparkles size={14} aria-hidden="true" />Style</span>
-                <select className={ui.select} aria-label="Dataset visual style" value={draft.style || "Auto"} onChange={(event) => updateWriterSettings({ style: event.target.value })}>
+                <select className={ui.select} aria-label="Dataset visual style" value={draft.style || "Auto"} onChange={(event) => update({ style: event.target.value })}>
                   {styles.map((item) => <option key={item}>{item}</option>)}
                 </select>
                 <small className="text-xs leading-relaxed text-muted">Auto follows your concept; with Anima it means anime.</small>
@@ -346,13 +264,13 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                 {sceneSources.map(([value, label, accessibleLabel]) =>
                    <label key={value} className={`${ui.choiceCard} block`}>
                      <span className="flex items-center gap-2 text-xs font-semibold"><input type="radio" name="dataset-source" value={value} aria-label={`${label}: ${accessibleLabel}`}
-                       checked={draft.source_mode === value} onChange={() => updateSceneSettings({ source_mode: value })} />{label}</span>
+                       checked={draft.source_mode === value} onChange={() => update({ source_mode: value })} />{label}</span>
                   </label>)}
               </div>
               <small className="mt-2 block text-xs leading-relaxed text-muted">{(sceneSources.find(([value]) => value === draft.source_mode) || sceneSources[0])[3]}</small>
               {draft.source_mode === "guided" && <label className={`${ui.field} mt-4`}><span>Guided inputs · one per line ({guidedLines})</span>
                 <textarea className={ui.ideaInput} aria-label="Guided dataset inputs" maxLength={50000}
-                  value={draft.inputs} onChange={(event) => updateSceneSettings({ inputs: event.target.value })}
+                  value={draft.inputs} onChange={(event) => update({ inputs: event.target.value })}
                   placeholder={"standing portrait in a city at night\nrunning through a sunlit field\nclose-up profile in a quiet studio"} />
                    <small className={ui.directorDescription}>Lines cycle to fill the batch; each action stays fixed.</small>
               </label>}
@@ -375,10 +293,8 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
             <Layers3 size={15} />Generate {draft.amount} {draft.amount === 1 ? "scene" : "scenes"} only
           </button>
           <div>
-            {showContinue && <button className={ui.button} disabled={!canContinue}
-              onClick={continueToDataset}><ArrowRight size={15} />Continue</button>}
             <button className={ui.primaryButton} disabled={!canWrite || !vocabulary.ready} onClick={generateDataset}>
-              <Sparkles size={17} />{generationBusy ? "Generating" : "Generate"} {draft.amount} {generationUnit}{generationBusy ? "…" : ""}
+              <Sparkles size={17} />{runActive ? "Generating" : "Generate"} {draft.amount} {generationUnit}{runActive ? "…" : ""}
             </button>
           </div>
         </footer>
@@ -387,132 +303,23 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
 
       <div id="dataset-scenes" role="tabpanel" aria-labelledby="dataset-tab-scenes" tabIndex={0} hidden={page !== "scenes"}>
       {page === "scenes" && run && <>{recordedPacks}<RunScenes run={run} onCopy={onCopy} onDownload={download} /></>}
-      {page === "scenes" && !run && <section className={`${ui.panel} dataset-scenes-panel`} aria-label="Scene Planner ideas">
-        <header className={ui.panelHeader}>
-          <div className={ui.panelIcon}><Layers3 size={21} /></div>
-           <div className={ui.panelHeading}><h2>Ideas and scenes</h2>
-             <p>Edit what happens and how it fits one image.</p></div>
-        </header>
-        {!draft.scene_plan.length ? <div className={`${ui.emptyState} dataset-empty`}>
-          <Layers3 size={34} aria-hidden="true" /><h3>{scenePlannerBusy || isGenerating ? "Planning scenes…" : "No scenes yet"}</h3>
-           <p>{scenePlannerBusy || isGenerating ? "Scenes will appear here as planning progresses." : "Set up your idea on Configure, then choose Generate."}</p>
+      {page === "scenes" && !run && <section className={`${ui.panel} dataset-scenes-panel`} aria-label="Scenes">
+        <div className={`${ui.emptyState} dataset-empty`}>
+          <Layers3 size={34} aria-hidden="true" /><h3>{workflowActive ? "Preparing scenes…" : "No scenes yet"}</h3>
+          <p>{workflowActive ? "Scenes will appear here once the request is confirmed." : "Set up your idea on Configure, then choose Generate."}</p>
           <button className={ui.button} onClick={() => goToStep("configure")}>Back to Configure</button>
-        </div> : <>
-        <HelpDetails>Each idea comes with its finished scene, and the final prompt is written from the scene. Edit the scene to change the image; edits invalidate only that prompt. Output settings reuse scenes and invalidate prompts.</HelpDetails>
-        {staleScenePlan && <p className={ui.warningNote}>This plan no longer matches the Dataset settings. Generate fresh scenes before continuing.</p>}
-        <div className="dataset-card-grid mt-4">
-          {draft.scene_plan.map((item) => <article key={item.index} className="dataset-card dataset-scene-card" aria-label={`Scene ${item.index} card`}>
-            <header className="dataset-card-header dataset-scene-header">
-              <div className="dataset-scene-title"><Layers3 size={18} aria-hidden="true" />
-                <h3>Scene <span>{String(item.index).padStart(2, "0")}</span></h3></div>
-              <div className="dataset-status-group"><StatusChip label="Idea" status={item.idea_status || "valid"} />
-                <StatusChip label="Scene" status={sceneUsable(item) ? item.scene_status : item.scene_status === "valid" ? "not_generated" : item.scene_status} />
-                <StatusChip label="Prompt" status={item.prompt_status} /></div>
-            </header>
-            <div className="dataset-scene-body">
-            <FailureReason item={item} />
-            {item.input && <p className="dataset-scene-source">Original idea: {item.input}</p>}
-            {item.selected_position && <p className="dataset-scene-source"><strong>Selected position:</strong> {item.selected_position}
-              <span className="block">Assigned instruction; generated pose adherence is not verified.</span></p>}
-            {item.selected_setting && <p className="dataset-scene-source"><strong>Selected setting:</strong> {item.selected_setting}</p>}
-            {item.scene_spec && <details className="dataset-details">
-              <summary>SceneSpec · {item.scene_spec.state === "provisional" ? "provisional" : "frozen"}</summary>
-              <p className="dataset-scene-source"><strong>Action:</strong> {item.scene_spec.action}</p>
-              {item.scene_spec.participants.map((participant) => <p key={participant.id} className="dataset-scene-source">
-                <strong>{participant.name} ({participant.id} · {participant.kind || "human"}):</strong> {[participant.role, participant.pose, participant.location,
-                  participant.support.replaceAll("_", " ")].filter(Boolean).join(" · ") || "Open mechanics"}
-              </p>)}
-              {item.scene_spec.contacts.map((contact) => <p key={`${contact.source}:${contact.target}`} className="dataset-scene-source">
-                <strong>Contact:</strong> {contact.source.replaceAll("_", " ")} → {contact.target.replaceAll("_", " ")}
-              </p>)}
-              {item.scene_spec.setting && <p className="dataset-scene-source"><strong>Setting:</strong> {item.scene_spec.setting}</p>}
-              {item.scene_spec.hard.map((requirement) => <p key={requirement} className="dataset-scene-source">
-                <strong>Required:</strong> {requirement}
-              </p>)}
-            </details>}
-            {item.edited_stage && <p className={ui.subtleNote}>This edit needs a SceneSpec check before prompt writing. Conflicting requirements will be shown, not restored into your text.</p>}
-            <div className="dataset-scene-editor dataset-scene-idea">
-              <div className="dataset-scene-editor-heading"><label htmlFor={`dataset-idea-${item.index}`}><Lightbulb size={15} aria-hidden="true" />Idea {item.index}</label></div>
-              <textarea className={ui.notesInput} aria-label={`Planned idea ${item.index}`} value={item.idea || ""}
-                id={`dataset-idea-${item.index}`} placeholder="Describe this image's idea" disabled={disabled}
-                maxLength={preferences.record?.idea_limits?.characters}
-                onChange={(event) => update(editDatasetPlan(draft, item.index, "idea", event.target.value))} />
-            </div>
-            <div className="dataset-scene-editor dataset-scene-description">
-              <div className="dataset-scene-editor-heading">
-                <label htmlFor={`dataset-scene-${item.index}`}><AlignLeft size={15} aria-hidden="true" />Scene {item.index}</label>
-              </div>
-              <textarea className={ui.notesInput} aria-label={`Planned scene ${item.index}`} value={item.scene}
-                id={`dataset-scene-${item.index}`} maxLength={preferences.record?.scene_limits?.characters} disabled={disabled}
-                onChange={(event) => update(editDatasetPlan(draft, item.index, "scene", event.target.value))} />
-            </div>
-            </div>
-            <footer className="dataset-scene-actions">
-              {item.scene_spec && !sceneUsable(item) && <button className={ui.button} disabled={!canPlanScenes || staleScenePlan}
-                onClick={() => sceneAction(item.index, "validate_scene")}>Check scene</button>}
-              <button className={ui.button} title="Regenerate idea" aria-label="Regenerate idea" disabled={!canWrite || staleScenePlan}
-                onClick={() => sceneAction(item.index, "regenerate_idea")}><RefreshCw size={14} aria-hidden="true" />Regenerate idea</button>
-              <button className={`${ui.button} dataset-scene-write`} title="Regenerate prompt" aria-label="Regenerate prompt" disabled={!canWrite || staleScenePlan || !sceneUsable(item)}
-                onClick={() => sceneAction(item.index, "regenerate_prompt")}><WandSparkles size={14} aria-hidden="true" />Regenerate prompt</button>
-            </footer>
-          </article>)}
         </div>
-        <div className="mt-4 flex flex-wrap gap-3">
-          {showContinue && <button className={ui.primaryButton} disabled={!canContinue}
-            onClick={continueToDataset}><ArrowRight size={15} />Continue</button>}
-          <button className={ui.button} disabled={!canPlanScenes || !vocabulary.ready} onClick={generateScenes}><RefreshCw size={14} />Generate new scenes</button>
-          <button className={ui.button} disabled={!draft.scene_plan.length}
-             onClick={() => exportDataset("dataset-scenes.json", JSON.stringify(draft.scene_plan, null, 2), "application/json")}><FileJson size={14} />Scenes JSON</button>
-        </div>
-        </>}
       </section>}
       </div>
 
       <div id="dataset-dataset" role="tabpanel" aria-labelledby="dataset-tab-dataset" tabIndex={0} hidden={page !== "dataset"}>
       {page === "dataset" && run && <>{recordedPacks}<RunPrompts run={run} onCopy={onCopy} onDownload={download} /></>}
       {page === "dataset" && !run && <section aria-label="Dataset results">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div><h3 className="font-display text-lg font-bold">Generated dataset</h3>
-            <p className="mt-1 text-xs text-muted">Completed prompts appear as the batch runs and remain editable.</p></div>
-          <div className="flex flex-wrap gap-2">
-            <button className={ui.button} disabled={!draft.results.length} onClick={() => onCopy(datasetCopyText(draft))}><Copy size={15} />Copy all</button>
-            <button className={ui.button} disabled={!draft.results.length} onClick={() => exportDataset("dataset-prompts.txt", allText, "text/plain;charset=utf-8")}><Download size={15} />TXT</button>
-            <button className={ui.button} disabled={!draft.results.length} onClick={() => exportDataset("dataset-prompts.jsonl", jsonl, "application/x-ndjson;charset=utf-8")}><FileJson size={15} />JSONL</button>
-            <button className={ui.button} disabled={disabled || !draft.results.length} onClick={clearResults}><Trash2 size={15} />Clear</button>
-          </div>
+        <div className={`${ui.emptyState} dataset-empty`}>
+          <Database size={34} aria-hidden="true" /><h3>No prompts yet</h3>
+          <p>Generate prompts from Configure. Completed prompts appear here as the batch runs.</p>
+          <button className={ui.button} onClick={() => goToStep("configure")}>Back to Configure</button>
         </div>
-        {!displayedResults.length ? <div className={`${ui.emptyState} dataset-empty`}>
-           <Database size={34} aria-hidden="true" /><h3>{isGenerating ? "Generating prompts…" : "No prompts yet"}</h3>
-           <p>{isGenerating ? "Completed prompts will appear here as the batch runs." : "Generate prompts from Configure, or continue an existing plan from Scenes."}</p>
-           {!isGenerating && <button className={ui.button} onClick={() => goToStep("configure")}>Back to Configure</button>}
-        </div> : <div className="dataset-card-grid">
-          {displayedResults.map((item) => {
-            return <article className="dataset-card dataset-result-card panel" key={item.index}>
-            <div className="dataset-card-header">
-               <div><span className="text-sm font-semibold text-accent">Prompt {item.index}</span>
-                {item.input && <p className="mt-1 max-w-[48ch] truncate text-[10px] text-muted" title={item.input}>{item.input}</p>}
-                </div>
-               <div className="dataset-status-group">{item.failed ? <StatusChip label="Failed · skipped" status="failed" /> : <StatusChip label="Generated" status={item.prompt_status || "unverified"} />}</div>
-             </div>
-              {item.idea ? <div className="text-xs">
-                <p className="whitespace-pre-wrap leading-relaxed text-muted">{item.idea}</p>
-              </div> : <p className={`${ui.subtleNote} mb-3`}>Legacy result: no originating idea was saved.</p>}
-              {item.scene ? <details className="dataset-details rounded-lg border border-line p-3 text-xs">
-               <summary><Layers3 size={14} aria-hidden="true" /><span>Scene {item.index}</span><ChevronDown size={14} aria-hidden="true" /></summary>
-               <p className="mt-2 whitespace-pre-wrap leading-relaxed text-muted">{item.scene}</p>
-              </details> : <p className={`${ui.subtleNote} mb-3`}>Legacy result: no originating scene was saved.</p>}
-              <FailureReason item={item} />
-              {item.failed ? <button className={`${ui.button} mt-3`} disabled={!canWrite || staleScenePlan}
-                onClick={() => sceneAction(item.index, `regenerate_${retryStage(item)}`)}><RefreshCw size={14} aria-hidden="true" />Retry failed {retryStage(item)}</button> : <>
-              <label htmlFor={`dataset-prompt-${item.index}`} className="dataset-final-label">Final prompt</label>
-              <textarea className={ui.outputInput} style={{ minHeight: 220 }} aria-label={`Dataset prompt ${item.index}`}
-               id={`dataset-prompt-${item.index}`}
-               value={item.prompt} maxLength={100000} disabled={disabled}
-              onChange={(event) => editResult(item.index, event.target.value)} />
-              <div><button className={ui.button} onClick={() => onCopy(item.prompt)}><Copy size={14} aria-hidden="true" />Copy</button></div>
-              </>}
-          </article>})}
-        </div>}
       </section>}
       </div>
     </>}

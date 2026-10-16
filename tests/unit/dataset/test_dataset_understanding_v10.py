@@ -13,7 +13,7 @@ from unittest.mock import Mock, patch
 
 from goated_prompter.backends.mock import MockBackend
 from goated_prompter.contracts import GoatedPrompterRequest
-from goated_prompter.features.dataset.service import default_dataset_draft
+from goated_prompter.features.dataset.v2.draft import default_dataset_draft
 from goated_prompter.features.dataset.v2 import intent, runs, understanding
 from goated_prompter.features.vocabulary.retrieval import RetrievalRequest
 

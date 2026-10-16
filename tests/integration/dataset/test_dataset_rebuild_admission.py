@@ -12,7 +12,7 @@ from aiohttp.test_utils import TestClient, TestServer
 
 import local_app as local
 from goated_prompter.backends.mock import MockBackend
-from goated_prompter.features.dataset.service import default_dataset_draft, validate_dataset_draft
+from goated_prompter.features.dataset.v2.draft import default_dataset_draft, validate_dataset_draft
 from goated_prompter.features.dataset.v2.understanding import apply_rules, copied_input
 from goated_prompter.features.vocabulary.visual import default_settings as default_visual_settings
 
@@ -171,10 +171,10 @@ class DatasetRebuildAdmissionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(response.status, 400, await response.text())
         self.scenes.assert_not_called()
 
-    async def test_rebuilt_approval_cannot_enter_legacy_scene_or_prompt_routes(self):
+    async def test_an_approval_has_no_legacy_scene_or_prompt_route_to_enter(self):
         payload = await self.analyze()
-        for endpoint in ("dataset", "dataset/scenes"):
+        for endpoint in ("dataset", "dataset/scenes", "dataset/scene"):
             response = await self.client.post(f"/api/workspace/{endpoint}", json={
                 "input": self.data, "confirmation_token": payload["confirmation_token"]})
-            self.assertEqual(response.status, 400, await response.text())
+            self.assertIn(response.status, (404, 405), await response.text())
         self.scenes.assert_not_called()

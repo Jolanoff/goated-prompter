@@ -246,25 +246,9 @@
   .dataset-scene-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; padding: 22px; }
   .dataset-scene-body > [role=note], .dataset-scene-body > details, .dataset-scene-source { grid-column: 1 / -1; }
   .dataset-scene-source { color: var(--color-muted); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
-  .dataset-scene-editor { display: flex; flex-direction: column; min-width: 0; gap: 10px; }
-  .dataset-scene-editor-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; min-height: 36px; }
-  .dataset-scene-editor-heading > label { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; }
-  .dataset-scene-editor-heading > label svg { color: var(--color-muted); }
-  .dataset-scene-editor .notes-input { flex: 1; height: 120px; min-height: 120px; padding: 14px; border-radius: 12px; font-size: 14px; line-height: 1.75; }
-  .dataset-scene-description .notes-input { height: 190px; min-height: 190px; }
-  .dataset-scene-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding: 14px 22px; border-top: 1px solid var(--color-line); }
-  .dataset-scene-actions .button { min-height: 38px; }
-  .dataset-scene-actions .dataset-scene-write { border-color: var(--select-border); color: var(--color-accent); background: var(--color-selected); }
   @container scene-card (min-width: 820px) {
     .dataset-scene-body { grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: 22px; }
-    .dataset-scene-editor .notes-input { height: 210px; min-height: 210px; }
   }
-  .dataset-status-group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-  .dataset-status-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; color: var(--color-muted); background: var(--status-bg); white-space: nowrap; }
-  .dataset-status-chip[data-state="success"] { color: var(--color-success); background: var(--success-bg); }
-  .dataset-status-chip[data-state="warning"] { color: var(--color-warning); background: var(--warning-bg); }
-  .dataset-status-chip[data-state="failed"] { color: var(--color-danger); background: var(--danger-bg); }
-  .dataset-final-label { color: var(--color-accent); font-size: 12px; font-weight: 700; }
   .dataset-result-card .output-input { width: 100%; min-height: 240px; }
   .dataset-details { transition: background-color 140ms, border-color 140ms; }
   .dataset-details > summary { display: flex; align-items: center; gap: 7px; cursor: pointer; font-size: 13px; font-weight: 600; list-style: none; }
@@ -627,9 +611,6 @@
     .dataset-card, .dataset-view .dataset-result-card { padding: 16px; gap: 14px; }
     .dataset-scene-header { padding: 14px 16px; }
     .dataset-scene-body { padding: 16px; }
-    .dataset-scene-actions { padding: 12px 16px; }
-    .dataset-scene-actions .button { flex: 1 1 140px; justify-content: center; min-height: 44px; }
-    .dataset-scene-editor .notes-input { font-size: 16px; }
     .dataset-view .button, .dataset-view .choice-card, .dataset-details > summary { min-height: 44px; }
     .dataset-view .button-primary { width: 100%; justify-content: center; }
     :root { --sidebar-width: 0px; }

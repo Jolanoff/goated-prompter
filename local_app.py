@@ -11,7 +11,6 @@ from pathlib import Path
 
 from aiohttp import web
 
-from goated_prompter.features.dataset.private_vocabulary import ensure_vocabulary_file
 from goated_prompter.prompt_library import ensure_library_files
 from goated_prompter.api import workflow_settings_routes
 from goated_prompter.api.common import STATE
@@ -25,9 +24,7 @@ from goated_prompter.features.builder.input_schema import builder_input_schema
 from goated_prompter.options.references import REFERENCE_SOURCES
 from goated_prompter.features.builder.service import GoatedPrompterService
 from goated_prompter.features.dataset import routes as dataset_routes
-from goated_prompter.features.dataset.checkpoints import DatasetCheckpointStore
-from goated_prompter.features.dataset.idea_history import RecentIdeaHistory
-from goated_prompter.features.dataset.intent import DatasetIntentTickets
+from goated_prompter.features.dataset.v2.tickets import DatasetIntentTickets
 from goated_prompter.features.dataset.v2.runs import DatasetRunStore
 from goated_prompter.features.minimax import routes as minimax_routes
 from goated_prompter.features.presets import routes as presets_routes
@@ -40,7 +37,7 @@ from goated_prompter.features.settings import routes as settings_routes
 from goated_prompter.features.vocabulary import routes as vocabulary_routes
 from goated_prompter.features.settings.routes import models_payload
 from goated_prompter.features.settings.validation import validate_local_paths, validate_settings
-from goated_prompter.job_lifecycle import DATASET_CHECKPOINT_KINDS, release_completed_checkpoints, daemon_work
+from goated_prompter.job_lifecycle import release_completed_checkpoints, daemon_work
 from goated_prompter.json_store import atomic_json, read_store
 from goated_prompter.local_jobs import Job, JobCancelled, TERMINAL
 from goated_prompter.presets import (
@@ -77,22 +74,11 @@ class LocalState:
         if workflow_settings_path in {self.settings_path, self.prompts_path}:
             raise ValueError("Workflow settings require a separate JSON path.")
         self.workflow_settings = WorkflowSettingsStore(workflow_settings_path, read_store, atomic_json)
-        checkpoint_path = self.settings_path.parent / "dataset_checkpoints.json"
-        if checkpoint_path in {self.settings_path, self.prompts_path}:
-            raise ValueError("Dataset checkpoints require a separate JSON path.")
-        self.dataset_checkpoints = DatasetCheckpointStore(checkpoint_path, read_store, atomic_json)
-        self.dataset_checkpoints.recover()
-        self.workflow_settings.dataset_checkpoints = self.dataset_checkpoints
         # Dataset V2 runs: one file per run. Startup marks unfinished runs interrupted, keeps their
         # completed work and starts no generation; unreadable files are reported and left alone.
         self.dataset_runs = DatasetRunStore(self.settings_path.parent / "dataset_v2_runs")
         self.dataset_run_recovery = self.dataset_runs.recover()
         self.jobs = OrderedDict()
-        fingerprint_path = self.settings_path.parent / "idea_fingerprints.json"
-        if fingerprint_path in {self.settings_path, self.prompts_path}:
-            raise ValueError("Idea fingerprints require a separate JSON path.")
-        self.idea_history = RecentIdeaHistory(fingerprint_path=fingerprint_path,
-                                              read=lambda path: read_store(path, {}, dict), write=atomic_json)
         self.dataset_intents = DatasetIntentTickets()
         self.tasks = set()
         self.admission = asyncio.Lock()
@@ -197,8 +183,6 @@ class LocalState:
         """Called under admission; all routes share task registration/lifecycle."""
         job = job_factory()
         job.kind = kind
-        if kind in DATASET_CHECKPOINT_KINDS:
-            self.workflow_settings.begin_dataset(job, workflow["input"], workflow.get("workflow_revision"))
         self.jobs[job.id] = job
         task = asyncio.create_task(self.run(job, request, config, text_only, workflow))
         self.tasks.add(task)
@@ -235,19 +219,13 @@ class LocalState:
                 if cancelled:
                     job.mark_cancelled()
                 elif job.stopping:
-                    job.mark_failed("Server stopped. Completed Dataset checkpoints remain recoverable.", "interrupted")
+                    job.mark_failed("Server stopped before this job finished.", "interrupted")
                 else:
                     job.mark_failed(str(exc) if isinstance(exc, (ValueError, GoatedPrompterError)) else (
                         "Generation failed unexpectedly. Check the server console and model configuration, then retry."),
                         getattr(exc, "completion_state", "provider_error"))
             if not cancelled:
                 logging.exception("Local generation failed")
-        finally:
-            if not job.released and job.kind in DATASET_CHECKPOINT_KINDS:
-                try:
-                    self.workflow_settings.checkpoint_dataset(job)
-                except (ValueError, OSError):
-                    logging.exception("Could not persist final Dataset job status; prior checkpoints remain intact")
 
     async def run(self, job, *args):
         await daemon_work(self.execute, job, *args)
@@ -284,9 +262,6 @@ async def bootstrap(request):
 async def job_endpoint(request):
     job = request.app[STATE].jobs.get(request.match_info["id"])
     if job is None:
-        recovered = await asyncio.to_thread(request.app[STATE].dataset_checkpoints.find, request.match_info["id"])
-        if recovered is not None and request.method == "GET":
-            return web.json_response(recovered)
         raise web.HTTPNotFound(reason="Job not found or expired. Generate again.")
     if request.method == "POST" and request.match_info["action"] == "cancel":
         with job.lock:
@@ -316,8 +291,6 @@ async def release_job_checkpoints(request):
     if not family:
         raise ValueError("Choose the workflow whose completed checkpoints should be released.")
     released = release_completed_checkpoints(request.app[STATE].jobs, family=family)
-    if family == "dataset":
-        await asyncio.to_thread(request.app[STATE].dataset_checkpoints.release, released)
     return web.json_response({"ok": True, "released": released})
 
 
@@ -404,15 +377,12 @@ def create_app(*, port=8190, dist=None, config_loader=load_config, service_facto
                 if not task.cancelled() and task.exception():
                     logging.error("Shutdown cancellation failed: %s", task.exception())
             for job in state.jobs.values():
-                job.mark_abandoned("Shutdown timeout. Completed checkpoints remain recoverable.")
-                if job.kind in DATASET_CHECKPOINT_KINDS:
-                    await asyncio.to_thread(state.workflow_settings.checkpoint_dataset, job)
+                job.mark_abandoned("Shutdown timeout.")
         unload_task = asyncio.create_task(daemon_work(get_process_manager().request_unload))
         _done, pending = await asyncio.wait({unload_task}, timeout=1)
         for task in pending:
             task.cancel()
         release_completed_checkpoints(state.jobs)
-        state.idea_history.clear()
 
     app.on_shutdown.append(shutdown)
     return app
@@ -424,5 +394,4 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=8190)
     args = parser.parse_args()
     ensure_library_files()  # First launch creates one empty, untracked prompt library per target.
-    ensure_vocabulary_file()  # And the empty, untracked private Dataset vocabulary file.
     web.run_app(create_app(port=args.port), host=args.host, port=args.port)

@@ -7,7 +7,7 @@ from unittest.mock import Mock, patch
 
 from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.dataset import runner
-from goated_prompter.features.dataset.service import default_dataset_draft
+from goated_prompter.features.dataset.v2.draft import default_dataset_draft
 from goated_prompter.features.dataset.v2 import scenes, understanding
 from goated_prompter.features.dataset.v2.prompts import write_prompts
 from goated_prompter.backends.mock import MockBackend

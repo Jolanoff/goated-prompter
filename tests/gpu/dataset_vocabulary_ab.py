@@ -75,7 +75,7 @@ def pack_manager(installed, scratch, packs_dir=None):
 
 def reference(brief, packs):
     """What the on arm gives the Director (vocabulary_reference with the brief's own director)."""
-    from goated_prompter.features.dataset.director import active_director
+    from goated_prompter.features.dataset.v2.director import active_director
     from goated_prompter.features.dataset.v2.vocabulary_packs import vocabulary_reference
     preset = active_director({"director_preset": brief["settings"]["director"], "target": brief["settings"]["target"]})
     return vocabulary_reference({}, brief, director=preset.instructions.strip() if preset else "", manager=packs)

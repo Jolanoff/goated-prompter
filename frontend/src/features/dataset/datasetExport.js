@@ -1,19 +1,6 @@
-/** JSONL preserves originating idea and scene; TXT/copy remain final-prompt-only. */
+/** Copy all: one final prompt per line. */
 export function datasetCopyText(draft) {
   return (draft?.results || []).map((item) => item.prompt.replace(/[\r\n]+/g, " ").trim()).join("\n");
-}
-
-export function datasetJsonl(draft) {
-  return (draft?.results || []).map((item) => {
-    const row = draft.scene_plan?.find((row) => row.index === item.index);
-    return JSON.stringify({
-      index: item.index, input: item.input || "", idea: item.idea || null, scene: item.scene || null,
-      prompt: item.prompt, trigger: draft.trigger, target: draft.target,
-      source: item.input || null,
-      ...(row ? { validation_status: row.prompt_status || "unverified", quality_warnings: row.quality_warnings || [],
-        ...(row.batch_validation ? { batch_validation: row.batch_validation } : {}) } : {}),
-    });
-  }).join("\n");
 }
 
 const settingFields = ["subject", "trigger_type", "custom_type", "constraints", "amount", "trigger",
@@ -89,21 +76,18 @@ function sanitize(value, secrets, field = "", privateDiagnostics = false) {
   return value;
 }
 
-function hasPrivateDiagnostics(draft, job) {
-  const rows = [...(draft?.scene_plan || []), ...(job?.result?.scene_plan || [])];
-  return rows.some((row) => row.scene_spec?.private_vocabulary)
-    || job?.llm_trace?.private_content === true
-    || job?.partial_responses?.some((row) => row.private_content === true)
-    || JSON.stringify(job?.llm_trace?.messages || []).includes("MORE SEXUAL CONTENT RULES");
+function hasPrivateDiagnostics(job) {
+  return job?.llm_trace?.private_content === true
+    || job?.partial_responses?.some((row) => row.private_content === true);
 }
 
-const legacyKinds = ["dataset", "dataset_scenes", "dataset_understanding"];
+const understandingKind = "dataset_understanding";
 const v2Kind = "dataset_v2_scenes";
 const v2ResultFields = ["run_id", "stage", "complete", "requested", "written", "missing", "slots", "concepts", "scenes", "prompts"];
 
 /** A V2 run (Confirm -> scenes -> prompts): its status, slots, concepts, scenes and prompts, the vocabulary it used
  * (pack selection with versions and fingerprints, entries and ideas by id and image, exclusions, Visual Direction)
- * and the packs its run record holds. The vocabulary block is renamed so the legacy TXT vocabulary filter never
+ * and the packs its run record holds. The vocabulary block is renamed so the generic "vocabulary" redaction never
  * strips it; it carries ids, names and reasons only, never pack wording. */
 function v2RunSnapshot(run, job, runPacks) {
   const result = run?.result || (job?.kind === v2Kind ? job.result : null);
@@ -123,8 +107,8 @@ function v2RunSnapshot(run, job, runPacks) {
 
 /** A click-time projection of current state, never a write or a checkpoint release. */
 export function datasetGenerationLog({ draft, review, job, record, state, run, runPacks } = {}, exportedAt = new Date()) {
-  const datasetJob = [...legacyKinds, v2Kind].includes(job?.kind) ? job : null;
-  // A V2 job's result is exported once, under v2_run, never through the legacy job projection.
+  const datasetJob = [understandingKind, v2Kind].includes(job?.kind) ? job : null;
+  // A V2 job's result is exported once, under v2_run, never through the job projection.
   const v2 = datasetJob?.kind === v2Kind;
   const jobSnapshot = v2 ? pick(datasetJob, jobFields.filter((field) => field !== "result"))
     : datasetJob ? pick(datasetJob, jobFields) : null;
@@ -134,21 +118,17 @@ export function datasetGenerationLog({ draft, review, job, record, state, run, r
     exported_at: exportedAt.toISOString(),
     settings: pick(draft, settingFields),
     dataset_idea: draft?.subject || "",
-    scene_plan: draft?.scene_plan || [],
-    generated_prompts: draft?.results || [],
     understanding: review ? { ...pick(review, ["operation", "options", "status", "jobId", "brief", "routing", "error", "notice"]),
       input: pick(review.input, settingFields) } : null,
     job: jobSnapshot,
     v2_run: v2Run,
-    state: pick(state, ["active", "starting", "error", "settings_status", "settings_error", "settings_conflict",
-      "stale_scene_plan", "valid_scene_count", "novelty_notice"]),
-    metadata: { ...pick(record, ["revision", "checkpoint", "scene_eligibility", "scene_plan_matches_settings",
-      "idea_limits", "scene_limits"]), ...pick(draft, ["scene_plan_signature", "result_job_id"]) },
+    state: pick(state, ["active", "error", "settings_status", "settings_error", "settings_conflict"]),
+    metadata: pick(record, ["revision"]),
   };
   // Also remove credentials repeated in free-form errors or transport messages.
-  // V2 results are searched through their export projection: their vocabulary block holds diagnostics, not the
-  // legacy private TXT vocabulary whose every value is treated as a secret.
+  // V2 results are searched through their export projection: their vocabulary block holds diagnostics, not
+  // private values to treat as secrets.
   const secrets = [...new Set(secretValues({ draft, review, job: v2 ? jobSnapshot : datasetJob, record,
     run: run && { ...run, result: undefined }, runPacks, v2_run: v2Run }))].sort((a, b) => b.length - a.length);
-  return JSON.stringify(sanitize(snapshot, secrets, "", hasPrivateDiagnostics(draft, datasetJob)), null, 2);
+  return JSON.stringify(sanitize(snapshot, secrets, "", hasPrivateDiagnostics(datasetJob)), null, 2);
 }

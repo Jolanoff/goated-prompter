@@ -27,7 +27,7 @@ python tests/run_synthetic_suite.py --task-key <task-key> --suite unit
 python tests/run_synthetic_suite.py --task-key <task-key> --suite integration
 python tests/run_synthetic_suite.py --task-key <task-key> --workflow dataset
 python tests/run_synthetic_suite.py --task-key <task-key> --suite unit --workflow minimax
-python tests/run_synthetic_suite.py --task-key <task-key> tests.unit.dataset.test_dataset
+python tests/run_synthetic_suite.py --task-key <task-key> tests.unit.dataset.test_dataset_v2_runs
 ```
 
 Use the task's issue key or one stable task slug. Without `--task-key`, the
@@ -49,9 +49,9 @@ synthetic repositories to verify that the app still reads selected user content
 and passes it to generation normally.
 
 The built-site integration check retains its existing skip when `frontend/dist`
-is absent. It does not build the frontend. Root-level `local_ui_server.py` and
-`understanding_ui_replay.py` remain compatible browser commands; implementations
-live under `integration/browser/`. Browser automation is a separate operation.
+is absent. It does not build the frontend. Root-level `local_ui_server.py`
+remains a compatible browser command; its implementation lives under
+`integration/browser/`. Browser automation is a separate operation.
 Set `GOATED_TEST_TASK_KEY` to place their synthetic storage under the task's
 `quality-artifacts/temp/<task-key>/browser/`; the default is `browser-tests`.
 
@@ -75,10 +75,9 @@ and sanitized frozen fixtures under `tests/`; generated reports stay ignored.
 Preview fixed cases without reading endpoint configuration or starting inference:
 
 ```powershell
-python -m tests.gpu.run --dry-run --workflow dataset --case object
 python -m tests.gpu.run --dry-run --workflow builder --case object
 python -m tests.gpu.run --dry-run --workflow minimax --case motion
-python -m tests.gpu.run --dry-run --workflow dataset --seed 73 --limit 1
+python -m tests.gpu.run --dry-run --workflow builder --seed 73 --limit 1
 python -m tests.gpu.run --dry-run --workflow builder --random 3 --seed 41
 python -m tests.gpu.run --probe supporting-planning --dry-run --workflow builder --case hoop
 ```
@@ -92,8 +91,9 @@ Fixed cases stay in the shared `eval/cases/corpus.json`, tagged by workflow, so 
 case used by several workflows has one definition. `--random N --seed S` instead
 composes N cases from `gpu/fixtures/<workflow>.json`; results record the seed,
 fixture digest and generated inputs. Each workflow module in `gpu/workflows/`
-calls the production service (`GoatedPrompterService`, `DatasetService`,
-`MiniMaxService`); `tests.eval.runner` uses the same modules.
+calls the production service (`GoatedPrompterService`, `MiniMaxService`);
+`tests.eval.runner` uses the same modules. Dataset has no workflow here: its
+real-model check is `tests/gpu/dataset_understanding_eval.py`.
 
 Live execution requires explicit owner approval and an owner-managed existing
 OpenAI-compatible endpoint. Confirm it is the intended GPU-backed engine; the
@@ -104,15 +104,12 @@ Use a separate endpoint configuration, never private app `data/` as test input.
 After approval, the command shape is:
 
 ```powershell
-python -m tests.gpu.run --workflow dataset --case object --allow-live --config <endpoint-config.json> --task-key <task-key> --max-runs <approved-ceiling>
+python -m tests.gpu.run --workflow builder --case object --allow-live --config <endpoint-config.json> --task-key <task-key> --max-runs <approved-ceiling>
 ```
 
-Substitute `builder` or `minimax` and a compatible case for those workflows.
-The runner calls `GoatedPrompterService`, `DatasetService` or `MiniMaxService`
-through the existing workflow evaluator, with real backend generation and no
-mocked writers. Dataset runs UNDERSTAND and requires a human to approve the
-source-bound interpretation before ideas, scenes and final enhancement.
-Clarifications, refusal or failure stop downstream generation.
+Substitute `minimax` and a compatible case for that workflow.
+The runner calls `GoatedPrompterService` or `MiniMaxService` through the
+existing workflow evaluator, with real backend generation and no mocked writers.
 
 `--limit` defaults to one fixed case. `--max-runs` is an explicit workflow-run
 ceiling, not a model-call budget: a pipeline may make several calls or repairs.

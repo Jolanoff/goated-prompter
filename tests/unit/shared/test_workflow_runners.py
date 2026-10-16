@@ -47,9 +47,7 @@ class WorkflowRunnerTests(unittest.TestCase):
         FakeService.calls = []
 
     def test_every_admitted_operation_has_a_runner(self):
-        self.assertEqual(set(WORKFLOW_RUNNERS), {"builder", "minimax", "dataset_understanding",
-                                                  "dataset", "dataset_scenes", "dataset_v2_scenes", "refine"})
-        self.assertIs(WORKFLOW_RUNNERS["dataset"], WORKFLOW_RUNNERS["dataset_scenes"])
+        self.assertEqual(set(WORKFLOW_RUNNERS), {"builder", "minimax", "dataset_understanding", "dataset_v2_scenes", "refine"})
         self.assertIs(WORKFLOW_RUNNERS["dataset_v2_scenes"], run_dataset_v2_scenes)
 
     def test_unknown_operation_is_rejected(self):

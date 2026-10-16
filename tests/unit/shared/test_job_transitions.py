@@ -3,8 +3,7 @@
 import json
 import unittest
 
-from goated_prompter.features.dataset.ideas import validate_ideas
-from goated_prompter.job_lifecycle import DATASET_CHECKPOINT_KINDS, JOB_FAMILIES, TERMINAL_JOB_STATUSES
+from goated_prompter.job_lifecycle import JOB_FAMILIES, TERMINAL_JOB_STATUSES
 from goated_prompter.local_jobs import TERMINAL, Job
 from goated_prompter.strict_json import reject_duplicate_keys
 from goated_prompter.workflow_output import WorkflowFormatError, normalize_workflow_output
@@ -67,7 +66,7 @@ class JobTransitionTests(unittest.TestCase):
     def test_private_activity_is_live_but_checkpointed_events_carry_no_engine_text(self):
         job = Job()
         secret = "SYNTHETIC_PRIVATE_ENTRY"
-        job.record_llm_activity({"type": "request", "private_content": True, "stage": "dataset:ideas", "model": "test",
+        job.record_llm_activity({"type": "request", "private_content": True, "stage": "dataset_v2:concepts", "model": "test",
             "messages": [{"role": "system", "content": secret}], "parameters": {"temperature": 0.7}})
         for event_type in ("response_delta", "reasoning_delta"):
             job.record_llm_activity({"type": event_type, "text": secret[:8]})
@@ -96,8 +95,8 @@ class JobTransitionTests(unittest.TestCase):
 
     def test_model_calls_are_summarised_per_stage_with_retries_errors_and_output_size(self):
         job = Job()
-        for stage, text, finish in (("dataset:1", "abc", "stop"), ("dataset:2", "de", "stop"),
-                                    ("dataset:2:output_retry_1", "f", None), ("dataset:validation:prompt", "[]", "stop")):
+        for stage, text, finish in (("dataset_v2:concepts", "abc", "stop"), ("dataset_v2:concepts:loop_retry_1", "de", "stop"),
+                                    ("dataset_v2:concepts:output_retry_1", "f", None), ("dataset_v2:understanding", "[]", "stop")):
             job.record_llm_activity({"type": "request", "stage": stage, "model": "test", "messages": [], "parameters": {}})
             job.record_llm_activity({"type": "response_delta", "text": text})
             job.record_llm_activity({"type": "response_complete", "finish_reason": finish} if finish
@@ -105,17 +104,16 @@ class JobTransitionTests(unittest.TestCase):
         stages = job.snapshot()["llm_stages"]
         self.assertEqual({key: (value["calls"], value["retries"], value["errors"], value["output_chars"])
                           for key, value in stages.items()},
-                         {"dataset:write": (3, 1, 1, 6), "dataset:validation:prompt": (1, 0, 0, 2)})
+                         {"dataset_v2:concepts": (3, 2, 1, 6), "dataset_v2:understanding": (1, 0, 0, 2)})
         job.deliver({"ok": True})
         summary = next(event for event in job.snapshot()["events"] if event["type"] == "summary")["message"]
-        self.assertIn("dataset:write 3 (1 retries) (1 errors)", summary)
+        self.assertIn("dataset_v2:concepts 3 (2 retries) (1 errors)", summary)
 
 
 class JobConstantTests(unittest.TestCase):
     def test_constants_have_one_definition(self):
         self.assertEqual(TERMINAL_JOB_STATUSES, frozenset(TERMINAL))
-        self.assertEqual(DATASET_CHECKPOINT_KINDS, {"dataset", "dataset_scenes"})
-        self.assertLessEqual(DATASET_CHECKPOINT_KINDS, JOB_FAMILIES["dataset"])
+        self.assertEqual(JOB_FAMILIES["dataset"], {"dataset_understanding", "dataset_v2_scenes"})
 
 
 class StrictJsonTests(unittest.TestCase):
@@ -126,8 +124,6 @@ class StrictJsonTests(unittest.TestCase):
             json.loads('{"a": 1, "a": 2}', object_pairs_hook=hook)
 
     def test_workflow_parsers_still_reject_duplicate_keys(self):
-        with self.assertRaisesRegex(ValueError, "Ideas returned duplicate JSON keys."):
-            validate_ideas('{"ideas": [], "ideas": []}', [1])
         with self.assertRaisesRegex(WorkflowFormatError, "Duplicate JSON keys are not allowed."):
             normalize_workflow_output('{"high_level_description": "a", "high_level_description": "b"}', "Ideogram4")
 

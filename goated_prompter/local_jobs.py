@@ -367,11 +367,11 @@ _RETRY_SUFFIX = re.compile(r":(?:(?:output|loop|transport)_retry_\d+|(?:format|v
 
 
 def _stage_key(stage):
-    """Group retries under their stage and every numbered Dataset writer under one stage."""
+    """Group retries under their stage."""
     key, retry = str(stage or "final"), False
     while match := _RETRY_SUFFIX.search(key):
         key, retry = key[:match.start()], True
-    return re.sub(r"^dataset:\d+$", "dataset:write", key), retry
+    return key, retry
 
 
 class JobCancelled(Exception):

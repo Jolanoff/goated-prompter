@@ -141,42 +141,6 @@ test("keyboard skip link and save dialog are accessible and usable on mobile", a
   await expect(dialog).not.toBeVisible();
 });
 
-for (const theme of ["dark", "light"]) {
-  test(`populated Dataset and expanded controls stay accessible in ${theme} mode`, async ({ page }, testInfo) => {
-    await page.addInitScript((value) => localStorage.setItem("goated-prompter.theme", value), theme);
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto("/");
-    await page.getByRole("button", { name: "Dataset", exact: true }).click();
-    await page.getByLabel("Dataset idea", { exact: true }).fill("A traveler in a blue coat.");
-    await page.getByLabel("Trigger text or terms").fill("ohwx_traveler");
-    await page.getByLabel("Number of prompts").selectOption("2");
-    await page.getByText("Advanced options", { exact: true }).click();
-    await page.getByText("Training trigger & controls", { exact: true }).click();
-    await page.getByLabel(/Provide my own scene ideas/).check();
-    await page.getByLabel("Guided dataset inputs").fill("standing on a platform\nreading a map");
-    await generateDataset(page);
-    await expect(page.getByLabel("Dataset prompt 2")).toHaveValue(/ohwx_traveler/);
-    await expect(page.getByRole("region", { name: "Dataset quality report" })).toHaveCount(0);
-    await openDatasetPage(page, "Scenes");
-    for (const index of [1, 2]) {
-      await expect(page.getByLabel(`Scene ${index} self-check`, { exact: true })).toHaveCount(0);
-      const card = page.getByRole("article", { name: `Scene ${index} card`, exact: true });
-      await expect(card.getByLabel("Scene: warning", { exact: true })).toHaveText("Scene · unverified");
-      await expect(card.getByLabel("Prompt: success", { exact: true })).toBeVisible();
-    }
-    await openDatasetPage(page, "Dataset");
-    // A contrast audit during the cards' entrance fade measures transient
-    // opacity, not the settled theme. Wait for finite animations/transitions.
-    await page.evaluate(() => Promise.all(document.getAnimations()
-      .filter((animation) => animation.effect?.target?.checkVisibility() && animation.effect.getComputedTiming().iterations !== Infinity)
-      .map((animation) => animation.finished.catch(() => {}))));
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-    const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21aa"]).analyze();
-    expect(results.violations).toEqual([]);
-    await page.screenshot({ path: testInfo.outputPath(`dataset-results-${theme}-mobile.png`), fullPage: true });
-  });
-}
-
 test("Refine prompt, undo, instruction editor and activity log remain accessible", async ({ page, request }, testInfo) => {
   let workspace = await (await request.get("/api/workspace")).json();
   await request.post("/api/workspace", { data: { revision: workspace.revision, action: "add", prompt: "A traveler in a blue coat.", target: "Generic" } });
@@ -201,4 +165,3 @@ test("Refine prompt, undo, instruction editor and activity log remain accessible
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("activity-log-mobile.png") });
 });
-import { generateDataset, openDatasetPage } from "./datasetHelpers.js";

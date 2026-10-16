@@ -203,8 +203,6 @@ function App() {
         }
         if (next.result.history_error) setError(next.result.history_error);
         setNotice(next.kind === "refine" ? "Prompt refined."
-          : next.kind === "dataset" ? `${next.result.completed} dataset prompts are ready.`
-          : next.kind === "dataset_scenes" ? `${next.result.scene_plan.length} scene ideas are ready to review or generate.`
           : next.kind === "dataset_understanding" ? "Review your Dataset request before generating."
           : "Your prompt is ready. Make it yours.");
       } else if (next.status === "cancelled") {
@@ -667,7 +665,7 @@ function App() {
             engineLabel={configuredBackend ? `Configured backend (${bootstrap.backend})` : selectedProfile?.label}
             presets={bootstrap.presets.presets} targets={bootstrap.inputs.target_model[0]}
             lengths={bootstrap.inputs.prompt_length[0]} onGenerate={startWorkflow}
-             onCancel={endGeneration} onCopy={copy} onReleaseJobs={releaseJobs} />}
+             onCancel={endGeneration} onCopy={copy} />}
           {active && view !== "builder" && view !== "refine" && view !== "minimax" && view !== "dataset" && (
             <div className={`${ui.panel} mb-5 flex flex-wrap items-center justify-between gap-3`} role="status">
               <span>{job.progress || "Generating prompt…"}</span>

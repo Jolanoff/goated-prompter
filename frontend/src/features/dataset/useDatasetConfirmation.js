@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../api.js";
-import { canConfirmDatasetReview, datasetRequestSignature, reviseDatasetRequest } from "./datasetState.js";
+import { canConfirmDatasetReview, datasetRequestSignature } from "./datasetState.js";
 
 export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm, setError, vocabularyPacks = [], visualDirection = null }) {
   const [confirmation, setConfirmation] = useState(null);
@@ -89,17 +89,6 @@ export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm
     }
   }
 
-  function reviseConfirmation(additions) {
-    if (!confirmation || busy || ["analyzing", "confirming"].includes(confirmation.status)) return;
-    const input = reviseDatasetRequest(confirmation.input, additions);
-    const needsReplan = input !== confirmation.input;
-    void analyze({ input, baseSignature: confirmation.baseSignature, vocabulary_packs: confirmation.vocabulary_packs,
-      ...(confirmation.visual_direction ? { visual_direction: confirmation.visual_direction } : {}),
-      operation: confirmation.operation === "dataset/scenes" ? "dataset/scenes" : needsReplan ? "dataset" : confirmation.operation,
-      options: needsReplan ? {} : confirmation.options,
-      notice: needsReplan ? "Understanding will use your corrections. Fresh scenes will be planned after confirmation." : confirmation.notice });
-  }
-
   async function confirmRequest() {
     if (!canConfirmDatasetReview(confirmation, busy)) return;
     if (datasetRequestSignature(latestDraft.current) !== confirmation.baseSignature) {
@@ -128,5 +117,5 @@ export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm
   }
 
   return { confirmation, understanding: confirmation || understanding, run,
-    requestConfirmation, reviseConfirmation, cancelConfirmation, confirmRequest, editIntent };
+    requestConfirmation, cancelConfirmation, confirmRequest, editIntent };
 }

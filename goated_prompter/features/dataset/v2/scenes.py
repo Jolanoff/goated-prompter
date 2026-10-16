@@ -64,8 +64,8 @@ from ....backends.recovery import GenerationRecovery, RunawayRecoveryError
 from ....contracts import PromptInstruction, effective_model_family
 from ....director_profiles import resolve_director_config
 from ....prompting.creativity import CREATIVITY_ADAPTERS
-from ..assignments import dataset_assignments
-from ..director import active_director
+from .assignments import dataset_assignments
+from .director import active_director
 from .debug import DebugTrace
 from .understanding import validate_brief
 from .vocabulary_packs import vocabulary_reference

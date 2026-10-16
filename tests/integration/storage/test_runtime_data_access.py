@@ -11,11 +11,8 @@ import local_app as local
 from goated_prompter import presets
 from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.builder.service import GoatedPrompterService
-from goated_prompter.features.dataset.service import DatasetService, default_dataset_draft
 from goated_prompter.json_store import atomic_json
-from goated_prompter.features.dataset.prompting import dataset_instruction
 from tests.helpers import enter_context
-from tests.support.dataset import checked_writer_responses, saved_scene
 
 
 class RuntimeDataAccessTests(unittest.TestCase):
@@ -51,32 +48,3 @@ class RuntimeDataAccessTests(unittest.TestCase):
         self.assertEqual(instruction.user_message, idea)
         self.assertIn(behavior, instruction.system_message)
         self.assertEqual(result.director_preset, director.label)
-
-    def test_saved_pass_scene_from_default_data_checkpoint_reaches_enhance(self):
-        state = self.app_state()
-        data = {**default_dataset_draft(), "subject": "A craftsperson", "trigger": "craft_token", "amount": 1}
-        scene = saved_scene(idea="Center clay",
-            scene="A craftsperson centers clay with both palms on a spinning wheel.")
-        job = local.Job()
-        job.kind = "dataset"
-        state.workflow_settings.begin_dataset(job, data)
-        job.result = {"scene_plan": [scene], "scene_plan_signature": "synthetic-runtime-plan", "prompts": []}
-        job.status = "succeeded"
-        state.workflow_settings.checkpoint_dataset(job)
-        restarted = self.app_state()
-        self.assertEqual(restarted.dataset_checkpoints.path, self.root / "data" / "dataset_checkpoints.json")
-        restarted.idea_history.remember(data, [scene])
-        self.assertTrue(self.app_state().idea_history.seen_before(data, scene["idea"]),
-                        "Idea fingerprints are kept next to the other app data across restarts.")
-        self.assertTrue((self.root / "data" / "idea_fingerprints.json").exists())
-        draft = restarted.workflow_settings.snapshot("dataset")["draft"]
-        self.assertEqual(draft["scene_plan"][0]["scene"], scene["scene"])
-        instruction = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), draft, 1,
-            plan_item=draft["scene_plan"][0])
-        session = Mock()
-        checked_writer_responses(session, ["craft_token centers clay with both palms on a spinning wheel."], [scene])
-        DatasetService({"backend": "mock"}, lambda: None)._generate(session, instruction, draft, 1,
-            lambda _message: None, draft["scene_plan"][0])
-        self.assertEqual(session.generate.call_count, 2)
-        self.assertEqual(session.generate.call_args_list[0].args[0].user_message, scene["scene"])
-        self.assertEqual(session.generate.call_args.args[0].diagnostic_stage, "dataset:validation:prompt")

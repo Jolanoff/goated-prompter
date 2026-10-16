@@ -8,9 +8,9 @@ from goated_prompter import contracts
 from tests.support.paths import ROOT
 
 WORKFLOW_MODULES = (
-    "goated_prompter.features.builder.service", "goated_prompter.features.dataset.service",
+    "goated_prompter.features.builder.service", "goated_prompter.features.dataset.v2.scenes",
     "goated_prompter.features.minimax.service", "goated_prompter.features.refine.service",
-    "goated_prompter.features.dataset.understanding", "goated_prompter.workflow_runners",
+    "goated_prompter.features.dataset.v2.understanding", "goated_prompter.workflow_runners",
 )
 
 

@@ -2,20 +2,21 @@
 
 `model_outputs/` contains exact existing model responses, not fabricated examples:
 
-- Dataset: inferred gender in a trigger-protected aerial scene.
 - Builder: forbidden-rule leakage (`no hat`) despite preserved complex action.
 - MiniMax: real motion/H3 response for temporal/reference/structure review.
   Its soundscape refers to a final landing while the timeline holds a suspended
   pose. This is an exploratory temporal-continuity concern requiring review,
   not a proven failure of the current revision.
 
-`current_fixed_engine_failures.json` adds seven selected failures observed on
+`current_fixed_engine_failures.json` adds four selected failures observed on
 the historical dirty `test` revision with one stable Qwen3.8 27B Q2 engine:
 
-- Dataset portrait trigger/constraint-repair exhaustion, including raw retries.
-- Builder and Dataset climbing lock-off contradictions.
-- Builder grounded-partner throw drift and Dataset sleeve-grip/underhook confusion.
+- Builder climbing lock-off contradiction.
+- Builder grounded-partner throw drift.
 - MiniMax forbidden peaked cap and invented floor-hand balancing in dialogue.
+
+The legacy Dataset pipeline's frozen failures were removed with that pipeline; Dataset V2 is
+evaluated by its own harnesses (`tests/gpu/dataset_understanding_eval.py`, `tests/gpu/dataset_vocabulary_ab.py`).
 
 These preserve exact raw responses, parameters, explicit `stop` reasons, measured
 latency, source artifact hash and production code digest. Machine-specific launch
@@ -25,13 +26,8 @@ private local evaluation artifacts. Selection is not a failure-rate
 denominator. Judgments are exploratory non-blinded agent review, not independent
 domain or rendered-media review. The originating local report used 39 samples.
 
-Existing evaluation artifacts also document omitted viewpoint, trigger-repair
-exhaustion, contradictory support mechanics, repetition and transport loss.
-Current deterministic regressions cover approval/scoped briefs, compact idea and
-scene shapes, PASS/REPAIR gates, one explicit repair attempt, trigger/target-output
-recovery, positive-content leakage, duplicates, durable progress and unfinished SSE.
-Legacy geometry fixtures and repair-loop tests have been removed; they do not
-describe the compact pipeline.
+Existing evaluation artifacts also document omitted viewpoint, contradictory support
+mechanics, repetition and transport loss.
 
 **Coverage limitation:** exact raw local-model responses for every requested
 failure class have not been located. Their synthetic regression inputs must not
