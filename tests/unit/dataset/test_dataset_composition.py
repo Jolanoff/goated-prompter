@@ -153,8 +153,12 @@ class ComposedScenes(unittest.TestCase):
         if record["space"]:
             self.assertNotIn("a different place", scene["space"])
         self.assertIsNotNone(prompts.mechanics_problem("two people undressing", scene))
-        locked = "\n".join(prompts.locked_clauses(scene))
-        self.assertIsNone(prompts.mechanics_problem(locked, scene))
+        # Meaning, not wording: any phrasing of each checked row (its name or an alias) keeps the scene.
+        checked = [row for row in prompts.preserved(scene) if row["check"]]
+        self.assertTrue(checked)
+        expressed = ", ".join(row["phrases"][-1] for row in checked)
+        self.assertIsNone(prompts.mechanics_problem(expressed, scene))
+        self.assertNotIn("(a:", expressed)
         class DropsMechanics:
             def __init__(self, *args, **kwargs):
                 pass
@@ -166,7 +170,7 @@ class ComposedScenes(unittest.TestCase):
                                            [scene], progress=lambda _: None)
         self.assertEqual(result[0]["prompt"], "")
         self.assertFalse(result[0]["mechanics_preserved"])
-        self.assertIn("locked scene clauses", result[0]["error"])
+        self.assertIn("lost part of the established scene", result[0]["error"])
 
     def test_symmetric_confirmed_activity_and_director_can_be_verified_with_declared_anatomy(self):
         from goated_prompter.features.dataset.v2 import intent

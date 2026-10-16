@@ -2,13 +2,21 @@
   "spec": 1,
   "id": "fantasy",
   "name": "Fantasy",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Dragons, elves, wings, spellcasting and a few fantasy places. Reuses core bodies, postures and positions.",
   "authors": [
     "Jolanoff"
   ],
   "license": "Goated Prompter Source-Available License 1.0",
   "rating": "general",
+  "themes": [
+    "fantasy",
+    "magic",
+    "magical",
+    "enchanted",
+    "mythical",
+    "sorcery"
+  ],
   "requires": {
     "core": ">=1.2.0 <2.0.0",
     "general": ">=1.0.0 <2.0.0"

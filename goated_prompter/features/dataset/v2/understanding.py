@@ -12,8 +12,15 @@ structured parts (intent.py): an interpretation for review and later vocabulary 
 changes the fields below. Intent-only defects never regenerate the brief: invalid optional annotations
 are marked unavailable without guessing; an unusable intent leaves the brief intact.
 
-Code rules: the path comes from the NSFW switch; a group of N becomes N numbered people; men are
-"he" and women "she" (custom characters keep the model's pronoun); NSFW is adults only, no animals.
+Code rules: the path comes from the NSFW switch (a request with people is nsfw_character while it is on; one
+without people, such as a place or a style, stays non_character and allows no adult vocabulary); a group of N becomes
+N numbered people; men are "he" and women "she" (custom characters keep the model's pronoun); NSFW is adults only, no
+animals.
+
+Optional interpretations never invalidate a usable answer: fixed and randomized may be "" (a broad request such as
+"magical world" fixes nothing beyond itself), text without a letter or digit (",[],", " ") counts as "", empty
+must/avoid phrases are dropped, and a missing summary becomes the request itself. Only what cannot be recovered (the
+keys, the path, the characters) is sent back to the model.
 
 Brief (validated by validate_brief before it can be confirmed):
   version, path, summary, fixed (what stays the same), randomized (what may and should vary)
@@ -75,10 +82,11 @@ characters: who appears in each image, in the user's order. One entry per person
   count: how many identical people this entry stands for (1 for one person).
   Use [] for non_character.
 fixed: the requested facts that stay the same in every image: subjects, roles, actions and attributes.
-  Preserve explicitly requested attributes unless the user allows them to vary.
+  Preserve explicitly requested attributes unless the user allows them to vary. "" when the request
+  fixes nothing beyond its general subject.
 randomized: dimensions allowed to vary, including unspecified ones, without changing fixed or breaking
   the rules. Name dimensions, not invented scenes or values. A variable dimension does not make its
-  fixed attributes variable.
+  fixed attributes variable. "" when nothing needs naming.
 must: what the user requires, as short phrases keeping the user's meaning ("toys in every image",
   "outdoors"). Only what the request or rules actually say. Usually few; [] when none.
 avoid: what the user rules out, as short phrases ("no oral", "no tattoos"). [] when none.
@@ -172,7 +180,8 @@ def _schema():
 def instruction(data, family="qwen", errors=()):
     system = SYSTEM
     if data.get("nsfw") is True:
-        system += "\nThis dataset is NSFW: every image shows adult people, so path is \"character\"."
+        system += ("\nThis dataset is NSFW: every person shown is an adult. A request about people is \"character\"; "
+                   "a request without people (a place, an object, a style) stays \"non_character\".")
     if errors:
         system += "\n\nYour previous answer broke these rules. Return the complete corrected JSON:\n- " + "\n- ".join(errors)
     user = {"request": data["subject"].strip(), "rules": _rules(data)}
@@ -193,20 +202,54 @@ def parse(raw):
     return value
 
 
-def model_errors(value, nsfw):
+def _optional_text(value):
+    """Optional brief text as a clean string: "" for text without a letter or digit (",[],", " "), a list of strings
+    joined with "; "; None when it is not text at all."""
+    if isinstance(value, list) and all(isinstance(item, str) for item in value):
+        value = "; ".join(item.strip() for item in value if _optional_text(item))
+    if not isinstance(value, str):
+        return None
+    value = " ".join(value.split())
+    return value if any(character.isalnum() for character in value) else ""
+
+
+def _phrases(value):
+    """must/avoid as clean phrases (empty or punctuation-only items dropped); None when it is not a list of text."""
+    if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
+        return None
+    return [text for text in (_optional_text(item) for item in value) if text]
+
+
+def recover(value):
+    """The model's answer with its optional texts normalized (a copy); what cannot be recovered is left unchanged
+    for model_errors to report."""
+    if not isinstance(value, dict):
+        return value
+    value = dict(value)
+    for key in ("summary", "fixed", "randomized"):
+        if key in value and (text := _optional_text(value[key])) is not None:
+            value[key] = text
+    for key in ("must", "avoid"):
+        if key in value and (items := _phrases(value[key])) is not None:
+            value[key] = items
+    return value
+
+
+def model_errors(value, nsfw, data=None):
     """Contract breaks of the brief fields the model must correct itself; the retry lists them. intent is
-    checked apart (intent_errors): its failure never fails the brief."""
+    checked apart (intent_errors): its failure never fails the brief. Optional texts (recover) are never errors:
+    fixed and randomized may be empty, and an empty summary falls back to the request."""
     if set(value) - {"intent"} != set(BRIEF_FIELDS):
         return [f"Use exactly the keys {', '.join(MODEL_FIELDS)}."]
     errors = []
     if value["path"] not in ("character", "non_character"):
         errors.append('path must be "character" or "non_character".')
     for key in ("summary", "fixed", "randomized"):
-        if not isinstance(value[key], str) or not value[key].strip() or len(value[key]) > MAX_TEXT:
-            errors.append(f"{key} must be nonempty text of at most {MAX_TEXT} characters.")
+        if not isinstance(value[key], str) or len(value[key]) > MAX_TEXT:
+            errors.append(f"{key} must be text of at most {MAX_TEXT} characters (\"\" when nothing applies).")
     for key in ("must", "avoid"):
         if (not isinstance(value[key], list) or len(value[key]) > MAX_ITEMS
-                or any(not isinstance(item, str) or not item.strip() or len(item) > MAX_TEXT for item in value[key])):
+                or any(not isinstance(item, str) or len(item) > MAX_TEXT for item in value[key])):
             errors.append(f"{key} must be a list of short phrases ([] when none).")
     people = value["characters"]
     if not isinstance(people, list) or len(people) > MAX_CHARACTERS:
@@ -231,8 +274,9 @@ def model_errors(value, nsfw):
         errors.append("A character request needs at least one entry in characters.")
     if value["path"] == "non_character" and people:
         errors.append("non_character must have characters [].")
-    if nsfw and value["path"] != "character":
-        errors.append('This dataset is NSFW: path must be "character" with the people listed.')
+    if nsfw and value["path"] != "character" and (data is None or adult_content_request(data, include_director=False)):
+        # A sexual request is always about people; a request without people (a place, an object) may stay non_character.
+        errors.append('This dataset is NSFW and the request is sexual: path must be "character" with the people listed.')
     return errors
 
 
@@ -308,10 +352,18 @@ def _singular(label):
 
 def apply_rules(value, data, trace):
     nsfw = data.get("nsfw") is True
-    path = "nsfw_character" if nsfw else "sfw_character" if value["path"] == "character" else "non_character"
+    path = ("non_character" if value["path"] == "non_character" else "nsfw_character" if nsfw else "sfw_character")
     trace.decide("path", f"{path} (NSFW switch {'on' if nsfw else 'off'}, model said {value['path']})")
     characters = expand_characters(value["characters"], trace)
-    brief = {"version": VERSION, "path": path, "summary": value["summary"].strip(),
+    summary = value["summary"].strip()
+    if not summary:
+        summary = " ".join(str(data.get("subject") or "").split())
+        trace.decide("summary_from_request", summary)
+    for key in ("fixed", "randomized"):
+        if not value[key].strip():
+            trace.decide(f"{key}_empty", "the model fixed nothing beyond the request" if key == "fixed"
+                         else "the model named no dimension to vary")
+    brief = {"version": VERSION, "path": path, "summary": summary,
             "people": len(characters), "characters": characters,
             "fixed": value["fixed"].strip(), "randomized": value["randomized"].strip(),
             "must": [item.strip() for item in value["must"]], "avoid": [item.strip() for item in value["avoid"]],
@@ -346,9 +398,11 @@ def validate_brief(brief):
         expected = (*expected, "intent")
     if set(brief) != set(expected):
         raise ValueError(f"The brief needs exactly: {', '.join(expected)}.")
-    for key in ("summary", "fixed", "randomized"):
-        if not isinstance(brief[key], str) or not brief[key].strip():
-            raise ValueError(f"{key} must be nonempty text.")
+    if not isinstance(brief["summary"], str) or not brief["summary"].strip():
+        raise ValueError("summary must be nonempty text.")
+    for key in ("fixed", "randomized"):  # optional: "" when the request fixes or varies nothing in particular
+        if not isinstance(brief[key], str):
+            raise ValueError(f"{key} must be text.")
     for key in ("must", "avoid"):
         if not isinstance(brief[key], list) or any(not isinstance(item, str) or not item.strip() for item in brief[key]):
             raise ValueError(f"{key} must be a list of phrases.")
@@ -367,7 +421,8 @@ def validate_brief(brief):
         raise ValueError("input.request is missing.")
     if not isinstance(brief["settings"], dict):
         raise ValueError("settings is missing.")
-    if type(brief["input"].get("nsfw")) is not bool or (brief["path"] == "nsfw_character") != brief["input"]["nsfw"]:
+    if type(brief["input"].get("nsfw")) is not bool or (brief["path"] == "nsfw_character" and not brief["input"]["nsfw"]) \
+            or (brief["input"]["nsfw"] and brief["path"] == "sfw_character"):
         raise ValueError("The brief path must match the NSFW switch.")
     if "intent" in brief:
         structured.validate(brief["intent"], brief)
@@ -433,8 +488,8 @@ def understand(config, request, data, *, checkpoint=lambda: None, progress=print
                 raw = recovery.generate(session, prompt, checkpoint)
                 checkpoint()
                 try:
-                    value = parse(raw)
-                    errors = model_errors(value, nsfw)
+                    value = recover(parse(raw))
+                    errors = model_errors(value, nsfw, data)
                     problems = [] if errors else intent_errors(value, data)
                 except ValueError as error:  # json.JSONDecodeError is a ValueError (also a reply cut off by the token limit)
                     errors, problems = [f"Return one valid JSON object, complete and compact; if it was cut off, keep intent "

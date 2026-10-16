@@ -532,7 +532,8 @@ def established(record):
             "facts": record["facts"], "space": record.get("space"), "items": record.get("items", []),
             "unplaced": record.get("unplaced", []), "checked": record["checked"], "not_checked": record["not_checked"],
             "verified": record.get("verified", False), "findings": record.get("findings", []),
-            "contract": record.get("contract", {}), "visual": record.get("visual", {})}
+            "contract": record.get("contract", {}), "visual": record.get("visual", {}),
+            "semantics": record.get("semantics", [])}
 
 
 def _composed_scene(number, record, finish, labels):

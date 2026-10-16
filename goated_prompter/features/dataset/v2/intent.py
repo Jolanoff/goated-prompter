@@ -155,6 +155,16 @@ def sanitize(value, characters, guided):
             not isinstance(item, dict) for item in value["elements"]):
         return value, []
     notes = []
+    if not guided:
+        # Without guided inputs, a scope number can only mean "every image": it is dropped, never a reason to lose
+        # the whole intent.
+        stray = [item.get("id", "part") for item in value["elements"] if isinstance(item, dict) and "input" in _present(item)]
+        if stray:
+            value = {**value, "elements": [{key: field for key, field in item.items() if key != "input"}
+                                           if isinstance(item, dict) and "input" in _present(item) else item
+                                           for item in value["elements"]]}
+            notes.append(f"{UNAVAILABLE_NOTE}{', '.join(map(str, stray))}: input applies only to guided inputs; "
+                         "kept for every image.")
     originals = [item for item in value["elements"] if item.get("source") != "suggested"]
     for item in value["elements"]:
         if item.get("source") == "suggested" and item.get("status") != "randomized":

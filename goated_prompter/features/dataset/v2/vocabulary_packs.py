@@ -22,9 +22,12 @@ same packs: the arrangement, interactions with their items, and the place, check
 choosing, with each person's role assigned. What a composed image must show narrows its Visual Direction. An image no
 entry fits is freeform (the concept, staging and description requests, with the inspiration block above).
 
-The Director (preferences.py): its instructions are a retrieval source; its structured vocabulary block, when the preset
-has one, adds the names it prefers to that source, weights the ideas it prefers, drops the ones it avoids (never what
-the request names), orders the roles the composer fills and steers Visual Direction.
+The Director (preferences.py): its instructions are a retrieval source, and every sentence of them that states an
+obligation and names entries makes those entries required in every image (composer.SceneContract); its structured
+vocabulary block, when the preset has one, requires the entries it lists, adds the names it prefers to that source,
+weights the ideas it prefers, drops the ones it avoids (never what the request names), orders the roles the composer
+fills and steers Visual Direction. The target model's vocabulary block (target_models.target_vocabulary) adds its
+requirements the same way. All of them take part in the same joint search as the user's requirements.
 
 Comparison: "dataset_vocabulary": false in config.json turns retrieval off (default on). It is read
 for each run, changes nothing else, and every scenes debug trace and result records the state.
@@ -37,6 +40,7 @@ from ...vocabulary.retrieval import RATINGS, RetrievalConfig, RetrievalRequest, 
 from ...vocabulary import visual as visual_direction
 from ...vocabulary.composer import Composer, SceneContract
 from ...vocabulary.preferences import PREFER_WEIGHT, Preferences
+from ....prompting.target_models import target_vocabulary
 from .intent import search_hints
 
 CONFIG_KEY = "dataset_vocabulary"
@@ -149,7 +153,13 @@ def vocabulary_reference(config, brief, *, director="", manager=None, selection=
     except ValueError as error:  # a stored block is validated when saved; an unreadable one steers nothing
         prefs, preference_error = Preferences(None, registry), str(error)
     amount = brief["input"].get("amount")
-    contract = SceneContract.build(registry, brief, prefs, director)
+    # The target model may add scene requirements of its own (prompting/target_models.py target_vocabulary): data, read
+    # the way a Director's block is; it never decides the final prompt's format, which stays the target adapter's job.
+    try:
+        target = Preferences(target_vocabulary(brief.get("settings", {}).get("target", "")), registry)
+    except ValueError:
+        target = Preferences(None, registry)
+    contract = SceneContract.build(registry, brief, prefs, director, target=target, allowed=allowed)
     images = range(1, (amount if type(amount) is int and amount > 0 else 1) + 1)
     # Visual Direction reads the same packs; what the brief says about camera and light is masked out of content
     # retrieval only while it is active, so "low camera angle" never finds a Camera prop. Off: the request is unchanged.

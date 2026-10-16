@@ -68,7 +68,9 @@ spaces when later requirements conflict. Feasible complete compositions outrank 
 
 Directors can carry a structured `vocabulary` block (`features/vocabulary/preferences.py`): preferred or
 avoided entries, tags and categories, visual preferences, role priorities and themes. `require: [entry ids]`
-sets mandatory mechanics; a missing required id yields an explicitly unchecked fallback. Built-ins and user
+sets mandatory mechanics (and visual directions); a missing required id yields an explicitly unchecked
+fallback. Obligation clauses anywhere in a Director's prose ("every image must show a leash") are mandatory
+too; other names in its prose only raise draw weight. A target model can add requirements the same way. Built-ins and user
 presets share this format; presets without a block use their text. User requirements, selected packs,
 ratings and compatibility remain authoritative. Preferences are preserved through preset save/update.
 
@@ -76,8 +78,9 @@ For composed images, Scene Builder makes one lightweight finishing call per batc
 open details instead of regenerating mechanics. Code renders positions and actions from the composition;
 the scene's `arrangement` record retains selected entries, roles, facts, place, items, status and checking
 limits. Code retains established place and visual fields rather than accepting rewritten copies from the
-finisher. Builder must preserve locked activity, role/resource facts, objects and visual clauses verbatim;
-omissions are retried once, then fail the prompt. Target formatting applies around those fixed clauses.
+finisher. Builder must keep the composition's meaning (`arrangement.semantics`: actions, postures, place,
+items and required camera), in its own words; code checks each by the entry's name or aliases, and a lost
+meaning is retried once with what was lost, then fails that prompt. Target formatting is the target's own.
 Freeform images retain concept → staging → description and are labelled `freeform` / `unchecked`.
 Statuses remain `unknown`, `eligible` or `feasible`, never proof of physical geometry or model prose.
 Only `feasible` records set `verified: true`; unresolved findings reach the finisher and run record.

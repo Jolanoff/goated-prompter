@@ -361,12 +361,20 @@ def _prose(text):
     return value[position:]
 
 
-def copied_reference(text, references, words=10):
-    """Return True when the prose of ``text`` repeats ``words`` consecutive words from a reference's prose."""
+def copied_reference(text, references, words=10, allowed=()):
+    """The first run of ``words`` consecutive words that the prose of ``text`` repeats from a reference's prose, as
+    text ("" when none, so it reads as False). A run that also occurs in ``allowed`` (the request's own wording, which
+    the prompt is meant to keep) is not a copy."""
     tokens = re.findall(r"[a-z0-9]+", _prose(text).casefold())
     runs = {tuple(tokens[index:index + words]) for index in range(len(tokens) - words + 1)}
+    shared = set()
+    for own in allowed:
+        source = re.findall(r"[a-z0-9]+", str(own or "").casefold())
+        shared.update(tuple(source[index:index + words]) for index in range(len(source) - words + 1))
     for reference in references:
         source = re.findall(r"[a-z0-9]+", _prose(reference).casefold())
-        if any(tuple(source[index:index + words]) in runs for index in range(len(source) - words + 1)):
-            return True
-    return False
+        for index in range(len(source) - words + 1):
+            run = tuple(source[index:index + words])
+            if run in runs and run not in shared:
+                return " ".join(run)
+    return ""

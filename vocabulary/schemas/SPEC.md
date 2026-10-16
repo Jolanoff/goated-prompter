@@ -596,6 +596,10 @@ lighting; the official `visual` pack owns atmosphere. Any selected pack may add 
 `max_regions` (a detail crop's region limit), `space` (place in view), and `complete` (the regions list is
 exhaustive). Missing fields leave that capability unknown. `visual.fit` compares these declarations with
 the composed scene's visibility (section 12); it does not infer geometry, occlusion or physical plausibility.
+Only framing decides on its own how much of a scene is in view, so a framing without `shows` leaves the
+scene's coverage unknown; a direction of another dimension (camera angle, composition, lighting,
+atmosphere) is checked only when it declares `shows` (a viewpoint that hides someone can say so), and
+otherwise imposes nothing (`visual.coverage`).
 
 Retrieval (section 10) never indexes, scores or offers a direction, and a category holding only directions is not
 one a brief opens: content retrieval is the same with or without them. Visual Direction (`visual.py`) chooses them
@@ -654,8 +658,13 @@ entries are interactions. Items fill interaction object slots. The default selec
 interaction, space; Director priorities can reorder it. Every trial binding is resolved with the scene so
 far, including placements, resources, access, surfaces and capacity. Conflicting trials are never selected.
 Search backtracks across entry choices, role assignments, objects and spaces; it does not lock the first
-nonconflicting binding. Complete feasible results outrank eligible and unknown results. Search is bounded;
+nonconflicting binding. Complete feasible results outrank eligible and unknown results; among results with
+the same status, the one that places more of the cast ranks first, then the one with fewer undeclared
+requirements (so a place that declares the surface a position needs beats one that does not). A posture is
+tried for every person it can still place before it is tried for one. Search is bounded;
 exhaustion is reported as unchecked, not proof of incompatibility. Unknown results have no verified claim.
+A required item that no chosen entry binds is placed in the scene unbound: present, with nobody declared to
+use it.
 
 The brief's named entries are established before optional choices can consume their resources.
 Names matched by the same words are alternatives, even across
@@ -673,10 +682,14 @@ The finisher receives selected names, roles, declared facts, items, place and vi
 appearance, open per-person details, place detail, lighting, mood, camera and background. It cannot replace
 the structured mechanics: code renders positions and actions from the composition and retains its
 established place and camera/light fields. Final scenes keep
-entries, roles, facts, status and the limits of checking. The Builder receives those facts and keeps them
-as verbatim locked clauses while writing the surrounding prompt in the selected target's format.
-Missing clauses trigger a retry, then a failed prompt, not silent acceptance. Added prose is not semantically validated; passing a
-contract check does not prove that a model's prose obeys every instruction.
+entries, roles, facts, status, the limits of checking and `semantics`: what the final prompt must keep, as
+meanings (`{kind, text, who, phrases, check}` for each action, each person's posture, the place, every item,
+each required visual direction, and unchecked rows for positions, facing and relative placement). The
+Builder writes those meanings in its own words in the selected target's format; it is told not to copy
+labelled lines or role notation. Code checks each `check: true` row by its phrases (the entry's name and
+aliases): every content word of one phrase must occur in the prompt, stemmed, in any order. A lost meaning
+triggers one retry naming it, then a failed prompt, not silent acceptance. Facing, relative placement and
+other prose are not parsed; passing this check does not prove that a model's prose obeys every instruction.
 
 A Director preset may carry an optional `vocabulary` block:
 
@@ -689,18 +702,28 @@ A Director preset may carry an optional `vocabulary` block:
  "themes": ["quiet afternoons"]}
 ```
 
-All keys are optional. `require` declares mandatory entry ids, not weighting. Missing required ids are
+All keys are optional. `require` declares mandatory entry ids, not weighting: actions, items, places or
+visual directions (a camera angle, for a Director whose viewpoint is the point). Every required id is
+required in every image, in the same joint search as the user's requirements. Missing required ids are
 reported as unsupported in an unchecked fallback. Grounded fixed Understanding actions must match
 activity names/aliases, not related descriptions, tags or semantic hints. A noun cannot satisfy an action.
-An explicit opening imperative in Director prose can name pack-defined requirements; arbitrary prose
-is not a general-purpose constraint language. Use `require` for reliable mechanical obligations.
+Director prose also states obligations, in any sentence: a clause that opens a sentence with an imperative
+(construct, depict, show, include, feature, require, contain, have; optionally after "always") or uses
+"must"/"always" with such a verb anywhere ("every image must show a leash"). The entries named after that
+verb, within the sentence and within the run's ratings, are required in every image. A sentence with a
+negation obliges nothing, and an obligation that names no entry stays with the Director's text for the
+finisher and writer (recorded as `director_text`), never a reason to give up the composition. Other names in
+Director prose only raise those entries' draw weight. Prose is not a general-purpose constraint language:
+use `require` for exact obligations. The target model may add a block of the same format
+(`prompting/target_models.py` `TARGET_VOCABULARY`); its `require` entries join the contract with source
+`target`, while the target's adapter keeps sole charge of the final prompt's format.
 Entries combining `visual` with participant/resource/object components enter joint composition only
 when required, not random activity inspiration. Their inherited mechanics and visual coverage are
 resolved together; purely visual entries remain Visual Direction choices.
 
 Preferences are validated data: ids, tags and categories to favour or avoid;
-visual ids; composition role priorities; and short theme phrases. Preferred ideas get increased draw
-weight. Avoided ideas are omitted unless the request names them. Preferences never enable unselected
+visual ids; composition role priorities; and short theme phrases. Preferred ideas, and entries the
+Director's prose names, get increased draw weight in every image (never a per-image coin toss). Avoided ideas are omitted unless the request names them. Preferences never enable unselected
 packs or bypass ratings, exclusions or compatibility. Unknown preference ids are unused and reported. Retired ids
 are canonicalized. Presets without a block still steer retrieval through their text. Saving and editing
 preserves the block; an omitted update keeps it, `{}` clears it. Built-in Directors use the same format,

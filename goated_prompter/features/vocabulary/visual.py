@@ -20,7 +20,10 @@ Rules, in order:
 3b. What the image's composed scene must show (SPEC.md section 12, see(n, visibility)): a direction whose declared
    shows cannot keep those regions, whole bodies or the place in view is not chosen for an open dimension. A direction
    that declares nothing about what it shows is not ruled out (unspecified is not incompatible). The brief's own
-   named directions are kept even then: the user's words come first.
+   named directions are kept even then: the user's words come first. Only framing decides how much is in view on its
+   own (FRAMES): a direction of another dimension (a camera angle, a composition, a light) is checked only when it
+   declares shows, so an undeclared light or composition never makes a scene's coverage unknown, while an
+   undeclared framing does.
 3c. The Director's structured preferences (preferences): directions it prefers enter a dimension's pool first, so a
    small variation keeps them; directions it avoids are left out unless the brief names them.
 4. Image N's directions depend only on N, the seed, the brief, the settings and the selected packs: never on other
@@ -39,6 +42,7 @@ from .resolver import implied
 from .semantic import NEGATIONS, STOPWORDS, STRUCTURAL, marker, phrase_terms, split_negated, stem
 
 DIMENSIONS = ("framing", "camera_angle", "composition", "lighting", "atmosphere")  # the order an image is decided in
+FRAMES = ("framing",)  # the dimensions whose every direction decides how much of the scene is in view (rule 3b)
 SECTIONS = ("camera", "lighting")
 DEFAULT_SECTION = {"framing": "camera", "camera_angle": "camera", "composition": "camera", "lighting": "lighting",
                    "atmosphere": "lighting"}
@@ -117,6 +121,14 @@ def fit(registry, shows, visibility):
             statuses.append("unknown")
     status = "conflict" if "conflict" in statuses else "unknown" if "unknown" in statuses else "feasible"
     return status, "; ".join(reasons)
+
+
+def coverage(registry, item, visibility):
+    """(status, reason) of a Direction for what a composed image must show: fit() of its declared shows. A direction
+    outside FRAMES that declares no shows says nothing about what is in view, so it imposes nothing (feasible)."""
+    if not item.shows and item.dimension not in FRAMES:
+        return "feasible", ""
+    return fit(registry, item.showing(), visibility)
 
 
 # -- the brief's words, matched the way retrieval matches names (semantic.phrase_terms), with their spans
@@ -237,7 +249,7 @@ class Plan:
             ranked = ranked[position:] + ranked[:position]
             if visibility and self.registry:
                 ranked.sort(key=lambda item: {"feasible": 0, "unknown": 1, "conflict": 2}[
-                    fit(self.registry, item.showing(), visibility)[0]])
+                    coverage(self.registry, item, visibility)[0]])
             # The brief's own directions are kept whatever the scene needs; open ones must be able to show it.
             visible = (lambda item: True) if self.dimensions[dimension]["status"] == "fixed" else (
                 lambda item: self.shows_enough(item, visibility))
@@ -261,7 +273,7 @@ class Plan:
         return all(item.id not in other.conflicts and other.id not in item.conflicts for other in chosen.values())
 
     def shows_enough(self, item, visibility):
-        return not visibility or self.registry is None or fit(self.registry, item.showing(), visibility)[0] != "conflict"
+        return not visibility or self.registry is None or coverage(self.registry, item, visibility)[0] != "conflict"
 
     def concept(self, number):
         """The visual_direction item for one concept request: camera and lighting text, in the concept's own fields."""

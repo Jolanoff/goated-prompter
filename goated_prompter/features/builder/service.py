@@ -357,6 +357,7 @@ class GoatedPrompterService:
         resolved_reference_map=None,
         text_only=False,
         prompt_scene_plan=None,
+        references=None,
     ):
         return assemble_instruction(
             request,
@@ -365,6 +366,7 @@ class GoatedPrompterService:
             resolved_reference_map=resolved_reference_map,
             text_only=text_only,
             **({"prompt_scene_plan": prompt_scene_plan} if prompt_scene_plan is not None else {}),
+            **({"references": references} if references is not None else {}),
         )
 
     def generate(self, request):
@@ -456,23 +458,25 @@ class GoatedPrompterService:
                     session_backend, request, resolved_scene=resolved_scene,
                     family=model_family, checkpoint=self._checkpoint, progress=planning_progress,
                     **({"semantic_validation": True} if validate_semantics else {}))
-            instruction = self.assemble(
-                request,
-                model_family=model_family,
-                resolved_scene=resolved_scene,
-                resolved_reference_map=resolved_reference_map,
-                text_only=text_only,
-                **({"prompt_scene_plan": prompt_scene_plan} if prompt_scene_plan is not None else {}),
-            )
-            instruction = replace(
-                instruction,
-                diagnostic_stage="final",
-                seed=seed,
-                diagnostic_context=_diagnostic_context(
-                    request,
-                    evidence_digest=resolved_scene_sha256(resolved_scene) if resolved_scene is not None else "NONE",
-                ),
-            )
+            def build(references=None):
+                return replace(
+                    self.assemble(
+                        request,
+                        model_family=model_family,
+                        resolved_scene=resolved_scene,
+                        resolved_reference_map=resolved_reference_map,
+                        text_only=text_only,
+                        **({"prompt_scene_plan": prompt_scene_plan} if prompt_scene_plan is not None else {}),
+                        **({"references": references} if references is not None else {}),
+                    ),
+                    diagnostic_stage="final",
+                    seed=seed,
+                    diagnostic_context=_diagnostic_context(
+                        request,
+                        evidence_digest=resolved_scene_sha256(resolved_scene) if resolved_scene is not None else "NONE",
+                    ),
+                )
+            instruction = build()
             qwen_images = _qwen21_source_tokens(request, resolved_reference_map, text_only) if request.target_model == "Qwen Image 2.1" else ()
             qwen_task = "edit" if qwen_images else "t2i"
             validate_format = request.target_model == "Qwen Image 2.1" or get_target_capabilities(request.target_model).supports_structured_output
@@ -489,6 +493,9 @@ class GoatedPrompterService:
                 semantic_contract["preserved_reference_facts"] = [{"attribute":item.key,"source":item.source,"evidence":item.evidence}
                     for item in resolved_scene.attributes if item.preserve and item.source not in {"Off","User Prompt"}]
             validate_copy = bool(instruction.reference_prompts)
+            # Library prompts guide style only. They are checked against the first instruction's references; the
+            # request's own wording is never a copy, and a retry after copying is written without them.
+            copy_sources = tuple(instruction.reference_prompts)
             for attempt in range(2 if validate_format or validate_constraints or validate_semantics or audit_constraints or validate_copy else 1):
                 format_valid = None
                 session_backend.validate_instruction(instruction)
@@ -501,15 +508,18 @@ class GoatedPrompterService:
                 raw_candidate = prompt
                 if not validate_format and not validate_constraints and not validate_semantics and not audit_constraints and not validate_copy:
                     break
-                problems = []
+                problems, copied = [], ""
                 try:
                     if validate_format:
                         prompt = normalize_workflow_output(prompt, request.target_model,
                                                             expected_visible_text=requested_visible_text(request.idea), mode=request.mode)
                         format_valid = True
-                    if validate_copy and copied_reference(prompt, instruction.reference_prompts):
-                        raise WorkflowFormatError("The prompt copied wording from a library reference prompt. Write new wording "
-                                                  "for this request; use the references only for style and quality.")
+                    copied = copied_reference(prompt, copy_sources, allowed=(request.idea, request.custom_instructions)) \
+                        if validate_copy else ""
+                    if copied:
+                        passage = f' ("{copied}")' if isinstance(copied, str) else ""
+                        raise WorkflowFormatError(f"The prompt copied wording from a library reference prompt{passage}. Write "
+                                                  "new wording for this request; use the references only for style and quality.")
                     problems = [issue for issue in output_constraint_issues(prompt, request.target_model,
                         compiled_constraints.workflow_data()) if issue["severity"] == "error"] if validate_constraints else []
                     if problems:
@@ -534,6 +544,10 @@ class GoatedPrompterService:
                             attempts=attempt + 1) from exc
                     accepted_facts = getattr(exc, "accepted_facts", ()) or accepted_facts
                     semantic_contract.update(previous_response=raw_candidate, listed_defect=str(exc))
+                    if copied:
+                        # The templates caused the copy: the one retry is written without them (same request, same
+                        # rules), so it cannot repeat their wording and the run does not lose the image to style.
+                        instruction = build(references=())
                     instruction = replace(instruction,
                         system_message=(instruction.system_message + "\n\nCONSTRAINT CORRECTION: " + str(exc)
                             + " Preserve the original scene/action and all supplied facts. Apply exclusions silently; change only invalid final wording."

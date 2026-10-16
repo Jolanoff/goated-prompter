@@ -1,11 +1,15 @@
 """Requirement-driven scene composition (vocabulary/schemas/SPEC.md section 13).
 
-SceneContract combines grounded confirmed intent, lexical requirements and Director
-obligations before retrieval. Related search hints are not fulfillment evidence.
+SceneContract combines grounded confirmed intent, lexical requirements, Director and target
+obligations before retrieval. Related search hints are not fulfillment evidence. A Director's
+obligations are its structured "require" list and every sentence of its instructions that states
+an obligation (must, always, include, show, ...) and names vocabulary entries: all of them, every
+image, deterministically. Its other names and its preferences only rank candidates.
 Composer searches entries, participant bindings, objects, arrangements and supporting
 spaces together, backtracking when later constraints invalidate earlier choices.
 Every trial uses the resolver; complete feasible scenes outrank eligible or unknown
-ones. Search limits and undeclared requirements never become proof of compatibility.
+ones, and among those that are not feasible, fewer undeclared requirements rank first.
+Search limits and undeclared requirements never become proof of compatibility.
 
 Selections are deterministic per image and seed. Concrete mechanics, including
 visual setups that consume body resources, belong to MODPACK entries, not engine
@@ -22,19 +26,33 @@ import re
 from .preferences import Preferences, ROLES
 from .packs import pack_schemas
 from .resolver import CompositionError, Finding, RANK, enumerate_bindings, object_satisfies, resolve
-from .visual import direction, fit
-from .semantic import grounded, phrase_terms, split_negated, terms
+from .visual import coverage, direction
+from .semantic import NEGATIONS, grounded, phrase_terms, split_negated, terms
 
 TRIES = 12            # optional candidates searched per role
 BINDINGS = 64         # bindings of one entry tried
 ITEMS = 4             # items tried for one object slot (then an undescribed object)
 SEARCH_NODES = 2048    # deterministic bound on joint entry/binding search per image
-DIRECTOR_TURN = 2     # a Director-named entry is offered to about one image in this many
+DIRECTOR_WEIGHT = 3.0  # how much likelier an entry the Director's text names is drawn (a preference, never a requirement)
+# A Director's prose states an obligation where a clause tells the scene to have something: an imperative that opens a
+# sentence ("Construct a mirror selfie ...", "Always include ...") or "must/always" with such a verb anywhere ("every
+# image must show a leash"). What follows the verb, up to the end of its sentence, is what is required; the entries it
+# names are required in every image. Descriptive sentences ("composition must remain intentional") and anything negated
+# ("never show ...", "avoid ...") oblige nothing; the structured "require" list states obligations exactly.
+_VERBS = r"(?:construct|depict|show|include|feature|require|contain|have)s?"
+_OBLIGATION = re.compile(rf"^\s*(?:always\s+)?{_VERBS}\b(?P<a>.+)|\b(?:must|always)\s+(?:be\s+)?{_VERBS}\b(?P<b>.+)",
+                         re.IGNORECASE)
+_SENTENCE = re.compile(r"[.!?;\n]+")
+_PLAIN = re.compile(r"[a-z]+")
 STANDING = ("director", "style", "hint")  # retrieval sources that prefer, never require
 CHECKED = ["every entry, binding and the place were checked together with the resolver while choosing",
            "slot counts, capabilities, placements, exclusive claims, blocked regions, surfaces and declared capacities"]
 NOT_CHECKED = ["anything the entries do not declare (it stays open for the scene writer)",
                "prose the scene writer adds: it may not change these facts, but it is not parsed"]
+# A busy body part in plain words, per claim purpose (the schema's closed purpose enum), for the scene writer.
+PURPOSE_WORDS = {"support": "bears weight", "hold": "holds on", "contact": "is in contact", "use": "is in use",
+                 "wear": "wears something", "attach": "has something attached", "insert": "is inserted",
+                 "wield": "wields something"}
 _ID = re.compile(r"\b[a-z][a-z0-9_]*:[a-z][a-z0-9_]*(?:\.[a-z0-9_]+)*\b")
 _SLOT = re.compile(r"^([a-z][a-z0-9_]*)")
 
@@ -103,6 +121,30 @@ def named_spans(registry, ids, words):
              if not any(where and where < other for other in matches.values())}
 
 
+def director_obligations(text):
+    """[(sentence, stemmed words of what it requires)] for every sentence of a Director's instructions that states an
+    obligation (_OBLIGATION), in order; never one with a negation."""
+    out = []
+    for sentence in _SENTENCE.split(str(text or "")):
+        match = _OBLIGATION.search(sentence)
+        if match and not set(_PLAIN.findall(sentence.casefold())) & NEGATIONS:
+            out.append((" ".join(sentence.split()), split_negated(match["a"] or match["b"])[0]))
+    return out
+
+
+def phrases(entry):
+    """An entry's name and aliases as written: the ways a final prompt may express it."""
+    return list(dict.fromkeys([entry["name"], *entry.get("aliases", [])]))
+
+
+def mentions(text, alternatives):
+    """Whether text expresses one of the alternatives: every content word of one phrase occurs among its words (stemmed,
+    in any order), so "the back seat of a parked car" expresses "Car back seat"."""
+    words = set(terms(text))
+    return any(phrase and set(phrase) <= words
+               for phrase in ([term for term in phrase_terms(item) if term != "@"] for item in alternatives))
+
+
 def named_groups(registry, ids, words):
     """Overlapping lexical matches are alternatives; disjoint activities are separate obligations."""
     groups = []
@@ -126,9 +168,13 @@ class SceneContract:
     unresolved: list = field(default_factory=list)
     relationships: list = field(default_factory=list)
     constraints: dict = field(default_factory=dict)
+    director_text: list = field(default_factory=list)  # Director obligations that name no entry (prose only)
 
     @classmethod
-    def build(cls, registry, brief, preferences, director=""):
+    def build(cls, registry, brief, preferences, director="", target=None, allowed=None):
+        """target: the target model's vocabulary preferences (preferences.Preferences), whose require list is
+        mandatory like a Director's (source "target"). allowed: the run's ratings; the Director's prose can only
+        require entries the run may use (None: every rating)."""
         contract = cls(constraints={"request": brief.get("input", {}).get("request", ""),
                                    "rules": brief.get("input", {}).get("rules", []), "fixed": brief.get("fixed", ""),
                                    "must": brief.get("must", []), "avoid": brief.get("avoid", [])})
@@ -169,9 +215,11 @@ class SceneContract:
                 elif not any(span(registry.resolved(ident), split_negated(row["rel"])[0])
                              for req in contract.requirements for ident in req["entries"]):
                     contract.unresolved.append("unsupported relationship: " + row["rel"])
-        for ident in preferences.require:
-            contract.requirements.append({"source": "director", "text": ident, "input": 0,
-                                          "entries": [ident] if ident in registry else []})
+        for source, block in (("director", preferences), ("target", target)):
+            for ident in (block.require if block else ()):
+                if not any(row["entries"] == [ident] for row in contract.requirements):
+                    contract.requirements.append({"source": source, "text": ident, "input": 0,
+                                                  "entries": [ident] if ident in registry else []})
         visual_ids = [ident for ident in registry.ids() if role_of(registry.resolved(ident)) == "visual"]
         visual_groups = {}
         for text in [brief.get("input", {}).get("request", ""), brief.get("fixed", ""),
@@ -184,25 +232,28 @@ class SceneContract:
         for ids in visual_groups.values():
             contract.requirements.append({"source": "user", "text": " or ".join(registry.resolved(ident)["name"] for ident in sorted(ids)),
                                           "input": 0, "entries": sorted(ids)})
-        # Explicit pack-defined names in Director prose are obligations, not related
-        # descriptions or the names added by soft preferences.text().
-        first = re.split(r"[.!?]", director, maxsplit=1)[0]
-        directive = re.match(r"\s*(?:construct|depict|show|require|include)\s+(.+)", first, re.IGNORECASE)
-        words = split_negated(directive[1] if directive else "")[0]
-        groups = named_groups(registry, [ident for ident in registry.ids() if role_of(registry.resolved(ident))], words)
-        if directive and not groups and not preferences.require:
-            contract.unresolved.append("unsupported Director requirement: " + directive[1])
-        for group in groups:
-            ids = group["ids"]
-            if not any(set(ids) & set(row["entries"]) for row in contract.requirements if row["source"] == "director"):
-                contract.requirements.append({"source": "director", "text": registry.resolved(ids[0])["name"],
-                                              "input": 0, "entries": sorted(ids)})
+        # Every obligation sentence of the Director's prose, not only the first: the entries it names are required in
+        # every image. A sentence that names no entry stays with the Director's text (the finisher and the final
+        # writer read it); it is recorded, never a reason to give up the composition.
+        candidates = [ident for ident in registry.ids() if role_of(registry.resolved(ident))
+                      and (allowed is None or registry.resolved(ident).get("rating") in allowed)]
+        contract.director_text = []
+        for sentence, words in director_obligations(director):
+            groups = named_groups(registry, candidates, words)
+            if not groups:
+                contract.director_text.append(sentence)
+            for group in groups:
+                ids = sorted(group["ids"])
+                if not any(set(ids) & set(row["entries"]) for row in contract.requirements
+                           if row["source"] in ("director", "user")):
+                    contract.requirements.append({"source": "director", "text": sentence, "input": 0, "entries": ids})
         return contract
 
     def record(self):
         return {"requirements": self.requirements, "unresolved": self.unresolved, "constraints": self.constraints,
                 "relationships": self.relationships,
-                "priority": ["user", "director", "preferences"]}
+                **({"director_text": self.director_text} if self.director_text else {}),
+                "priority": ["user", "director", "target", "preferences"]}
 
 
 @dataclass
@@ -349,10 +400,11 @@ class Composer:
                 out.append(entry_id)
         for entry in self.found.ideas(number):
             add(entry.id)
-        for entry_id in self.director_named:
-            if int(hashlib.sha256(f"{self.seed}\0{entry_id}\0{number}".encode()).hexdigest(), 16) % DIRECTOR_TURN == 0:
-                add(entry_id)
-        weight = self.preferences.weight if self.preferences else (lambda entry_id: 1.0)
+        # What the Director prefers (its block) or names in its prose ranks higher in every image's seeded race: a
+        # soft preference, so it is likelier, never forced and never dropped by a coin toss.
+        preferred = self.preferences.weight if self.preferences else (lambda entry_id: 1.0)
+        director = set(self.director_named)
+        weight = lambda entry_id: preferred(entry_id) * (DIRECTOR_WEIGHT if entry_id in director else 1.0)
         rest = sorted(self.pool.get(role, {}),
                       key=lambda entry_id: -math.log(_unit(self.seed, number, role, entry_id))
                       / (max(self.pool[role][entry_id], 1e-9) * weight(entry_id)))
@@ -419,13 +471,19 @@ class Composer:
                 return False
             nodes += 1
             if index == len(tasks):
-                if any(not {obj["item"] for obj in current["objects"]}.intersection(group)
-                       for group in required.get("item", [])):
+                current = self._with_items(current, required.get("item", []))
+                if current is None:
                     return False
                 result = self._resolve(current)
                 if result is None or result.status == "conflict":
                     return False
-                rank = (RANK[result.status], -len(current["use"]), -bool(current["space"]))
+                # Fewer undeclared requirements first: among scenes that are not feasible, the one whose place,
+                # items and bindings declare more of what the entries need is the more compatible one.
+                # Then the scene that places more of the cast: an entry that places one person of three is a less
+                # complete reading of the request than one that places all of them.
+                open_findings = sum(finding.status in ("unknown", "eligible") for finding in result.findings)
+                unplaced = sum(member["id"] not in result.placements for member in self.cast)
+                rank = (RANK[result.status], unplaced, open_findings, -len(current["use"]), -bool(current["space"]))
                 if best_rank is None or rank < best_rank:
                     best, best_rank = (current, result), rank
                 return result.status == "feasible"
@@ -470,6 +528,21 @@ class Composer:
                     "reason": "no vocabulary place for this image", "skipped": notes[:6]}
         return self.record(number, composition, result, notes)
 
+    def _with_items(self, composition, groups):
+        """The composition with every required item present: one an entry binds, or else one of the group placed in
+        the scene unbound (it is there, nobody is declared to use it). None when a group has no usable item."""
+        present = {obj["item"] for obj in composition["objects"]}
+        extra = []
+        for group in groups:
+            if present.intersection(group):
+                continue
+            item = next((ident for ident in group if ident in self.registry and self._usable(ident)), None)
+            if item is None:
+                return None
+            extra.append({"id": f"{self.name(item).lower()} {len(composition['objects']) + len(extra) + 1}", "item": item})
+            present.add(item)
+        return {**composition, "objects": [*composition["objects"], *extra]} if extra else composition
+
     def options(self, composition, entry_id, number):
         """All bounded nonconflicting bindings, so later requirements can revise earlier decisions."""
         entry = self.registry.resolved(entry_id)
@@ -483,10 +556,12 @@ class Composer:
                 yield trial, result
             return
         if is_posture(entry):
-            for ident in self._order(number, entry_id, [member["id"] for member in self.cast]):
-                if ident in composition["declared"] or self._placed(composition, ident):
-                    continue
-                trial = {**composition, "declared": {**composition["declared"], ident: {"posture": entry_id}}}
+            free = [ident for ident in self._order(number, entry_id, [member["id"] for member in self.cast])
+                    if ident not in composition["declared"] and not self._placed(composition, ident)]
+            # The posture for everyone it can still place first (a group "sitting together"), then for one person.
+            groups = ([free] if len(free) > 1 else []) + [[ident] for ident in free]
+            for group in groups:
+                trial = {**composition, "declared": {**composition["declared"], **{ident: {"posture": entry_id} for ident in group}}}
                 result = self._resolve(trial)
                 if result is not None and result.status != "conflict":
                     yield trial, result
@@ -599,7 +674,7 @@ class Composer:
             selected += [item for item in self.plan.directions(composition.get("slot", 1))[0].values()
                          if item.id not in {existing.id for existing in selected}]
         for index, item in enumerate(selected):
-            status, reason = fit(self.registry, item.showing(), result.visibility)
+            status, reason = coverage(self.registry, item, result.visibility)
             if status != "feasible":
                 result.findings.append(Finding(status, "visual_visibility", reason or "visual coverage is undeclared", (item.id,)))
             for other in selected[:index]:
@@ -676,11 +751,54 @@ class Composer:
                   "visibility": result.visibility,
                   "findings": [{**finding.to_dict(), "message": self.humanize(finding.message)}
                                for finding in result.findings if finding.status != "feasible"][:8],
+                   "semantics": self.semantics(composition, result),
                    "verified": result.status == "feasible", "contract": self.contract.record(),
                    "checked": CHECKED if result.status == "feasible" else [], "not_checked": NOT_CHECKED}
         if notes:
             record["skipped"] = notes[:6]
         return record
+
+    def semantics(self, composition, result):
+        """What the final prompt must keep of this composition, as meanings rather than wording: one row per action,
+        each person's posture, the place, every item and each required visual direction, with the phrases (an entry's
+        name and aliases) that express it. check is False for what words cannot reliably show (a position's own name,
+        facing, relative placement): the final writer is told those, and only checked rows are validated in code
+        (dataset/v2/prompts.py)."""
+        rows = []
+
+        def row(kind, entry_id, who=(), check=True):
+            entry = self.registry.resolved(entry_id)
+            rows.append({"kind": kind, "id": entry_id, "text": entry["name"], "who": sorted(who),
+                         "phrases": phrases(entry), "check": check})
+        for use in composition["use"]:
+            entry = self.registry.resolved(use["entry"])
+            slots = entry["components"].get("participants", {}).get("slots", {})
+            who = {ident for slot, value in use["bind"].items() if slots.get(slot, {}).get("kind") == "being"
+                   for ident in (value if isinstance(value, list) else [value])}
+            role = role_of(entry)
+            row({"interaction": "action", "arrangement": "position", "visual": "visual"}.get(role, role), use["entry"], who,
+                check=role in ("interaction", "visual"))
+        for who, placement in sorted(result.placements.items()):
+            if placement.get("posture") and placement["posture"] in self.registry:
+                row("posture", placement["posture"], [who])
+            for anchor in placement.get("anchors", []):
+                rows.append({"kind": "relation", "text": f"{who} {anchor['relation'].replace('_', ' ')} {' and '.join(anchor['of'])}",
+                             "who": sorted({who, *anchor["of"]}), "phrases": [], "check": False})
+        if composition["space"]:
+            row("place", composition["space"])
+        for item in composition["objects"]:
+            if item["item"]:
+                row("item", item["item"])
+        for relation in composition.get("relationships", []):
+            for a in relation["a"]:
+                for b in relation["b"]:
+                    rows.append({"kind": "relation", "text": f"{a} {relation['relation'].replace('_', ' ')} {b}",
+                                 "who": sorted({a, b}), "phrases": [], "check": False})
+        unique = []
+        for item in rows:
+            if item not in unique:
+                unique.append(item)
+        return unique
 
     def summary(self):
         """Run-level diagnostics: each image's composition, or why it is freeform or failed."""
@@ -729,7 +847,8 @@ def facts(registry, result, name=None):
         for instance, uses in sorted(instances.items()):
             purposes = sorted({use["purpose"] for use in uses if use["mode"] == "exclusive"})
             if purposes:
-                lines.append(f"{who}'s {instance.replace('_', ' ').replace('.', ' ')}: {', '.join(purposes)}")
+                part = " ".join(reversed(instance.replace("_", " ").split(".")))  # "leg.left" -> "left leg"
+                lines.append(f"{who}'s {part} " + " and ".join(PURPOSE_WORDS.get(purpose, purpose) for purpose in purposes))
     return lines
 
 

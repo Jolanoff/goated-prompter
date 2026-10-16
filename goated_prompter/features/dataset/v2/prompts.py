@@ -9,14 +9,19 @@ who takes which role, posture, facing, declared contact, busy body parts, the pl
 idea as "arrangement" lines with one more rule to keep them; the Director and the target model still decide the
 wording, emphasis and format. A freeform scene gets neither, so nothing unchecked is presented as checked.
 
-Code checks the user's exact trigger and the composed scene's locked clauses. A prompt
-that drops either is retried once, then marked failed. Other model prose is not semantically validated.
+Code checks the user's exact trigger and the composed scene's meaning (preserved): every action, each person's
+posture, the place, every item and each required visual direction must still be expressed, in any words (one of the
+entry's name or aliases, matched by stemmed content words in any order), never as a verbatim copy of the scene's
+internal lines. A prompt that drops either is retried once with what it lost, then marked failed. Facing and relative
+placement are given to the writer but not parsed; the Builder's own semantic review, when enabled, is the only check
+of the rest of the prose.
 """
 
 from dataclasses import replace
 import json
 
 from ...builder.service import GoatedPrompterService, PromptValidationError
+from ...vocabulary.composer import mentions
 from ....backends.recovery import GenerationRecovery, RunawayRecoveryError
 from .debug import DebugTrace
 
@@ -31,9 +36,9 @@ wording the target format needs."""
 
 ESTABLISHED_RULES = """
 ESTABLISHED SCENE FACTS: the arrangement lines were composed from vocabulary before the scene
-was written. Keep who takes which role, each person's posture and facing, and where they are relative to each
-other exactly as listed. The locked clauses below must occur verbatim in the final prompt; target-specific
-formatting and creative wording may surround them but must not replace them. Unknown is not validated."""
+was written. Keep their meaning: who does what to whom, each person's posture and facing, where they are relative
+to each other, the place, the items and the required camera. Write them in your own natural words for the target
+format; do not copy the labelled lines, role names or internal notation. Unknown is not validated."""
 
 
 def established(scene):
@@ -66,23 +71,47 @@ def scene_text(scene):
     return "\n".join(lines)
 
 
-def locked_clauses(scene):
-    """Code-owned mechanics may not be lost in a target adapter's rewrite."""
+def preserved(scene):
+    """What the final prompt must keep of a composed scene, as meanings: [{kind, text, who, phrases, check}]
+    (composer.Composer.semantics). A scene recorded before semantics existed keeps its actions, place and items by
+    name. [] for a freeform scene."""
     arrangement = established(scene)
     if not arrangement:
         return []
-    relationships = [f"{a} {row['relation'].replace('_', ' ')} {b}"
-                     for row in arrangement.get("contract", {}).get("relationships", []) for a in row["a"] for b in row["b"]]
-    return list(dict.fromkeys([scene["actions"], *arrangement["facts"],
-                              *relationships,
-                              *arrangement.get("visual", {}).values(),
-                              *([arrangement["space"]["name"]] if arrangement.get("space") else []),
-                              *(item["name"] for item in arrangement.get("items", []))]))
+    if arrangement.get("semantics"):
+        return arrangement["semantics"]
+    rows = [{"kind": "action", "text": entry["name"], "who": sorted({who for people in entry["roles"].values() for who in people}),
+             "phrases": [entry["name"]], "check": entry.get("role") == "interaction"} for entry in arrangement["entries"]]
+    if arrangement.get("space"):
+        rows.append({"kind": "place", "text": arrangement["space"]["name"], "who": [], "phrases": [arrangement["space"]["name"]],
+                     "check": True})
+    rows += [{"kind": "item", "text": item["name"], "who": [], "phrases": [item["name"]], "check": True}
+             for item in arrangement.get("items", [])]
+    return rows
+
+
+def _meaning(row):
+    who = f" ({', '.join(row['who'])})" if row.get("who") else ""
+    other = [phrase for phrase in row["phrases"] if phrase != row["text"]]
+    return f"{row['kind']}: {row['text']}{who}" + (f", e.g. {' / '.join(other[:3])}" if other else "")
+
+
+def scene_meaning(scene):
+    """The meanings to keep, one per line, for the final writer (checked ones and the ones it is only told)."""
+    return "\n".join("- " + _meaning(row) for row in preserved(scene))
+
+
+def lost(prompt, scene):
+    """The checked meanings the prompt no longer expresses."""
+    return [row for row in preserved(scene) if row["check"] and row["phrases"] and not mentions(prompt, row["phrases"])]
 
 
 def mechanics_problem(prompt, scene):
-    missing = [clause for clause in locked_clauses(scene) if clause not in prompt]
-    return "Preserve these locked scene clauses verbatim: " + " | ".join(missing) if missing else None
+    missing = lost(prompt, scene)
+    if not missing:
+        return None
+    return ("The prompt lost part of the established scene. Express each of these in natural words that suit the "
+            "target (any phrasing that keeps the meaning; do not paste labels): " + "; ".join(_meaning(row) for row in missing))
 
 
 def _trigger_rule(brief):
@@ -133,7 +162,7 @@ def write_prompts(config, request, brief, scenes, *, checkpoint=lambda: None, pr
                 report=lambda detail: trace.decide("runaway_recovery", detail), progress=progress)
             for attempt in (1, 2):
                 rules = "\n\n".join(part for part in (SCENE_RULES, ESTABLISHED_RULES if established(scene) else "",
-                                                      "LOCKED SCENE CLAUSES\n" + "\n".join(locked_clauses(scene)) if established(scene) else "",
+                                                      "MEANING TO KEEP\n" + scene_meaning(scene) if preserved(scene) else "",
                                                      requirements, _trigger_rule(brief),
                                                      f"CORRECTION: {problem}" if problem else "") if part)
                 builder_request = replace(request, idea=idea, mode="Enhance", planning_mode="Direct",

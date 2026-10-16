@@ -126,7 +126,7 @@ class Persistence(RunStoreHarness):
     def test_builder_validation_rejection_keeps_other_images_and_records_failed_slot(self):
         with patch("goated_prompter.features.builder.service.pick_references", return_value=("A reader by a window.",)), \
              patch("goated_prompter.features.builder.service.copied_reference",
-                   side_effect=lambda text, references: "location2" in text):
+                   side_effect=lambda text, references, **_: "location2" in text):
             job = self.run_job()
         self.assertEqual(job.result["prompt_summary"], {"written": 2, "missing": [2]})
         self.assertFalse(job.result["complete"])
