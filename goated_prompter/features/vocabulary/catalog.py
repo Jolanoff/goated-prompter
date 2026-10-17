@@ -192,18 +192,6 @@ def catalog_for(selection, root=None, user_root=None):
     return load_catalog(root, user_root)
 
 
-def built_in_entries(pack_id, root=None):
-    """The entries of one built-in pack ("<folder>/<file>"), or [] when it is missing or cannot be read."""
-    folder, _, stem = pack_id.partition("/")
-    root = _roots(root, False)[0]
-    try:
-        categories, _ = read_categories(root)
-        category = next(row for row in categories if row["folder"] == folder)
-        return read_pack(Path(root) / folder / f"{stem}.json", category["id"], folder)["entries"]
-    except (StopIteration, OSError, ValueError):
-        return []
-
-
 # ---------------------------------------------------------------- one run's selection
 
 def validate_selection(catalog, selection):

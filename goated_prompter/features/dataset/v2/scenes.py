@@ -12,10 +12,6 @@ word for word); the writer chooses an entry that fits the request and the cast. 
 the selected entries and that no entry is used by more images than ENTRY_CAP allows (two, or more when the selected
 packs have fewer entries than the requested images), and asks again otherwise (the last round keeps the image).
 
-Looks: when the cast has people and no Subjects pack is selected, every image gets one look per character from the
-built-in Subjects/Humans pack, dealt from a seeded shuffle without repeats, so each image and each seed starts from
-different people.
-
 A scene has subjects (per character: skin, build, hair, detail, clothing), position (per character), actions, space,
 lighting, mood, camera and extras. Actions & Poses entries may define a pose with their action or leave it open, and
 name people as "one person" / "the other person": the writer maps them to the character labels (and their gender) and
@@ -43,7 +39,7 @@ from ....backends.recovery import GenerationRecovery, RunawayRecoveryError
 from ....contracts import PromptInstruction, effective_model_family
 from ....director_profiles import resolve_director_config
 from ....prompting.creativity import CREATIVITY_ADAPTERS
-from ...vocabulary.catalog import (built_in_entries, catalog_for, record as selection_record, selected_vocabulary,
+from ...vocabulary.catalog import (catalog_for, record as selection_record, selected_vocabulary,
                                    validate_selection, vocabulary_prompt)
 from .assignments import dataset_assignments
 from .understanding import validate_brief
@@ -57,8 +53,6 @@ MAX_FIELD = 2000
 EARLIER = 25  # every earlier image of a run (25 is the largest amount)
 TEMPERATURE = {"Strict": .55, "Balanced": .8, "Creative": .95, "Dice": 1.05}
 ACTIONS_CATEGORY = "Actions & Poses"
-SUBJECTS_CATEGORY = "Subjects"
-LOOKS_PACK = "Subjects/Humans"
 ENTRY_CAP = 2
 _PLACEHOLDER = re.compile(r"\b(?:one|the other) person\b", re.IGNORECASE)  # Actions & Poses wording left unreplaced
 _NEGATION = re.compile(r"^\s*(?:no|not|without|avoid|never|don'?t|do not)\b\s*", re.IGNORECASE)
@@ -180,9 +174,6 @@ NSFW_RULE = ("- This dataset is adult and explicit: the action is the adult acti
 SFW_RULE = "- This dataset is not adult content: no nudity and nothing explicit."
 NO_PEOPLE_RULE = "- There are no people: describe how the subject is placed instead of a pose."
 GUIDED_RULE = "- An image's input fixes its action: keep it, and build the rest of the scene around it."
-LOOKS_RULE = ("- An image lists a look for each character: build that character's skin, build, hair and detail from it, "
-              "adapted to the character's gender, age and species. When fixed keeps the same people in every image, keep "
-              "them instead.")
 ENTRY_RULE = """ACTIONS & POSES ENTRY
 Base every scene on one entry from the Actions & Poses vocabulary that fits the request and this cast: an entry that
 needs something this cast does not have does not fit. Copy that entry word for word into the scene's "entry" field.
@@ -207,14 +198,12 @@ def slot_inputs(brief):
     return {row["index"]: row["input"] for row in guided_assignments(brief)}
 
 
-def _system(brief, errors, vocabulary="", entry_cap=None, looks=False):
+def _system(brief, errors, vocabulary="", entry_cap=None):
     content = NSFW_RULE if brief["path"] == "nsfw_character" else SFW_RULE
     if not brief["characters"]:
         content += "\n" + NO_PEOPLE_RULE
     if brief["input"].get("source_mode") == "guided":
         content += "\n" + GUIDED_RULE
-    if looks:
-        content += "\n" + LOOKS_RULE
     system = COMPOSE_SYSTEM.format(content_rule=content)
     if vocabulary:
         system += "\n\n" + VOCABULARY_RULES
@@ -251,7 +240,7 @@ def compose_message(brief, images, earlier=(), vocabulary="", entries_used=None)
 
 
 def compose_instruction(brief, images, earlier=(), errors=(), vocabulary="", entry_cap=None, entries_used=None):
-    """One composition request. images: [{"image": n, "input"?: guided text, "looks"?: {label: look}}]; vocabulary:
+    """One composition request. images: [{"image": n, "input"?: guided text}]; vocabulary:
     the SELECTED VOCABULARY section ("" for none); entry_cap: set when scenes name their Actions & Poses entry."""
     labels = _labels(brief)
     text = {"type": "string", "maxLength": MAX_FIELD}
@@ -266,8 +255,7 @@ def compose_instruction(brief, images, earlier=(), errors=(), vocabulary="", ent
               "properties": {"scenes": {"type": "array", "minItems": count, "maxItems": count, "items": item}}}
     per_image = 700 + 300 * len(labels)
     creativity = brief["settings"]["creativity"] or "Balanced"
-    looks = any("looks" in image for image in images)
-    return PromptInstruction(system_message=_system(brief, errors, vocabulary, entry_cap, looks),
+    return PromptInstruction(system_message=_system(brief, errors, vocabulary, entry_cap),
                              user_message=compose_message(brief, images, earlier, vocabulary, entries_used),
                              model_family=brief["_family"], diagnostic_stage="dataset_v2:scenes",
                              max_tokens=per_image * count, hard_max_tokens=per_image * count,
@@ -335,7 +323,7 @@ def _entry_key(text):
 
 def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progress, on_slot):
     """Compose one batch, asking again for the images still missing: ({number: scene}, {number: failure}).
-    plan: {"vocabulary": section, "entries": {key: entry} or None, "cap", "used": {entry: images}, "looks": {slot: {}}}."""
+    plan: {"vocabulary": section, "entries": {key: entry} or None, "cap", "used": {entry: images}}."""
     labels, avoid = _labels(brief), brief["_avoid"]
     entries, cap, used = plan["entries"], plan["cap"], plan["used"]
     extra = ("entry",) if entries else ()
@@ -348,8 +336,7 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
             break
         recovery.items = tuple(todo)
         progress(f"Composing scene{'s' if len(todo) > 1 else ''} {', '.join(map(str, todo))}...")
-        images = [{"image": number, **({"input": inputs[number]} if inputs[number] else {}),
-                   **({"looks": plan["looks"][number]} if plan["looks"].get(number) else {})} for number in todo]
+        images = [{"image": number, **({"input": inputs[number]} if inputs[number] else {})} for number in todo]
         errors = sorted({f"image {number}: {reason}" for number in todo for reason in reasons[number]})
         prompt = compose_instruction(brief, images, earlier + [_summary(scenes[n]) for n in sorted(scenes)], errors,
                                      plan["vocabulary"], cap if entries else None, used if entries else None)
@@ -433,23 +420,6 @@ def _shuffled(groups, rng):
     return result
 
 
-def deal_looks(labels, total, pool, rng):
-    """{slot: {label: look}}: one look per character per image, dealt from a shuffled pool without repeats until the
-    pool runs out ({} without characters or looks)."""
-    if not labels or not pool:
-        return {}
-    deck, looks = [], {}
-    for number in range(1, total + 1):
-        row = {}
-        for label in labels:
-            if not deck:
-                deck = list(pool)
-                rng.shuffle(deck)
-            row[label] = deck.pop()
-        looks[number] = row
-    return looks
-
-
 def entry_cap(entries, total):
     """How many images may use one Actions & Poses entry: ENTRY_CAP, or more when there are fewer entries than
     images."""
@@ -477,10 +447,8 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
     rng = random.Random(seed) if isinstance(seed, int) else random.Random()
     actions = next((group for group in groups if group["category"] == ACTIONS_CATEGORY), None)
     action_entries = list(dict.fromkeys(entry for pack in actions["packs"] for entry in pack["entries"])) if actions else []
-    labels = _labels(brief)
-    pool = [] if guided or any(group["category"] == SUBJECTS_CATEGORY for group in groups) else built_in_entries(LOOKS_PACK)
     plan = {"entries": {_entry_key(entry): entry for entry in action_entries} or None,
-            "cap": entry_cap(action_entries, total), "used": {}, "looks": deal_looks(labels, total, pool, rng)}
+            "cap": entry_cap(action_entries, total), "used": {}}
     effective, profile = resolve_director_config(config, request)
     brief = {**brief, "_family": effective_model_family(request, profile, effective), "_avoid": avoid_patterns(brief)}
     scenes, failed = {}, {}

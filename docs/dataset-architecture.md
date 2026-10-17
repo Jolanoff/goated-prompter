@@ -43,8 +43,8 @@ entries of those packs (merged per category and shuffled for every batch by a ge
 plus the shared vocabulary usage rules. The request and the approved requirements always win. With an Actions & Poses
 pack selected, every scene names the entry it is built on (`entry`); code checks the entry is one of the selected ones
 and that no entry is used by more than two images (`ENTRY_CAP`, raised to the images-per-entry when there are fewer
-entries than images), and asks again otherwise. When the cast has people and no Subjects pack is selected, every image
-gets one look per character, dealt by the seeded generator from the built-in `Subjects/Humans` pack. Missing images
+entries than images), and asks again otherwise. No pack is used automatically: character looks come from the request
+and approved requirements, with vocabulary guidance only from manually selected Subjects packs. Missing images
 are retried, then reported; the last round keeps an image rather than lose it.
 
 Prompts (`v2/prompts.py`): the existing Builder writes each final prompt from the scene with the run's Director

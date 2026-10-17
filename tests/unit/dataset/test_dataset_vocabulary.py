@@ -188,27 +188,35 @@ class SceneVocabulary(unittest.TestCase):
         self.assertEqual(scenes.entry_cap(["a"] * 20, 10), 2)
         self.assertIsNone(scenes.entry_cap([], 10))
 
-    def test_people_get_dealt_looks_that_change_with_the_seed(self):
+    def test_unselected_subjects_never_supply_character_looks(self):
         pair = [{"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 1},
                 {"label": "woman", "gender": "female", "custom": "", "pronoun": "she", "count": 1}]
-        self.write(self.brief("A couple", pair, amount=3))
-        call = self.composer()[0]
-        images = composer_user(call.user_message)["images"]
-        looks = [look for image in images for look in image["looks"].values()]
-        self.assertEqual([set(image["looks"]) for image in images], [{"man", "woman"}] * 3)
-        self.assertEqual(len(set(looks)), 6, "no look repeats while the pack has more")
-        self.assertIn(scenes.LOOKS_RULE, call.system_message)
-        pool = ["look a", "look b", "look c", "look d"]
-        import random
-        self.assertNotEqual(scenes.deal_looks(["x"], 4, pool, random.Random(1)),
-                            scenes.deal_looks(["x"], 4, pool, random.Random(2)))
-        self.assertEqual(scenes.deal_looks(["x"], 4, pool, random.Random(1)),
-                         scenes.deal_looks(["x"], 4, pool, random.Random(1)))
+        for packs in ([], ["Spaces/Fantasy"]):
+            with self.subTest(packs=packs):
+                self.calls.clear()
+                with patch("goated_prompter.features.vocabulary.catalog.read_pack",
+                           side_effect=AssertionError("The supplied catalog needs no extra pack reads")):
+                    result = self.write(self.brief("A couple", pair, amount=3), packs)
+                self.assertTrue(result["complete"])
+                for call in self.composer():
+                    user = composer_user(call.user_message)
+                    self.assertTrue(all("looks" not in image for image in user["images"]))
+                    self.assertNotIn("Subjects\n", user.get("vocabulary", ""))
+                    self.assertNotIn("An image lists a look for each character", call.system_message)
 
-    def test_a_selected_subjects_pack_replaces_the_dealt_looks(self):
+    def test_only_the_manually_selected_subjects_pack_is_sent(self):
         knight = [{"label": "knight", "gender": "male", "custom": "", "pronoun": "he", "count": 1}]
-        self.write(self.brief("A knight", knight, amount=1), ["Subjects/Robots"])
-        self.assertNotIn("looks", composer_user(self.composer()[0].user_message)["images"][0])
+        for pack_id in ("Subjects/Robots", "Subjects/Humans"):
+            with self.subTest(pack=pack_id):
+                self.calls.clear()
+                result = self.write(self.brief("A knight", knight, amount=1), [pack_id])
+                user = composer_user(self.composer()[0].user_message)
+                self.assertNotIn("looks", user["images"][0])
+                self.assertIn("Subjects\nCore instruction:", user["vocabulary"])
+                pack = next(pack for pack in self.catalog["packs"] if pack["id"] == pack_id)
+                for entry in pack["entries"]:
+                    self.assertIn(entry, user["vocabulary"])
+                self.assertEqual([pack["id"] for pack in result["vocabulary"]["selection"]["packs"]], [pack_id])
 
     def test_the_seed_shuffles_the_vocabulary_order(self):
         def order(seed):
