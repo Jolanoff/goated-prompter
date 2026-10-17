@@ -6,6 +6,7 @@ import shutil
 import tempfile
 import unittest
 from unittest.mock import patch
+from tests.helpers import enter_context
 
 from aiohttp.test_utils import TestClient, TestServer
 
@@ -20,9 +21,9 @@ class VocabularyCatalogAPITests(unittest.IsolatedAsyncioTestCase):
         self.root = Path(self.temp.name) / "vocabulary"
         shutil.copytree(catalog.ROOT, self.root, ignore=shutil.ignore_patterns("SKILL.md"))
         self.user = Path(self.temp.name) / "data-vocabulary"
-        self.enterContext(patch.object(catalog, "ROOT", self.root))
-        self.enterContext(patch.object(catalog, "USER_ROOT", self.user))
-        self.enterContext(patch("local_app.get_process_manager"))
+        enter_context(self, patch.object(catalog, "ROOT", self.root))
+        enter_context(self, patch.object(catalog, "USER_ROOT", self.user))
+        enter_context(self, patch("local_app.get_process_manager"))
         app = local_app.create_app(config_loader=lambda: {"backend": "mock"}, settings_path=Path(self.temp.name) / "settings.json")
         self.client = TestClient(TestServer(app), headers={"Host": "127.0.0.1:8190"})
         await self.client.start_server()

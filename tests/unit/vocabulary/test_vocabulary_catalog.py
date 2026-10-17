@@ -6,6 +6,7 @@ import shutil
 import tempfile
 import unittest
 from unittest.mock import patch
+from tests.helpers import enter_context
 
 from goated_prompter.features.vocabulary import catalog
 from goated_prompter.features.vocabulary.catalog import (CatalogError, catalog_for, import_pack, load_catalog, record,
@@ -19,7 +20,7 @@ def isolate_imports(case):
     """Point the imported-pack folder at an empty temporary one, so the user's own data/vocabulary never counts."""
     folder = Path(tempfile.mkdtemp())
     case.addCleanup(shutil.rmtree, folder, True)
-    case.enterContext(patch.object(catalog, "USER_ROOT", folder))
+    enter_context(case, patch.object(catalog, "USER_ROOT", folder))
     return folder
 
 

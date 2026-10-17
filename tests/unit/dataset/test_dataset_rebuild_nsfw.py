@@ -4,6 +4,7 @@ from copy import deepcopy
 import json
 import unittest
 from unittest.mock import patch
+from tests.helpers import enter_context
 
 from goated_prompter.backends.mock import MockBackend
 from goated_prompter.contracts import GoatedPrompterRequest
@@ -20,10 +21,10 @@ class AdultDatasetTests(unittest.TestCase):
         self.scene = {}
         self.replies = {}
         self.final_text = "adult_token: The consenting adults keep their assigned positions and red ribbon."
-        self.enterContext(patch.object(self.backend, "generate", side_effect=self.generate))
+        enter_context(self, patch.object(self.backend, "generate", side_effect=self.generate))
         for module in (understanding, scenes):
-            self.enterContext(patch.object(module, "create_backend", return_value=self.backend))
-        self.enterContext(patch("goated_prompter.features.builder.service.create_backend", return_value=self.backend))
+            enter_context(self, patch.object(module, "create_backend", return_value=self.backend))
+        enter_context(self, patch("goated_prompter.features.builder.service.create_backend", return_value=self.backend))
         self.config = {"backend": "mock"}
         self.request = GoatedPrompterRequest(idea="Consenting adults", director_preset="general_director", planning_mode="Direct")
 

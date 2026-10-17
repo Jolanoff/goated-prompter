@@ -29,10 +29,13 @@ test("the Vocabulary Library searches, previews, and applies or discards a selec
   await expect(library.getByRole("checkbox", { name: "Select Fantasy (Spaces)" })).toBeChecked();
   await expect(library.getByRole("status")).toContainText("Selected: Fantasy, Cinematic");
   await library.getByRole("button", { name: "Apply" }).click();
-  await expect(page.getByText("Selected: Fantasy, Cinematic")).toBeVisible();
+  await expect(library).not.toBeVisible();
+  const selection = page.getByRole("region", { name: "Vocabulary", exact: true }).locator(".pack-picker-help");
+  await expect(selection).toHaveText("Selected: Fantasy, Cinematic");
 
   await page.getByRole("button", { name: "Vocabulary Library" }).click();
   await library.getByRole("checkbox", { name: "Select Fantasy (Spaces)" }).uncheck();
   await library.getByRole("button", { name: "Cancel" }).click();
-  await expect(page.getByText("Selected: Fantasy, Cinematic")).toBeVisible();
+  await expect(library).not.toBeVisible();
+  await expect(selection).toHaveText("Selected: Fantasy, Cinematic");
 });

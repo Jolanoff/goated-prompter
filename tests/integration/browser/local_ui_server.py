@@ -33,9 +33,9 @@ def ui_backend(config):
 
 
 class DelayedMockService(GoatedPrompterService):
-    def _generate(self, request, text_only=False):
+    def _generate(self, request, text_only=False, *, seed=None, recovery=None):
         time.sleep(1)
-        return super()._generate(request, text_only=text_only)
+        return super()._generate(request, text_only=text_only, seed=seed, recovery=recovery)
 
 
 if __name__ == "__main__":

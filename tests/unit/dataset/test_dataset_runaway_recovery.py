@@ -5,6 +5,7 @@ from copy import deepcopy
 import json
 import unittest
 from unittest.mock import Mock, patch
+from tests.helpers import enter_context
 
 from goated_prompter.backends.base import BackendConfigurationError, BackendGenerationError, BackendRunawayError
 from goated_prompter.backends.mock import MockBackend
@@ -29,10 +30,10 @@ class RunawayRecoveryTests(unittest.TestCase):
         self.brief = understanding.apply_rules(self.value, self.data)
         self.calls, self.scripts = [], defaultdict(list)
         self.backend = MockBackend()
-        self.enterContext(patch.object(self.backend, "generate", side_effect=self.generate))
+        enter_context(self, patch.object(self.backend, "generate", side_effect=self.generate))
         for module in (understanding, scenes):
-            self.enterContext(patch.object(module, "create_backend", return_value=self.backend))
-        self.enterContext(patch("goated_prompter.features.builder.service.create_backend", return_value=self.backend))
+            enter_context(self, patch.object(module, "create_backend", return_value=self.backend))
+        enter_context(self, patch("goated_prompter.features.builder.service.create_backend", return_value=self.backend))
 
     def loop(self):
         return BackendRunawayError('The prompt engine entered a repetition loop around "the s".',

@@ -7,6 +7,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
+from tests.helpers import enter_context
 
 from aiohttp.test_utils import TestClient, TestServer
 
@@ -26,15 +27,15 @@ class DatasetRebuildAdmissionTests(unittest.IsolatedAsyncioTestCase):
         self.data = {**default_dataset_draft(), "subject": "Two adults reading", "amount": 1, "seed": 73,
                      "seed_mode": "fixed", "trigger": "reader"}
         self.backend = MockBackend()
-        self.generate = self.enterContext(patch.object(self.backend, "generate", side_effect=lambda _prompt: json.dumps(self.value)))
-        self.enterContext(patch("goated_prompter.features.dataset.v2.understanding.create_backend", return_value=self.backend))
-        self.enterContext(patch("goated_prompter.features.dataset.runner.create_backend", return_value=self.backend))
-        self.scenes = self.enterContext(patch("goated_prompter.features.dataset.runner.write_scenes", return_value={
+        self.generate = enter_context(self, patch.object(self.backend, "generate", side_effect=lambda _prompt: json.dumps(self.value)))
+        enter_context(self, patch("goated_prompter.features.dataset.v2.understanding.create_backend", return_value=self.backend))
+        enter_context(self, patch("goated_prompter.features.dataset.runner.create_backend", return_value=self.backend))
+        self.scenes = enter_context(self, patch("goated_prompter.features.dataset.runner.write_scenes", return_value={
             "scenes": [{"slot": 1, "actions": "reading"}], "requested": 1, "written": 1, "complete": True, "missing": [],
             "slots": [{"slot": 1, "status": "written", "input": "", "concept": None, "stage": None, "reasons": [], "tries": 1}]}))
-        self.prompts = self.enterContext(patch("goated_prompter.features.dataset.runner.write_prompts", return_value=[
+        self.prompts = enter_context(self, patch("goated_prompter.features.dataset.runner.write_prompts", return_value=[
             {"slot": 1, "index": 1, "prompt": "reader reading", "trigger_ok": True}]))
-        self.enterContext(patch("local_app.get_process_manager"))
+        enter_context(self, patch("local_app.get_process_manager"))
         self.app = local.create_app(config_loader=lambda: {"backend": "mock"},
                                     settings_path=Path(self.temp.name) / "settings.json")
         self.client = TestClient(TestServer(self.app), headers={"Host": "127.0.0.1:8190"})

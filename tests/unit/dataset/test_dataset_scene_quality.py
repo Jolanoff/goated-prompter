@@ -4,6 +4,7 @@ prompt. Scripted models only: these check what is asked and checked, not how wel
 import json
 import unittest
 from unittest.mock import Mock, patch
+from tests.helpers import enter_context
 
 from goated_prompter.backends.mock import MockBackend
 from goated_prompter.contracts import GoatedPrompterRequest
@@ -19,10 +20,10 @@ class Harness(unittest.TestCase):
     def setUp(self):
         self.calls, self.replies = [], []
         self.backend = MockBackend()
-        self.enterContext(patch.object(self.backend, "generate", side_effect=self.generate))
-        self.enterContext(patch.object(scenes, "create_backend", return_value=self.backend))
-        self.enterContext(patch("goated_prompter.features.builder.service.create_backend", return_value=self.backend))
-        self.enterContext(patch("goated_prompter.features.builder.service.pick_references", return_value=()))
+        enter_context(self, patch.object(self.backend, "generate", side_effect=self.generate))
+        enter_context(self, patch.object(scenes, "create_backend", return_value=self.backend))
+        enter_context(self, patch("goated_prompter.features.builder.service.create_backend", return_value=self.backend))
+        enter_context(self, patch("goated_prompter.features.builder.service.pick_references", return_value=()))
         self.request = GoatedPrompterRequest(idea="dataset", planning_mode="Direct", director_preset="general_director")
         data = {**default_dataset_draft(), "subject": "2 adult men in an explicit scene", "amount": 10, "nsfw": True, "seed": 3,
                 "seed_mode": "fixed"}

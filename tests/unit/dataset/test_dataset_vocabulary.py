@@ -5,6 +5,7 @@ model uses it."""
 import json
 import unittest
 from unittest.mock import Mock, patch
+from tests.helpers import enter_context
 
 from goated_prompter.backends.mock import MockBackend
 from goated_prompter.contracts import GoatedPrompterRequest
@@ -22,9 +23,9 @@ class SceneVocabulary(unittest.TestCase):
         self.catalog = load_catalog(user_root=False)
         self.calls, self.entries = [], []
         self.backend = MockBackend()
-        self.enterContext(patch.object(self.backend, "generate", side_effect=self.generate))
-        self.enterContext(patch.object(scenes, "create_backend", return_value=self.backend))
-        self.enterContext(patch("goated_prompter.features.builder.service.create_backend", return_value=self.backend))
+        enter_context(self, patch.object(self.backend, "generate", side_effect=self.generate))
+        enter_context(self, patch.object(scenes, "create_backend", return_value=self.backend))
+        enter_context(self, patch("goated_prompter.features.builder.service.create_backend", return_value=self.backend))
         self.request = GoatedPrompterRequest(idea="dataset", planning_mode="Direct", director_preset="general_director")
 
     def brief(self, subject, cast, *, nsfw=False, amount=2):

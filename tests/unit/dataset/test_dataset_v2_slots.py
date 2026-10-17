@@ -5,6 +5,7 @@ import json
 import re
 import unittest
 from unittest.mock import Mock, patch
+from tests.helpers import enter_context
 
 from goated_prompter.backends.mock import MockBackend
 from goated_prompter.contracts import GoatedPrompterRequest
@@ -26,10 +27,10 @@ class SlotIdentityTests(unittest.TestCase):
         self.failing = {"omitted": set(), "description": set()}  # omitted: the answer stops before this image
         self.calls, self.scripts = [], defaultdict(list)
         self.backend = MockBackend()
-        self.enterContext(patch.object(self.backend, "generate", side_effect=self.generate))
+        enter_context(self, patch.object(self.backend, "generate", side_effect=self.generate))
         for module in (understanding, scenes):
-            self.enterContext(patch.object(module, "create_backend", return_value=self.backend))
-        self.enterContext(patch("goated_prompter.features.builder.service.create_backend", return_value=self.backend))
+            enter_context(self, patch.object(module, "create_backend", return_value=self.backend))
+        enter_context(self, patch("goated_prompter.features.builder.service.create_backend", return_value=self.backend))
         self.make_brief(3)
 
     def make_brief(self, amount, guided=()):
