@@ -51,7 +51,7 @@ Screenshots: save PNGs in docs/media/ with these names, then remove this comment
 | **Prompt Builder** | Turn text and up to **four reference images** into target-aware prompts. Mix a face from one image, a pose from another, and lighting from a third. |
 | **Refine** | Paste a prompt or send one from Builder, request targeted edits, compare changes and undo a refinement. |
 | **MiniMax H3** | Write video prompts for **4–15-second clips**, with symbolic references, automatic role analysis, H3 schemas, and Director presets. |
-| **Dataset** | Create **1–25 varied prompts** from one concept or just a trigger, for LoRA training sets. A Director stages every scene, your prompt library sets the writing style, a seed repeats or varies a batch, and recent ideas are avoided across runs. TXT/JSONL export. |
+| **Dataset** | Create **1–25 varied prompts** from one request, for LoRA training sets. You confirm the request first; optional vocabulary packs you pick add creative material, and a seed repeats or varies a batch. TXT/JSON export. |
 | **Saved Prompts** | Add your own prompts directly, keep named outputs, and open saved text in Builder. |
 | **Prompt Library** | Add, edit and delete target-specific writing examples in a compact list. Stored in the same plain-text files. |
 
@@ -195,7 +195,7 @@ Copy **`config/config.example.json`** to **`config/config.json`**, then set `loc
 
 Leave `"backend": "local_llama_cpp"` selected. If `config.json` is absent, copy `config/config.example.json` to `config/config.json` first. The example uses `llama-server` on PATH; an absolute path is usually easier on Windows. You do not need to hand-edit `model_path` or `mmproj_path` for an engine selected through the website.
 
-The shipped local defaults use `context_size: 32768` and `max_tokens: 4096`. Dataset generation uses bounded output budgets based on the selected prompt length. An unfinished bounded stream is stopped once it exceeds 7,000 generated characters, then that individual prompt can retry up to three times. A 32K context consumes more RAM/VRAM than 8K; lower `context_size` if your hardware cannot load it. Restart the app (and unload any retained model) after changing runtime settings so llama.cpp starts with the new context.
+The shipped local defaults use `context_size: 32768` and `max_tokens: 4096`. Dataset generation uses bounded output budgets based on the selected prompt length. An unfinished bounded writer stream is stopped once it exceeds 7,000 generated characters; that individual prompt gets at most one retry. A 32K context consumes more RAM/VRAM than 8K; lower `context_size` if your hardware cannot load it. Restart the app (and unload any retained model) after changing runtime settings so llama.cpp starts with the new context.
 
 Start the app from the project folder:
 
@@ -305,9 +305,7 @@ The coding assistant must not inspect private **`data/`** contents. This is not 
 
 #### Saved creative settings and advanced instructions
 
-Refine, MiniMax H3, and Dataset settings autosave separately to **`data/workflow_settings.json`**. Refine retains requested changes, locks and editable prompt/target drafts; MiniMax and Dataset retain their workflow-specific inputs and current results. Wait for the respective **Saved** indicator before closing or reloading. Failed writes keep the local draft and expose retry/reload actions; revision checks prevent a stale browser tab from replacing newer settings.
-
-Dataset generated progress is different: the backend atomically writes completed ideas, checked scenes and final prompts to **`data/dataset_checkpoints.json`** before displaying them. Browser autosave is needed for your edits, not completed generation work. Revision and input signatures prevent stale jobs from replacing newer edits. After a backend restart, completed progress is recovered as interrupted work, not silently resumed inference. Generate from the recovered plan to continue.
+Refine, MiniMax H3, and Dataset settings autosave separately to **`data/workflow_settings.json`**. Refine retains requested changes, locks and editable prompt/target drafts; MiniMax retains its inputs and current result, and Dataset its settings (Dataset runs are saved separately, see below). Wait for the respective **Saved** indicator before closing or reloading. Failed writes keep the local draft and expose retry/reload actions; revision checks prevent a stale browser tab from replacing newer settings.
 
 Expand **Refine advanced settings** to edit its built-in behavior. **Save instructions** activates edits for subsequent generations; **Discard instruction edits** restores the saved editor text; **Use built-in instructions** resets the workflow to its shipped default. Unsaved instruction-editor changes require an explicit save before reload, unlike the ordinary autosaved controls.
 
@@ -317,96 +315,29 @@ Custom workflow instructions replace the corresponding built-in behavior. Target
 
 ### Dataset prompt batches
 
-Build a batch around one concept, keep shared details consistent, and vary the scenes. Every generation begins with Understanding and your approval.
+Build a batch around one request, keep shared details consistent, and vary the scenes. Every batch begins with Understanding and your approval.
 
-1. Describe the **Dataset idea** and choose a subject type, amount (**1–25**), and variety.
-2. Add consistency rules, optional guided scene ideas, and training triggers if needed.
-3. Choose the visual treatment, Director preset, target model, and prompt length.
-4. Click **Generate prompts** or **Plan scenes first**, review Understanding, and confirm. Answer any clarification questions through reanalysis first.
-5. Inspect ideas, their scenes and final prompts. Edit any scene, regenerate an idea or prompt, and export **TXT**, **JSONL**, or **Scenes JSON**.
+1. On **Configure**, write the **Request**, choose **NSFW** and the **Amount** (**1–25**), and add an optional **Trigger** for LoRA training. **Advanced options** hold consistency rules, the seed and whether the trigger must start each prompt.
+2. Choose the Director preset, target model, prompt length, creativity and style. The Director and target model shape the final prompts; the scenes are written without a Director. Directors that need reference images, edit an image or write video are not offered here.
+3. Choose the scene source: **Invent scenes**, or **Use my scene ideas** with one idea per line (lines cycle to fill the batch). Your own scene ideas are used as written, without vocabulary.
+4. With **Invent scenes**, optionally open the **Vocabulary Library** to select vocabulary packs (search, filter by category, preview, then **Apply**). The selection is saved with your Dataset settings. With an **Actions & Poses** pack selected, every scene is built on one of its entries, and no entry is used by more than two images (more only when the pack has fewer entries than images). Without a **Subjects** pack, each image still gets different people, dealt from the built-in Humans looks.
+5. Click **Generate** or **Generate scenes only**. Check what the review says stays fixed and what varies, then **Confirm**. Nothing is written before you confirm.
+6. The **Scenes** page shows each image's scene as soon as it is written, and **Dataset** shows each final prompt as soon as it is written. Copy them or download TXT or JSON. **Export generation log** saves the current state to a file.
 
-#### How a batch stays varied
-
-- A brainstorm lists about three candidate events per image, and the app picks among them, gently favouring the less obvious ones and skipping near-repeats.
-- Each image gets its own creative direction (framing, light, mood, interaction, setting), and each randomly invented person gets their own hair, build, skin tone and adult age.
-- Recent ideas are avoided across runs, even after a restart (see [Checkpoint privacy and recovery](#checkpoint-privacy-and-recovery)).
-- **Seed** and **Seed control** under Advanced options work like ComfyUI: Fixed repeats a batch as closely as the engine allows, Increment and Randomize explore new ones.
-- If the model loops while brainstorming or writing ideas, the batch keeps going and only the affected images are redone.
-
-#### Directors
-
-The selected Director shapes the brainstorm and stages every scene (framing, camera, light). A Director built around one kind of shot, such as **Mirror Selfie**, makes every image that shot, even when the only input is your trigger.
-
-#### Prompt library as a style template
-
-When a target's library has prompts, the app measures their range of lengths, structure (labeled sections, prose or tags) and any shared trigger word, and shows the final writer two of them at random for each image. The writer copies their structure, order and level of detail; the medium, style, palette and mood still come from your idea, the Style setting and the Director. Length settings pick a point in your library's own range (Short near your shorter prompts, Maximum Detail near your longest).
-
-Ideas never see the library prompts themselves, so your saved prompts' places and situations do not turn up in every batch. Once per library version the app asks the model for short craft notes on how your prompts are written (specific action, props, staging, light, detail), drops any note that repeats a word specific to your prompts, keeps them in `.craft-notes/` next to the library file, and gives only those notes to the idea step.
+Runs are not saved by the app; copy or download what you want to keep. Editing scenes, regenerating single images and continuing a scenes-only run are not available. **Seed** and **Seed control** work like ComfyUI: the seed drives the engine and the order in which vocabulary and looks are offered, so Fixed repeats a batch as closely as the engine allows, and Increment and Randomize give different scenes.
 
 #### Adult content (Dataset only)
 
-Sexual requests are supported in the Dataset tab only, and everyone must be an adult: a request that makes someone a child or teen is refused before generation, and a sexual batch can never involve an animal.
-
-- The act is the core of every idea, and each idea varies the situation around it (place, what led there, who starts it, mood, clothing). The brainstorm gets a fresh random handful of positions that fit the cast as inspiration, never forced.
-- Ordinary consensual sex is the default. BDSM, domination, restraint and fetish dynamics appear only when your request or a Director asks for them; oral and feet positions only when requested.
-- Ownership language in the request or Director (slave, owned, master or mistress, human pet) makes the power exchange part of every image: only power-exchange moods, dynamics and clothing, a prop in each image, and power-exchange positions instead of ordinary ones.
-- Acts stay between the people your request pairs (with two men and a woman, each man is with her unless you ask otherwise).
-- Every body part stays attached to its owner, and two people's genitals never merge; wording that breaks this is redone.
-
-**Your private vocabulary.** The moods, dynamics, places, clothing, props and positions for adult batches are not part of the project. They live in your own plain-text file, **`data/vocabulary/sexual.txt`**, which the app creates empty on first launch (listing every section) and which is never committed. Edit it in any text editor: one entry per line under a `[section]` heading, `#` for comments. Changes apply to the next batch without a restart. Without the file, adult batches still work and the model invents those details itself within the rules.
-
-| Section | Used |
-| --- | --- |
-| `[rules]` | Extra rule lines for every adult batch |
-| `[ownership rules]` | Extra rule lines when the request or Director uses ownership language |
-| `[mood]` `[interaction]` `[setting]` `[clothing]` | Every adult batch |
-| `[group interaction]` | Three or more people |
-| `[kink mood]` `[kink interaction]` `[kink setting]` `[kink clothing]` `[props]` | When kink or ownership is requested |
-| `[pet mood]` `[pet interaction]` | When pet play is requested |
-| `[solo positions]` `[couple positions]` `[two men positions]` `[two women positions]` `[man and woman positions]` `[three positions]` `[group positions]` | By cast |
-| `[oral positions]` `[feet positions]` `[kink positions]` `[pet positions]` `[furniture positions]` `[aftercare positions]` | When requested (furniture also with ownership) |
-| `[requested]` | `pattern => entry`: the entry joins the positions when your request matches the pattern |
+Adult (NSFW) requests are supported in the Dataset tab only, and everyone must be an adult: a request that makes someone a child or teen is refused before generation, and an adult batch can never involve an animal. The repository ships only general vocabulary; keep adult packs in your own `data/vocabulary/` by importing them.
 
 Freaky stuff are ignored. Generating freaky stuff is at your own risk. I'm not responsible of any prompt you generate.
 
-<details>
-<summary><strong>Dataset controls, scene planning, and validation details</strong></summary>
+#### Vocabulary packs
 
-Open **Dataset** and start with **Dataset idea**: describe the subject and what should happen, for example “a woman doing funny stuff.” Choose Subject type, Amount and Variety, then final visual treatment, target and prompt length. Character, multiple-character, animal, object/product, visual-style, location/environment, brand/logo, typography/text, concept and custom types receive appropriate planning guidance. Training trigger controls are separate and collapsible; opaque trigger tokens are not sent to Scene Planner as visual descriptions.
+Each category is a folder under `vocabulary/` (Subjects, Actions & Poses, Spaces, Objects, Expressions, Clothing, Mood & Tone, Lighting, Camera & Composition, Effects & Atmosphere), and each JSON file in it is one pack, for example
+`{"name": "Rooftops", "category": "Spaces", "entries": ["rooftop bar", "water tower"]}`. Click **Import packs** on the **Vocabulary** tab and choose one or more pack files: each is checked and saved in `data/vocabulary/<its category's folder>/`, and importing the same file again replaces it. A pack that cannot be read is listed there with the reason, and every other pack keeps working. The categories are defined in `vocabulary/core/` (`scene_category_registry.json`, `category_definitions.json`, `prompt_instructions.json`); a new category is one entry in each plus its folder.
 
-**Allow the model to expand the trigger** is on by default. **Require trigger at the beginning** strongly requests beginning placement when enabled; while off, the model is encouraged to write a natural visual introduction first. With expansion on, the trigger is kept together or spread near what it describes, whichever reads most naturally. With expansion off, **Keep trigger text connected** appears: it requests the complete input as one phrase; turn it off to encourage comma-, line-, or `and`-separated terms in different meaningful positions, such as `woman, cake` or `1 man and 1 girl`. Placement and grouping remain warning-only preferences. With expansion off, every trigger term must appear exactly as typed, including capitalization and word order. Missing exact wording retries only that final prompt, preserving its idea and scene. With expansion enabled, articles, capitalization and inserted descriptors may vary: `a banana` can become `A muscular anthropomorphic banana`, but both banana and apple must still be mentioned for `a banana, an apple`. Subject/attribute words are matched as whole words in order; unknown semantic paraphrases need manual review, and custom identifier tokens remain protected. When expansion is off, the model may still describe actions, poses, interactions, scene-relevant clothing or use, composition, and lighting, but it must not invent intrinsic identity, appearance, design, material, style, or location properties unless the concept, rules, guided input, or trigger explicitly supplies them.
-
-The **dataset concept** is the recurring activity, relationship, environment, or theme shared by the batch—for example, “their adventures together.” **Consistency and variation rules** state both fixed requirements (“the man is taller and has a beard”) and deliberate changes (“use a different adventure and outfit in every prompt”). Explicit rules are allowed even when trigger expansion is disabled. The seed field shows the seed of the last batch. The seed drives the app's random picks and is sent to the model, so a fixed seed with the same settings and model repeats a batch as closely as the engine allows; regenerating one image stays random.
-
-Choose 1–25 prompts, a realistic or non-realistic visual treatment, variety level, Director preset, target model and prompt length. **Let Scene Planner invent scenes** develops distinct visible events inside your concept and rules. **Provide my own scene ideas** uses one line per idea. Scene Planner improves each guided idea without replacing its central action or named objects; when lines cycle, only permitted context and presentation vary.
-
-Scene Planner follows your concept, consistency rules, and guided inputs, choosing compatible action, expression, framing, setting, and lighting rather than receiving automatic facet assignments.
-
-Old final prompts remain readable. Obsolete scene plans are excluded from executable drafts and need replanning before reuse; archived checkpoints remain intact.
-
-Generation follows **UNDERSTAND → approval → IDEAS (each with its finished scene) → Builder ENHANCE → FINAL PROMPT**. Understanding lists the characters in every image (name, count, sex, kind such as human, anthro, monster, alien or robot, and whether they are an existing character, described by you or invented per image) and exposes a compact **HARD / SOFT / FREE** contract alongside its richer interpretation: approved HARD obligations are immutable, SOFT preferences may adjust, and FREE choices remain open within the user's expansion limits. Counts, required actions, contacts and demanded visible evidence retain their scope and qualifiers. Added instructions require reanalysis; unresolved questions block downstream generation.
-
-Before IDEAS, a brainstorm lists about three candidate events per image with how typical each is; the app skips near-repeats of recent runs and samples the batch, gently favouring unusual events, and draws a different hair, build, adult age (unless the role implies one) and, when you left it open, sex for each randomly invented person. Ideas keep every body in an ordinary, supported pose and show a fall or jump just before or after it, never mid-air. Anima prompts that print their tag list twice keep one copy. An idea with a body in the air, upside down or in acrobatics you did not ask for is redone, and a final prompt that lists rules or settings instead of the picture, or loops one phrase, is rewritten. Numbered role labels such as "friend 1" never reach a scene or prompt, an expanded trigger is never quoted (which would letter it into the image) or left alone at the end, and Anima keeps only the count tags that match the cast, without a contradictory solo. IDEAS then writes five images per call, each later call seeing the earlier ideas: a one-line **idea** (the core event) and its **scene**, a complete three-to-five-sentence picture with the whole cast in frame, placement, action, setting, light and camera. There is no separate scene-building call, geometry engine, evaluator or recursive repair loop. Invalid idea output stops that stage without fallback scenes or substitute ideas; completed progress stays checkpointed.
-
-Structured runtime output validation dispatches from target capabilities. MiniMax H3 video output requires complete nonempty named sections in order and receives a bounded format-only retry if malformed. The dedicated MiniMax workflow shares that section validation while retaining its reference/timeline checks; non-video Builder/Dataset tasks remain image tasks.
-
-**Plan scenes first** needs no trigger. Idea and scene edits keep each other and invalidate only that prompt; the edited scene is written as edited. Output settings reuse scenes. Concept, inputs, amount, type, variety, rules or visual-style changes invalidate the plan. Final results contain `{index, input, idea, scene, prompt}`. JSONL includes originating idea/scene; **Scenes JSON** exports the plan. TXT and Copy all are final-prompt-only. Wait for **Dataset settings: Saved** for edits. Old final prompts remain readable, but plans from the earlier frozen-idea contract require replanning; archives are not migrated or rewritten on load.
-
-**Guided inputs** accept full events or partial anchors. Details in a line apply only to its assignments. Shared identity does not automatically lock clothing. Lines cycle in order: six lines for ten images map to 1–6, then 1–4. Fixed actions stay fixed; permitted details may vary. Recent-idea memory supplies novelty guidance without overriding anchors.
-
-The scene is Builder's entire creative input in **Enhance / Direct**, together with the approved cast and requirements. Builder's Director, creativity, style, target and detail controls enrich it without dropping characters or changing the action, camera or framing. For Anima, count tags (such as `1girl, 1boy`) come from the cast, followed by named characters' Danbooru and series tags. There is no separate Dataset final writer, fidelity reviewer or support audit. Shared Builder/MiniMax validation stays available.
-
-**Visible content only:** Final generation follows **target normalization → trigger check → conservative positive-content cleanup → strict validation → acceptance or bounded retry**. `sanitize_positive_prompt()` removes only complete standalone exclusion/meta clauses, never useful mixed prose, literal image text or protected triggers. Ideogram cleanup preserves rendered text and required JSON fields. Anima's supported standalone positive quality tags remain allowed. Narrow lexical checks do not detect every paraphrase or prove scene fidelity.
-
-Generation runs sequentially in one model session. Completed items survive later failures. Final enhancement has up to three retries for transport, target-format, trigger, positive-content or runaway errors; exhaustion marks only that prompt failed without replacing its scene. Runaway retries reduce the output allowance, and a complete prefix is accepted only after validation. With expansion enabled, unrecognized subject wording produces a warning, not an automatic rewrite. For Ideogram4, trigger checks apply inside `high_level_description`.
-
-No quality-score report or Deep Review route remains. Inspect the scene and final prompt directly.
-
-Automated tests validate the pipeline with mocks, not LLM creativity or semantic fidelity. `/api/workspace/dataset/scenes` starts a planning-only job after Understanding approval.
-
-Generic output cleanup trims only outer whitespace: parentheses, semicolons, quotations, deliberate spacing, math and metadata-like visible text remain intact. Target-specific formatting and Dataset positive-content checks remain separate. See the [current Dataset architecture](docs/dataset-architecture.md) and [evaluation guide](tests/eval/README.md) for ownership and optional production-pipeline evaluation. Independent review is required for semantic regression evidence; model self-review is diagnostic only.
-
-</details>
+See the [Dataset architecture](docs/dataset-architecture.md) for how a run is understood, composed and written.
 
 ## Project and data layout
 
@@ -430,7 +361,7 @@ goated-prompter/
 │   │   ├── builder/            # Prompt assembly, reference evidence, generation, /api/generate
 │   │   ├── refine/             # Refine service, prompt text and version-history routes
 │   │   ├── minimax/            # MiniMax H3 contract, prompt text, knowledge files and routes
-│   │   ├── dataset/            # Understanding, ideas, scenes, plans, checkpoints and routes
+│   │   ├── dataset/            # Dataset routes and runner; v2/ holds Understanding, scenes, prompts and runs
 │   │   ├── saved_prompts/      # Saved prompt collection store and routes
 │   │   ├── presets/            # Instruction preset library routes
 │   │   └── settings/           # Settings validation, model discovery and unload routes
@@ -455,7 +386,7 @@ goated-prompter/
 │   ├── prompts.json            # Saved prompt collection
 │   ├── workspace.json          # Versions and undo/redo history
 │   ├── workflow_settings.json  # Workflow drafts and custom instructions
-│   ├── vocabulary/sexual.txt   # Your private adult Dataset vocabulary (optional)
+│   ├── vocabulary/             # Your imported vocabulary packs, one folder per category
 │   └── directors/              # Custom instruction presets
 │       └── .overrides/         # Edits to built-in instruction presets
 └── tests/                      # Python, frontend, and browser workflow tests
@@ -510,7 +441,7 @@ Want to help? Read the [contribution guide](CONTRIBUTING.md) and [Code of Conduc
 
 ### Checkpoint privacy and recovery
 
-Recent Dataset ideas keep their text in RAM only. To avoid repeating them after a restart, **`data/idea_fingerprints.json`** keeps only one-way fingerprints of each idea's key words (hashed with a random per-install key and cut to 20 bits, so the text cannot be read back), expiring after three days; the brainstorm prefers candidates that match none of them, and a fixed seed skips them. Dataset generated checkpoints are durable local content in **`data/dataset_checkpoints.json`**, separate from editable settings. Up to 20 recent job records are retained, subject to the local 16 MiB store limit. Other workflows' runtime checkpoints, live request/response logs and interrupted partial-text diagnostics remain RAM-only. Dataset exports/Clear release completed RAM jobs and hide their diagnostic recovery endpoints; they do not erase durable scenes/prompts. Active jobs are never deleted by cleanup. Shutdown uses bounded cancellation, marks unfinished work interrupted and releases RAM diagnostics. Backend restart recovers completed Dataset chunks, not active sockets or partial prompts.
+Dataset runs are not saved to disk. Runtime checkpoints, live request/response logs and interrupted partial-text diagnostics remain RAM-only. Active jobs are never deleted by cleanup. Shutdown uses bounded cancellation, marks unfinished work interrupted and releases RAM diagnostics. Files left by retired Dataset features (`dataset_checkpoints.json`, `idea_fingerprints.json`, the `dataset_v2_runs/` folder and the old private vocabulary file) are no longer read and can be deleted.
 
 This cleanup does **not** remove your existing autosaved drafts (`settings.json` / `workflow_settings.json`), named saved prompts, version history, downloaded exports or clipboard content. Those still contain private content locally. Keep `GOATED_PROMPTER_DEBUG_PROMPTS` disabled to avoid content in console logs. Remote inference providers have their own retention policies; releasing Python references is not guaranteed secure memory erasure.
 

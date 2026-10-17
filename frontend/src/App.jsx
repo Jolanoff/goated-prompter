@@ -9,6 +9,7 @@ import MiniMaxTab from "./features/minimax/MiniMaxTab.jsx";
 import DatasetTab from "./features/dataset/DatasetTab.jsx";
 import SavedPromptsTab from "./features/saved-prompts/SavedPromptsTab.jsx";
 import PromptLibraryTab from "./features/prompt-library/PromptLibraryTab.jsx";
+import VocabularyTab from "./features/vocabulary/VocabularyTab.jsx";
 import SettingsTab from "./features/settings/SettingsTab.jsx";
 import DirectorsTab from "./features/directors/DirectorsTab.jsx";
 import BuilderTab from "./features/builder/BuilderTab.jsx";
@@ -26,6 +27,7 @@ import {
   FileText,
   Film,
   Library,
+  Package,
   Moon,
   ScrollText,
   Settings2,
@@ -52,6 +54,7 @@ const workspaceViews = [
   { id: "dataset", label: "Dataset", icon: Database },
   { id: "saved", label: "Saved Prompts", icon: Bookmark },
   { id: "library", label: "Prompt Library", icon: Library },
+  { id: "vocabulary", label: "Vocabulary", icon: Package },
   { id: "directors", label: "Instruction presets", icon: FileText },
   { id: "settings", label: "Settings", icon: Settings2 },
 ];
@@ -200,8 +203,6 @@ function App() {
         }
         if (next.result.history_error) setError(next.result.history_error);
         setNotice(next.kind === "refine" ? "Prompt refined."
-          : next.kind === "dataset" ? `${next.result.completed} dataset prompts are ready.`
-          : next.kind === "dataset_scenes" ? `${next.result.scene_plan.length} scene ideas are ready to review or generate.`
           : next.kind === "dataset_understanding" ? "Review your Dataset request before generating."
           : "Your prompt is ready. Make it yours.");
       } else if (next.status === "cancelled") {
@@ -664,7 +665,7 @@ function App() {
             engineLabel={configuredBackend ? `Configured backend (${bootstrap.backend})` : selectedProfile?.label}
             presets={bootstrap.presets.presets} targets={bootstrap.inputs.target_model[0]}
             lengths={bootstrap.inputs.prompt_length[0]} onGenerate={startWorkflow}
-             onCancel={endGeneration} onCopy={copy} onReleaseJobs={releaseJobs} />}
+             onCancel={endGeneration} onCopy={copy} />}
           {active && view !== "builder" && view !== "refine" && view !== "minimax" && view !== "dataset" && (
             <div className={`${ui.panel} mb-5 flex flex-wrap items-center justify-between gap-3`} role="status">
               <span>{job.progress || "Generating prompt…"}</span>
@@ -675,7 +676,8 @@ function App() {
           {bootstrap && <PromptLibraryTab visible={view === "library"}
             targets={bootstrap.inputs.target_model[0]} initialTarget={settings.target_model}
             onNotice={setNotice} />}
-          {view === "refine" || view === "minimax" || view === "dataset" || view === "library" ? null : view === "saved" ? (
+          {bootstrap && <VocabularyTab visible={view === "vocabulary"} />}
+          {view === "refine" || view === "minimax" || view === "dataset" || view === "library" || view === "vocabulary" ? null : view === "saved" ? (
             <SavedPromptsTab records={saved} ready={storageReady} busy={busy}
               deletingDisabled={!storageReady || promptsBusy || dialogBusy}
               addingDisabled={!bootstrap || !storageReady || promptsBusy || dialogBusy || !!saveKind}

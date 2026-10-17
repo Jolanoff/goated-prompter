@@ -3,8 +3,7 @@
 import json
 import unittest
 
-from goated_prompter.features.dataset.ideas import validate_ideas
-from goated_prompter.job_lifecycle import DATASET_CHECKPOINT_KINDS, JOB_FAMILIES, TERMINAL_JOB_STATUSES
+from goated_prompter.job_lifecycle import JOB_FAMILIES, TERMINAL_JOB_STATUSES
 from goated_prompter.local_jobs import TERMINAL, Job
 from goated_prompter.strict_json import reject_duplicate_keys
 from goated_prompter.workflow_output import WorkflowFormatError, normalize_workflow_output
@@ -64,12 +63,57 @@ class JobTransitionTests(unittest.TestCase):
         self.assertEqual(job.snapshot()["status"], "running")
         self.assertEqual(job.snapshot()["events"][-1]["type"], "status")
 
+    def test_private_activity_is_live_but_checkpointed_events_carry_no_engine_text(self):
+        job = Job()
+        secret = "SYNTHETIC_PRIVATE_ENTRY"
+        job.record_llm_activity({"type": "request", "private_content": True, "stage": "dataset_v2:concepts", "model": "test",
+            "messages": [{"role": "system", "content": secret}], "parameters": {"temperature": 0.7}})
+        for event_type in ("response_delta", "reasoning_delta"):
+            job.record_llm_activity({"type": event_type, "text": secret[:8]})
+            job.record_llm_activity({"type": event_type, "text": secret[8:]})
+        job.record_llm_activity({"type": "error", "message": f"OpenAI-compatible backend returned HTTP 400: {secret}",
+                                 "partial_text": secret, "completion_state": "interrupted", "finish_reason": secret})
+        snapshot = job.snapshot()
+        trace = snapshot["llm_trace"]
+        self.assertTrue(trace["private_content"])
+        self.assertEqual(trace["messages"], [{"role": "system", "content": secret}])
+        self.assertEqual(trace["output"], secret)
+        self.assertEqual(trace["reasoning"], secret)
+        self.assertEqual(trace["status"], "error")
+        self.assertEqual(trace["finish_reason"], "other")
+        self.assertIn("HTTP 400", trace["issue"])
+        self.assertNotIn(secret, trace["issue"])
+        self.assertNotIn(secret, json.dumps(snapshot["events"]))
+        self.assertTrue(snapshot["partial_responses"][0]["private_content"])
+        job.record_llm_activity({"type": "request", "stage": "final", "model": "test", "messages": [], "parameters": {}})
+        job.record_llm_activity({"type": "response_delta", "text": "Ordinary public response"})
+        job.record_llm_activity({"type": "response_complete", "finish_reason": "stop"})
+        self.assertEqual(job.snapshot()["llm_trace"]["output"], "Ordinary public response")
+        self.assertEqual(job.snapshot()["llm_trace"]["status"], "complete")
+        self.assertNotIn("private_content", job.snapshot()["llm_trace"])
+
+
+    def test_model_calls_are_summarised_per_stage_with_retries_errors_and_output_size(self):
+        job = Job()
+        for stage, text, finish in (("dataset_v2:concepts", "abc", "stop"), ("dataset_v2:concepts:loop_retry_1", "de", "stop"),
+                                    ("dataset_v2:concepts:output_retry_1", "f", None), ("dataset_v2:understanding", "[]", "stop")):
+            job.record_llm_activity({"type": "request", "stage": stage, "model": "test", "messages": [], "parameters": {}})
+            job.record_llm_activity({"type": "response_delta", "text": text})
+            job.record_llm_activity({"type": "response_complete", "finish_reason": finish} if finish
+                                    else {"type": "error", "message": "timeout"})
+        stages = job.snapshot()["llm_stages"]
+        self.assertEqual({key: (value["calls"], value["retries"], value["errors"], value["output_chars"])
+                          for key, value in stages.items()},
+                         {"dataset_v2:concepts": (3, 2, 1, 6), "dataset_v2:understanding": (1, 0, 0, 2)})
+        job.deliver({"ok": True})
+        summary = next(event for event in job.snapshot()["events"] if event["type"] == "summary")["message"]
+        self.assertIn("dataset_v2:concepts 3 (2 retries) (1 errors)", summary)
+
 
 class JobConstantTests(unittest.TestCase):
     def test_constants_have_one_definition(self):
         self.assertEqual(TERMINAL_JOB_STATUSES, frozenset(TERMINAL))
-        self.assertEqual(DATASET_CHECKPOINT_KINDS, {"dataset", "dataset_scenes"})
-        self.assertLessEqual(DATASET_CHECKPOINT_KINDS, JOB_FAMILIES["dataset"])
+        self.assertEqual(JOB_FAMILIES["dataset"], {"dataset_understanding", "dataset_v2_scenes"})
 
 
 class StrictJsonTests(unittest.TestCase):
@@ -80,8 +124,6 @@ class StrictJsonTests(unittest.TestCase):
             json.loads('{"a": 1, "a": 2}', object_pairs_hook=hook)
 
     def test_workflow_parsers_still_reject_duplicate_keys(self):
-        with self.assertRaisesRegex(ValueError, "Ideas returned duplicate JSON keys."):
-            validate_ideas('{"ideas": [], "ideas": []}', [1])
         with self.assertRaisesRegex(WorkflowFormatError, "Duplicate JSON keys are not allowed."):
             normalize_workflow_output('{"high_level_description": "a", "high_level_description": "b"}', "Ideogram4")
 

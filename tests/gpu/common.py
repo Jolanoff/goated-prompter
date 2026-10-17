@@ -77,8 +77,8 @@ def run_case(case, workflow, config, args, run, *, approve=None):
     rules = case.get("rules", "")
     if compiled_source.forbidden:
         rules += "\n" + "; ".join("no " + fact for fact in compiled_source.forbidden)
-    # Builder and Dataset share Dataset's explicit trigger/identity restriction for
-    # parity; it is evaluation scaffolding, not a production planning step.
+    # Builder evaluation adds an explicit trigger/identity restriction; it is
+    # evaluation scaffolding, not a production planning step.
     source = "eval_subject represents " + case["request"] if module.SUBJECT_SCAFFOLD else case["request"]
     common_rules = rules
     identity_rules = ""

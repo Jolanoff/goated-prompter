@@ -12,7 +12,8 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from .base import BackendConfigurationError, BackendGenerationError, BackendRunawayError, GoatedPrompterBackend
-from ..diagnostics import debug_prompts_enabled, log_request, log_response, payload_without_binary_images
+from ..diagnostics import (debug_prompts_enabled, diagnostic_finish_reason, log_request, log_response,
+                           payload_without_binary_images, private_error_message)
 from ..output_repetition import repeated_tag
 from .interruptible_http import interruptible_urlopen
 
@@ -186,6 +187,17 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
             raise BackendConfigurationError("OpenAI-compatible temperature, timeout, or max_tokens is invalid.") from exc
 
     def generate(self, instruction):
+        context = getattr(instruction, "diagnostic_context", None)
+        private_content = isinstance(context, dict) and context.get("private_content") is True
+        try:
+            return self._generate(instruction, private_content=private_content)
+        except BackendGenerationError as exc:
+            if private_content:
+                exc.args = (private_error_message(exc),)
+                exc.finish_reason = diagnostic_finish_reason(exc.finish_reason, private_content=True)
+            raise
+
+    def _generate(self, instruction, *, private_content=False):
         self.validate_instruction(instruction)
         payload = {
             "model": self.model,
@@ -194,6 +206,9 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
             "max_tokens": self.max_tokens,
         }
         if self.is_llama_cpp and getattr(instruction, "json_output", False) is True:
+            # Structured stages have fixed output budgets; hidden thinking would consume them and
+            # truncate the JSON. Free-text writing keeps the configured reasoning setting.
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
             schema = getattr(instruction, "json_schema", None)
             if schema is None:
                 payload["response_format"] = {"type": "json_object"}
@@ -208,6 +223,11 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
                 if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or not 0 <= value <= ceiling:
                     raise BackendConfigurationError(f"Request-local {name} must be between 0 and {ceiling}.")
                 payload[name] = value
+        if self.is_llama_cpp and (penalty := getattr(instruction, "repeat_penalty", None)) is not None:
+            if (isinstance(penalty, bool) or not isinstance(penalty, (int, float))
+                    or not math.isfinite(penalty) or not 0 <= penalty <= 2):
+                raise BackendConfigurationError("Request-local repeat_penalty must be between 0 and 2.")
+            payload["repeat_penalty"] = penalty
         seed = getattr(instruction, "seed", None)
         if type(seed) is int and seed >= 0:
             payload["seed"] = seed
@@ -266,8 +286,10 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
         if streaming:
             payload["stream"] = True
         log_request(self, instruction, payload)
-        _log_multimodal_messages(payload["messages"])
+        if not private_content:
+            _log_multimodal_messages(payload["messages"])
         if streaming:
+            # The live inspector is local and in memory; exports and checkpoints apply their own redaction.
             safe = payload_without_binary_images(payload)
             self.emit_activity(
                 "request",
@@ -276,6 +298,7 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
                 messages=safe.get("messages", []),
                 parameters={key: value for key, value in safe.items() if key not in {"messages", "model"}},
                 timeout_seconds=self.timeout,
+                **({"private_content": True} if private_content else {}),
             )
         headers = {
             "Content-Type": "application/json",

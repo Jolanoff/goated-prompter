@@ -4,13 +4,11 @@ import argparse
 import json
 import hashlib
 from pathlib import Path
-import time
 from contextlib import nullcontext
 
 from .metrics import annotation_template
 from tests.gpu.common import capture, run_case, run_metadata  # noqa: F401  (existing import path)
 from tests.gpu.cases import fixture_digest, random_cases
-from tests.gpu.workflows.dataset import approve_dataset
 from tests.support.artifacts import new_output, task_paths
 from tests.support.safety import synthetic_storage
 from tests.support.scenarios import select_cases
@@ -19,42 +17,7 @@ CORPUS = Path(__file__).parent / "cases" / "corpus.json"
 
 
 def live_case(case, workflow, config, args, run=1):
-    # approve_dataset is resolved here so callers and tests can replace it.
-    return run_case(case, workflow, config, args, run, approve=approve_dataset)
-
-
-def novelty_cases(spec, config, args):
-    from goated_prompter.contracts import GoatedPrompterRequest
-    from goated_prompter.features.dataset.service import DatasetService, default_dataset_draft
-    from goated_prompter.features.dataset.idea_history import RecentIdeaHistory
-    history = RecentIdeaHistory() if args.history == "on" else None
-    rows = []
-    for run in range(1, spec["runs"] + 1):
-        calls = []
-        data = {**default_dataset_draft(), "subject": spec["concept"], "amount": spec["amount"],
-                 "trigger": "eval_subject",
-                "target": args.target, "length": args.length, "director_preset": args.director,
-                 "creativity": args.creativity}
-        start = time.perf_counter()
-        row = {"sample_id": f"novelty:{spec['id']}|dataset|{run}", "workflow": "dataset",
-               "case_id": spec["id"], "concept": spec["concept"], "run": run,
-               "anchors": {}, "calls": calls, "target": args.target, "output_kind": "ideas",
-               "dataset_type": data["trigger_type"], "history": args.history}
-        try:
-            effective = {**config, "_activity_callback": lambda event: capture(calls, event)}
-            request = GoatedPrompterRequest(idea=spec["concept"])
-            data = approve_dataset(effective, request, data)
-            result = DatasetService(effective, lambda: None, idea_history=history).run(request,
-                    data, lambda _message: None, lambda _partial: None, scenes_only=True)
-            row.update(ideas=[item["idea"] for item in result["scene_plan"]], scene_plan=result["scene_plan"],
-                       completion_state="completed")
-        except Exception as exc:
-            row.update(error=str(exc), completion_state=getattr(exc, "completion_state", "provider_error"))
-        row["latency_seconds"] = time.perf_counter() - start
-        rows.append(row)
-        if row.get("error"):
-            break
-    return rows
+    return run_case(case, workflow, config, args, run)
 
 
 def load_replay(path):
@@ -81,7 +44,7 @@ def load_replay(path):
             raise ValueError(f"{source.name}: evaluation run requires a nonempty run_id")
         if not isinstance(records, list) or any(
             not isinstance(row, dict) or not row.get("sample_id") or
-            row.get("workflow") not in {"builder", "dataset", "minimax"}
+            row.get("workflow") not in {"builder", "minimax"}
             for row in records
         ):
             raise ValueError(f"{source.name}: evaluation records require sample_id and workflow")
@@ -104,15 +67,13 @@ def main(argv=None, gpu=False):
     parser.add_argument("--config", type=Path)
     parser.add_argument("--allow-live", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--workflow", choices=["builder", "dataset", "minimax"])
+    parser.add_argument("--workflow", choices=["builder", "minimax"])
     parser.add_argument("--case", action="append")
     parser.add_argument("--target", default="Generic")
     parser.add_argument("--length", default="Detailed")
     parser.add_argument("--director", default="general_director")
     parser.add_argument("--creativity", default="Balanced")
     parser.add_argument("--planning", choices=["Direct", "Auto", "Always"], default="Direct")
-    parser.add_argument("--novelty", action="store_true")
-    parser.add_argument("--history", choices=["on", "off"], default="on")
     parser.add_argument("--repeats", type=int, choices=range(1, 6), default=1)
     parser.add_argument("--seed", type=int, help="Seed fixed-case selection/order or random cases, not model output")
     parser.add_argument("--random", type=int, metavar="N",
@@ -121,16 +82,16 @@ def main(argv=None, gpu=False):
     parser.add_argument("--task-key", help="Task key for isolated real-engine execution")
     parser.add_argument("--max-runs", type=int, help="Approved maximum workflow runs, not model calls")
     args = parser.parse_args(argv)
-    if gpu and (args.replay or args.novelty):
-        parser.error("Use tests.eval.runner for replay or novelty evaluation.")
+    if gpu and args.replay:
+        parser.error("Use tests.eval.runner for replay evaluation.")
     if gpu and not args.workflow:
         parser.error("Real-engine execution requires one explicit --workflow.")
     corpus = json.loads(args.corpus.read_text(encoding="utf-8"))
     random_selection = None
     try:
         if args.random is not None:
-            if not args.workflow or args.case or args.replay or args.novelty:
-                raise ValueError("--random needs one --workflow and no --case, --replay or --novelty.")
+            if not args.workflow or args.case or args.replay:
+                raise ValueError("--random needs one --workflow and no --case or --replay.")
             cases = random_cases(args.workflow, args.seed, args.random)
             random_selection = {"workflow": args.workflow, "seed": args.seed, "count": args.random,
                                 "fixture_digest": fixture_digest(args.workflow)}
@@ -139,8 +100,7 @@ def main(argv=None, gpu=False):
     except ValueError as exc:
         parser.error(str(exc))
     if args.dry_run:
-        print(json.dumps({"cases": cases, "novelty": [] if gpu or random_selection else corpus["novelty"],
-                          "scenario_seed": args.seed, "random_cases": random_selection, "inference": False}, indent=2))
+        print(json.dumps({"cases": cases, "scenario_seed": args.seed, "random_cases": random_selection, "inference": False}, indent=2))
         return
     scratch = None
     if gpu:
@@ -196,9 +156,6 @@ def main(argv=None, gpu=False):
                                     return
                         elif row.get("error") and "Could not reach" in row["error"]:
                             return
-            if args.novelty:
-                for spec in corpus["novelty"]:
-                    result["records"].extend(novelty_cases(spec, config, args))
     if args.template:
         args.template.parent.mkdir(parents=True, exist_ok=True)
         with args.template.open("x" if gpu else "w", encoding="utf-8") as template:

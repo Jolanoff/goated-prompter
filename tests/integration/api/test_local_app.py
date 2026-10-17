@@ -70,6 +70,7 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         self.release.set()
         await self.client.close()
+        self.assertTrue(self.client.server.closed, "The synthetic HTTP listener did not close.")
 
     async def start(self, **payload):
         response = await self.client.post("/api/generate", json={"settings": {"idea": "portrait"}, **payload})
@@ -125,8 +126,7 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(models["backend"], expected)
 
     async def test_configured_aliases_do_not_require_profiles_at_workflow_admission(self):
-        from tests.helpers import confirmed_dataset_payload
-        from goated_prompter.features.dataset.service import default_dataset_draft
+        from goated_prompter.features.dataset.v2.draft import default_dataset_draft
         from goated_prompter.features.minimax.contract import default_minimax_draft
 
         state = self.app[local.STATE]
@@ -139,8 +139,6 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
             state.config_loader = lambda: backend_config(name)
             revision = state.workspace.snapshot()["revision"]
             for path, payload in (
-                ("dataset", confirmed_dataset_payload(state, data)),
-                ("dataset/scenes", confirmed_dataset_payload(state, data)),
                 ("dataset/understand", {"input": data}),
                 ("minimax", {"input": minimax}),
                 ("refine", {"revision": revision, "changes": "Soften the light."}),
@@ -710,11 +708,11 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
     async def test_checkpoint_cleanup_is_scoped_memory_only_and_preserves_saved_content(self):
         state = self.app[local.STATE]
         completed = local.Job()
-        completed.kind = "dataset"
+        completed.kind = "dataset_v2_scenes"
         completed.deliver({"prompts": ["private checkpoint"]})
         completed.record_llm_activity({"type": "request", "messages": [{"content": "private request"}]})
         active = local.Job()
-        active.kind = "dataset_scenes"
+        active.kind = "dataset_understanding"
         other = local.Job()
         other.kind = "minimax"
         other.deliver({"prompt": "other workflow"})
@@ -733,31 +731,17 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.client.delete("/api/jobs?kind=unknown")).status, 400)
         self.assertEqual((await self.client.delete("/api/jobs")).status, 400)
         self.assertEqual((await self.client.delete("/api/jobs?kind=dataset", headers={"Origin": "https://evil.example"})).status, 403)
-        active.deliver({"scene_plan": []})
+        active.deliver({"brief": {}})
 
-    async def test_local_prompt_regeneration_requires_a_checked_scene(self):
-        from tests.helpers import confirmed_dataset_payload
-        from goated_prompter.features.dataset.service import default_dataset_draft
-        from goated_prompter.features.dataset.assignments import dataset_assignments
-        from goated_prompter.features.dataset.plan import scene_plan_signature
-        data = {**default_dataset_draft(), "amount": 1, "subject": "A traveler", "trigger": "person_token"}
-        data["scene_plan"] = [{"index": 1, "input": "", "idea": "Reading on a bench",
-                               "scene": "She reads a book on a park bench.", "self_check": "PASS",
-                               "idea_status": "valid", "scene_status": "valid", "prompt_status": "not_generated"}]
-        data["scene_plan_signature"] = scene_plan_signature(data, dataset_assignments(data))
-        response = await self.client.post("/api/workspace/dataset/scene", json=confirmed_dataset_payload(
-            self.app[local.STATE], data, index=1, action="regenerate_prompt"))
-        self.assertEqual(response.status, 202, await response.text())
-        finished = await self.wait_status((await response.json())["id"], "succeeded")
-        self.assertEqual(finished["result"]["scene_plan"][0]["scene"], data["scene_plan"][0]["scene"])
-        self.assertEqual(finished["result"]["scene_plan"][0]["self_check"], "PASS")
-
-    async def test_retired_dataset_review_and_quality_routes_do_not_start_jobs(self):
+    async def test_retired_dataset_routes_do_not_start_jobs(self):
         state = self.app[local.STATE]
         with patch.object(state, "start_job") as start:
-            for route in ("quality", "review"):
-                response = await self.client.post(f"/api/workspace/dataset/{route}", json={"input": {}})
-                self.assertIn(response.status, (404, 405))
+            # The legacy pipeline's generation, scene planning and per-scene routes, and older retired ones.
+            for path in ("/api/workspace/dataset", "/api/workspace/dataset/scenes", "/api/workspace/dataset/scene",
+                         "/api/workspace/dataset/quality", "/api/workspace/dataset/review"):
+                with self.subTest(path=path):
+                    response = await self.client.post(path, json={"input": {}})
+                    self.assertIn(response.status, (404, 405))
             start.assert_not_called()
 
     async def test_preset_crud_and_unload_shapes(self):
