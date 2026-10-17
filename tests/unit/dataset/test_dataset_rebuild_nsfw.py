@@ -96,7 +96,7 @@ class AdultDatasetTests(unittest.TestCase):
                 user = self.users("scenes")[0]
                 self.assertEqual(user["understanding"]["characters"], brief["characters"])
                 self.assertEqual(user["understanding"]["fixed"], brief["fixed"])
-                self.assertIn("adult and explicit", self.composer()[0].system_message)
+                self.assertIn("This dataset is explicit", self.composer()[0].system_message)
                 written = prompts.write_prompts(self.config, self.request, brief, result["scenes"], progress=lambda _message: None)
                 final = self.calls[-1]
                 for label in labels:
@@ -184,3 +184,5 @@ class AdultDatasetTests(unittest.TestCase):
                 for required in (requirement, "No blindfold", "No collar", "Use a red ribbon",
                                  "Alex is the only participant and keeps the same identity."):
                     self.assertIn(required, final.system_message + final.user_message)
+                adult = "This is an adult dataset: word the act and the bodies in plain, explicit terms"
+                (self.assertIn if nsfw else self.assertNotIn)(adult, final.system_message + final.user_message)

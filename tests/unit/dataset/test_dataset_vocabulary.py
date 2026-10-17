@@ -139,14 +139,33 @@ class SceneVocabulary(unittest.TestCase):
                      "correct gender", "Objects, furniture and surfaces in an entry", "keeping the pose\n   physically the same"):
             self.assertIn(rule, call.system_message)
 
-    def test_a_scene_that_keeps_the_placeholder_people_is_rejected(self):
+    def test_every_image_is_dealt_its_own_entry_by_the_seed(self):
+        pair = [{"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 1},
+                {"label": "woman", "gender": "female", "custom": "", "pronoun": "she", "count": 1}]
+        self.entries = ["two people slow dancing", "two people holding hands", "one person kissing the other person's forehead"]
+        self.write(self.brief("A couple", pair, amount=3), ["Actions & Poses/Romance"])
+        dealt = [image["entry"] for image in composer_user(self.composer()[0].user_message)["images"]]
+        self.assertEqual(len(set(dealt)), 3, "no entry is dealt twice while the pack has more")
+        import random
+        entries = [f"entry {number}" for number in range(10)]
+        self.assertEqual(scenes.deal_entries(entries, 10, random.Random(4)), scenes.deal_entries(entries, 10, random.Random(4)))
+        self.assertNotEqual(scenes.deal_entries(entries, 10, random.Random(4)), scenes.deal_entries(entries, 10, random.Random(5)))
+        self.assertEqual(sorted(scenes.deal_entries(entries, 10, random.Random(4)).values()), sorted(entries))
+        self.assertEqual(scenes.deal_entries([], 3, random.Random(4)), {})
+
+    def test_a_scene_may_keep_neutral_wording_from_an_entry(self):
         labels = ["man", "woman"]
         scene = {"subjects": {label: dict(SCENE) for label in labels}, "position": {"man": "kneeling", "woman": "on all fours"},
                  "actions": "one person kneels behind the other person", "space": "a cabin", "lighting": "lamp",
                  "mood": "warm", "camera": "side view", "extras": "rug"}
-        self.assertTrue(any("one person" in error for error in scenes.scene_errors(scene, labels, [])))
-        scene["actions"] = "the man kneels behind the woman"
         self.assertEqual(scenes.scene_errors(scene, labels, []), [])
+
+    def test_the_builder_gets_the_position_name_of_the_entry(self):
+        scene = {"slot": 1, "subjects": {}, "position": {}, "actions": "they dance", "space": "hall", "lighting": "lamps",
+                 "mood": "warm", "camera": "wide", "extras": "none", "entry": "slow dance: two people dancing close"}
+        self.assertIn("actions: they dance\nposition name: slow dance\n", prompts.scene_text(scene))
+        self.assertEqual(prompts.position_name({**scene, "entry": "two people holding hands"}), "")
+        self.assertIn("use that name word for word", prompts.SCENE_RULES)
 
 
     def test_scene_ideas_never_get_vocabulary(self):
@@ -173,7 +192,7 @@ class SceneVocabulary(unittest.TestCase):
         retry = self.composer()[1]
         self.assertIn('the entry "two people slow dancing" is already used by 2 images', retry.system_message)
         self.assertEqual(composer_user(retry.user_message)["already_used"]["entries"], {"two people slow dancing": 2})
-        self.assertIn("at most 2 images", self.composer()[0].system_message)
+        self.assertIn("used by fewer than\n2 images", self.composer()[0].system_message)
 
     def test_an_entry_that_is_not_in_the_vocabulary_is_asked_again(self):
         pair = [{"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 1},

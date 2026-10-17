@@ -7,16 +7,16 @@ generator seeded by the run's seed, so each seed leads the writer to different e
 when the scenes are invented (source "random"); with the user's own scene ideas (source "guided") no vocabulary is
 sent. With no pack selected the prompt has no vocabulary section. No Director takes part in composing.
 
-Actions & Poses: when that category has a selected pack, every scene names the entry it is built on ("entry", copied
-word for word); the writer chooses an entry that fits the request and the cast. Code checks that the entry is one of
+Actions & Poses: when that category has a selected pack, every image is dealt a different entry from a seeded shuffle
+(deal_entries) and every scene names the entry it is built on ("entry", copied word for word); the writer keeps the
+dealt entry unless it cannot fit the cast. Code checks that the entry is one of
 the selected entries and that no entry is used by more images than ENTRY_CAP allows (two, or more when the selected
 packs have fewer entries than the requested images), and asks again otherwise (the last round keeps the image).
 
 A scene has subjects (per character: skin, build, hair, detail, clothing), position (per character), actions, space,
 lighting, mood, camera and extras. Actions & Poses entries may define a pose with their action or leave it open, and
 name people as "one person" / "the other person": the writer maps them to the character labels (and their gender) and
-adapts named objects and supports to the scene; code rejects a scene that still says "one person" or "the other
-person" in its actions or position.
+adapts named objects and supports to the scene.
 
 Code checks the shape of each answer (every section filled, exactly the character labels, no phrase from the avoid
 list) and that no image reuses another one's place together with its camera or arrangement (_repeats; the last round
@@ -54,7 +54,6 @@ EARLIER = 25  # every earlier image of a run (25 is the largest amount)
 TEMPERATURE = {"Strict": .55, "Balanced": .8, "Creative": .95, "Dice": 1.05}
 ACTIONS_CATEGORY = "Actions & Poses"
 ENTRY_CAP = 2
-_PLACEHOLDER = re.compile(r"\b(?:one|the other) person\b", re.IGNORECASE)  # Actions & Poses wording left unreplaced
 _NEGATION = re.compile(r"^\s*(?:no|not|without|avoid|never|don'?t|do not)\b\s*", re.IGNORECASE)
 
 COMPOSE_SYSTEM = """You compose the scenes of an image-training dataset. Each scene is one still image.
@@ -86,8 +85,8 @@ For each scene:
    decided: keep it with its action and split it across the actions and position fields. If it defines only an
    action, choose a pose that physically supports that action. If it defines only a pose, give it a fitting action.
 3. Entries name people as placeholders: "the person", "one person", "the other person". Replace each one with a
-   character label of this scene and write it with that character's own gender, pronouns and body (a man is "he"
-   and has a man's body, a woman is "she" and has a woman's body). Decide who takes which role from the request and
+   character label of this scene and write it with that character's own gender, pronouns and body(a male is "he", a female is "she" everything else is "they")
+   Decide who takes which role from the request and
    the cast. Never leave "one person" or "the other person" in the scene.
 4. Objects, furniture and surfaces in an entry (a bed, a table, a chair, a wall, the floor, a toy) are examples too.
    Replace them with ones that belong in this scene's space or come from the selected Objects, keeping the pose
@@ -119,7 +118,7 @@ extras: objects and background details.
 Be concrete and brief: a later step writes the final prompt.
 
 Rules:
-- English only. Every person is an adult.
+- English only.
 {content_rule}
 Return one JSON object: {{"scenes": [ ... ]}}, one per image, in order."""
 
@@ -166,19 +165,21 @@ Do not force every individual vocabulary entry into a scene.
 Unselected categories remain unrestricted and may be invented naturally.
 If no vocabulary is selected, generate normally."""
 
-NSFW_RULE = ("- This dataset is adult and explicit: the action is the adult activity the request asks for, shown clearly, "
-             "in a position that is physically possible for this cast. Every image shows that activity itself; kissing, "
-             "touching, undressing or foreplay alone never stand in for it unless the request asks for them. The actions "
-             "name the act plainly: which body part of whom goes where and in what state, never only the name of a "
-             "position, and every position agrees with that act.")
+NSFW_RULE = ("- This dataset is explicit sexual content: the action is the sexual activity the request asks for, "
+             "shown clearly and directly, in a position that is physically possible for this cast. Every image "
+             "shows that activity itself; kissing, touching, undressing or foreplay alone never stand in for it "
+             "unless the request asks for them. The actions name the act plainly: which body part of whom goes "
+             "where and in what state, together with the position's usual name, and every position agrees with that act.")
 SFW_RULE = "- This dataset is not adult content: no nudity and nothing explicit."
 NO_PEOPLE_RULE = "- There are no people: describe how the subject is placed instead of a pose."
 GUIDED_RULE = "- An image's input fixes its action: keep it, and build the rest of the scene around it."
 ENTRY_RULE = """ACTIONS & POSES ENTRY
-Base every scene on one entry from the Actions & Poses vocabulary that fits the request and this cast: an entry that
-needs something this cast does not have does not fit. Copy that entry word for word into the scene's "entry" field.
-Each entry may be used by at most {cap} images of the whole set; already_used.entries counts how many images used each
-entry so far. Spread the images over different entries."""
+Every image in IMAGES names the Actions & Poses entry to build it on ("entry"). Build the scene on that entry. Every
+entry counts as the requested activity, never as a lesser or different one. Only when that entry cannot fit this cast
+(it needs a body part or object nobody here has) build the scene on another entry that fits and is used by fewer than
+{cap} images (already_used.entries counts them). Copy the entry you used word for word into the scene's "entry" field.
+When the entry starts with a name followed by a colon, that name is the position: the actions field states the act in
+plain words and names that position, so a later step can name it too."""
 
 
 def _labels(brief):
@@ -302,10 +303,7 @@ def scene_errors(scene, labels, avoid, extra=()):
         return [f"each scene needs {', '.join(FIELDS)}; subjects and position have exactly "
                 f"{', '.join(labels) or 'no labels ({})'}; subjects each with {', '.join(SUBJECT_FIELDS)}"]
     text = " ".join(_strings({key: scene[key] for key in SECTIONS}))
-    placeholder = [] if not labels or any("person" in label.casefold() for label in labels) else [
-        f'replace "{match[0]}" with the character label it stands for, written with that character\'s gender'
-        for match in [_PLACEHOLDER.search(" ".join(_strings({key: scene[key] for key in ("actions", "position")})))] if match]
-    return placeholder + [f'the user said "{phrase}" but the scene has "{match[0]}"' for phrase, pattern in avoid
+    return [f'the user said "{phrase}" but the scene has "{match[0]}"' for phrase, pattern in avoid
             if (match := pattern.search(text))]
 
 
@@ -323,7 +321,7 @@ def _entry_key(text):
 
 def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progress, on_slot):
     """Compose one batch, asking again for the images still missing: ({number: scene}, {number: failure}).
-    plan: {"vocabulary": section, "entries": {key: entry} or None, "cap", "used": {entry: images}}."""
+    plan: {"vocabulary": section, "entries": {key: entry} or None, "cap", "used": {entry: images}, "dealt": {slot: entry}}."""
     labels, avoid = _labels(brief), brief["_avoid"]
     entries, cap, used = plan["entries"], plan["cap"], plan["used"]
     extra = ("entry",) if entries else ()
@@ -336,7 +334,8 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
             break
         recovery.items = tuple(todo)
         progress(f"Composing scene{'s' if len(todo) > 1 else ''} {', '.join(map(str, todo))}...")
-        images = [{"image": number, **({"input": inputs[number]} if inputs[number] else {})} for number in todo]
+        images = [{"image": number, **({"input": inputs[number]} if inputs[number] else {}),
+                   **({"entry": plan["dealt"][number]} if plan.get("dealt") else {})} for number in todo]
         errors = sorted({f"image {number}: {reason}" for number in todo for reason in reasons[number]})
         prompt = compose_instruction(brief, images, earlier + [_summary(scenes[n]) for n in sorted(scenes)], errors,
                                      plan["vocabulary"], cap if entries else None, used if entries else None)
@@ -420,6 +419,20 @@ def _shuffled(groups, rng):
     return result
 
 
+def deal_entries(entries, total, rng):
+    """{slot: entry}: a different Actions & Poses entry for every image, from a seeded shuffle, without repeats until
+    every entry has been dealt ({} without entries). The writer keeps it unless it cannot fit the cast."""
+    if not entries:
+        return {}
+    deck, dealt = [], {}
+    for number in range(1, total + 1):
+        if not deck:
+            deck = list(entries)
+            rng.shuffle(deck)
+        dealt[number] = deck.pop()
+    return dealt
+
+
 def entry_cap(entries, total):
     """How many images may use one Actions & Poses entry: ENTRY_CAP, or more when there are fewer entries than
     images."""
@@ -448,7 +461,7 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
     actions = next((group for group in groups if group["category"] == ACTIONS_CATEGORY), None)
     action_entries = list(dict.fromkeys(entry for pack in actions["packs"] for entry in pack["entries"])) if actions else []
     plan = {"entries": {_entry_key(entry): entry for entry in action_entries} or None,
-            "cap": entry_cap(action_entries, total), "used": {}}
+            "cap": entry_cap(action_entries, total), "used": {}, "dealt": deal_entries(action_entries, total, rng)}
     effective, profile = resolve_director_config(config, request)
     brief = {**brief, "_family": effective_model_family(request, profile, effective), "_avoid": avoid_patterns(brief)}
     scenes, failed = {}, {}
