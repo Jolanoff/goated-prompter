@@ -34,7 +34,7 @@ function SceneReview({ brief }) {
   </>;
 }
 
-export default function DatasetConfirmationModal({ review, busy, catalog, onConfirm, onCancel, onExport }) {
+export default function DatasetConfirmationModal({ review, busy, catalog, directorLabel, onConfirm, onCancel, onExport }) {
   const dialog = useRef(null);
   useEffect(() => {
     if (review && !dialog.current?.open) dialog.current?.showModal();
@@ -78,6 +78,7 @@ export default function DatasetConfirmationModal({ review, busy, catalog, onConf
       <section className="dataset-review-output" aria-label="Output settings">
         <h3>Output settings</h3>
         <dl>
+          <div><dt>Director</dt><dd>{directorLabel || brief.settings.director || "Not specified"}</dd></div>
           <div><dt>Style</dt><dd>{brief.settings.style || "Not specified"}</dd></div>
           <div><dt>Target model</dt><dd>{brief.settings.target || "Not specified"}</dd></div>
         </dl>

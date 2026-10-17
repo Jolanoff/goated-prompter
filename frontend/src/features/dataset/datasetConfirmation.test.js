@@ -160,7 +160,14 @@ test("review lists the selected vocabulary packs, or says none were selected", a
   const none = renderToStaticMarkup(createElement(Modal, { catalog, review: { status: "ready", input: {}, confirmation_token: "t",
     brief: brief() } }));
   assert.match(none, /No packs selected/);
-  assert.doesNotMatch(markup, /Director|Visual direction|Structured details/);
+  assert.doesNotMatch(markup, /Visual direction|Structured details/);
+});
+
+test("review shows the run's Director beside the target model", async () => {
+  const Modal = await loadReviewModal();
+  const markup = renderToStaticMarkup(createElement(Modal, { directorLabel: "NSFW Director",
+    review: { status: "ready", input: {}, confirmation_token: "t", brief: brief() } }));
+  assert.match(markup, /<dt>Director<\/dt><dd>NSFW Director<\/dd>/);
 });
 
 test("a saved version 10 brief with an intent shows no intent details", async () => {

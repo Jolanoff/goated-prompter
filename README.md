@@ -318,7 +318,7 @@ Custom workflow instructions replace the corresponding built-in behavior. Target
 Build a batch around one request, keep shared details consistent, and vary the scenes. Every batch begins with Understanding and your approval.
 
 1. On **Configure**, write the **Request**, choose **NSFW** and the **Amount** (**1–25**), and add an optional **Trigger** for LoRA training. **Advanced options** hold consistency rules, the seed and whether the trigger must start each prompt.
-2. Choose the target model, prompt length, creativity and style.
+2. Choose the Director preset, target model, prompt length, creativity and style. The Director and target model shape the final prompts; the scenes are written without a Director.
 3. Choose the scene source: **Invent scenes**, or **Use my scene ideas** with one idea per line (lines cycle to fill the batch).
 4. Optionally open the **Vocabulary Library** to select vocabulary packs (search, filter by category, preview, then **Apply**). The selection is saved with your Dataset settings. Selected packs are optional ideas for the scene writer; with none selected, scenes come from your request alone.
 5. Click **Generate** or **Generate scenes only**. Check what the review says stays fixed and what varies, then **Confirm**. Nothing is written before you confirm.

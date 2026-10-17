@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { AlignLeft, ChevronDown, CircleHelp, Cpu, Database, Download, Layers3, LoaderCircle, SlidersHorizontal, Sparkles, Tag, WandSparkles } from "lucide-react";
 import { ui } from "../../ui.js";
+import { orderDisplayPresets, presetDisplayLabel } from "../../presetPresentation.js";
 import { TargetSelect } from "../../shared/workflow/WorkflowControls.jsx";
 import { useWorkflowSettings } from "../../shared/workflow/useWorkflowSettings.js";
 import WorkflowSettingsStatus from "../../shared/workflow/WorkflowSettingsStatus.jsx";
@@ -42,16 +43,18 @@ function download(name, content, type) {
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-export default function DatasetTab({ visible, job, busy, active, noEngine, engineLabel,
+export default function DatasetTab({ visible, job, busy, active, noEngine, engineLabel, presets,
   targets, lengths, onGenerate, onCancel, onCopy }) {
   const preferences = useWorkflowSettings("dataset");
   const { draft, update } = preferences;
   const [page, setPage] = useState("configure");
+  const availablePresets = orderDisplayPresets(presets || []);
+  const director = availablePresets.find((item) => item.id === draft?.director_preset);
   const vocabulary = useCatalog(visible);
   const selectedPacks = cleanSelection(vocabulary.catalog, draft?.vocabulary_packs);
   const { error, workflowActive, disabled, guidedLines, canPlanScenes, canWrite, generateDataset, generateScenes,
     confirmation, understanding, run, cancelConfirmation, confirmRequest } = useDatasetWorkflow({ preferences, job, busy, active, noEngine,
-      onGenerate });
+      director, onGenerate });
   // A run shows the vocabulary it was confirmed with, never the library's current choice.
   const runPacks = run && (run.result?.vocabulary?.selection ? recordedNames(run.result.vocabulary.selection)
     : selectedNames(vocabulary.catalog, run.vocabulary));
@@ -223,10 +226,17 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
 
         <section className="dataset-config-column" aria-label="Dataset generation settings">
           <header className="dataset-config-heading">
-            <h3>Model &amp; output settings</h3><p>Choose the target model, prompt format and vocabulary.</p>
+            <h3>Model &amp; output settings</h3><p>Choose the Director, target model, prompt format and vocabulary.</p>
           </header>
           <fieldset disabled={disabled}>
-            <div className="grid grid-cols-2 gap-4 tiny:grid-cols-1">
+            <label className={ui.field}><span><SlidersHorizontal size={14} aria-hidden="true" />Director preset</span>
+              <select className={ui.select} aria-label="Dataset director preset" value={draft.director_preset} onChange={(event) => update({ director_preset: event.target.value })}>
+                {!director && <option value={draft.director_preset}>Unavailable — choose a preset</option>}
+                {availablePresets.map((item) => <option key={item.id} value={item.id}>{presetDisplayLabel(item)}</option>)}
+              </select>
+              <small className="text-xs leading-relaxed text-muted">Styles the final prompts together with the target model; the scenes themselves stay as written.</small>
+            </label>
+            <div className="mt-4 grid grid-cols-2 gap-4 tiny:grid-cols-1">
               <TargetSelect label="Target model" ariaLabel="Dataset target model" icon={<Cpu size={14} aria-hidden="true" />} value={draft.target} targets={targets} disabled={disabled} onChange={(target) => update({ target })} />
               <label className={ui.field}><span><AlignLeft size={14} aria-hidden="true" />Prompt length</span>
                 <select className={ui.select} aria-label="Dataset prompt length" value={draft.length} onChange={(event) => update({ length: event.target.value })}>
@@ -312,6 +322,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
       </div>
     </>}
     {confirmation && <DatasetConfirmationModal review={confirmation} busy={busy} catalog={vocabulary.catalog}
+      directorLabel={director ? presetDisplayLabel(director) : ""}
       onConfirm={confirmRequest} onCancel={cancelConfirmation} onExport={exportGenerationLog} />}
   </div>;
 }

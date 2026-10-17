@@ -3,7 +3,7 @@ import { datasetConfirmationPayload, nextDatasetSeed } from "./datasetState.js";
 import { useDatasetConfirmation } from "./useDatasetConfirmation.js";
 
 /** Dataset requests and job projections; editable-draft revisions stay in useWorkflowSettings. */
-export function useDatasetWorkflow({ preferences, job, busy, active, noEngine,
+export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, director,
   onGenerate }) {
   const { draft, update } = preferences;
   const [error, setError] = useState("");
@@ -20,7 +20,7 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine,
   const sourceReady = draft?.source_mode !== "guided" || guidedLines > 0;
   const canPlanScenes = draft && !disabled && !noEngine && !preferences.conflict &&
     draft.subject.trim() && sourceReady;
-  const canWrite = canPlanScenes;
+  const canWrite = canPlanScenes && !!director;
 
   useEffect(() => {
     if (!datasetJob || !["failed", "interrupted"].includes(job.status)) return;

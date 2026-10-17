@@ -79,6 +79,8 @@ class DatasetRebuildAdmissionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(job["result"]["stage"], "scenes" if operation.endswith("scenes") else "done")
         self.assertEqual(self.scenes.call_args.args[2], payload["brief"])
         self.assertEqual(self.scenes.call_args.kwargs["vocabulary"], {"packs": []})
+        self.assertEqual(self.prompts.call_args.args[1].director_preset, "general_director",
+                         "the draft's Director reaches the final prompts")
         self.assertEqual(set(self.scenes.call_args.kwargs), {"checkpoint", "progress", "on_slot", "vocabulary"},
                          "no Director, Visual Direction or other planning input reaches scene writing")
 

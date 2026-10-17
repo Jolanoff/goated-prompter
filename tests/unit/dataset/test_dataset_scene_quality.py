@@ -25,7 +25,7 @@ class Harness(unittest.TestCase):
             self.enterContext(patch.object(module, "DebugTrace", return_value=Mock()))
         self.enterContext(patch("goated_prompter.features.builder.service.create_backend", return_value=self.backend))
         self.enterContext(patch("goated_prompter.features.builder.service.pick_references", return_value=()))
-        self.request = GoatedPrompterRequest(idea="dataset", planning_mode="Direct", director_preset=prompts.WRITER_DIRECTOR)
+        self.request = GoatedPrompterRequest(idea="dataset", planning_mode="Direct", director_preset="general_director")
         data = {**default_dataset_draft(), "subject": "2 males having sex", "amount": 10, "nsfw": True, "seed": 3,
                 "seed_mode": "fixed"}
         self.brief = understanding.apply_rules({"path": "character", "summary": "Two men having sex", "fixed": "two men",
@@ -67,6 +67,12 @@ class SceneVariety(Harness):
         person = self.composer()[0].json_schema["properties"]["scenes"]["items"]["properties"]["subjects"]["properties"]["man 1"]
         self.assertIn("expression", person["required"])
         self.assertIn("expression (their face in this moment)", self.composer()[0].system_message)
+
+    def test_the_requested_activity_is_every_images_action(self):
+        self.write()
+        system = self.composer()[0].system_message
+        self.assertIn("never replace it with a lesser, earlier or different activity, and vocabulary never changes it", system)
+        self.assertIn("kissing, touching, undressing or foreplay alone never stand in for it", system)
 
     def test_ten_images_are_written_in_one_answer(self):
         self.write()
@@ -131,6 +137,18 @@ class FinalLabels(Harness):
         written = self.write(["Man1 kneels.", "man_2 leans back."])
         self.assertEqual(written[0]["prompt"], "man_2 leans back.")
         self.assertFalse(written[0].get("error"))
+
+    def test_the_runs_director_shapes_the_final_prompt_but_never_the_scene(self):
+        from dataclasses import replace
+        self.request = replace(self.request, director_preset="nsfw_director")
+        self.write(["The taller man kneels behind his partner."])
+        final = [call for call in self.calls if call.diagnostic_stage == "final"][0]
+        self.assertIn("DIRECTOR BEHAVIOR — NSFW Director", final.system_message + final.user_message)
+        self.calls.clear()
+        self.brief["input"]["amount"] = 1
+        scenes.write_scenes({"backend": "mock"}, self.request, self.brief, progress=lambda _: None)
+        composer = self.composer()[0]
+        self.assertNotIn("Director", composer.system_message + composer.user_message)
 
     def test_names_and_plain_words_are_not_labels(self):
         brief = {"characters": [{"label": "man 1"}, {"label": "Alex"}, {"label": "woman"}]}

@@ -2,8 +2,9 @@
 
 The scene is fixed: the Builder writes it in the target model's format, style and length and may not move anyone,
 change the action, add subjects, objects or a conflicting camera. Builder's own target formatting, library
-references and clean-up apply unchanged. Dataset runs write with the default Director only: the scene already says
-what happens, so no Director can redesign it.
+references and clean-up apply unchanged. The Director chosen for the run (request.director_preset) and the target
+model shape the final prompt together, as in the Prompt Builder; the scene rules keep the Director from redesigning
+what happens. The scene writer itself never sees a Director.
 
 Code checks the user's exact trigger (a prompt without it is retried once, then marked failed) and that no numbered
 character label ("man 1", "woman2") is left in the prompt; a prompt that still has one after its retry is kept.
@@ -18,13 +19,13 @@ from ....backends.recovery import GenerationRecovery, RunawayRecoveryError
 from .debug import DebugTrace
 
 SCENE_ORDER = ("subjects", "position", "actions", "space", "lighting", "mood", "camera", "extras")
-WRITER_DIRECTOR = "general_director"
 
 SCENE_RULES = """
 The idea is one scene of an IMAGE, already decided. Write it as one prompt for the
 target model. Keep every person, their appearance, every placement, orientation, support, contact
 and the action exactly as given; do not move anyone, change the action or add contact. Add only
-wording the target format needs. Do not add subjects, objects or actions, and do not change the camera or light.
+wording the target format and the Director need: the Director decides how explicitly the action and bodies
+are worded. Do not add subjects, objects or actions, and do not change the camera or light.
 Labels such as "man 1" or "woman" only tell the people apart: describe each person by appearance and role
 ("the taller man", "his partner"), never by the label itself."""
 
@@ -109,7 +110,7 @@ def write_prompts(config, request, brief, scenes, *, checkpoint=lambda: None, pr
                 builder_request = replace(request, idea=idea, mode="Enhance", planning_mode="Direct",
                                           target_model=brief["settings"]["target"], prompt_length=brief["settings"]["length"],
                                           creativity=brief["settings"]["creativity"], style=brief["settings"]["style"] or "Auto",
-                                          director_preset=WRITER_DIRECTOR, custom_instructions=rules)
+                                          director_preset=request.director_preset, custom_instructions=rules)
                 try:
                     prompt = service.generate_text_only(builder_request, seed=brief["input"].get("seed"), recovery=recovery).prompt
                 except RunawayRecoveryError as error:

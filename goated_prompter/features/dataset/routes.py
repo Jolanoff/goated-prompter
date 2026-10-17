@@ -5,7 +5,7 @@ import asyncio
 from aiohttp import web
 
 from .v2.draft import validate_dataset_draft
-from .v2.prompts import WRITER_DIRECTOR
+from ...presets import get_director_preset
 from .v2.understanding import VERSIONS, confirm, copied_input, copied_settings, reviewed_brief
 from ..vocabulary.catalog import CatalogError, catalog_for, record, validate_selection
 from ...api.common import STATE, active_job_conflict, engine_request, json_object
@@ -34,7 +34,7 @@ async def understand_endpoint(request):
             state, config, settings,
             idea=data["subject"], mode="Custom", target_model=data["target"],
             creativity=data["creativity"], style=data["style"], prompt_length=data["length"],
-            director_preset=WRITER_DIRECTOR,
+            director_preset="general_director",
         )
         return web.json_response(state.start_job("dataset_understanding", director_request, config, True,
             {"operation": "dataset_understanding", "input": data}), status=202)
@@ -67,6 +67,7 @@ async def confirm_endpoint(request):
     if brief.get("version") not in VERSIONS or brief["input"] != copied_input(data) or brief["settings"] != copied_settings(data):
         raise ValueError("Dataset input changed after analysis. Review the updated request before generating.")
     brief = confirm(brief, data)
+    director = get_director_preset(brief["settings"]["director"], strict=True)
     vocabulary, recorded = await asyncio.to_thread(_vocabulary, data["vocabulary_packs"])
     async with state.admission:
         if (conflict := active_job_conflict(state, "Wait for the active generation before generating again.")) is not None:
@@ -76,7 +77,7 @@ async def confirm_endpoint(request):
             state, config, settings,
             idea=brief["input"]["request"], mode="Custom", target_model=brief["settings"]["target"],
             creativity=brief["settings"]["creativity"], style=brief["settings"]["style"],
-            prompt_length=brief["settings"]["length"], director_preset=WRITER_DIRECTOR,
+            prompt_length=brief["settings"]["length"], director_preset=director.id,
         )
         return web.json_response(state.start_job("dataset_v2_scenes", director_request, config, True,
             {"operation": "dataset_v2_scenes", "brief": brief, "vocabulary": vocabulary, "vocabulary_record": recorded,

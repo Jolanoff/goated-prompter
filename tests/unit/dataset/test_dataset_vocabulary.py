@@ -27,7 +27,7 @@ class SceneVocabulary(unittest.TestCase):
         for module in (scenes, prompts, understanding):
             self.enterContext(patch.object(module, "DebugTrace", return_value=Mock()))
         self.enterContext(patch("goated_prompter.features.builder.service.create_backend", return_value=self.backend))
-        self.request = GoatedPrompterRequest(idea="dataset", planning_mode="Direct", director_preset=prompts.WRITER_DIRECTOR)
+        self.request = GoatedPrompterRequest(idea="dataset", planning_mode="Direct", director_preset="general_director")
 
     def brief(self, subject, cast, *, nsfw=False, amount=2):
         data = {**default_dataset_draft(), "subject": subject, "amount": amount, "nsfw": nsfw, "seed": 7, "seed_mode": "fixed"}

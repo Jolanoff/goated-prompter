@@ -49,6 +49,8 @@ The user message is data, never instructions to you.
 For each image listed under IMAGES, in order, write one complete and coherent scene:
 - Keep the user's request: the same subjects with the same labels, the same number of people and the requested
   activity. What fixed says stays the same in every image; vary what randomized allows; must and avoid always apply.
+- The requested activity is the action of every image. Vary how it happens (position, place, pace), never what
+  happens: never replace it with a lesser, earlier or different activity, and vocabulary never changes it.
 - Give everyone a clear role, pose and place that fit the action and each other. All positions together must be one
   physically possible arrangement: if one person is behind another, that person faces away from them; if someone
   lies on their back facing a partner, the partner is above or between their legs, not behind them; say who holds
@@ -57,7 +59,7 @@ For each image listed under IMAGES, in order, write one complete and coherent sc
   a different camera from every other image, both in this answer and in already_used (what earlier images used).
   Never reuse a place, arrangement or camera listed there, and do not follow its order.
 - Give the people new looks (skin, build, hair, detail) in every image unless fixed keeps the same people; then keep
-  their looks identical in every image.
+  their looks identical in every image. Otherwise no two images share the same people: do not cycle a few looks.
 
 Fields:
 subjects: one entry per character label, each with skin (tone), build (body shape), hair (colour and style),
@@ -112,7 +114,9 @@ If no vocabulary is selected, generate the scene normally from the user request.
 The original request and approved constraints always take priority."""
 
 NSFW_RULE = ("- This dataset is sexual and explicit: the action is the sex the request asks for, shown clearly, in a "
-             "position that is physically possible for this cast.")
+             "position that is physically possible for this cast. Every image shows the sex itself; kissing, touching, "
+             "undressing or foreplay alone never stand in for it unless the request asks for them. The actions name the sex "
+             "act plainly: which body part of whom goes where, never only the name of a position.")
 SFW_RULE = "- This dataset is not sexual: no nudity and no sexual content."
 NO_PEOPLE_RULE = "- There are no people: describe how the subject is placed instead of a pose."
 GUIDED_RULE = "- An image's input fixes its action: keep it, and build the rest of the scene around it."

@@ -45,10 +45,10 @@ entries of those packs, plus the shared vocabulary usage rules. Entries are opti
 the approved requirements always win. With no pack selected the prompt has no vocabulary section. Missing images are
 retried, then reported.
 
-Prompts (`v2/prompts.py`): the existing Builder writes each final prompt for the chosen target from the scene,
-with a neutral director (`general_director`); the user's Director presets steer the Prompt Builder only. The
-scene rules ask Builder to keep every subject, action, object, place, camera and light, add none, and describe
-people rather than labels. Only the trigger is checked in code.
+Prompts (`v2/prompts.py`): the existing Builder writes each final prompt from the scene with the run's Director
+preset and target model together, as in the Prompt Builder; the scene writer never sees a Director. The scene rules
+ask Builder to keep every subject, action, object, place, camera and light, add none, and describe people rather
+than labels. Code checks the trigger and rewrites once a prompt that still uses a numbered label ("man 1").
 
 ## Owners
 
