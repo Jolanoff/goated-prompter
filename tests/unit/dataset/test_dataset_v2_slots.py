@@ -29,9 +29,6 @@ class SlotIdentityTests(unittest.TestCase):
         self.enterContext(patch.object(self.backend, "generate", side_effect=self.generate))
         for module in (understanding, scenes):
             self.enterContext(patch.object(module, "create_backend", return_value=self.backend))
-        self.trace = Mock()
-        for module in (understanding, scenes, prompts):
-            self.enterContext(patch.object(module, "DebugTrace", return_value=self.trace))
         self.enterContext(patch("goated_prompter.features.builder.service.create_backend", return_value=self.backend))
         self.make_brief(3)
 
@@ -42,7 +39,7 @@ class SlotIdentityTests(unittest.TestCase):
         value = {"path": "character", "summary": "Alex reads", "fixed": "Alex stays the same", "randomized": "Location",
                  "must": [], "avoid": [],
                  "characters": [{"label": "Alex", "gender": "custom", "custom": "adult human reader", "pronoun": "it", "count": 1}]}
-        self.brief = understanding.apply_rules(value, data, Mock())
+        self.brief = understanding.apply_rules(value, data)
 
     @staticmethod
     def image(text):

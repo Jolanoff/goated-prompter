@@ -26,15 +26,12 @@ class RunawayRecoveryTests(unittest.TestCase):
         self.value = {"path": "character", "summary": "Alex reads", "fixed": "Alex's identity and anatomy remain fixed",
                       "randomized": "Location and light", "must": [self.data["constraints"]], "avoid": [],
                       "characters": [{"label": "Alex", "gender": "custom", "custom": "adult human reader", "pronoun": "it", "count": 1}]}
-        self.trace = Mock()
-        self.brief = understanding.apply_rules(self.value, self.data, self.trace)
+        self.brief = understanding.apply_rules(self.value, self.data)
         self.calls, self.scripts = [], defaultdict(list)
         self.backend = MockBackend()
         self.enterContext(patch.object(self.backend, "generate", side_effect=self.generate))
         for module in (understanding, scenes):
             self.enterContext(patch.object(module, "create_backend", return_value=self.backend))
-        for module in (understanding, scenes, prompts):
-            self.enterContext(patch.object(module, "DebugTrace", return_value=self.trace))
         self.enterContext(patch("goated_prompter.features.builder.service.create_backend", return_value=self.backend))
 
     def loop(self):
@@ -100,8 +97,6 @@ class RunawayRecoveryTests(unittest.TestCase):
         with self.assertRaises(BackendRunawayError):
             understanding.understand(self.config, self.request, self.data, progress=lambda _message: None)
         self.assertEqual(len(self.calls), 3)
-        self.trace.finish.assert_called_once()
-        self.assertNotIn("output", self.trace.finish.call_args.kwargs)
 
     def test_the_scene_stage_recovers_with_changed_sampling_and_identical_input(self):
         stage = "dataset_v2:scenes"
@@ -194,17 +189,12 @@ class RunawayRecoveryTests(unittest.TestCase):
                     self.assertIs(caught.exception, error)
                     self.assertEqual(len(self.calls), 1)
 
-    def test_recovery_diagnostics_are_bounded_and_do_not_copy_private_output(self):
+    def test_two_loops_in_a_final_prompt_are_recovered_and_the_loop_text_is_never_kept(self):
         self.scripts["final"] = [self.loop(), self.loop()]
         result = self.write_prompts()
         self.assertTrue(result[0]["prompt"])
-        records = [call.args[1] for call in self.trace.decide.call_args_list if call.args[0] == "runaway_recovery"]
-        self.assertEqual([record["outcome"] for record in records], ["retrying", "retrying", "succeeded"])
-        self.assertEqual(records[-1]["attempts"], 3)
-        self.assertEqual(records[-1]["items"], [1])
-        self.assertEqual(records[-1]["reason"], "repetition_loop")
-        self.assertNotIn('"the s"', json.dumps(records))
-        self.assertNotIn("Incomplete response", json.dumps(records))
+        self.assertEqual(len([call for call in self.calls if call.diagnostic_stage == "final"]), 3)
+        self.assertNotIn("Incomplete response", json.dumps(result))
 
     def test_builder_format_repairs_cannot_accept_invalid_output_after_recovery(self):
         self.brief["settings"]["target"] = "Qwen Image 2.1"

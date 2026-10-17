@@ -42,7 +42,6 @@ from ....backends.recovery import GenerationRecovery
 from ....contracts import PromptInstruction, effective_model_family
 from ....director_profiles import resolve_director_config
 from .safety import ADULTS_ONLY, NO_ANIMALS, adult_content_request, adults_only_error, minor_reference
-from .debug import DebugTrace
 
 VERSION = 11
 VERSIONS = (9, 10, 11)  # 9 and 10: saved runs (10 with a structured intent no longer read)
@@ -226,28 +225,20 @@ def model_errors(value, nsfw, data=None):
     if value["path"] == "non_character" and people:
         errors.append("non_character must have characters [].")
     if nsfw and value["path"] != "character" and (data is None or adult_content_request(data, include_director=False)):
-        # A sexual request is always about people; a request without people (a place, an object) may stay non_character.
-        errors.append('This dataset is NSFW and the request is sexual: path must be "character" with the people listed.')
+        # An adult request is always about people; a request without people (a place, an object) may stay non_character.
+        errors.append('This dataset is NSFW and the request is about people: path must be "character" with the people listed.')
     return errors
 
 
-def expand_characters(items, trace):
+def expand_characters(items):
     """One entry per person: an entry with count N becomes N numbered people."""
     characters, totals, numbers = [], {}, {}
     for item in items:
         totals[_singular(item["label"].strip())] = totals.get(_singular(item["label"].strip()), 0) + item["count"]
     for item in items:
         custom = item["custom"].strip() if item["gender"] == "custom" else ""
-        if item["gender"] != "custom" and item["custom"].strip():
-            trace.decide("custom_only_for_custom_gender", f'{item["label"]}: dropped custom "{item["custom"].strip()}"')
         pronoun = {"male": "he", "female": "she"}.get(item["gender"], item["pronoun"])
-        if pronoun != item["pronoun"]:
-            trace.decide("pronoun_from_gender", f'{item["label"]}: {item["gender"]} is "{pronoun}" (model said "{item["pronoun"]}")')
         label = item["label"].strip()
-        if item["count"] > 1:
-            if _singular(label) != label:
-                trace.decide("group_label_singular", f"{label} -> {_singular(label)}")
-            trace.decide("group_expanded", f'{_singular(label)} x{item["count"]}')
         label = _singular(label) if item["count"] > 1 or totals[_singular(label)] > 1 else label
         for _ in range(item["count"]):
             if totals[_singular(label)] > 1:
@@ -272,27 +263,17 @@ def _singular(label):
     return " ".join(words)
 
 
-def apply_rules(value, data, trace):
+def apply_rules(value, data):
     nsfw = data.get("nsfw") is True
     path = ("non_character" if value["path"] == "non_character" else "nsfw_character" if nsfw else "sfw_character")
-    trace.decide("path", f"{path} (NSFW switch {'on' if nsfw else 'off'}, model said {value['path']})")
-    characters = expand_characters(value["characters"], trace)
-    summary = value["summary"].strip()
-    if not summary:
-        summary = " ".join(str(data.get("subject") or "").split())
-        trace.decide("summary_from_request", summary)
-    for key in ("fixed", "randomized"):
-        if not value[key].strip():
-            trace.decide(f"{key}_empty", "the model fixed nothing beyond the request" if key == "fixed"
-                         else "the model named no dimension to vary")
+    characters = expand_characters(value["characters"])
+    summary = value["summary"].strip() or " ".join(str(data.get("subject") or "").split())
     brief = {"version": VERSION, "path": path, "summary": summary,
             "people": len(characters), "characters": characters,
             "fixed": value["fixed"].strip(), "randomized": value["randomized"].strip(),
             "must": [item.strip() for item in value["must"]], "avoid": [item.strip() for item in value["avoid"]],
             "input": copied_input(data), "settings": copied_settings(data)}
     validate_content(brief, data)
-    if nsfw:
-        trace.decide("adults_only", "passed")
     return brief
 
 
@@ -365,9 +346,8 @@ def validate_content(brief, data=None):
 
 
 def understand(config, request, data, *, checkpoint=lambda: None, progress=print):
-    """Run Understanding. Every run writes one debug JSON file and prints the brief."""
-    trace = DebugTrace("understanding", **copied_input(data), settings=copied_settings(data))
-    recovery = GenerationRecovery("dataset_v2:understanding", report=lambda detail: trace.decide("runaway_recovery", detail), progress=progress)
+    """Run Understanding and return the brief."""
+    recovery = GenerationRecovery("dataset_v2:understanding", progress=progress)
     try:
         if not str(data.get("subject") or "").strip():
             raise ValueError("Write a request first.")
@@ -387,30 +367,20 @@ def understand(config, request, data, *, checkpoint=lambda: None, progress=print
                     errors = model_errors(value, nsfw, data)
                 except ValueError as error:  # json.JSONDecodeError is a ValueError (also a reply cut off by the token limit)
                     errors = [f"Return one valid JSON object, complete and compact ({error})."]
-                trace.attempt(system=prompt.system_message, user=prompt.user_message, raw=raw, errors=errors)
                 if not errors:
                     break
             else:
                 raise ValueError("The model returned an invalid answer twice: " + " ".join(errors))
-        brief = validate_brief(apply_rules(value, data, trace))
-    except Exception as error:
+        brief = validate_brief(apply_rules(value, data))
+    except Exception:
         recovery.finish("failed")
-        trace.finish(error=f"{type(error).__name__}: {error}")
         raise
     recovery.finish("succeeded")
-    trace.finish(output=brief)
     return brief
 
 
 def confirm(brief, data=None):
     """Validate the confirmed contract and content before any downstream generation."""
-    trace = DebugTrace("confirmed", path=brief.get("path") if isinstance(brief, dict) else None)
-    try:
-        validate_brief(brief)
-        validate_content(brief, data)
-    except Exception as error:
-        trace.finish(error=f"{type(error).__name__}: {error}")
-        raise
-    trace.decide("contract", "valid brief and eligible content")
-    trace.finish(output=brief)
+    validate_brief(brief)
+    validate_content(brief, data)
     return brief

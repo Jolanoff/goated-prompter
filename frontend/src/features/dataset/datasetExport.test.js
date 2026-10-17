@@ -126,7 +126,7 @@ test("diagnostic export omits raw content from private transport traces", () => 
 });
 
 function v2Result(overrides = {}) {
-  return { ok: true, kind: "dataset_v2_scenes", run_id: "run-42", stage: "done", complete: false, requested: 2, written: 1,
+  return { ok: true, kind: "dataset_v2_scenes", stage: "done", complete: false, requested: 2, written: 1,
     slots: [{ slot: 1, status: "written", input: "", concept: null, stage: null, reasons: [], tries: 1 },
       { slot: 2, status: "failed", input: "", concept: null, stage: "scene", reasons: ["answer was not JSON"], tries: 3 }],
     scenes: [{ slot: 1, actions: "two sailors greet at a harbour", camera: "low angle", lighting: "golden hour" }],
@@ -143,7 +143,7 @@ test("generation log exports a V2 run: status, slots, scenes, prompts, failures 
   const before = structuredClone(context);
   const log = JSON.parse(datasetGenerationLog(context));
   const run = log.v2_run;
-  assert.equal(run.run_id, "run-42");
+  assert.equal(run.job_id, "job-v2");
   assert.equal(run.status, "done");
   assert.equal(run.brief.summary, "Two sailors greet");
   assert.equal(run.scenes[0].camera, "low angle");

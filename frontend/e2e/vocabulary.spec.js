@@ -4,7 +4,7 @@ test("the Vocabulary tab lists every registered category and its packs", async (
   await page.goto("/");
   await page.getByRole("button", { name: "Vocabulary", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Vocabulary", exact: true })).toBeVisible();
-  for (const name of ["Subjects", "Spaces", "Positions & Poses", "Effects & Atmosphere"]) {
+  for (const name of ["Subjects", "Spaces", "Actions & Poses", "Effects & Atmosphere"]) {
     await expect(page.getByRole("region", { name, exact: true })).toBeVisible();
   }
   await expect(page.getByRole("region", { name: "Spaces", exact: true }).getByRole("heading", { name: "Fantasy" })).toBeVisible();

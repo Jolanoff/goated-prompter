@@ -27,7 +27,7 @@ python tests/run_synthetic_suite.py --task-key <task-key> --suite unit
 python tests/run_synthetic_suite.py --task-key <task-key> --suite integration
 python tests/run_synthetic_suite.py --task-key <task-key> --workflow dataset
 python tests/run_synthetic_suite.py --task-key <task-key> --suite unit --workflow minimax
-python tests/run_synthetic_suite.py --task-key <task-key> tests.unit.dataset.test_dataset_v2_runs
+python tests/run_synthetic_suite.py --task-key <task-key> tests.unit.dataset.test_dataset_vocabulary
 ```
 
 Use the task's issue key or one stable task slug. Without `--task-key`, the

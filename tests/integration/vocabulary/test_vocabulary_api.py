@@ -19,8 +19,9 @@ class VocabularyCatalogAPITests(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name) / "vocabulary"
         shutil.copytree(catalog.ROOT, self.root, ignore=shutil.ignore_patterns("SKILL.md"))
+        self.user = Path(self.temp.name) / "data-vocabulary"
         self.enterContext(patch.object(catalog, "ROOT", self.root))
-        self.enterContext(patch.object(catalog.load_catalog, "__defaults__", (self.root,)))
+        self.enterContext(patch.object(catalog, "USER_ROOT", self.user))
         self.enterContext(patch("local_app.get_process_manager"))
         app = local_app.create_app(config_loader=lambda: {"backend": "mock"}, settings_path=Path(self.temp.name) / "settings.json")
         self.client = TestClient(TestServer(app), headers={"Host": "127.0.0.1:8190"})
@@ -34,7 +35,7 @@ class VocabularyCatalogAPITests(unittest.IsolatedAsyncioTestCase):
 
     async def test_catalog_lists_registered_categories_and_their_packs(self):
         body = await self.get()
-        self.assertEqual(len(body["categories"]), 11)
+        self.assertEqual(len(body["categories"]), 10)
         self.assertEqual(body["categories"][2]["id"], "Spaces")
         self.assertIn("Spaces/Fantasy", {pack["id"] for pack in body["packs"]})
         self.assertEqual(body["problems"], [])
@@ -46,6 +47,20 @@ class VocabularyCatalogAPITests(unittest.IsolatedAsyncioTestCase):
         body = await self.get()
         self.assertIn("Spaces/Rooftops", {pack["id"] for pack in body["packs"]})
         self.assertEqual([row["file"] for row in body["problems"]], ["Spaces/Broken.json"])
+
+    async def test_an_imported_pack_is_saved_in_its_category_folder_and_listed(self):
+        content = json.dumps({"name": "Rooftops", "category": "Spaces", "entries": ["rooftop bar"]})
+        response = await self.client.post("/api/vocabulary/import", json={"filename": "Rooftops.json", "content": content})
+        self.assertEqual(response.status, 200)
+        self.assertEqual((await response.json())["pack"]["id"], "data/Spaces/Rooftops")
+        self.assertTrue((self.user / "Spaces" / "Rooftops.json").is_file())
+        self.assertIn("data/Spaces/Rooftops", {pack["id"] for pack in (await self.get())["packs"]})
+
+    async def test_an_invalid_import_is_refused_with_its_reason(self):
+        response = await self.client.post("/api/vocabulary/import", json={"filename": "x.json", "content": "{}"})
+        self.assertEqual(response.status, 400)
+        self.assertIn("Could not import x.json", (await response.json())["error"])
+        self.assertFalse(self.user.exists())
 
     async def test_old_pack_management_routes_are_gone(self):
         for method, path in (("GET", "/api/vocabulary/packs"), ("POST", "/api/vocabulary/packs")):

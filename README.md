@@ -318,24 +318,24 @@ Custom workflow instructions replace the corresponding built-in behavior. Target
 Build a batch around one request, keep shared details consistent, and vary the scenes. Every batch begins with Understanding and your approval.
 
 1. On **Configure**, write the **Request**, choose **NSFW** and the **Amount** (**1–25**), and add an optional **Trigger** for LoRA training. **Advanced options** hold consistency rules, the seed and whether the trigger must start each prompt.
-2. Choose the Director preset, target model, prompt length, creativity and style. The Director and target model shape the final prompts; the scenes are written without a Director.
-3. Choose the scene source: **Invent scenes**, or **Use my scene ideas** with one idea per line (lines cycle to fill the batch).
-4. Optionally open the **Vocabulary Library** to select vocabulary packs (search, filter by category, preview, then **Apply**). The selection is saved with your Dataset settings. Selected packs are optional ideas for the scene writer; with none selected, scenes come from your request alone.
+2. Choose the Director preset, target model, prompt length, creativity and style. The Director and target model shape the final prompts; the scenes are written without a Director. Directors that need reference images, edit an image or write video are not offered here.
+3. Choose the scene source: **Invent scenes**, or **Use my scene ideas** with one idea per line (lines cycle to fill the batch). Your own scene ideas are used as written, without vocabulary.
+4. With **Invent scenes**, optionally open the **Vocabulary Library** to select vocabulary packs (search, filter by category, preview, then **Apply**). The selection is saved with your Dataset settings. With an **Actions & Poses** pack selected, every scene is built on one of its entries, and no entry is used by more than two images (more only when the pack has fewer entries than images). Without a **Subjects** pack, each image still gets different people, dealt from the built-in Humans looks.
 5. Click **Generate** or **Generate scenes only**. Check what the review says stays fixed and what varies, then **Confirm**. Nothing is written before you confirm.
-6. The **Scenes** page shows each image's scene as it is written, and **Dataset** shows the final prompts. Copy them or download TXT or JSON. **Export generation log** saves the current state for debugging.
+6. The **Scenes** page shows each image's scene as soon as it is written, and **Dataset** shows each final prompt as soon as it is written. Copy them or download TXT or JSON. **Export generation log** saves the current state to a file.
 
-Each run is saved under **`data/dataset_v2_runs/`** as its scenes and prompts complete; a run left unfinished when the server stopped is marked interrupted on the next start, not resumed. Editing scenes, regenerating single images and continuing a scenes-only run are not available. **Seed** and **Seed control** work like ComfyUI: Fixed repeats a batch as closely as the engine allows, Increment and Randomize explore new ones.
+Runs are not saved by the app; copy or download what you want to keep. Editing scenes, regenerating single images and continuing a scenes-only run are not available. **Seed** and **Seed control** work like ComfyUI: the seed drives the engine and the order in which vocabulary and looks are offered, so Fixed repeats a batch as closely as the engine allows, and Increment and Randomize give different scenes.
 
 #### Adult content (Dataset only)
 
-Sexual requests are supported in the Dataset tab only, and everyone must be an adult: a request that makes someone a child or teen is refused before generation, and a sexual batch can never involve an animal. Adult packs are marked NSFW and can only be turned on while NSFW is on.
+Adult (NSFW) requests are supported in the Dataset tab only, and everyone must be an adult: a request that makes someone a child or teen is refused before generation, and an adult batch can never involve an animal. The repository ships only general vocabulary; keep adult packs in your own `data/vocabulary/` by importing them.
 
 Freaky stuff are ignored. Generating freaky stuff is at your own risk. I'm not responsible of any prompt you generate.
 
 #### Vocabulary packs
 
-Each category is a folder under `vocabulary/` (Subjects, Actions, Spaces, Objects, Positions & Poses, Expressions, Clothing, Mood & Tone, Lighting, Camera & Composition, Effects & Atmosphere), and each JSON file in it is one pack, for example `vocabulary/Spaces/Rooftops.json` containing
-`{"name": "Rooftops", "category": "Spaces", "entries": ["rooftop bar", "water tower"]}`. Add the file and click **Refresh** on the **Vocabulary** tab; a pack that cannot be read is listed there with the reason, and every other pack keeps working. The categories are defined in `vocabulary/core/` (`scene_category_registry.json`, `category_definitions.json`, `prompt_instructions.json`); a new category is one entry in each plus its folder.
+Each category is a folder under `vocabulary/` (Subjects, Actions & Poses, Spaces, Objects, Expressions, Clothing, Mood & Tone, Lighting, Camera & Composition, Effects & Atmosphere), and each JSON file in it is one pack, for example
+`{"name": "Rooftops", "category": "Spaces", "entries": ["rooftop bar", "water tower"]}`. Click **Import packs** on the **Vocabulary** tab and choose one or more pack files: each is checked and saved in `data/vocabulary/<its category's folder>/`, and importing the same file again replaces it. A pack that cannot be read is listed there with the reason, and every other pack keeps working. The categories are defined in `vocabulary/core/` (`scene_category_registry.json`, `category_definitions.json`, `prompt_instructions.json`); a new category is one entry in each plus its folder.
 
 See the [Dataset architecture](docs/dataset-architecture.md) for how a run is understood, composed and written.
 
@@ -386,7 +386,7 @@ goated-prompter/
 │   ├── prompts.json            # Saved prompt collection
 │   ├── workspace.json          # Versions and undo/redo history
 │   ├── workflow_settings.json  # Workflow drafts and custom instructions
-│   ├── dataset_v2_runs/        # Saved Dataset runs
+│   ├── vocabulary/             # Your imported vocabulary packs, one folder per category
 │   └── directors/              # Custom instruction presets
 │       └── .overrides/         # Edits to built-in instruction presets
 └── tests/                      # Python, frontend, and browser workflow tests
@@ -441,7 +441,7 @@ Want to help? Read the [contribution guide](CONTRIBUTING.md) and [Code of Conduc
 
 ### Checkpoint privacy and recovery
 
-Dataset runs are durable local content in **`data/dataset_v2_runs/`**, never deleted automatically. Runtime checkpoints, live request/response logs and interrupted partial-text diagnostics remain RAM-only. Active jobs are never deleted by cleanup. Shutdown uses bounded cancellation, marks unfinished work interrupted and releases RAM diagnostics. Files left by the retired Dataset pipeline (`dataset_checkpoints.json`, `idea_fingerprints.json`, `vocabulary/sexual.txt`) are no longer read and are left untouched.
+Dataset runs are not saved to disk. Runtime checkpoints, live request/response logs and interrupted partial-text diagnostics remain RAM-only. Active jobs are never deleted by cleanup. Shutdown uses bounded cancellation, marks unfinished work interrupted and releases RAM diagnostics. Files left by retired Dataset features (`dataset_checkpoints.json`, `idea_fingerprints.json`, the `dataset_v2_runs/` folder and the old private vocabulary file) are no longer read and can be deleted.
 
 This cleanup does **not** remove your existing autosaved drafts (`settings.json` / `workflow_settings.json`), named saved prompts, version history, downloaded exports or clipboard content. Those still contain private content locally. Keep `GOATED_PROMPTER_DEBUG_PROMPTS` disabled to avoid content in console logs. Remote inference providers have their own retention policies; releasing Python references is not guaranteed secure memory erasure.
 

@@ -23,7 +23,7 @@ class RebuildParityTests(unittest.TestCase):
                       "randomized": "Light and framing", "must": [], "avoid": [], "characters": [
                           {"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 1},
                           {"label": "woman", "gender": "female", "custom": "", "pronoun": "she", "count": 1}]}
-        self.brief = understanding.apply_rules(self.value, self.data, Mock())
+        self.brief = understanding.apply_rules(self.value, self.data)
 
     def test_guided_sources_reach_understanding_and_are_copied_into_brief(self):
         user = json.loads(understanding.instruction(self.data).user_message)
@@ -40,14 +40,14 @@ class RebuildParityTests(unittest.TestCase):
         self.assertIn(scenes.GUIDED_RULE, prompt.system_message)
         self.assertEqual(prompt.seed, 73)
 
-    def test_sexual_composer_does_not_invent_anatomy_from_gender(self):
+    def test_adult_composer_does_not_invent_bodies_from_gender(self):
         brief = {**self.brief, "path": "nsfw_character", "_family": "qwen",
-                 "must": ["The man has a vagina; the woman has a penis"]}
+                 "must": ["The man has long braided hair; the woman has a shaved head"]}
         prompt = scenes.compose_instruction(brief, [{"image": 1}])
         user = composer_user(prompt.user_message)
         self.assertEqual(user["understanding"]["characters"], brief["characters"])
         self.assertEqual(user["understanding"]["must"], brief["must"])
-        self.assertNotIn("no vagina", prompt.system_message + prompt.user_message)
+        self.assertNotIn("no braided", prompt.system_message + prompt.user_message)
 
     def test_guided_retry_asks_again_only_for_the_failed_image_with_its_own_input(self):
         backend = MockBackend()
@@ -63,8 +63,7 @@ class RebuildParityTests(unittest.TestCase):
                             "position": {label: "seated" for label in cast}, "actions": row["input"], "space": f"library {row['image']}",
                             "lighting": "daylight", "mood": "calm", "camera": "wide", "extras": "books"})
             return json.dumps({"scenes": out})
-        with patch.object(backend, "generate", side_effect=generate), patch.object(scenes, "create_backend", return_value=backend), \
-                patch.object(scenes, "DebugTrace"):
+        with patch.object(backend, "generate", side_effect=generate), patch.object(scenes, "create_backend", return_value=backend):
             result = scenes.write_scenes({"backend": "mock"}, GoatedPrompterRequest(idea="reading"), self.brief,
                                          progress=lambda _message: None)
         self.assertEqual([scene["actions"] for scene in result["scenes"]],
@@ -99,8 +98,7 @@ class RebuildParityTests(unittest.TestCase):
                  "mood": "calm", "camera": "wide", "extras": "shelves"}
         backend = MockBackend()
         with patch("goated_prompter.features.builder.service.create_backend", return_value=backend), \
-                patch.object(backend, "generate", return_value="Two adults reading in a library.") as generate, \
-                patch("goated_prompter.features.dataset.v2.prompts.DebugTrace"):
+                patch.object(backend, "generate", return_value="Two adults reading in a library.") as generate:
             result = write_prompts({"backend": "mock"}, GoatedPrompterRequest(idea="reading", planning_mode="Direct"),
                                    self.brief, [scene], progress=lambda _message: None)
         self.assertEqual(len(result), 1)
@@ -111,6 +109,6 @@ class RebuildParityTests(unittest.TestCase):
             data = {**self.data, "subject": request, "nsfw": True}
             brief = {**self.brief, "path": "nsfw_character", "input": understanding.copied_input(data),
                      "characters": [{"label": label, "gender": "custom", "custom": label, "pronoun": "it"}], "people": 1}
-            with self.subTest(request=request), patch.object(understanding, "DebugTrace"):
+            with self.subTest(request=request):
                 with self.assertRaises(ValueError):
                     understanding.confirm(brief)

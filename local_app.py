@@ -25,7 +25,6 @@ from goated_prompter.options.references import REFERENCE_SOURCES
 from goated_prompter.features.builder.service import GoatedPrompterService
 from goated_prompter.features.dataset import routes as dataset_routes
 from goated_prompter.features.dataset.v2.tickets import DatasetIntentTickets
-from goated_prompter.features.dataset.v2.runs import DatasetRunStore
 from goated_prompter.features.minimax import routes as minimax_routes
 from goated_prompter.features.presets import routes as presets_routes
 from goated_prompter.features.prompt_library import routes as prompt_library_routes
@@ -74,10 +73,6 @@ class LocalState:
         if workflow_settings_path in {self.settings_path, self.prompts_path}:
             raise ValueError("Workflow settings require a separate JSON path.")
         self.workflow_settings = WorkflowSettingsStore(workflow_settings_path, read_store, atomic_json)
-        # Dataset V2 runs: one file per run. Startup marks unfinished runs interrupted, keeps their
-        # completed work and starts no generation; unreadable files are reported and left alone.
-        self.dataset_runs = DatasetRunStore(self.settings_path.parent / "dataset_v2_runs")
-        self.dataset_run_recovery = self.dataset_runs.recover()
         self.jobs = OrderedDict()
         self.dataset_intents = DatasetIntentTickets()
         self.tasks = set()

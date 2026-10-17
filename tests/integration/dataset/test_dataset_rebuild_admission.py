@@ -28,7 +28,6 @@ class DatasetRebuildAdmissionTests(unittest.IsolatedAsyncioTestCase):
         self.backend = MockBackend()
         self.generate = self.enterContext(patch.object(self.backend, "generate", side_effect=lambda _prompt: json.dumps(self.value)))
         self.enterContext(patch("goated_prompter.features.dataset.v2.understanding.create_backend", return_value=self.backend))
-        self.enterContext(patch("goated_prompter.features.dataset.v2.understanding.DebugTrace"))
         self.enterContext(patch("goated_prompter.features.dataset.runner.create_backend", return_value=self.backend))
         self.scenes = self.enterContext(patch("goated_prompter.features.dataset.runner.write_scenes", return_value={
             "scenes": [{"slot": 1, "actions": "reading"}], "requested": 1, "written": 1, "complete": True, "missing": [],
@@ -148,7 +147,7 @@ class DatasetRebuildAdmissionTests(unittest.IsolatedAsyncioTestCase):
                                                      "pronoun": "it", "count": 1}]}
                 # A ticket alone is not sufficient: confirmation must independently recheck eligibility.
                 safe = {**data, "subject": "An adult", "nsfw": False}
-                brief = apply_rules(value, safe, Mock())
+                brief = apply_rules(value, safe)
                 brief.update(path="nsfw_character" if data["nsfw"] else "sfw_character", input=copied_input(data))
                 reviewed = self.app[local.STATE].dataset_intents.register(data, brief)
                 response = await self.confirm({**reviewed, "input": data, "settings": {}, "operation": "dataset"})

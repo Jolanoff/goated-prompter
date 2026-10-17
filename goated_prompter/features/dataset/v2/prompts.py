@@ -16,7 +16,6 @@ import re
 
 from ...builder.service import GoatedPrompterService, PromptValidationError
 from ....backends.recovery import GenerationRecovery, RunawayRecoveryError
-from .debug import DebugTrace
 
 SCENE_ORDER = ("subjects", "position", "actions", "space", "lighting", "mood", "camera", "extras")
 
@@ -26,8 +25,20 @@ target model. Keep every person, their appearance, every placement, orientation,
 and the action exactly as given; do not move anyone, change the action or add contact. Add only
 wording the target format and the Director need: the Director decides how explicitly the action and bodies
 are worded. Do not add subjects, objects or actions, and do not change the camera or light.
-Labels such as "man 1" or "woman" only tell the people apart: describe each person by appearance and role
-("the taller man", "his partner"), never by the label itself."""
+Words such as "the first man" or "woman" only tell the people apart: describe each person by appearance and role
+("the taller man", "his partner") rather than by that word."""
+
+
+ORDINALS = ("first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth")
+
+
+def unlabel(text, brief):
+    """Numbered labels ("man 1") read as "the first man", so the writer has nothing to copy."""
+    for person in brief["characters"]:
+        found = re.fullmatch(r"(.+?)\s+(\d+)", person["label"].strip())
+        if found and 0 < int(found[2]) <= len(ORDINALS):
+            text = re.sub(r"\b" + re.escape(found[0]) + r"\b", f"the {ORDINALS[int(found[2]) - 1]} {found[1]}", text)
+    return text
 
 
 def scene_text(scene):
@@ -86,63 +97,51 @@ def scene_slot(scene, position):
 def write_prompts(config, request, brief, scenes, *, checkpoint=lambda: None, progress=print, on_prompt=lambda item: None):
     """One final prompt per scene, in scene order; on_prompt gets each one as it is written.
     Each item is keyed by the scene's slot ("slot", and "index" with the same value), never by its
-    position in the list, so a failed earlier image never renumbers a later one.
-    One debug JSON file per run."""
-    trace = DebugTrace("prompts", amount=len(scenes), target=brief["settings"]["target"], trigger=brief["input"]["trigger"],
-                       trigger_at_start=brief["input"]["trigger_at_start"])
+    position in the list, so a failed earlier image never renumbers a later one."""
     service = GoatedPrompterService(config, checkpoint=checkpoint)
     requirements = "CONFIRMED DATASET REQUIREMENTS\n" + json.dumps({
         "request": brief["input"]["request"], "rules": brief["input"]["rules"],
         "characters": brief["characters"], "people": brief["people"], "fixed": brief["fixed"],
         "must": brief["must"], "avoid": brief["avoid"]}, ensure_ascii=False)
+    requirements = unlabel(requirements, brief)
     results = []
-    try:
-        for position, scene in enumerate(scenes, 1):
-            number = scene_slot(scene, position)
-            progress(f"Writing final prompt {position} of {len(scenes)} (image {number})...")
-            idea = scene_text(scene)
-            problem = None
-            recovery = GenerationRecovery("dataset_v2:builder", [number],
-                report=lambda detail: trace.decide("runaway_recovery", detail), progress=progress)
-            for attempt in (1, 2):
-                rules = "\n\n".join(part for part in (SCENE_RULES, requirements, _trigger_rule(brief),
-                                                      f"CORRECTION: {problem}" if problem else "") if part)
-                builder_request = replace(request, idea=idea, mode="Enhance", planning_mode="Direct",
-                                          target_model=brief["settings"]["target"], prompt_length=brief["settings"]["length"],
-                                          creativity=brief["settings"]["creativity"], style=brief["settings"]["style"] or "Auto",
-                                          director_preset=request.director_preset, custom_instructions=rules)
-                try:
-                    prompt = service.generate_text_only(builder_request, seed=brief["input"].get("seed"), recovery=recovery).prompt
-                except RunawayRecoveryError as error:
-                    recovery.finish("failed")
-                    results.append({"slot": number, "index": number, "prompt": "", "trigger_ok": False, "error": str(error),
-                                    "stage": error.stage, "attempts": error.attempts, "reason": error.reason})
-                    trace.decide("prompt_failed", results[-1])
-                    on_prompt(results[-1])
-                    break
-                except PromptValidationError as error:
-                    recovery.finish("failed")
-                    results.append({"slot": number, "index": number, "prompt": "", "trigger_ok": False, "error": str(error),
-                                    "stage": "dataset_v2:builder", "attempts": error.attempts})
-                    trace.decide("prompt_failed", results[-1])
-                    on_prompt(results[-1])
-                    break
-                problem = trigger_problem(prompt, brief) or label_problem(prompt, brief)
-                trace.attempt(scene=number, attempt=attempt, idea=idea, rules=rules, prompt=prompt, problem=problem)
-                if not problem:
-                    break
-            if results and results[-1]["slot"] == number:
-                continue
-            problem = trigger_problem(prompt, brief)  # a label left after the retry is not worth failing the image
-            recovery.finish("succeeded" if not problem else "failed")
-            results.append({"slot": number, "index": number, "prompt": "" if problem else prompt,
-                            "trigger_ok": trigger_problem(prompt, brief) is None})
-            if problem:
-                results[-1].update(error=problem, stage="dataset_v2:builder", attempts=recovery.attempts)
-                trace.decide("prompt_rejected", {"scene": number, "problem": problem})
-            on_prompt(results[-1])
-    except Exception as error:
-        trace.finish(error=f"{type(error).__name__}: {error}")
-        raise
-    trace.finish(output=results)
+    for position, scene in enumerate(scenes, 1):
+        number = scene_slot(scene, position)
+        progress(f"Writing final prompt {position} of {len(scenes)} (image {number})...")
+        idea = unlabel(scene_text(scene), brief)
+        problem = None
+        recovery = GenerationRecovery("dataset_v2:builder", [number], progress=progress)
+        for _ in (1, 2):
+            rules = "\n\n".join(part for part in (SCENE_RULES, requirements, _trigger_rule(brief),
+                                                  f"CORRECTION: {problem}" if problem else "") if part)
+            builder_request = replace(request, idea=idea, mode="Enhance", planning_mode="Direct",
+                                      target_model=brief["settings"]["target"], prompt_length=brief["settings"]["length"],
+                                      creativity=brief["settings"]["creativity"], style=brief["settings"]["style"] or "Auto",
+                                      director_preset=request.director_preset, custom_instructions=rules)
+            try:
+                prompt = service.generate_text_only(builder_request, seed=brief["input"].get("seed"), recovery=recovery).prompt
+            except RunawayRecoveryError as error:
+                recovery.finish("failed")
+                results.append({"slot": number, "index": number, "prompt": "", "trigger_ok": False, "error": str(error),
+                                "stage": error.stage, "attempts": error.attempts, "reason": error.reason})
+                on_prompt(results[-1])
+                break
+            except PromptValidationError as error:
+                recovery.finish("failed")
+                results.append({"slot": number, "index": number, "prompt": "", "trigger_ok": False, "error": str(error),
+                                "stage": "dataset_v2:builder", "attempts": error.attempts})
+                on_prompt(results[-1])
+                break
+            problem = trigger_problem(prompt, brief) or label_problem(prompt, brief)
+            if not problem:
+                break
+        if results and results[-1]["slot"] == number:
+            continue
+        problem = trigger_problem(prompt, brief)  # a label left after the retry is not worth failing the image
+        recovery.finish("succeeded" if not problem else "failed")
+        results.append({"slot": number, "index": number, "prompt": "" if problem else prompt,
+                        "trigger_ok": trigger_problem(prompt, brief) is None})
+        if problem:
+            results[-1].update(error=problem, stage="dataset_v2:builder", attempts=recovery.attempts)
+        on_prompt(results[-1])
     return results

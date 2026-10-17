@@ -36,6 +36,10 @@ class OptionParityTests(unittest.TestCase):
                          dataset.SEED_MODES)
         self.assertEqual(exported("features/dataset/options.js", "maxSeed"), dataset.MAX_SEED)
 
+    def test_dataset_director_exclusions_match_backend(self):
+        self.assertEqual(tuple(exported("features/dataset/options.js", "excludedDirectors")),
+                         dataset.DATASET_EXCLUDED_DIRECTORS)
+
     def test_styles_match_backend(self):
         self.assertEqual(tuple(exported("shared/workflow/options.js", "styles")), styles.STYLE_NAMES)
 

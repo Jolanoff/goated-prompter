@@ -50,7 +50,7 @@ export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm
       : ["failed", "cancelled", "interrupted"].includes(job.status) ? "failed" : "running";
     if (result === run.result && status === run.status) return;
     setRun((current) => current?.jobId === job.id ? { ...current, result, status,
-      error: status === "failed" ? job.error || "This run stopped. See the console and the debug files." : "" } : current);
+      error: status === "failed" ? job.error || "This run stopped before it finished." : "" } : current);
   }, [job, run]);
 
   useEffect(() => () => { pending.current = null; }, []);

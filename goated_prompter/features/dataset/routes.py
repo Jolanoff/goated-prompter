@@ -7,7 +7,8 @@ from aiohttp import web
 from .v2.draft import validate_dataset_draft
 from ...presets import get_director_preset
 from .v2.understanding import VERSIONS, confirm, copied_input, copied_settings, reviewed_brief
-from ..vocabulary.catalog import CatalogError, catalog_for, record, validate_selection
+from ..vocabulary.catalog import CatalogError, catalog_for, validate_selection
+from ...options.dataset import dataset_director_allowed
 from ...api.common import STATE, active_job_conflict, engine_request, json_object
 
 
@@ -41,14 +42,12 @@ async def understand_endpoint(request):
 
 
 def _vocabulary(packs):
-    """The run's vocabulary packs (the draft's vocabulary_packs) checked against the packs on disk now, and what the
-    run records of them."""
+    """The run's vocabulary packs (the draft's vocabulary_packs) checked against the packs on disk now."""
     catalog = catalog_for(packs)
     try:
-        clean = validate_selection(catalog, packs)
+        return validate_selection(catalog, packs)
     except CatalogError as error:
         raise ValueError(str(error)) from None
-    return clean, record(catalog, clean)
 
 
 async def confirm_endpoint(request):
@@ -68,7 +67,11 @@ async def confirm_endpoint(request):
         raise ValueError("Dataset input changed after analysis. Review the updated request before generating.")
     brief = confirm(brief, data)
     director = get_director_preset(brief["settings"]["director"], strict=True)
-    vocabulary, recorded = await asyncio.to_thread(_vocabulary, data["vocabulary_packs"])
+    if not dataset_director_allowed(director.id):
+        raise ValueError(f"{director.name} does not work in Dataset. Choose another Director preset.")
+    # The user's own scene ideas (guided) use no vocabulary.
+    packs = [] if data["source_mode"] == "guided" else data["vocabulary_packs"]
+    vocabulary = await asyncio.to_thread(_vocabulary, packs)
     async with state.admission:
         if (conflict := active_job_conflict(state, "Wait for the active generation before generating again.")) is not None:
             return conflict
@@ -80,7 +83,7 @@ async def confirm_endpoint(request):
             prompt_length=brief["settings"]["length"], director_preset=director.id,
         )
         return web.json_response(state.start_job("dataset_v2_scenes", director_request, config, True,
-            {"operation": "dataset_v2_scenes", "brief": brief, "vocabulary": vocabulary, "vocabulary_record": recorded,
+            {"operation": "dataset_v2_scenes", "brief": brief, "vocabulary": vocabulary,
              "scenes_only": payload["operation"] == "dataset/scenes"}), status=202)
 
 

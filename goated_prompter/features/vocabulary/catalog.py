@@ -13,6 +13,10 @@ A pack is one JSON file in a registered folder, vocabulary/<folder>/<file>.json,
 where category is the folder's registered category. Its id is "<folder>/<file name without .json>". Each file is read
 on its own: a broken file is reported with its reason and every other pack still loads.
 
+Imported packs live in the user's own data folder, data/vocabulary/<folder>/<file>.json, in exactly the same format;
+their id is "data/<folder>/<file name without .json>" and their source is "imported" (built-in packs: "built-in").
+import_pack() checks an uploaded pack and saves it there, in the folder of its category.
+
 The user selects packs by hand; vocabulary_prompt() turns the selected ones into the scene writer's vocabulary
 section, grouped by category with that category's Core instruction. Nothing is selected or matched automatically.
 """
@@ -20,9 +24,14 @@ section, grouped by category with that category's Core instruction. Nothing is s
 import json
 from pathlib import Path
 
+import re
+
 from ...config import PROJECT_ROOT
+from ...json_store import atomic_json
 
 ROOT = PROJECT_ROOT / "vocabulary"
+USER_ROOT = PROJECT_ROOT / "data" / "vocabulary"
+USER_PREFIX = "data/"
 REGISTRY = "scene_category_registry.json"
 DEFINITIONS = "category_definitions.json"
 INSTRUCTIONS = "prompt_instructions.json"
@@ -40,10 +49,10 @@ def _json(path):
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
-def read_categories(root=ROOT):
+def read_categories(root=None):
     """The registered categories, in registry order, each with its folder, definition and Core instruction.
     Core itself must be readable: without it nothing can be shown. Returns (categories, problems)."""
-    core = Path(root) / "core"
+    core = Path(root if root is not None else ROOT) / "core"
     registry = _json(core / REGISTRY)
     rows = registry.get("categories") if isinstance(registry, dict) else None
     if not isinstance(rows, list):
@@ -76,19 +85,19 @@ def _text(value, where):
     return " ".join(value.split())
 
 
-def read_pack(path, category, folder):
-    """One pack file in a registered category folder, checked. Raises ValueError naming the first problem."""
-    path = Path(path)
-    if path.stat().st_size > MAX_FILE_BYTES:
-        raise ValueError(f"larger than {MAX_FILE_BYTES // (1024 * 1024)} MB")
+def _parse(text):
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (UnicodeError, ValueError) as error:
+        return json.loads(text)
+    except ValueError as error:
         raise ValueError(f"not valid JSON ({error})") from None
+
+
+def _checked(data):
+    """(name, category, entries) of pack data with exactly the pack keys. Raises ValueError naming the first problem."""
     if not isinstance(data, dict) or set(data) != PACK_KEYS:
         raise ValueError('needs exactly "name", "category" and "entries"')
-    if data["category"] != category:
-        raise ValueError(f'category is "{data["category"]}", but the {folder} folder holds "{category}" packs')
+    if not isinstance(data["category"], str):
+        raise ValueError("category must be text")
     if not isinstance(data["entries"], list) or not data["entries"] or len(data["entries"]) > MAX_ENTRIES:
         raise ValueError(f"entries must be a list of 1 to {MAX_ENTRIES} texts")
     entries, seen = [], set()
@@ -97,34 +106,102 @@ def read_pack(path, category, folder):
         if entry.casefold() not in seen:  # a repeated entry is the same entry
             seen.add(entry.casefold())
             entries.append(entry)
-    return {"id": f"{folder}/{path.stem}", "name": _text(data["name"], "name"), "category": category, "entries": entries}
+    return _text(data["name"], "name"), data["category"], entries
 
 
-def load_catalog(root=ROOT):
-    """{"categories", "packs", "problems"}: every pack that loads, by category (registry order) then file name, and
-    one {"file", "problem"} row for each file (or Core entry) that does not. Only Core can raise."""
-    root = Path(root)
+def read_pack(path, category, folder, prefix=""):
+    """One pack file in a registered category folder, checked. Raises ValueError naming the first problem."""
+    path = Path(path)
+    if path.stat().st_size > MAX_FILE_BYTES:
+        raise ValueError(f"larger than {MAX_FILE_BYTES // (1024 * 1024)} MB")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except UnicodeError as error:
+        raise ValueError(f"not valid JSON ({error})") from None
+    name, declared, entries = _checked(_parse(text))
+    if declared != category:
+        raise ValueError(f'category is "{declared}", but the {folder} folder holds "{category}" packs')
+    return {"id": f"{prefix}{folder}/{path.stem}", "name": name, "category": category, "entries": entries,
+            "source": "imported" if prefix else "built-in"}
+
+
+def _roots(root, user_root):
+    """The built-in and imported vocabulary folders: None means the app's own (read when called, so tests can point
+    them elsewhere); user_root=False reads no imported packs."""
+    return Path(root if root is not None else ROOT), (None if user_root is False
+                                                     else Path(user_root if user_root is not None else USER_ROOT))
+
+
+def load_catalog(root=None, user_root=None):
+    """{"categories", "packs", "problems"}: every pack that loads, by category (registry order), built-in packs before
+    imported ones, then file name, and one {"file", "problem"} row for each file (or Core entry) that does not. Only
+    Core can raise."""
+    root, user_root = _roots(root, user_root)
     categories, problems = read_categories(root)
     packs = []
     for category in categories:
-        folder = root / category["folder"]
-        if not folder.is_dir():
-            continue
-        for path in sorted(folder.glob("*.json"), key=lambda item: item.name.casefold()):
-            try:
-                packs.append(read_pack(path, category["id"], category["folder"]))
-            except (OSError, ValueError) as error:
-                problems.append({"file": f"{category['folder']}/{path.name}", "problem": str(error)})
+        for base, prefix in ((root, ""), (user_root, USER_PREFIX)):
+            folder = base / category["folder"] if base else None
+            if folder is None or not folder.is_dir():
+                continue
+            for path in sorted(folder.glob("*.json"), key=lambda item: item.name.casefold()):
+                try:
+                    packs.append(read_pack(path, category["id"], category["folder"], prefix))
+                except (OSError, ValueError) as error:
+                    problems.append({"file": f"{prefix}{category['folder']}/{path.name}", "problem": str(error)})
     return {"categories": categories, "packs": packs, "problems": problems}
 
 
-def catalog_for(selection, root=ROOT):
+def pack_file_stem(filename, name):
+    """The file name an imported pack is saved under: the uploaded file's name (or the pack name), words joined by
+    hyphens."""
+    base = Path(str(filename or "")).name
+    base = base[:-5] if base.lower().endswith(".json") else base
+    words = re.findall(r"[A-Za-z0-9]+", base) or re.findall(r"[A-Za-z0-9]+", name)
+    if not words:
+        raise ValueError("the pack needs a file name or a name with letters or digits")
+    return "-".join(words)[:120]
+
+
+def import_pack(filename, text, root=None, user_root=None):
+    """Check one uploaded pack and save it as data/vocabulary/<its category's folder>/<file>.json, replacing an
+    earlier import of the same file. Returns the saved pack. Raises ValueError naming the first problem."""
+    if not isinstance(text, str) or len(text.encode("utf-8")) > MAX_FILE_BYTES:
+        raise ValueError(f"a pack must be a JSON text file of at most {MAX_FILE_BYTES // (1024 * 1024)} MB")
+    root, user_root = _roots(root, user_root)
+    if user_root is None:
+        raise ValueError("there is no folder for imported packs")
+    name, category, entries = _checked(_parse(text))
+    categories, _ = read_categories(root)
+    match = next((row for row in categories if row["id"] == category), None)
+    if match is None:
+        raise ValueError(f'"{category}" is not a vocabulary category')
+    stem = pack_file_stem(filename, name)
+    path = user_root / match["folder"] / f"{stem}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_json(path, {"name": name, "category": category, "entries": entries})
+    return read_pack(path, category, match["folder"], USER_PREFIX)
+
+
+def catalog_for(selection, root=None, user_root=None):
     """The catalog a run needs: just Core when it selects no pack (no pack folder is read), else everything."""
     packs = selection.get("packs") if isinstance(selection, dict) else selection
     if not packs:
-        categories, problems = read_categories(root)
+        categories, problems = read_categories(_roots(root, False)[0])
         return {"categories": categories, "packs": [], "problems": problems}
-    return load_catalog(root)
+    return load_catalog(root, user_root)
+
+
+def built_in_entries(pack_id, root=None):
+    """The entries of one built-in pack ("<folder>/<file>"), or [] when it is missing or cannot be read."""
+    folder, _, stem = pack_id.partition("/")
+    root = _roots(root, False)[0]
+    try:
+        categories, _ = read_categories(root)
+        category = next(row for row in categories if row["folder"] == folder)
+        return read_pack(Path(root) / folder / f"{stem}.json", category["id"], folder)["entries"]
+    except (StopIteration, OSError, ValueError):
+        return []
 
 
 # ---------------------------------------------------------------- one run's selection

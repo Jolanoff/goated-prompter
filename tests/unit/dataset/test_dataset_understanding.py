@@ -18,7 +18,7 @@ MAGICAL_FIRST = ('{"path": "non_character", "summary": "A magical world.", "char
                  '"randomized": " ", "must": [], "avoid": [], "intent": {"elements": [], "relations": []}}')
 MAGICAL_SECOND = ('{"path": "non_character", "summary": "A magical world.", "characters": [], "fixed": "", '
                   '"randomized": "setting, lighting, camera, mood, style", "must": [], "avoid": []}')
-TWO_MEN = json.dumps({"path": "character", "summary": "Two men having sex", "fixed": "Two adult men",
+TWO_MEN = json.dumps({"path": "character", "summary": "Two men in an explicit scene", "fixed": "Two adult men",
                       "randomized": "Position, place, lighting", "must": [], "avoid": [],
                       "characters": [{"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 2}]})
 
@@ -35,23 +35,22 @@ class Understanding(unittest.TestCase):
         values = {**default_dataset_draft(), "subject": "magical world", "amount": 3, "seed": 5, "seed_mode": "fixed", **data}
         with patch.object(backend, "generate", side_effect=generate), \
                 patch.object(understanding, "create_backend", return_value=backend), \
-                patch.object(understanding, "DebugTrace", return_value=Mock()), \
                 patch.object(understanding, "resolve_director_config", return_value=({}, None)):
             result = understanding.understand({"backend": "mock"}, SimpleNamespace(selected_prompt_model="Default"), values,
                                               progress=lambda _: None)
         return result, calls
 
-    def test_two_men_having_sex_keeps_two_men_and_the_activity(self):
-        result, calls = self.understand([TWO_MEN], subject="2 males having sex", nsfw=True)
+    def test_two_men_in_an_explicit_scene_keeps_two_men_and_the_activity(self):
+        result, calls = self.understand([TWO_MEN], subject="2 adult men in an explicit scene", nsfw=True)
         self.assertEqual(len(calls), 1)
         self.assertEqual((result["path"], result["people"]), ("nsfw_character", 2))
         self.assertEqual([(person["label"], person["gender"], person["pronoun"]) for person in result["characters"]],
                          [("man 1", "male", "he"), ("man 2", "male", "he")])
-        self.assertIn("sex", result["summary"])
-        self.assertEqual(result["input"]["request"], "2 males having sex", "the request itself is kept word for word")
+        self.assertIn("explicit scene", result["summary"])
+        self.assertEqual(result["input"]["request"], "2 adult men in an explicit scene", "the request itself is kept word for word")
 
     def test_understanding_never_chooses_vocabulary(self):
-        result, calls = self.understand([TWO_MEN], subject="2 males having sex", nsfw=True)
+        result, calls = self.understand([TWO_MEN], subject="2 adult men in an explicit scene", nsfw=True)
         self.assertEqual(result["version"], 11)
         self.assertNotIn("intent", result)
         self.assertEqual(set(calls[0].json_schema["properties"]), set(understanding.MODEL_FIELDS))
@@ -83,9 +82,9 @@ class Understanding(unittest.TestCase):
         self.assertEqual((result["path"], result["people"], result["input"]["nsfw"]), ("non_character", 0, True))
         self.assertIn("without people", calls[0].system_message)
 
-    def test_nsfw_sexual_request_without_people_is_still_sent_back(self):
+    def test_nsfw_adult_request_without_people_is_still_sent_back(self):
         errors = understanding.model_errors(understanding.recover(json.loads(MAGICAL_FIRST)), True,
-                                            {"subject": "two people having sex", "source_mode": "random"})
+                                            {"subject": "two people in an explicit scene", "source_mode": "random"})
         self.assertTrue(any("path must be" in error for error in errors), errors)
 
     def test_unrecoverable_answers_still_fail_after_one_retry(self):

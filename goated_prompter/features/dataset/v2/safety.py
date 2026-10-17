@@ -1,4 +1,7 @@
-"""Dataset V2 content eligibility: sexual content shows adults only, and never animals.
+"""Dataset V2 content eligibility: adult content shows adults only, and never animals.
+
+The word lists below exist only to recognise adult requests so that the adults-only and no-animals checks apply to
+them; they are detection data, not content the app writes.
 
 Understanding (v2/understanding.py) applies these checks to the request and to its own reading of it, before
 and at confirmation. Moved here from the retired legacy pipeline (features/dataset/quality.py) unchanged.
@@ -30,7 +33,7 @@ _MINOR = re.compile(r"\b(?:child|children|childlike|kids?|minors?|underage\w*|te
                     r"(?:[1-9]|1[0-7])\s*(?:yo|y/o|-?years?[- ]old|-year-old))\b")
 
 
-ADULTS_ONLY = ("Sexual content can only show adults. Remove anything that makes a character a child or teen "
+ADULTS_ONLY = ("Adult content can only show adults. Remove anything that makes a character a child or teen "
                "(age under 18, school, childlike body); describe every character as an adult.")
 
 
@@ -76,7 +79,7 @@ def minor_reference(text):
     return match.group() if match else None
 
 
-NO_ANIMALS = "Sexual content cannot involve animals. Remove the animal from the cast or the sexual request."
+NO_ANIMALS = "Adult content cannot involve animals. Remove the animal from the cast or the adult request."
 
 
 def adults_only_error(data, *, include_director=True):

@@ -7,9 +7,10 @@ description: Create, extend or review Goated Prompter vocabulary packs: one JSON
 
 ## What a pack is
 
-A pack is one JSON file in a category folder under `vocabulary/`. The user selects packs by hand in the Dataset tab's
-Vocabulary Library; the scene writer then gets their entries, grouped under the category's Core instruction, as
-optional creative material. A pack has no logic.
+A pack is one JSON file in a category folder under `vocabulary/` (shipped with the app, general content only) or under
+`data/vocabulary/` (the user's own packs, added with **Import packs** on the Vocabulary tab; their id starts with
+`data/`). The user selects packs by hand in the Dataset tab's Vocabulary Library; the scene writer then gets their
+entries, grouped under the category's Core instruction and shuffled by the run's seed. A pack has no logic.
 
 ```json
 {
@@ -22,7 +23,7 @@ optional creative material. A pack has no logic.
 - Exactly `name`, `category` and `entries`, nothing else.
 - `category` must be the folder's registered category (`vocabulary/Spaces/Fantasy.json` → `"Spaces"`).
 - `entries`: 1–2000 non-empty texts of up to 300 characters; repeats (ignoring case) count once.
-- File name: words joined by hyphens (`Seductive-Solo-Poses.json`); the pack id is `<folder>/<file name>`.
+- File name: words joined by hyphens (`Solo-Activities.json`); the pack id is `<folder>/<file name>`.
 
 ## Categories
 
@@ -39,6 +40,19 @@ asked.
 
 - One idea per entry, named the way a person would say it ("arched back", "rim lighting").
 - Keep a pack to one category and one theme.
+- `Actions & Poses` holds what subjects do and how they are positioned. An entry can define both ("one person on all
+  fours, the other person kneeling behind them"), only the action ("one person giving the other person a massage")
+  or only the pose ("the person posing with an arched back"); the scene writer keeps a defined pose with its action
+  and picks a fitting one when it is missing. When an action only makes sense in one arrangement, write both in one
+  entry.
+- Name people "the person" (solo), "one person" and "the other person" (couples) or "a group", never "partner" or a
+  gender: the scene writer replaces them with the scene's characters and their gender. Objects and surfaces in an
+  entry ("on the floor", "over a table", "a toy") are examples it adapts to the scene's space.
+- With an `Actions & Poses` pack selected, every scene names the entry it uses and no entry is used by more than two
+  images, so a pack needs enough distinct entries for the batch sizes it is used with.
+- `Subjects/Humans` holds people's looks (skin, build, hair, one detail); when no Subjects pack is selected, every
+  image is dealt looks from it.
+- Keep adult content out of `vocabulary/`; it belongs in the user's own imported packs.
 - Every person is an adult.
 
 ## Checks

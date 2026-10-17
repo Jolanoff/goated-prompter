@@ -5,8 +5,8 @@
       "folder": "Subjects"
     },
     {
-      "category": "Actions",
-      "folder": "Actions"
+      "category": "Actions & Poses",
+      "folder": "Actions & Poses"
     },
     {
       "category": "Spaces",
@@ -15,10 +15,6 @@
     {
       "category": "Objects",
       "folder": "Objects"
-    },
-    {
-      "category": "Positions & Poses",
-      "folder": "Positions & Poses"
     },
     {
       "category": "Expressions",

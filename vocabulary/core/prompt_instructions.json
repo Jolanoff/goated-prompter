@@ -4,8 +4,8 @@
     "prompt_text": "{Subjects} provides vocabulary for the subjects appearing in the scene. Use relevant entries to inspire subject choices or appearances without replacing subjects explicitly requested by the user."
   },
   {
-    "category": "Actions",
-    "prompt_text": "{Actions} provides vocabulary for actions and events. Use relevant entries to inspire what subjects do while preserving any action already specified by the user."
+    "category": "Actions & Poses",
+    "prompt_text": "{Actions & Poses} provides vocabulary for what subjects do and how they are positioned while doing it. An entry may define the action and the pose together, or only one of them. When it defines both, keep them together as one arrangement. When it defines only the action, choose a pose that physically supports it; when it defines only the pose, choose an action that fits it. Entries name people neutrally (\"the person\", \"one person\", \"the other person\"): replace them with the scene's actual subjects, using each subject's correct gender, pronouns and body. Objects, furniture and surfaces named in an entry are examples: replace them with ones that suit the scene's space and any selected objects, keeping the pose physically the same. If an entry needs something a subject does not have, adapt it or choose another entry. Preserve any action already specified by the user."
   },
   {
     "category": "Spaces",
@@ -14,10 +14,6 @@
   {
     "category": "Objects",
     "prompt_text": "{Objects} provides vocabulary for physical objects. Objects can be used by subjects, held by subjects, worn where appropriate, interacted with, or included in the background."
-  },
-  {
-    "category": "Positions & Poses",
-    "prompt_text": "{Positions & Poses} provides vocabulary for how subjects are positioned or posed. Apply relevant entries to the appropriate subjects while keeping their bodies, actions, and interactions physically coherent."
   },
   {
     "category": "Expressions",

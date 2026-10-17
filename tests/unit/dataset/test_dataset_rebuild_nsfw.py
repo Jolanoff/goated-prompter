@@ -23,8 +23,6 @@ class AdultDatasetTests(unittest.TestCase):
         self.enterContext(patch.object(self.backend, "generate", side_effect=self.generate))
         for module in (understanding, scenes):
             self.enterContext(patch.object(module, "create_backend", return_value=self.backend))
-            self.enterContext(patch.object(module, "DebugTrace"))
-        self.enterContext(patch.object(prompts, "DebugTrace"))
         self.enterContext(patch("goated_prompter.features.builder.service.create_backend", return_value=self.backend))
         self.config = {"backend": "mock"}
         self.request = GoatedPrompterRequest(idea="Consenting adults", director_preset="general_director", planning_mode="Direct")
@@ -42,14 +40,14 @@ class AdultDatasetTests(unittest.TestCase):
         return self.final_text
 
     def scenario(self, cast, labels):
-        data = {**default_dataset_draft(), "subject": "Consenting nude adults posing together with a red ribbon.",
+        data = {**default_dataset_draft(), "subject": "Consenting adults in an explicit pose together with a red ribbon.",
                 "amount": 1, "nsfw": True, "seed": 73, "seed_mode": "fixed", "trigger": "adult_token",
                 "trigger_at_start": True, "constraints": "Use a red ribbon.\nNo blindfold.\nNo collar."}
         self.understood = {"path": "character", "summary": "Consenting adults posing together",
             "characters": cast, "fixed": "The named adults retain their identities, roles and assigned support.",
             "randomized": "Lighting and camera", "must": ["Use a red ribbon"], "avoid": ["No blindfold", "No collar"]}
         self.scene = {"subjects": {label: {"skin": "warm brown", "build": "adult", "hair": "short dark hair",
-            "detail": f"{label}'s recognizable face", "expression": "a soft smile", "clothing": "nude"} for label in labels},
+            "detail": f"{label}'s recognizable face", "expression": "a soft smile", "clothing": "no clothing"} for label in labels},
             "position": {label: f"{label} sits on the bench, feet on the floor, holding a red ribbon in the right hand."
                          for label in labels}, "actions": "The adults display their red ribbons without changing places.",
             "space": "A studio with a wide bench", "lighting": "daylight", "mood": "calm", "camera": "wide shot",
@@ -97,12 +95,13 @@ class AdultDatasetTests(unittest.TestCase):
                 user = self.users("scenes")[0]
                 self.assertEqual(user["understanding"]["characters"], brief["characters"])
                 self.assertEqual(user["understanding"]["fixed"], brief["fixed"])
-                self.assertIn("sexual and explicit", self.composer()[0].system_message)
+                self.assertIn("adult and explicit", self.composer()[0].system_message)
                 written = prompts.write_prompts(self.config, self.request, brief, result["scenes"], progress=lambda _message: None)
                 final = self.calls[-1]
                 for label in labels:
-                    self.assertIn(self.scene["position"][label], final.user_message)
-                    self.assertIn(f"{label}'s recognizable face", final.user_message)
+                    self.assertIn(prompts.unlabel(self.scene["position"][label], brief), final.user_message)
+                    self.assertIn(prompts.unlabel(f"{label}'s recognizable face", brief), final.user_message)
+                self.assertNotIn("performer 1", final.user_message)
                 self.assertIn(self.scene["actions"], final.user_message)
                 self.assertTrue(written[0]["trigger_ok"])
                 self.assertEqual(final.seed, 73)
@@ -117,20 +116,20 @@ class AdultDatasetTests(unittest.TestCase):
         self.assertEqual(len(self.users("understanding")), 2)
         self.assertIn('path must be "character"', self.calls[1].system_message)
 
-    def test_explicit_anatomy_roles_and_interaction_reach_the_composer_and_builder(self):
+    def test_stated_bodies_roles_and_interaction_reach_the_composer_and_builder(self):
         data = self.scenario([
             {"label": "Mara", "gender": "female", "custom": "", "pronoun": "she", "count": 1},
             {"label": "Rowan", "gender": "male", "custom": "", "pronoun": "he", "count": 1}], ["Mara", "Rowan"])
-        anatomy = "Mara has a penis; Rowan has a vagina."
+        anatomy = "Mara has a prosthetic left arm; Rowan has a tattooed back."
         roles = "Mara is the giver; Rowan is the receiver. Both are consenting adults."
         support = "Mara stands facing Rowan; Rowan lies on the bench with both feet supported."
-        data.update(subject=f"{roles} {anatomy} Consensual vaginal intercourse.", constraints=support + "\nNo toys.")
+        data.update(subject=f"{roles} {anatomy} An explicit scene between them.", constraints=support + "\nNo toys.")
         self.understood.update(summary=data["subject"], fixed=roles + " " + support, must=[anatomy], avoid=["No toys"])
         self.scene.update(position={"Mara": "Mara stands on the floor facing Rowan, whose hips are at the bench edge.",
                                     "Rowan": "Rowan lies on the bench facing Mara, feet supported on the bench."},
-                          actions="Mara penetrates Rowan's vagina with her penis.")
-        self.scene["subjects"]["Mara"]["detail"] = "Mara's penis and recognizable face"
-        self.scene["subjects"]["Rowan"]["detail"] = "Rowan's vagina and recognizable face"
+                          actions="Mara rests her prosthetic hand on Rowan's tattooed back.")
+        self.scene["subjects"]["Mara"]["detail"] = "Mara's prosthetic arm and recognizable face"
+        self.scene["subjects"]["Rowan"]["detail"] = "Rowan's tattooed back and recognizable face"
         brief = self.understand(data)
         result = self.write(brief)
         user = self.users("scenes")[0]
@@ -141,10 +140,10 @@ class AdultDatasetTests(unittest.TestCase):
         self.assertTrue(all("anatomy" not in person for person in user["understanding"]["characters"]))
         prompts.write_prompts(self.config, self.request, brief, result["scenes"], progress=lambda _message: None)
         final = self.calls[-1]
-        self.assertIn("Mara's penis", final.user_message)
-        self.assertIn("Rowan's vagina", final.user_message)
+        self.assertIn("Mara's prosthetic arm", final.user_message)
+        self.assertIn("Rowan's tattooed back", final.user_message)
         self.assertIn(self.scene["actions"], final.user_message)
-        self.assertNotIn("no vagina and no pussy", final.system_message + final.user_message)
+        self.assertNotIn("no prosthetic", final.system_message + final.user_message)
 
     def test_a_wrong_participant_is_asked_again_not_published(self):
         data = self.scenario([{"label": "Alex", "gender": "male", "custom": "", "pronoun": "he", "count": 1}], ["Alex"])
@@ -169,7 +168,7 @@ class AdultDatasetTests(unittest.TestCase):
         self.assertIn("red ribbon", scene["position"]["Alex"])
 
     def test_builder_receives_confirmed_requirements_even_when_the_scene_does_not_repeat_them(self):
-        for nsfw, requirement in ((True, "Alex has a vagina"), (False, "Alex wears a blue shirt")):
+        for nsfw, requirement in ((True, "Alex has a prosthetic left arm"), (False, "Alex wears a blue shirt")):
             with self.subTest(nsfw=nsfw):
                 data = self.scenario([{"label": "Alex", "gender": "male", "custom": "", "pronoun": "he", "count": 1}], ["Alex"])
                 if not nsfw:

@@ -50,7 +50,7 @@ test("the brief is displayed directly and missing approval still gates confirmat
 const broadMaleRoute = { scope: "all_outputs", nsfw: true,
   cast: { mode: "pair", count: 2, male: 2, female: 0, unspecified: 0, source: "approved_cast" },
   user_categories: [], director_categories: [], effective_categories: [], excluded_categories: [],
-  position_pools: ["anal", "oral"], private_position_count: 12,
+  position_pools: ["standing", "seated"], private_position_count: 12,
   kink_styling: false, ownership_styling: false };
 
 test("review modal does not expose server routing", async () => {

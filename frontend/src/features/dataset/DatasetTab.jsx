@@ -12,13 +12,13 @@ import DatasetVocabulary from "./DatasetVocabulary.jsx";
 import { useCatalog } from "../vocabulary/useCatalog.js";
 import { cleanSelection, recordedNames, selectedNames } from "../vocabulary/catalog.js";
 import { RunPrompts, RunScenes } from "./DatasetRunPages.jsx";
-import { maxSeed, seedModes } from "./options.js";
+import { excludedDirectors, maxSeed, seedModes } from "./options.js";
 import { styles } from "../../shared/workflow/options.js";
 
 const datasetPages = [["configure", "Configure"], ["scenes", "Scenes"], ["dataset", "Dataset"]];
 const sceneSources = [
-  ["random", "Invent scenes", "Let Scene Planner invent scenes", "Distinct situations from your concept."],
-  ["guided", "Use my scene ideas", "Provide my own scene ideas", "One idea per line; the action stays fixed."],
+  ["random", "Invent scenes", "Let Scene Planner invent scenes", "Distinct situations from your concept and the vocabulary you select."],
+  ["guided", "Use my scene ideas", "Provide my own scene ideas", "One idea per line; the action stays fixed. Vocabulary is not used."],
 ];
 
 function HelpDetails({ children }) {
@@ -48,7 +48,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
   const preferences = useWorkflowSettings("dataset");
   const { draft, update } = preferences;
   const [page, setPage] = useState("configure");
-  const availablePresets = orderDisplayPresets(presets || []);
+  const availablePresets = orderDisplayPresets((presets || []).filter((item) => !excludedDirectors.includes(item.id)));
   const director = availablePresets.find((item) => item.id === draft?.director_preset);
   const vocabulary = useCatalog(visible);
   const selectedPacks = cleanSelection(vocabulary.catalog, draft?.vocabulary_packs);
@@ -279,7 +279,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
             </fieldset>
 
             <div className="mt-5 border-t border-line pt-4">
-              <DatasetVocabulary catalog={vocabulary.catalog} selected={selectedPacks}
+              <DatasetVocabulary catalog={vocabulary.catalog} selected={selectedPacks} guided={draft.source_mode === "guided"}
                 onChange={(ids) => update({ vocabulary_packs: ids })} disabled={disabled} error={vocabulary.error} />
             </div>
 

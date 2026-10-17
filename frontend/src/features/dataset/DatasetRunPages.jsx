@@ -36,6 +36,7 @@ function SceneDetails({ scene }) {
   return <>
     {Object.entries(scene.position).map(([label, text]) => <Line key={`position-${label}`} label={`Position · ${label}`}>{text}</Line>)}
     <Line label="Action">{scene.actions}</Line>
+    {scene.entry && <Line label="Vocabulary entry">{scene.entry}</Line>}
     {Object.entries(scene.subjects).map(([label, person]) => <Line key={`subject-${label}`} label={label}>
       {[person.skin, person.build, person.hair, person.detail, person.expression, person.clothing].filter(Boolean).join(" · ")}</Line>)}
     <Line label="Space">{scene.space}</Line>
@@ -48,7 +49,7 @@ function SceneDetails({ scene }) {
 
 function Waiting({ icon: Icon, title, text }) {
   return <div className={`${ui.emptyState} dataset-empty`}>
-    <Icon size={34} aria-hidden="true" /><h3>{title}</h3><p>{text}</p>
+    <Icon size={34} aria-hidden="true" className={Icon === LoaderCircle ? "dataset-loader" : undefined} /><h3>{title}</h3><p>{text}</p>
   </div>;
 }
 
@@ -56,8 +57,8 @@ function RunNotes({ run }) {
   const result = run.result;
   return <>
     {run.error && <p className={`${ui.warningNote} mt-3`} role="alert">{run.error}</p>}
-    {result && !result.complete && result.written < result.requested && <p className={`${ui.warningNote} mt-3`} role="status">
-      Incomplete: {result.written} of {result.requested} scenes written. Not written: {(result.missing || []).map((item) => `image ${item.slot}`).join(", ")}. The debug file says why.</p>}
+    {run.status !== "running" && result && !result.complete && result.written < result.requested && <p className={`${ui.warningNote} mt-3`} role="status">
+      Incomplete: {result.written} of {result.requested} scenes written. Not written: {(result.missing || []).map((item) => `image ${item.slot}`).join(", ")}. Each image below says why.</p>}
     {run.status !== "running" && result?.prompt_summary?.missing.length > 0 && <p className={`${ui.warningNote} mt-3`} role="status">
       Incomplete: {result.prompt_summary.written} of {result.requested} final prompts written. Not written: {result.prompt_summary.missing.map((slot) => `image ${slot}`).join(", ")}. Per-image errors are shown below.</p>}
   </>;
@@ -72,6 +73,7 @@ function NotWritten({ record }) {
 export function RunScenes({ run, onCopy, onDownload }) {
   const scenes = run.result?.scenes || [];
   const records = runSlots(run.result);
+  const writing = run.status === "running" && run.result?.stage === "writing_scenes";
   return <section className={`${ui.panel} dataset-scenes-panel`} aria-label="Scenes">
     <header className={ui.panelHeader}>
       <div className={ui.panelIcon}><Layers3 size={21} /></div>
@@ -79,8 +81,11 @@ export function RunScenes({ run, onCopy, onDownload }) {
     </header>
     <RunNotes run={run} />
     {!scenes.length ? (run.status === "running"
-      ? <Waiting icon={LoaderCircle} title="Writing scenes…" text="Scenes appear here when they are all written, then the final prompts start." />
+      ? <Waiting icon={LoaderCircle} title="Writing scenes…" text="Each scene appears here as soon as it is written; the final prompts start when all are done." />
       : <Waiting icon={Layers3} title="No scenes" text="This run stopped before any scene was written." />) : <>
+      {writing && <p className="mt-3 flex items-center gap-2 text-xs text-muted" role="status">
+        <LoaderCircle size={14} className="dataset-loader" aria-hidden="true" />
+        Scenes appear as they are written: {scenes.length} of {run.result.requested}.</p>}
       <div className="mt-4 flex flex-wrap gap-3">
         <button className={ui.button} onClick={() => onCopy(JSON.stringify(scenes, null, 2))}><Copy size={14} />Copy scenes JSON</button>
         <button className={ui.button} onClick={() => onDownload("dataset-scenes.json", JSON.stringify(scenes, null, 2), "application/json")}><FileJson size={14} />Scenes JSON</button>
@@ -104,7 +109,8 @@ export function RunScenes({ run, onCopy, onDownload }) {
 export function RunPrompts({ run, onCopy, onDownload }) {
   const result = run.result;
   const prompts = result?.prompts || [];
-  const total = result?.scenes?.length || 0;
+  const writingScenes = result?.stage === "writing_scenes";
+  const total = writingScenes ? 0 : result?.scenes?.length || 0;
   const records = runSlots(result).filter((record) => record.prompt || record.status === "failed");
   const written = writtenPrompts(result);
   const text = written.map((item) => item.prompt).join("\n\n");

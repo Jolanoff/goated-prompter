@@ -79,7 +79,7 @@ function hasPrivateDiagnostics(job) {
 
 const understandingKind = "dataset_understanding";
 const v2Kind = "dataset_v2_scenes";
-const v2ResultFields = ["run_id", "stage", "complete", "requested", "written", "missing", "slots", "scenes", "prompts"];
+const v2ResultFields = ["stage", "complete", "requested", "written", "missing", "slots", "scenes", "prompts"];
 
 /** A V2 run (Confirm -> scenes -> prompts): its status, slots, scenes and prompts, and the vocabulary packs it used
  * (the ids selected at Confirm and what the run recorded of them). The vocabulary block is renamed so the generic

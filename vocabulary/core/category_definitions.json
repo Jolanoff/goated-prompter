@@ -5,9 +5,9 @@
     "use_when": "When the request involves visible subjects or subject creation."
   },
   {
-    "category": "Actions",
-    "description": "What subjects are doing, including individual actions, events, activities, and interactions between subjects.",
-    "use_when": "When the scene involves an action or event."
+    "category": "Actions & Poses",
+    "description": "What subjects are doing and how they are positioned while doing it: individual activities, interactions between subjects, and the posture or body arrangement that goes with them, for solo, couple and group scenes.",
+    "use_when": "When the scene involves an action, an interaction, or a specific pose or arrangement of subjects."
   },
   {
     "category": "Spaces",
@@ -18,11 +18,6 @@
     "category": "Objects",
     "description": "Physical items that can be held, used, worn, interacted with, or placed in the environment.",
     "use_when": "When objects, props, equipment, tools, or furniture are relevant."
-  },
-  {
-    "category": "Positions & Poses",
-    "description": "The physical positioning, posture, body arrangement, and spatial relationships of subjects, including solo, couple, and group poses.",
-    "use_when": "When posing, physical arrangement, or subject positioning is relevant."
   },
   {
     "category": "Expressions",
