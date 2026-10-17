@@ -26,7 +26,7 @@ def _recorder(state, job, workflow):
         return None
     brief = workflow["brief"]
     return RunRecorder.start(store, job.id, brief, scenes_only=bool(workflow.get("scenes_only")), inputs=slot_inputs(brief),
-                             packs=workflow.get("vocabulary_packs"))
+                             packs=workflow.get("vocabulary_record"))
 
 
 def _close(recorder, status, error=None):
@@ -67,7 +67,7 @@ def incomplete(value):
 def prompt_result(result, prompts, stage):
     """Keep scene counts intact, but require usable final prompts for end-to-end completion."""
     ready = {item["slot"] for item in prompts if item.get("prompt", "").strip() and not item.get("error")
-             and item.get("trigger_ok", True) and item.get("mechanics_preserved", True)}
+             and item.get("trigger_ok", True)}
     missing = [number for number in range(1, result["requested"] + 1) if number not in ready]
     return {**result, "stage": stage, "prompts": list(prompts), "complete": result["complete"] and not missing,
             "prompt_summary": {"written": result["requested"] - len(missing), "missing": missing}}
@@ -108,8 +108,7 @@ def run_dataset_v2_scenes(state, job, request, config, workflow):
         effective, _ = resolve_director_config(config, request)
         with create_backend(effective).generation_session():
             result = write_scenes(config, request, workflow["brief"], checkpoint=job.checkpoint, progress=job.set_progress,
-                                  on_slot=on_slot, vocabulary=workflow.get("vocabulary_packs"),
-                                  visual=workflow.get("visual_direction"))
+                                  on_slot=on_slot, vocabulary=workflow.get("vocabulary"))
             if recorder:
                 recorder.scenes_finished(result)
             if not result["written"]:

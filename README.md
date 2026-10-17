@@ -51,7 +51,7 @@ Screenshots: save PNGs in docs/media/ with these names, then remove this comment
 | **Prompt Builder** | Turn text and up to **four reference images** into target-aware prompts. Mix a face from one image, a pose from another, and lighting from a third. |
 | **Refine** | Paste a prompt or send one from Builder, request targeted edits, compare changes and undo a refinement. |
 | **MiniMax H3** | Write video prompts for **4–15-second clips**, with symbolic references, automatic role analysis, H3 schemas, and Director presets. |
-| **Dataset** | Create **1–25 varied prompts** from one request, for LoRA training sets. You confirm the request first; a Director stages every scene, your vocabulary packs guide it, and a seed repeats or varies a batch. TXT/JSON export. |
+| **Dataset** | Create **1–25 varied prompts** from one request, for LoRA training sets. You confirm the request first; optional vocabulary packs you pick add creative material, and a seed repeats or varies a batch. TXT/JSON export. |
 | **Saved Prompts** | Add your own prompts directly, keep named outputs, and open saved text in Builder. |
 | **Prompt Library** | Add, edit and delete target-specific writing examples in a compact list. Stored in the same plain-text files. |
 
@@ -318,21 +318,26 @@ Custom workflow instructions replace the corresponding built-in behavior. Target
 Build a batch around one request, keep shared details consistent, and vary the scenes. Every batch begins with Understanding and your approval.
 
 1. On **Configure**, write the **Request**, choose **NSFW** and the **Amount** (**1–25**), and add an optional **Trigger** for LoRA training. **Advanced options** hold consistency rules, the seed and whether the trigger must start each prompt.
-2. Choose the Director preset, target model, prompt length, creativity and style.
+2. Choose the target model, prompt length, creativity and style.
 3. Choose the scene source: **Invent scenes**, or **Use my scene ideas** with one idea per line (lines cycle to fill the batch).
-4. Choose the vocabulary packs the run uses and the Visual Direction settings (framing, camera angle, composition, lighting, atmosphere).
-5. Click **Generate** or **Generate scenes only**. Check the request part by part in the review, correct links and remove the model's own suggestions if needed, then **Confirm**. Nothing is written before you confirm.
+4. Optionally open the **Vocabulary Library** to select vocabulary packs (search, filter by category, preview, then **Apply**). The selection is saved with your Dataset settings. Selected packs are optional ideas for the scene writer; with none selected, scenes come from your request alone.
+5. Click **Generate** or **Generate scenes only**. Check what the review says stays fixed and what varies, then **Confirm**. Nothing is written before you confirm.
 6. The **Scenes** page shows each image's scene as it is written, and **Dataset** shows the final prompts. Copy them or download TXT or JSON. **Export generation log** saves the current state for debugging.
 
 Each run is saved under **`data/dataset_v2_runs/`** as its scenes and prompts complete; a run left unfinished when the server stopped is marked interrupted on the next start, not resumed. Editing scenes, regenerating single images and continuing a scenes-only run are not available. **Seed** and **Seed control** work like ComfyUI: Fixed repeats a batch as closely as the engine allows, Increment and Randomize explore new ones.
 
 #### Adult content (Dataset only)
 
-Sexual requests are supported in the Dataset tab only, and everyone must be an adult: a request that makes someone a child or teen is refused before generation, and a sexual batch can never involve an animal. Adult positions, acts and details come from the vocabulary packs you select for the run.
+Sexual requests are supported in the Dataset tab only, and everyone must be an adult: a request that makes someone a child or teen is refused before generation, and a sexual batch can never involve an animal. Adult packs are marked NSFW and can only be turned on while NSFW is on.
 
 Freaky stuff are ignored. Generating freaky stuff is at your own risk. I'm not responsible of any prompt you generate.
 
-See the [Dataset architecture](docs/dataset-architecture.md) for how a run is understood, staged and written.
+#### Vocabulary packs
+
+Each category is a folder under `vocabulary/` (Subjects, Actions, Spaces, Objects, Positions & Poses, Expressions, Clothing, Mood & Tone, Lighting, Camera & Composition, Effects & Atmosphere), and each JSON file in it is one pack, for example `vocabulary/Spaces/Rooftops.json` containing
+`{"name": "Rooftops", "category": "Spaces", "entries": ["rooftop bar", "water tower"]}`. Add the file and click **Refresh** on the **Vocabulary** tab; a pack that cannot be read is listed there with the reason, and every other pack keeps working. The categories are defined in `vocabulary/core/` (`scene_category_registry.json`, `category_definitions.json`, `prompt_instructions.json`); a new category is one entry in each plus its folder.
+
+See the [Dataset architecture](docs/dataset-architecture.md) for how a run is understood, composed and written.
 
 ## Project and data layout
 

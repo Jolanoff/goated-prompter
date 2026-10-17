@@ -3,8 +3,8 @@ import { datasetConfirmationPayload, nextDatasetSeed } from "./datasetState.js";
 import { useDatasetConfirmation } from "./useDatasetConfirmation.js";
 
 /** Dataset requests and job projections; editable-draft revisions stay in useWorkflowSettings. */
-export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, director,
-  onGenerate, vocabularyPacks = [], packsReady = true, visualDirection = null }) {
+export function useDatasetWorkflow({ preferences, job, busy, active, noEngine,
+  onGenerate }) {
   const { draft, update } = preferences;
   const [error, setError] = useState("");
   const confirmationFlow = useDatasetConfirmation({ draft, job, busy, onGenerate,
@@ -12,7 +12,7 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, d
       const accepted = await onGenerate("dataset/v2/confirm", datasetConfirmationPayload(item));
       if (accepted) update({ seed: item.input.seed });
       return accepted;
-    }, setError, vocabularyPacks, visualDirection });
+    }, setError });
   const datasetJob = ["dataset_understanding", "dataset_v2_scenes"].includes(job?.kind);
   const workflowActive = datasetJob && active;
   const disabled = busy || preferences.working || !!confirmationFlow.confirmation;
@@ -20,7 +20,7 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, d
   const sourceReady = draft?.source_mode !== "guided" || guidedLines > 0;
   const canPlanScenes = draft && !disabled && !noEngine && !preferences.conflict &&
     draft.subject.trim() && sourceReady;
-  const canWrite = canPlanScenes && director;
+  const canWrite = canPlanScenes;
 
   useEffect(() => {
     if (!datasetJob || !["failed", "interrupted"].includes(job.status)) return;
@@ -29,12 +29,12 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, d
 
   // Each batch is reviewed first; Confirm then writes scenes, and prompts unless scenes only was chosen.
   function generateDataset() {
-    if (!canWrite || !packsReady) return;
+    if (!canWrite) return;
     confirmationFlow.requestConfirmation("dataset", {}, { ...draft, seed: nextDatasetSeed(draft) });
   }
 
   function generateScenes() {
-    if (!canPlanScenes || !packsReady) return;
+    if (!canPlanScenes) return;
     confirmationFlow.requestConfirmation("dataset/scenes", {}, { ...draft, seed: nextDatasetSeed(draft) });
   }
 

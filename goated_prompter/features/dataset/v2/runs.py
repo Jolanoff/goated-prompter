@@ -17,18 +17,18 @@ Record (schema 2; schema 1 is read as it is, see below):
   error         text or null
   brief         the confirmed Understanding brief (request, rules, settings, seed, amount, guided inputs)
   seed, requested   copies of brief.input.seed and brief.input.amount, checked against the brief
-  vocabulary    {"enabled", "provided", ...} once scenes are written, else null: also the export-safe diagnostics of
-                vocabulary_packs.diagnostics (selection, entries and ideas by image, exclusions, Visual Direction)
-  packs         the run's vocabulary pack selection, recorded when the run is created, before any inference,
-                and never changed afterwards (update() refuses): {version, enabled, selected, packs: [{id, role,
-                origin, version, fingerprint}]} (vocabulary.packs.validate_selection), or null when the caller gave
-                none. It is the run's own selection, never the global enabled state.
+  vocabulary    once scenes are written: {"selection", "images": [{slot, ingredients}]} (scenes.write_scenes), else
+                null. Older runs keep what their version recorded.
+  packs         the run's vocabulary selection, recorded when the run is created, before any inference, and never
+                changed afterwards (update() refuses): {"packs": [{id, name, category, source, nsfw, entries}],
+                "entries": {pack id: [picked names]}} (vocabulary.catalog.record), or null when the caller gave none.
+                Older runs keep the selection format of their version; it is read as stored.
   slots         one per requested image, slot N = image N, never renumbered:
     slot, revision (this slot's own change counter), input (guided input or ""),
     concept, staging, scene     each null until completed, then never overwritten by generation
     scene_status  pending | written | failed
-    failure       null or {"stage": "composition" | "concepts" | "staging" | "description" | "finishing", "reasons": [...],
-                  "tries": n}; a composed image's concept is {"composition": ...} and it has no staging
+    failure       null or {"stage": "scene" (or, in older runs, "composition" | "concepts" | "staging" | "description" |
+                  "finishing"), "reasons": [...], "tries": n}; concept is the image's vocabulary ingredients
     prompt        null, or {"status": "written" | "failed", "text", "trigger_ok", "error", "stage", "attempts"}
 
 Schema 1 runs (written before pack selection) are read and updated as schema 1: they have no packs field and
@@ -65,7 +65,6 @@ import time
 import uuid
 
 from ....json_store import MAX_STORE_BYTES, atomic_json
-from ...vocabulary.packs import VocabularyError, validate_selection
 from .understanding import validate_brief
 
 SCHEMA = 2
@@ -75,7 +74,7 @@ STATUSES = ("running", "succeeded", "failed", "cancelled", "interrupted")
 TERMINAL = frozenset(STATUSES[1:])
 STAGES = ("concepts", "staging", "description", "prompts", "done")
 SCENE_STATUSES = ("pending", "written", "failed")
-FAILED_STAGES = ("concepts", "staging", "description", "composition", "finishing")
+FAILED_STAGES = ("scene", "concepts", "staging", "description", "composition", "finishing")  # all but "scene": older runs
 RETAIN_COMPLETE = 20
 RETAIN_INCOMPLETE = 20
 RUN_ID = re.compile(r"^[0-9a-f]{32}$")
@@ -149,11 +148,8 @@ def validate_run(value):
     keys = RECORD_KEYS if value["schema"] == SCHEMA else RECORD_KEYS_1
     if set(value) != keys:
         raise RunStoreError(f"A schema {value['schema']} run needs exactly: {', '.join(sorted(keys))}.")
-    if value["schema"] == SCHEMA and value["packs"] is not None:
-        try:
-            validate_selection(value["packs"])
-        except VocabularyError as error:
-            raise RunStoreError(f"The recorded pack selection is invalid: {error}") from None
+    if value["schema"] == SCHEMA and value["packs"] is not None and not isinstance(value["packs"], dict):
+        raise RunStoreError("The recorded vocabulary selection must be an object or null.")
     if not isinstance(value["run_id"], str) or not RUN_ID.match(value["run_id"]) or not isinstance(value["job_id"], str) or not value["job_id"]:
         raise RunStoreError("run_id must be 32 hex characters and job_id nonempty text.")
     if type(value["revision"]) is not int or value["revision"] < 0:

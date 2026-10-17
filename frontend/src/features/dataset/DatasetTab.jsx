@@ -1,16 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { AlignLeft, ChevronDown, CircleHelp, Cpu, Database, Download, Layers3, LoaderCircle, SlidersHorizontal, Sparkles, Tag, WandSparkles } from "lucide-react";
 import { ui } from "../../ui.js";
-import { orderDisplayPresets, presetDisplayLabel } from "../../presetPresentation.js";
 import { TargetSelect } from "../../shared/workflow/WorkflowControls.jsx";
 import { useWorkflowSettings } from "../../shared/workflow/useWorkflowSettings.js";
 import WorkflowSettingsStatus from "../../shared/workflow/WorkflowSettingsStatus.jsx";
 import { datasetGenerationLog } from "./datasetExport.js";
 import { useDatasetWorkflow } from "./useDatasetWorkflow.js";
 import DatasetConfirmationModal from "./DatasetConfirmationModal.jsx";
-import { useDatasetPacks, useRunPacks, useVisualDirection } from "./useDatasetPacks.js";
-import VisualDirectionControls from "./VisualDirectionControls.jsx";
-import { PackSelector, RecordedPacks } from "../vocabulary/PackSelector.jsx";
+import DatasetVocabulary from "./DatasetVocabulary.jsx";
+import { useCatalog } from "../vocabulary/useCatalog.js";
+import { cleanSelection, recordedNames, selectedNames } from "../vocabulary/catalog.js";
 import { RunPrompts, RunScenes } from "./DatasetRunPages.jsx";
 import { maxSeed, seedModes } from "./options.js";
 import { styles } from "../../shared/workflow/options.js";
@@ -43,24 +42,23 @@ function download(name, content, type) {
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-export default function DatasetTab({ visible, job, busy, active, noEngine, engineLabel, presets,
+export default function DatasetTab({ visible, job, busy, active, noEngine, engineLabel,
   targets, lengths, onGenerate, onCancel, onCopy }) {
   const preferences = useWorkflowSettings("dataset");
   const { draft, update } = preferences;
   const [page, setPage] = useState("configure");
-  const availablePresets = orderDisplayPresets(presets || []);
-  const director = availablePresets.find((item) => item.id === draft?.director_preset);
-  const vocabulary = useDatasetPacks(visible);
-  const visualDirection = useVisualDirection();
+  const vocabulary = useCatalog(visible);
+  const selectedPacks = cleanSelection(vocabulary.catalog, draft?.vocabulary_packs);
   const { error, workflowActive, disabled, guidedLines, canPlanScenes, canWrite, generateDataset, generateScenes,
-    confirmation, understanding, run, cancelConfirmation, confirmRequest, editIntent } = useDatasetWorkflow({ preferences, job, busy, active, noEngine,
-      director, onGenerate, vocabularyPacks: vocabulary.selected, packsReady: vocabulary.ready,
-      visualDirection: visualDirection.settings });
-  // A run shows the packs it recorded on the server, never the selector's current choice.
-  const runPacks = useRunPacks(run?.result?.run_id);
-  const packNames = Object.fromEntries(vocabulary.packs.map((pack) => [pack.id, pack.name || pack.id]));
-  const recordedPacks = run && (runPacks ? runPacks.error ? <p className={ui.warningNote} role="alert">Could not load this run's recorded packs. {runPacks.error}</p>
-    : <RecordedPacks recorded={runPacks.packs} status={runPacks.status} names={packNames} /> : null);
+    confirmation, understanding, run, cancelConfirmation, confirmRequest } = useDatasetWorkflow({ preferences, job, busy, active, noEngine,
+      onGenerate });
+  // A run shows the vocabulary it was confirmed with, never the library's current choice.
+  const runPacks = run && (run.result?.vocabulary?.selection ? recordedNames(run.result.vocabulary.selection)
+    : selectedNames(vocabulary.catalog, run.vocabulary));
+  const recordedPacks = run && <section className="pack-picker-record" aria-label="Vocabulary for this run">
+    <h3>Vocabulary for this run</h3>
+    <p>{runPacks.length ? runPacks.join(", ") : "No packs selected"}</p>
+  </section>;
   const [clock, setClock] = useState(Date.now());
 
   const stageSeconds = workflowActive
@@ -95,7 +93,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
   }, [run]);
 
   function exportGenerationLog() {
-    download("dataset-generation-log.json", datasetGenerationLog({ draft, review: understanding, job, record: preferences.record, run, runPacks,
+    download("dataset-generation-log.json", datasetGenerationLog({ draft, review: understanding, job, record: preferences.record, run,
       state: { active: workflowActive, error, settings_status: preferences.status, settings_error: preferences.error,
         settings_conflict: preferences.conflict } }), "application/json;charset=utf-8");
   }
@@ -162,7 +160,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
               <input type="checkbox" className="mt-0.5" aria-label="NSFW"
                 checked={draft.nsfw === true} onChange={(event) => update({ nsfw: event.target.checked })} />
               <span><strong className="block">NSFW</strong>
-                <small className="mt-1 block leading-relaxed text-muted">On: adult characters and your NSFW vocabulary. Off: safe-for-work images.</small></span>
+                <small className="mt-1 block leading-relaxed text-muted">On: adult characters and NSFW packs. Off: safe-for-work images.</small></span>
             </label>
             <div className="dataset-subject-fields">
               <label className={ui.field}><span>Amount</span>
@@ -225,16 +223,10 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
 
         <section className="dataset-config-column" aria-label="Dataset generation settings">
           <header className="dataset-config-heading">
-            <h3>Model &amp; output settings</h3><p>Choose instructions and prompt format.</p>
+            <h3>Model &amp; output settings</h3><p>Choose the target model, prompt format and vocabulary.</p>
           </header>
           <fieldset disabled={disabled}>
-            <label className={ui.field}><span><SlidersHorizontal size={14} aria-hidden="true" />Director preset</span>
-              <select className={ui.select} aria-label="Dataset director preset" value={draft.director_preset} onChange={(event) => update({ director_preset: event.target.value })}>
-                {!director && <option value={draft.director_preset}>Unavailable — choose a preset</option>}
-                {availablePresets.map((item) => <option key={item.id} value={item.id}>{presetDisplayLabel(item)}</option>)}
-              </select>
-            </label>
-            <div className="mt-4 grid grid-cols-2 gap-4 tiny:grid-cols-1">
+            <div className="grid grid-cols-2 gap-4 tiny:grid-cols-1">
               <TargetSelect label="Target model" ariaLabel="Dataset target model" icon={<Cpu size={14} aria-hidden="true" />} value={draft.target} targets={targets} disabled={disabled} onChange={(target) => update({ target })} />
               <label className={ui.field}><span><AlignLeft size={14} aria-hidden="true" />Prompt length</span>
                 <select className={ui.select} aria-label="Dataset prompt length" value={draft.length} onChange={(event) => update({ length: event.target.value })}>
@@ -277,23 +269,19 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
             </fieldset>
 
             <div className="mt-5 border-t border-line pt-4">
-              {vocabulary.loading ? <p className="text-xs text-muted" role="status">Loading vocabulary packs…</p>
-                : <PackSelector packs={vocabulary.packs} selected={vocabulary.selected} onChange={vocabulary.choose}
-                  disabled={disabled} error={vocabulary.error} />}
-              {!vocabulary.loading && <div className="mt-4"><VisualDirectionControls settings={visualDirection.settings}
-                onChange={visualDirection.choose} disabled={disabled}
-                packAvailable={!vocabulary.packs.some((pack) => pack.id === "visual") || vocabulary.selected.includes("visual")} /></div>}
+              <DatasetVocabulary catalog={vocabulary.catalog} selected={selectedPacks}
+                onChange={(ids) => update({ vocabulary_packs: ids })} disabled={disabled} error={vocabulary.error} />
             </div>
 
           </fieldset>
         </section>
       </div>
         <footer className="dataset-config-actions">
-          <button className={ui.button} disabled={!canPlanScenes || !vocabulary.ready} onClick={generateScenes}>
+          <button className={ui.button} disabled={!canPlanScenes} onClick={generateScenes}>
             <Layers3 size={15} />Generate {draft.amount} {draft.amount === 1 ? "scene" : "scenes"} only
           </button>
           <div>
-            <button className={ui.primaryButton} disabled={!canWrite || !vocabulary.ready} onClick={generateDataset}>
+            <button className={ui.primaryButton} disabled={!canWrite} onClick={generateDataset}>
               <Sparkles size={17} />{runActive ? "Generating" : "Generate"} {draft.amount} {generationUnit}{runActive ? "…" : ""}
             </button>
           </div>
@@ -323,8 +311,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
       </section>}
       </div>
     </>}
-    {confirmation && <DatasetConfirmationModal review={confirmation} busy={busy}
-      directorLabel={director ? presetDisplayLabel(director) : ""}
-      onConfirm={confirmRequest} onCancel={cancelConfirmation} onExport={exportGenerationLog} onEditIntent={editIntent} />}
+    {confirmation && <DatasetConfirmationModal review={confirmation} busy={busy} catalog={vocabulary.catalog}
+      onConfirm={confirmRequest} onCancel={cancelConfirmation} onExport={exportGenerationLog} />}
   </div>;
 }

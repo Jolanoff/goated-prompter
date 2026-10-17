@@ -33,15 +33,12 @@ function redactUrl(text) {
   } catch { return "[REDACTED URL]"; }
 }
 
-const vocabularyDiagnosticFields = ["loaded", "eligible", "rejected", "diagnostics", "unresolved_constraints", "filtering_rules"];
-
 function secretValues(value, sensitive = false, field = "") {
   if (typeof value === "string") return sensitive && value.length >= 4 ? [value] : [];
   if (!value || typeof value !== "object") return [];
   if (Array.isArray(value)) return value.flatMap((item) => secretValues(item, sensitive, field));
   return Object.entries(value).flatMap(([key, child]) => secretValues(child, sensitive || sensitiveKey(key)
     || (value.private_vocabulary === true && key === "choices")
-    || (field === "vocabulary" && !vocabularyDiagnosticFields.includes(key))
     || (field === "diagnostics" && key === "entry"), key));
 }
 
@@ -70,8 +67,7 @@ function sanitize(value, secrets, field = "", privateDiagnostics = false) {
     ? "[PRIVATE CONTENT OMITTED]" : redactText(value, secrets, !contentFields.has(field));
   if (Array.isArray(value)) return value.map((item) => sanitize(item, secrets, field, privateDiagnostics));
   if (value && typeof value === "object") return Object.fromEntries(Object.entries(value)
-    .filter(([key]) => !sensitiveKey(key) && !(field === "vocabulary" && !vocabularyDiagnosticFields.includes(key))
-      && !(field === "diagnostics" && !["line", "record", "rule", "reason"].includes(key)))
+    .filter(([key]) => !sensitiveKey(key) && !(field === "diagnostics" && !["line", "record", "rule", "reason"].includes(key)))
     .map(([key, child]) => [key, sanitize(child, secrets, key, privateDiagnostics)]));
   return value;
 }
@@ -83,13 +79,12 @@ function hasPrivateDiagnostics(job) {
 
 const understandingKind = "dataset_understanding";
 const v2Kind = "dataset_v2_scenes";
-const v2ResultFields = ["run_id", "stage", "complete", "requested", "written", "missing", "slots", "concepts", "scenes", "prompts"];
+const v2ResultFields = ["run_id", "stage", "complete", "requested", "written", "missing", "slots", "scenes", "prompts"];
 
-/** A V2 run (Confirm -> scenes -> prompts): its status, slots, concepts, scenes and prompts, the vocabulary it used
- * (pack selection with versions and fingerprints, entries and ideas by id and image, exclusions, Visual Direction)
- * and the packs its run record holds. The vocabulary block is renamed so the generic "vocabulary" redaction never
- * strips it; it carries ids, names and reasons only, never pack wording. */
-function v2RunSnapshot(run, job, runPacks) {
+/** A V2 run (Confirm -> scenes -> prompts): its status, slots, scenes and prompts, and the vocabulary packs it used
+ * (the ids selected at Confirm and what the run recorded of them). The vocabulary block is renamed so the generic
+ * "vocabulary" redaction never strips it. */
+function v2RunSnapshot(run, job) {
   const result = run?.result || (job?.kind === v2Kind ? job.result : null);
   if (!run && !result) return null;
   return {
@@ -97,22 +92,20 @@ function v2RunSnapshot(run, job, runPacks) {
     status: run?.status || job?.status || null,
     error: run?.error || job?.error || "",
     brief: run?.brief || null,
-    visual_direction_settings: run?.visual_direction ?? null,
     ...pick(result, v2ResultFields),
-    vocabulary_retrieval: result?.vocabulary || null,
-    vocabulary_packs: { requested: run?.vocabulary_packs ?? null, recorded: runPacks?.packs ?? null,
-      status: runPacks?.status ?? null, ...(runPacks?.error ? { load_error: runPacks.error } : {}) },
+    vocabulary_selection: run?.vocabulary ?? null,
+    vocabulary_used: result?.vocabulary || null,
   };
 }
 
 /** A click-time projection of current state, never a write or a checkpoint release. */
-export function datasetGenerationLog({ draft, review, job, record, state, run, runPacks } = {}, exportedAt = new Date()) {
+export function datasetGenerationLog({ draft, review, job, record, state, run } = {}, exportedAt = new Date()) {
   const datasetJob = [understandingKind, v2Kind].includes(job?.kind) ? job : null;
   // A V2 job's result is exported once, under v2_run, never through the job projection.
   const v2 = datasetJob?.kind === v2Kind;
   const jobSnapshot = v2 ? pick(datasetJob, jobFields.filter((field) => field !== "result"))
     : datasetJob ? pick(datasetJob, jobFields) : null;
-  const v2Run = v2RunSnapshot(run, datasetJob, runPacks);
+  const v2Run = v2RunSnapshot(run, datasetJob);
   const snapshot = {
     schema_version: 1,
     exported_at: exportedAt.toISOString(),
@@ -129,6 +122,6 @@ export function datasetGenerationLog({ draft, review, job, record, state, run, r
   // V2 results are searched through their export projection: their vocabulary block holds diagnostics, not
   // private values to treat as secrets.
   const secrets = [...new Set(secretValues({ draft, review, job: v2 ? jobSnapshot : datasetJob, record,
-    run: run && { ...run, result: undefined }, runPacks, v2_run: v2Run }))].sort((a, b) => b.length - a.length);
+    run: run && { ...run, result: undefined }, v2_run: v2Run }))].sort((a, b) => b.length - a.length);
   return JSON.stringify(sanitize(snapshot, secrets, "", hasPrivateDiagnostics(datasetJob)), null, 2);
 }

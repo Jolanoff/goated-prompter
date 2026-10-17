@@ -9,7 +9,7 @@ const task = process.env.GOATED_TEST_TASK_KEY || "vocabulary-ui";
 if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(task)) throw new Error("Invalid test task key");
 
 export default defineConfig({
-  testDir: ".", testMatch: ["vocabulary.spec.js", "vocabulary-creator.spec.js"], workers: 1, timeout: 30000,
+  testDir: ".", testMatch: ["vocabulary.spec.js"], workers: 1, timeout: 30000,
   outputDir: `../../quality-artifacts/temp/${task}/browser/vocabulary`,
   use: { baseURL: `http://127.0.0.1:${port}`, browserName: "chromium", channel: process.env.PLAYWRIGHT_CHANNEL,
     headless: true, screenshot: "only-on-failure" },

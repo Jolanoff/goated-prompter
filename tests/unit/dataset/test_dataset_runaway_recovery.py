@@ -14,22 +14,21 @@ from goated_prompter.features.dataset import runner
 from goated_prompter.features.dataset.v2 import prompts, scenes, understanding
 from goated_prompter.local_jobs import Job, JobCancelled
 from goated_prompter.workflow_output import WorkflowFormatError
+from tests.support.dataset_scenes import composer_user
 
 
 class RunawayRecoveryTests(unittest.TestCase):
     def setUp(self):
-        self.config = {"backend": "mock", "dataset_vocabulary": False}
+        self.config = {"backend": "mock"}
         self.request = GoatedPrompterRequest(idea="Adult reading", planning_mode="Direct", director_preset="general_director")
         self.data = {**default_dataset_draft(), "subject": "Alex reads", "amount": 1, "seed": 73,
                      "seed_mode": "fixed", "constraints": "Alex has one left hand and one right hand."}
         self.value = {"path": "character", "summary": "Alex reads", "fixed": "Alex's identity and anatomy remain fixed",
                       "randomized": "Location and light", "must": [self.data["constraints"]], "avoid": [],
-                      "characters": [{"label": "Alex", "gender": "custom", "custom": "adult human reader", "pronoun": "it", "count": 1}],
-                      "intent": {"elements": [], "relations": []}}
+                      "characters": [{"label": "Alex", "gender": "custom", "custom": "adult human reader", "pronoun": "it", "count": 1}]}
         self.trace = Mock()
         self.brief = understanding.apply_rules(self.value, self.data, self.trace)
         self.calls, self.scripts = [], defaultdict(list)
-        self.next_concept = 0
         self.backend = MockBackend()
         self.enterContext(patch.object(self.backend, "generate", side_effect=self.generate))
         for module in (understanding, scenes):
@@ -54,29 +53,18 @@ class RunawayRecoveryTests(unittest.TestCase):
             return value
         if stage == "dataset_v2:understanding":
             return json.dumps(self.value)
-        if stage == "dataset_v2:concepts":
-            user = json.loads(instruction.user_message)
-            concepts = []
-            for _ in range(user["concepts_needed"]):
-                self.next_concept += 1
-                concepts.append({"place": f"location{self.next_concept}", "position_name": "reading",
-                                 "position": f"arrangement{self.next_concept}", "looks": {"Alex": "short hair"},
-                                 "lighting": "daylight", "camera": "wide"})
-            return json.dumps({"concepts": concepts})
-        if stage == "dataset_v2:stagings":
-            return json.dumps({"stagings": [{"reach": "The book is within reach", "actions": "Alex reads the book",
-                "position": {"Alex": f"Seated at {concept['place']}, feet on the floor"}}
-                for concept in json.loads(instruction.user_message)["concepts"]]})
         if stage == "dataset_v2:scenes":
-            return json.dumps({"scenes": [self.description(row["concept"]["place"]) for row in json.loads(instruction.user_message)["scenes"]]})
+            return json.dumps({"scenes": [self.description(f"location{row['image']}")
+                                          for row in composer_user(instruction.user_message)["images"]]})
         return "Alex reads a book, seated with feet on the floor."
 
     def description(self, place="library"):
         return {"subjects": {"Alex": {field: f"visible {field}" for field in scenes.SUBJECT_FIELDS}},
+                "actions": "Alex reads", "position": {"Alex": "Seated, feet on the floor"},
                 "space": place, "lighting": "daylight", "mood": "calm", "camera": "wide", "extras": "books"}
 
     def scene(self):
-        return {**self.description(), "actions": "Alex reads", "position": {"Alex": "Seated, feet on the floor"}}
+        return self.description()
 
     def write_scenes(self, **kwargs):
         return scenes.write_scenes(self.config, self.request, self.brief, progress=lambda _message: None, **kwargs)
@@ -85,14 +73,10 @@ class RunawayRecoveryTests(unittest.TestCase):
         return prompts.write_prompts(self.config, self.request, self.brief, [deepcopy(self.scene()) for _ in range(count)],
                                      progress=lambda _message: None, **kwargs)
 
-    def test_staging_loop_retries_without_replanning_the_successful_concept(self):
-        self.scripts["dataset_v2:stagings"] = [self.loop()]
+    def test_scene_writing_is_one_stage(self):
         result = self.write_scenes()
         self.assertTrue(result["complete"])
-        counts = Counter(call.diagnostic_stage for call in self.calls)
-        self.assertEqual(counts["dataset_v2:concepts"], 1)
-        self.assertEqual(counts["dataset_v2:stagings"], 2)
-        self.assertEqual(counts["dataset_v2:scenes"], 1)
+        self.assertEqual(Counter(call.diagnostic_stage for call in self.calls), {"dataset_v2:scenes": 1})
 
     def test_one_prompt_exhausts_loop_recovery_and_the_next_prompt_still_runs(self):
         self.scripts["final"] = [self.loop(), self.loop(), self.loop()]
@@ -119,51 +103,29 @@ class RunawayRecoveryTests(unittest.TestCase):
         self.trace.finish.assert_called_once()
         self.assertNotIn("output", self.trace.finish.call_args.kwargs)
 
-    def test_all_scene_stages_recover_with_changed_sampling_and_identical_input(self):
-        for stage in ("dataset_v2:concepts", "dataset_v2:stagings", "dataset_v2:scenes"):
-            with self.subTest(stage=stage):
-                self.calls.clear()
-                self.scripts[stage] = [self.loop()]
-                result = self.write_scenes()
-                self.assertTrue(result["complete"])
-                calls = [call for call in self.calls if call.diagnostic_stage == stage]
-                self.assertEqual(len(calls), 2)
-                self.assertEqual(calls[0].user_message, calls[1].user_message)
-                self.assertNotEqual(calls[0].system_message, calls[1].system_message)
-                self.assertNotEqual(calls[0].seed, calls[1].seed)
-                self.assertGreater(calls[1].temperature, 0)
-                self.assertEqual(calls[0].json_schema, calls[1].json_schema)
-
-    def test_all_scene_stages_have_bounded_failure_and_identify_failed_slots(self):
-        for stage, label in (("dataset_v2:concepts", "concepts"), ("dataset_v2:stagings", "staging"),
-                             ("dataset_v2:scenes", "description")):
-            with self.subTest(stage=stage):
-                self.calls.clear()
-                self.scripts[stage] = [self.loop() for _ in range(3)]
-                result = self.write_scenes()
-                self.assertFalse(result["complete"])
-                self.assertEqual(result["scenes"], [])
-                self.assertEqual(result["missing"][0]["stage"], label)
-                self.assertEqual(result["missing"][0]["slot"], 1)
-                self.assertEqual(sum(call.diagnostic_stage == stage for call in self.calls), 3)
-                self.assertEqual(len(result["concepts"]), 0 if label == "concepts" else 1)
-
-    def test_partial_concepts_survive_a_loop_in_the_remaining_concept(self):
-        self.brief["input"]["amount"] = 2
-        concept = {"place": "library", "position_name": "reading", "position": "seated",
-                   "looks": {"Alex": "short hair"}, "lighting": "daylight", "camera": "wide"}
-        self.scripts["dataset_v2:concepts"] = [json.dumps({"concepts": [concept]}), self.loop(), self.loop()]
+    def test_the_scene_stage_recovers_with_changed_sampling_and_identical_input(self):
+        stage = "dataset_v2:scenes"
+        self.scripts[stage] = [self.loop()]
         result = self.write_scenes()
-        self.assertEqual([{key: value for key, value in item.items() if key != "arrangement"}
-                          for item in result["concepts"]], [concept])
-        self.assertEqual(result["concepts"][0]["arrangement"]["kind"], "freeform")
-        self.assertEqual(result["written"], 1)
-        self.assertEqual(result["missing"][0]["slot"], 2)
-        calls = [json.loads(call.user_message)["concepts_needed"] for call in self.calls
-                 if call.diagnostic_stage == "dataset_v2:concepts"]
-        self.assertEqual(calls, [2, 1, 1])
+        self.assertTrue(result["complete"])
+        calls = [call for call in self.calls if call.diagnostic_stage == stage]
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0].user_message, calls[1].user_message)
+        self.assertNotEqual(calls[0].system_message, calls[1].system_message)
+        self.assertNotEqual(calls[0].seed, calls[1].seed)
+        self.assertGreater(calls[1].temperature, 0)
+        self.assertEqual(calls[0].json_schema, calls[1].json_schema)
 
-    def test_completed_scene_is_not_regenerated_when_another_description_loops(self):
+    def test_the_scene_stage_has_bounded_failure_and_identifies_failed_slots(self):
+        stage = "dataset_v2:scenes"
+        self.scripts[stage] = [self.loop() for _ in range(3)]
+        result = self.write_scenes()
+        self.assertFalse(result["complete"])
+        self.assertEqual(result["scenes"], [])
+        self.assertEqual((result["missing"][0]["stage"], result["missing"][0]["slot"]), ("scene", 1))
+        self.assertEqual(sum(call.diagnostic_stage == stage for call in self.calls), 3)
+
+    def test_completed_scene_is_not_regenerated_when_another_scene_loops(self):
         self.brief["input"]["amount"] = 2
         self.scripts["dataset_v2:scenes"] = [json.dumps({"scenes": [self.description("kept library")]}),
                                              self.loop(), self.loop()]
@@ -171,7 +133,7 @@ class RunawayRecoveryTests(unittest.TestCase):
         self.assertEqual(result["written"], 1)
         self.assertEqual(result["scenes"][0]["space"], "kept library")
         self.assertEqual(result["missing"][0]["slot"], 2)
-        calls = [json.loads(call.user_message)["scenes"] for call in self.calls
+        calls = [composer_user(call.user_message)["images"] for call in self.calls
                  if call.diagnostic_stage == "dataset_v2:scenes"]
         self.assertEqual([len(value) for value in calls], [2, 1, 1])
 
@@ -214,7 +176,7 @@ class RunawayRecoveryTests(unittest.TestCase):
                         else:
                             job.stopping = True
                         raise self.loop()
-                    stage = "dataset_v2:concepts" if operation == self.write_scenes else "final"
+                    stage = "dataset_v2:scenes" if operation == self.write_scenes else "final"
                     self.scripts[stage] = [stop]
                     with self.assertRaises((JobCancelled, ValueError)):
                         operation(checkpoint=job.checkpoint)
@@ -225,7 +187,7 @@ class RunawayRecoveryTests(unittest.TestCase):
             for error in (BackendConfigurationError("invalid config"), BackendGenerationError("engine unavailable")):
                 with self.subTest(operation=operation.__name__, error=type(error).__name__):
                     self.calls.clear()
-                    stage = "dataset_v2:concepts" if operation == self.write_scenes else "final"
+                    stage = "dataset_v2:scenes" if operation == self.write_scenes else "final"
                     self.scripts[stage] = [error]
                     with self.assertRaises(type(error)) as caught:
                         operation()

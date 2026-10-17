@@ -4,8 +4,8 @@ import { datasetCopyText } from "./datasetExport.js";
 
 // Rebuild (issue 106): the Scenes and Dataset pages for a run started by Confirm.
 const pad = (number) => String(number).padStart(2, "0");
-const STAGES = { composition: "composition", concepts: "concept", staging: "staging", description: "description",
-  finishing: "finishing" };
+const STAGES = { scene: "scene", composition: "composition", concepts: "concept", staging: "staging",
+  description: "description", finishing: "finishing" };
 
 const slotOf = (item, position) => (Number.isInteger(item?.slot) && item.slot > 0 ? item.slot
   : Number.isInteger(item?.index) && item.index > 0 ? item.index : position + 1);
@@ -32,26 +32,12 @@ function Line({ label, children }) {
   return <p className="dataset-scene-source"><strong>{label}:</strong> {children}</p>;
 }
 
-/** How an image's arrangement was decided: checked against the vocabulary (with its status), or freeform. */
-export function arrangementLine(arrangement) {
-  if (!arrangement) return "";
-  if (arrangement.kind !== "vocabulary") return "Freeform (not checked against the vocabulary)"
-    + (arrangement.reason ? `: ${arrangement.reason}` : "");
-  const entries = arrangement.entries.map((entry) => `${entry.name} (${Object.entries(entry.roles)
-    .map(([role, who]) => `${role}: ${who.join(", ")}`).join("; ")})`).join(" + ");
-  const extras = [arrangement.space ? `place: ${arrangement.space.name}` : "",
-    ...(arrangement.items || []).map((item) => `item: ${item.name}`)].filter(Boolean);
-  return `${arrangement.composed ? "Composed: " : ""}${entries || "no interaction"}${extras.length ? ` · ${extras.join(" · ")}` : ""}`
-    + ` · vocabulary check: ${arrangement.status}`;
-}
-
 function SceneDetails({ scene }) {
   return <>
-    {scene.arrangement && <Line label="Arrangement">{arrangementLine(scene.arrangement)}</Line>}
     {Object.entries(scene.position).map(([label, text]) => <Line key={`position-${label}`} label={`Position · ${label}`}>{text}</Line>)}
     <Line label="Action">{scene.actions}</Line>
     {Object.entries(scene.subjects).map(([label, person]) => <Line key={`subject-${label}`} label={label}>
-      {[person.skin, person.build, person.hair, person.detail, person.clothing].join(" · ")}</Line>)}
+      {[person.skin, person.build, person.hair, person.detail, person.expression, person.clothing].filter(Boolean).join(" · ")}</Line>)}
     <Line label="Space">{scene.space}</Line>
     <Line label="Lighting">{scene.lighting}</Line>
     <Line label="Mood">{scene.mood}</Line>
@@ -89,7 +75,7 @@ export function RunScenes({ run, onCopy, onDownload }) {
   return <section className={`${ui.panel} dataset-scenes-panel`} aria-label="Scenes">
     <header className={ui.panelHeader}>
       <div className={ui.panelIcon}><Layers3 size={21} /></div>
-      <div className={ui.panelHeading}><h2>Scenes</h2><p>One scene per image: the bodies first, then everything around them.</p></div>
+      <div className={ui.panelHeading}><h2>Scenes</h2><p>One scene per image, composed from your request and any vocabulary you selected.</p></div>
     </header>
     <RunNotes run={run} />
     {!scenes.length ? (run.status === "running"

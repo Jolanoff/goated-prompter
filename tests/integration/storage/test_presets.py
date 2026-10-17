@@ -12,27 +12,6 @@ from tests.helpers import enter_context
 
 
 class DirectorLibraryTests(unittest.TestCase):
-    def test_vocabulary_preferences_round_trip_keep_replace_and_clear(self):
-        block = {"prefer": {"entries": ["core:action.hug"]}, "priorities": ["space"]}
-        director, path = presets.save_user_director("Scene director", "Instructions", vocabulary=block)
-        self.assertEqual(director.vocabulary, block)
-        self.assertEqual(json.loads(path.read_text())["vocabulary"], block)
-        kept, _ = presets.update_director(director.id, director.label, "Edited")
-        self.assertEqual(kept.vocabulary, block)
-        replaced, _ = presets.update_director(director.id, director.label, "Edited", vocabulary={"themes": ["quiet"]})
-        self.assertEqual(replaced.vocabulary, {"themes": ["quiet"]})
-        cleared, _ = presets.update_director(director.id, director.label, "Edited", vocabulary={})
-        self.assertEqual(cleared.vocabulary, {})
-
-    def test_builtin_vocabulary_survives_behavior_override_and_reset(self):
-        builtin = next(item for item in presets.DIRECTOR_PRESETS if item.vocabulary)
-        updated, _ = presets.update_director(builtin.id, builtin.label, "Edited")
-        self.assertEqual(updated.vocabulary, builtin.vocabulary)
-        cleared, _ = presets.update_director(builtin.id, builtin.label, "Edited", vocabulary={})
-        self.assertEqual(cleared.vocabulary, {})
-        reset, _ = presets.reset_director(builtin.id)
-        self.assertEqual(reset.vocabulary, builtin.vocabulary)
-
     def test_single_minimax_director_resolves_legacy_ids_labels_and_override(self):
         directors = [preset for preset in presets.DIRECTOR_PRESETS if "MiniMax" in preset.label]
         self.assertEqual(len(directors), 1)

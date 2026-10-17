@@ -3,8 +3,8 @@
 This is separate from deterministic `unittest` tests. No model, network, GPU,
 downloads or embeddings are needed to replay fixtures and report their metrics.
 The corpus covers unrelated specialized domains; it is test data, never a
-production concept-to-action mapping. It evaluates Builder and MiniMax; Dataset's
-real-model check is `tests/gpu/dataset_understanding_eval.py`.
+production concept-to-action mapping. It evaluates Builder and MiniMax; Dataset has
+no real-model harness yet.
 
 Run from the repository root:
 

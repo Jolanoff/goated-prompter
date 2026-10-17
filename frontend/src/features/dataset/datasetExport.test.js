@@ -126,30 +126,20 @@ test("diagnostic export omits raw content from private transport traces", () => 
 });
 
 function v2Result(overrides = {}) {
-  const fingerprint = `sha256:${"a".repeat(64)}`;
   return { ok: true, kind: "dataset_v2_scenes", run_id: "run-42", stage: "done", complete: false, requested: 2, written: 1,
-    concepts: [{ place: "harbour", camera: "low angle", lighting: "golden hour" }],
-    slots: [{ slot: 1, status: "written", input: "", concept: { place: "harbour" }, stage: null, reasons: [], tries: 1 },
-      { slot: 2, status: "failed", input: "", concept: null, stage: "concepts", reasons: ["answer was not JSON"], tries: 3 }],
-    scenes: [{ slot: 1, actions: "two sailors greet", camera: "low angle", lighting: "golden hour" }],
-    missing: [{ slot: 2, stage: "concepts", reasons: ["answer was not JSON"], tries: 3, input: "" }],
+    slots: [{ slot: 1, status: "written", input: "", concept: null, stage: null, reasons: [], tries: 1 },
+      { slot: 2, status: "failed", input: "", concept: null, stage: "scene", reasons: ["answer was not JSON"], tries: 3 }],
+    scenes: [{ slot: 1, actions: "two sailors greet at a harbour", camera: "low angle", lighting: "golden hour" }],
+    missing: [{ slot: 2, stage: "scene", reasons: ["answer was not JSON"], tries: 3, input: "" }],
     prompts: [{ slot: 1, prompt: "sailor_token two sailors greeting at a harbour", trigger_ok: true }],
-    vocabulary: { enabled: true, provided: ["scene:action.embrace"],
-      selection: { enabled: true, selected: ["scene"], packs: [{ id: "core", role: "core", origin: "core", version: "1.1.0", fingerprint },
-        { id: "scene", role: "selected", origin: "installed", version: "2.0.0", fingerprint }] },
-      entries: [{ id: "scene:action.embrace", name: "Embrace", pack: "scene", category: "action", rating: "general", status: "feasible", source: "direct", scopes: [] }],
-      ideas: [], images: [{ slot: 1, entries: ["scene:action.embrace"], ideas: [] }, { slot: 2, entries: ["scene:action.embrace"], ideas: [] }],
-      excluded: [{ id: "scene:position.aerial_carry", reason: "conflict: cannot lift" }], suppressed: [],
-      visual: { enabled: true, slots: [{ slot: 1, directions: { camera_angle: "visual:camera_angle.low_angle" } }] } },
+    vocabulary: { selection: { packs: [{ id: "Spaces/Ports", name: "Ports", category: "Spaces", entries: 2 }] } },
     ...overrides };
 }
 
-test("generation log exports a V2 run: status, slots, scenes, prompts, failures, packs and vocabulary by image", () => {
-  const recorded = { version: 1, enabled: true, selected: ["scene"], packs: v2Result().vocabulary.selection.packs };
+test("generation log exports a V2 run: status, slots, scenes, prompts, failures and its vocabulary packs", () => {
+  const selection = ["Spaces/Ports"];
   const context = { job: { id: "job-v2", kind: "dataset_v2_scenes", status: "succeeded", result: v2Result(), events: [{ message: "done" }] },
-    run: { jobId: "job-v2", brief: { version: 9, summary: "Two sailors greet" }, vocabulary_packs: ["scene"], status: "done", result: v2Result(), error: "",
-      visual_direction: { lighting: { enabled: false, variation: "auto" } } },
-    runPacks: { runId: "run-42", packs: recorded, status: { exact: true, drift: [], disabled_globally: [] }, error: "" } };
+    run: { jobId: "job-v2", brief: { version: 11, summary: "Two sailors greet" }, vocabulary: selection, status: "done", result: v2Result(), error: "" } };
   const before = structuredClone(context);
   const log = JSON.parse(datasetGenerationLog(context));
   const run = log.v2_run;
@@ -157,20 +147,12 @@ test("generation log exports a V2 run: status, slots, scenes, prompts, failures,
   assert.equal(run.status, "done");
   assert.equal(run.brief.summary, "Two sailors greet");
   assert.equal(run.scenes[0].camera, "low angle");
-  assert.equal(run.concepts.length, 1);
   assert.equal(run.prompts[0].prompt, "sailor_token two sailors greeting at a harbour");
   assert.deepEqual(run.missing[0].reasons, ["answer was not JSON"]);
   assert.equal(run.slots[1].status, "failed");
-  assert.equal(run.vocabulary_retrieval.enabled, true);
-  assert.equal(run.vocabulary_retrieval.selection.packs[1].fingerprint, `sha256:${"a".repeat(64)}`);
-  assert.deepEqual(run.vocabulary_retrieval.images[1], { slot: 2, entries: ["scene:action.embrace"], ideas: [] });
-  assert.equal(run.vocabulary_retrieval.entries[0].id, "scene:action.embrace");
-  assert.match(run.vocabulary_retrieval.excluded[0].reason, /conflict/);
-  assert.equal(run.vocabulary_retrieval.visual.slots[0].directions.camera_angle, "visual:camera_angle.low_angle");
-  assert.deepEqual(run.vocabulary_packs.requested, ["scene"]);
-  assert.deepEqual(run.visual_direction_settings, { lighting: { enabled: false, variation: "auto" } });
-  assert.equal(run.vocabulary_packs.recorded.packs[0].id, "core");
-  assert.equal(run.vocabulary_packs.status.exact, true);
+  assert.deepEqual(run.vocabulary_selection, selection);
+  assert.equal(run.vocabulary_used.selection.packs[0].name, "Ports");
+  assert.ok(log.v2_run.prompts[0].prompt.includes("harbour"), "entry names are never treated as secrets");
   assert.equal(log.job.kind, "dataset_v2_scenes");
   assert.equal("result" in log.job, false, "the V2 result is exported once, under v2_run");
   assert.deepEqual(context, before);
@@ -178,21 +160,16 @@ test("generation log exports a V2 run: status, slots, scenes, prompts, failures,
 
 test("a V2 job recovered without the tab's run state is still exported", () => {
   const recovered = JSON.parse(datasetGenerationLog({ job: { id: "job-v2", kind: "dataset_v2_scenes", status: "failed",
-    error: "The selected vocabulary packs changed since this run was confirmed", result: v2Result({ stage: "scenes" }) } }));
+    error: "The vocabulary pack \"Spaces/Ports\" is not installed", result: v2Result({ stage: "scenes" }) } }));
   assert.equal(recovered.v2_run.status, "failed");
-  assert.match(recovered.v2_run.error, /packs changed/);
-  assert.equal(recovered.v2_run.vocabulary_retrieval.provided[0], "scene:action.embrace");
-  assert.equal(recovered.v2_run.vocabulary_packs.recorded, null);
-  const disabled = JSON.parse(datasetGenerationLog({ run: { jobId: "j", status: "done", result: v2Result({
-    vocabulary: { enabled: false, provided: [], reason: "turned off in config.json", selection: null } }) } }));
-  assert.equal(disabled.v2_run.vocabulary_retrieval.enabled, false);
-  assert.match(disabled.v2_run.vocabulary_retrieval.reason, /turned off/);
+  assert.match(recovered.v2_run.error, /not installed/);
+  assert.equal(recovered.v2_run.vocabulary_used.selection.packs[0].name, "Ports");
+  assert.equal(recovered.v2_run.vocabulary_selection, null);
 });
 
 test("V2 exports keep redaction: credentials in run errors, briefs and pack status never leak", () => {
   const text = datasetGenerationLog({ run: { jobId: "j", status: "failed", error: "Authorization: Bearer run-secret-789",
-    brief: { summary: "A harbour", api_key: "brief-secret" }, result: v2Result({ debug: "token=result-secret" }) },
-    runPacks: { packs: null, status: null, error: "https://user:pass@example.test/x?api_key=pack-secret" } });
+    brief: { summary: "A harbour", api_key: "brief-secret", note: "https://user:pass@example.test/x?api_key=pack-secret" },
+    result: v2Result({ debug: "token=result-secret" }) } });
   for (const secret of ["run-secret-789", "brief-secret", "user:pass", "pack-secret"]) assert.ok(!text.includes(secret), secret);
-  assert.ok(!text.includes("description"), "no pack wording is exported");
 });

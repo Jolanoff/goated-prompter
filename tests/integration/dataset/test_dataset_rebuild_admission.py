@@ -14,16 +14,12 @@ import local_app as local
 from goated_prompter.backends.mock import MockBackend
 from goated_prompter.features.dataset.v2.draft import default_dataset_draft, validate_dataset_draft
 from goated_prompter.features.dataset.v2.understanding import apply_rules, copied_input
-from goated_prompter.features.vocabulary.visual import default_settings as default_visual_settings
-from goated_prompter.features.vocabulary.packs import PackManager
 
 
 class DatasetRebuildAdmissionTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        packs = PackManager(Path(self.temp.name) / "packs", Path(self.temp.name) / "pack-state.json")
-        self.enterContext(patch("goated_prompter.features.dataset.v2.vocabulary_packs.PackManager", return_value=packs))
         self.value = {"path": "character", "summary": "Two adults reading", "fixed": "Two readers",
                       "randomized": "Light and framing", "must": [], "avoid": [], "characters": [
                           {"label": "reader", "gender": "custom", "custom": "adult human", "pronoun": "it", "count": 2}]}
@@ -65,8 +61,7 @@ class DatasetRebuildAdmissionTests(unittest.IsolatedAsyncioTestCase):
         job = await self.terminal(await response.json())
         self.assertEqual(job["status"], "succeeded", job.get("error"))
         return {"input": deepcopy(self.data), "brief": job["result"]["brief"],
-                "confirmation_token": job["result"]["confirmation_token"], "settings": {}, "operation": "dataset",
-                "vocabulary_packs": []}
+                "confirmation_token": job["result"]["confirmation_token"], "settings": {}, "operation": "dataset"}
 
     async def confirm(self, payload):
         return await self.client.post("/api/workspace/dataset/v2/confirm", json=payload)
@@ -83,46 +78,31 @@ class DatasetRebuildAdmissionTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(self.prompts.call_count, expected_calls)
                 self.assertEqual(job["result"]["stage"], "scenes" if operation.endswith("scenes") else "done")
         self.assertEqual(self.scenes.call_args.args[2], payload["brief"])
-        # The run's own resolved selection (core only here) reaches scene writing; nothing global is read later.
-        selection = self.scenes.call_args.kwargs["vocabulary"]
-        self.assertEqual(selection["selected"], [])
-        self.assertIn("core", [pack["id"] for pack in selection["packs"]])
-        self.assertEqual(self.scenes.call_args.kwargs["visual"], default_visual_settings(),
-                         "without visual_direction the run gets the default Visual Direction settings")
+        self.assertEqual(self.scenes.call_args.kwargs["vocabulary"], {"packs": []})
+        self.assertEqual(set(self.scenes.call_args.kwargs), {"checkpoint", "progress", "on_slot", "vocabulary"},
+                         "no Director, Visual Direction or other planning input reaches scene writing")
 
-    async def test_confirm_accepts_allowed_intent_corrections_and_refuses_the_rest(self):
-        self.value["intent"] = {"elements": [
-            {"id": "s1", "kind": "subject", "text": "adults", "status": "fixed", "source": "request", "character": "reader"},
-            {"id": "a1", "kind": "action", "text": "reading", "status": "fixed", "source": "request", "by": ["s1"], "terms": ["read"]},
-            {"id": "k1", "kind": "aspect", "text": "lighting", "status": "randomized", "source": "suggested"}], "relations": []}
+    async def test_the_drafts_vocabulary_packs_reach_scene_writing_without_a_new_review(self):
         payload = await self.analyze()
-        self.assertEqual(payload["brief"]["version"], 10)
-        self.assertEqual(payload["brief"]["intent"]["elements"][0]["cast"], ["reader 1", "reader 2"])
-        refused = deepcopy(payload)
-        refused["brief"]["intent"]["elements"][1]["status"] = "optional"
-        response = await self.confirm(refused)
-        self.assertEqual(response.status, 400)
-        self.assertIn("Use Revise", await response.text())
-        edited = deepcopy(payload)
-        edited["brief"]["intent"]["elements"][1]["terms"] = ["read", "book"]
-        edited["brief"]["intent"]["elements"] = edited["brief"]["intent"]["elements"][:2]
-        response = await self.confirm(edited)
+        packs = ["Spaces/Fantasy", "Lighting/Cinematic"]
+        changed = deepcopy(payload)
+        changed["input"]["vocabulary_packs"] = packs  # picked after Understanding: no new review is needed
+        response = await self.confirm(changed)
         self.assertEqual(response.status, 202, await response.text())
         job = await self.terminal(await response.json())
         self.assertEqual(job["status"], "succeeded", job.get("error"))
-        confirmed = self.scenes.call_args.args[2]
-        self.assertEqual(confirmed["intent"]["elements"][1]["terms"], ["read", "book"])
-        self.assertEqual({key: value for key, value in confirmed.items() if key != "intent"},
-                         {key: value for key, value in payload["brief"].items() if key != "intent"})
+        self.assertEqual(self.scenes.call_args.kwargs["vocabulary"], {"packs": packs})
 
-    async def test_confirm_requires_an_explicit_usable_pack_selection(self):
+    async def test_confirm_refuses_unknown_packs_and_retired_fields(self):
         payload = await self.analyze()
-        missing = {key: value for key, value in payload.items() if key != "vocabulary_packs"}
-        for body in (missing, {**payload, "vocabulary_packs": ["no_such_pack_for_this_test"]},
-                     {**payload, "vocabulary_packs": "core"},
-                     {**payload, "visual_direction": {"mood": {"enabled": True}}},
-                     {**payload, "visual_direction": {"lighting": {"variation": "wild"}}}):
-            with self.subTest(packs=body.get("vocabulary_packs"), visual=body.get("visual_direction")):
+        unknown = deepcopy(payload)
+        unknown["input"]["vocabulary_packs"] = ["Spaces/No-Such-Pack"]
+        malformed = deepcopy(payload)
+        malformed["input"]["vocabulary_packs"] = "Spaces/Fantasy"
+        for name, body in (("unknown pack", unknown), ("not a list", malformed),
+                           ("retired selection field", {**payload, "vocabulary": {"packs": []}}),
+                           ("retired visual field", {**payload, "visual_direction": {}})):
+            with self.subTest(name):
                 response = await self.confirm(body)
                 self.assertEqual(response.status, 400, await response.text())
         self.scenes.assert_not_called()
@@ -169,8 +149,7 @@ class DatasetRebuildAdmissionTests(unittest.IsolatedAsyncioTestCase):
                 brief = apply_rules(value, safe, Mock())
                 brief.update(path="nsfw_character" if data["nsfw"] else "sfw_character", input=copied_input(data))
                 reviewed = self.app[local.STATE].dataset_intents.register(data, brief)
-                response = await self.confirm({**reviewed, "input": data, "settings": {}, "operation": "dataset",
-                                               "vocabulary_packs": []})
+                response = await self.confirm({**reviewed, "input": data, "settings": {}, "operation": "dataset"})
                 self.assertEqual(response.status, 400, await response.text())
         self.scenes.assert_not_called()
 

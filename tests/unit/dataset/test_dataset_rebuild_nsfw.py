@@ -9,6 +9,7 @@ from goated_prompter.backends.mock import MockBackend
 from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.dataset.v2.draft import default_dataset_draft
 from goated_prompter.features.dataset.v2 import prompts, scenes, understanding
+from tests.support.dataset_scenes import composer_user
 
 
 class AdultDatasetTests(unittest.TestCase):
@@ -16,9 +17,7 @@ class AdultDatasetTests(unittest.TestCase):
         self.backend = MockBackend()
         self.calls = []
         self.understood = None
-        self.concepts = []
-        self.staging = {}
-        self.description = {}
+        self.scene = {}
         self.replies = {}
         self.final_text = "adult_token: The consenting adults keep their assigned positions and red ribbon."
         self.enterContext(patch.object(self.backend, "generate", side_effect=self.generate))
@@ -27,7 +26,7 @@ class AdultDatasetTests(unittest.TestCase):
             self.enterContext(patch.object(module, "DebugTrace"))
         self.enterContext(patch.object(prompts, "DebugTrace"))
         self.enterContext(patch("goated_prompter.features.builder.service.create_backend", return_value=self.backend))
-        self.config = {"backend": "mock", "dataset_vocabulary": False}
+        self.config = {"backend": "mock"}
         self.request = GoatedPrompterRequest(idea="Consenting adults", director_preset="general_director", planning_mode="Direct")
 
     def generate(self, instruction):
@@ -37,12 +36,8 @@ class AdultDatasetTests(unittest.TestCase):
             return json.dumps(self.replies[stage].pop(0))
         if stage == "dataset_v2:understanding":
             return json.dumps(self.understood)
-        if stage == "dataset_v2:concepts":
-            return json.dumps({"concepts": self.concepts})
-        if stage == "dataset_v2:stagings":
-            return json.dumps({"stagings": [self.staging]})
         if stage == "dataset_v2:scenes":
-            return json.dumps({"scenes": [self.description]})
+            return json.dumps({"scenes": [self.scene]})
         self.assertEqual(stage, "final", "No new generation or validation stages are expected")
         return self.final_text
 
@@ -53,13 +48,10 @@ class AdultDatasetTests(unittest.TestCase):
         self.understood = {"path": "character", "summary": "Consenting adults posing together",
             "characters": cast, "fixed": "The named adults retain their identities, roles and assigned support.",
             "randomized": "Lighting and camera", "must": ["Use a red ribbon"], "avoid": ["No blindfold", "No collar"]}
-        self.concepts = [{"place": "sunlit studio", "position_name": "seated pose", "position": "Supported on a wide bench",
-            "looks": {label: "short dark hair" for label in labels}, "lighting": "daylight", "camera": "wide shot"}]
-        self.staging = {"reach": "Each person has a separate place on the wide bench and can reach their own ribbon.",
+        self.scene = {"subjects": {label: {"skin": "warm brown", "build": "adult", "hair": "short dark hair",
+            "detail": f"{label}'s recognizable face", "expression": "a soft smile", "clothing": "nude"} for label in labels},
             "position": {label: f"{label} sits on the bench, feet on the floor, holding a red ribbon in the right hand."
-                         for label in labels}, "actions": "The adults display their red ribbons without changing places."}
-        self.description = {"subjects": {label: {"skin": "warm brown", "build": "adult", "hair": "short dark hair",
-            "detail": f"{label}'s recognizable face", "clothing": "nude"} for label in labels},
+                         for label in labels}, "actions": "The adults display their red ribbons without changing places.",
             "space": "A studio with a wide bench", "lighting": "daylight", "mood": "calm", "camera": "wide shot",
             "extras": "A plain wall"}
         return data
@@ -71,7 +63,11 @@ class AdultDatasetTests(unittest.TestCase):
         return scenes.write_scenes(self.config, self.request, brief, progress=lambda _message: None)
 
     def users(self, stage):
-        return [json.loads(call.user_message) for call in self.calls if call.diagnostic_stage == f"dataset_v2:{stage}"]
+        read = composer_user if stage == "scenes" else json.loads
+        return [read(call.user_message) for call in self.calls if call.diagnostic_stage == f"dataset_v2:{stage}"]
+
+    def composer(self):
+        return [call for call in self.calls if call.diagnostic_stage == "dataset_v2:scenes"]
 
     def test_solo_pair_and_group_keep_nsfw_route_identity_and_counts_through_builder(self):
         cases = [
@@ -96,17 +92,18 @@ class AdultDatasetTests(unittest.TestCase):
                 result = self.write(brief)
                 scene = result["scenes"][0]
                 self.assertEqual(set(scene["subjects"]), set(labels))
-                self.assertEqual(scene["position"], self.staging["position"])
-                self.assertEqual(scene["actions"], self.staging["actions"])
-                for stage in ("concepts", "stagings", "scenes"):
-                    self.assertEqual(self.users(stage)[0]["characters"], brief["characters"])
-                    self.assertEqual(self.users(stage)[0]["fixed"], brief["fixed"])
+                self.assertEqual(scene["position"], self.scene["position"])
+                self.assertEqual(scene["actions"], self.scene["actions"])
+                user = self.users("scenes")[0]
+                self.assertEqual(user["understanding"]["characters"], brief["characters"])
+                self.assertEqual(user["understanding"]["fixed"], brief["fixed"])
+                self.assertIn("sexual and explicit", self.composer()[0].system_message)
                 written = prompts.write_prompts(self.config, self.request, brief, result["scenes"], progress=lambda _message: None)
                 final = self.calls[-1]
                 for label in labels:
-                    self.assertIn(self.staging["position"][label], final.user_message)
+                    self.assertIn(self.scene["position"][label], final.user_message)
                     self.assertIn(f"{label}'s recognizable face", final.user_message)
-                self.assertIn(self.staging["actions"], final.user_message)
+                self.assertIn(self.scene["actions"], final.user_message)
                 self.assertTrue(written[0]["trigger_ok"])
                 self.assertEqual(final.seed, 73)
 
@@ -120,7 +117,7 @@ class AdultDatasetTests(unittest.TestCase):
         self.assertEqual(len(self.users("understanding")), 2)
         self.assertIn('path must be "character"', self.calls[1].system_message)
 
-    def test_explicit_anatomy_roles_and_interaction_survive_all_scene_requests(self):
+    def test_explicit_anatomy_roles_and_interaction_reach_the_composer_and_builder(self):
         data = self.scenario([
             {"label": "Mara", "gender": "female", "custom": "", "pronoun": "she", "count": 1},
             {"label": "Rowan", "gender": "male", "custom": "", "pronoun": "he", "count": 1}], ["Mara", "Rowan"])
@@ -129,50 +126,43 @@ class AdultDatasetTests(unittest.TestCase):
         support = "Mara stands facing Rowan; Rowan lies on the bench with both feet supported."
         data.update(subject=f"{roles} {anatomy} Consensual vaginal intercourse.", constraints=support + "\nNo toys.")
         self.understood.update(summary=data["subject"], fixed=roles + " " + support, must=[anatomy], avoid=["No toys"])
-        self.staging.update(position={"Mara": "Mara stands on the floor facing Rowan, whose hips are at the bench edge.",
-                                      "Rowan": "Rowan lies on the bench facing Mara, feet supported on the bench."},
-                            actions="Mara penetrates Rowan's vagina with her penis.")
-        self.description["subjects"]["Mara"]["detail"] = "Mara's penis and recognizable face"
-        self.description["subjects"]["Rowan"]["detail"] = "Rowan's vagina and recognizable face"
+        self.scene.update(position={"Mara": "Mara stands on the floor facing Rowan, whose hips are at the bench edge.",
+                                    "Rowan": "Rowan lies on the bench facing Mara, feet supported on the bench."},
+                          actions="Mara penetrates Rowan's vagina with her penis.")
+        self.scene["subjects"]["Mara"]["detail"] = "Mara's penis and recognizable face"
+        self.scene["subjects"]["Rowan"]["detail"] = "Rowan's vagina and recognizable face"
         brief = self.understand(data)
         result = self.write(brief)
-        for stage in ("concepts", "stagings", "scenes"):
-            user = self.users(stage)[0]
-            self.assertEqual(user["must"], [anatomy])
-            self.assertEqual(user["fixed"], roles + " " + support)
-            self.assertEqual(user["rules"], [support, "No toys."])
-            self.assertEqual(user["avoid"], ["No toys"])
-            self.assertTrue(all("anatomy" not in person for person in user["characters"]))
-        self.assertEqual(self.users("scenes")[0]["scenes"][0]["staging"], self.staging)
+        user = self.users("scenes")[0]
+        self.assertEqual(user["understanding"]["must"], [anatomy])
+        self.assertEqual(user["understanding"]["fixed"], roles + " " + support)
+        self.assertEqual(user["rules"], [support, "No toys."])
+        self.assertEqual(user["understanding"]["avoid"], ["No toys"])
+        self.assertTrue(all("anatomy" not in person for person in user["understanding"]["characters"]))
         prompts.write_prompts(self.config, self.request, brief, result["scenes"], progress=lambda _message: None)
         final = self.calls[-1]
         self.assertIn("Mara's penis", final.user_message)
         self.assertIn("Rowan's vagina", final.user_message)
-        self.assertIn(self.staging["actions"], final.user_message)
+        self.assertIn(self.scene["actions"], final.user_message)
         self.assertNotIn("no vagina and no pussy", final.system_message + final.user_message)
 
-    def test_wrong_participant_and_description_placement_are_retried_not_published(self):
+    def test_a_wrong_participant_is_asked_again_not_published(self):
         data = self.scenario([{"label": "Alex", "gender": "male", "custom": "", "pronoun": "he", "count": 1}], ["Alex"])
-        wrong_cast = deepcopy(self.staging)
-        wrong_cast["position"] = {"Stranger": "standing"}
-        moved_body = {**deepcopy(self.description), "position": {"Alex": "stands on the ceiling"}}
-        self.replies = {"dataset_v2:stagings": [{"stagings": [wrong_cast]}], "dataset_v2:scenes": [{"scenes": [moved_body]}]}
+        wrong_cast = {**deepcopy(self.scene), "position": {"Stranger": "standing"}}
+        self.replies = {"dataset_v2:scenes": [{"scenes": [wrong_cast]}]}
         result = self.write(self.understand(data))
-        self.assertEqual(len(self.users("stagings")), 2)
         self.assertEqual(len(self.users("scenes")), 2)
-        self.assertEqual(result["scenes"][0]["position"], self.staging["position"])
+        self.assertEqual(result["scenes"][0]["position"], self.scene["position"])
         self.assertEqual(set(result["scenes"][0]["subjects"]), {"Alex"})
-        self.assertNotIn("ceiling", json.dumps(result))
+        self.assertNotIn("Stranger", json.dumps(result["scenes"]))
 
-    def test_excluded_accessories_are_retried_in_staging_and_description(self):
+    def test_excluded_accessories_are_asked_again(self):
         data = self.scenario([{"label": "Alex", "gender": "male", "custom": "", "pronoun": "he", "count": 1}], ["Alex"])
-        forbidden_action = {**self.staging, "actions": "Alex wears a blindfold."}
-        forbidden_detail = {**self.description, "extras": "A leather COLLAR"}
-        self.replies = {"dataset_v2:stagings": [{"stagings": [forbidden_action]}],
-                        "dataset_v2:scenes": [{"scenes": [forbidden_detail]}]}
+        self.replies = {"dataset_v2:scenes": [{"scenes": [{**self.scene, "actions": "Alex wears a blindfold."}]},
+                                              {"scenes": [{**self.scene, "extras": "A leather COLLAR"}]}]}
         result = self.write(self.understand(data))
-        self.assertEqual(len(self.users("stagings")), 2)
-        self.assertEqual(len(self.users("scenes")), 2)
+        self.assertEqual(len(self.users("scenes")), 3)
+        self.assertIn('the user said "No blindfold"', self.composer()[1].system_message)
         scene = result["scenes"][0]
         self.assertNotIn("blindfold", json.dumps(scene).lower())
         self.assertNotIn("collar", json.dumps(scene).lower())
@@ -184,7 +174,7 @@ class AdultDatasetTests(unittest.TestCase):
                 data = self.scenario([{"label": "Alex", "gender": "male", "custom": "", "pronoun": "he", "count": 1}], ["Alex"])
                 if not nsfw:
                     data.update(nsfw=False, subject="An adult posing with a red ribbon.")
-                    self.description["subjects"]["Alex"]["clothing"] = "blue shirt"
+                    self.scene["subjects"]["Alex"]["clothing"] = "blue shirt"
                 self.understood["must"].append(requirement)
                 self.understood["fixed"] = "Alex is the only participant and keeps the same identity."
                 brief = self.understand(data)

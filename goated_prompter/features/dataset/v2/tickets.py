@@ -10,8 +10,8 @@ import time
 
 from .understanding import validate_brief
 
-# Run-to-run choices that do not change what was understood.
-UNSIGNED = frozenset({"seed", "seed_mode"})
+# Run-to-run choices that do not change what was understood (Understanding never reads vocabulary).
+UNSIGNED = frozenset({"seed", "seed_mode", "vocabulary_packs"})
 
 
 def intent_signature(data):

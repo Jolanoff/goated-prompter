@@ -1,4 +1,4 @@
-"""Dataset V2 slot identity: image N stays image N through every stage. Scripted responses only."""
+"""Dataset V2 slot identity: image N stays image N from its vocabulary to its final prompt. Scripted responses only."""
 
 from collections import defaultdict
 import json
@@ -14,15 +14,16 @@ from goated_prompter.features.dataset.v2 import prompts, scenes, understanding
 from goated_prompter.local_jobs import Job
 
 PLACE = re.compile(r"location(\d+)")
+from tests.support.dataset_scenes import composer_user
 
 
 class SlotIdentityTests(unittest.TestCase):
-    """Each concept's place is "location<N>" for image N, so every later stage can be traced to its image."""
+    """The composer writes "location<N>" as image N's space, so every later stage can be traced to its image."""
 
     def setUp(self):
-        self.config = {"backend": "mock", "dataset_vocabulary": False}
+        self.config = {"backend": "mock"}
         self.request = GoatedPrompterRequest(idea="Adult reading", planning_mode="Direct", director_preset="general_director")
-        self.failing = {"concepts": set(), "staging": set(), "description": set()}
+        self.failing = {"omitted": set(), "description": set()}  # omitted: the answer stops before this image
         self.calls, self.scripts = [], defaultdict(list)
         self.backend = MockBackend()
         self.enterContext(patch.object(self.backend, "generate", side_effect=self.generate))
@@ -49,32 +50,20 @@ class SlotIdentityTests(unittest.TestCase):
 
     def generate(self, instruction):
         self.calls.append(instruction)
-        stage, user = instruction.diagnostic_stage, json.loads(instruction.user_message) if instruction.user_message.startswith("{") else None
+        stage, user = instruction.diagnostic_stage, composer_user(instruction.user_message) if instruction.diagnostic_stage == "dataset_v2:scenes" else None
         if self.scripts[stage]:
             return self.scripts[stage].pop(0)
-        if stage == "dataset_v2:concepts":
-            start = len(user["earlier_concepts"]) + 1
-            concepts = []
-            for number in range(start, start + user["concepts_needed"]):
-                if number in self.failing["concepts"]:
-                    break  # the model keeps leaving this image out
-                concepts.append({"place": f"location{number}", "position_name": "reading", "position": f"arrangement{number}",
-                                 "looks": {"Alex": "short hair"}, "lighting": "daylight", "camera": "wide"})
-            return json.dumps({"concepts": concepts})
-        if stage == "dataset_v2:stagings":
-            return json.dumps({"stagings": [
-                {"reach": "The book is within reach", "actions": "Alex reads the book",
-                 "position": {("Nobody" if self.image(concept) in self.failing["staging"] else "Alex"): f"Seated at {concept['place']}"}}
-                for concept in user["concepts"]]})
         if stage == "dataset_v2:scenes":
             out = []
-            for row in user["scenes"]:
-                number = self.image(row["concept"])
-                described = {"subjects": {"Alex": {field: f"visible {field}" for field in scenes.SUBJECT_FIELDS}},
-                             "space": f"location{number}", "lighting": "daylight", "mood": "calm", "camera": "wide", "extras": "books"}
-                if number in self.failing["description"]:
-                    described["subjects"] = {"Nobody": described["subjects"]["Alex"]}
-                out.append(described)
+            for row in user["images"]:
+                number = row["image"]
+                if number in self.failing["omitted"]:
+                    break
+                label = "Nobody" if number in self.failing["description"] else "Alex"
+                out.append({"subjects": {label: {field: f"visible {field}" for field in scenes.SUBJECT_FIELDS}},
+                            "actions": "Alex reads the book", "position": {label: f"Seated at location{number}"},
+                            "space": f"location{number}", "lighting": "daylight", "mood": "calm", "camera": "wide",
+                            "extras": "books"})
             return json.dumps({"scenes": out})
         # Builder: echo the image the scene came from, so prompt-to-scene association is checkable.
         found = PLACE.search(instruction.user_message or "") or PLACE.search(instruction.system_message or "")
@@ -112,43 +101,39 @@ class SlotIdentityTests(unittest.TestCase):
         result = self.write_scenes()
         self.assert_slots(result, [1, 2, 3])
         self.assertEqual([row["stage"] for row in result["slots"]], [None, None, None])
-        self.assertEqual([row["concept"]["place"] for row in result["slots"]], ["location1", "location2", "location3"])
+        self.assertEqual([row["concept"] for row in result["slots"]], [None] * 3)
 
     def test_failed_first_scene(self):
         self.failing["description"] = {1}
-        self.assert_slots(self.write_scenes(), [2, 3], "description")
+        self.assert_slots(self.write_scenes(), [2, 3], "scene")
 
     def test_failed_middle_scene(self):
         self.failing["description"] = {2}
         result = self.write_scenes()
-        self.assert_slots(result, [1, 3], "description")
-        self.assertEqual(result["slots"][1]["concept"]["place"], "location2", "the failed slot keeps its own concept")
+        self.assert_slots(result, [1, 3], "scene")
 
     def test_failed_final_scene(self):
         self.failing["description"] = {3}
-        self.assert_slots(self.write_scenes(), [1, 2], "description")
+        self.assert_slots(self.write_scenes(), [1, 2], "scene")
 
-    def test_multiple_failed_scenes_across_stages(self):
-        self.make_brief(5)
-        self.failing["staging"], self.failing["description"] = {2}, {4}
+    def test_multiple_failed_scenes_in_two_batches(self):
+        self.make_brief(7)
+        self.failing["description"] = {2, 6}
         result = self.write_scenes()
-        self.assert_slots(result, [1, 3, 5])
-        self.assertEqual({row["slot"]: row["stage"] for row in result["slots"] if row["status"] == "failed"},
-                         {2: "staging", 4: "description"})
+        self.assert_slots(result, [1, 3, 4, 5, 7], "scene")
 
-    def test_concept_failure_marks_its_own_slot_and_every_later_one(self):
-        self.make_brief(3)
-        self.failing["concepts"] = {2}
+    def test_an_answer_that_stops_early_fails_only_the_images_it_never_wrote(self):
+        self.failing["omitted"] = {2}
         result = self.write_scenes()
-        failed = self.assert_slots(result, [1], "concepts")
-        self.assertEqual([row["concept"] for row in failed], [None, None])
+        failed = self.assert_slots(result, [1], "scene")
+        self.assertTrue(all("missing" in row["reasons"][0] for row in failed))
 
     # -- guided inputs
     def test_guided_inputs_stay_with_their_slots_including_failed_ones(self):
         self.make_brief(3, guided=("reading by a window", "reading on a train", "reading in a garden"))
         self.failing["description"] = {2}
         result = self.write_scenes()
-        self.assert_slots(result, [1, 3], "description")
+        self.assert_slots(result, [1, 3], "scene")
         self.assertEqual({row["slot"]: row["input"] for row in result["slots"]},
                          {1: "reading by a window", 2: "reading on a train", 3: "reading in a garden"})
         self.assertEqual(result["missing"][0]["input"], "reading on a train")
@@ -158,9 +143,9 @@ class SlotIdentityTests(unittest.TestCase):
         result = self.write_scenes()
         self.assertEqual([row["input"] for row in result["slots"]], ["first", "second", "first"])
 
-    def test_guided_concept_failure_keeps_later_inputs_unassigned_to_wrong_slots(self):
+    def test_guided_failure_keeps_later_inputs_unassigned_to_wrong_slots(self):
         self.make_brief(3, guided=("one", "two", "three"))
-        self.failing["concepts"] = {2}
+        self.failing["omitted"] = {2}
         result = self.write_scenes()
         self.assertEqual([(row["slot"], row["status"], row["input"]) for row in result["slots"]],
                          [(1, "written", "one"), (2, "failed", "two"), (3, "failed", "three")])

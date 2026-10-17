@@ -1,50 +1,32 @@
-"""Section 3 — Prompts: each written scene becomes one final prompt through the Builder.
+"""Section 3 — Prompts: each composed scene becomes one final prompt through the Builder.
 
-The scene is fixed: the Builder writes it in the target model's format, style and length with the
-selected Director, and may not move anyone, change the action or add contact. Builder's own target
-formatting and clean-up apply unchanged (Dataset delegates final writing to the Builder).
+The scene is fixed: the Builder writes it in the target model's format, style and length and may not move anyone,
+change the action, add subjects, objects or a conflicting camera. Builder's own target formatting, library
+references and clean-up apply unchanged. Dataset runs write with the default Director only: the scene already says
+what happens, so no Director can redesign it.
 
-A scene Core composed from the vocabulary (vocabulary/composer.py) also carries its established facts: the entries,
-who takes which role, posture, facing, declared contact, busy body parts, the place and items. They are added to the
-idea as "arrangement" lines with one more rule to keep them; the Director and the target model still decide the
-wording, emphasis and format. A freeform scene gets neither, so nothing unchecked is presented as checked.
-
-Code checks the user's exact trigger and the composed scene's meaning (preserved): every action, each person's
-posture, the place, every item and each required visual direction must still be expressed, in any words (one of the
-entry's name or aliases, matched by stemmed content words in any order), never as a verbatim copy of the scene's
-internal lines. A prompt that drops either is retried once with what it lost, then marked failed. Facing and relative
-placement are given to the writer but not parsed; the Builder's own semantic review, when enabled, is the only check
-of the rest of the prose.
+Code checks the user's exact trigger (a prompt without it is retried once, then marked failed) and that no numbered
+character label ("man 1", "woman2") is left in the prompt; a prompt that still has one after its retry is kept.
 """
 
 from dataclasses import replace
 import json
+import re
 
 from ...builder.service import GoatedPrompterService, PromptValidationError
-from ...vocabulary.composer import mentions
 from ....backends.recovery import GenerationRecovery, RunawayRecoveryError
 from .debug import DebugTrace
 
 SCENE_ORDER = ("subjects", "position", "actions", "space", "lighting", "mood", "camera", "extras")
+WRITER_DIRECTOR = "general_director"
 
 SCENE_RULES = """
 The idea is one scene of an IMAGE, already decided. Write it as one prompt for the
 target model. Keep every person, their appearance, every placement, orientation, support, contact
 and the action exactly as given; do not move anyone, change the action or add contact. Add only
-wording the target format needs."""
-
-
-ESTABLISHED_RULES = """
-ESTABLISHED SCENE FACTS: the arrangement lines were composed from vocabulary before the scene
-was written. Keep their meaning: who does what to whom, each person's posture and facing, where they are relative
-to each other, the place, the items and the required camera. Write them in your own natural words for the target
-format; do not copy the labelled lines, role names or internal notation. Unknown is not validated."""
-
-
-def established(scene):
-    """A vocabulary-checked arrangement of the scene, or None (freeform scenes and scenes from before arrangements)."""
-    arrangement = scene.get("arrangement")
-    return arrangement if isinstance(arrangement, dict) and arrangement.get("kind") == "vocabulary" else None
+wording the target format needs. Do not add subjects, objects or actions, and do not change the camera or light.
+Labels such as "man 1" or "woman" only tell the people apart: describe each person by appearance and role
+("the taller man", "his partner"), never by the label itself."""
 
 
 def scene_text(scene):
@@ -59,59 +41,7 @@ def scene_text(scene):
             lines.extend(f"{key} of {label}: {text}" for label, text in value.items())
         else:
             lines.append(f"{key}: {value}")
-    arrangement = established(scene)
-    if arrangement:
-        for entry in arrangement["entries"]:
-            roles = "; ".join(f"{role}: {', '.join(who)}" for role, who in entry["roles"].items())
-            lines.append(f"arrangement: {entry['name']} ({roles})")
-        lines.extend(f"arrangement fact: {fact}" for fact in arrangement["facts"])
-        if arrangement.get("space"):
-            lines.append(f"arrangement place: {arrangement['space']['name']}")
-        lines.extend(f"arrangement item: {item['name']}" for item in arrangement.get("items", []))
     return "\n".join(lines)
-
-
-def preserved(scene):
-    """What the final prompt must keep of a composed scene, as meanings: [{kind, text, who, phrases, check}]
-    (composer.Composer.semantics). A scene recorded before semantics existed keeps its actions, place and items by
-    name. [] for a freeform scene."""
-    arrangement = established(scene)
-    if not arrangement:
-        return []
-    if arrangement.get("semantics"):
-        return arrangement["semantics"]
-    rows = [{"kind": "action", "text": entry["name"], "who": sorted({who for people in entry["roles"].values() for who in people}),
-             "phrases": [entry["name"]], "check": entry.get("role") == "interaction"} for entry in arrangement["entries"]]
-    if arrangement.get("space"):
-        rows.append({"kind": "place", "text": arrangement["space"]["name"], "who": [], "phrases": [arrangement["space"]["name"]],
-                     "check": True})
-    rows += [{"kind": "item", "text": item["name"], "who": [], "phrases": [item["name"]], "check": True}
-             for item in arrangement.get("items", [])]
-    return rows
-
-
-def _meaning(row):
-    who = f" ({', '.join(row['who'])})" if row.get("who") else ""
-    other = [phrase for phrase in row["phrases"] if phrase != row["text"]]
-    return f"{row['kind']}: {row['text']}{who}" + (f", e.g. {' / '.join(other[:3])}" if other else "")
-
-
-def scene_meaning(scene):
-    """The meanings to keep, one per line, for the final writer (checked ones and the ones it is only told)."""
-    return "\n".join("- " + _meaning(row) for row in preserved(scene))
-
-
-def lost(prompt, scene):
-    """The checked meanings the prompt no longer expresses."""
-    return [row for row in preserved(scene) if row["check"] and row["phrases"] and not mentions(prompt, row["phrases"])]
-
-
-def mechanics_problem(prompt, scene):
-    missing = lost(prompt, scene)
-    if not missing:
-        return None
-    return ("The prompt lost part of the established scene. Express each of these in natural words that suit the "
-            "target (any phrasing that keeps the meaning; do not paste labels): " + "; ".join(_meaning(row) for row in missing))
 
 
 def _trigger_rule(brief):
@@ -130,6 +60,19 @@ def trigger_problem(prompt, brief):
         return f'The prompt must contain the exact text "{trigger}".'
     if brief["input"]["trigger_at_start"] and not prompt.lstrip().startswith(trigger):
         return f'The prompt must begin with "{trigger}".'
+    return None
+
+
+def label_problem(prompt, brief):
+    """A numbered character label ("man 1", "woman_2") left in the prompt, which should describe people instead."""
+    for person in brief["characters"]:
+        found = re.fullmatch(r"(.+?)\s+(\d+)", person["label"].strip())
+        if not found:
+            continue  # a name or a single unnumbered label reads naturally in prose
+        stem, number = found.groups()
+        if re.search(r"\b" + r"\W*".join(map(re.escape, stem.split())) + r"[\s_-]*" + number + r"\b", prompt, re.IGNORECASE):
+            return (f'The prompt calls a person "{person["label"]}". Describe each person by appearance and role '
+                    "(\"the taller man\", \"his partner\") and never use these labels.")
     return None
 
 
@@ -161,14 +104,12 @@ def write_prompts(config, request, brief, scenes, *, checkpoint=lambda: None, pr
             recovery = GenerationRecovery("dataset_v2:builder", [number],
                 report=lambda detail: trace.decide("runaway_recovery", detail), progress=progress)
             for attempt in (1, 2):
-                rules = "\n\n".join(part for part in (SCENE_RULES, ESTABLISHED_RULES if established(scene) else "",
-                                                      "MEANING TO KEEP\n" + scene_meaning(scene) if preserved(scene) else "",
-                                                     requirements, _trigger_rule(brief),
-                                                     f"CORRECTION: {problem}" if problem else "") if part)
+                rules = "\n\n".join(part for part in (SCENE_RULES, requirements, _trigger_rule(brief),
+                                                      f"CORRECTION: {problem}" if problem else "") if part)
                 builder_request = replace(request, idea=idea, mode="Enhance", planning_mode="Direct",
                                           target_model=brief["settings"]["target"], prompt_length=brief["settings"]["length"],
                                           creativity=brief["settings"]["creativity"], style=brief["settings"]["style"] or "Auto",
-                                          director_preset=request.director_preset, custom_instructions=rules)
+                                          director_preset=WRITER_DIRECTOR, custom_instructions=rules)
                 try:
                     prompt = service.generate_text_only(builder_request, seed=brief["input"].get("seed"), recovery=recovery).prompt
                 except RunawayRecoveryError as error:
@@ -180,23 +121,21 @@ def write_prompts(config, request, brief, scenes, *, checkpoint=lambda: None, pr
                     break
                 except PromptValidationError as error:
                     recovery.finish("failed")
-                    results.append({"slot": number, "index": number, "prompt": "", "trigger_ok": False,
-                                    "mechanics_preserved": False, "error": str(error),
+                    results.append({"slot": number, "index": number, "prompt": "", "trigger_ok": False, "error": str(error),
                                     "stage": "dataset_v2:builder", "attempts": error.attempts})
                     trace.decide("prompt_failed", results[-1])
                     on_prompt(results[-1])
                     break
-                trigger_error = trigger_problem(prompt, brief)
-                problem = trigger_error or mechanics_problem(prompt, scene)
+                problem = trigger_problem(prompt, brief) or label_problem(prompt, brief)
                 trace.attempt(scene=number, attempt=attempt, idea=idea, rules=rules, prompt=prompt, problem=problem)
                 if not problem:
                     break
             if results and results[-1]["slot"] == number:
                 continue
+            problem = trigger_problem(prompt, brief)  # a label left after the retry is not worth failing the image
             recovery.finish("succeeded" if not problem else "failed")
             results.append({"slot": number, "index": number, "prompt": "" if problem else prompt,
-                            "trigger_ok": trigger_problem(prompt, brief) is None,
-                            "mechanics_preserved": mechanics_problem(prompt, scene) is None})
+                            "trigger_ok": trigger_problem(prompt, brief) is None})
             if problem:
                 results[-1].update(error=problem, stage="dataset_v2:builder", attempts=recovery.attempts)
                 trace.decide("prompt_rejected", {"scene": number, "problem": problem})

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../../api.js";
 import { canConfirmDatasetReview, datasetRequestSignature } from "./datasetState.js";
 
-export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm, setError, vocabularyPacks = [], visualDirection = null }) {
+export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm, setError }) {
   const [confirmation, setConfirmation] = useState(null);
   const [understanding, setUnderstanding] = useState(null);
   // Rebuild (issue 106): the run started by Confirm; the tab's Scenes and Dataset pages show it.
@@ -11,11 +11,6 @@ export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm
   const opener = useRef(null);
   const latestDraft = useRef(draft);
   latestDraft.current = draft;
-  // The pack choice is frozen into each review when it starts and sent with Confirm (Phase 2).
-  const latestPacks = useRef(vocabularyPacks);
-  latestPacks.current = vocabularyPacks;
-  const latestVisual = useRef(visualDirection);
-  latestVisual.current = visualDirection;
 
   async function analyze(item) {
     pending.current = item;
@@ -75,8 +70,7 @@ export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm
     // The review lock disables the launcher before showModal can remember it.
     opener.current = document.activeElement;
     setError("");
-    void analyze({ input, operation, options, baseSignature: datasetRequestSignature(draft), vocabulary_packs: [...latestPacks.current],
-      ...(latestVisual.current ? { visual_direction: structuredClone(latestVisual.current) } : {}) });
+    void analyze({ input, operation, options, baseSignature: datasetRequestSignature(draft) });
   }
 
   function cancelConfirmation() {
@@ -104,18 +98,12 @@ export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm
       pending.current = null;
       setUnderstanding({ ...item, status: "confirmed" });
       setConfirmation(null);
-      setRun({ jobId: accepted.id, brief: item.brief, vocabulary_packs: item.vocabulary_packs, visual_direction: item.visual_direction ?? null, status: "running", result: null, error: "" });
+      setRun({ jobId: accepted.id, brief: item.brief, vocabulary: [...(item.input.vocabulary_packs || [])], status: "running", result: null, error: "" });
     } catch (err) {
       setConfirmation({ ...item, status: "ready", error: err.message });
     }
   }
 
-  // Understanding v10: corrections to the structured details travel with Confirm; the server checks them again.
-  function editIntent(intent) {
-    setConfirmation((current) => current?.status === "ready" && current.brief?.intent
-      ? { ...current, brief: { ...current.brief, intent }, error: "" } : current);
-  }
-
   return { confirmation, understanding: confirmation || understanding, run,
-    requestConfirmation, cancelConfirmation, confirmRequest, editIntent };
+    requestConfirmation, cancelConfirmation, confirmRequest };
 }

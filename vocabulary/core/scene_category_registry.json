@@ -1,0 +1,48 @@
+{
+  "categories": [
+    {
+      "category": "Subjects",
+      "folder": "Subjects"
+    },
+    {
+      "category": "Actions",
+      "folder": "Actions"
+    },
+    {
+      "category": "Spaces",
+      "folder": "Spaces"
+    },
+    {
+      "category": "Objects",
+      "folder": "Objects"
+    },
+    {
+      "category": "Positions & Poses",
+      "folder": "Positions & Poses"
+    },
+    {
+      "category": "Expressions",
+      "folder": "Expressions"
+    },
+    {
+      "category": "Clothing",
+      "folder": "Clothing"
+    },
+    {
+      "category": "Mood & Tone",
+      "folder": "Mood & Tone"
+    },
+    {
+      "category": "Lighting",
+      "folder": "Lighting"
+    },
+    {
+      "category": "Camera & Composition",
+      "folder": "Camera & Composition"
+    },
+    {
+      "category": "Effects & Atmosphere",
+      "folder": "Effects & Atmosphere"
+    }
+  ]
+}

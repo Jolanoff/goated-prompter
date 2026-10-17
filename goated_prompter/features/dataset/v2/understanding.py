@@ -7,10 +7,8 @@ Three paths:
 
 One model call, plus one repair for an invalid brief; runaway recovery shares a three-call ceiling. Code
 applies the few fixed rules below and logs every decision. No questions are asked, no vocabulary is read and
-the user's rules are passed through unchanged. The same call also returns intent, the request as
-structured parts (intent.py): an interpretation for review and later vocabulary matching that never
-changes the fields below. Intent-only defects never regenerate the brief: invalid optional annotations
-are marked unavailable without guessing; an unusable intent leaves the brief intact.
+the user's rules are passed through unchanged. It preserves the request (who, how many, what happens, what stays the
+same, what may vary); it never chooses positions, places, camera or vocabulary.
 
 Code rules: the path comes from the NSFW switch (a request with people is nsfw_character while it is on; one
 without people, such as a place or a style, stays non_character and allows no adult vocabulary); a group of N becomes
@@ -32,8 +30,8 @@ Brief (validated by validate_brief before it can be confirmed):
   input       request, trigger, trigger_at_start, rules, amount, nsfw, source_mode, guided_inputs,
               seed, seed_mode — copied by code
   settings    style, target, director, length, creativity — copied by code
-  intent      (version 10) structured parts, links and notes; see intent.py. Version 9 briefs (saved runs)
-              have no intent and stay valid.
+  Version 11 briefs have exactly these fields. Saved runs keep their version 9 or 10 briefs (10 also has an
+  "intent" interpretation, kept as stored and no longer read).
 """
 
 import json
@@ -44,17 +42,18 @@ from ....backends.recovery import GenerationRecovery
 from ....contracts import PromptInstruction, effective_model_family
 from ....director_profiles import resolve_director_config
 from .safety import ADULTS_ONLY, NO_ANIMALS, adult_content_request, adults_only_error, minor_reference
-from . import intent as structured
 from .debug import DebugTrace
 
-VERSION = 10
-VERSIONS = (9, 10)  # 9: saved runs from before structured intent
+VERSION = 11
+VERSIONS = (9, 10, 11)  # 9 and 10: saved runs (10 with a structured intent no longer read)
 PATHS = ("sfw_character", "nsfw_character", "non_character")
 GENDERS = ("male", "female", "custom", "")
 PRONOUNS = ("he", "she", "it", "")
 MAX_CHARACTERS, MAX_COUNT, MAX_TEXT, MAX_ITEMS = 20, 20, 1200, 20
 BRIEF_FIELDS = ("path", "summary", "characters", "fixed", "randomized", "must", "avoid")
-MODEL_FIELDS = (*BRIEF_FIELDS, "intent")
+MODEL_FIELDS = BRIEF_FIELDS
+IRREGULAR_PLURALS = {"men": "man", "women": "woman", "people": "person", "children": "child", "feet": "foot",
+                     "teeth": "tooth", "mice": "mouse", "geese": "goose"}
 CHARACTER_FIELDS = ("label", "gender", "custom", "pronoun")
 MODEL_CHARACTER_FIELDS = (*CHARACTER_FIELDS, "count")
 
@@ -78,7 +77,7 @@ characters: who appears in each image, in the user's order. One entry per person
     female elf "she", a robot "it").
   Use "" for an unspecified gender or pronoun, not a guessed value or "custom" for an unspecified human.
     Do not infer gender from a name, role or group. Keep requested character kinds and attributes.
-    Never turn an unspecified attribute into a requested fact in characters, summary, fixed, must or intent.
+    Never turn an unspecified attribute into a requested fact in characters, summary, fixed or must.
   count: how many identical people this entry stands for (1 for one person).
   Use [] for non_character.
 fixed: the requested facts that stay the same in every image: subjects, roles, actions and attributes.
@@ -89,55 +88,7 @@ randomized: dimensions allowed to vary, including unspecified ones, without chan
   fixed attributes variable. "" when nothing needs naming.
 must: what the user requires, as short phrases keeping the user's meaning ("toys in every image",
   "outdoors"). Only what the request or rules actually say. Usually few; [] when none.
-avoid: what the user rules out, as short phrases ("no oral", "no tattoos"). [] when none.
-intent: the request-grounded parts and links needed for review and later matching, not a second brief.
-  The character list defines identities; fixed, randomized, must and avoid define constraints.
-  Do not repeat suggested variation dimensions here. Keep inferred retrieval concepts in terms, not
-  as extra objects, actions or requirements.
-  elements: up to 24 parts {id, kind, text, status, source}, plus links where they apply:
-    id: short and unique ("s1", "a1"). kind: subject, action, pose, object, body_part, attribute,
-      environment, or aspect (lighting, camera, mood, style). text: the user's words ("kissing", "neck").
-    status: Derive status from fixed, randomized, must and avoid, not a second interpretation of the
-      request: fixed for facts in fixed/must, including attributes inside longer descriptions;
-      randomized for dimensions in randomized; excluded for avoid. Use optional only for what the
-      user allows sometimes. Keep each guided input's facts scoped to that input.
-    source: "request" for these parts; suggested dimensions stay in randomized, not in elements.
-      Never add objects, actions, details or
-      links because they are plausible.
-    character: on a subject, reference its character-list label; do not independently describe its identity.
-    member: for identical people (a characters entry with count above 1) that the request tells apart or
-      gives separate roles, one subject per person numbered 1, 2, ... in the order the request mentions
-      them ("two women, one paints, the other sings": member 1 paints, member 2 sings). When the request
-      speaks of them only together, one subject for the group without member.
-    Use only the links allowed for the element's kind; omit irrelevant or empty fields:
-      subject: character and member only. action: by and to only. pose: by only.
-      object, body_part, attribute: of only. environment, aspect: no ownership or participant fields.
-    of: ownership, on an object, body part or attribute; the id of the subject, object or body part
-      it belongs to ("his scarf", "his neck"). Use a real id, not a character label. Never put of on
-      an action or subject; never infer ownership from who uses something.
-    by and to: action participants, not ownership. Objects must not have by or to. An action's by
-      lists everyone the request says takes part (for a mutual action such
-      as "two friends hugging", all of them, or their group subject) and in to who or what it is done to.
-      A pose lists by. Resolve plain pronouns from the request ("she" when one woman is present). Leave
-      a link out only when the request does not make it clear, and say so in unresolved; never guess.
-    input: for a part of one guided input only, its number (1 = first); omit for every image.
-    terms: search hints for later matching, kept apart from the user's words: for each action, pose,
-      object, body part, attribute and place, concise concepts that mean the same or name the
-      broader kind ("sneakers": "shoes"; "diner": "restaurant"; "sprinting": "running"). Prefer
-      useful semantic alternatives to the original word, not spelling or inflection changes. Use
-      0 to 3 reliable hints; [] is better than an echo or a guess. Do not invent synonyms to fill a
-      quota. Search hints never add requirements or justify inventing a visible prop.
-  relations: up to 12 links {a, rel, b, status} between two parts that are not an action: position,
-    arrangement or a stated tie ("behind", "next to", "married to"), rel in the user's words.
-    a and b must be different part ids; never relate a part to itself, including a group subject.
-    A mutual action may use the same group subject in by and to; do not split or rebind it to add a tie.
-    Do not duplicate actions here: a participant-action-target belongs in one action element,
-    not also in a relationship. Keep any distinct stated position or tie.
-  unresolved: only ambiguity affecting stated facts or participant bindings (who "she" is).
-    Missing optional details (gender, appearance, clothing, setting) are not unresolved. Leave them open,
-    without a question or warning; use [] when nothing is ambiguous. Keep genuine ambiguity about stated
-    facts or who acts on whom, and contradictions between requested constraints; never guess to resolve them.
-  truncated: true only when the request has more parts than fit.
+avoid: what the user rules out, as short phrases ("no blond hair", "no tattoos"). [] when none.
 Return only the JSON object."""
 
 
@@ -174,7 +125,7 @@ def _schema():
     return {"type": "object", "additionalProperties": False, "required": list(MODEL_FIELDS), "properties": {
         "path": {"type": "string", "enum": ["character", "non_character"]}, "summary": text,
         "characters": {"type": "array", "maxItems": MAX_CHARACTERS, "items": character},
-        "fixed": text, "randomized": text, "must": phrases, "avoid": phrases, "intent": structured.model_schema()}}
+        "fixed": text, "randomized": text, "must": phrases, "avoid": phrases}}
 
 
 def instruction(data, family="qwen", errors=()):
@@ -190,7 +141,7 @@ def instruction(data, family="qwen", errors=()):
         system += "\nGuided inputs are ordered scene ideas. Preserve their actions; do not make one input's details global."
     return PromptInstruction(system_message=system, user_message=json.dumps(user, ensure_ascii=False),
                              model_family=family, diagnostic_stage="dataset_v2:understanding",
-                             max_tokens=3072, hard_max_tokens=3072, temperature=.15, top_p=.85,
+                             max_tokens=1536, hard_max_tokens=1536, temperature=.15, top_p=.85,
                              json_output=True, json_schema=_schema(), seed=data.get("seed"))
 
 
@@ -236,8 +187,8 @@ def recover(value):
 
 
 def model_errors(value, nsfw, data=None):
-    """Contract breaks of the brief fields the model must correct itself; the retry lists them. intent is
-    checked apart (intent_errors): its failure never fails the brief. Optional texts (recover) are never errors:
+    """Contract breaks of the brief fields the model must correct itself; the retry lists them (a stray "intent" key
+    from an older prompt is ignored). Optional texts (recover) are never errors:
     fixed and randomized may be empty, and an empty summary falls back to the request."""
     if set(value) - {"intent"} != set(BRIEF_FIELDS):
         return [f"Use exactly the keys {', '.join(MODEL_FIELDS)}."]
@@ -280,35 +231,6 @@ def model_errors(value, nsfw, data=None):
     return errors
 
 
-def _intent_counts(value):
-    counts = {}
-    for item in value["characters"]:
-        if isinstance(item, dict) and isinstance(item.get("label"), str):
-            counts[item["label"]] = counts.get(item["label"], 0) + (item["count"] if type(item.get("count")) is int else 1)
-    return counts
-
-
-def intent_errors(value, data):
-    """Contract breaks recorded for the model's intent; they never trigger a new interpretation."""
-    if "intent" not in value:
-        return ["Add the intent key: the request as structured parts."]
-    return structured.check(structured.prepare(value["intent"]), _intent_counts(value), len(copied_input(data)["guided_inputs"]))
-
-
-def cast_base(items):
-    """{model label: the cast label it becomes without a number}: "men" x2 -> "man" ("man 1", "man 2")."""
-    totals = {}
-    for item in items:
-        totals[_singular(item["label"].strip())] = totals.get(_singular(item["label"].strip()), 0) + item["count"]
-    return {item["label"].strip(): _singular(item["label"].strip()) if item["count"] > 1 or totals[_singular(item["label"].strip())] > 1
-            else item["label"].strip() for item in items}
-
-
-def user_texts(source):
-    """The user's own words in the request: the request, rules and guided inputs (input of a brief)."""
-    return [source["request"], *source.get("rules", []), *source.get("guided_inputs", [])]
-
-
 def expand_characters(items, trace):
     """One entry per person: an entry with count N becomes N numbered people."""
     characters, totals, numbers = [], {}, {}
@@ -343,8 +265,8 @@ def _singular(label):
     if not words:
         return label
     last = words[-1].casefold()
-    if last in structured.IRREGULAR_PLURALS:
-        words[-1] = structured.IRREGULAR_PLURALS[last]
+    if last in IRREGULAR_PLURALS:
+        words[-1] = IRREGULAR_PLURALS[last]
     elif last.endswith("s") and not last.endswith("ss") and len(last) > 3:
         words[-1] = words[-1][:-1]
     return " ".join(words)
@@ -368,21 +290,6 @@ def apply_rules(value, data, trace):
             "fixed": value["fixed"].strip(), "randomized": value["randomized"].strip(),
             "must": [item.strip() for item in value["must"]], "avoid": [item.strip() for item in value["avoid"]],
             "input": copied_input(data), "settings": copied_settings(data)}
-    candidate, notices = structured.sanitize(value.get("intent"), _intent_counts(value), len(brief["input"]["guided_inputs"]))
-    problems = structured.check(candidate, _intent_counts(value), len(brief["input"]["guided_inputs"]))
-    if problems:
-        brief["intent"] = structured.unavailable("its structure was invalid")
-        trace.decide("intent_unavailable", problems)
-    else:
-        bases = cast_base(value["characters"])
-        brief["intent"] = structured.normalize(candidate, characters, brief["avoid"], user_texts(brief["input"]),
-                                               base=lambda label: bases.get(label, label), notices=notices)
-        if removed := len(value["intent"]["elements"]) - len(candidate["elements"]):
-            trace.decide("suggested_intent_parts_omitted", removed)
-        if removed := len(candidate["relations"]) - len(brief["intent"]["relations"]):
-            trace.decide("duplicate_action_relations_removed", removed)
-        if brief["intent"]["warnings"]:
-            trace.decide("intent_warnings", brief["intent"]["warnings"])
     validate_content(brief, data)
     if nsfw:
         trace.decide("adults_only", "passed")
@@ -394,8 +301,8 @@ def validate_brief(brief):
     expected = ("version", "path", "summary", "people", "characters", "fixed", "randomized", "must", "avoid", "input", "settings")
     if not isinstance(brief, dict) or brief.get("version") not in VERSIONS or brief["path"] not in PATHS:
         raise ValueError("Unknown brief version or path.")
-    if brief["version"] >= 10:
-        expected = (*expected, "intent")
+    if brief["version"] == 10:
+        expected = (*expected, "intent")  # a saved run's interpretation, kept as stored
     if set(brief) != set(expected):
         raise ValueError(f"The brief needs exactly: {', '.join(expected)}.")
     if not isinstance(brief["summary"], str) or not brief["summary"].strip():
@@ -424,21 +331,16 @@ def validate_brief(brief):
     if type(brief["input"].get("nsfw")) is not bool or (brief["path"] == "nsfw_character" and not brief["input"]["nsfw"]) \
             or (brief["input"]["nsfw"] and brief["path"] == "sfw_character"):
         raise ValueError("The brief path must match the NSFW switch.")
-    if "intent" in brief:
-        structured.validate(brief["intent"], brief)
+    if "intent" in brief and not isinstance(brief["intent"], dict):
+        raise ValueError("A saved brief's intent must be an object.")
     return brief
 
 
 def reviewed_brief(approved, submitted):
-    """The confirmed brief: the approved one, with the reviewer's corrections to its intent (intent.reviewed).
-    Every other field must be exactly as analyzed; a change there needs Revise."""
-    if submitted == approved:
-        return approved
-    if (not isinstance(submitted, dict) or approved.get("version") != VERSION or set(submitted) != set(approved)
-            or any(submitted[key] != approved[key] for key in approved if key != "intent")):
+    """The confirmed brief: exactly the approved one; any change needs a new review."""
+    if submitted != approved:
         raise ValueError("The brief changed after analysis. Review the updated request before generating.")
-    return {**approved, "intent": structured.reviewed(approved["intent"], submitted["intent"], approved,
-                                                      user_texts(approved["input"]))}
+    return approved
 
 
 def validate_content(brief, data=None):
@@ -457,13 +359,6 @@ def validate_content(brief, data=None):
                           *(f'{item["label"]} {item["custom"]}' for item in brief["characters"])])
         if word := minor_reference(text):
             raise ValueError(f'{ADULTS_ONLY} ("{word}")')
-        # Structured details only ever add to this check. A word found only there is the analysis's reading or a
-        # search word, not the request's wording, so the message says where it is instead of asking to remove it.
-        details = "\n".join(" ".join([item["text"], *item["terms"]]) for item in brief.get("intent", {}).get("elements", []))
-        if word := minor_reference(details):
-            raise ValueError(f'{ADULTS_ONLY} ("{word}" is in the structured details, the analysis\'s reading of your '
-                             f'request and its search words, not in your own wording. Remove that search word, or use '
-                             f'Revise to run the analysis again.)')
         if data.get("trigger_type") == "Animal" or any(
                 _ANIMALS.search(f'{item["label"]} {item["custom"]}'.casefold()) for item in brief["characters"]):
             raise ValueError(NO_ANIMALS)
@@ -490,13 +385,11 @@ def understand(config, request, data, *, checkpoint=lambda: None, progress=print
                 try:
                     value = recover(parse(raw))
                     errors = model_errors(value, nsfw, data)
-                    problems = [] if errors else intent_errors(value, data)
                 except ValueError as error:  # json.JSONDecodeError is a ValueError (also a reply cut off by the token limit)
-                    errors, problems = [f"Return one valid JSON object, complete and compact; if it was cut off, keep intent "
-                                        f"to the most important parts and set truncated true ({error})."], []
-                trace.attempt(system=prompt.system_message, user=prompt.user_message, raw=raw, errors=errors + problems)
+                    errors = [f"Return one valid JSON object, complete and compact ({error})."]
+                trace.attempt(system=prompt.system_message, user=prompt.user_message, raw=raw, errors=errors)
                 if not errors:
-                    break  # intent annotations cannot cause the valid brief or its relationships to be regenerated
+                    break
             else:
                 raise ValueError("The model returned an invalid answer twice: " + " ".join(errors))
         brief = validate_brief(apply_rules(value, data, trace))

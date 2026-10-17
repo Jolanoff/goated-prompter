@@ -13,6 +13,7 @@ from ....options.targets import TARGET_MODEL_NAMES, canonical_target
 from ....output_repetition import MAX_ANIMA_TAGS, anima_tag_count
 
 MAX_AMOUNT = 25
+MAX_VOCABULARY_PACKS = 200
 
 
 def default_dataset_draft():
@@ -24,6 +25,7 @@ def default_dataset_draft():
         "director_preset": "general_director", "constraints": "",
         "creativity": "Balanced", "style": "Auto",
         "seed": 0, "seed_mode": "randomize",
+        "vocabulary_packs": [],
     }
 
 
@@ -66,6 +68,11 @@ def validate_dataset_draft(value, *, generation=False, planning=False):
     for key in ("trigger_at_start", "trigger_connected", "expand_trigger", "nsfw"):
         if type(result[key]) is not bool:
             raise ValueError(f"{key} must be enabled or disabled.")
+    packs = result["vocabulary_packs"]
+    if (not isinstance(packs, list) or len(packs) > MAX_VOCABULARY_PACKS
+            or any(not isinstance(item, str) or not item or len(item) > 300 for item in packs)):
+        raise ValueError("Vocabulary packs must be a list of pack ids.")
+    result["vocabulary_packs"] = list(dict.fromkeys(packs))
     if result["trigger_type"] == "Custom" and generation and not result["custom_type"].strip():
         raise ValueError("Describe the custom subject kind before generating.")
     if result["source_mode"] == "guided" and generation and not any(line.strip() for line in result["inputs"].splitlines()):

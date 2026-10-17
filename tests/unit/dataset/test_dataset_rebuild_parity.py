@@ -11,6 +11,7 @@ from goated_prompter.features.dataset.v2.draft import default_dataset_draft
 from goated_prompter.features.dataset.v2 import scenes, understanding
 from goated_prompter.features.dataset.v2.prompts import write_prompts
 from goated_prompter.backends.mock import MockBackend
+from tests.support.dataset_scenes import composer_user
 
 
 class RebuildParityTests(unittest.TestCase):
@@ -31,56 +32,46 @@ class RebuildParityTests(unittest.TestCase):
         self.assertEqual(self.brief["input"]["seed"], 73)
         self.assertEqual(understanding.instruction(self.data).seed, 73)
 
-    def test_concepts_keep_guided_assignment_order_when_a_chunk_is_retried(self):
+    def test_the_composer_gets_each_images_guided_input_in_slot_order(self):
+        self.assertEqual(scenes.slot_inputs(self.brief), {1: "Read on a bench", 2: "Read beside a fountain", 3: "Read on a bench"})
         brief = {**self.brief, "_family": "qwen"}
-        prompt = scenes.concept_instruction(brief, 2, [{"place": "first"}])
-        user = json.loads(prompt.user_message)
-        self.assertEqual(user["assignments"], [
-            {"index": 2, "input": "Read beside a fountain"}, {"index": 3, "input": "Read on a bench"}])
+        prompt = scenes.compose_instruction(brief, [{"image": 2, "input": "Read beside a fountain"}])
+        self.assertEqual(composer_user(prompt.user_message)["images"], [{"image": 2, "input": "Read beside a fountain"}])
+        self.assertIn(scenes.GUIDED_RULE, prompt.system_message)
         self.assertEqual(prompt.seed, 73)
 
-    def test_sexual_planner_does_not_invent_anatomy_from_gender(self):
+    def test_sexual_composer_does_not_invent_anatomy_from_gender(self):
         brief = {**self.brief, "path": "nsfw_character", "_family": "qwen",
                  "must": ["The man has a vagina; the woman has a penis"]}
-        for prompt in (scenes.concept_instruction(brief, 3, []), scenes.staging_instruction(brief, [])):
-            user = json.loads(prompt.user_message)
-            self.assertEqual(user["characters"], brief["characters"])
-            self.assertEqual(user["must"], brief["must"])
-            self.assertNotIn("no vagina", prompt.system_message + prompt.user_message)
+        prompt = scenes.compose_instruction(brief, [{"image": 1}])
+        user = composer_user(prompt.user_message)
+        self.assertEqual(user["understanding"]["characters"], brief["characters"])
+        self.assertEqual(user["understanding"]["must"], brief["must"])
+        self.assertNotIn("no vagina", prompt.system_message + prompt.user_message)
 
-    def test_guided_retry_keeps_sources_attached_through_staging_and_description(self):
+    def test_guided_retry_asks_again_only_for_the_failed_image_with_its_own_input(self):
         backend = MockBackend()
         calls = []
         def generate(prompt):
             calls.append(prompt)
-            user = json.loads(prompt.user_message)
-            labels = [person["label"] for person in user["characters"]]
-            if prompt.diagnostic_stage.endswith(":concepts"):
-                concepts = [{"place": f"location {row['index']}", "position_name": "reading",
-                             "position": f"variation {row['index']}", "lighting": "daylight", "camera": "wide",
-                             "looks": {label: "short hair" for label in labels}} for row in user["assignments"]]
-                if len(calls) == 1:
-                    concepts[1] = dict(concepts[0])  # Reject slot 2; do not consume slot 3's input.
-                return json.dumps({"concepts": concepts})
-            if prompt.diagnostic_stage.endswith(":stagings"):
-                self.assertEqual([row["input"] for row in user["concepts"]],
-                                 ["Read on a bench", "Read beside a fountain", "Read on a bench"])
-                return json.dumps({"stagings": [{"reach": "The book is reachable", "actions": row["input"],
-                    "position": {label: "seated" for label in labels}} for row in user["concepts"]]})
-            self.assertEqual([row["concept"]["input"] for row in user["scenes"]],
-                             ["Read on a bench", "Read beside a fountain", "Read on a bench"])
-            return json.dumps({"scenes": [{"subjects": {label: {field: "visible" for field in scenes.SUBJECT_FIELDS}
-                for label in labels}, "space": "library", "lighting": "daylight", "mood": "calm", "camera": "wide",
-                "extras": "books"} for _row in user["scenes"]]})
+            user = composer_user(prompt.user_message)
+            labels = [person["label"] for person in user["understanding"]["characters"]]
+            out = []
+            for row in user["images"]:
+                cast = ["stranger"] if len(calls) == 1 and row["image"] == 2 else labels  # reject image 2 once
+                out.append({"subjects": {label: {field: "visible" for field in scenes.SUBJECT_FIELDS} for label in cast},
+                            "position": {label: "seated" for label in cast}, "actions": row["input"], "space": f"library {row['image']}",
+                            "lighting": "daylight", "mood": "calm", "camera": "wide", "extras": "books"})
+            return json.dumps({"scenes": out})
         with patch.object(backend, "generate", side_effect=generate), patch.object(scenes, "create_backend", return_value=backend), \
                 patch.object(scenes, "DebugTrace"):
-            result = scenes.write_scenes({"backend": "mock", "dataset_vocabulary": False},
-                GoatedPrompterRequest(idea="reading"), self.brief, progress=lambda _message: None)
+            result = scenes.write_scenes({"backend": "mock"}, GoatedPrompterRequest(idea="reading"), self.brief,
+                                         progress=lambda _message: None)
         self.assertEqual([scene["actions"] for scene in result["scenes"]],
                          ["Read on a bench", "Read beside a fountain", "Read on a bench"])
-        # Image 3's valid concept is kept at once in image 3; only image 2 is asked for again, with its own input.
-        self.assertEqual(json.loads(calls[1].user_message)["assignments"], [{"index": 2, "input": "Read beside a fountain"}])
-        self.assertEqual(json.loads(calls[1].user_message)["images"], [2])
+        self.assertEqual([row["input"] for row in composer_user(calls[0].user_message)["images"]],
+                         ["Read on a bench", "Read beside a fountain", "Read on a bench"])
+        self.assertEqual(composer_user(calls[1].user_message)["images"], [{"image": 2, "input": "Read beside a fountain"}])
         self.assertTrue(all(prompt.seed == 73 for prompt in calls))
 
     def test_random_source_does_not_apply_inactive_guided_inputs(self):

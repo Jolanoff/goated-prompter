@@ -15,8 +15,8 @@ the historical dirty `test` revision with one stable Qwen3.8 27B Q2 engine:
 - Builder grounded-partner throw drift.
 - MiniMax forbidden peaked cap and invented floor-hand balancing in dialogue.
 
-The legacy Dataset pipeline's frozen failures were removed with that pipeline; Dataset V2 is
-evaluated by its own harnesses (`tests/gpu/dataset_understanding_eval.py`, `tests/gpu/dataset_vocabulary_ab.py`).
+The legacy Dataset pipeline's frozen failures were removed with that pipeline; Dataset V2 has
+no frozen live-model failures yet; its CPU tests use scripted models only.
 
 These preserve exact raw responses, parameters, explicit `stop` reasons, measured
 latency, source artifact hash and production code digest. Machine-specific launch

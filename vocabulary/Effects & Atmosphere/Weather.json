@@ -1,0 +1,9 @@
+{
+  "name": "Weather",
+  "category": "Effects & Atmosphere",
+  "entries": [
+    "heavy rain",
+    "falling snow",
+    "thunderstorm"
+  ]
+}

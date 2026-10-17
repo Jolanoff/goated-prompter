@@ -18,6 +18,8 @@ from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.dataset import runner
 from goated_prompter.features.dataset.v2.draft import default_dataset_draft
 from goated_prompter.features.dataset.v2 import prompts, runs, scenes, understanding
+from goated_prompter.features.vocabulary.catalog import load_catalog as REAL_LOAD
+from tests.support.dataset_scenes import composer_user
 from goated_prompter.json_store import atomic_json
 from goated_prompter.local_jobs import Job, JobCancelled
 
@@ -40,12 +42,12 @@ class RunStoreHarness(unittest.TestCase):
             self.saved.append(deepcopy(payload))
         self.write = write
         self.store = runs.DatasetRunStore(self.directory, write=self.write)
-        self.config = {"backend": "mock", "dataset_vocabulary": False}
+        self.config = {"backend": "mock"}
         self.request = GoatedPrompterRequest(idea="Adult reading", planning_mode="Direct", director_preset="general_director")
-        self.failing = {"concepts": set(), "staging": set(), "description": set()}
+        # description: images answered with the wrong character label.
+        self.failing = {"description": set()}
         self.on_call = None  # hook(stage, instruction) before each model answer
         self.calls = []
-        self.finishing_pending = []
         self.backend = MockBackend()
         self.enterContext(patch.object(self.backend, "generate", side_effect=self.generate))
         for module in (understanding, scenes):
@@ -75,37 +77,16 @@ class RunStoreHarness(unittest.TestCase):
         self.calls.append(stage)
         if self.on_call:
             self.on_call(stage, instruction)
-        user = json.loads(instruction.user_message) if (instruction.user_message or "").startswith("{") else None
-        if stage == "dataset_v2:concepts":
-            start = len(user["earlier_concepts"]) + 1
-            concepts = []
-            for number in range(start, start + user["concepts_needed"]):
-                if number in self.failing["concepts"]:
-                    break
-                concepts.append({"place": f"location{number}", "position_name": "reading", "position": f"arrangement{number}",
-                                 "looks": {"Alex": "short hair"}, "lighting": "daylight", "camera": "wide"})
-            return json.dumps({"concepts": concepts})
-        if stage == "dataset_v2:stagings":
-            return json.dumps({"stagings": [
-                {"reach": "The book is within reach", "actions": "Alex reads the book",
-                 "position": {("Nobody" if self.image(concept) in self.failing["staging"] else "Alex"): f"Seated at {concept['place']}"}}
-                for concept in user["concepts"]]})
+        user = composer_user(instruction.user_message) if stage == "dataset_v2:scenes" else None
         if stage == "dataset_v2:scenes":
             out = []
-            finishing = "open" in instruction.json_schema["properties"]["scenes"]["items"]["properties"]
-            if finishing and not self.finishing_pending:
-                self.finishing_pending = list(range(1, self.brief["input"]["amount"] + 1))
-            numbers = self.finishing_pending[:len(user["scenes"])] if finishing else []
-            for index, row in enumerate(user["scenes"], 1):
-                number = numbers[index - 1] if finishing else self.image(row["concept"])
-                described = {"subjects": {("Nobody" if number in self.failing["description"] else "Alex"):
-                                          {field: f"visible {field}" for field in scenes.SUBJECT_FIELDS}},
-                             "space": f"location{number}", "lighting": "daylight", "mood": "calm", "camera": "wide", "extras": "books",
-                             **({"open": {"Alex": "reading a book"}} if finishing else {})}
-                out.append(described)
-            if finishing:
-                self.finishing_pending = [number for number in self.finishing_pending
-                                           if number not in numbers or number in self.failing["description"]]
+            for row in user["images"]:
+                number = row["image"]
+                label = "Nobody" if number in self.failing["description"] else "Alex"
+                out.append({"subjects": {label: {field: f"visible {field}" for field in scenes.SUBJECT_FIELDS}},
+                            "actions": "Alex reads the book", "position": {label: f"Seated at location{number}"},
+                            "space": f"location{number}", "lighting": "daylight", "mood": "calm", "camera": "wide",
+                            "extras": "books"})
             return json.dumps({"scenes": out})
         found = PLACE.search(instruction.user_message or "") or PLACE.search(instruction.system_message or "")
         return f"Alex reads a book at location{found.group(1)}." if found else "Alex reads a book."
@@ -220,27 +201,23 @@ class Persistence(RunStoreHarness):
         self.assertEqual(record["brief"], self.brief)
         for slot in record["slots"]:
             number = slot["slot"]
-            self.assertEqual(slot["concept"]["place"], f"location{number}")
-            self.assertIn(f"location{number}", json.dumps(slot["staging"]))
+            self.assertIsNone(slot["concept"], "there is no separate planning step")
+            self.assertIsNone(slot["staging"], "there is no separate staging step")
             self.assertEqual((slot["scene_status"], slot["scene"]["slot"], slot["scene"]["space"]), ("written", number, f"location{number}"))
             self.assertEqual(slot["prompt"]["status"], "written")
             self.assertIn(f"location{number}", slot["prompt"]["text"])
         self.assertTrue(runs.is_complete(record))
 
-    def test_partial_concept_staging_and_scene_completion(self):
+    def test_partial_scene_completion_keeps_each_failure_reason(self):
         self.make_brief(5)
-        self.failing["staging"], self.failing["description"], self.failing["concepts"] = {2}, {3}, {5}
+        self.failing["description"] = {2, 3, 5}
         self.run_job()
         record = self.only_run()
         by = {slot["slot"]: slot for slot in record["slots"]}
         self.assertEqual({n: by[n]["scene_status"] for n in by}, {1: "written", 2: "failed", 3: "failed", 4: "written", 5: "failed"})
-        self.assertEqual(by[2]["failure"]["stage"], "staging")
-        self.assertIsNotNone(by[2]["concept"], "the concept that was completed is kept")
-        self.assertIsNone(by[2]["staging"])
-        self.assertEqual(by[3]["failure"]["stage"], "description")
-        self.assertIsNotNone(by[3]["staging"], "the staging that was completed is kept")
-        self.assertEqual(by[5]["failure"]["stage"], "concepts")
-        self.assertIsNone(by[5]["concept"])
+        self.assertEqual({by[n]["failure"]["stage"] for n in (2, 3, 5)}, {"scene"})
+        self.assertEqual(by[3]["failure"]["tries"], scenes.ROUNDS, "a wrong answer is asked again, then given up")
+        self.assertTrue(by[2]["failure"]["reasons"])
         self.assertEqual({n for n in by if by[n]["prompt"]}, {1, 4})
         self.assertFalse(runs.is_complete(record))
         self.assertEqual(record["status"], "succeeded")
@@ -315,14 +292,13 @@ class Interruption(RunStoreHarness):
                 job.cancel_requested = True
         self.on_call = on_call
 
-    def test_cancellation_during_scene_generation_keeps_completed_concepts(self):
+    def test_cancellation_during_scene_generation_leaves_scenes_pending(self):
         job = Job()
-        self.cancel_on(job, "dataset_v2:stagings")
+        self.cancel_on(job, "dataset_v2:scenes")
         with self.assertRaises(JobCancelled):
             self.run_job(job=job)
         record = self.only_run()
         self.assertEqual(record["status"], "cancelled")
-        self.assertEqual([slot["concept"]["place"] for slot in record["slots"]], ["location1", "location2", "location3"])
         self.assertTrue(all(slot["scene_status"] == "pending" for slot in record["slots"]), "unfinished, not failed")
 
     def test_cancellation_during_prompt_generation_keeps_written_prompts(self):
@@ -355,7 +331,7 @@ class Interruption(RunStoreHarness):
 
     def test_restart_after_partial_completion_keeps_work_and_runs_nothing(self):
         def on_call(stage, _instruction):
-            if stage == "dataset_v2:scenes":
+            if not stage.startswith("dataset_v2:"):  # the first Builder call: every scene is already saved
                 raise ProcessKilled()
         self.on_call = on_call
         with self.assertRaises(ProcessKilled):
@@ -368,8 +344,8 @@ class Interruption(RunStoreHarness):
         after = self.only_run(restarted)
         self.assertEqual(report, {"interrupted": [before["run_id"]], "problems": {}})
         self.assertEqual((after["status"], after["error"]), ("interrupted", runs.INTERRUPTED))
-        self.assertEqual([slot["staging"] for slot in after["slots"]], [slot["staging"] for slot in before["slots"]])
-        self.assertTrue(all(slot["staging"] for slot in after["slots"]))
+        self.assertEqual([slot["scene"] for slot in after["slots"]], [slot["scene"] for slot in before["slots"]])
+        self.assertTrue(all(slot["scene"] for slot in after["slots"]))
         self.assertEqual([slot["slot"] for slot in after["slots"]], [1, 2, 3])
         self.assertEqual(len(self.calls), calls, "recovery starts no inference")
         self.assertEqual(restarted.recover()["interrupted"], [], "recovery is idempotent")
@@ -642,7 +618,7 @@ class FinalStatus(RunStoreHarness):
     def test_a_cancellation_that_surfaces_as_another_error_is_still_cancelled(self):
         job = Job()
         def on_call(stage, _instruction):
-            if stage == "dataset_v2:stagings":
+            if stage == "dataset_v2:scenes":
                 job.cancel_requested = True
                 raise ConnectionError("transport closed by the cancellation")
         self.on_call = on_call
@@ -650,7 +626,7 @@ class FinalStatus(RunStoreHarness):
             self.run_job(job=job)
         record = self.only_run()
         self.assertEqual(record["status"], "cancelled")
-        self.assertTrue(all(slot["concept"] for slot in record["slots"]))
+        self.assertTrue(all(slot["scene_status"] == "pending" for slot in record["slots"]))
 
     def test_succeeded_is_written_only_after_the_job_succeeded(self):
         statuses = []
@@ -684,86 +660,79 @@ class FinalStatus(RunStoreHarness):
 
 
 class PackSelection(RunStoreHarness):
-    """Phase 2: the run's own vocabulary pack selection, recorded before inference and never changed."""
+    """The run's vocabulary packs: recorded before inference, never changed, and the only vocabulary sent."""
 
     def setUp(self):
         super().setUp()
-        from goated_prompter.features.dataset.v2 import vocabulary_packs
-        from goated_prompter.features.vocabulary.packs import BUNDLED_DIRS, OFFICIAL_DIR, PackManager
-        self.vocabulary_packs = vocabulary_packs
-        self.config = {"backend": "mock", "dataset_vocabulary": True}
-        packs = self.root / "packs"
-        (packs / "harbor").mkdir(parents=True)
-        (packs / "harbor" / "manifest.json").write_text(json.dumps(
-            {"spec": 1, "id": "harbor", "name": "Harbor", "version": "1.0.0", "rating": "general",
-             "requires": {"core": ">=1.0.0 <2.0.0"}, "files": ["entries.json"]}), encoding="utf-8")
-        (packs / "harbor" / "entries.json").write_text(json.dumps({"spec": 1, "entries": [
-            {"id": "harbor:space.quay", "category": "space", "name": "Stone quay", "description": "A quay of old stone.",
-             "components": {"environment": {"provides": ["core:surface.ground"]}}}]}), encoding="utf-8")
-        self.manager = PackManager(packs, self.root / "state.json", bundled_dirs=BUNDLED_DIRS, official_dir=OFFICIAL_DIR)
-        self.enterContext(patch.object(vocabulary_packs, "PackManager", return_value=self.manager))
+        from goated_prompter.features.vocabulary import catalog
+        self.vocabulary = self.root / "vocabulary"
+        shutil.copytree(catalog.ROOT / "core", self.vocabulary / "core")
+        for folder, name, entries in (("Spaces", "Harbor", ["stone quay", "fish market"]),
+                                      ("Lighting", "Lamps", ["oil lamp glow"])):
+            (self.vocabulary / folder).mkdir(parents=True, exist_ok=True)
+            (self.vocabulary / folder / f"{name}.json").write_text(json.dumps(
+                {"name": name, "category": folder, "entries": entries}), encoding="utf-8")
+        self.enterContext(patch.object(catalog, "load_catalog", side_effect=lambda *_: REAL_LOAD(self.vocabulary)))
 
-    def select(self, packs):
-        return self.vocabulary_packs.select_packs(self.config, packs)
-
-    def run_with(self, selection, **options):
+    def run_with(self, packs, **options):
+        from goated_prompter.features.vocabulary.catalog import record
+        selection = {"packs": list(packs)}
         job = Job()
-        workflow = {"brief": self.brief, "scenes_only": options.get("scenes_only", False), "vocabulary_packs": selection}
+        workflow = {"brief": self.brief, "scenes_only": options.get("scenes_only", False), "vocabulary": selection,
+                    "vocabulary_record": record(REAL_LOAD(self.vocabulary), selection)}
         runner.run_dataset_v2_scenes(SimpleNamespace(dataset_runs=self.store), job, self.request, self.config, workflow)
         return job
 
+    def composer_messages(self):
+        messages = []
+        self.on_call = lambda stage, instruction: messages.append(instruction.user_message) if stage == "dataset_v2:scenes" else None
+        return messages
+
     def test_the_selection_is_recorded_before_any_inference_and_used(self):
-        selection = self.select(["harbor"])
         seen = []
         self.on_call = lambda stage, instruction: seen.append(self.only_run()["packs"])
-        job = self.run_with(selection)
+        job = self.run_with(["Spaces/Harbor"])
         self.assertEqual(job.status, "succeeded")
-        self.assertTrue(seen and all(packs == selection for packs in seen), "saved before the first model call")
         record = self.only_run()
-        self.assertEqual((record["schema"], record["packs"]), (2, selection))
-        self.assertEqual(runs.recorded_packs(record), selection)
-        self.assertEqual(record["vocabulary"]["enabled"], True)
+        expected = {"packs": [{"id": "Spaces/Harbor", "name": "Harbor", "category": "Spaces", "entries": 2}]}
+        self.assertEqual(record["packs"], expected)
+        self.assertTrue(seen and all(packs == expected for packs in seen), "saved before the first model call")
+        self.assertEqual(runs.recorded_packs(record), expected)
+        self.assertEqual(record["vocabulary"], {"selection": expected})
 
-    def test_a_run_reads_exactly_its_selection(self):
-        concept_vocabulary = []
-        self.on_call = lambda stage, instruction: concept_vocabulary.append(instruction.user_message) if stage == "dataset_v2:concepts" else None
-        self.make_brief(2)
-        self.brief["randomized"] = "location"
-        self.run_with(self.select([]))
-        self.assertFalse(any("Stone quay" in message for message in concept_vocabulary), "an unselected pack never takes part")
+    def test_a_run_sends_exactly_its_selection(self):
+        messages = self.composer_messages()
+        self.run_with(["Lighting/Lamps"])
+        self.assertTrue(messages and all("oil lamp glow" in message for message in messages))
+        self.assertFalse(any("stone quay" in message for message in messages), "an unselected pack never takes part")
 
-    def test_a_pack_changed_since_confirmation_stops_the_run_before_inference(self):
-        selection = self.select(["harbor"])
-        entries = self.root / "packs" / "harbor" / "entries.json"
-        entries.write_text(entries.read_text(encoding="utf-8").replace("Stone quay", "Granite quay"), encoding="utf-8")
+    def test_a_pack_removed_since_confirmation_stops_the_run_before_inference(self):
+        from goated_prompter.features.vocabulary.catalog import record
+        selection = {"packs": ["Spaces/Harbor"]}
+        recorded = record(REAL_LOAD(self.vocabulary), selection)
+        (self.vocabulary / "Spaces" / "Harbor.json").unlink()
         job = Job()
         with self.assertRaises(ValueError) as caught:
             runner.run_dataset_v2_scenes(SimpleNamespace(dataset_runs=self.store), job, self.request, self.config,
-                                         {"brief": self.brief, "scenes_only": False, "vocabulary_packs": selection})
-        self.assertIn("changed since this run was confirmed", str(caught.exception))
-        self.assertEqual(self.calls, [], "no model call: there is no fallback to other pack content")
-        record = self.only_run()
-        self.assertEqual((record["status"], record["packs"]), ("failed", selection))
-
-    def test_a_global_disable_never_changes_a_recorded_selection(self):
-        selection = self.select(["harbor"])
-        self.manager.set_enabled("harbor", False)
-        self.assertEqual(self.run_with(selection).status, "succeeded")
-        self.assertEqual(self.only_run()["packs"], selection)
+                                         {"brief": self.brief, "scenes_only": False, "vocabulary": selection,
+                                          "vocabulary_record": recorded})
+        self.assertIn("Spaces/Harbor", str(caught.exception))
+        self.assertEqual(self.calls, [], "no model call: there is no fallback to other vocabulary")
+        self.assertEqual((self.only_run()["status"], self.only_run()["packs"]), ("failed", recorded))
 
     def test_the_recorded_selection_and_schema_never_change(self):
-        job = self.run_with(self.select(["harbor"]))
+        job = self.run_with(["Spaces/Harbor"])
         record = self.only_run()
         path = self.directory / f"{record['run_id']}.json"
         before = path.read_bytes()
-        for change in (lambda working: working.update(packs=self.select([])), lambda working: working.update(schema=1)):
+        for change in (lambda working: working.update(packs={"packs": []}), lambda working: working.update(schema=1)):
             with self.assertRaises(runs.RunConflict):
                 self.store.update(record["run_id"], change)
         self.assertEqual(path.read_bytes(), before)
         self.assertEqual(job.status, "succeeded")
 
     def test_schema_1_runs_stay_readable_unchanged_and_not_recorded(self):
-        self.run_with(self.select(["harbor"]))
+        self.run_with(["Spaces/Harbor"])
         record = self.only_run()
         old = {key: value for key, value in record.items() if key != "packs"}
         old.update(schema=1, run_id="3" * 32, status="running")
@@ -771,7 +740,7 @@ class PackSelection(RunStoreHarness):
         path.write_text(json.dumps(old), encoding="utf-8")
         loaded = self.store.get("3" * 32)
         self.assertEqual(loaded["schema"], 1)
-        self.assertEqual(runs.recorded_packs(loaded), {"recorded": False}, "no selection is invented from today's settings")
+        self.assertEqual(runs.recorded_packs(loaded), {"recorded": False}, "no selection is invented from today's packs")
         untouched = self.directory / f"{record['run_id']}.json"
         before = untouched.read_bytes()
         self.store.recover()
@@ -780,31 +749,12 @@ class PackSelection(RunStoreHarness):
                          "a schema 1 run is updated as schema 1")
         self.assertEqual(untouched.read_bytes(), before, "a finished schema 2 run is not rewritten")
 
-    def test_a_disabled_vocabulary_is_recorded_as_such(self):
-        self.config = {"backend": "mock", "dataset_vocabulary": False}
-        selection = self.select(["harbor"])
-        self.assertEqual(selection, {"version": 1, "enabled": False, "selected": [], "packs": []})
-        self.run_with(selection)
-        self.assertEqual(self.only_run()["packs"], selection)
-
-    def test_slot_identity_and_cancellation_hold_with_a_selection(self):
+    def test_slot_identity_holds_with_a_selection(self):
         self.failing["description"] = {2}
-        job = self.run_with(self.select(["harbor"]))
+        job = self.run_with(["Spaces/Harbor", "Lighting/Lamps"])
         record = self.only_run()
         self.assertEqual([slot["scene_status"] for slot in record["slots"]], ["written", "failed", "written"])
         self.assertEqual(job.status, "succeeded")
-        cancelled = Job()
-        def cancel(stage, instruction):
-            if stage == "dataset_v2:scenes":
-                cancelled.cancel_requested = True
-                raise JobCancelled()
-        self.on_call = cancel
-        with self.assertRaises(JobCancelled):
-            runner.run_dataset_v2_scenes(SimpleNamespace(dataset_runs=self.store), cancelled, self.request, self.config,
-                                         {"brief": self.brief, "scenes_only": False, "vocabulary_packs": self.select(["harbor"])})
-        newest = self.store.find_by_job(cancelled.id)
-        self.assertEqual((newest["status"], newest["schema"]), ("cancelled", 2))
-        self.assertEqual(newest["packs"]["selected"], ["harbor"])
 
 
 if __name__ == "__main__":

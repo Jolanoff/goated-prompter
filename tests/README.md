@@ -92,8 +92,8 @@ case used by several workflows has one definition. `--random N --seed S` instead
 composes N cases from `gpu/fixtures/<workflow>.json`; results record the seed,
 fixture digest and generated inputs. Each workflow module in `gpu/workflows/`
 calls the production service (`GoatedPrompterService`, `MiniMaxService`);
-`tests.eval.runner` uses the same modules. Dataset has no workflow here: its
-real-model check is `tests/gpu/dataset_understanding_eval.py`.
+`tests.eval.runner` uses the same modules. Dataset has no workflow here and no
+real-model harness yet; its CPU tests use scripted models.
 
 Live execution requires explicit owner approval and an owner-managed existing
 OpenAI-compatible endpoint. Confirm it is the intended GPU-backed engine; the
