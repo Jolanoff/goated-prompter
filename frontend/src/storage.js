@@ -60,7 +60,7 @@ export function hydrateBuilder(inputs, saved = {}, library) {
     ...builderSnapshot(saved),
   });
   const targetAliases = {
-    "Z-Image": "Z-Image Base", "Qwen Image": "Qwen Image (original)",
+    "Z-Image Base": "Z-Image", "Z-Image Turbo": "Z-Image", "Qwen Image": "Qwen Image (original)",
     "Qwen2.1": "Qwen Image 2.1", "MiniMax": "MiniMax H3",
   };
   result.target_model = targetAliases[result.target_model] ?? result.target_model;

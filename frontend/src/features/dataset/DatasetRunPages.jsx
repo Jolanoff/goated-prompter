@@ -139,7 +139,7 @@ export function RunPrompts({ run, onCopy, onDownload }) {
           {record.input && <Line label="Input">{record.input}</Line>}
           {!item ? <NotWritten record={record} /> : <>
             {item.error ? <p className={`${ui.warningNote} mt-2`}>The final prompt failed. {item.error}</p>
-              : !item.trigger_ok && <p className={`${ui.warningNote} mt-2`}>The trigger is missing or not at the start.</p>}
+              : !item.trigger_ok && <p className={`${ui.warningNote} mt-2`}>A trigger is missing or not at the start.</p>}
             <textarea className={ui.outputInput} style={{ minHeight: 220 }} aria-label={`Dataset prompt ${slot}`}
               value={item.prompt} readOnly />
           </>}

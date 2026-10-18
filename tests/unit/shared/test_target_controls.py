@@ -23,14 +23,13 @@ class TargetControlTests(unittest.TestCase):
         self.assertEqual(get_target_capabilities("Ideogram4").output_format, "json")
         self.assertTrue(get_target_capabilities("MiniMax H3").supports_multishot)
         self.assertTrue(get_target_capabilities("LTX 2.5").supports_audio)
-        self.assertTrue(get_target_capabilities("Z-Image Base").supports_negative_prompt)
-        self.assertFalse(get_target_capabilities("Z-Image Turbo").supports_negative_prompt)
-        self.assertTrue(get_target_capabilities("Z-Image Base").supports_cfg)
-        self.assertFalse(get_target_capabilities("Z-Image Turbo").supports_cfg)
+        # One Z-Image target serves Base and Turbo, so its prompts never rely on a negative prompt.
+        self.assertTrue(get_target_capabilities("Z-Image").positive_description_only)
+        self.assertFalse(get_target_capabilities("Z-Image").supports_negative_prompt)
 
     def test_legacy_targets_migrate_without_ambiguous_selector_entries(self):
         for legacy, current in (("Qwen2.1", "Qwen Image 2.1"), ("Qwen Image", "Qwen Image (original)"),
-                                ("Z-Image", "Z-Image Base"), ("MiniMax", "MiniMax H3")):
+                                ("Z-Image Base", "Z-Image"), ("Z-Image Turbo", "Z-Image"), ("MiniMax", "MiniMax H3")):
             with self.subTest(legacy=legacy):
                 self.assertNotIn(legacy, TARGET_MODEL_NAMES)
                 self.assertEqual(GoatedPrompterRequest(idea="A book", target_model=legacy).target_model, current)

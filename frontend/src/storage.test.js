@@ -172,7 +172,7 @@ test("renamed targets and precision Directors hydrate without losing saved choic
   ];
   for (const [legacy, current] of [
     ["Qwen2.1", "Qwen Image 2.1"], ["Qwen Image", "Qwen Image (original)"],
-    ["Z-Image", "Z-Image Base"], ["MiniMax", "MiniMax H3"],
+    ["Z-Image Base", "Z-Image"], ["Z-Image Turbo", "Z-Image"], ["MiniMax", "MiniMax H3"],
   ]) {
     assert.equal(hydrateBuilder({}, { target_model: legacy }).target_model, current);
   }

@@ -136,7 +136,7 @@ class SceneVocabulary(unittest.TestCase):
         self.assertIn("Actions & Poses\nCore instruction:\nActions & Poses provides vocabulary", vocabulary)
         self.assertIn("one person kissing the other person's forehead", vocabulary)
         for rule in ("If it does, that pose is\n   decided", "If it defines only an\n   action, choose a pose",
-                     "correct gender", "Objects, furniture and surfaces in an entry", "keeping the pose\n   physically the same"):
+                     "correct gender", "Objects, furniture and surfaces named in an entry", "keeping the pose physically the same"):
             self.assertIn(rule, call.system_message)
 
     def test_every_image_is_dealt_its_own_entry_by_the_seed(self):
@@ -233,8 +233,9 @@ class SceneVocabulary(unittest.TestCase):
                 self.assertNotIn("looks", user["images"][0])
                 self.assertIn("Subjects\nCore instruction:", user["vocabulary"])
                 pack = next(pack for pack in self.catalog["packs"] if pack["id"] == pack_id)
-                for entry in pack["entries"]:
-                    self.assertIn(entry, user["vocabulary"])
+                sent = [entry for entry in pack["entries"] if entry in user["vocabulary"]]
+                # A large pack is sampled (a different seeded sample per batch) so it never drowns the request.
+                self.assertEqual(len(sent), min(len(pack["entries"]), scenes.VOCABULARY_SAMPLE))
                 self.assertEqual([pack["id"] for pack in result["vocabulary"]["selection"]["packs"]], [pack_id])
 
     def test_the_seed_shuffles_the_vocabulary_order(self):

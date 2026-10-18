@@ -3,16 +3,29 @@ import { Download, LoaderCircle, X } from "lucide-react";
 import { ui } from "../../ui.js";
 import { canConfirmDatasetReview } from "./datasetState.js";
 import { selectedNames } from "../vocabulary/catalog.js";
+import { triggerExpansions, triggerKinds } from "./options.js";
 
 // Rebuild (issue 106): the modal shows only the new Understanding brief.
 const genderLabel = (person) => person.gender === "custom" ? person.custom : person.gender;
 
-function PeopleBar({ characters }) {
+function PeopleBar({ characters, triggers }) {
   return <section className="dataset-review-concept" aria-label="People">
     <h3>{characters.length} {characters.length === 1 ? "person" : "people"} per image</h3>
     <ul className="dataset-review-list">
-      {characters.map((person, index) => <li className="wrap-anywhere" key={index}>{person.label}: {genderLabel(person)}</li>)}
+      {characters.map((person, index) => <li className="wrap-anywhere" key={index}>{person.label}: {genderLabel(person)}{person.triggers?.length ? ` · ${person.triggers.map((number) => triggers[number - 1]?.text).filter(Boolean).join(", ")}` : ""}
+        {person.known ? " · looks come from its name or trigger" : ""}</li>)}
     </ul>
+  </section>;
+}
+
+const kindLabels = Object.fromEntries(triggerKinds);
+const useLabels = Object.fromEntries(triggerExpansions);
+
+function TriggerReview({ triggers }) {
+  return <section className="dataset-review-list" aria-label="Triggers"><h3>Triggers</h3>
+    <ul>{triggers.map((trigger, index) => <li className="wrap-anywhere" key={index}>
+      <code>{trigger.text}</code>{" · "}{kindLabels[trigger.kind]}
+      {" · "}{useLabels[trigger.expand]}{trigger.start ? " · at start" : ""}</li>)}</ul>
   </section>;
 }
 
@@ -25,7 +38,7 @@ function ReviewList({ title, items }) {
 
 function SceneReview({ brief }) {
   return <>
-    {brief.path !== "non_character" && <PeopleBar characters={brief.characters} />}
+    {brief.path !== "non_character" && <PeopleBar characters={brief.characters} triggers={brief.input.triggers || []} />}
     <div className="dataset-review-requirements">
       <ReviewList title="Stays the same" items={[brief.fixed, ...brief.must].filter(Boolean)} />
       <ReviewList title="Changes per image" items={[brief.randomized].filter(Boolean)} />
@@ -66,6 +79,7 @@ export default function DatasetConfirmationModal({ review, busy, catalog, direct
         <p className="whitespace-pre-wrap wrap-anywhere">{brief.summary}</p>
       </section>
       <SceneReview brief={brief} />
+      {!!brief.input.triggers?.length && <TriggerReview triggers={brief.input.triggers} />}
       {!!brief.input.guided_inputs?.length && <section className="dataset-review-concept" aria-label="Guided inputs">
         <h3>Guided inputs</h3><ol>{brief.input.guided_inputs.map((item, index) => <li key={index}>{item}</li>)}</ol>
       </section>}

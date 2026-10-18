@@ -27,7 +27,7 @@ def anima_tags(text, *, tag_only=False):
         candidate = re.sub(r":\d+(?:\.\d+)?(?=\)?$)", "", field)
         if not field:
             continue
-        if not re.fullmatch(r"[\w ()\\/+'-]+", candidate):
+        if not re.fullmatch(r"[\w ()\\/+'@-]+", candidate):  # @ marks an Anima artist tag
             break
         # Legacy inline prose uses sentence case. New writer output separates
         # tags and prose explicitly; supplied inventories are counted literally.

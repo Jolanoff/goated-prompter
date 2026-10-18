@@ -18,7 +18,7 @@ import tempfile
 import threading
 
 from .config import PROJECT_ROOT
-from .options.targets import TARGET_MODEL_NAMES, canonical_target
+from .options.targets import TARGET_ALIASES, TARGET_MODEL_NAMES, canonical_target
 from .output_repetition import anima_tags
 from .workspace_store import text
 
@@ -49,8 +49,12 @@ def library_directory():
     return Path(configured).expanduser() if configured else PROJECT_ROOT / "data" / "prompt_library"
 
 
+def _slug(name):
+    return re.sub(r"[^a-z0-9]+", "-", str(name).casefold()).strip("-") + ".txt"
+
+
 def library_file_name(target):
-    return re.sub(r"[^a-z0-9]+", "-", str(canonical_target(target)).casefold()).strip("-") + ".txt"
+    return _slug(canonical_target(target))
 
 
 def library_path(target, directory=None):
@@ -64,7 +68,21 @@ def ensure_library_files(directory=None):
     for target in TARGET_MODEL_NAMES:
         path = directory / library_file_name(target)
         if not path.exists():
-            path.write_text(HEADER.format(target=target), encoding="utf-8")
+            path.write_text(HEADER.format(target=target) + _merged_legacy_prompts(directory, target), encoding="utf-8")
+
+
+def _merged_legacy_prompts(directory, target):
+    """Prompts saved for targets that were merged into this one (Z-Image Base and Turbo into Z-Image), so a new
+    library file starts with them; the old files are left untouched."""
+    prompts = []
+    for legacy in sorted(name for name, current in TARGET_ALIASES.items() if current == target):
+        try:
+            prompts.extend(parse_library((directory / _slug(legacy)).read_text(encoding="utf-8-sig")))
+        except (OSError, UnicodeError):
+            continue
+    unique = list(dict.fromkeys(prompts))
+    return "".join(f"\n{prompt}\n" + (f"\n{SEPARATOR}\n" if index < len(unique) else "")
+                   for index, prompt in enumerate(unique, 1))
 
 
 def parse_library(text):

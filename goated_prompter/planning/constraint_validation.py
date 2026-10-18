@@ -9,8 +9,10 @@ def positive_descriptions(prompt, target):
     if target != "Ideogram4":
         return [prompt]
     value = json.loads(prompt)
-    return [value["high_level_description"], value["compositional_deconstruction"]["background"],
-            *[text for text in value["style_description"].values() if isinstance(text, str)],
+    # high_level_description and style_description are optional in the Ideogram 4 schema.
+    return [*([value["high_level_description"]] if "high_level_description" in value else []),
+            value["compositional_deconstruction"]["background"],
+            *[text for text in value.get("style_description", {}).values() if isinstance(text, str)],
             *[element["desc"] for element in value["compositional_deconstruction"]["elements"]]]
 
 

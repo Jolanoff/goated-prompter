@@ -227,7 +227,7 @@ def assemble_instruction(
         print("[Goated Prompter DIRECTOR CONSTRAINTS]", flush=True)
         print(resolved_reference_map.director_constraints(), flush=True)
 
-    if prompt_scene_plan is None and compile_user_constraints:
+    if prompt_scene_plan is None and compile_user_constraints and request.compile_rules:
         from ...planning.constraints import compile_prompt_request, COMPILED_CONTRACT
         compiled = compile_prompt_request(request, has_context=has_visual_context)
         if compiled.forbidden or compiled.variable:
@@ -480,9 +480,10 @@ class GoatedPrompterService:
             qwen_images = _qwen21_source_tokens(request, resolved_reference_map, text_only) if request.target_model == "Qwen Image 2.1" else ()
             qwen_task = "edit" if qwen_images else "t2i"
             validate_format = request.target_model == "Qwen Image 2.1" or get_target_capabilities(request.target_model).supports_structured_output
-            from ...planning.constraints import compile_prompt_request
+            from ...planning.constraints import CompiledRequest, compile_prompt_request
             from ...planning.constraint_validation import output_constraint_issues
-            compiled_constraints = compile_prompt_request(request, has_context=resolved_scene is not None or bool(reference_images(request)))
+            compiled_constraints = (compile_prompt_request(request, has_context=resolved_scene is not None or bool(reference_images(request)))
+                                    if request.compile_rules else CompiledRequest(request.idea, request.idea))
             validate_constraints = bool(compiled_constraints.forbidden)
             audit_constraints = validate_constraints and constraints_enabled(effective_config)
             semantic_contract = invariant_contract(request.idea + "\n" + request.custom_instructions,

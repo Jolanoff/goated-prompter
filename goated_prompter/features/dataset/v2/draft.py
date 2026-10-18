@@ -11,6 +11,7 @@ from ....options.lengths import PROMPT_LENGTH_NAMES
 from ....options.styles import STYLE_NAMES
 from ....options.targets import TARGET_MODEL_NAMES, canonical_target
 from ....output_repetition import MAX_ANIMA_TAGS, anima_tag_count
+from .triggers import legacy_trigger, placed, validate_triggers
 
 MAX_AMOUNT = 25
 MAX_VOCABULARY_PACKS = 200
@@ -18,8 +19,7 @@ MAX_VOCABULARY_PACKS = 200
 
 def default_dataset_draft():
     return {
-        "trigger": "", "trigger_type": "Character", "custom_type": "", "subject": "",
-        "trigger_at_start": False, "trigger_connected": True, "expand_trigger": True, "nsfw": False,
+        "triggers": [], "trigger_type": "Character", "custom_type": "", "subject": "", "nsfw": False,
         "amount": 12,
         "source_mode": "random", "inputs": "", "target": "Generic", "length": "Medium",
         "director_preset": "general_director", "constraints": "",
@@ -37,14 +37,17 @@ def _text(value, label, limit, *, required=False):
 
 def validate_dataset_draft(value, *, generation=False, planning=False):
     """The draft with defaults filled in; fields it does not know are dropped. generation: the draft is about to
-    be analyzed or run, so required text must be present; planning: the trigger may still be empty."""
+    be analyzed or run, so required text must be present (planning is accepted for older callers)."""
     defaults = default_dataset_draft()
     if not isinstance(value, dict):
         raise ValueError("Invalid Dataset settings fields.")
     result = {**defaults, **{key: item for key, item in value.items() if key in defaults}}
+    if not value.get("triggers") and isinstance(value.get("trigger"), str):
+        # A draft from before the trigger list: its one trigger, exact text, pinned to the start when it was.
+        result["triggers"] = legacy_trigger(value["trigger"], value.get("trigger_at_start"))
     if result["source_mode"] == "library":
         result["source_mode"] = "random"  # "From my library" was removed; ideas never come from the library.
-    result["trigger"] = _text(result["trigger"], "Trigger / prepend", 1000, required=generation and not planning).strip()
+    result["triggers"] = validate_triggers(result["triggers"], generation=generation)
     result["subject"] = _text(result["subject"], "Dataset concept", 10000, required=generation).strip()
     for key, label, limit in (("custom_type", "Custom subject kind", 120),
                               ("inputs", "Guided inputs", 50000), ("constraints", "Dataset constraints", 10000)):
@@ -56,8 +59,9 @@ def validate_dataset_draft(value, *, generation=False, planning=False):
     result["target"] = canonical_target(result["target"])
     if result["target"] not in TARGET_MODEL_NAMES:
         raise ValueError("Invalid target model.")
-    if generation and result["target"] == "Anima" and anima_tag_count(result["trigger"], tag_only=True) > MAX_ANIMA_TAGS:
-        raise ValueError("Anima allows at most 100 tags. Your supplied trigger already exceeds this limit; edit it before generating.")
+    if generation and result["target"] == "Anima" and sum(
+            anima_tag_count(trigger["text"], tag_only=True) for trigger in placed(result["triggers"])) > MAX_ANIMA_TAGS:
+        raise ValueError("Anima allows at most 100 tags. Your triggers already exceed this limit; shorten them before generating.")
     _text(result["director_preset"], "Director preset", 256)
     if type(result["seed"]) is not int or not 0 <= result["seed"] <= MAX_SEED:
         raise ValueError(f"Seed must be a whole number from 0 to {MAX_SEED}.")
@@ -65,7 +69,7 @@ def validate_dataset_draft(value, *, generation=False, planning=False):
         raise ValueError("Invalid seed mode.")
     if type(result["amount"]) is not int or not 1 <= result["amount"] <= MAX_AMOUNT:
         raise ValueError(f"Dataset prompt amount must be between 1 and {MAX_AMOUNT}.")
-    for key in ("trigger_at_start", "trigger_connected", "expand_trigger", "nsfw"):
+    for key in ("nsfw",):
         if type(result[key]) is not bool:
             raise ValueError(f"{key} must be enabled or disabled.")
     packs = result["vocabulary_packs"]

@@ -13,8 +13,9 @@ dealt entry unless it cannot fit the cast. Code checks that the entry is one of
 the selected entries and that no entry is used by more images than ENTRY_CAP allows (two, or more when the selected
 packs have fewer entries than the requested images), and asks again otherwise (the last round keeps the image).
 
-A scene has subjects (per character: skin, build, hair, detail, clothing), position (per character), actions, space,
-lighting, mood, camera and extras. Actions & Poses entries may define a pose with their action or leave it open, and
+A scene has subjects (per character: skin, build, hair, detail, expression, clothing; a known character, which the
+image model draws from its name or trigger, has only expression and clothing), position (per character), actions,
+space, lighting, mood, camera and extras. Actions & Poses entries may define a pose with their action or leave it open, and
 name people as "one person" / "the other person": the writer maps them to the character labels (and their gender) and
 adapts named objects and supports to the scene.
 
@@ -42,12 +43,15 @@ from ....prompting.creativity import CREATIVITY_ADAPTERS
 from ...vocabulary.catalog import (catalog_for, record as selection_record, selected_vocabulary,
                                    validate_selection, vocabulary_prompt)
 from .assignments import dataset_assignments
+from .triggers import brief_triggers, owner
 from .understanding import validate_brief
 
 BATCH = 10  # one answer holds up to ten images: a model spreads a set out best within one answer
 ROUNDS = 3
 SECTIONS = ("subjects", "actions", "position", "space", "lighting", "mood", "camera", "extras")
 SUBJECT_FIELDS = ("skin", "build", "hair", "detail", "expression", "clothing")
+KNOWN_SUBJECT_FIELDS = ("expression", "clothing")  # a known character's look comes from its name, never the writer
+VOCABULARY_SAMPLE = 40  # entries per category in one batch's prompt: enough choice without drowning the request
 FIELDS = SECTIONS
 MAX_FIELD = 2000
 EARLIER = 25  # every earlier image of a run (25 is the largest amount)
@@ -75,6 +79,9 @@ For each image listed under IMAGES, in order, write one complete and coherent sc
   Never reuse a place, arrangement or camera listed in already_used, and do not follow its order.
 - Give the people new looks (skin, build, hair, detail) in every image unless fixed keeps the same people; then keep
   their looks identical in every image. Otherwise no two images share the same people: do not cycle a few looks.
+- A character with "known": true is an established character: the image model already knows their face, hair, eyes,
+  skin and body from their name, so never describe or change them, and no vocabulary changes them. Write only their
+  expression and clothing (their usual outfit unless the request or the scene calls for another or for undressing).
 
 ACTION AND POSE COHERENCE
 The actions and position fields are two descriptions of one physical moment, never independently chosen details.
@@ -84,15 +91,13 @@ For each scene:
 2. Check whether the chosen entry defines a pose (who is where, on what, facing which way). If it does, that pose is
    decided: keep it with its action and split it across the actions and position fields. If it defines only an
    action, choose a pose that physically supports that action. If it defines only a pose, give it a fitting action.
-3. Entries name people as placeholders: "the person", "one person", "the other person". Replace each one with a
-   character label of this scene and write it with that character's own gender, pronouns and body(a male is "he", a female is "she" everything else is "they")
+3. Entries name people as placeholders. Replace each one with a character label of this scene and write it with that
+   character's own gender, pronouns and body (a male is "he", a female is "she", everything else is "they").
    Decide who takes which role from the request and
-   the cast. Never leave "one person" or "the other person" in the scene.
-4. Objects, furniture and surfaces in an entry (a bed, a table, a chair, a wall, the floor, a toy) are examples too.
-   Replace them with ones that belong in this scene's space or come from the selected Objects, keeping the pose
-   physically the same: kneeling on the floor can become kneeling on a rug or a metal deck; the edge of a bed can
-   become the edge of a sofa or a crate of the same height. Never place furniture that does not belong in the space
-   (no bed on a ship's bridge), and keep the support at the height the pose needs.
+   the cast. Never leave a placeholder person in the scene.
+4. Objects, furniture and surfaces named in an entry are examples too. Replace them with ones that belong in this
+   scene's space or come from the selected Objects, keeping the pose physically the same and the support at the
+   height the pose needs. Never place furniture that does not belong in the space.
 5. If an entry needs a body part or object that this cast or space does not have, adapt it to something that does
    the same job, or choose another entry.
 6. Describe every participant's position relative to the action and the other participants, and check that every
@@ -104,8 +109,9 @@ pose instead of changing the requested action.
 
 Fields:
 subjects: one entry per character label, each with skin (tone), build (body shape), hair (colour and style),
-  detail (one distinguishing feature), expression (their face in this moment) and clothing (what they wear or how undressed they are; it never covers what
-  the action needs to show).
+  detail (one distinguishing feature), expression (their face in this moment) and clothing (what they wear or how
+  undressed they are; it never covers what the action needs to show). A known character has only expression and
+  clothing.
 position: one entry per character label: where that person is, their pose, which way they face, what holds their
   weight and what they touch. With no characters, position is {{}}.
 actions: who does what to whom, in one sentence. With no characters: how the subject is placed.
@@ -129,7 +135,7 @@ Treat vocabulary entries as creative possibilities, not mandatory instructions.
 For every scene:
 1. Read the selected categories and their available vocabulary.
 2. Each selected category controls its corresponding scene aspect:
-   - Subjects: subject choices or characteristics.
+   - Subjects: subject choices or characteristics (never the looks of a known character).
    - Actions & Poses: what subjects do and how they are positioned for it (actions and position fields).
    - Spaces: locations and environments.
    - Objects: props and usable objects.
@@ -186,6 +192,31 @@ def _labels(brief):
     return [item["label"] for item in brief["characters"]]
 
 
+def trigger_notes(brief):
+    """What the user's triggers mean for the scenes: an exact-text outfit trigger leaves only how much of the outfit is
+    worn, and a meaning trigger (other than style) applies to every scene. Exact-text character triggers make their
+    character known (no looks); style is the final prompt's concern."""
+    notes = []
+    for number, trigger in enumerate(brief_triggers(brief), 1):
+        person = owner(brief, number)
+        if trigger["kind"] == "outfit" and trigger["expand"] == "off":
+            notes.append(f"{person or 'The person it belongs to'}'s outfit comes from a trigger: their clothing says only "
+                         "how much of it is worn (fully dressed, partly undressed or nude), never what it looks like.")
+        elif trigger["kind"] != "style" and trigger["expand"] != "off":
+            about = f" ({person})" if person else ""
+            notes.append(f'"{trigger["text"]}"{about} applies to every image: keep its meaning.')
+    return notes
+
+
+def known_labels(brief):
+    """Labels of established characters (brief version 12), whose looks come from their name, never the writer."""
+    return {item["label"] for item in brief["characters"] if item.get("known") is True}
+
+
+def subject_fields(brief, label):
+    return KNOWN_SUBJECT_FIELDS if label in known_labels(brief) else SUBJECT_FIELDS
+
+
 def guided_assignments(brief):
     return dataset_assignments({"source_mode": "guided", "inputs": "\n".join(brief["input"]["guided_inputs"]),
                                 "amount": brief["input"]["amount"]})
@@ -227,6 +258,8 @@ def compose_message(brief, images, earlier=(), vocabulary="", entries_used=None)
     requirements = {"rules": brief["input"]["rules"],
                     "understanding": {key: brief[key] for key in ("summary", "characters", "fixed", "randomized", "must", "avoid")},
                     "style": brief["settings"]["style"] or "Auto"}
+    if notes := trigger_notes(brief):
+        requirements["triggers"] = notes
     parts = [f"USER REQUEST:\n{brief['input']['request']}",
              "EXISTING APPROVED REQUIREMENTS:\n" + json.dumps(requirements, ensure_ascii=False, indent=1)]
     if vocabulary:
@@ -245,11 +278,16 @@ def compose_instruction(brief, images, earlier=(), errors=(), vocabulary="", ent
     the SELECTED VOCABULARY section ("" for none); entry_cap: set when scenes name their Actions & Poses entry."""
     labels = _labels(brief)
     text = {"type": "string", "maxLength": MAX_FIELD}
-    person = {"type": "object", "additionalProperties": False, "required": list(SUBJECT_FIELDS),
-              "properties": {field: text for field in SUBJECT_FIELDS}}
+
+    def person(label):
+        fields = subject_fields(brief, label)
+        return {"type": "object", "additionalProperties": False, "required": list(fields),
+                "properties": {field: text for field in fields}}
+    subjects = {"type": "object", "additionalProperties": False, "required": labels,
+                "properties": {label: person(label) for label in labels}}
     fields = [*FIELDS, "entry"] if entry_cap else list(FIELDS)
     item = {"type": "object", "additionalProperties": False, "required": fields,
-            "properties": {field: _keyed(labels, person) if field == "subjects" else _keyed(labels, text)
+            "properties": {field: subjects if field == "subjects" else _keyed(labels, text)
                            if field == "position" else text for field in fields}}
     count = len(images)
     schema = {"type": "object", "additionalProperties": False, "required": ["scenes"],
@@ -290,18 +328,22 @@ def avoid_patterns(brief):
     return patterns
 
 
-def scene_errors(scene, labels, avoid, extra=()):
+def scene_errors(scene, labels, avoid, extra=(), known=frozenset()):
     """Why one composed scene is unusable as an answer; [] when its shape is right. extra: further text fields the
-    answer must have (the Actions & Poses "entry")."""
+    answer must have (the Actions & Poses "entry"); known: labels of known characters (expression and clothing only)."""
     plain = [key for key in SECTIONS if key not in ("subjects", "position")]
     if (not isinstance(scene, dict) or set(scene) != set(FIELDS) | set(extra)
             or not all(isinstance(scene[key], str) for key in extra)
             or not _filled({key: scene[key] for key in plain}, plain)
             or not (_filled(scene["position"], labels) if labels else scene["position"] in ({}, None))
             or not isinstance(scene["subjects"], dict) or set(scene["subjects"]) != set(labels)
-            or not all(_filled(person, SUBJECT_FIELDS) for person in scene["subjects"].values())):
+            or not all(_filled(person, KNOWN_SUBJECT_FIELDS if label in known else SUBJECT_FIELDS)
+                       for label, person in scene["subjects"].items())):
+        fields = f"subjects each with {', '.join(SUBJECT_FIELDS)}"
+        if known:
+            fields += f" (known characters {', '.join(sorted(known))} only with {', '.join(KNOWN_SUBJECT_FIELDS)})"
         return [f"each scene needs {', '.join(FIELDS)}; subjects and position have exactly "
-                f"{', '.join(labels) or 'no labels ({})'}; subjects each with {', '.join(SUBJECT_FIELDS)}"]
+                f"{', '.join(labels) or 'no labels ({})'}; {fields}"]
     text = " ".join(_strings({key: scene[key] for key in SECTIONS}))
     return [f'the user said "{phrase}" but the scene has "{match[0]}"' for phrase, pattern in avoid
             if (match := pattern.search(text))]
@@ -352,7 +394,7 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
         for number, scene in zip(todo, (answer or []) + [None] * len(todo)):
             tries[number] += max(1, recovery.attempts - before)
             problems = ([error] if error else ["an answer was missing"] if scene is None
-                        else scene_errors(scene, labels, avoid, extra))
+                        else scene_errors(scene, labels, avoid, extra, brief["_known"]))
             entry = entries.get(_entry_key(scene["entry"])) if entries and not problems else None
             if not problems and round_ < ROUNDS:  # the last round accepts a repeat rather than lose the image
                 if any(_repeats(scene, item, labels) for item in [*earlier, *scenes.values()]):
@@ -382,8 +424,9 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
 
 
 def _summary(scene):
-    """What a later request reads of an earlier scene, so the set spreads out."""
-    looks = {label: f"{person['skin']}, {person['hair']}" for label, person in scene["subjects"].items()}
+    """What a later request reads of an earlier scene, so the set spreads out (known characters have no looks)."""
+    looks = {label: f"{person['skin']}, {person['hair']}" for label, person in scene["subjects"].items()
+             if "skin" in person and "hair" in person}
     return {"space": scene["space"][:120], "camera": scene["camera"][:80], "actions": scene["actions"][:120], "looks": looks}
 
 
@@ -409,13 +452,15 @@ def _repeats(scene, other, labels=()):
         _overlap(scene["camera"], other["camera"]) >= .6 or _overlap(scene["actions"], other["actions"], ignore) >= .6)
 
 
-def _shuffled(groups, rng):
-    """The selected vocabulary with each category's entries merged and shuffled."""
+def _shuffled(groups, rng, limit=None):
+    """The selected vocabulary with each category's entries merged and shuffled; with limit, only the first limit
+    entries of each category (a different seeded sample every batch), so large packs never drown the request."""
     result = []
     for group in groups:
         entries = list(dict.fromkeys(entry for pack in group["packs"] for entry in pack["entries"]))
         rng.shuffle(entries)
-        result.append({**group, "packs": [{"name": ", ".join(pack["name"] for pack in group["packs"]), "entries": entries}]})
+        result.append({**group, "packs": [{"name": ", ".join(pack["name"] for pack in group["packs"]),
+                                           "entries": entries[:limit] if limit else entries}]})
     return result
 
 
@@ -463,13 +508,14 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
     plan = {"entries": {_entry_key(entry): entry for entry in action_entries} or None,
             "cap": entry_cap(action_entries, total), "used": {}, "dealt": deal_entries(action_entries, total, rng)}
     effective, profile = resolve_director_config(config, request)
-    brief = {**brief, "_family": effective_model_family(request, profile, effective), "_avoid": avoid_patterns(brief)}
+    brief = {**brief, "_family": effective_model_family(request, profile, effective), "_avoid": avoid_patterns(brief),
+             "_known": frozenset(known_labels(brief))}
     scenes, failed = {}, {}
     with create_backend(effective).generation_session() as session:
         for start in range(0, total, BATCH):
             numbers = list(range(start + 1, min(total, start + BATCH) + 1))
             earlier = [_summary(scenes[number]) for number in sorted(scenes)][-EARLIER:]
-            plan["vocabulary"] = vocabulary_prompt(_shuffled(groups, rng))
+            plan["vocabulary"] = vocabulary_prompt(_shuffled(groups, rng, VOCABULARY_SAMPLE))
             written, missing = _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progress, on_slot)
             scenes.update(written)
             failed.update(missing)

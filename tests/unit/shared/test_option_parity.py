@@ -36,6 +36,13 @@ class OptionParityTests(unittest.TestCase):
                          dataset.SEED_MODES)
         self.assertEqual(exported("features/dataset/options.js", "maxSeed"), dataset.MAX_SEED)
 
+    def test_dataset_trigger_options_match_backend(self):
+        self.assertEqual(tuple(value for value, _label in exported("features/dataset/options.js", "triggerKinds")),
+                         dataset.TRIGGER_KINDS)
+        self.assertEqual(tuple(value for value, _label in exported("features/dataset/options.js", "triggerExpansions")),
+                         dataset.TRIGGER_EXPANSIONS)
+        self.assertEqual(exported("features/dataset/options.js", "maxTriggers"), dataset.MAX_TRIGGERS)
+
     def test_dataset_director_exclusions_match_backend(self):
         self.assertEqual(tuple(exported("features/dataset/options.js", "excludedDirectors")),
                          dataset.DATASET_EXCLUDED_DIRECTORS)

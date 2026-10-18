@@ -29,6 +29,15 @@ class LibraryTests(unittest.TestCase):
             self.assertEqual(snapshot["prompts"], ("alpha", "gamma"))
             self.assertEqual(after, before - 1)
 
+    def test_merged_z_image_library_starts_with_the_old_base_and_turbo_prompts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "z-image-base.txt").write_text("# old\nalpha\n---\nbeta\n", encoding="utf-8")
+            (root / "z-image-turbo.txt").write_text("beta\n---\ngamma\n", encoding="utf-8")
+            prompt_library.ensure_library_files(directory)
+            self.assertEqual(prompt_library.library_snapshot("Z-Image Turbo", directory)["prompts"], ("alpha", "beta", "gamma"))
+            self.assertTrue((root / "z-image-base.txt").exists(), "the old files are kept")
+
     def test_tokenize_keeps_non_ascii_letters(self):
         self.assertEqual(prompt_library.tokenize("café 1girl"), ["café", "girl"])
 

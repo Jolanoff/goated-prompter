@@ -67,10 +67,10 @@ class DatasetRebuildAdmissionTests(unittest.IsolatedAsyncioTestCase):
         return await self.client.post("/api/workspace/dataset/v2/confirm", json=payload)
 
     async def test_confirm_routes_scenes_only_and_full_generation_separately(self):
-        payload = await self.analyze()
-        self.assertTrue(payload["confirmation_token"])
         for operation, expected_calls in (("dataset/scenes", 0), ("dataset", 1)):
             with self.subTest(operation=operation):
+                payload = await self.analyze()
+                self.assertTrue(payload["confirmation_token"])
                 response = await self.confirm({**payload, "operation": operation})
                 self.assertEqual(response.status, 202, await response.text())
                 job = await self.terminal(await response.json())
@@ -83,6 +83,43 @@ class DatasetRebuildAdmissionTests(unittest.IsolatedAsyncioTestCase):
                          "the draft's Director reaches the final prompts")
         self.assertEqual(set(self.scenes.call_args.kwargs), {"checkpoint", "progress", "on_slot", "vocabulary"},
                          "no Director, Visual Direction or other planning input reaches scene writing")
+
+    async def test_trigger_list_reaches_the_brief_and_links_its_characters(self):
+        clo = {"text": "clo21", "kind": "character", "expand": "off", "start": False}
+        style = {"text": "chibi style", "kind": "style", "expand": "on", "start": True}
+        self.data = {**self.data, "trigger": "", "triggers": [clo, style]}
+        response = await self.client.post("/api/workspace/dataset/understand", json={"input": self.data})
+        job = await self.terminal(await response.json())
+        self.assertEqual(job["status"], "failed", "a character trigger the model does not cast is sent back, then fails")
+        self.assertIn('Trigger 1 ("clo21", character) must belong to exactly one character', job["error"])
+        self.value["characters"] = [{"label": "Mara", "gender": "female", "custom": "", "pronoun": "she", "count": 1,
+                                     "triggers": [1]},
+                                    {"label": "reader", "gender": "custom", "custom": "adult human", "pronoun": "it", "count": 1}]
+        payload = await self.analyze()
+        self.assertEqual(payload["brief"]["input"]["triggers"], [clo, style])
+        self.assertEqual([person["known"] for person in payload["brief"]["characters"]], [True, False])
+        response = await self.confirm(payload)
+        self.assertEqual(response.status, 202, await response.text())
+        await self.terminal(await response.json())
+
+    async def test_one_review_starts_one_run(self):
+        payload = await self.analyze()
+        response = await self.confirm(payload)
+        self.assertEqual(response.status, 202, await response.text())
+        job = await self.terminal(await response.json())
+        self.assertEqual(job["status"], "succeeded", job.get("error"))
+        again = await self.confirm(payload)
+        self.assertEqual(again.status, 400)
+        self.assertIn("already used", await again.text())
+        self.assertEqual(self.scenes.call_count, 1)
+
+    async def test_a_refused_confirm_keeps_the_review_usable(self):
+        payload = await self.analyze()
+        refused = await self.confirm({**payload, "brief": {**payload["brief"], "summary": "Changed"}})
+        self.assertEqual(refused.status, 400)
+        response = await self.confirm(payload)
+        self.assertEqual(response.status, 202, await response.text())
+        await self.terminal(await response.json())
 
     async def test_the_drafts_vocabulary_packs_reach_scene_writing_without_a_new_review(self):
         payload = await self.analyze()

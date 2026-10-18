@@ -50,8 +50,8 @@ asked.
   entry ("on the floor", "over a table", "a toy") are examples it adapts to the scene's space.
 - With an `Actions & Poses` pack selected, every scene names the entry it uses and no entry is used by more than two
   images, so a pack needs enough distinct entries for the batch sizes it is used with.
-- `Subjects/Humans` holds people's looks (skin, build, hair, one detail); when no Subjects pack is selected, every
-  image is dealt looks from it.
+- `Subjects/Humans` holds people's looks (skin, build, hair, one detail). It is used only when selected, and never
+  for a known character, whose look comes from its name.
 - Keep adult content out of `vocabulary/`; it belongs in the user's own imported packs.
 - Every person is an adult.
 

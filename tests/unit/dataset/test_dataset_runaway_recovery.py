@@ -145,9 +145,18 @@ class RunawayRecoveryTests(unittest.TestCase):
             self.assertIn(self.data["constraints"], call.system_message)
         self.assertNotEqual(first.seed, retry.seed)
 
-    def test_nested_builder_and_trigger_repairs_share_one_budget(self):
-        self.brief["input"]["trigger"] = "reader_token"
-        self.scripts["final"] = [self.loop(), "Alex reads without the required token.", self.loop(), "reader_token Alex reads."]
+    def test_a_prompt_without_the_trigger_gets_it_from_code_not_another_generation(self):
+        self.brief["input"]["triggers"] = [{"text": "reader_token", "kind": "other", "name": "", "expand": "off", "start": False}]
+        self.scripts["final"] = [self.loop(), "Alex reads without the required token.", "unused"]
+        result = self.write_prompts()
+        self.assertEqual(result[0]["prompt"], "reader_token, Alex reads without the required token.")
+        self.assertTrue(result[0]["trigger_ok"])
+        self.assertEqual(len(self.calls), 2)
+        self.assertEqual(self.scripts["final"], ["unused"])
+
+    def test_nested_builder_and_label_repairs_share_one_budget(self):
+        self.brief["characters"][0]["label"] = "reader 1"
+        self.scripts["final"] = [self.loop(), "reader 1 reads.", self.loop(), "unused"]
         result = self.write_prompts()
         self.assertFalse(result[0]["prompt"])
         self.assertEqual(result[0]["attempts"], 3)

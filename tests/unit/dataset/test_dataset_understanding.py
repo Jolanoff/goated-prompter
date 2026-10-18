@@ -1,4 +1,4 @@
-"""Dataset Understanding (brief version 11): who, how many, what happens, what stays and what varies. Scripted model
+"""Dataset Understanding (brief version 13): who, how many, what happens, what stays and what varies. Scripted model
 answers only; nothing here is live-model evidence."""
 
 import json
@@ -51,7 +51,7 @@ class Understanding(unittest.TestCase):
 
     def test_understanding_never_chooses_vocabulary(self):
         result, calls = self.understand([TWO_MEN], subject="2 adult men in an explicit scene", nsfw=True)
-        self.assertEqual(result["version"], 11)
+        self.assertEqual(result["version"], 13)
         self.assertNotIn("intent", result)
         self.assertEqual(set(calls[0].json_schema["properties"]), set(understanding.MODEL_FIELDS))
         for word in ("pack", "vocabulary"):

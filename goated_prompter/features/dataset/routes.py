@@ -5,6 +5,7 @@ import asyncio
 from aiohttp import web
 
 from .v2.draft import validate_dataset_draft
+from .v2.tickets import USED
 from ...presets import get_director_preset
 from .v2.understanding import VERSIONS, confirm, copied_input, copied_settings, reviewed_brief
 from ..vocabulary.catalog import CatalogError, catalog_for, validate_selection
@@ -75,6 +76,9 @@ async def confirm_endpoint(request):
     async with state.admission:
         if (conflict := active_job_conflict(state, "Wait for the active generation before generating again.")) is not None:
             return conflict
+        # One approval starts one run: a repeated Confirm (double click, second tab) cannot start a second one.
+        if not state.dataset_intents.consume(payload["confirmation_token"]):
+            raise ValueError(USED)
         config = state.config()
         director_request = engine_request(
             state, config, settings,

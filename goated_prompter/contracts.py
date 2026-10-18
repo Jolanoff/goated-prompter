@@ -64,6 +64,9 @@ class GoatedPrompterRequest:
     image_4: object = None
     linked_references: bool = False
     planning_mode: str = "Auto"
+    # Read the idea and workflow rules as user rules ("no X" exclusions, quoted literals). Dataset turns this off: its
+    # idea is a generated scene and its rules are already approved requirements, not text to parse. Never from the API.
+    compile_rules: bool = True
 
     def __post_init__(self):
         object.__setattr__(self, "target_model", canonical_target(self.target_model))

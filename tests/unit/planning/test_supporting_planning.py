@@ -95,18 +95,18 @@ class SupportingPlanningTests(unittest.TestCase):
         # built-in Directors ensure saved custom presets cannot affect fixtures.
         # Anima alone uses the updated compact hybrid adapter and flat-prefix format.
         # Regenerated for the slimmed Builder prompt, per-target guidance, library templates and no built-in examples.
+        # Updated for the merged Z-Image target and the Anima, FLUX.2 Klein, Qwen Image (original) and Ideogram4 adapters.
         golden = {
             "Generic": "ca973563591fd39b2f5af4ca0bb3b60455c2b082222ebc1adb5d659c5f349e49",
-            "Anima": "2007fb6dc752d4d848fb067bdf5fccd885be11b414e288c3b874d49e89e6a1bd",
+            "Anima": "0def63b65d0cc8e0462073a88e1771621eb02ba8e617f10902228921c9a90097",
             "Krea 2": "5b714ca610bcba54a62229eea57816f3d85fa223bef9a3ac4bea34035a1c7a25",
-            "FLUX.2 Klein": "c2c8efeecba5f6709093fb51472e76fdb9531be07fc29520d6d3a6c149bddbe6",
-            "Z-Image Base": "a9ee8986ccc24004c8cc604b9940aa181e007fba5ce11d998a0d17c8ccae2881",
-            "Z-Image Turbo": "5fdd9a9111494735231b3e613ded70d20639f71a6fcb08e98a15c8e48185cece",
-            "Qwen Image (original)": "fba6490f03cf79ff667201bff6f10ad81a48a4670d7b5f5fd45077f439089872",
+            "FLUX.2 Klein": "a26dc1228fcda0ab4cb4d0119b9a9dfbc8d2a772609053b5a361b7f5f3978b49",
+            "Z-Image": "c1dd927888b8e03b37190f7664303890ba1a6f2a88a5b71bb7971068abacb926",
+            "Qwen Image (original)": "e73830077f44879864a4f80f92bd4f91bbc61657a5ed9546ca9493c0a9e49c8e",
             "Qwen Image 2.1": "5640e5267445c981da3136e72814c9ff493dd5109a5509e55a5f656e11c4f717",
             "MiniMax H3": "fe9f699275051a1d04dd0d485d18f1c4d2c2b99b67c4d3bdd8c37609bde05931",
             "LTX 2.5": "3bef3b1045ba979bc42f6ff6f287672761391952a52d6ebb8c8ef1a496a1b26d",
-            "Ideogram4": "f77126fe2ccd7358dc91d3c5626fb20dc09978b8827b368807d290a4541c24ed"}
+            "Ideogram4": "13235a7022b883900cd0e94415dae111c70031a46ff89e6625643aac96cbbe6c"}
         self.assertEqual(set(golden), set(TARGET_MODEL_NAMES))
         for target, digest in golden.items():
             with self.subTest(target=target):
