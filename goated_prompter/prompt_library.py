@@ -156,7 +156,13 @@ def update_library(target, revision, action, *, prompt=None, index=None, directo
                     blocks.append(content)
                 first, last = blocks[index][0], blocks[index][-1]
                 replacement = prompt.replace("\n", newline) + newline if action == "edit" else ""
+                drop = None
+                if action == "delete":  # remove one neighbouring separator so no orphan "---" lines pile up
+                    drop = next((i for i in range(last + 1, len(lines)) if lines[i].strip() == SEPARATOR), None)
+                    if drop is None:
+                        drop = next((i for i in range(first - 1, -1, -1) if lines[i].strip() == SEPARATOR), None)
                 raw = "".join(
+                    "" if position == drop else
                     (replacement if position == first else "")
                     if first <= position <= last and not line.lstrip().startswith("#") else line
                     for position, line in enumerate(lines)
@@ -181,10 +187,10 @@ def update_library(target, revision, action, *, prompt=None, index=None, directo
 
 
 def tokenize(text):
-    """Words for search: count tags split ("1girl" -> "girl"), simple plurals folded, stopwords dropped."""
+    """Words for search (letters of any script): count tags split ("1girl" -> "girl"), simple plurals folded, stopwords dropped."""
     value = str(text or "").casefold().replace("\\", "").replace("_", " ")
     tokens = []
-    for token in re.findall(r"[a-z]+", value):
+    for token in re.findall(r"[^\W\d_]+", value):  # letters of any script; digits and underscores split words
         if len(token) > 3 and token.endswith("s") and not token.endswith("ss"):
             token = token[:-1]
         if token not in _STOPWORDS:
@@ -344,7 +350,8 @@ def pick_scenarios(target, query, count, rng=None, directory=None):
     rng.shuffle(strong)
     rng.shuffle(weak)
     ranked = strong + weak
-    rest = [prompt for prompt in index.prompts if prompt not in set(ranked)]
+    taken = set(ranked)
+    rest = [prompt for prompt in index.prompts if prompt not in taken]
     rng.shuffle(rest)
     ordered = ranked + rest
     return tuple(ordered[position % len(ordered)] for position in range(count))

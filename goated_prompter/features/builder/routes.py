@@ -12,6 +12,9 @@ from ...uploaded_images import decode_image
 from ..settings.validation import validate_local_paths
 
 
+_SERVER_ONLY_SETTINGS = frozenset({"director_model_path", "director_mmproj_path", "director_llama_server"})
+
+
 async def generate(request):
     state = request.app[STATE]
     payload = await json_object(request)
@@ -22,6 +25,10 @@ async def generate(request):
         raise ValueError("settings must be an object; images must be an array with at most four entries.")
     if not isinstance(text_only, bool):
         raise ValueError("text_only must be a boolean.")
+    # Executable and model locations come from config or model discovery, never from the request body.
+    forbidden = sorted(_SERVER_ONLY_SETTINGS & settings.keys())
+    if forbidden:
+        raise ValueError("These settings can only be configured on the server: " + ", ".join(forbidden) + ".")
     async with state.admission:
         active_job = state.active_job()
         if active_job is not None:

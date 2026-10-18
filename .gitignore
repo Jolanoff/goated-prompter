@@ -64,4 +64,5 @@ Desktop.ini
 # Local AI-agent state and generated plans
 /.agents/skills/
 /.opencode/plans/
+/.openchamber/
 /skills-lock.json

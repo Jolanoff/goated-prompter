@@ -638,9 +638,11 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
                         {"Sec-Fetch-Site": "cross-site"}):
             response = await self.client.get("/api/bootstrap", headers=headers)
             self.assertEqual(response.status, 403)
+        # Only the API's own origin is trusted; the Vite dev proxy rewrites Origin to it, so other localhost ports
+        # (including an unrelated app on 5173) are rejected.
         for origin in ("http://localhost:5173", "http://127.0.0.1:5173"):
             response = await self.client.get("/api/bootstrap", headers={"Origin": origin})
-            self.assertEqual(response.status, 200)
+            self.assertEqual(response.status, 403)
         response = await self.client.get("/api/jobs/missing")
         self.assertEqual(response.status, 404)
         response = await self.client.get("/api/no-such-route")
