@@ -34,14 +34,14 @@ jobs:
       - run: npm run build
         working-directory: frontend
       - run: python -m unittest discover -s tests -v
-      - name: Replay frozen quality corpus (no inference)
+      - name: Replay synthetic evaluation contracts (no inference)
         run: |
           mkdir -p quality-artifacts
-          python -m tests.eval.runner --replay tests/eval/fixtures/model_outputs --output quality-artifacts/run.json
+          python -m tests.eval.runner --replay tests/eval/fixtures/synthetic --output quality-artifacts/run.json
           python -m tests.eval.report quality-artifacts/run.json --output quality-artifacts/report.json
       - uses: actions/upload-artifact@v4
         with:
-          name: frozen-quality-python-${{ matrix.python }}
+          name: synthetic-evaluation-python-${{ matrix.python }}
           path: quality-artifacts/
       - run: npx playwright install --with-deps chromium
         working-directory: frontend

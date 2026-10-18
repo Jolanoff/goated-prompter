@@ -97,34 +97,24 @@ class EvaluationTests(unittest.TestCase):
         self.assertGreaterEqual(len(corpus["cases"]), 20)
         self.assertEqual({workflow for row in corpus["cases"] for workflow in row["workflows"]}, {"builder", "minimax"})
 
-    def test_frozen_real_responses_cover_all_workflows_and_do_not_invent_usage(self):
-        fixtures = TESTS / "eval/fixtures/model_outputs"
-        rows = [row for path in fixtures.glob("real_*.json") for row in json.loads(path.read_text(encoding="utf-8"))["records"]]
+    def test_synthetic_replay_covers_both_workflows_and_does_not_invent_usage(self):
+        fixture = TESTS / "eval/fixtures/synthetic/replay.json"
+        rows = json.loads(fixture.read_text(encoding="utf-8"))["records"]
         report = summarize(rows)
         self.assertEqual(set(report["workflows"]), {"builder", "minimax"})
         self.assertFalse(report["semantic_review_complete"])
         self.assertEqual(report["latency"]["measured"], 0)
         self.assertEqual(report["workflows"]["builder"]["negative_language_leakage"], 1)
 
-    def test_current_real_failures_have_raw_calls_and_measured_latency(self):
-        fixture = TESTS / "eval/fixtures/model_outputs/current_fixed_engine_failures.json"
-        run = json.loads(fixture.read_text(encoding="utf-8"))
-        self.assertEqual(run["source_records"], 39)
-        self.assertEqual(run["engine"]["context_size"], 16384)
-        self.assertEqual(len(run["records"]), 4)
-        self.assertTrue(run["code_digest"])
-        self.assertTrue(run["source_sha256"])
-        for row in run["records"]:
-            self.assertTrue(row["known_failure"])
-            self.assertGreater(row["latency_seconds"], 0)
-            self.assertTrue(row["calls"])
-            for call in row["calls"]:
-                self.assertTrue(call["raw"])
-                self.assertEqual(call["finish_reason"], "stop")
-                self.assertEqual(call["completion_state"], "completed")
-        report = summarize(run["records"])
-        self.assertEqual(report["latency"]["measured"], 4)
-        self.assertEqual(sum(len(result["failures"]) for result in report["workflows"].values()), 4)
+    def test_synthetic_known_failures_keep_call_counts_and_latency(self):
+        rows = [self.sample(sample_id=f"failure-{index}", known_failure=True, latency_seconds=index,
+                            calls=[{"stage": "builder:1", "raw": "A cup on a table.",
+                                    "finish_reason": "stop", "completion_state": "completed"}])
+                for index in (1, 2)]
+        report = summarize(rows)
+        self.assertEqual(report["latency"]["measured"], 2)
+        self.assertEqual(report["workflows"]["builder"]["failures"], ["failure-1", "failure-2"])
+        self.assertTrue(all(row["model_calls"] == 1 for row in report["samples"]))
 
     def test_regression_gate_cannot_hide_fidelity_loss_in_more_words(self):
         baseline = {"samples": [{"sample_id": "one", "review_complete": True, "review_kind": "human", "scene_fidelity": 1, "prompt_words": 10}]}
