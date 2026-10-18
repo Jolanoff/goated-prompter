@@ -327,6 +327,7 @@ def write_prompts(config, request, brief, scenes, *, checkpoint=lambda: None, pr
     requirements = unlabel(requirements, brief)
     # An exact-text style trigger carries the style: the Style setting would only fight it.
     style = "Auto" if locked(brief_triggers(brief), "style") else brief["settings"]["style"] or "Auto"
+    capture = "Auto" if style == "Auto" else brief["settings"].get("capture") or "Auto"
     results = []
     for position, scene in enumerate(scenes, 1):
         number = scene_slot(scene, position)
@@ -341,7 +342,7 @@ def write_prompts(config, request, brief, scenes, *, checkpoint=lambda: None, pr
                                 if part)
             builder_request = replace(request, idea=idea, mode="Enhance", planning_mode="Direct",
                                       target_model=brief["settings"]["target"], prompt_length=brief["settings"]["length"],
-                                      creativity=brief["settings"]["creativity"], style=style,
+                                      creativity=brief["settings"]["creativity"], style=style, capture=capture,
                                       director_preset=request.director_preset, custom_instructions=rules,
                                       compile_rules=False)
             try:

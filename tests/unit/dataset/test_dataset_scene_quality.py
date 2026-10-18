@@ -150,7 +150,7 @@ class FinalLabels(Harness):
         self.request = replace(self.request, director_preset="nsfw_director")
         self.write(["The taller man kneels behind his partner."])
         final = [call for call in self.calls if call.diagnostic_stage == "final"][0]
-        self.assertIn("DIRECTOR BEHAVIOR — NSFW Director", final.system_message + final.user_message)
+        self.assertIn("DIRECTOR BEHAVIOR — Explicit Adult", final.system_message + final.user_message)
         self.calls.clear()
         self.brief["input"]["amount"] = 1
         scenes.write_scenes({"backend": "mock"}, self.request, self.brief, progress=lambda _: None)

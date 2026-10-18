@@ -27,6 +27,7 @@ const builderKeys = [
   "target_model",
   "creativity",
   "style",
+  "capture",
   "planning_mode",
   "prompt_length",
   "director_preset",
@@ -50,6 +51,49 @@ export function builderSnapshot(settings) {
   );
 }
 
+const replacedDirectors = Object.fromEntries(Object.entries({
+  photography_director: ["Realistic", "Pro camera"],
+  smartphone_realism: ["Realistic", "Phone snapshot"],
+  krea_2_smartphone_realism: ["Realistic", "Phone snapshot"],
+  vintage_analog: ["Realistic", "Analog film"],
+  anime_director: ["Anime", "Auto"],
+}).flatMap(([id, value]) => [[id, value], [{
+  photography_director: "Photography Director", smartphone_realism: "Smartphone Realism",
+  krea_2_smartphone_realism: "Krea 2 Smartphone Realism", vintage_analog: "Vintage / Analog",
+  anime_director: "Anime Director",
+}[id], value]]));
+
+// Director names saved before they were renamed.
+const directorAliases = {
+  "Maximum Detail Director": "maximum_detail_director",
+  "Technical Visual Precision": "maximum_detail_director",
+  "Krea 2 High Detail": "krea_2_high_detail",
+  "Krea 2 Visual Precision": "krea_2_high_detail",
+  "Krea 2 Identity Edit": "krea_2_identity_edit",
+  "minimax_h3_director": "minimax_director",
+  "MiniMax Director": "minimax_director",
+  "MiniMax H3 Director": "minimax_director",
+  "General Director": "general_director",
+  "Prompt Enhancer": "prompt_enhancer",
+  "Reverse Engineer": "reverse_engineer",
+  "Surgical Edit": "surgical_edit",
+  "Face Identity Analyst": "face_identity_analyst",
+  "Subject Appearance Analyst": "subject_appearance_analyst",
+  "Reference Composer": "reference_composer",
+  "Arm's-Length Selfie": "arms_length_selfie",
+  "First-Person POV": "first_person_pov",
+  "Fashion Editorial": "fashion_editorial",
+  "Boudoir / Intimate": "boudoir_intimate",
+  "Krea 2 Pose Lock": "krea_2_pose_lock",
+  "Video Director": "video_director",
+  "Archviz Director": "archviz_director",
+  "Character Director": "character_director",
+  "Product Director": "product_director",
+  "Style Transfer Director": "style_transfer_director",
+  "Dataset Caption Director": "dataset_caption_director",
+  "NSFW Director": "nsfw_director",
+};
+
 export function hydrateBuilder(inputs, saved = {}, library) {
   const result = builderSnapshot({
     planning_mode: "Direct",
@@ -64,14 +108,13 @@ export function hydrateBuilder(inputs, saved = {}, library) {
     "Qwen2.1": "Qwen Image 2.1", "MiniMax": "MiniMax H3",
   };
   result.target_model = targetAliases[result.target_model] ?? result.target_model;
+  // Directors that set a medium became Style choices: General plus that style and capture.
+  const replaced = replacedDirectors[result.director_preset];
+  if (replaced) {
+    result.director_preset = "general_director";
+    if ((result.style ?? "Auto") === "Auto") [result.style, result.capture] = replaced;
+  }
   if (library) {
-    const directorAliases = {
-      "Maximum Detail Director": "maximum_detail_director",
-      "Krea 2 High Detail": "krea_2_high_detail",
-      "Krea 2 Identity Edit": "krea_2_identity_edit",
-      "minimax_h3_director": "minimax_director",
-      "MiniMax Director": "minimax_director",
-    };
     result.director_preset = directorAliases[result.director_preset] ?? result.director_preset;
     const find = (value) =>
       library.presets.find((item) => item.id === value || item.label === value);

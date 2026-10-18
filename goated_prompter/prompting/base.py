@@ -9,7 +9,7 @@ Do not invent important subjects, objects, architecture, clothing, actions, or c
 FRAME COMPLETENESS DEFAULT
 Unless intentional cropping is requested, choose framing and camera distance that keep all requested subjects and important objects meaningfully inside the image. Preserve explicit counts and required extremities. Increase distance or field of view when necessary rather than silently cropping requested content."""
 # One shared precedence rule replaces the former Mode/Detail/Director meta block.
-SETTINGS_PRECEDENCE = """The selected Mode sets the task and the target model sets the output format. Creativity, prompt length and Director style adapt to both and never change the task, the format or the user's facts."""
+SETTINGS_PRECEDENCE = """The selected Mode sets the task. The target model sets how the prompt is written: format, syntax, order and length. The Visual Style sets the medium and rendering. The Director sets what is emphasized inside them. None overrides another: creativity, prompt length and the Director adapt to the task, format and style and never change the task, the format or the user's facts."""
 PRIORITY_CONTRACT = """PRIORITY AND CONFLICT RESOLUTION
 Build one internally coherent prompt. When instructions compete, resolve them in this order:
 1. The user's current request, only for the attributes it changes.

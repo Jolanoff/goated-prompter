@@ -44,7 +44,7 @@ and the review shows the link. Each character carries `known`: its looks come fr
 exact-text character trigger, so no step invents them. Version 9 to 12 briefs in saved runs stay readable.
 
 Scenes (`v2/scenes.py`): the scene writer (`dataset_v2:scenes`, one call per batch of up to ten images) receives the
-USER REQUEST, the EXISTING APPROVED REQUIREMENTS (rules, Understanding, style) and, only when packs are selected, a
+USER REQUEST, the EXISTING APPROVED REQUIREMENTS (rules, Understanding, style, and the capture when the style is Realistic) and, only when packs are selected, a
 SELECTED VOCABULARY section: just the categories that have a selected pack, each with its Core instruction and the
 entries of those packs (merged per category and shuffled for every batch by a generator seeded with the run's seed),
 plus the shared vocabulary usage rules. Each category sends a seeded sample of at most `VOCABULARY_SAMPLE` (40)
@@ -61,7 +61,7 @@ preset and target model together, as in the Prompt Builder; the scene writer nev
 ask Builder to keep every subject, action, object, place, camera and light, add none, and describe people rather
 than labels; known characters are named, never described. The Builder does not parse the scene as user rules
 (`compile_rules=False`): the approved requirements already carry them. The Builder is told what exact-text triggers
-carry (never describe it) and which meanings to write; an exact style trigger turns the Style setting off. Code places
+carry (never describe it) and which meanings to write; an exact style trigger turns the Style and Capture settings off. Code places
 every exact text itself (`place_triggers`): pinned ones first in list order, the rest by type in the Anima tag line,
 at its person's first mention in prose, or in an Ideogram element's description, `style_description.aesthetics` or
 `high_level_description`. The scene writer hears outfit and meaning triggers (`trigger_notes`). Code rewrites once a

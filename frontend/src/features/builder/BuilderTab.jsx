@@ -3,6 +3,7 @@ import { ArrowUpRight, Bookmark, ChevronDown, Copy,
 import { orderDisplayPresets, presetDisplayLabel } from "../../presetPresentation.js";
 import { ui } from "../../ui.js";
 import { taskLabels } from "./options.js";
+import { styleChoices } from "../../shared/workflow/options.js";
 import LibraryStatus from "../../shared/workflow/LibraryStatus.jsx";
 
 function BuilderField({ name, label, short, schema, value, choices: override, onChange }) {
@@ -68,7 +69,8 @@ export default function BuilderTab({ settings, inputs, presets, preset, engine, 
                   })))}
                   {field("target_model", "Target model", "Model")}
                   {field("creativity", "Creativity")}
-                  {field("style", "Style")}
+                  {field("style", "Style", undefined, styleChoices(inputs.style[0], settings.target_model, settings.style))}
+                  {settings.style === "Realistic" && settings.target_model !== "Anima" && field("capture", "Capture")}
                   {field("prompt_length", "Prompt length", "Length", ["Short", "Medium", "Detailed", "Maximum Detail"].map(
                     (value) => ({ value, label: value })))}
                   <label className={ui.pillField}>

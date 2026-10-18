@@ -33,6 +33,7 @@ class GoatedPrompterRequest:
     target_model: str = "Generic"
     creativity: str = "Balanced"
     style: str = "Auto"
+    capture: str = "Auto"  # how a Realistic image was captured (options/styles.py CAPTURE_NAMES)
     prompt_model: str = "Qwen 3.5 9B"
     director_preset: str = DEFAULT_DIRECTOR_PRESET
     director_ai: str = ""
@@ -89,6 +90,7 @@ class GoatedPrompterRequest:
             target_model=str(values.get("target_model") or "Generic"),
             creativity=str(values.get("creativity") or "Balanced"),
             style=str(values.get("style") or "Auto"),
+            capture=str(values.get("capture") or "Auto"),
             prompt_model=str(values.get("prompt_model") or values.get("director_ai") or "Qwen 3.5 9B"),
             director_preset=str(preset_value),
             director_profile=str(values.get("director_profile") or ""),

@@ -49,6 +49,9 @@ class OptionParityTests(unittest.TestCase):
 
     def test_styles_match_backend(self):
         self.assertEqual(tuple(exported("shared/workflow/options.js", "styles")), styles.STYLE_NAMES)
+        self.assertEqual(tuple(exported("shared/workflow/options.js", "captures")), styles.CAPTURE_NAMES)
+        self.assertEqual({key: tuple(value) for key, value in exported("shared/workflow/options.js", "unsupportedStyles").items()},
+                         styles.UNSUPPORTED_STYLES)
 
     def test_detail_locks_match_backend(self):
         self.assertEqual(tuple(value for value, _label in exported("shared/workflow/options.js", "lockOptions")),

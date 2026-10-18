@@ -16,8 +16,8 @@ class DirectorLibraryTests(unittest.TestCase):
         directors = [preset for preset in presets.DIRECTOR_PRESETS if "MiniMax" in preset.label]
         self.assertEqual(len(directors), 1)
         director = directors[0]
-        self.assertEqual(director.label, "MiniMax H3 Director")
-        for alias in ("minimax_director", "minimax_h3_director", "MiniMax Director", "MiniMax H3 Director"):
+        self.assertEqual(director.label, "MiniMax H3")
+        for alias in ("minimax_director", "minimax_h3_director", "MiniMax Director", "MiniMax H3 Director", "MiniMax H3"):
             self.assertEqual(presets.get_director_preset(alias), director)
         path = self.root / ".overrides" / "minimax_h3_director.json"
         path.parent.mkdir()
@@ -28,6 +28,19 @@ class DirectorLibraryTests(unittest.TestCase):
         self.assertEqual(modified.instructions, "User motion direction")
         presets.reset_director("minimax_h3_director")
         self.assertFalse(path.exists())
+
+    def test_renamed_and_replaced_directors(self):
+        self.assertEqual(presets.get_director_preset("Fashion Editorial").label, "Fashion & Styling")
+        path = self.root / ".overrides" / "fashion_editorial.json"
+        path.parent.mkdir()
+        path.write_text(json.dumps({"id": "fashion_editorial", "name": "Fashion Editorial",
+            "instructions": "Saved before the rename", "recommended_mode": "Photography"}), encoding="utf-8")
+        self.assertEqual(presets.get_director_preset("fashion_editorial").instructions, "Saved before the rename")
+        for removed in ("photography_director", "Smartphone Realism", "anime_director", "Vintage / Analog"):
+            self.assertEqual(presets.get_director_preset(removed).id, "general_director")
+        self.assertEqual(presets.fold_replaced_director({"director_preset": "Vintage / Analog"}),
+                         {"director_preset": "general_director", "style": "Realistic", "capture": "Analog film"})
+        self.assertEqual(presets.fold_replaced_director({"director_preset": "nsfw_director"}), {"director_preset": "nsfw_director"})
 
     def setUp(self):
         temporary = enter_context(self, tempfile.TemporaryDirectory())

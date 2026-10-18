@@ -84,6 +84,7 @@ async def confirm_endpoint(request):
             state, config, settings,
             idea=brief["input"]["request"], mode="Custom", target_model=brief["settings"]["target"],
             creativity=brief["settings"]["creativity"], style=brief["settings"]["style"],
+            capture=brief["settings"].get("capture") or "Auto",
             prompt_length=brief["settings"]["length"], director_preset=director.id,
         )
         return web.json_response(state.start_job("dataset_v2_scenes", director_request, config, True,

@@ -14,7 +14,7 @@ import { useCatalog } from "../vocabulary/useCatalog.js";
 import { cleanSelection, recordedNames, selectedNames } from "../vocabulary/catalog.js";
 import { RunPrompts, RunScenes } from "./DatasetRunPages.jsx";
 import { excludedDirectors, maxSeed, seedModes } from "./options.js";
-import { styles } from "../../shared/workflow/options.js";
+import { captures, styleChoices, styles } from "../../shared/workflow/options.js";
 
 const datasetPages = [["configure", "Configure"], ["scenes", "Scenes"], ["dataset", "Dataset"]];
 const sceneSources = [
@@ -238,10 +238,16 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
               </label>
               <label className={ui.field}><span><WandSparkles size={14} aria-hidden="true" />Style</span>
                 <select className={ui.select} aria-label="Dataset visual style" value={draft.style || "Auto"} onChange={(event) => update({ style: event.target.value })}>
-                  {styles.map((item) => <option key={item}>{item}</option>)}
+                  {styleChoices(styles, draft.target, draft.style || "Auto").map(({ value }) => <option key={value}>{value}</option>)}
                 </select>
                 <small className="text-xs leading-relaxed text-muted">Auto follows your concept; with Anima it means anime.</small>
               </label>
+              {draft.style === "Realistic" && draft.target !== "Anima" && <label className={ui.field}><span><WandSparkles size={14} aria-hidden="true" />Capture</span>
+                <select className={ui.select} aria-label="Dataset photo capture" value={draft.capture || "Auto"} onChange={(event) => update({ capture: event.target.value })}>
+                  {captures.map((item) => <option key={item}>{item}</option>)}
+                </select>
+                <small className="text-xs leading-relaxed text-muted">How the photos were taken. Auto picks one per image.</small>
+              </label>}
             </div>
 
             <fieldset className="mt-5 border-t border-line pt-4">

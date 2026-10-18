@@ -14,20 +14,17 @@ test("all built-in display titles follow the requested order without mutating th
   Object.freeze(presets);
   const displayed = orderDisplayPresets(presets);
   assert.deepEqual(displayed.map(presetDisplayLabel), [
-    "General-Purpose Prompt", "Polish a Rough Prompt", "Technical Visual Precision",
+    "General", "Polish a Rough Prompt", "Technical Precision",
     "Recreate a Reference Image", "Describe Facial Features", "Describe Face & Body",
     "Combine Reference Images", "Edit Only the Requested Details", "Krea 2 Identity Edit v1.2 (Community)",
-    "Change the Visual Style", "Krea 2 Visual Precision", "Krea 2 Match Reference Pose",
-    "Photography Director", "Casual Phone Photo", "Front-Camera Selfie", "Mirror Selfie",
-    "First-Person View", "Fashion Photography", "Vintage Film Photography",
-    "Boudoir Photography", "Krea 2 Phone Photo", "Character Director",
-    "Architecture & Interiors", "Product Photography", "Dataset & LoRA Caption",
-    "Video Action & Camera Movement", "MiniMax H3 Director",
-    "Anime Director", "NSFW Director",
+    "Change the Visual Style", "Krea 2 Precision", "Krea 2 Match Reference Pose",
+    "Front-Camera Selfie", "Mirror Selfie", "First-Person View", "Fashion & Styling",
+    "Boudoir & Intimate", "Character Focus", "Architecture & Interiors", "Product Focus",
+    "Dataset & LoRA Caption", "Video Action & Camera Movement", "MiniMax H3", "Explicit Adult",
   ]);
   assert.deepEqual(presets, original);
   for (const item of displayed) assert.equal(item, presets.find((p) => p.id === item.id));
-  for (const id of ["krea_2_identity_edit", "photography_director", "character_director"]) {
+  for (const id of ["krea_2_identity_edit", "fashion_editorial", "character_director"]) {
     const item = presets.find((p) => p.id === id);
     assert.equal(presetDisplayLabel(item), item.label);
   }
@@ -44,8 +41,8 @@ test("custom labels and order survive after built-ins, including canonical-looki
   const displayed = orderDisplayPresets(input);
   assert.deepEqual(displayed.slice(-3), custom);
   assert.deepEqual(displayed.slice(-3).map(presetDisplayLabel), custom.map((p) => p.label));
-  // Unmapped built-ins retain input order and still precede user presets.
+  // Unlisted built-ins follow the listed ones and still precede user presets.
   assert.ok(displayed.indexOf(unknown) < displayed.indexOf(custom[0]));
-  assert.ok(displayed.indexOf(unknown) < displayed.findIndex((p) => p.id === "anime_director"));
+  assert.ok(displayed.indexOf(unknown) > displayed.findIndex((p) => p.id === "nsfw_director"));
   assert.equal(presetDisplayLabel(unknown), "Future preset");
 });

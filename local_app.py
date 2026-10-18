@@ -41,7 +41,7 @@ from goated_prompter.json_store import atomic_json, read_store
 from goated_prompter.local_jobs import Job, JobCancelled, TERMINAL
 from goated_prompter.presets import (
     DEFAULT_DIRECTOR_PRESET, DirectorLibraryError, get_director_preset, recommended_director_for_mode,
-    save_user_director,
+    fold_replaced_director, save_user_director,
 )
 from goated_prompter.options.references import REFERENCE_ATTRIBUTES
 from goated_prompter.workflow_runners import execute_workflow
@@ -91,7 +91,7 @@ class LocalState:
                 self.saved_settings = saved
 
     def canonical_builder(self, builder, recover=False):
-        builder = dict(builder)
+        builder = fold_replaced_director(dict(builder))  # a Director that became a Style choice
         selected = builder.get("director_preset")
         try:
             director = get_director_preset(selected or (recommended_director_for_mode(builder.get("mode")) if recover else DEFAULT_DIRECTOR_PRESET), strict=True)

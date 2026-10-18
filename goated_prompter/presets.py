@@ -26,7 +26,7 @@ def _serialized(function):
     return wrapped
 from .prompting.directors import (
     DEFAULT_DIRECTOR_PRESET, DIRECTOR_PRESETS, DIRECTOR_PRESET_NAMES,
-    MODE_DIRECTOR_RECOMMENDATIONS, DirectorPreset, _LEGACY_DIRECTOR_ALIASES,
+    MODE_DIRECTOR_RECOMMENDATIONS, DirectorPreset, _LEGACY_DIRECTOR_ALIASES, fold_replaced_director,
 )
 from .options.modes import MODE_NAMES
 
@@ -243,13 +243,14 @@ def _effective_builtin(builtin, directory):
         return builtin, ""
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
-        ids, labels, modes = {builtin.id}, {builtin.label}, {builtin.recommended_mode}
+        # An override saved before a Director was renamed keeps its old name.
+        labels = {builtin.label.casefold(), *(old for old, new in _LEGACY_DIRECTOR_ALIASES.items() if new == builtin.label)}
+        ids, modes = {builtin.id}, {builtin.recommended_mode}
         if builtin.id == "minimax_director":
             ids.add("minimax_h3_director")
-            labels.add("MiniMax Director")
             modes.add("")
         if (not isinstance(payload, dict) or not isinstance(payload.get("id"), str) or payload.get("id") not in ids
-                or not isinstance(payload.get("name"), str) or payload.get("name") not in labels
+                or not isinstance(payload.get("name"), str) or payload["name"].casefold() not in labels
                 or not isinstance(payload.get("instructions"), str)
                 or not 1 <= len(payload["instructions"].strip()) <= 100000
                 or not isinstance(payload.get("recommended_mode"), str) or payload.get("recommended_mode") not in modes):

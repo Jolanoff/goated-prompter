@@ -1,41 +1,33 @@
-// Presentation only: never replace canonical preset names or instructions.
-const builtinTitles = new Map([
-  ["general_director", "General-Purpose Prompt"],
-  ["prompt_enhancer", "Polish a Rough Prompt"],
-  ["maximum_detail_director", "Technical Visual Precision"],
-  ["reverse_engineer", "Recreate a Reference Image"],
-  ["face_identity_analyst", "Describe Facial Features"],
-  ["subject_appearance_analyst", "Describe Face & Body"],
-  ["reference_composer", "Combine Reference Images"],
-  ["surgical_edit", "Edit Only the Requested Details"],
-  ["krea_2_identity_edit", "Krea 2 Identity Edit v1.2 (Community)"],
-  ["style_transfer_director", "Change the Visual Style"],
-  ["krea_2_high_detail", "Krea 2 Visual Precision"],
-  ["krea_2_pose_lock", "Krea 2 Match Reference Pose"],
-  ["photography_director", "Photography Director"],
-  ["smartphone_realism", "Casual Phone Photo"],
-  ["arms_length_selfie", "Front-Camera Selfie"],
-  ["mirror_selfie", "Mirror Selfie"],
-  ["first_person_pov", "First-Person View"],
-  ["fashion_editorial", "Fashion Photography"],
-  ["vintage_analog", "Vintage Film Photography"],
-  ["boudoir_intimate", "Boudoir Photography"],
-  ["krea_2_smartphone_realism", "Krea 2 Phone Photo"],
-  ["character_director", "Character Director"],
-  ["archviz_director", "Architecture & Interiors"],
-  ["product_director", "Product Photography"],
-  ["dataset_caption_director", "Dataset & LoRA Caption"],
-  ["video_director", "Video Action & Camera Movement"],
-  ["minimax_director", "MiniMax H3 Director"],
-]);
-const builtinOrder = new Map(
-  [...builtinTitles.keys()].map((id, index) => [id, index]),
-);
+// Presentation only: the order built-in Directors are listed in. Their names come from the backend.
+const builtinOrder = new Map([
+  "general_director",
+  "prompt_enhancer",
+  "maximum_detail_director",
+  "reverse_engineer",
+  "face_identity_analyst",
+  "subject_appearance_analyst",
+  "reference_composer",
+  "surgical_edit",
+  "krea_2_identity_edit",
+  "style_transfer_director",
+  "krea_2_high_detail",
+  "krea_2_pose_lock",
+  "arms_length_selfie",
+  "mirror_selfie",
+  "first_person_pov",
+  "fashion_editorial",
+  "boudoir_intimate",
+  "character_director",
+  "archviz_director",
+  "product_director",
+  "dataset_caption_director",
+  "video_director",
+  "minimax_director",
+  "nsfw_director",
+].map((id, index) => [id, index]));
 
 export function presetDisplayLabel(preset) {
-  return preset.source === "builtin"
-    ? builtinTitles.get(preset.id) ?? preset.label
-    : preset.label;
+  return preset.label;
 }
 
 export function orderDisplayPresets(presets) {

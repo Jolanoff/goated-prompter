@@ -121,7 +121,7 @@ class TargetControlTests(unittest.TestCase):
         self.assertIn("Community", get_director_preset("Krea 2 Identity Edit").label)
 
     def test_krea_specific_directors_are_target_gated_even_with_working_copy(self):
-        for director in ("krea_2_smartphone_realism", "krea_2_pose_lock", "krea_2_identity_edit", "krea_2_high_detail"):
+        for director in ("krea_2_pose_lock", "krea_2_identity_edit", "krea_2_high_detail"):
             with self.subTest(director=director):
                 preset = get_director_preset(director)
                 self.assertIn(preset.instructions, self.instruction("Krea 2", director_preset=director))

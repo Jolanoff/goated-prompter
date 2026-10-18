@@ -96,17 +96,18 @@ class SupportingPlanningTests(unittest.TestCase):
         # Anima alone uses the updated compact hybrid adapter and flat-prefix format.
         # Regenerated for the slimmed Builder prompt, per-target guidance, library templates and no built-in examples.
         # Updated for the merged Z-Image target and the Anima, FLUX.2 Klein, Qwen Image (original) and Ideogram4 adapters.
+        # Updated for the Style/Director split: the precedence text, renamed Directors and medium-neutral adapters.
         golden = {
-            "Generic": "ca973563591fd39b2f5af4ca0bb3b60455c2b082222ebc1adb5d659c5f349e49",
-            "Anima": "0def63b65d0cc8e0462073a88e1771621eb02ba8e617f10902228921c9a90097",
-            "Krea 2": "5b714ca610bcba54a62229eea57816f3d85fa223bef9a3ac4bea34035a1c7a25",
-            "FLUX.2 Klein": "a26dc1228fcda0ab4cb4d0119b9a9dfbc8d2a772609053b5a361b7f5f3978b49",
-            "Z-Image": "c1dd927888b8e03b37190f7664303890ba1a6f2a88a5b71bb7971068abacb926",
-            "Qwen Image (original)": "e73830077f44879864a4f80f92bd4f91bbc61657a5ed9546ca9493c0a9e49c8e",
-            "Qwen Image 2.1": "5640e5267445c981da3136e72814c9ff493dd5109a5509e55a5f656e11c4f717",
-            "MiniMax H3": "fe9f699275051a1d04dd0d485d18f1c4d2c2b99b67c4d3bdd8c37609bde05931",
-            "LTX 2.5": "3bef3b1045ba979bc42f6ff6f287672761391952a52d6ebb8c8ef1a496a1b26d",
-            "Ideogram4": "13235a7022b883900cd0e94415dae111c70031a46ff89e6625643aac96cbbe6c"}
+            "Generic": "724e3c6aa833b18524d7e9131a7e5530b1092f3019bdb87ffd9267b60c63d533",
+            "Anima": "73923343ca6d19fdb44446349e9604fb276103eff6b250b0884c9beea870a732",
+            "Krea 2": "0e3fb44261511da7a9f25a3b84a51307258bea849d9e95b77201b445b7bf878e",
+            "FLUX.2 Klein": "1733b9ebea2b39af43f368aeb2600a8a47ae975893b88badec82a75b6fd8db70",
+            "Z-Image": "12e86ccf062d891c75761dba1ca813c9c3b9c9557071ccb5dcf3892de057af2b",
+            "Qwen Image (original)": "38ea075ec39b45a718e751ec0aba537f47d5c6dfa04edc869fdb576749bc5c2d",
+            "Qwen Image 2.1": "2c356c101d040fc9dfcdf0fe18c670f42edfafb2362feaa994591b755cb23526",
+            "MiniMax H3": "b99dab8fc288ca70400e0173a1a6e9f0d3464c9d9fb04b71bafc7a5875aecece",
+            "LTX 2.5": "085d28a38403f35d53b392e18d7ea023bc996faa13b6dfea2ce707cbc05a863e",
+            "Ideogram4": "9b9546de55b5886df88f4faace6079ad56c76508a408447efa334f2fe032b4f9"}
         self.assertEqual(set(golden), set(TARGET_MODEL_NAMES))
         for target, digest in golden.items():
             with self.subTest(target=target):

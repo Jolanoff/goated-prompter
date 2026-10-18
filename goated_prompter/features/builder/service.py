@@ -191,7 +191,7 @@ def assemble_instruction(
         style_profile_text(profile, request.prompt_length) if references and (profile := library_profile(request.target_model))
         else resolve_target_length(request.target_model, request.prompt_length),
     ])
-    if style := style_section(request.style, request.target_model):
+    if style := style_section(request.style, request.target_model, request.capture):
         sections.append(style)
 
     sections.append(_preservation_section(

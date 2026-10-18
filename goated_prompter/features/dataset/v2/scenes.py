@@ -258,6 +258,8 @@ def compose_message(brief, images, earlier=(), vocabulary="", entries_used=None)
     requirements = {"rules": brief["input"]["rules"],
                     "understanding": {key: brief[key] for key in ("summary", "characters", "fixed", "randomized", "must", "avoid")},
                     "style": brief["settings"]["style"] or "Auto"}
+    if requirements["style"] == "Realistic" and brief["settings"].get("capture", "Auto") != "Auto":
+        requirements["capture"] = brief["settings"]["capture"]  # how the photograph was taken
     if notes := trigger_notes(brief):
         requirements["triggers"] = notes
     parts = [f"USER REQUEST:\n{brief['input']['request']}",

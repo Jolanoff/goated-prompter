@@ -105,7 +105,7 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("lock_generated_prompt", payload["inputs"])
         self.assertEqual(set(payload["presets"]), {"ok", "default", "presets", "mode_directors", "warnings", "storage"})
         self.assertEqual(set(payload["presets"]["mode_directors"]), set(payload["inputs"]["mode"][0]))
-        self.assertEqual(payload["presets"]["mode_directors"]["Photography"], "photography_director")
+        self.assertEqual(payload["presets"]["mode_directors"]["Photography"], "general_director")
         self.assertEqual(set(payload["models"]), {"ok", "backend", "root", "profiles", "assignments", "warnings"})
         with patch.object(settings_routes, "discover_director_profiles", wraps=settings_routes.discover_director_profiles) as discover:
             response = await self.client.get("/api/models?refresh=true")
@@ -217,15 +217,15 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["file"], original["file"])
         self.assertEqual(result["director"]["id"], original["director"]["id"])
         self.assertEqual(result["director"]["recommended_mode"], "Custom")
-        response = await self.client.put("/api/presets", json={"id": "photography_director", "name": "Photography Director", "instructions": "Saved authority"})
+        response = await self.client.put("/api/presets", json={"id": "fashion_editorial", "name": "Fashion & Styling", "instructions": "Saved authority"})
         builtin = (await response.json())["director"]
         self.assertTrue(builtin["modified"])
         self.assertTrue(builtin["protected"])
         self.assertEqual(builtin["recommended_mode"], "Photography")
-        self.assertEqual(library.get_director_preset("Photography Director").instructions, "Saved authority")
+        self.assertEqual(library.get_director_preset("Fashion & Styling").instructions, "Saved authority")
         self.assertEqual(Path(library.__file__).read_bytes(), source)
         for text_only in (False, True):
-            for selected in ("photography_director", "reverse_engineer", result["director"]["id"]):
+            for selected in ("fashion_editorial", "reverse_engineer", result["director"]["id"]):
                 job = await self.start(settings={"idea": "test", "director_preset": selected, "mode": "Video", "system_prompt_override": "Ignored"}, text_only=text_only)
                 await self.wait_status(job["id"], "succeeded")
                 request, actual_text = self.calls[-1]
@@ -234,9 +234,9 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(request.system_prompt_override, "")
         response = await self.client.post("/api/generate", json={"settings": {"director_preset": "user:missing"}})
         self.assertEqual(response.status, 400)
-        response = await self.client.delete("/api/presets", json={"id": "photography_director"})
+        response = await self.client.delete("/api/presets", json={"id": "fashion_editorial"})
         self.assertEqual(response.status, 400)
-        response = await self.client.post("/api/presets/reset", json={"id": "photography_director"})
+        response = await self.client.post("/api/presets/reset", json={"id": "fashion_editorial"})
         self.assertFalse((await response.json())["director"]["modified"])
         self.assertEqual(Path(library.__file__).read_bytes(), source)
 
@@ -276,6 +276,12 @@ class LocalEndpointTests(unittest.IsolatedAsyncioTestCase):
         state = local.LocalState(lambda: {}, None, self.settings_path)
         self.assertEqual(state.settings()["builder"], {"director_preset": "video_director", "mode": "Video"})
         self.assertTrue(state.migration_notices)
+
+    async def test_saved_replaced_director_becomes_general_with_its_style(self):
+        local.atomic_json(self.settings_path, {"builder": {"director_preset": "Smartphone Realism", "mode": "Photography"}})
+        state = local.LocalState(lambda: {}, None, self.settings_path)
+        self.assertEqual(state.settings()["builder"], {"director_preset": "general_director", "mode": "Photography",
+                                                       "style": "Realistic", "capture": "Phone snapshot"})
 
     async def test_inflight_pause_conflict_resume_and_delivery(self):
         self.release.clear()

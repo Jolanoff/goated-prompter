@@ -126,7 +126,7 @@ def copied_input(data):
 
 
 def copied_settings(data):
-    return {"style": data.get("style", ""), "target": data.get("target", ""), "director": data.get("director_preset", ""),
+    return {"style": data.get("style", ""), "capture": data.get("capture", "Auto"), "target": data.get("target", ""), "director": data.get("director_preset", ""),
             "length": data.get("length", ""), "creativity": data.get("creativity", "")}
 
 
