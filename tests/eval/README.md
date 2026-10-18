@@ -11,24 +11,26 @@ Run from the repository root:
 ```powershell
 python -m tests.eval.runner --dry-run
 New-Item -ItemType Directory -Force quality-artifacts/temp/<task-key>/evaluation | Out-Null
-python -m tests.eval.runner --replay tests/eval/fixtures/model_outputs/real_builder.json --output quality-artifacts/temp/<task-key>/evaluation/run.json
-python -m tests.eval.runner --template quality-artifacts/temp/<task-key>/evaluation/review.json --replay tests/eval/fixtures/model_outputs/real_builder.json
+python -m tests.eval.runner --replay tests/eval/fixtures/synthetic/replay.json --output quality-artifacts/temp/<task-key>/evaluation/run.json
+python -m tests.eval.runner --template quality-artifacts/temp/<task-key>/evaluation/review.json --replay tests/eval/fixtures/synthetic/replay.json
 python -m tests.eval.report quality-artifacts/temp/<task-key>/evaluation/run.json --output quality-artifacts/temp/<task-key>/evaluation/report.json
 ```
 
-`--replay tests/eval/fixtures/model_outputs` combines frozen evaluation runs across
-both workflows. Runs require `run_id` and records with `sample_id` and
+`--replay tests/eval/fixtures/synthetic` loads handwritten examples for
+both workflows. They test replay and metric contracts, not model quality.
+Runs require `run_id` and records with `sample_id` and
 `workflow`. Historical raw supporting fixtures use separate schemas;
 directory replay lists them in `skipped_supporting_fixtures`
 instead of treating them as workflow samples. Malformed workflow runs still fail.
 Keep live results, hardware details, local paths, and review notes in ignored
 `quality-artifacts/` or outside the repository. Top-level evaluation result/notes
-files are local-only; reusable corpora, test documentation, and sanitized frozen
-regression responses remain versioned. Review fixture metadata before adding it.
+files are local-only; reusable corpora, test documentation, and synthetic
+regression examples remain versioned. Historical captures under `fixtures/model_outputs/`
+and `fixtures/FAILURE_COVERAGE.md` are ignored. Keep new captures under `quality-artifacts/`.
 Reporting with `--annotations REVIEW.json --require-review --baseline OLD_REPORT.json`
 fails on incomplete comparable reviews, missing explicit independent provenance, or fidelity/constraint regressions. Prompt
-length never compensates for a lost anchor. CI publishes frozen replay JSON/Markdown;
-it does not pretend those old known-failing samples establish current model quality.
+length never compensates for a lost anchor. CI publishes synthetic replay JSON/Markdown;
+it does not establish current model quality.
 
 Live calls require both `--config` and `--allow-live`; notify the GPU owner first.
 Prefer the [task-scoped real-GPU command](../README.md#real-gpu-entry-point),
@@ -51,7 +53,7 @@ diagnostic, never independent ground truth. Legacy/unspecified review provenance
 the independent gate. Mark optional
 video/domain fields null only when not applicable. Missing review is **unknown**, never success.
 Lexical exclusion checks are conservative diagnostics, not full semantic review.
-Freeze real failures with source and exact raw text; never label synthetic
+Keep real failures with source and exact raw text in ignored storage; never label synthetic
 transport/format test data as an observed real-model failure.
 
 Metrics distinguish target-format validity, first-pass validity, trigger fidelity, scene usability,
@@ -61,4 +63,4 @@ retries and transport failures are not counted as output repairs. A planner repa
 sample from being first-pass valid even if its first final-writer call succeeds. Missing call history
 leaves cost/first-pass metrics unknown. Exact duplicate rates are lexical diagnostics; semantic
 repetition, scene/action/pose fidelity and target usability still require explicit anchor review.
-Frozen replay measures historical artifacts, not the semantic quality of current code.
+Synthetic replay checks evaluation contracts, not the semantic quality of current code.

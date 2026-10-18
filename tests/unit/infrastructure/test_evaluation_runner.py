@@ -50,7 +50,7 @@ class EvaluationRunnerTests(unittest.TestCase):
                 load_replay(root)
 
     def test_committed_fixture_directory_replays_only_evaluation_samples(self):
-        result = load_replay(TESTS / "eval/fixtures/model_outputs")
-        self.assertEqual(len(result["records"]), 6)
+        result = load_replay(TESTS / "eval/fixtures/synthetic")
+        self.assertEqual(len(result["records"]), 2)
         self.assertEqual({row["workflow"] for row in result["records"]}, {"builder", "minimax"})
-        self.assertIn("semantic_constraint_reviews.json", result["skipped_supporting_fixtures"])
+        self.assertEqual(result["skipped_supporting_fixtures"], [])

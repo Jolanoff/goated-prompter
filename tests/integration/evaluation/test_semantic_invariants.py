@@ -1,4 +1,4 @@
-"""Real raw failures plus explicitly synthetic audit verdicts/valid controls.
+"""Handwritten synthetic action/constraint failures, audit verdicts and valid controls.
 
 These prove routing/contracts, NOT model-review accuracy. Live verification is
 required separately. Defining relations stay fixed; equivalent prose and compatible
@@ -7,7 +7,6 @@ lighting/material treatment may vary. Plausible role/grip/support substitution m
 
 from contextlib import contextmanager
 import json
-from pathlib import Path
 from unittest.mock import Mock, patch
 import unittest
 
@@ -20,10 +19,22 @@ from goated_prompter.planning.semantic_validation import (
 )
 from goated_prompter.features.minimax.contract import validate_output, validate_analysis, validate_minimax_draft
 from tests.eval.metrics import measure, useful_fact_coverage
-from tests.support.paths import TESTS
 
-FIXTURE = TESTS / "eval/fixtures/model_outputs/current_fixed_engine_failures.json"
-RECORDS = {(r["case_id"], r["workflow"]):r for r in json.loads(FIXTURE.read_text(encoding="utf-8"))["records"]}
+SCENARIOS = [
+    ("climb", "builder", "A climber holds one arm locked off.",
+     "A climber keeps the supporting arm fully extended and locked off."),
+    ("combat", "builder", "Two athletes train with the partner balanced over the hip.",
+     "Two athletes train with both feet planted firmly on the mat."),
+    ("literal", "minimax", 'A guard holds a sign reading "NO ENTRY"; no hats.',
+     'integrated_multimodal_description: [Shot 1] A guard wears a navy uniform and a peaked cap, holding a sign reading "NO ENTRY".'
+     '\n\noverall_soundscape: Quiet footsteps.\n\nnon_diegetic_music: N/A'),
+    ("dialogue", "minimax", 'Two acrobats counterbalance holding one hand. One says "No, don\'t stop—go!" End at 10 seconds.',
+     'integrated_multimodal_description: [Shot 1] At 00:00.000, an acrobat balances with a single hand planted firmly on the ground. '
+     'The partner (S1) says <d>[English] No, don\'t stop—go!</d> as they recover balance.'
+     '\n\noverall_soundscape: Footsteps and spoken dialogue.\n\nnon_diegetic_music: N/A'),
+]
+RECORDS = {(case, workflow): {"request": request, "rules": "", "prompt": candidate, "calls": [{"raw": candidate}]}
+           for case, workflow, request, candidate in SCENARIOS}
 CHECKS = ("action_fidelity", "scene_fidelity", "constraint_validity")
 
 
@@ -37,7 +48,7 @@ def defect(category, kind, source, evidence, message="Defining invariant changed
 
 
 class SequenceBackend:
-    name = "synthetic-audit-frozen-output"
+    name = "synthetic-audit"
     def __init__(self, outputs): self.outputs, self.calls, self.events = iter(outputs), [], []
     @contextmanager
     def generation_session(self): yield self
@@ -56,18 +67,24 @@ class SemanticInvariantTests(unittest.TestCase):
         self.assertEqual(contract["action_critical_facts"]["pose_detail"], plan["pose_detail"])
         self.assertNotIn("planned_geometry", contract)
 
-    def test_captured_real_constraint_audits_replay_with_separate_issue_kinds(self):
-        fixture=json.loads((FIXTURE.parent/"semantic_constraint_reviews.json").read_text(encoding="utf-8"))
-        for row in fixture["records"]:
-            with self.subTest(sample=row["id"]):
-                contract=invariant_contract(row["source"],constraints=compile_request(row["source"],has_context=True).workflow_data())
-                backend=SequenceBackend([row["raw"]])
-                if row["expected_accepted"]:
-                    review_candidate(backend,contract,row["candidate"],stage="captured-review",checks=("constraint_validity",))
+    def test_synthetic_constraint_audits_replay_with_separate_issue_kinds(self):
+        source = "A guard. No hats."
+        cases = [
+            ("A guard wears a hat.", defect("constraint_validity", "forbidden_content", "No hats.", "a hat")),
+            ("A guard without a hat.", defect("constraint_validity", "exclusion_leakage", "No hats.", "without a hat")),
+            ("A guard wears a blue coat.", None),
+            ("A guard stands without leaning.", None),
+        ]
+        for candidate, issue in cases:
+            with self.subTest(candidate=candidate):
+                contract=invariant_contract(source,constraints=compile_request(source,has_context=True).workflow_data())
+                backend=SequenceBackend([verdict(("constraint_validity",), issue)] * 2)
+                if issue is None:
+                    review_candidate(backend,contract,candidate,stage="synthetic-review",checks=("constraint_validity",))
                 else:
                     with self.assertRaises(SemanticValidationError) as caught:
-                        review_candidate(backend,contract,row["candidate"],stage="captured-review",checks=("constraint_validity",))
-                    self.assertEqual(caught.exception.issues[0]["kind"],row["expected_issue_kind"])
+                        review_candidate(backend,contract,candidate,stage="synthetic-review",checks=("constraint_validity",))
+                    self.assertEqual(caught.exception.issues[0]["kind"],issue["kind"])
 
     def test_long_prompt_pass_cannot_hide_synonymous_exclusion_language(self):
         source="A guard holds a sign reading \"NO ENTRY\". No hats."
@@ -118,7 +135,7 @@ class SemanticInvariantTests(unittest.TestCase):
         with self.assertRaises(SemanticValidationError):
             review_candidate(SequenceBackend([bad,bad]),invariant_contract("A chair."),"A chair.",stage="fence-evidence")
 
-    def test_four_raw_action_constraint_failures_are_auditable_without_rewriting_them(self):
+    def test_four_synthetic_action_constraint_failures_are_auditable(self):
         samples = [
             ("climb", "builder", "one arm locked off", "fully extended and locked off", "action_fidelity", "action_drift"),
             ("combat", "builder", "partner balanced over the hip", "feet planted firmly on the mat", "action_fidelity", "action_drift"),
@@ -128,7 +145,6 @@ class SemanticInvariantTests(unittest.TestCase):
         for cid, workflow, source, evidence, category, kind in samples:
             with self.subTest(case=cid, workflow=workflow):
                 row = RECORDS[(cid,workflow)]
-                # Exact accepted bad text from the real fixture, not a simplified surrogate.
                 candidate = row["prompt"]
                 contract = invariant_contract(row["request"] + "\n" + row["rules"],
                     constraints=compile_request(row["request"],has_context=True).workflow_data())
@@ -138,7 +154,7 @@ class SemanticInvariantTests(unittest.TestCase):
                 self.assertEqual(caught.exception.issues[0]["kind"], kind)
                 self.assertIn(candidate, session.calls[0].user_message.replace('\\"','"').replace('\\n','\n'))
 
-    def test_builder_rejects_raw_straight_arm_drift_and_fully_checks_repair(self):
+    def test_builder_rejects_synthetic_straight_arm_drift_and_fully_checks_repair(self):
         row = RECORDS[("climb","builder")]
         bad = row["calls"][-1]["raw"]
         good = bad.replace("fully extended and locked off", "bent at the elbow in a sustained lock-off")
@@ -152,7 +168,7 @@ class SemanticInvariantTests(unittest.TestCase):
         self.assertIn("one arm locked off", backend.calls[2].user_message)
         self.assertEqual([e["accepted"] for e in backend.events if e["type"] == "validation"], [False, True])
 
-    def test_minimax_raw_cap_is_semantically_rejected_and_repair_keeps_literal(self):
+    def test_minimax_synthetic_cap_is_semantically_rejected_and_repair_keeps_literal(self):
         row = RECORDS[("literal","minimax")]
         bad = row["calls"][-1]["raw"]
         good = bad.replace(" and a peaked cap", "")
@@ -167,7 +183,7 @@ class SemanticInvariantTests(unittest.TestCase):
         self.assertIn("NO ENTRY",result["prompt"])
         self.assertIn("required",backend.calls[2].user_message)
 
-    def test_raw_dialogue_requires_explicit_endpoint_but_dialogue_stays_exact(self):
+    def test_synthetic_dialogue_requires_explicit_endpoint_but_dialogue_stays_exact(self):
         row = RECORDS[("dialogue","minimax")]
         data = validate_minimax_draft({"user_request":row["request"],"duration_seconds":10})
         plan = validate_analysis('{"references":[],"first_frame":null,"last_frame":null}',data)

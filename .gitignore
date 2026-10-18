@@ -45,6 +45,9 @@ coverage/
 /tests/eval/*.json
 /tests/evaluation/*RESULTS*.md
 /tests/evaluation/*results*.json
+# Historical evaluation captures and coverage notes are local-only
+/tests/eval/fixtures/model_outputs/
+/tests/eval/fixtures/FAILURE_COVERAGE.md
 *.log
 *.tmp
 *.swp
