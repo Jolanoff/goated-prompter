@@ -9,7 +9,7 @@ Run commands from the repository root with the project's Python environment
 | --- | --- |
 | `unit/` | Builder, Dataset, MiniMax, refinement, planning, backend and shared contracts with controlled dependencies. |
 | `integration/` | HTTP, jobs, persistence, loopback transport and evaluation-to-production wiring using synthetic storage and responses. |
-| `eval/` | Maintained corpus, frozen real responses, annotation rubric, metrics, workflow execution and JSON/Markdown reports. |
+| `eval/` | Maintained corpus, synthetic replay examples, annotation rubric, metrics, workflow execution and JSON/Markdown reports. |
 | `evaluation/` | Specialized Direct/Auto supporting-planning probe; shares capture and run metadata with `eval/runner.py`. |
 | `gpu/` | Explicit real-engine entry point (`run.py`), one production-path module per workflow (`workflows/`), shared capture/metadata (`common.py`), seeded random cases (`cases.py`, `fixtures/`) and baseline/candidate comparison (`compare.py`). Not discovered as unit or integration tests. |
 | `support/`, `helpers.py` | Reused domain fixtures, controlled backends, lifecycle helpers, paths, seeded selection and test-only isolation. |
@@ -62,13 +62,13 @@ See [the evaluation guide](eval/README.md) for review and regression semantics.
 
 ```powershell
 New-Item -ItemType Directory -Force quality-artifacts/temp/<task-key>/evaluation | Out-Null
-python -m tests.eval.runner --replay tests/eval/fixtures/model_outputs --output quality-artifacts/temp/<task-key>/evaluation/run.json
+python -m tests.eval.runner --replay tests/eval/fixtures/synthetic --output quality-artifacts/temp/<task-key>/evaluation/run.json
 python -m tests.eval.report quality-artifacts/temp/<task-key>/evaluation/run.json --output quality-artifacts/temp/<task-key>/evaluation/report.json
 ```
 
-Replay evaluates historical artifacts, not current model quality. Missing human
+The committed replay examples are synthetic, not model-quality evidence. Missing human
 or independent review is unknown, not a semantic pass. Keep maintained corpora
-and sanitized frozen fixtures under `tests/`; generated reports stay ignored.
+and synthetic fixtures under `tests/`; recorded outputs and generated reports stay ignored.
 
 ## Real-GPU entry point
 

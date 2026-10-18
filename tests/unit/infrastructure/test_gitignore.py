@@ -33,6 +33,11 @@ class GitIgnoreTests(unittest.TestCase):
             "tests/eval/LIVE_RESULTS.json", "tests/eval/LIVE_RESULTS.md",
             "tests/eval/STATUS.md", "tests/eval/SEMANTIC_INVESTIGATION.md",
             "tests/evaluation/RESULTS.md", "tests/evaluation/DATASET_WRITER_RESULTS.md",
+            "tests/eval/fixtures/model_outputs/real_builder.json",
+            "tests/eval/fixtures/model_outputs/real_minimax.json",
+            "tests/eval/fixtures/model_outputs/current_fixed_engine_failures.json",
+            "tests/eval/fixtures/model_outputs/semantic_constraint_reviews.json",
+            "tests/eval/fixtures/FAILURE_COVERAGE.md",
         ):
             with self.subTest(path=path):
                 self.assertTrue(self.ignored(path))
@@ -41,7 +46,7 @@ class GitIgnoreTests(unittest.TestCase):
         for path in (
             "config/config.example.json", ".env.example", ".env.local.example",
             "frontend/package-lock.json", "frontend/src/App.jsx",
-            "tests/eval/fixtures/model_outputs/real_builder.json",
+            "tests/eval/fixtures/synthetic/replay.json",
             "tests/eval/README.md",
             "tests/fixtures/scene_planner_eval.md", ".github/workflows/checks.yml",
         ):
@@ -49,9 +54,8 @@ class GitIgnoreTests(unittest.TestCase):
                 self.assertFalse(self.ignored(path))
 
     def test_public_evaluation_metadata_has_no_absolute_machine_paths(self):
-        paths = list((ROOT / "tests/eval/fixtures/model_outputs").glob("*.json"))
-        paths += [ROOT / "tests/eval/README.md",
-                  ROOT / "tests/eval/fixtures/FAILURE_COVERAGE.md"]
+        paths = list((ROOT / "tests/eval/fixtures/synthetic").glob("*.json"))
+        paths += [ROOT / "tests/eval/README.md"]
         for path in paths:
             with self.subTest(path=path.relative_to(ROOT)):
                 text = path.read_text(encoding="utf-8")
