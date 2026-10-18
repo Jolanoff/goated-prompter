@@ -14,30 +14,3 @@ def enter_context(test_case, context):
     result = stack.enter_context(context)
     test_case.addCleanup(stack.close)
     return result
-
-
-def confirmed_dataset_payload(state, data, **options):
-    """Seed only the approval boundary in tests focused on downstream behavior."""
-    from goated_prompter.features.dataset.service import validate_dataset_draft
-    ticket = state.dataset_intents.register(validate_dataset_draft(data), dataset_understanding_fixture())
-    return {"input": data, "confirmation_token": ticket["confirmation_token"], **options}
-
-
-def dataset_understanding_fixture(**changes):
-    return {"requested_generation": "A person practising boxing.",
-            "character_count": None, "identity_policy": "random_per_prompt", "action_options": [],
-            "hard": [], "soft": [], "free": [],
-            "fixed": [], "may_vary": [], "must_vary": [], "rules": [],
-            "visible_evidence": [], "interactions": [], "natural_occlusions": [],
-            "visibility_to_preserve": [], "physical_conflicts": [],
-            "expansion_freedom": "Expand only unspecified details.",
-            "dataset_contents": "One training-image prompt in the selected format.",
-             "clarifications": [], **changes}
-
-
-def dataset_idea_fixture(index=1, **changes):
-    return {"index": index, "idea": f"Boxer {index} practises at a station.",
-            "scene": (f"At training station {index}, a boxer drives a straight punch into a swinging heavy bag; "
-                      "the punching glove sinks into the leather while the other glove guards the chin. "
-                      "Full-body three-quarter view in a dim arena training area lit by one overhead lamp."),
-            **changes}

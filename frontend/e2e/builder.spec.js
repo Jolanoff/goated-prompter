@@ -195,7 +195,7 @@ test("builder JSON restores text fields and resets unavailable reference sources
     await expect(
       page.getByLabel(`${key[0].toUpperCase() + key.slice(1)} source`),
     ).toHaveValue("Off");
-  await expect(page.locator('input[type="file"]')).toHaveCount(4);
+  await expect(page.getByLabel(/^Upload image [1-4]$/)).toHaveCount(4);
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(page.getByLabel("Subject source")).toBeDisabled();
   await expect(

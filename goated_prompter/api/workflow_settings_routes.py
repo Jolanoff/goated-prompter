@@ -12,15 +12,6 @@ async def workflow_settings_endpoint(request):
     operation = request.match_info["operation"]
 
     def response(record):
-        if operation == "dataset":
-            data = record["draft"]
-            token = state.dataset_intents.continuation_token(data)
-            if not token and data["scene_plan"]:
-                retained = state.dataset_checkpoints.continuation_intent(data)
-                if retained:
-                    state.dataset_intents.remember_generated(data, retained)
-                    token = state.dataset_intents.continuation_token(data)
-            record = {**record, "continuation_token": token}
         return web.json_response(record)
 
     if request.method == "GET":

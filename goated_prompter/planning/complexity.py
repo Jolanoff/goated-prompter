@@ -3,7 +3,7 @@
 import re
 
 
-def needs_planning(text, *, video=False):
+def needs_planning(text):
     # Literal text/dialogue is not evidence of bodily or temporal complexity.
     text = re.sub(r'"[^"\n]*"|“[^”\n]*”|(?<!\w)\'[^\'\n]*\'(?!\w)', "", text).casefold()
     text = re.sub(r"<d>.*?</d>", "", text, flags=re.S)
@@ -21,8 +21,6 @@ def needs_planning(text, *, video=False):
     if re.search(r"\b(?:each other|one another|opposite directions|supporting .{1,30}weight|between .{1,40}while)\b", text):
         return True
     if re.search(r"\b(?:only|both|all)\b[^.;\n]{0,40}\b(?:hands?|feet|limbs?)\b[^.;\n]{0,35}\b(?:visible|frame|cropped)\b", text):
-        return True
-    if video and (re.search(r"<shot\d+>", text) or re.search(r"\b(?:then|followed by|before .{1,45}after|transforms? into)\b", text)):
         return True
     if re.search(r"\bwhile\b", text) and (re.search(r"\b(?:holding|gripping|carrying|balancing|rotating|lifting|reaching|passing)\b", text)):
         return True

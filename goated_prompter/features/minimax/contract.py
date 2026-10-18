@@ -25,7 +25,6 @@ AUDIO_ROLES = {"direct audio reuse", "background music reuse", "music style", "r
 
 def default_minimax_draft():
     return {"model": MODELS[0], "duration_seconds": 10, "mode": "auto", "aspect_ratio": "Auto",
-            "planning_mode": "Auto",
             "director_preset": "minimax_director", "references": [], "user_request": "",
             "generated_prompt": "", "result_job_id": ""}
 
@@ -88,11 +87,12 @@ def parse_shot_outline(text, duration):
 
 def validate_minimax_draft(value, *, generation=False):
     defaults = default_minimax_draft()
+    if isinstance(value, dict):
+        value = {key: item for key, item in value.items() if key != "planning_mode"}
     if not isinstance(value, dict) or value.keys() - defaults.keys():
         raise ValueError("Invalid MiniMax settings fields.")
     result = {**defaults, **value}
-    from ...options.planning import PLANNING_MODES
-    for key, choices in (("model", MODELS), ("mode", MODES), ("aspect_ratio", RATIOS), ("planning_mode", PLANNING_MODES)):
+    for key, choices in (("model", MODELS), ("mode", MODES), ("aspect_ratio", RATIOS)):
         if result[key] not in choices:
             raise ValueError(f"Invalid MiniMax {key}.")
     if type(result["duration_seconds"]) is not int or not 4 <= result["duration_seconds"] <= 15:
@@ -132,10 +132,14 @@ def reference_warnings(data):
 
 
 def validate_analysis(raw, data):
+    if isinstance(raw, str):
+        fenced = re.fullmatch(r"\s*```(?:json)?[ \t]*\r?\n(.*?)\r?\n```\s*", raw, re.S | re.I)
+        if fenced:
+            raw = fenced[1]
     try:
         plan = json.loads(raw)
     except (ValueError, TypeError) as exc:
-        raise ValueError("Reference analysis must be a JSON object without fences.") from exc
+        raise ValueError("Reference analysis must be a valid JSON object.") from exc
     if not isinstance(plan, dict) or set(plan) != {"references", "first_frame", "last_frame"} or not isinstance(plan["references"], list):
         raise ValueError("Reference analysis has missing fields.")
     by_token = {}

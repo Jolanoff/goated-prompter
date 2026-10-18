@@ -4,10 +4,25 @@ import base64
 import hashlib
 import json
 import os
+import re
 
 
 def sha256_text(value):
     return hashlib.sha256(str(value or "").encode("utf-8")).hexdigest()
+
+
+def diagnostic_finish_reason(value, *, private_content=False):
+    if private_content and value is not None and (not isinstance(value, str)
+            or value not in {"stop", "length", "content_filter", "tool_calls", "function_call", "other"}):
+        return "other"
+    return value
+
+
+def private_error_message(message):
+    """Keep a private request's failure category; drop only engine text that may echo prompt content."""
+    message = re.sub(r"(returned HTTP \d+): .*", r"\1 (engine detail omitted for private content).", str(message), flags=re.S)
+    message = re.sub(r"(stream failed): .*", r"\1 (engine detail omitted for private content).", message, flags=re.S)
+    return re.sub(r'(repetition loop around )"[^"]*"', r"\1a private phrase", message)
 
 
 def debug_prompts_enabled():

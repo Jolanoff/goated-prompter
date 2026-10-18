@@ -2,12 +2,8 @@
 
 import threading
 import unittest
-from types import SimpleNamespace
-from unittest.mock import Mock, patch
 
-from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.local_jobs import Job, JobCancelled
-from goated_prompter.workflow_runners import execute_workflow
 
 
 class JobPersistenceTests(unittest.TestCase):
@@ -96,36 +92,3 @@ class JobPersistenceTests(unittest.TestCase):
         with self.assertRaises(JobCancelled):
             job.commit(lambda: calls.append(1), finish=True)
         self.assertEqual(calls, [])
-
-    def test_dataset_checkpoint_uses_prospective_snapshot_without_locking_job_reads(self):
-        job = Job()
-        result = {"completed": 1, "total": 1, "scene_plan": [], "prompts": []}
-        seen = []
-
-        def persist(target, *, snapshot, approved_intent):
-            self.assertIsNone(approved_intent)
-            observed = threading.Event()
-            snapshots = []
-            def read_job():
-                snapshots.append(target.snapshot())
-                observed.set()
-            reader = threading.Thread(target=read_job, daemon=True)
-            reader.start()
-            responsive = observed.wait(1)
-            reader.join(.1)
-            self.assertTrue(responsive, "Dataset persistence held the job state lock")
-            self.assertEqual(snapshot["result"], result)
-            seen.append(snapshots[0]["result"])
-
-        state = SimpleNamespace(workflow_settings=Mock(), idea_history=None)
-        state.workflow_settings.checkpoint_dataset.side_effect = persist
-        def generate(request, data, progress, partial, **options):
-            partial(result)
-            return result
-        with patch("goated_prompter.features.dataset.runner.DatasetService") as service:
-            service.return_value.run.side_effect = generate
-            execute_workflow(state, job, GoatedPrompterRequest(idea="synthetic cup"), {},
-                             {"operation": "dataset", "input": {}})
-        self.assertEqual(seen, [None, result])
-        self.assertEqual(job.snapshot()["result"], result)
-        self.assertEqual(job.snapshot()["status"], "succeeded")

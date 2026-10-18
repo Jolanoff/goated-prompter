@@ -8,9 +8,9 @@ from goated_prompter import contracts
 from tests.support.paths import ROOT
 
 WORKFLOW_MODULES = (
-    "goated_prompter.features.builder.service", "goated_prompter.features.dataset.service",
+    "goated_prompter.features.builder.service", "goated_prompter.features.dataset.v2.scenes",
     "goated_prompter.features.minimax.service", "goated_prompter.features.refine.service",
-    "goated_prompter.features.dataset.understanding", "goated_prompter.workflow_runners",
+    "goated_prompter.features.dataset.v2.understanding", "goated_prompter.workflow_runners",
 )
 
 
@@ -27,7 +27,7 @@ class ContractsTests(unittest.TestCase):
 
     def test_planning_modules_import_without_builder(self):
         script = (
-            "import sys; import goated_prompter.planning.video_planner, "
+            "import sys; import goated_prompter.planning.scene_planner, "
             "goated_prompter.planning.semantic_validation; "
             "print('goated_prompter.features.builder.service' in sys.modules)"
         )

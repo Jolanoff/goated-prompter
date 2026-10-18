@@ -107,7 +107,7 @@ class SemanticInvariantTests(unittest.TestCase):
         backend=SequenceBackend([bad,verdict(("constraint_validity",),issue),good,verdict(("constraint_validity",))])
         with patch("goated_prompter.features.minimax.service.create_backend",return_value=backend):
             result=MiniMaxService({"backend":"mock","semantic_constraints":True},lambda:None).run(
-                GoatedPrompterRequest(idea=row["request"]),{"user_request":row["request"],"planning_mode":"Direct"},lambda _:None)
+                GoatedPrompterRequest(idea=row["request"]),{"user_request":row["request"]},lambda _:None)
         self.assertNotIn("peaked cap",result["prompt"])
         for instruction in (backend.calls[1],backend.calls[3]):
             self.assertEqual(json.loads(instruction.user_message)["checks"],["constraint_validity"])
@@ -118,12 +118,10 @@ class SemanticInvariantTests(unittest.TestCase):
         with self.assertRaises(SemanticValidationError):
             review_candidate(SequenceBackend([bad,bad]),invariant_contract("A chair."),"A chair.",stage="fence-evidence")
 
-    def test_six_raw_action_constraint_failures_are_auditable_without_rewriting_them(self):
+    def test_four_raw_action_constraint_failures_are_auditable_without_rewriting_them(self):
         samples = [
             ("climb", "builder", "one arm locked off", "fully extended and locked off", "action_fidelity", "action_drift"),
-            ("climb", "dataset", "one arm locked off", "fully extended and locked off", "action_fidelity", "action_drift"),
             ("combat", "builder", "partner balanced over the hip", "feet planted firmly on the mat", "action_fidelity", "action_drift"),
-            ("combat", "dataset", "grips the other's sleeve", "sleeve with a firm underhook", "action_fidelity", "action_drift"),
             ("literal", "minimax", "no hats", "peaked cap", "constraint_validity", "forbidden_content"),
             ("dialogue", "minimax", "counterbalance holding one hand", "single hand planted firmly on the ground", "action_fidelity", "action_drift"),
         ]
@@ -161,7 +159,7 @@ class SemanticInvariantTests(unittest.TestCase):
         issue = defect("constraint_validity", "forbidden_content", "hats", "peaked cap")
         checks = (*CHECKS,"temporal_fidelity")
         backend = SequenceBackend([bad, verdict(checks,issue), good, verdict((*checks,"repair_preservation"))])
-        data = {"user_request":row["request"],"planning_mode":"Direct","director_preset":"general_director"}
+        data = {"user_request":row["request"],"director_preset":"general_director"}
         with patch("goated_prompter.features.minimax.service.create_backend", return_value=backend):
             result = MiniMaxService({"backend":"mock","semantic_validation":True},lambda:None).run(
                 GoatedPrompterRequest(idea=row["request"]),data,lambda _:None)
@@ -217,10 +215,10 @@ class SemanticInvariantTests(unittest.TestCase):
         after = {"useful_details":{"lighting":["left window","left window"],"action":["hip supports partner"]}}
         self.assertEqual(useful_fact_coverage(before,after)["new_useful_facts"],[])
         self.assertEqual(useful_fact_coverage(before,after)["net_useful_fact_gain"],0)
-        row = {"sample_id":"repair","workflow":"dataset","prompt":"Two workers support glass.","completion_state":"completed",
-               "calls":[{"stage":"dataset:1","finish_reason":"stop","validation_events":[{"type":"validation","workflow":"dataset","attempt":0,"accepted":False}]},
-                        {"stage":"semantic:review:dataset:final:format_retry","finish_reason":"stop"},
-                        {"stage":"dataset:1:semantic_retry_1","finish_reason":"stop","validation_events":[{"type":"validation","workflow":"dataset","attempt":1,"accepted":True}]}]}
+        row = {"sample_id":"repair","workflow":"builder","prompt":"Two workers support glass.","completion_state":"completed",
+               "calls":[{"stage":"builder:1","finish_reason":"stop","validation_events":[{"type":"validation","workflow":"builder","attempt":0,"accepted":False}]},
+                        {"stage":"semantic:review:builder:final:format_retry","finish_reason":"stop"},
+                        {"stage":"builder:1:semantic_retry_1","finish_reason":"stop","validation_events":[{"type":"validation","workflow":"builder","attempt":1,"accepted":True}]}]}
         result = measure(row)
         self.assertEqual(result["repair_calls"],1)
         self.assertEqual(result["repair_status"],"repaired_successfully")
@@ -258,9 +256,9 @@ class SemanticInvariantTests(unittest.TestCase):
         validate_temporal_endpoints("[Shot 1] At 00:07.250, the box rests on the floor.",data)
 
     def test_semantic_rejection_does_not_become_format_or_transport_failure(self):
-        row={"sample_id":"rejected","workflow":"dataset","target":"Generic","error":"wrong support",
-             "completion_state":"provider_error","calls":[{"stage":"dataset:1","finish_reason":"stop","validation_events":[
-             {"type":"validation","workflow":"dataset","attempt":0,"accepted":False,"format_valid":True}]}]}
+        row={"sample_id":"rejected","workflow":"builder","target":"Generic","error":"wrong support",
+             "completion_state":"provider_error","calls":[{"stage":"builder:1","finish_reason":"stop","validation_events":[
+             {"type":"validation","workflow":"builder","attempt":0,"accepted":False,"format_valid":True}]}]}
         result=measure(row)
         self.assertTrue(result["format_valid"])
         self.assertTrue(result["transport_success"])
@@ -270,7 +268,7 @@ class SemanticInvariantTests(unittest.TestCase):
 
     def test_length_pairs_measure_fact_delta_and_cannot_offset_action_failure(self):
         from tests.eval.metrics import summarize, annotation_template
-        common={"workflow":"dataset","case_id":"sanding","target":"Generic","director":"general_director",
+        common={"workflow":"builder","case_id":"sanding","target":"Generic","director":"general_director",
                 "style":"Photorealistic","creativity":"Balanced","planning":"Auto","run":1,
                 "request":"A woodworker sands a chair leg.","rules":"","completion_state":"completed","anchors":{"action":["manual sanding"]}}
         low={**common,"sample_id":"detailed","length":"Detailed","prompt":"A woodworker sands a chair leg."}

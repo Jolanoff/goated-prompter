@@ -1,0 +1,9 @@
+{
+  "name": "Weapons",
+  "category": "Objects",
+  "entries": [
+    "longsword",
+    "crossbow",
+    "plasma rifle"
+  ]
+}

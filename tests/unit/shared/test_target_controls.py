@@ -4,14 +4,11 @@ import unittest
 
 from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.builder.service import assemble_instruction
-from goated_prompter.features.dataset.service import validate_dataset_draft
-from goated_prompter.features.dataset.visible_content import positive_prompt_error, sanitize_positive_prompt
+from goated_prompter.features.dataset.v2.draft import default_dataset_draft, validate_dataset_draft
 from goated_prompter.presets import get_director_preset
-from goated_prompter.features.dataset.prompting import dataset_instruction
 from goated_prompter.prompting.target_models import TARGET_CAPABILITIES, get_model_adapter, get_target_capabilities, resolve_target_length
 from goated_prompter.options.targets import TARGET_MODEL_NAMES
 from goated_prompter.workflow_settings import validate_draft
-from tests.support.dataset import valid_draft, saved_scene
 
 
 class TargetControlTests(unittest.TestCase):
@@ -37,7 +34,7 @@ class TargetControlTests(unittest.TestCase):
             with self.subTest(legacy=legacy):
                 self.assertNotIn(legacy, TARGET_MODEL_NAMES)
                 self.assertEqual(GoatedPrompterRequest(idea="A book", target_model=legacy).target_model, current)
-                self.assertEqual(validate_dataset_draft(valid_draft(target=legacy))["target"], current)
+                self.assertEqual(validate_dataset_draft({**default_dataset_draft(), "target": legacy})["target"], current)
                 self.assertEqual(validate_draft("refine", {"target": legacy})["target"], current)
                 self.assertEqual(get_model_adapter(legacy), get_model_adapter(current))
         self.assertIn("Qwen/Qwen-Image checkpoint", get_model_adapter("Qwen Image (original)"))
@@ -54,24 +51,15 @@ class TargetControlTests(unittest.TestCase):
         message = self.instruction("Krea 2", creativity="Dice")
         self.assertIn("leave useful aesthetic freedom", message)
 
-    def test_flux_maximum_detail_stays_moderate_and_dataset_scene_dense(self):
+    def test_flux_maximum_detail_stays_moderate(self):
         message = self.instruction("FLUX.2 Klein", prompt_length="Maximum Detail")
         self.assertIn("Aim for roughly 40 to 100 words", message)
         self.assertIn("The model has no negative prompt", message)
         self.assertIn("Moderately detailed, focused", message)
         self.assertNotIn("Exhaustively cover", message)
-        data = valid_draft(target="FLUX.2 Klein", length="Maximum Detail")
-        request = GoatedPrompterRequest(idea=data["subject"], target_model=data["target"])
-        writer = dataset_instruction(request, data, 1, plan_item=saved_scene())
-        self.assertIn(resolve_target_length(data["target"], data["length"]), writer.system_message)
-        self.assertIn("WRITE THE FINAL PROMPT FROM THE SCENE", writer.system_message)
+        self.assertIn(resolve_target_length("FLUX.2 Klein", "Maximum Detail"), message)
 
-    def test_anima_positive_quality_tags_are_allowed_but_negatives_stay_separate(self):
-        prompt = 'masterpiece, best quality, score_9, 1girl\nShe reads a book beside a window.'
-        self.assertEqual(sanitize_positive_prompt(prompt, "Anima"), prompt)
-        self.assertIsNone(positive_prompt_error(prompt, "Anima"))
-        self.assertIsNotNone(positive_prompt_error(prompt, "Generic"))
-        self.assertIsNotNone(positive_prompt_error(prompt + "\nnegative prompt: bad anatomy", "Anima"))
+    def test_anima_keeps_negative_terms_out_of_the_positive_prompt(self):
         self.assertIn("Avoid redundant tags, excessive tag counts, negative prompt terms", get_model_adapter("Anima"))
 
     def test_anima_adapter_uses_the_owner_supplied_plain_text_contract_once(self):

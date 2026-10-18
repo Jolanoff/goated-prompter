@@ -2,13 +2,6 @@
 
 # Prompt length and preservation/reference detail controls.
 
-DATASET_OUTPUT_TOKEN_LIMITS = {
-    "Short": 384,
-    "Medium": 768,
-    "Detailed": 1536,
-    "Maximum Detail": 3072,
-    "Maximum": 3072,
-}
 MAXIMUM_DETAIL_GUIDANCE = """Prompt length — Maximum Detail: use the richest useful descriptive density within the target's practical envelope. Clarify supported subject/action, spatial relationships, composition, relevant materials and lighting without exhaustive unrelated inventories. After the core scene is covered, spend remaining detail on previously unstated useful facts: defining contact/support mechanics, spatial relationships, material behavior at contact surfaces, motivated light/shadow/reflection behavior, environmental surfaces and foreground/background separation. Each addition should help render this exact scene, not repeat an existing fact with adjectives. Do not change mechanics to create detail. If applicable coverage is saturated, stop rather than force filler or unrelated categories. Preserve the central concept, reference evidence and locks. Omit irrelevant or unavailable facts; do not repeat details, stack synonyms, invent evidence or pad with filler. Target structure and density limits take priority."""
 LENGTH_ADAPTERS = {
     "Short": "Prompt length — Short: one compact prompt focused on the most consequential visual information.",

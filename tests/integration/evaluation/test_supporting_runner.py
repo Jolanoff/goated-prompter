@@ -57,7 +57,7 @@ class SupportingRunnerTests(unittest.TestCase):
                 self.activity({"type": "request", "stage": "minimax:writer", "parameters": {}, "messages": []})
                 self.activity({"type": "response_delta", "text": "Synthetic MiniMax output."})
                 self.activity({"type": "response_complete", "finish_reason": "stop"})
-                return {"prompt": "Synthetic MiniMax output.", "planning_status": data["planning_mode"]}
+                return {"prompt": "Synthetic MiniMax output."}
 
         with tempfile.TemporaryDirectory() as directory, \
                 patch.object(supporting, "MiniMaxService", Service), \
@@ -68,12 +68,14 @@ class SupportingRunnerTests(unittest.TestCase):
             config = Path(directory) / "endpoint.json"
             config.write_text(json.dumps({"backend": "openai_compatible"}))
             supporting.main(["--config", str(config), "--case", "motion", "--workflow", "minimax",
-                             "--allow-live", "--task-key", "fixture", "--max-runs", "2"], gpu=True)
+                             "--allow-live", "--task-key", "fixture", "--max-runs", "1"], gpu=True)
             output = Path(directory) / "quality-artifacts/tasks/fixture/gpu/results.json"
             result = load_replay(output)
-            self.assertEqual([record["planning"] for record in result["records"]], ["Direct", "Auto"])
+            self.assertEqual([record["planning"] for record in result["records"]], ["Direct"])
             self.assertTrue(all(record["workflow"] == "minimax" for record in result["records"]))
             self.assertTrue(all(data["duration_seconds"] == 10 and data["references"] == [] for data in inputs))
             self.assertTrue(all(data["user_request"] == supporting.CASES[2]["request"] for data in inputs))
-            self.assertEqual(len({record["sample_id"] for record in result["records"]}), 2)
+            self.assertEqual(len(inputs), 1)
+            self.assertTrue(all("planning_mode" not in data for data in inputs))
+            self.assertEqual(len({record["sample_id"] for record in result["records"]}), 1)
             manager.assert_not_called()

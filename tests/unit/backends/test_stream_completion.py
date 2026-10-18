@@ -8,7 +8,6 @@ import local_app
 from pathlib import Path
 import tempfile
 from goated_prompter.contracts import GoatedPrompterRequest
-from unittest.mock import Mock
 
 
 def event(text="", reason=None):
@@ -104,17 +103,3 @@ class StreamCompletionTests(unittest.TestCase):
         self.assertEqual(job.status, "interrupted")
         self.assertEqual(job.completion_state, "interrupted")
         self.assertIsNone(job.result)
-
-    def test_dataset_transport_retry_exhaustion_keeps_original_completion_state(self):
-        from goated_prompter.features.dataset.service import DatasetService, default_dataset_draft
-        from goated_prompter.features.dataset.prompting import dataset_instruction
-        data = {**default_dataset_draft(), "subject": "a person", "trigger": "subject", "amount": 1}
-        session = Mock()
-        session.generate.side_effect = BackendGenerationError("EOF", completion_state="interrupted", partial_text="partial")
-        scene = {"scene": "A person stands beside a table.", "self_check": "PASS"}
-        instruction = dataset_instruction(GoatedPrompterRequest(idea="a person"), data, 1, plan_item=scene)
-        with self.assertRaises(BackendGenerationError) as raised:
-            DatasetService({"backend": "mock"}, lambda: None)._generate(session, instruction, data, 1, lambda _message: None, scene, retries=1)
-        self.assertEqual(raised.exception.completion_state, "interrupted")
-        self.assertEqual(raised.exception.partial_text, "partial")
-        self.assertEqual(session.generate.call_count, 2)

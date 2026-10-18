@@ -13,8 +13,6 @@ from goated_prompter.options.targets import TARGET_MODEL_NAMES
 from goated_prompter.prompt_library import (LIBRARY_DIR_ENV, copied_reference, ensure_library_files, library_path,
     library_status, load_library, parse_library, pick_references, style_profile, style_profile_text,
     LibraryConflict, library_snapshot, update_library)
-from goated_prompter.features.dataset.prompting import dataset_instruction
-from tests.support.dataset import saved_scene, valid_draft
 from tests.unit.planning.test_supporting_planning import ScriptedBackend
 
 CAR = ("1girl, 1boy, driving_from_front, car, motor_vehicle, driving, car_interior, steering_wheel, seatbelt\n\n"
@@ -182,21 +180,6 @@ class PromptLibraryTests(unittest.TestCase):
         even = style_profile([" ".join(["word"] * 120)] * 3)
         self.assertIn("about 120 words;", style_profile_text(even, "Short"))
         self.assertIn("at about 120 words for the selected Short length", style_profile_text(even, "Short"))
-
-    def test_dataset_writer_draws_templates_per_image_from_the_whole_library(self):
-        prompts = [f"Template prompt number {word} about something else entirely." for word in
-                   ("one", "two", "three", "four", "five", "six", "seven", "eight")]
-        self.write("Krea 2", *prompts)
-        data = valid_draft(target="Krea 2", subject="a dorm room party")
-        def templates(index, scene):
-            row = {**saved_scene(index), "scene": scene}
-            return dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, index, plan_item=row).reference_prompts
-        first = templates(1, "A woman laughs at a dorm desk.")
-        self.assertEqual(len(first), 2)
-        self.assertTrue(set(first) <= set(prompts))
-        self.assertEqual(first, templates(1, "A woman laughs at a dorm desk."), "Rewriting one prompt keeps its templates.")
-        draws = {templates(index, f"Scene {index} of a new run.") for index in range(1, 9)}
-        self.assertGreater(len(draws), 3, "Images and runs get different templates.")
 
     def test_builder_retries_once_when_the_output_copies_a_reference(self):
         self.write("Generic", "A mother is concentrating on driving while her daughter sleeps beside her in the car.")
