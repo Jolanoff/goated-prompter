@@ -222,6 +222,36 @@ class ProcessManagerTests(unittest.TestCase):
 
 
 class OpenAITimeoutTests(unittest.TestCase):
+    def test_repetition_penalty_is_request_local_and_only_sent_to_owned_llama_cpp(self):
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = b'{"choices":[{"message":{"content":"result"},"finish_reason":"stop"}]}'
+        for local, penalty in ((True, 1.1), (True, None), (False, 1.1)):
+            with self.subTest(local=local, penalty=penalty):
+                backend = openai.OpenAICompatibleBackend({"base_url": "http://127.0.0.1:8189/v1",
+                    "model": "test", "_is_llama_cpp": local})
+                instruction = SimpleNamespace(repeat_penalty=penalty, temperature=None, top_p=None,
+                    to_messages=lambda: [{"role": "user", "content": "A clothed boxer holds training pads."}])
+                with patch.object(openai, "urlopen", return_value=response) as send, \
+                        patch.object(openai, "log_request"), patch.object(openai, "log_response"), \
+                        patch.object(openai, "_log_multimodal_messages"):
+                    backend.generate(instruction)
+                payload = json.loads(send.call_args.args[0].data)
+                if local and penalty is not None:
+                    self.assertEqual(payload["repeat_penalty"], 1.1)
+                else:
+                    self.assertNotIn("repeat_penalty", payload)
+
+    def test_invalid_local_repetition_penalty_fails_before_http(self):
+        backend = openai.OpenAICompatibleBackend({"base_url": "http://127.0.0.1:8189/v1",
+            "model": "test", "_is_llama_cpp": True})
+        for penalty in (True, "1.1", float("nan"), float("inf"), -1, 2.1):
+            with self.subTest(penalty=penalty), patch.object(openai, "urlopen") as send:
+                instruction = SimpleNamespace(repeat_penalty=penalty, temperature=None, top_p=None,
+                    to_messages=lambda: [{"role": "user", "content": "A clothed boxer holds training pads."}])
+                with self.assertRaisesRegex(openai.BackendConfigurationError, "repeat_penalty"):
+                    backend.generate(instruction)
+                send.assert_not_called()
+
     def test_timeout_is_passed_to_http_without_shortening_slow_requests(self):
         for requested, expected in ((None, 90), (600, 600), (1800, 1800),
                                     (3600, 3600), (7200, 3600), (0, 1)):
@@ -312,6 +342,88 @@ class OpenAITimeoutTests(unittest.TestCase):
         self.assertEqual("".join(event.get("text", "") for event in events if event["type"] == "response_delta"), "hello world")
         self.assertEqual(next(event["text"] for event in events if event["type"] == "reasoning_delta"), "visible analysis")
         self.assertEqual(events[-1], {"type": "response_complete", "finish_reason": "stop"})
+
+    def test_structured_llama_cpp_requests_skip_hidden_thinking_but_free_text_keeps_the_setting(self):
+        backend = openai.OpenAICompatibleBackend({"base_url": "http://127.0.0.1:8189/v1", "model": "test", "_is_llama_cpp": True})
+        response = MagicMock()
+        response.__enter__.return_value.headers = {"Content-Type": "application/json"}
+        response.__enter__.return_value.read.return_value = b'{"choices":[{"message":{"content":"[]"},"finish_reason":"stop"}]}'
+        for json_output in (True, False):
+            with self.subTest(json_output=json_output), patch.object(openai, "urlopen", return_value=response) as send, \
+                    patch.object(openai, "log_request"), patch.object(openai, "log_response"):
+                backend.generate(contracts.PromptInstruction(system_message="Plan", user_message="[]", json_output=json_output))
+                outgoing = json.loads(send.call_args.args[0].data)
+                if json_output:
+                    self.assertEqual(outgoing["chat_template_kwargs"], {"enable_thinking": False})
+                else:
+                    self.assertNotIn("chat_template_kwargs", outgoing)
+
+    def test_private_request_is_flagged_for_the_live_inspector_but_kept_off_stdout_debug(self):
+        events = []
+        backend = openai.OpenAICompatibleBackend({
+            "base_url": "http://127.0.0.1:8189/v1", "model": "test", "_activity_callback": events.append,
+            "_is_llama_cpp": True,
+        })
+        instruction = contracts.PromptInstruction(system_message="SYNTHETIC_PRIVATE_RULE", user_message="Approved scene",
+            diagnostic_context={"private_content": True}, diagnostic_stage="dataset:ideas", json_output=True,
+            json_schema={"type": "string", "const": "SYNTHETIC_PRIVATE_SCHEMA"})
+        response = MagicMock()
+        response.__enter__.return_value.headers = {"Content-Type": "application/json"}
+        response.__enter__.return_value.read.return_value = b'{"choices":[{"message":{"content":"Original model result"},"finish_reason":"stop"}]}'
+        with patch.object(openai, "urlopen", return_value=response) as send, \
+             patch.object(openai, "log_request"), patch.object(openai, "log_response"), \
+             patch.object(openai, "_log_multimodal_messages") as debug:
+            self.assertEqual(backend.generate(instruction), "Original model result")
+        outgoing = json.loads(send.call_args.args[0].data)
+        self.assertEqual(outgoing["messages"], instruction.to_messages())
+        self.assertEqual(outgoing["response_format"]["json_schema"]["schema"], instruction.json_schema)
+        request = next(event for event in events if event["type"] == "request")
+        self.assertTrue(request["private_content"])
+        self.assertEqual(request["messages"], instruction.to_messages())
+        self.assertEqual(request["parameters"]["temperature"], outgoing["temperature"])
+        debug.assert_not_called()
+
+    def test_private_errors_keep_content_free_causes(self):
+        from goated_prompter.diagnostics import private_error_message
+        timeout = "The prompt engine did not respond within 90 seconds. Check that the engine is healthy."
+        self.assertEqual(private_error_message(timeout), timeout)
+        self.assertEqual(private_error_message("OpenAI-compatible backend returned HTTP 400: grammar echo PRIVATE"),
+                         "OpenAI-compatible backend returned HTTP 400 (engine detail omitted for private content).")
+        self.assertNotIn("PRIVATE", private_error_message('The prompt engine entered a repetition loop around "PRIVATE words".'))
+
+    def test_private_transport_error_keeps_its_category_without_echoed_engine_text(self):
+        class FailedStream:
+            headers = {"Content-Type": "text/event-stream"}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def __iter__(self):
+                chunks = [{"choices": [{"delta": {"content": "Original partial scene"}, "finish_reason": None}]},
+                          {"error": {"message": "SYNTHETIC_PRIVATE_RULE"}}]
+                return iter(f"data: {json.dumps(chunk)}\n\n".encode() for chunk in chunks)
+        from goated_prompter.local_jobs import Job
+        job = Job()
+        backend = openai.OpenAICompatibleBackend({"base_url": "http://127.0.0.1:8189/v1", "model": "test",
+            "_activity_callback": job.record_llm_activity})
+        instruction = contracts.PromptInstruction(system_message="SYNTHETIC_PRIVATE_RULE", user_message="Approved scene",
+            diagnostic_context={"private_content": True}, diagnostic_stage="dataset:ideas")
+        with patch.object(openai, "urlopen", return_value=FailedStream()), \
+             patch.object(openai, "log_request"), patch.object(openai, "log_response"), \
+             self.assertRaises(openai.BackendGenerationError) as error:
+            backend.generate(instruction)
+        self.assertNotIn("SYNTHETIC_PRIVATE_RULE", str(error.exception))
+        self.assertIn("stream failed", str(error.exception))
+        self.assertEqual(error.exception.partial_text, "Original partial scene")
+        snapshot = job.snapshot()
+        # Checkpointed event messages carry the category, never echoed engine text.
+        self.assertNotIn("SYNTHETIC_PRIVATE_RULE", json.dumps(snapshot["events"]))
+        self.assertIn("stream failed", snapshot["events"][-1]["message"])
+        # The in-memory live inspector still shows what the model returned.
+        self.assertEqual(snapshot["llm_trace"]["partial_text"], "Original partial scene")
 
     def test_streaming_repetition_loop_is_stopped_early(self):
         class RepeatingResponse:

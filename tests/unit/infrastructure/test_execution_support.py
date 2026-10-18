@@ -13,23 +13,21 @@ from unittest.mock import patch
 from tests.eval import runner
 from tests.evaluation import run_supporting_planning as supporting
 from tests.gpu.run import main as gpu_main
-from tests.helpers import dataset_idea_fixture, dataset_understanding_fixture
 from tests.support import artifacts, safety
-from tests.support.dataset import saved_scene, valid_draft
 from tests.support.scenarios import select_cases
 
 
 class ScenarioTests(unittest.TestCase):
     def setUp(self):
-        self.cases = [{"id": str(index), "workflows": ["builder", "dataset"], "anchors": {"scene": [str(index)]}}
+        self.cases = [{"id": str(index), "workflows": ["builder"], "anchors": {"scene": [str(index)]}}
                       for index in range(10)]
 
     def test_fixed_and_seeded_selection_are_repeatable_without_global_random_changes(self):
         state = random.getstate()
         self.assertEqual(select_cases(self.cases), self.cases)
-        selected = select_cases(self.cases, workflow="dataset", seed=73, limit=3)
-        self.assertEqual(selected, select_cases(self.cases, workflow="dataset", seed=73, limit=3))
-        self.assertNotEqual(selected, select_cases(self.cases, workflow="dataset", seed=74, limit=3))
+        selected = select_cases(self.cases, workflow="builder", seed=73, limit=3)
+        self.assertEqual(selected, select_cases(self.cases, workflow="builder", seed=73, limit=3))
+        self.assertNotEqual(selected, select_cases(self.cases, workflow="builder", seed=74, limit=3))
         self.assertEqual(random.getstate(), state)
         selected[0]["anchors"]["scene"].clear()
         self.assertTrue(all(case["anchors"]["scene"] for case in self.cases))
@@ -39,17 +37,6 @@ class ScenarioTests(unittest.TestCase):
             with self.subTest(kwargs=kwargs), self.assertRaises(ValueError):
                 select_cases(self.cases, **kwargs)
         self.assertEqual(select_cases(supporting.CASES, ["hoop"], "builder")[0]["id"], "hoop")
-
-    def test_domain_fixtures_return_independent_mutable_defaults(self):
-        for fixture in (dataset_understanding_fixture, dataset_idea_fixture, saved_scene, valid_draft):
-            with self.subTest(fixture=fixture.__name__):
-                first, second = fixture(), fixture()
-                self.assertEqual(first, second)
-                self.assertIsNot(first, second)
-                for key, value in first.items():
-                    if isinstance(value, list):
-                        value.append("test-only mutation")
-                        self.assertNotEqual(value, second[key])
 
 
 class ExecutionSafetyTests(unittest.TestCase):
@@ -116,7 +103,7 @@ class GPUCommandTests(unittest.TestCase):
     def test_dry_run_selects_each_workflow_without_reading_config_or_starting_models(self):
         with patch("goated_prompter.backends.llama_cpp_process.LlamaCppProcessManager.acquire") as acquire, \
                 patch.object(runner, "live_case") as live:
-            for workflow, case in (("builder", "object"), ("dataset", "object"), ("minimax", "motion")):
+            for workflow, case in (("builder", "object"), ("minimax", "motion")):
                 with self.subTest(workflow=workflow):
                     _, text = self.call(["--dry-run", "--workflow", workflow, "--case", case, "--seed", "73", "--config", "does-not-exist.json"])
                     payload = json.loads(text)
@@ -138,8 +125,8 @@ class GPUCommandTests(unittest.TestCase):
 
     def test_gpu_dispatch_reuses_both_existing_runners(self):
         with patch.object(runner, "main", return_value=7) as workflow:
-            self.assertEqual(gpu_main(["--workflow", "dataset", "--dry-run"]), 7)
-            workflow.assert_called_once_with(["--workflow", "dataset", "--dry-run"], gpu=True)
+            self.assertEqual(gpu_main(["--workflow", "builder", "--dry-run"]), 7)
+            workflow.assert_called_once_with(["--workflow", "builder", "--dry-run"], gpu=True)
         with patch.object(supporting, "main", return_value=8) as planning:
             self.assertEqual(gpu_main(["--probe", "supporting-planning", "--workflow", "minimax", "--dry-run"]), 8)
             planning.assert_called_once_with(["--workflow", "minimax", "--dry-run"], gpu=True)

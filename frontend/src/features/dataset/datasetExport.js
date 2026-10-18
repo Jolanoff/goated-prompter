@@ -1,14 +1,6 @@
-/** JSONL preserves originating idea and scene; TXT/copy remain final-prompt-only. */
+/** Copy all: one final prompt per line. */
 export function datasetCopyText(draft) {
   return (draft?.results || []).map((item) => item.prompt.replace(/[\r\n]+/g, " ").trim()).join("\n");
-}
-
-export function datasetJsonl(draft) {
-  return (draft?.results || []).map((item) => JSON.stringify({
-    index: item.index, input: item.input || "", idea: item.idea || null, scene: item.scene || null,
-    prompt: item.prompt, trigger: draft.trigger, target: draft.target,
-    source: item.input || null,
-  })).join("\n");
 }
 
 const settingFields = ["subject", "trigger_type", "custom_type", "constraints", "amount", "trigger",
@@ -16,7 +8,7 @@ const settingFields = ["subject", "trigger_type", "custom_type", "constraints", 
   "target", "length", "creativity", "style", "source_mode", "inputs", "seed", "seed_mode"];
 const jobFields = ["id", "kind", "status", "completion_state", "revision", "created_at", "finished_at", "result",
   "error", "progress", "progress_at", "status_reason", "events", "llm_trace", "partial_responses",
-  "workflow_revision", "input_signature"];
+  "llm_stages", "workflow_revision", "input_signature"];
 
 function pick(value, fields) {
   return Object.fromEntries(fields.filter((field) => value && Object.hasOwn(value, field))
@@ -26,7 +18,8 @@ function pick(value, fields) {
 function sensitiveKey(key) {
   const normalized = key.replace(/[^a-z0-9]/gi, "").toLowerCase();
   return /(?:apikey|privatekey|signingkey|secret|password|passwd|credential|authorization|cookie|headers|accesstoken|refreshtoken|authtoken|sessiontoken|confirmationtoken|connectionstring)/.test(normalized) ||
-    ["token", "tokens", "auth", "config", "configuration", "environment", "env", "baseurl", "endpoint", "modelpath", "executable"].includes(normalized);
+    ["token", "tokens", "auth", "config", "configuration", "environment", "env", "baseurl", "endpoint", "modelpath", "executable",
+      "catalogid", "selectedposition", "selectedsetting", "privatevocabulary", "vocabularyentries", "vocabularysource"].includes(normalized);
 }
 
 function redactUrl(text) {
@@ -40,10 +33,13 @@ function redactUrl(text) {
   } catch { return "[REDACTED URL]"; }
 }
 
-function secretValues(value, sensitive = false) {
+function secretValues(value, sensitive = false, field = "") {
   if (typeof value === "string") return sensitive && value.length >= 4 ? [value] : [];
   if (!value || typeof value !== "object") return [];
-  return Object.entries(value).flatMap(([key, child]) => secretValues(child, sensitive || sensitiveKey(key)));
+  if (Array.isArray(value)) return value.flatMap((item) => secretValues(item, sensitive, field));
+  return Object.entries(value).flatMap(([key, child]) => secretValues(child, sensitive || sensitiveKey(key)
+    || (value.private_vocabulary === true && key === "choices")
+    || (field === "diagnostics" && key === "entry"), key));
 }
 
 const contentFields = new Set(["subject", "trigger", "inputs", "constraints", "input", "idea", "scene", "prompt",
@@ -60,33 +56,72 @@ function redactText(text, secrets, detectCredentials) {
     .replace(/\beyJ[a-z0-9_-]+\.[a-z0-9_-]+\.[a-z0-9_-]+\b/gi, "[REDACTED]");
 }
 
-function sanitize(value, secrets, field = "") {
-  if (typeof value === "string") return redactText(value, secrets, !contentFields.has(field));
-  if (Array.isArray(value)) return value.map((item) => sanitize(item, secrets, field));
+const rawDiagnosticFields = new Set(["content", "output", "reasoning", "partial_text", "issue", "message", "error"]);
+
+function sanitize(value, secrets, field = "", privateDiagnostics = false) {
+  if (privateDiagnostics && field === "choices") return {};
+  if (privateDiagnostics && ["messages", "response_format"].includes(field)) return "[PRIVATE CONTENT OMITTED]";
+  if (privateDiagnostics && field === "finish_reason" && value !== null &&
+    !/^(stop|length|content_filter|tool_calls|function_call|other)$/.test(value)) return "other";
+  if (typeof value === "string") return privateDiagnostics && rawDiagnosticFields.has(field)
+    ? "[PRIVATE CONTENT OMITTED]" : redactText(value, secrets, !contentFields.has(field));
+  if (Array.isArray(value)) return value.map((item) => sanitize(item, secrets, field, privateDiagnostics));
   if (value && typeof value === "object") return Object.fromEntries(Object.entries(value)
-    .filter(([key]) => !sensitiveKey(key)).map(([key, child]) => [key, sanitize(child, secrets, key)]));
+    .filter(([key]) => !sensitiveKey(key) && !(field === "diagnostics" && !["line", "record", "rule", "reason"].includes(key)))
+    .map(([key, child]) => [key, sanitize(child, secrets, key, privateDiagnostics)]));
   return value;
 }
 
+function hasPrivateDiagnostics(job) {
+  return job?.llm_trace?.private_content === true
+    || job?.partial_responses?.some((row) => row.private_content === true);
+}
+
+const understandingKind = "dataset_understanding";
+const v2Kind = "dataset_v2_scenes";
+const v2ResultFields = ["stage", "complete", "requested", "written", "missing", "slots", "scenes", "prompts"];
+
+/** A V2 run (Confirm -> scenes -> prompts): its status, slots, scenes and prompts, and the vocabulary packs it used
+ * (the ids selected at Confirm and what the run recorded of them). The vocabulary block is renamed so the generic
+ * "vocabulary" redaction never strips it. */
+function v2RunSnapshot(run, job) {
+  const result = run?.result || (job?.kind === v2Kind ? job.result : null);
+  if (!run && !result) return null;
+  return {
+    job_id: run?.jobId || job?.id || null,
+    status: run?.status || job?.status || null,
+    error: run?.error || job?.error || "",
+    brief: run?.brief || null,
+    ...pick(result, v2ResultFields),
+    vocabulary_selection: run?.vocabulary ?? null,
+    vocabulary_used: result?.vocabulary || null,
+  };
+}
+
 /** A click-time projection of current state, never a write or a checkpoint release. */
-export function datasetGenerationLog({ draft, review, job, record, state } = {}, exportedAt = new Date()) {
-  const datasetJob = ["dataset", "dataset_scenes", "dataset_understanding"].includes(job?.kind) ? job : null;
+export function datasetGenerationLog({ draft, review, job, record, state, run } = {}, exportedAt = new Date()) {
+  const datasetJob = [understandingKind, v2Kind].includes(job?.kind) ? job : null;
+  // A V2 job's result is exported once, under v2_run, never through the job projection.
+  const v2 = datasetJob?.kind === v2Kind;
+  const jobSnapshot = v2 ? pick(datasetJob, jobFields.filter((field) => field !== "result"))
+    : datasetJob ? pick(datasetJob, jobFields) : null;
+  const v2Run = v2RunSnapshot(run, datasetJob);
   const snapshot = {
     schema_version: 1,
     exported_at: exportedAt.toISOString(),
     settings: pick(draft, settingFields),
     dataset_idea: draft?.subject || "",
-    scene_plan: draft?.scene_plan || [],
-    generated_prompts: draft?.results || [],
-    understanding: review ? { ...pick(review, ["operation", "options", "status", "jobId", "brief", "error", "notice"]),
+    understanding: review ? { ...pick(review, ["operation", "options", "status", "jobId", "brief", "routing", "error", "notice"]),
       input: pick(review.input, settingFields) } : null,
-    job: datasetJob ? pick(datasetJob, jobFields) : null,
-    state: pick(state, ["active", "starting", "error", "settings_status", "settings_error", "settings_conflict",
-      "stale_scene_plan", "valid_scene_count", "novelty_notice"]),
-    metadata: { ...pick(record, ["revision", "checkpoint", "scene_eligibility", "scene_plan_matches_settings",
-      "idea_limits", "scene_limits"]), ...pick(draft, ["scene_plan_signature", "result_job_id"]) },
+    job: jobSnapshot,
+    v2_run: v2Run,
+    state: pick(state, ["active", "error", "settings_status", "settings_error", "settings_conflict"]),
+    metadata: pick(record, ["revision"]),
   };
   // Also remove credentials repeated in free-form errors or transport messages.
-  const secrets = [...new Set(secretValues({ draft, review, job: datasetJob, record }))].sort((a, b) => b.length - a.length);
-  return JSON.stringify(sanitize(snapshot, secrets), null, 2);
+  // V2 results are searched through their export projection: their vocabulary block holds diagnostics, not
+  // private values to treat as secrets.
+  const secrets = [...new Set(secretValues({ draft, review, job: v2 ? jobSnapshot : datasetJob, record,
+    run: run && { ...run, result: undefined }, v2_run: v2Run }))].sort((a, b) => b.length - a.length);
+  return JSON.stringify(sanitize(snapshot, secrets, "", hasPrivateDiagnostics(datasetJob)), null, 2);
 }

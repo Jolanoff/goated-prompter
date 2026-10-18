@@ -49,11 +49,11 @@ class RandomCaseTests(unittest.TestCase):
     def test_gpu_dry_run_prints_random_cases_without_inference(self):
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
-            gpu_main(["--dry-run", "--workflow", "dataset", "--random", "2", "--seed", "9"])
+            gpu_main(["--dry-run", "--workflow", "builder", "--random", "2", "--seed", "9"])
         report = json.loads(output.getvalue())
         self.assertFalse(report["inference"])
         self.assertEqual(report["random_cases"]["seed"], 9)
-        self.assertEqual([case["id"] for case in report["cases"]], ["random-dataset-9-1", "random-dataset-9-2"])
+        self.assertEqual([case["id"] for case in report["cases"]], ["random-builder-9-1", "random-builder-9-2"])
 
 
 class CaptureTests(unittest.TestCase):

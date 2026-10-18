@@ -8,7 +8,6 @@ from unittest.mock import patch
 from goated_prompter.backends.base import BackendGenerationError, GoatedPrompterBackend
 from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.builder.service import GoatedPrompterService
-from goated_prompter.features.dataset.service import DatasetService, default_dataset_draft, dataset_instruction
 from goated_prompter.options.targets import TARGET_MODEL_NAMES
 from goated_prompter.features.refine.service import RefineService, refine_instruction
 from goated_prompter.workflow_output import WorkflowFormatError, normalize_workflow_output, requested_visible_text, sanitize_prompt_text
@@ -162,19 +161,12 @@ class OutputFormatTests(unittest.TestCase):
 
 
 class FormatRepairTests(unittest.TestCase):
-    def test_builder_and_dataset_keep_visible_math_and_protected_trigger_punctuation(self):
+    def test_builder_keeps_visible_math_and_protected_trigger_punctuation(self):
         text = 'mira(token); a blackboard reads "f(x) = (x + 1)^2;  x > 0".'
         request = GoatedPrompterRequest(idea=text, target_model="Generic", planning_mode="Direct")
         backend = ScriptedBackend([text])
         with patch("goated_prompter.features.builder.service.create_backend", return_value=backend):
             self.assertEqual(GoatedPrompterService(config={"backend": "mock"}).generate(request).prompt, text)
-        data = {**default_dataset_draft(), "subject": text, "trigger": "mira(token)", "amount": 1}
-        backend = ScriptedBackend([text])
-        scene = {"scene": text, "self_check": "PASS"}
-        instruction = dataset_instruction(request, data, 1, plan_item=scene)
-        self.assertEqual(DatasetService({"backend": "mock"}, lambda: None)._generate(
-            backend, instruction, data, 1, lambda _message: None, scene), text)
-        self.assertEqual(len(backend.calls), 1)
 
     def test_refinement_preserves_punctuation_and_visible_lettering_without_retry(self):
         text = 'Mira (in profile) stands by a sign reading "OPEN (LATE);  A + B".'

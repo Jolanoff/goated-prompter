@@ -147,6 +147,8 @@ class PromptInstruction:
     # Request-local sampling; supporting planners use conservative values.
     temperature: float = None
     top_p: float = None
+    # llama.cpp-only sampling control; generic providers retain their own defaults.
+    repeat_penalty: float = None
     # Structured stages can request llama.cpp JSON decoding without changing writers.
     json_output: bool = False
     json_schema: dict = None

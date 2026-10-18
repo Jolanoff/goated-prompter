@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../api.js";
-import { canConfirmDatasetReview, datasetRequestSignature, reviseDatasetRequest } from "./datasetState.js";
+import { canConfirmDatasetReview, datasetRequestSignature } from "./datasetState.js";
 
 export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm, setError }) {
   const [confirmation, setConfirmation] = useState(null);
   const [understanding, setUnderstanding] = useState(null);
+  // Rebuild (issue 106): the run started by Confirm; the tab's Scenes and Dataset pages show it.
+  const [run, setRun] = useState(null);
   const pending = useRef(null);
   const opener = useRef(null);
   const latestDraft = useRef(draft);
@@ -13,7 +15,7 @@ export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm
   async function analyze(item) {
     pending.current = item;
     setUnderstanding(null);
-    setConfirmation({ ...item, status: "analyzing", brief: null, confirmation_token: "", error: "" });
+    setConfirmation({ ...item, status: "analyzing", brief: null, summary: null, confirmation_token: "", error: "" });
     try {
       const accepted = await onGenerate("dataset/understand", { input: item.input });
       if (!accepted) throw new Error("Request analysis could not start. Wait for active work and try again.");
@@ -39,6 +41,17 @@ export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm
         error: job.error || "Request analysis stopped. No ideas, scenes or prompts were generated." });
     }
   }, [confirmation, job]);
+
+  // Follow the run's job: scenes arrive first, then each final prompt.
+  useEffect(() => {
+    if (!run?.jobId || job?.id !== run.jobId) return;
+    const result = job.result?.kind === "dataset_v2_scenes" ? job.result : run.result;
+    const status = job.status === "succeeded" ? "done"
+      : ["failed", "cancelled", "interrupted"].includes(job.status) ? "failed" : "running";
+    if (result === run.result && status === run.status) return;
+    setRun((current) => current?.jobId === job.id ? { ...current, result, status,
+      error: status === "failed" ? job.error || "This run stopped before it finished." : "" } : current);
+  }, [job, run]);
 
   useEffect(() => () => { pending.current = null; }, []);
 
@@ -70,16 +83,6 @@ export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm
     }
   }
 
-  function reviseConfirmation(additions) {
-    if (!confirmation || busy || ["analyzing", "confirming"].includes(confirmation.status)) return;
-    const input = reviseDatasetRequest(confirmation.input, additions);
-    const needsReplan = input !== confirmation.input;
-    void analyze({ input, baseSignature: confirmation.baseSignature,
-      operation: confirmation.operation === "dataset/scenes" ? "dataset/scenes" : needsReplan ? "dataset" : confirmation.operation,
-      options: needsReplan ? {} : confirmation.options,
-      notice: needsReplan ? "New rules require fresh ideas and scenes. Review them before continuing to Dataset." : confirmation.notice });
-  }
-
   async function confirmRequest() {
     if (!canConfirmDatasetReview(confirmation, busy)) return;
     if (datasetRequestSignature(latestDraft.current) !== confirmation.baseSignature) {
@@ -91,15 +94,16 @@ export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm
     setConfirmation({ ...item, status: "confirming", error: "" });
     try {
       const accepted = await onConfirm(item);
-      if (!accepted) throw new Error("Generation did not start. Your previous batch is unchanged; try again.");
+      if (!accepted) throw new Error("Scene writing could not start. Wait for active work and try again.");
       pending.current = null;
       setUnderstanding({ ...item, status: "confirmed" });
       setConfirmation(null);
+      setRun({ jobId: accepted.id, brief: item.brief, vocabulary: [...(item.input.vocabulary_packs || [])], status: "running", result: null, error: "" });
     } catch (err) {
       setConfirmation({ ...item, status: "ready", error: err.message });
     }
   }
 
-  return { confirmation, understanding: confirmation || understanding,
-    requestConfirmation, reviseConfirmation, cancelConfirmation, confirmRequest };
+  return { confirmation, understanding: confirmation || understanding, run,
+    requestConfirmation, cancelConfirmation, confirmRequest };
 }

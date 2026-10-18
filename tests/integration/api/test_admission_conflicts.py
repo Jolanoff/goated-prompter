@@ -12,7 +12,7 @@ from aiohttp.test_utils import TestClient, TestServer
 import local_app as local
 from goated_prompter.local_jobs import Job
 from tests.helpers import enter_context
-from tests.support.dataset import valid_draft
+from goated_prompter.features.dataset.v2.draft import default_dataset_draft
 from tests.support.minimax import dance_input
 
 
@@ -37,7 +37,7 @@ class AdmissionConflictTests(unittest.IsolatedAsyncioTestCase):
         settings = await (await self.client.get("/api/workspace/settings/refine")).json()
         requests = (
             ("/api/workspace/minimax", {"input": dance_input()}),
-            ("/api/workspace/dataset/understand", {"input": valid_draft(amount=1)}),
+            ("/api/workspace/dataset/understand", {"input": {**default_dataset_draft(), "subject": "A red bicycle.", "amount": 1}}),
             ("/api/workspace", {"action": "add", "prompt": "A red bicycle.", "revision": workspace["revision"]}),
             ("/api/workspace/settings/refine/instructions", {"action": "reset", "revision": settings["revision"]}),
         )

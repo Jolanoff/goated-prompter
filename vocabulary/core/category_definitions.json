@@ -1,0 +1,52 @@
+[
+  {
+    "category": "Subjects",
+    "description": "Who or what is present in the scene. Subjects can include humans, creatures, robots, animals, fantasy beings, and personified objects.",
+    "use_when": "When the request involves visible subjects or subject creation."
+  },
+  {
+    "category": "Actions & Poses",
+    "description": "What subjects are doing and how they are positioned while doing it: individual activities, interactions between subjects, and the posture or body arrangement that goes with them, for solo, couple and group scenes.",
+    "use_when": "When the scene involves an action, an interaction, or a specific pose or arrangement of subjects."
+  },
+  {
+    "category": "Spaces",
+    "description": "Where the scene takes place, including environments, locations, backgrounds, and surrounding spaces.",
+    "use_when": "When a location or environment is relevant."
+  },
+  {
+    "category": "Objects",
+    "description": "Physical items that can be held, used, worn, interacted with, or placed in the environment.",
+    "use_when": "When objects, props, equipment, tools, or furniture are relevant."
+  },
+  {
+    "category": "Expressions",
+    "description": "Facial expressions and visible emotional reactions belonging to subjects.",
+    "use_when": "When a subject's expression or visible emotional state is relevant."
+  },
+  {
+    "category": "Clothing",
+    "description": "Outfits, garments, fashion, accessories, and clothing appearance.",
+    "use_when": "When clothing or outfit styling is relevant."
+  },
+  {
+    "category": "Mood & Tone",
+    "description": "The emotional atmosphere, attitude, feeling, or overall tone of a scene.",
+    "use_when": "When the scene calls for a particular emotional atmosphere or attitude."
+  },
+  {
+    "category": "Lighting",
+    "description": "Light sources, illumination, shadows, lighting conditions, and lighting aesthetics.",
+    "use_when": "When lighting contributes to the scene."
+  },
+  {
+    "category": "Camera & Composition",
+    "description": "The visual viewpoint, framing, shot size, perspective, and composition of the image.",
+    "use_when": "When framing or viewpoint is relevant."
+  },
+  {
+    "category": "Effects & Atmosphere",
+    "description": "Visible environmental, atmospheric, magical, or cinematic effects.",
+    "use_when": "When environmental or visual effects contribute to the scene."
+  }
+]

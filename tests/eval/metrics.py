@@ -1,12 +1,12 @@
 """Transparent lexical diagnostics plus explicit semantic review, never word-count fidelity."""
 
 from collections import defaultdict
+import json
 import re
 
 from goated_prompter.planning.rule_compiler import compile_rules
 from goated_prompter.workflow_output import normalize_workflow_output
 from goated_prompter.planning.constraint_validation import output_constraint_issues
-from goated_prompter.features.dataset.triggers import trigger_presence_error
 
 FIDELITY = ("scene", "action", "pose", "constraint")
 REVIEW_FIELDS = ("semantic_repetition", "domain_action_relevance", "generic_pose", "pose_simplified",
@@ -17,10 +17,22 @@ def normalized(text):
     return " ".join(re.findall(r"\w+", text.casefold()))
 
 
+def trigger_present(prompt, trigger, target):
+    """Every trigger term (comma- or "and"-separated) appears with its exact, case-sensitive wording; Ideogram4
+    checks its high-level description. False when the output cannot be read."""
+    if target == "Ideogram4":
+        try:
+            prompt = json.loads(prompt)["high_level_description"]
+        except (ValueError, TypeError, KeyError):
+            return False
+    terms = [part.strip() for part in re.split(r"(?:[,\r\n]+|\s+and\s+)", str(trigger), flags=re.IGNORECASE) if part.strip()]
+    return bool(terms) and all(re.search(r"(?<!\w)" + re.escape(term) + r"(?!\w)", str(prompt or "")) for term in terms)
+
+
 def annotation_template(records):
     return [{"sample_id": row["sample_id"], "reviewer": "", "review_kind": "", "anchors": {
         kind: {anchor: None for anchor in row.get("anchors", {}).get(kind, [])} for kind in FIDELITY},
-        "useful_details": {}, "semantic_idea_ids": [], "coverage_saturated": None, **{key: None for key in REVIEW_FIELDS}, "notes": ""}
+        "useful_details": {}, "coverage_saturated": None, **{key: None for key in REVIEW_FIELDS}, "notes": ""}
         for row in records]
 
 
@@ -37,13 +49,8 @@ def measure(row, review=None):
     validations = [event for event in events if event.get("type") == "validation" and event.get("workflow") == row["workflow"]]
     semantic = [event for event in events if event.get("type") == "semantic_review"]
     try:
-        if row.get("output_kind") == "ideas":
-            from goated_prompter.features.dataset.plan import validate_saved_scene_plan
-            validate_saved_scene_plan(row.get("scene_plan", []))
-            valid = bool(row.get("scene_plan"))
-        else:
-            normalize_workflow_output(prompt, row.get("target", "Generic"), mode="Video" if row["workflow"] == "minimax" else "Enhance")
-            valid = bool(prompt)
+        normalize_workflow_output(prompt, row.get("target", "Generic"), mode="Video" if row["workflow"] == "minimax" else "Enhance")
+        valid = bool(prompt)
     except (ValueError, TypeError, KeyError):
         valid = False
     try:
@@ -52,10 +59,7 @@ def measure(row, review=None):
         issues = []
     accepted = valid and not row.get("error") and completion == "completed"
     completed = row.get("completed_results", int(accepted))
-    trigger_fidelity = None
-    if row.get("trigger") and row.get("output_kind") != "ideas":
-        trigger_fidelity = trigger_presence_error(prompt, row["trigger"], row.get("target", "Generic"),
-                                                 expand=row.get("expand_trigger", False)) is None
+    trigger_fidelity = trigger_present(prompt, row["trigger"], row.get("target", "Generic")) if row.get("trigger") else None
     # Rejected semantic candidates can still have valid target formatting.
     measured_formats = [event["format_valid"] for event in validations if type(event.get("format_valid")) is bool]
     format_valid = measured_formats[-1] if measured_formats else valid
@@ -98,10 +102,6 @@ def measure(row, review=None):
         statuses = [event.get("checks", {}).get(category) for event in semantic if category in event.get("checks", {})]
         result["model_review_" + category] = statuses[-1] if statuses else None
     result["known_failure"] = row.get("known_failure")
-    if row.get("scene_plan"):
-        from goated_prompter.features.dataset.eligibility import scene_eligibility
-        scenes = row["scene_plan"]
-        result["scene_validity"] = sum(scene_eligibility(scene, {"trigger_type": row.get("dataset_type", "Character")}).usable for scene in scenes) / len(scenes)
     if review is None:
         return result
     if not review.get("reviewer"):
@@ -140,10 +140,6 @@ def measure(row, review=None):
     elif row.get("anchors", {}).get("action"):
         required.extend(("domain_action_relevance", "generic_pose", "pose_simplified"))
     result["review_complete"] = all(type(review.get(field)) is bool for field in required)
-    if row.get("output_kind") == "ideas":
-        semantic_ids = review.get("semantic_idea_ids", [])
-        result["review_complete"] &= len(semantic_ids) == len(row.get("ideas", [])) and all(
-            isinstance(value, str) and value.strip() for value in semantic_ids)
     return result
 
 
@@ -189,33 +185,15 @@ def summarize(records, annotations=()):
                 row.get("temporal_fidelity") is False or row.get("dialogue_reference_fidelity") is False or
                 row.get("pose_simplified") is True or row.get("semantic_repetition") is True or
                 any(row.get(kind + "_fidelity", 1) not in (None, 1) for kind in FIDELITY)]}
-    groups = defaultdict(list)
-    semantic_groups = defaultdict(list)
-    for row in records:
-        for idea in row.get("ideas", []):
-            groups[(row.get("concept", row.get("case_id")), row.get("run", 1))].append(normalized(idea))
-        if labels.get(row["sample_id"]):
-            semantic_groups[row.get("concept", row.get("case_id"))].extend(labels[row["sample_id"]].get("semantic_idea_ids", []))
     def duplicate_rate(values):
         return (len(values) - len(set(values))) / len(values) if values else None
-    cross = defaultdict(list)
-    for (concept, _run), ideas in groups.items():
-        cross[concept].extend(ideas)
     prompt_groups = defaultdict(list)
     for row in records:
         if row.get("prompt"):
             prompt_groups[(row["workflow"], row.get("concept", row.get("case_id")))].append(normalized(row["prompt"]))
-    parity_groups = defaultdict(dict)
-    for row, sample in zip(records, samples):
-        if row["workflow"] in {"builder", "dataset"} and row.get("output_kind") != "ideas":
-            key = tuple(row.get(field) for field in ("case_id", "target", "length", "director", "style", "creativity", "run"))
-            if all(value is not None for value in key):
-                parity_groups[key][row["workflow"]] = sample
-    parity = [{"settings": list(key), "builder": values["builder"], "dataset": values["dataset"]}
-              for key, values in parity_groups.items() if set(values) == {"builder", "dataset"}]
     length_groups = defaultdict(dict)
     for row, sample in zip(records, samples):
-        if row.get("length") not in {"Detailed", "Maximum", "Maximum Detail"} or row.get("output_kind") == "ideas":
+        if row.get("length") not in {"Detailed", "Maximum", "Maximum Detail"}:
             continue
         key = tuple(row.get(field) for field in ("workflow", "case_id", "target", "director", "style", "creativity", "planning", "run", "request", "rules"))
         if all(value is not None for value in key):
@@ -238,11 +216,8 @@ def summarize(records, annotations=()):
             "source_saturated":labels[low[0]["sample_id"]].get("coverage_saturated"),
             "useful_coverage_increased": bool(delta["new_useful_facts"]) and delta["net_useful_fact_gain"] > 0 and fidelity_valid})
     latency = sorted(row["latency_seconds"] for row in records if isinstance(row.get("latency_seconds"), (int, float)))
-    return {"workflows": workflows, "samples": samples, "parity_pairs": parity, "length_coverage_pairs":coverage_pairs,
+    return {"workflows": workflows, "samples": samples, "length_coverage_pairs":coverage_pairs,
             "latency": {"measured": len(latency), "p50_seconds": latency[len(latency) // 2] if latency else None,
                         "p95_seconds": latency[min(len(latency) - 1, int(len(latency) * .95))] if latency else None},
-            "novelty": {"within_run_exact_duplicate_rates": {str(key): duplicate_rate(values) for key, values in groups.items()},
-                        "cross_run_exact_duplicate_rates": {str(key): duplicate_rate(values) for key, values in cross.items()},
-                        "cross_run_prompt_duplicate_rates": {str(key): duplicate_rate(values) if len(values) > 1 else None for key, values in prompt_groups.items()},
-                        "reviewed_semantic_duplicate_rates": {str(key): duplicate_rate(values) for key, values in semantic_groups.items()}},
+            "novelty": {"cross_run_prompt_duplicate_rates": {str(key): duplicate_rate(values) if len(values) > 1 else None for key, values in prompt_groups.items()}},
             "semantic_review_complete": bool(samples) and all(row.get("review_complete") and row["independent_review"] for row in samples)}

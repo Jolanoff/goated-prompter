@@ -4,11 +4,9 @@ import unittest
 
 from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.builder.service import assemble_instruction
-from goated_prompter.features.dataset.prompting import dataset_instruction
-from goated_prompter.features.dataset.service import validate_dataset_draft
+from goated_prompter.features.dataset.v2.draft import default_dataset_draft, validate_dataset_draft
 from goated_prompter.options.styles import STYLE_NAMES
 from goated_prompter.prompting.styles import STYLE_ADAPTERS, resolve_style
-from tests.support.dataset import saved_scene, valid_draft
 
 
 def message(**changes):
@@ -31,14 +29,11 @@ class StyleTests(unittest.TestCase):
         self.assertIn("VISUAL STYLE — Anime", message(target_model="Anima"))
         self.assertIn("VISUAL STYLE — Product", message(style="Product"))
 
-    def test_dataset_validates_style_and_passes_it_to_the_writer(self):
-        self.assertEqual(validate_dataset_draft(valid_draft())["style"], "Auto")
-        self.assertEqual(validate_dataset_draft(valid_draft(style="Anime"))["style"], "Anime")
+    def test_dataset_draft_validates_style(self):
+        self.assertEqual(validate_dataset_draft(default_dataset_draft())["style"], "Auto")
+        self.assertEqual(validate_dataset_draft({**default_dataset_draft(), "style": "Anime"})["style"], "Anime")
         with self.assertRaises(ValueError):
-            validate_dataset_draft(valid_draft(style="Watercolour anime"))
-        data = valid_draft(target="Krea 2", style="Anime")
-        writer = dataset_instruction(GoatedPrompterRequest(idea=data["subject"]), data, 1, plan_item=saved_scene())
-        self.assertIn("VISUAL STYLE — Anime", writer.system_message)
+            validate_dataset_draft({**default_dataset_draft(), "style": "Watercolour anime"})
 
 
 if __name__ == "__main__":

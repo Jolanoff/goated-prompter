@@ -1,242 +1,82 @@
 # Dataset architecture
 
-Dataset produces prompts, not images. There is one pipeline:
+Dataset produces prompts, not images. The rebuilt workflow uses
+`features/dataset/v2/understanding.py`, `scenes.py` and `prompts.py`:
+Understanding → source-bound human confirmation → the scene writer (with any selected vocabulary) → final Builder prompts.
+Scenes-only generation stops before Builder. This is the only Dataset workflow; the
+earlier pipeline (ideas with scenes, per-scene actions, Continue, saved scene plans, durable
+checkpoints, recent-idea history and the old private vocabulary file) has been retired.
+Its files under `data/` are not read, changed or deleted; old fields in a saved Dataset draft
+are dropped when the draft loads.
 
-```text
-concept + rules + local guided input
-  → UNDERSTAND (characters + hard / soft / free) → human approval
-  → BRAINSTORM candidate events (random batches) → app picks each image's event
-  → IDEAS, five per call, each an idea with its finished scene
-  → Builder ENHANCE / Direct with the approved cast → FINAL PROMPT
-```
+## Runs
+
+Each requested image keeps its slot number through every stage. A run lives only in its job's result: each scene
+is published as soon as it is written (stage `writing_scenes`), then each final prompt as it is written. Nothing is
+saved to disk; the user copies, downloads or exports what to keep. Reload recovery, scene editing, per-image
+regeneration and continuing a scenes-only run are not implemented.
+
+Vocabulary (`features/vocabulary/catalog.py`): `vocabulary/core/scene_category_registry.json` is the source of
+truth for the categories and their folders; `category_definitions.json` says what each means and
+`prompt_instructions.json` what the scene writer is told about it. A pack is one JSON file in a registered folder,
+exactly `{"name", "category", "entries": [texts]}`; its id is `<folder>/<file>`. Imported packs live in
+`data/vocabulary/<folder>/<file>.json` with id `data/<folder>/<file>` (`POST /api/vocabulary/import` with
+`{"filename", "content"}` checks one and saves it in its category's folder, replacing an earlier import of that file).
+Each file is read on its own: one that cannot be read is reported with its reason and the others still load.
+`GET /api/vocabulary/catalog` returns categories, packs and problems. Adding a category is one entry in each Core file
+plus its folder. Packs carry no compatibility data.
+
+Selection: the Dataset tab's Vocabulary Library selects packs by hand (search, category filter, preview,
+Apply/Cancel); the selected ids are the draft's `vocabulary_packs`, saved with the other Dataset settings. They are
+not part of the review signature, so changing them needs no new Understanding. Confirm checks them against the
+catalog. Vocabulary is used only when scenes are invented (source `random`); with the user's own scene ideas
+(`guided`) no vocabulary is sent and the selection is ignored.
+
+Understanding (brief version 11) records the subject type, participant count, stated attributes, the central
+activity, and what stays fixed and what varies. It never reads vocabulary. Version 9 and 10 briefs in saved runs
+stay readable.
+
+Scenes (`v2/scenes.py`): the scene writer (`dataset_v2:scenes`, one call per batch of up to ten images) receives the
+USER REQUEST, the EXISTING APPROVED REQUIREMENTS (rules, Understanding, style) and, only when packs are selected, a
+SELECTED VOCABULARY section: just the categories that have a selected pack, each with its Core instruction and the
+entries of those packs (merged per category and shuffled for every batch by a generator seeded with the run's seed),
+plus the shared vocabulary usage rules. The request and the approved requirements always win. With an Actions & Poses
+pack selected, every scene names the entry it is built on (`entry`); code checks the entry is one of the selected ones
+and that no entry is used by more than two images (`ENTRY_CAP`, raised to the images-per-entry when there are fewer
+entries than images), and asks again otherwise. No pack is used automatically: character looks come from the request
+and approved requirements, with vocabulary guidance only from manually selected Subjects packs. Missing images
+are retried, then reported; the last round keeps an image rather than lose it.
+
+Prompts (`v2/prompts.py`): the existing Builder writes each final prompt from the scene with the run's Director
+preset and target model together, as in the Prompt Builder; the scene writer never sees a Director. The scene rules
+ask Builder to keep every subject, action, object, place, camera and light, add none, and describe people rather
+than labels. Code checks the trigger and rewrites once a prompt that still uses a numbered label ("man 1").
 
 ## Owners
 
-| Responsibility | Owner |
+| Concern | Owner |
 | --- | --- |
-| Scoped understanding, character list and richer brief validation | `goated_prompter/features/dataset/understanding.py` |
-| Source-bound, expiring approval tickets | `goated_prompter/features/dataset/intent.py` |
-| Guided assignment indexes and cycling | `goated_prompter/features/dataset/assignments.py` |
-| Ideas with finished scenes and lexical duplicate hints | `goated_prompter/features/dataset/ideas.py`, `quality.py` |
-| Recent-event RAM history, read and written only by Ideas | `goated_prompter/features/dataset/ideas.py`, `idea_history.py` |
-| Chunked idea orchestration and versioned saved-plan validation | `goated_prompter/features/dataset/plan.py` |
-| Writer eligibility, shared by API and enhancement | `goated_prompter/features/dataset/eligibility.py` |
-| Builder handoff, cast section, Anima cast tags, cast check and trigger controls | `goated_prompter/features/dataset/prompting.py` |
-| Batch/actions and bounded final-output recovery | `goated_prompter/features/dataset/service.py` |
-| Target syntax and output normalization | `goated_prompter/prompting/target_models.py`, `workflow_output.py` |
-| Editable drafts and durable generated progress | `goated_prompter/workflow_settings.py`, `goated_prompter/features/dataset/checkpoints.py` |
-| API admission | `goated_prompter/features/dataset/routes.py` |
-| Workflow execution | `goated_prompter/features/dataset/runner.py` (dispatched by `goated_prompter/workflow_runners.py`) |
-| Confirmation and job synchronization | `frontend/src/features/dataset/useDatasetConfirmation.js`, `useDatasetWorkflow.js` |
-| Autosave, revisions and refresh guards | `frontend/src/shared/workflow/useWorkflowSettings.js` |
-| Cards, edits, character review and exports | `frontend/src/features/dataset/DatasetTab.jsx`, `DatasetConfirmationModal.jsx`, `datasetState.js` |
+| API admission: understand, confirm | `goated_prompter/features/dataset/routes.py` |
+| Workflow execution (`dataset_understanding`, `dataset_v2_scenes`) | `goated_prompter/features/dataset/runner.py` (dispatched by `goated_prompter/workflow_runners.py`) |
+| Editable draft defaults and validation | `goated_prompter/features/dataset/v2/draft.py`, saved by `goated_prompter/workflow_settings.py` |
+| Understanding brief | `v2/understanding.py` |
+| Adults-only and safety checks on the request | `v2/safety.py` |
+| Source-bound, expiring approval tickets | `v2/tickets.py` |
+| Guided input assignment | `v2/assignments.py` |
+| Vocabulary categories, pack discovery and the vocabulary prompt section | `features/vocabulary/catalog.py` |
+| Scene composition | `v2/scenes.py` |
+| Final prompts through the Builder | `v2/prompts.py` |
 
-## Authority and stages
-
-UNDERSTAND interprets the user's request without generating scenes. Its brief lists the
-characters in every image (name, count, sex, kind such as human, anthro, monster, alien
-or robot, origin as an existing, described or randomly invented character, series and
-supplied traits) and records character count, identity policy, scoped requirements, action alternatives, permitted
-expansion, visible evidence, interactions, natural occlusions and physical conflicts.
-`all_outputs` applies to every image, `dataset` to the set, and `guided:N` only to that
-line's assignments. Clarifications prevent approval. Added instructions require
-reanalysis; the approval ticket is bound to source settings and saved scene edits.
-
-The brief also exposes three small scoped lists for approval: **hard** obligations,
-**soft** preferences that may yield to hard requirements, and **free** creative
-choices within the user's expansion limits. Only approved hard requirements are
-immutable. The richer interpretation explains this contract; downstream stages do
-not infer extra locks from it or promote their own inventions into requirements.
-UNDERSTAND generates each scoped fact once in a hard, soft, free or explanatory
-context bucket, tagged with the review sections it belongs to. The generation schema
-reserves one HARD slot for the app-retained character trigger when needed, without
-reducing the other buckets' capacities. The app expands these facts into the same public
-brief, supplies output-setting prose from the request, and retains the supplied
-character trigger before approval. Existing full briefs remain valid; saved reviews,
-approval tickets, IDEAS and the writer still consume the unchanged public contract.
-Generation uses bucket-specific review-tag schemas: HARD excludes `may_vary`, FREE
-allows only `may_vary`, SOFT has no review tags, and CONTEXT requires exactly
-`natural_occlusions`. Required overlaps may still be HARD. This prevents constrained
-decoding from producing cross-authority tags that the projection would reject;
-nonconforming responses remain rejected, without moving or dropping their facts.
-The generation instructions request minified, single-line JSON, preserving whitespace
-inside string values. This is model guidance, not a JSON-schema whitespace guarantee;
-valid pretty-printed responses remain accepted without a formatting retry.
-UNDERSTAND also requests semantic brevity: no synonymous restatements or separate
-facts already contained in another same-scope, same-authority fact. Ordinary
-unspecified freedoms are grouped categorically by scope and policy rather than
-enumerating every possible trait. Explicit restrictions, owners and choose-once
-versus per-image policies remain distinct. Array limits are ceilings, not targets;
-complex requests retain their full existing capacity. This is model guidance, not
-automatic semantic deduplication or truncation of a generated brief.
-The review summary lists mandatory variation once instead of repeating it among
-image/scoped requirements. Within the optional details view, exact scoped facts
-with the same authority appear once, with their additional review categories shown
-as annotations. Different wording, literal case/spacing, scopes or authorities
-remain separate, and conflict resolutions remain inspectable. The original brief,
-approval and downstream inputs are not rewritten by these display changes.
-Explicit user counts, actions, contacts, exclusions and required visual evidence
-belong in hard, retaining their scope and qualifiers. A semantic trait does not
-automatically require exposure. Unresolved user conflicts block approval.
-
-For random batches, a brainstorm call (`brainstorm.py`) first lists about three candidate
-scenarios per image (what happens and where, each in its own place) with a typicality score.
-The app drops events similar to recent runs or current siblings and samples the batch gently
-weighted toward unusual events, then passes each image its `event_seed`, which replaces that
-image's moment, interaction and setting directions. Randomly invented human characters also
-get a look per image built from independent parts (`LOOK_PARTS`: hair length, style and colour,
-build, skin tone, plus an age from `AGES` unless one is stated), so each seed draws new people
-from hundreds of combinations instead of reshuffling one short list. An unusable brainstorm is reported
-and ideas continue without seeds; guided batches skip it.
-IDEAS writes five images per call: each record is a one-line idea (the core event) and
-its scene, a complete three-to-five-sentence picture with the whole cast in frame,
-placement, action, setting, light and camera. The selected Director's instructions (when it
-applies to the target) go to IDEAS too, so it decides each scene's framing, camera and light;
-the writer then keeps them. The brainstorm gets the same Director section (`director.py`). A
-Director built around one kind of shot (selfie, mirror, first person) also replaces each image's
-framing direction, lifts the mirror and posing bans, and is not limited as a watching idea. A sexual request (`quality.sexual_request`, which also reads
-the cast, the brief and the Director) takes its mood, interaction, setting and clothing directions,
-and a random handful of `position_ideas` for the brainstorm, from the user's private vocabulary file
-(`private_vocabulary.py`, `data/vocabulary/sexual.txt`, never committed; without it those axes stay open
-and the model invents them within the rules). Positions follow the cast (solo, couple, two men, two
-women, three, a group); oral, feet, kink, pet, furniture and aftercare positions and the file's
-`requested` entries join only when the request or Director asks. Kink moods, dynamics, clothing and a
-prop per image join only when `kink_request` finds BDSM or fetish wording in the request, or a Director
-clause that asks for it (a clause that forbids it does not count). An `ownership_request` (slave, owned,
-master or mistress, human pet) uses only the kink moods, dynamics and clothing, replaces ordinary couple
-positions with power-exchange ones, and adds the file's ownership rules. Every file entry passes the
-adults-only and anatomy checks plus consent, incapacitation, death, family, animal, school and
-breath-restriction checks before use. The stage also keeps
-every sexual act between the people the request pairs, allows a partner-supported lift during sex, keeps the place and
-position next to a required act, drops the moment axis, and draws an adult age for random characters; `adults_only_error` refuses a
-sexual or suggestive batch that names someone under 18 or involves an animal before any model call, and brainstorm
-events, ideas and final prompts that do so are dropped, repaired or retried. The same stages tie every body part to
-its owner and keep visible genitals with their owner's hips and torso in frame; `broken_anatomy`
-drops, repairs or retries wording that detaches a body part or merges two people's genitals. Later calls receive the earlier ideas as
-existing ideas and share one creative-direction salt, so the
-batch stays spread without one long list. Ideas never see the prompt library's prompts;
-they get craft notes (`craft_notes.py`) distilled from it once per library version, and any
-note that repeats a word specific to the saved prompts is dropped. An
-explicit replacement requests only its index. History and diversity hints never
-override a guided action or approved hard requirement. There is no Fast/Quality
-dispatch, automatic substitute idea or fallback plan.
-During a fresh batch, exact normalized duplicates retain the first valid idea and mark
-only later repeats for repair; permitted guided repeats remain accepted. Invalid
-individual rows also become explicit failed slots without dropping valid siblings.
-Valid prompts finish first, then one replacement call requests only failed idea
-indexes, followed by their writer calls. Replacement validation still rejects unchanged
-or repeated ideas; unsuccessful repairs leave an inspectable partial batch, not an
-unbounded retry loop. A brainstorm that loops continues without event seeds; an ideas call that
-loops gets one varied retry and then fails only its slots for repair. When near-repeat filtering leaves
-too few events, the least typical leftovers fill the remaining slots, so no image falls back to bare
-direction labels. Rule texts carry no worked examples, which small models copied into every idea. Lexical similarity remains a nonblocking hint, not semantic
-verification. Globally malformed JSON or a wrong batch size gets one format correction
-and is otherwise rejected rather than guessing missing assignments.
-
-Across restarts, `idea_history.py` keeps only keyed, 20-bit fingerprints of each idea's key words
-in `idea_fingerprints.json` (three-day expiry, no text); the brainstorm prefers candidates that
-match none of them. IDEAS owns recent-event memory and checks normalized exact repeats against it,
-including when only camera or context changed. Fresh accepted ideas are remembered;
-failed slots are not. A repair of a slot that failed as a history repeat is kept rather than rejected again.
-An explicit guided input matching the event can still repeat.
-History stays bounded in RAM per concept and expires automatically. There is no
-manual reset control or endpoint. The writer does not read this history or change an
-accepted event for novelty. Semantic variation beyond exact repeats
-remains model-guided, not independently verified.
-
-There is no separate scene-building call. Each idea's scene, or the user's edit of it,
-is accepted for the writer as written. A `REPAIR:` note saved by the former scene check
-still blocks its writer until the idea is regenerated.
-
-Scenes state exactly one camera angle and shot size and one head-to-feet pose per character;
-the app's creative directions never ask for top-down or worm's-eye views, and the writer may not
-add a second viewpoint or extra pose detail. A deterministic check rejects final prompts that
-describe the camera from above and from below at once, because contradictory viewpoints are a
-common cause of folded anatomy. When the target's library has prompts, the writer gets a
-measured prompt format (range of lengths, structure, section labels, shared trigger; the selected
-length picks a point in that range) and two library prompts as templates for how the
-prompt is built, drawn at random from the whole library for each image (fixed per scene, so
-rewriting one prompt keeps its templates). The target adapter and the Director stay in full: the
-look (medium, style, palette, mood) comes from the request, the Style setting and the Director,
-never from the templates.
-Scene prose is Builder's entire creative input. `dataset_instruction` calls the
-existing `assemble_instruction` with **Enhance / Direct**, adds the approved cast and
-the applicable hard/soft/free contract. Director, creativity, style, length and target
-controls enrich open detail, not a different event, cast or crop. For Anima, count tags
-derived from the cast lead the tag block, followed by named characters' Danbooru and
-series tags. A deterministic check retries the writer when cast-derived count tags or a
-named character's name are missing from the prompt.
-Dataset has no separate final writer or semantic/support reviewer. Shared Builder
-and MiniMax reference/timeline validation remain independent and available.
-
-## Recovery and text preservation
-
-Normal **Generate prompts** always runs ideas → prompts after the first
-UNDERSTAND approval, regardless of the legacy `plan_scenes_first` saved flag.
-**Generate scenes only** is an explicit separate action for manual scene review;
-Continue reuses the accepted plan and writes only its missing prompts.
-
-Final enhancement retains up to three bounded retries for transport errors, malformed
-target output, missing protected triggers, positive-content leakage and runaway
-generation, and for a dropped cast member. These retries never replan the scene. Transport retries repeat
-the instruction; output correction stays within the accepted scene and target format.
-Runaway retries reduce the output allowance. A sentence-complete prefix may be
-accepted only after normal output validation.
-
-With trigger expansion disabled, Dataset restores a missing literal numeric count
-from its equivalent English number-word phrase (1–20) before strict validation,
-for example `two men` → `2 men`. This changes spelling only: it does not add subjects,
-rewrite synonyms, infer counts or change the accepted scene. Quoted lettering,
-identifier boundaries, compound numbers and already-present exact terms are left
-alone. Ideogram restoration is limited to `high_level_description`. The correction
-is reported in progress/activity; missing triggers still use the bounded writer retries.
-
-Generic text cleanup trims outer whitespace only. Dataset's conservative sanitizer
-removes complete standalone exclusion/meta clauses, not useful mixed prose, quoted
-image text or protected triggers. Ideogram cleanup touches descriptive strings, never
-rendered `elements[].text` or required schema fields. Anima's supported standalone
-positive quality tags remain allowed. These are narrow checks, not a semantic fidelity
-score or universal ban on words such as “no.”
-
-## Edits, freshness and persistence
-
-Idea and scene edits keep each other and invalidate only that prompt; an edited scene
-is written as edited. Output-setting changes reuse scenes; concept, guided input, amount, type or rules
-changes invalidate the plan. Server eligibility is accepted only while the client's
-scene matches its saved dependency projection; key order and prompt bookkeeping do
-not affect identity.
-Plans created before ideas carried their own scenes also need replanning; their
-saved text and final prompts are not deleted or migrated.
+## Seeds
 
 The draft's `seed` and `seed_mode` (randomize, fixed, increment) work like ComfyUI's seed
-control. The frontend picks each new batch's seed and sends it with the request without
-saving it first; admission saves the request with the other settings, so a rejected run
-changes nothing and an admitted one keeps the seed it used. Continue and per-image actions
-keep the current seed. A batch run
-seeds the app's picks (brainstorm sampling, creative directions, drawn looks) and sends the
-seed with every model request; per-image regeneration stays random. With a fixed seed,
-recent-idea history is neither read nor written, so a repeated batch is not rejected. The
-seed is not part of the plan or intent signatures, so changing it invalidates nothing.
-
-The backend atomically checkpoints generated progress before publishing it. Workflow
-revision and input signatures prevent stale jobs from replacing newer edits. Restart
-marks running work interrupted without resuming inference. Generation does not clear
-the prior edited batch before admission; a lost admission response cannot roll back
-accepted work. Exports and Clear release completed job diagnostics, not durable scenes.
-Clear explicitly removes the current final prompts.
-
-Final results contain `index`, `input`, `idea`, `scene`, `prompt`. Saved final prompts
-from older versions remain readable through a nonmutating projection. Obsolete plans
-are excluded from executable draft projections and require replanning; archived
-checkpoint snapshots remain intact. No legacy staging migration is executed.
+control. The frontend picks each new batch's seed and sends it with the reviewed request; the
+seed is saved after Confirm starts the run, so a rejected or cancelled review changes nothing.
+The seed is not part of the approval signature, so changing it invalidates nothing.
 
 ## Evidence boundary
 
-CPU tests use mocked models and synthetic temporary storage. Browser checks cover
-approval, persistence, admission races, edits, per-scene actions and export. They do
-not prove real-model creativity or visual correctness.
-
-`tests/eval/runner.py` uses the production Dataset pipeline with an interactive
-Understanding approval gate for live evaluation. Frozen replay remains historical
-evidence, not proof of current model quality. Semantic claims require independent
-review; see [the evaluation guide](../tests/eval/README.md).
+CPU tests use mocked models and synthetic temporary storage. They check data flow (selection, what reaches the
+composer and Builder, failures), not real-model creativity, scene coherence or visual correctness. No browser
+end-to-end test covers the Dataset tab. The general evaluation harness (`tests/eval/runner.py`) covers Builder and
+MiniMax only.

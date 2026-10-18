@@ -8,18 +8,6 @@ from tests.support.paths import TESTS
 
 
 class EvaluationTests(unittest.TestCase):
-    def test_current_compact_plan_is_valid_in_idea_evaluation(self):
-        from tests.support.dataset import saved_scene
-        row = self.sample(workflow="dataset", output_kind="ideas", scene_plan=[saved_scene()], prompt="")
-        measured = measure(row)
-        self.assertTrue(measured["format_valid"])
-        self.assertTrue(measured["accepted"])
-
-    def test_obsolete_unchecked_plan_is_not_valid_in_idea_evaluation(self):
-        row = self.sample(workflow="dataset", output_kind="ideas", scene_plan=[{
-            "index": 1, "input": "", "idea": "Old idea", "scene": "Old unchecked scene"}], prompt="")
-        self.assertFalse(measure(row)["format_valid"])
-
     def sample(self, **patch):
         return {"sample_id": "one", "workflow": "builder", "prompt": "A cup on a table.",
                 "completion_state": "completed", "anchors": {"scene": ["cup"], "action": [], "pose": [], "constraint": []}, **patch}
@@ -38,9 +26,9 @@ class EvaluationTests(unittest.TestCase):
 
     def test_cost_counts_reviews_but_output_repairs_exclude_transport_and_self_review(self):
         calls = [{"stage": stage, "finish_reason": "stop"} for stage in (
-            "dataset:scene_planner", "dataset:1", "semantic:review:dataset:final:1",
-            "semantic:review:dataset:final:1:format_retry", "dataset:1:transport_retry_1", "dataset:1:format_retry_2")]
-        measured = measure(self.sample(workflow="dataset", calls=calls, trigger="cup"))
+            "builder:scene_planning", "builder:1", "semantic:review:builder:final:1",
+            "semantic:review:builder:final:1:format_retry", "builder:1:transport_retry_1", "builder:1:format_retry_2")]
+        measured = measure(self.sample(calls=calls, trigger="cup"))
         self.assertEqual(measured["model_calls"], 6)
         self.assertEqual(measured["calls_per_result"], 6)
         self.assertEqual(measured["repair_calls"], 1)
@@ -52,12 +40,16 @@ class EvaluationTests(unittest.TestCase):
         self.assertTrue(measure(self.sample(trigger="cup"))["trigger_fidelity"])
         self.assertFalse(measure(self.sample(trigger="Cup"))["trigger_fidelity"])
         self.assertIsNone(measure(self.sample())["trigger_fidelity"])
+        self.assertTrue(measure(self.sample(prompt="A cup and a saucer.", trigger="cup and saucer"))["trigger_fidelity"])
+        self.assertFalse(measure(self.sample(prompt="A cupboard.", trigger="cup"))["trigger_fidelity"])
+        ideogram = json.dumps({"high_level_description": "A cup on a table."})
+        self.assertTrue(measure(self.sample(target="Ideogram4", prompt=ideogram, trigger="cup"))["trigger_fidelity"])
 
     def test_pipeline_repair_is_not_hidden_by_a_valid_first_writer_attempt(self):
-        calls = [{"stage": "dataset:scene_composer:repair", "finish_reason": "stop"},
-                 {"stage": "dataset:1", "finish_reason": "stop", "validation_events": [
-                     {"type": "validation", "workflow": "dataset", "attempt": 0, "accepted": True}]}]
-        self.assertFalse(measure(self.sample(workflow="dataset", calls=calls))["first_pass_valid"])
+        calls = [{"stage": "builder:scene_planning:repair", "finish_reason": "stop"},
+                 {"stage": "builder:1", "finish_reason": "stop", "validation_events": [
+                     {"type": "validation", "workflow": "builder", "attempt": 0, "accepted": True}]}]
+        self.assertFalse(measure(self.sample(calls=calls))["first_pass_valid"])
 
     def test_missing_prompt_is_a_trigger_failure_not_an_unmeasured_success(self):
         self.assertIs(measure(self.sample(prompt="", trigger="cup", error="writer failed"))["trigger_fidelity"], False)
@@ -95,22 +87,21 @@ class EvaluationTests(unittest.TestCase):
         self.assertTrue(measure(self.sample(completion_state="interrupted"))["format_valid"])
         self.assertFalse(measure(self.sample(target="Ideogram4", prompt="not json"))["format_valid"])
 
-    def test_duplicate_rate_across_runs(self):
-        rows = [self.sample(sample_id=str(index), concept="craft", run=index, ideas=["Center clay", "Center clay"]) for index in (1, 2)]
+    def test_prompt_duplicate_rate_across_runs(self):
+        rows = [self.sample(sample_id=str(index), case_id="craft", run=index) for index in (1, 2, 3)]
         report = summarize(rows)
-        self.assertEqual(report["novelty"]["cross_run_exact_duplicate_rates"]["craft"], .75)
+        self.assertEqual(report["novelty"]["cross_run_prompt_duplicate_rates"]["('builder', 'craft')"], 2 / 3)
 
     def test_corpus_has_difficult_cases_and_all_workflows(self):
         corpus = json.loads((TESTS / "eval/cases/corpus.json").read_text())
         self.assertGreaterEqual(len(corpus["cases"]), 20)
-        self.assertEqual({workflow for row in corpus["cases"] for workflow in row["workflows"]}, {"builder", "dataset", "minimax"})
-        self.assertTrue(all(row["runs"] == 5 and row["amount"] == 10 for row in corpus["novelty"]))
+        self.assertEqual({workflow for row in corpus["cases"] for workflow in row["workflows"]}, {"builder", "minimax"})
 
     def test_frozen_real_responses_cover_all_workflows_and_do_not_invent_usage(self):
         fixtures = TESTS / "eval/fixtures/model_outputs"
         rows = [row for path in fixtures.glob("real_*.json") for row in json.loads(path.read_text(encoding="utf-8"))["records"]]
         report = summarize(rows)
-        self.assertEqual(set(report["workflows"]), {"builder", "dataset", "minimax"})
+        self.assertEqual(set(report["workflows"]), {"builder", "minimax"})
         self.assertFalse(report["semantic_review_complete"])
         self.assertEqual(report["latency"]["measured"], 0)
         self.assertEqual(report["workflows"]["builder"]["negative_language_leakage"], 1)
@@ -120,7 +111,7 @@ class EvaluationTests(unittest.TestCase):
         run = json.loads(fixture.read_text(encoding="utf-8"))
         self.assertEqual(run["source_records"], 39)
         self.assertEqual(run["engine"]["context_size"], 16384)
-        self.assertEqual(len(run["records"]), 7)
+        self.assertEqual(len(run["records"]), 4)
         self.assertTrue(run["code_digest"])
         self.assertTrue(run["source_sha256"])
         for row in run["records"]:
@@ -132,8 +123,8 @@ class EvaluationTests(unittest.TestCase):
                 self.assertEqual(call["finish_reason"], "stop")
                 self.assertEqual(call["completion_state"], "completed")
         report = summarize(run["records"])
-        self.assertEqual(report["latency"]["measured"], 7)
-        self.assertEqual(sum(len(result["failures"]) for result in report["workflows"].values()), 7)
+        self.assertEqual(report["latency"]["measured"], 4)
+        self.assertEqual(sum(len(result["failures"]) for result in report["workflows"].values()), 4)
 
     def test_regression_gate_cannot_hide_fidelity_loss_in_more_words(self):
         baseline = {"samples": [{"sample_id": "one", "review_complete": True, "review_kind": "human", "scene_fidelity": 1, "prompt_words": 10}]}

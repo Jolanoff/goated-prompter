@@ -53,6 +53,18 @@ def get_target_capabilities(name):
     return TARGET_CAPABILITIES.get(canonical_target(name), TARGET_CAPABILITIES["Generic"])
 
 
+# Scene requirements a target model adds to Dataset composition, as a Director-style vocabulary block
+# (features/vocabulary/preferences.py); its "require" entries (actions, items, places or visual directions such as a
+# camera angle) are mandatory in every image, in the same joint search as the user's. Data only; the target's own
+# adapter still decides the final prompt's format. No built-in target needs one yet.
+TARGET_VOCABULARY = {}
+
+
+def target_vocabulary(name):
+    """The target's vocabulary block for Dataset composition ({} when it adds none)."""
+    return dict(TARGET_VOCABULARY.get(canonical_target(name), {}))
+
+
 def resolve_target_length(name, length):
     return get_target_capabilities(name).resolve_length(length)
 

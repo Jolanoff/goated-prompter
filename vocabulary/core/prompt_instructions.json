@@ -1,0 +1,42 @@
+[
+  {
+    "category": "Subjects",
+    "prompt_text": "{Subjects} provides vocabulary for the subjects appearing in the scene. Use relevant entries to inspire subject choices or appearances without replacing subjects explicitly requested by the user."
+  },
+  {
+    "category": "Actions & Poses",
+    "prompt_text": "{Actions & Poses} provides vocabulary for what subjects do and how they are positioned while doing it. An entry may define the action and the pose together, or only one of them. When it defines both, keep them together as one arrangement. When it defines only the action, choose a pose that physically supports it; when it defines only the pose, choose an action that fits it. Entries name people neutrally (\"the person\", \"one person\", \"the other person\"): replace them with the scene's actual subjects, using each subject's correct gender, pronouns and body. Objects, furniture and surfaces named in an entry are examples: replace them with ones that suit the scene's space and any selected objects, keeping the pose physically the same. If an entry needs something a subject does not have, adapt it or choose another entry. Preserve any action already specified by the user."
+  },
+  {
+    "category": "Spaces",
+    "prompt_text": "{Spaces} provides vocabulary describing where the action takes place. Use relevant entries as possible locations or environmental inspiration."
+  },
+  {
+    "category": "Objects",
+    "prompt_text": "{Objects} provides vocabulary for physical objects. Objects can be used by subjects, held by subjects, worn where appropriate, interacted with, or included in the background."
+  },
+  {
+    "category": "Expressions",
+    "prompt_text": "{Expressions} provides vocabulary for facial expressions and visible reactions. Apply relevant expressions to appropriate subjects."
+  },
+  {
+    "category": "Clothing",
+    "prompt_text": "{Clothing} provides vocabulary for outfits and garments. Apply relevant entries to appropriate subjects while respecting their appearance and the user request."
+  },
+  {
+    "category": "Mood & Tone",
+    "prompt_text": "{Mood & Tone} provides vocabulary for the overall emotional atmosphere or attitude of the scene. Use relevant entries to influence how the scene feels without unnecessarily changing the requested action."
+  },
+  {
+    "category": "Lighting",
+    "prompt_text": "{Lighting} provides vocabulary for illumination, lighting conditions, and light sources. Use relevant entries to establish coherent scene lighting."
+  },
+  {
+    "category": "Camera & Composition",
+    "prompt_text": "{Camera & Composition} provides vocabulary for shot types, camera angles, framing, and viewpoints. Use relevant entries to compose the scene while keeping required subjects and actions visible."
+  },
+  {
+    "category": "Effects & Atmosphere",
+    "prompt_text": "{Effects & Atmosphere} provides vocabulary for visible environmental, atmospheric, magical, and cinematic effects. Use relevant entries when they contribute naturally to the scene."
+  }
+]

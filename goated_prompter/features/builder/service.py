@@ -40,6 +40,14 @@ from ...workflow_output import WorkflowFormatError, normalize_workflow_output, s
 from ...contracts import GenerationResult, PromptInstruction, _reference_role, effective_model_family
 
 
+class PromptValidationError(BackendGenerationError):
+    """Builder exhausted its repairs for one output; the provider itself remained available."""
+
+    def __init__(self, message, *, attempts):
+        super().__init__(message)
+        self.attempts = attempts
+
+
 def _qwen21_source_tokens(request, reference_map=None, text_only=False):
     """Use selected sources even when the final compiler receives evidence, not images."""
     if text_only:
@@ -349,6 +357,7 @@ class GoatedPrompterService:
         resolved_reference_map=None,
         text_only=False,
         prompt_scene_plan=None,
+        references=None,
     ):
         return assemble_instruction(
             request,
@@ -357,12 +366,13 @@ class GoatedPrompterService:
             resolved_reference_map=resolved_reference_map,
             text_only=text_only,
             **({"prompt_scene_plan": prompt_scene_plan} if prompt_scene_plan is not None else {}),
+            **({"references": references} if references is not None else {}),
         )
 
     def generate(self, request):
         return self._generate(request, text_only=False)
 
-    def generate_text_only(self, request):
+    def generate_text_only(self, request, *, seed=None, recovery=None):
         """Generate from text settings without touching image/reference state."""
         if not str(request.idea or "").strip():
             raise ValueError("Enter a text prompt first.")
@@ -383,9 +393,9 @@ class GoatedPrompterService:
             preserve_lighting=False,
             preserve_colors=False,
         )
-        return self._generate(sanitized, text_only=True)
+        return self._generate(sanitized, text_only=True, seed=seed, **({"recovery": recovery} if recovery is not None else {}))
 
-    def _generate(self, request, text_only=False):
+    def _generate(self, request, text_only=False, *, seed=None, recovery=None):
         if self._checkpoint is not None:
             self._checkpoint()
         config = self._config if self._config is not None else load_config(self._config_path)
@@ -448,22 +458,25 @@ class GoatedPrompterService:
                     session_backend, request, resolved_scene=resolved_scene,
                     family=model_family, checkpoint=self._checkpoint, progress=planning_progress,
                     **({"semantic_validation": True} if validate_semantics else {}))
-            instruction = self.assemble(
-                request,
-                model_family=model_family,
-                resolved_scene=resolved_scene,
-                resolved_reference_map=resolved_reference_map,
-                text_only=text_only,
-                **({"prompt_scene_plan": prompt_scene_plan} if prompt_scene_plan is not None else {}),
-            )
-            instruction = replace(
-                instruction,
-                diagnostic_stage="final",
-                diagnostic_context=_diagnostic_context(
-                    request,
-                    evidence_digest=resolved_scene_sha256(resolved_scene) if resolved_scene is not None else "NONE",
-                ),
-            )
+            def build(references=None):
+                return replace(
+                    self.assemble(
+                        request,
+                        model_family=model_family,
+                        resolved_scene=resolved_scene,
+                        resolved_reference_map=resolved_reference_map,
+                        text_only=text_only,
+                        **({"prompt_scene_plan": prompt_scene_plan} if prompt_scene_plan is not None else {}),
+                        **({"references": references} if references is not None else {}),
+                    ),
+                    diagnostic_stage="final",
+                    seed=seed,
+                    diagnostic_context=_diagnostic_context(
+                        request,
+                        evidence_digest=resolved_scene_sha256(resolved_scene) if resolved_scene is not None else "NONE",
+                    ),
+                )
+            instruction = build()
             qwen_images = _qwen21_source_tokens(request, resolved_reference_map, text_only) if request.target_model == "Qwen Image 2.1" else ()
             qwen_task = "edit" if qwen_images else "t2i"
             validate_format = request.target_model == "Qwen Image 2.1" or get_target_capabilities(request.target_model).supports_structured_output
@@ -480,32 +493,40 @@ class GoatedPrompterService:
                 semantic_contract["preserved_reference_facts"] = [{"attribute":item.key,"source":item.source,"evidence":item.evidence}
                     for item in resolved_scene.attributes if item.preserve and item.source not in {"Off","User Prompt"}]
             validate_copy = bool(instruction.reference_prompts)
+            # Library prompts guide style only. They are checked against the first instruction's references; the
+            # request's own wording is never a copy, and a retry after copying is written without them.
+            copy_sources = tuple(instruction.reference_prompts)
             for attempt in range(2 if validate_format or validate_constraints or validate_semantics or audit_constraints or validate_copy else 1):
                 format_valid = None
                 session_backend.validate_instruction(instruction)
                 if self._checkpoint is not None:
                     self._checkpoint()
-                prompt = str(session_backend.generate(instruction) or "").strip()
+                prompt = str((recovery.generate(session_backend, instruction, self._checkpoint) if recovery is not None
+                              else session_backend.generate(instruction)) or "").strip()
                 if self._checkpoint is not None:
                     self._checkpoint()
                 raw_candidate = prompt
                 if not validate_format and not validate_constraints and not validate_semantics and not audit_constraints and not validate_copy:
                     break
-                problems = []
+                problems, copied = [], ""
                 try:
                     if validate_format:
                         prompt = normalize_workflow_output(prompt, request.target_model,
                                                             expected_visible_text=requested_visible_text(request.idea), mode=request.mode)
                         format_valid = True
-                    if validate_copy and copied_reference(prompt, instruction.reference_prompts):
-                        raise WorkflowFormatError("The prompt copied wording from a library reference prompt. Write new wording "
-                                                  "for this request; use the references only for style and quality.")
+                    copied = copied_reference(prompt, copy_sources, allowed=(request.idea, request.custom_instructions)) \
+                        if validate_copy else ""
+                    if copied:
+                        passage = f' ("{copied}")' if isinstance(copied, str) else ""
+                        raise WorkflowFormatError(f"The prompt copied wording from a library reference prompt{passage}. Write "
+                                                  "new wording for this request; use the references only for style and quality.")
                     problems = [issue for issue in output_constraint_issues(prompt, request.target_model,
                         compiled_constraints.workflow_data()) if issue["severity"] == "error"] if validate_constraints else []
                     if problems:
                         raise WorkflowFormatError(problems[0]["message"])
                     if validate_semantics or audit_constraints:
-                        accepted_facts = review_candidate(session_backend, {**semantic_contract, "accepted_facts": list(accepted_facts)},
+                        review_session = recovery.review_session(session_backend, self._checkpoint) if recovery is not None else session_backend
+                        accepted_facts = review_candidate(review_session, {**semantic_contract, "accepted_facts": list(accepted_facts)},
                             prompt, stage="builder:final", family=model_family, checkpoint=self._checkpoint,
                             checks=("action_fidelity", "scene_fidelity", "constraint_validity", *(["repair_preservation"] if attempt else []))
                             if validate_semantics else ("constraint_validity",))
@@ -516,9 +537,17 @@ class GoatedPrompterService:
                         format_valid=False if format_valid is None and validate_format else format_valid,
                         error=str(exc), issues=getattr(exc, "issues", []))
                     if attempt:
-                        raise BackendGenerationError(f"{request.target_model} returned an invalid prompt after one format-repair attempt: {exc}") from exc
+                        if recovery is not None and recovery.had_runaway:
+                            raise recovery.invalid_output() from exc
+                        raise PromptValidationError(
+                            f"{request.target_model} returned an invalid prompt after one format-repair attempt: {exc}",
+                            attempts=attempt + 1) from exc
                     accepted_facts = getattr(exc, "accepted_facts", ()) or accepted_facts
                     semantic_contract.update(previous_response=raw_candidate, listed_defect=str(exc))
+                    if copied:
+                        # The templates caused the copy: the one retry is written without them (same request, same
+                        # rules), so it cannot repeat their wording and the run does not lose the image to style.
+                        instruction = build(references=())
                     instruction = replace(instruction,
                         system_message=(instruction.system_message + "\n\nCONSTRAINT CORRECTION: " + str(exc)
                             + " Preserve the original scene/action and all supplied facts. Apply exclusions silently; change only invalid final wording."
@@ -529,6 +558,8 @@ class GoatedPrompterService:
                         )), user_message=instruction.user_message + repair_contract(semantic_contract, raw_candidate, exc, accepted_facts), temperature=.25, top_p=.85,
                         diagnostic_stage="final:semantic_retry" if isinstance(exc, SemanticValidationError) else "final:constraint_retry" if problems else "final:format_retry")
         if not prompt:
+            if recovery is not None and recovery.had_runaway:
+                raise recovery.invalid_output()
             raise RuntimeError("Goated Prompter backend returned an empty prompt.")
         if request.target_model != "Ideogram4" and not (request.target_model == "MiniMax H3" and request.mode == "Video"):
             prompt = sanitize_prompt_text(prompt)
