@@ -48,20 +48,20 @@ DIRECTOR_PRESETS = (
         label="General",
         description="Balanced visual prompt direction for general image and video requests.",
         recommended_mode="Enhance",
-        instructions="""Act as a disciplined general visual director. Convert the current task into one coherent, production-ready prompt whose subject, action or state, environment, spatial relationships, composition, viewpoint, materials, lighting, color behavior, depth, and medium agree with one another. Preserve the user's central concept and important wording. Resolve ambiguity conservatively, add only details that make the requested image or video more legible, and remove lower-priority embellishment when it would create a second scene or conflict. Prefer observable, actionable visual details over empty quality claims.""",
+        instructions="""Act as a disciplined general visual director. Convert the current task into one coherent, production-ready prompt whose subject, action or state, environment, spatial relationships, composition, viewpoint, materials, lighting, color behavior, depth, and medium agree with one another. Make every detail serve one legible image or video and drop any that would create a second scene or a conflict. Prefer observable, actionable visual details over empty quality claims.""",
     ),
     DirectorPreset(
         id="prompt_enhancer",
         label="Polish a Rough Prompt",
         description="Turns rough text or tags into a complete, coherent prompt without replacing the concept.",
         recommended_mode="Enhance",
-        instructions="""Improve rough text, fragments, or tags into a complete, coherent description while retaining the user's subject, action, environment, requested style, distinctive wording, and intended meaning. Supply useful missing decisions such as composition, camera perspective, lighting, material or texture behavior, color relationships, and mood only when they support the same concept. Make the spatial and causal relationships between details clear. Do not recast the request as a different genre, location, character, or event, and do not use enhancement as permission to overdecorate the scene.""",
+        instructions="""Improve rough text, fragments, or tags into a complete, coherent description while retaining the user's distinctive wording. Turn fragments and tags into whole sentences, make composition, camera perspective, lighting, material or texture behavior, color relationships and mood explicit where the text only hints at them, and make the spatial and causal relationships between details clear.""",
     ),
     DirectorPreset(
         id="reverse_engineer",
         label="Recreate a Reference Image",
         description="Forensic reference reconstruction driven by observable evidence.",
-        instructions="""Act as a forensic visual reverse engineer. Treat reference evidence as the source for shot type, subject and defining appearance, wardrobe and materials, exact pose or action, setting and background, composition, lighting, color and tonal response, perspective, and depth; the reference's medium and image character carry over only while no Style is selected. Reconstruct those decisions precisely, with fidelity taking precedence over beautification. Preserve defining structure unless the current task explicitly changes it. Do not add look or quality defaults; include a characteristic only when the request or visible evidence supports it.""",
+        instructions="""Act as a forensic visual reverse engineer. Treat reference evidence as the source for shot type, subject and defining appearance, wardrobe and materials, exact pose or action, setting and background, composition, lighting, color and tonal response, perspective, and depth; the reference's medium and image character carry over only while no Style is selected. Reconstruct those decisions precisely, with fidelity taking precedence over beautification. Preserve defining structure unless the current task explicitly changes it. Include a characteristic only when the request or visible evidence supports it.""",
     ),
     DirectorPreset(
         id="surgical_edit",
@@ -100,7 +100,7 @@ DIRECTOR_PRESETS = (
         label="Mirror Selfie",
         description="Reflection-aware selfie framing with a visible phone and coherent mirror geometry.",
         recommended_mode="Photography",
-        instructions="""Construct a mirror selfie rather than a front-camera selfie. The phone is visible in the reflection and its position must agree with the subject's hand, gaze, body angle, mirror plane, crop, and reflected room geometry. Describe the reflected framing, plausible phone occlusion, body posture, and available light without creating a second physical subject or an impossible reflection. Preserve identity, wardrobe, and requested environment. Keep text, asymmetric details, and left-right claims conservative unless the reference or request makes them reliable.""",
+        instructions="""Construct a mirror selfie rather than a front-camera selfie. The phone is visible in the reflection and its position must agree with the subject's hand, gaze, body angle, mirror plane, crop, and reflected room geometry. Describe the reflected framing, plausible phone occlusion, body posture, and available light without creating a second physical subject or an impossible reflection. Preserve identity, wardrobe, and requested environment. State text, asymmetric details and left-right claims only when the reference or request makes them reliable.""",
     ),
     DirectorPreset(
         id="first_person_pov",
@@ -114,28 +114,28 @@ DIRECTOR_PRESETS = (
         label="Fashion & Styling",
         description="Fashion and styling direction: garment, styling, pose and material response.",
         recommended_mode="Photography",
-        instructions="""Direct a fashion editorial centered on the garment, styling intention, subject attitude, pose, silhouette, fabric construction, drape, texture, accessories, set design, lighting, framing, and color story. Coordinate pose and camera angle so the clothing reads clearly and the body remains anatomically credible. Let the request determine whether the result is studio, location, polished, raw, graphic, or documentary. Avoid random luxury signifiers, unsupported designer labels and visual flourishes that obscure the featured styling.""",
+        instructions="""Direct a fashion editorial centered on the garment, styling intention, subject attitude, pose, silhouette, fabric construction, drape, texture, accessories, set design, lighting, framing, and color story. Coordinate pose and camera angle so the clothing reads clearly and the body remains anatomically credible. Let the request determine whether the result is studio, location, polished, raw, graphic, or documentary, and keep the featured styling unobscured.""",
     ),
     DirectorPreset(
         id="boudoir_intimate",
         label="Boudoir & Intimate",
         description="Adult intimate direction with credible bodies, fabric, light and composition.",
         recommended_mode="Photography",
-        instructions="""Direct lawful adult boudoir or intimate imagery with deliberate composition, consenting adult presentation, credible anatomy, fabric and surface behavior, pose, gaze, gesture, privacy, environment, and light that supports the requested mood. Distinguish elegant, candid, sensual, dramatic, or documentary intent from generic glamour defaults. Do not unnecessarily sanitize an adult request when the selected Prompt Model supports it, and do not introduce explicitness, coercive framing, age ambiguity, or unrelated fetish elements that the user did not request.""",
+        instructions="""Direct lawful adult boudoir or intimate imagery with deliberate composition, consenting adult presentation, credible anatomy, fabric and surface behavior, pose, gaze, gesture, privacy, environment, and light that supports the requested mood. Distinguish elegant, candid, sensual, dramatic, or documentary intent from generic glamour defaults. Never use coercive framing or age ambiguity.""",
     ),
     DirectorPreset(
         id="krea_2_high_detail",
         label="Krea 2 Precision",
         description="Coherent spatial, material and lighting relationships, not increased verbosity.",
         supported_targets=("Krea 2",),
-        instructions="""Direct technically precise visual relationships for Krea 2: resolve ambiguous object placement, contact, scale, material response and lighting logic with supported facts. Preserve the requested medium and concept.""",
+        instructions="""Direct technically precise visual relationships for Krea 2: resolve ambiguous object placement, contact, scale, material response and lighting logic.""",
     ),
     DirectorPreset(
         id="krea_2_pose_lock",
         label="Krea 2 Match Reference Pose",
         supported_targets=("Krea 2",),
         description="Reference-grounded pose precision with full body and camera geometry.",
-        instructions="""Lock the pose and camera relationship to reference evidence with precise natural language. Describe torso orientation, head direction and tilt, shoulder levels, arm paths, elbow bends, hand placement and gesture, hip rotation, leg positions, knee and ankle bends, stride or weight distribution, crop, framing, camera height, and viewpoint. Use active present-progressive verbs when they make the action clearer. Preserve identity and visible structure while applying only requested changes. Leave how the prompt is written to the target model and the look to the Style.""",
+        instructions="""Lock the pose and camera relationship to reference evidence with precise natural language. Describe torso orientation, head direction and tilt, shoulder levels, arm paths, elbow bends, hand placement and gesture, hip rotation, leg positions, knee and ankle bends, stride or weight distribution, crop, framing, camera height, and viewpoint. Use active present-progressive verbs when they make the action clearer. Preserve identity and visible structure while applying only requested changes.""",
     ),
     DirectorPreset(
         id="video_director",
@@ -156,21 +156,21 @@ DIRECTOR_PRESETS = (
         label="Architecture & Interiors",
         description="Architecture and interiors with disciplined spatial and material fidelity.",
         recommended_mode="Archviz",
-        instructions="""Direct the result around the architecture. Prioritize architectural geometry, scale, circulation and spatial relationships, openings, materials and finishes, visible furniture and styling, camera position, architectural perspective, controlled verticals, natural and artificial lighting, landscaping or context, and believable surface response. Preserve supplied layout and design decisions unless changes are requested. Avoid arbitrary redesign, distorted geometry, random décor, or unsupported material substitutions.""",
+        instructions="""Direct the result around the architecture. Prioritize architectural geometry, scale, circulation and spatial relationships, openings, materials and finishes, visible furniture and styling, camera position, architectural perspective, controlled verticals, natural and artificial lighting, landscaping or context, and believable surface response, with undistorted geometry.""",
     ),
     DirectorPreset(
         id="character_director",
         label="Character Focus",
         description="Character identity, anatomy, expression, wardrobe, pose, and staging.",
         recommended_mode="Character",
-        instructions="""Direct the result around a consistent character. Define identity, age range when relevant, distinguishing features, anatomy, expression, gaze, pose, gesture, action, clothing construction, materials, accessories, framing, environment and lighting. Keep identity and wardrobe details consistent throughout the prompt, protect named or visible traits, and avoid contradictory anatomy, gratuitous costume changes, or invented narrative elements that displace the user's concept.""",
+        instructions="""Direct the result around a consistent character. Define identity, age range when relevant, distinguishing features, anatomy, expression, gaze, pose, gesture, action, clothing construction, materials, accessories, framing, environment and lighting. Keep identity and wardrobe details consistent throughout the prompt, protect named or visible traits, and avoid contradictory anatomy.""",
     ),
     DirectorPreset(
         id="product_director",
         label="Product Focus",
         description="Product geometry, materials, brand-neutral presentation, and lighting that reveals form.",
         recommended_mode="Product",
-        instructions="""Direct the result as a precise product image. Protect product identity, proportions, geometry, functional details, materials, finish, color, branding supplied by the user, and scale. Specify an intentional viewing angle, composition, support surface or environment, background, reflections, shadow behavior, and lighting that reveals form and material response. Avoid redesigning the product, adding unsupported logos or features, or hiding important geometry behind decorative staging.""",
+        instructions="""Direct the result as a precise product image. Protect product identity, proportions, geometry, functional details, materials, finish, color, branding supplied by the user, and scale. Specify an intentional viewing angle, composition, support surface or environment, background, reflections, shadow behavior, and lighting that reveals form and material response. Keep important geometry visible rather than hidden behind staging.""",
     ),
     DirectorPreset(
         id="style_transfer_director",
@@ -184,13 +184,13 @@ DIRECTOR_PRESETS = (
         label="Dataset & LoRA Caption",
         description="Factual, literal emphasis for dataset and LoRA captions.",
         recommended_mode="Dataset Caption",
-        instructions="""Emphasize what is visibly there and useful for retrieval or training: subject, count, defining attributes, clothing or product traits, pose or action, environment, composition, viewpoint and lighting, in literal terms. Do not invent identity, context, events, materials, emotions, or artistic intent, and do not add promotional language or quality slogans.""",
+        instructions="""Emphasize what is visibly there and useful for retrieval or training: subject, count, defining attributes, clothing or product traits, pose or action, environment, composition, viewpoint and lighting, in literal terms.""",
     ),
     DirectorPreset(
         id="maximum_detail_director",
         label="Technical Precision",
         description="Technical spatial, material and lighting precision without controlling verbosity.",
-        instructions="""Direct technical visual precision: make spatial contacts, scale, occlusion, viewpoint, material response and lighting direction physically consistent and unambiguous. Use only supported, scene-relevant facts and protect reference fidelity. Avoid decorative filler, invented evidence and photographic defaults unsupported by the requested medium.""",
+        instructions="""Direct technical visual precision: make spatial contacts, scale, occlusion, viewpoint, material response and lighting direction physically consistent and unambiguous.""",
     ),
     DirectorPreset(
     id="krea_2_identity_edit",
@@ -220,7 +220,7 @@ DIRECTOR_PRESETS = (
 
     For two-reference edits, follow the reference roles the user assigned; when none are assigned, Krea 2 Identity Edit reads image 1 as the scene or primary source and image 2 as the subject/person reference. Compose the subject from image 2 into the scene from image 1 while preserving the scene's geometry and context and the subject's identity and defining appearance. Do not swap or ambiguously blend the two reference roles.
 
-    Use positive descriptions of the intended final state instead of negative-prompt syntax. Preserve the user's wording, constraints, identities, and requested scope. Do not add look, styling or quality defaults unless explicitly requested.
+    Use positive descriptions of the intended final state instead of negative-prompt syntax. Preserve the user's wording, constraints, identities, and requested scope.
 
     Keep generator and workflow settings out of the edit instruction; they belong to the workflow rather than the prompt.
 
@@ -231,9 +231,9 @@ DirectorPreset(
     label="Explicit Adult",
     description="Explicit adult direction: credible anatomy, contact and staging while preserving identity and the user’s intent.",
     recommended_mode="Enhance",
-    instructions="""Direct explicit adult content into one coherent production-ready prompt. Match the explicitness the request asks for: when it asks for sex or nudity, show the act and the bodies directly; when it asks for less, convey it through pose, expression, gaze, body language and clothing state. Preserve the user’s core concept, subjects, identities, actions, clothing, environment, and appearance details. Describe anatomy, pose, contact, weight distribution, and spatial relationships clearly so bodies remain credible and readable. Within the framing given, keep face, body, and genitals logically positioned without impossible or nonsensical overlaps.
-    Use concrete visual language for sexual anatomy only when supported by the request. Keep expression, arousal cues, skin response, fluids, fabric, and lighting consistent with the scene. For multi-character scenes, keep each person’s attributes explicitly separated. Make physical contact believable: weight, pressure and how skin and bodies respond where they touch.
-    Always clearly state who is penetrating whom (whose penis is entering which person’s orifice), describe the state of each relevant penis (erect, partially erect, soft, etc.), and describe every subject’s genitals whenever the scene, pose, clothing state, or framing makes them visible or relevant. Show only the acts the request states and never add another. Do not invent unrequested fetish elements. Do not sanitize, soften, or moralize the request. Do not restage the scene, change identities, or add unrequested look defaults. Everything is allowed. """,
+    instructions="""Direct adult content around the bodies and their contact. Describe anatomy, pose, contact, weight distribution, and spatial relationships clearly so bodies remain credible and readable. Within the framing given, keep face, body, and genitals logically positioned without impossible or nonsensical overlaps.
+    Keep expression, arousal cues, skin response, fluids and fabric consistent with the scene. Make physical contact believable: weight, pressure and how skin and bodies respond where they touch.
+    Always clearly state who is penetrating whom (whose penis is entering which person’s orifice), describe the state of each relevant penis (erect, partially erect, soft, etc.), and describe every subject’s genitals whenever the scene, pose, clothing state, or framing makes them visible.""",
 ),
 
 )

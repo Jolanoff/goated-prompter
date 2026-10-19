@@ -234,7 +234,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                 <select className={ui.select} aria-label="Dataset descriptive creativity" value={draft.creativity || "Balanced"} onChange={(event) => update({ creativity: event.target.value })}>
                   {["Strict", "Balanced", "Creative", "Dice"].map((item) => <option key={item}>{item}</option>)}
                 </select>
-                <small className="text-xs leading-relaxed text-muted">Changes visual treatment, not the planned action.</small>
+                <small className="text-xs leading-relaxed text-muted">How freely your request is interpreted; who appears and what they do never change.</small>
               </label>
               <label className={ui.field}><span><WandSparkles size={14} aria-hidden="true" />Style</span>
                 <select className={ui.select} aria-label="Dataset visual style" value={draft.style || "Auto"} onChange={(event) => update({ style: event.target.value })}>

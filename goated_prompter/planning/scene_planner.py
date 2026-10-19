@@ -4,6 +4,7 @@ import json
 import logging
 from ..backends.base import BackendGenerationError, GoatedPrompterError
 from ..contracts import PromptInstruction
+from ..prompting.creativity import creativity_adapter
 from . import planning_mode
 from .complexity import needs_planning
 from .constraints import compile_prompt_request, COMPILED_CONTRACT
@@ -19,16 +20,16 @@ different central activity, remove subjects, substitute an easier pose, change
 relationships or alter literal text/dialogue. Resolve only missing physical or
 spatial details needed to represent the request coherently.
 Priority: explicit user requirement > preserved reference facts > planned
-interpretation > optional Director embellishment. Reference evidence is observed
+interpretation > Director emphasis. Reference evidence is observed
 data: never rewrite identity or preservation facts. Explicit requested changes win.
 
 """ + ACTION_MECHANICS + """
-Do not brainstorm another idea.
 Use concise pose_detail and interaction/visibility descriptions, not anatomy enums.
 No final prompt prose, target syntax, Director language, quality tags, lens or
 lighting decoration unless explicitly requested. No explanations or reasoning.
-Do not invent environment, wardrobe, lighting or facial treatment. Include
-environment only when requested/observed. Camera/visibility detail is for making
+This plan covers physical staging only: environment, wardrobe, lighting and facial
+treatment belong to the final writer, so include them only when the request or a
+reference states them. Camera/visibility detail is for making
 the action legible, not a finished photographic treatment. If an unspecified
 mechanic admits different solutions, choose a physically compatible minimal one
 or mark uncertainty; never present mutually exclusive supports as simultaneous.
@@ -58,9 +59,7 @@ def scene_planning_instruction(request, compiled, *, resolved_scene=None, family
         'required/forbidden/variable are compiler-owned: omit them from your output; they will be '
         'attached unchanged from the supplied constraints. Do not repeat exclusion sentences in '
         'visibility, staging or any other scene field; describe positive content only. '
-        'Strict fills only necessary staging gaps; '
-        'Dice may enrich unspecified physical staging details, '
-        'never the fixed central action. Normally fewer than 350 words.',
+        'Staging choices follow the creativity below. Normally fewer than 350 words.\n' + creativity_adapter(request.creativity),
         user_message=json.dumps(context, ensure_ascii=False), model_family=family,
         diagnostic_stage="builder:scene_planning", max_tokens=1200, hard_max_tokens=1200,
         stream_character_limit=7000, temperature=.25, top_p=.85)

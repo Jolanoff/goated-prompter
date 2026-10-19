@@ -24,7 +24,7 @@ from ...prompting.base import (
     PRIORITY_CONTRACT,
     TEXT_ONLY_PRIORITY_CONTRACT,
 )
-from ...prompting.creativity import CREATIVITY_ADAPTERS as _CREATIVITY_ADAPTERS
+from ...prompting.creativity import creativity_adapter, creativity_temperature
 from ...prompting.styles import style_section
 from ...prompting.details import LENGTH_ADAPTERS as _LENGTH_ADAPTERS, MAXIMUM_DETAIL_GUIDANCE as _MAXIMUM_DETAIL_GUIDANCE, PRESERVATION_ADAPTERS as _PRESERVATION_ADAPTERS, PRESERVATION_LINKED_LOCK, PRESERVATION_NO_LINKED_LOCKS, PRESERVATION_NONE
 from .prompting import EVIDENCE_ANALYSIS_SYSTEM_PROMPT, evidence_analysis_user_message
@@ -206,7 +206,7 @@ def assemble_instruction(
                                                              describe_style=request.describe_style))
         + ("\n\n" + target_example if target_example else ""),
         "USER SETTINGS",
-        _CREATIVITY_ADAPTERS.get(request.creativity, _CREATIVITY_ADAPTERS["Balanced"]),
+        creativity_adapter(request.creativity),
         # With a library, structure and length are measured against the user's own prompts.
         style_profile_text(profile, request.prompt_length, get_target_capabilities(request.target_model).max_words,
                            describe_structure=not references)
@@ -300,6 +300,8 @@ def assemble_instruction(
         max_tokens=None,
         unlimited_tokens=True,
         reference_prompts=references,
+        # How freely the prompt is written follows Creativity, not a fixed setting.
+        temperature=creativity_temperature(request.creativity),
     )
 
 

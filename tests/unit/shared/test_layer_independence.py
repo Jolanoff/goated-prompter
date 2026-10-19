@@ -1,6 +1,7 @@
 """Each part of the writing instructions does its own job: the Mode the task, the target how a prompt is written,
 the Style the medium and look, the Director the emphasis, Creativity how much is invented. None carries another's."""
 
+import json
 import unittest
 
 from goated_prompter.contracts import GoatedPrompterRequest
@@ -62,6 +63,46 @@ class LayerIndependence(unittest.TestCase):
 
     def test_creativity_never_moves_people(self):
         self.assertNotIn("staging", CREATIVITY_ADAPTERS["Balanced"])
+
+    def test_only_creativity_decides_how_much_is_invented(self):
+        """Mode, target, Length, Directors, the planner and the Dataset prompt rules each keep their own job; none of
+        them says how much may be invented, how long the prompt is or what look it has."""
+        from goated_prompter.features.dataset.v2.prompts import SCENE_RULES
+        from goated_prompter.features.dataset.v2.scenes import COMPOSE_SYSTEM
+        from goated_prompter.planning.scene_planner import AUTHORITY
+        from goated_prompter.prompting.base import CORE_SYSTEM_PROMPT, PRIORITY_CONTRACT, TEXT_ONLY_PRIORITY_CONTRACT
+        from goated_prompter.prompting.details import LENGTH_ADAPTERS
+        from goated_prompter.prompting.target_models import MODEL_ADAPTERS
+        guides = {f"Director {preset.label}": preset.instructions for preset in DIRECTOR_PRESETS}
+        guides.update({f"Mode {name}": text for name, text in MODE_ADAPTERS.items() if name != "Remix"})
+        guides.update({f"Length {name}": text for name, text in LENGTH_ADAPTERS.items()})
+        # MiniMax H3 keeps its own reference and dialogue contract (its own tab).
+        guides.update({f"Target {name}": text for name, text in MODEL_ADAPTERS.items() if name != "MiniMax H3"})
+        guides.update({"core": CORE_SYSTEM_PROMPT, "priority": PRIORITY_CONTRACT, "text priority": TEXT_ONLY_PRIORITY_CONTRACT,
+                       "planner": AUTHORITY, "dataset prompt rules": SCENE_RULES, "scene writer": COMPOSE_SYSTEM})
+        owned = ("conservativ", "embellish", "overdecorat", "brainstorm", "recast", "look default", "quality default",
+                 "invent signage", "invent dialogue", "explicitness", "sanitize", "only when they support")
+        for name, text in guides.items():
+            for word in owned:
+                self.assertNotIn(word, " ".join(text.split()).casefold(), name)
+            if name.startswith("Target"):
+                self.assertNotIn("exhaustive", text, f"{name}: how long the prompt is belongs to Length")
+        for level in CREATIVITY_ADAPTERS.values():
+            self.assertIn("Never add or replace a subject or an act", level)
+        self.assertIn("Avoid the most obvious way to show it", CREATIVITY_ADAPTERS["Creative"])
+        self.assertIn("decide boldly everything the request leaves open", CREATIVITY_ADAPTERS["Dice"])
+
+    def test_the_writing_temperature_follows_creativity(self):
+        temperatures = [assemble_instruction(GoatedPrompterRequest(idea="a cat", creativity=level)).temperature
+                        for level in ("Strict", "Balanced", "Creative", "Dice")]
+        self.assertEqual(temperatures, sorted(temperatures))
+        self.assertEqual(len(set(temperatures)), 4)
+
+    def test_repairs_protect_facts_not_props_or_clothing(self):
+        from goated_prompter.planning.semantic_validation import AUDIT_CONTRACT, repair_contract
+        rule = json.loads(repair_contract({}, "", "x").split("\n", 3)[3])["repair_rule"]
+        self.assertIn("Do not introduce subjects, actions or exclusions", rule)
+        self.assertNotIn("props", rule + AUDIT_CONTRACT)
 
     def test_a_medium_mode_sets_the_style_only_when_the_style_is_auto(self):
         self.assertEqual(resolve_style("Auto", "Krea 2", "Photography"), "Realistic")

@@ -3,8 +3,8 @@
 # Prompt task (Mode)
 MODE_ADAPTERS = {
     "Remix": """Remix mode: recast the saved scenario below with the user's subjects. The user's request decides who appears and any changes; the scenario supplies the place, activity, props, camera and mood.""",
-    "Enhance": """Enhance mode: improve clarity, visual specificity, and coherence while preserving the original meaning. Under Strict creativity, make only minimal necessary changes.""",
-    "Archviz": """Archviz mode: describe architecture and interiors: spatial relationships, layout, furniture, believable scale, camera height, controlled verticals, composition, window and practical light, and every material and finish with its surface response. Do not arbitrarily redesign architecture, geometry, layout, furniture, or specified finishes.""",
+    "Enhance": """Enhance mode: improve clarity, visual specificity, and coherence while preserving the original meaning.""",
+    "Archviz": """Archviz mode: describe architecture and interiors: spatial relationships, layout, furniture, believable scale, camera height, controlled verticals, composition, window and practical light, and every material and finish with its surface response. Keep the architecture, layout, furniture and finishes the request or reference specifies.""",
     "Photography": """Photography mode: describe the idea as one real moment seen from one camera position: subject, action, setting, composition, viewpoint and where the light comes from, while preserving the original meaning.""",
     "Character": """Character mode: prioritize subject identity and description, coherent pose and anatomy, expression, clothing, framing, environment, lighting, and camera language. Keep all character details mutually consistent.""",
     "Product": """Product mode: preserve and clearly describe product geometry, materials, finish, surface response, scale, setup, lighting, background and composition.""",

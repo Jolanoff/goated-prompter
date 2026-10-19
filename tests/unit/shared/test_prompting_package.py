@@ -10,7 +10,7 @@ from goated_prompter.prompting import base, creativity, details, directors, mode
 
 class PromptingPackageTests(unittest.TestCase):
     def test_runtime_modules_share_the_split_catalog_values(self):
-        self.assertIs(builder._CREATIVITY_ADAPTERS, creativity.CREATIVITY_ADAPTERS)
+        self.assertEqual(builder.creativity_adapter("Dice"), creativity.CREATIVITY_ADAPTERS["Dice"])
         self.assertIs(builder._LENGTH_ADAPTERS, details.LENGTH_ADAPTERS)
         self.assertIs(builder._PRESERVATION_ADAPTERS, details.PRESERVATION_ADAPTERS)
         self.assertIs(builder.CORE_SYSTEM_PROMPT, base.CORE_SYSTEM_PROMPT)

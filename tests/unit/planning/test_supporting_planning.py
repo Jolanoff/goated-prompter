@@ -100,17 +100,18 @@ class SupportingPlanningTests(unittest.TestCase):
         # Updated again when each guide was limited to its own job and the Style moved after the library templates.
         # Updated for one precedence rule, emphasis-only Directors and target layouts that templates replace.
         # Updated for the two-or-more-people rule and the Length guide that details the subjects first.
+        # Updated when Creativity became the only owner of how much is invented.
         golden = {
-            "Generic": "0819467f7e25ab33892a38888d56b5b67247fcfb6dce8feddbd26e7ebe1cff68",
-            "Anima": "f9a74d95fdebd5a49ea48f85c604e7bd295c3eb71d9900cd163dd17fed334b28",
-            "Krea 2": "b2c677282ab0b1aac23fb4729a3d8a4b2156ef2897c68885d5643528e697bc2c",
-            "FLUX.2 Klein": "14553cbfdf5f3102d854a0284a67fc85c7217a28ff5464a9152ee89f1fe5cfb9",
-            "Z-Image": "6b319ff89b36aaf9b1c65b512b99d108b6c8c9f8947c8e544f09f94afac3856f",
-            "Qwen Image (original)": "ae0b9b77dadb77d93f541dc003778a2b27dd5d24b893b43f9eb675a9f151b016",
-            "Qwen Image 2.1": "4f546282e96103dda4312456473d908ed5ba3c0911372c4d8424e6daf1a3cfb7",
-            "MiniMax H3": "c5d4c5b455859c96238816c51f257e1303f01dc06b4854fd67dbda0bcb79b1ad",
-            "LTX 2.5": "130562b180e14d8c814d7e6ffbf6b6d3c3325815dc2e61edebbf39deeafa87c6",
-            "Ideogram4": "c70b6535da5e21a66988aab05a350589cb473f4abb1f290abe71442a0f0bfcf4"}
+            "Generic": "20e0cb8f150f378911d1fd7e27ac8b3b197594cdc8582d8c96e45abb7ef5c278",
+            "Anima": "104eaccaa48dbeac45ad8fe0166ededa486bfa4ae7f7c772548b5810b27ad5f3",
+            "Krea 2": "4dbddd9bfa66a41d849cc76c2b0d89a3edad66f2997f204d8dbf3c227c724433",
+            "FLUX.2 Klein": "3297d5a7b60cb9864379c4e25355acffd9209ae351201584c357cc6e530b011b",
+            "Z-Image": "97b7b6c8ee245b8982f80e9d9de6c99b7dd5f38265778d81a1e66084eda91139",
+            "Qwen Image (original)": "080a6eb4a372db3d5ce6675f6d41e66e71540a5a32777856f5e89671ec36a9c8",
+            "Qwen Image 2.1": "f1c92cc0a37209d68aac21c51f514ea97818b63e0b0c5db4c3d15ce46488970f",
+            "MiniMax H3": "136575398489f09702173097b81e1e8cfd7d2d354f391e8fba31ac0a9ff52916",
+            "LTX 2.5": "40103e65a70f74a5d96ba9b0b9247fed029f701f752e0ab2a536ede966ec8878",
+            "Ideogram4": "5b447cfc30e8731547038e0dea86c0930b3d22bdedfc31640c32c39d180a0c4c"}
         self.assertEqual(set(golden), set(TARGET_MODEL_NAMES))
         for target, digest in golden.items():
             with self.subTest(target=target):
@@ -155,7 +156,8 @@ class SupportingPlanningTests(unittest.TestCase):
         self.assertEqual(result.prompt, HOOP)
         self.assertEqual(backend.calls[0].hard_max_tokens, 1200)
         self.assertTrue(backend.calls[1].unlimited_tokens)
-        self.assertIsNone(backend.calls[1].temperature)
+        self.assertEqual(backend.calls[1].temperature, .3, "The writer's temperature follows Creativity (Strict).")
+        self.assertIn("Creativity — Strict", backend.calls[0].system_message, "The planner's staging follows Creativity too.")
 
     def test_pair_plan_keeps_separate_roles_and_shared_contact(self):
         result, backend = self.builder(GoatedPrompterRequest(idea=PAIR), json.dumps(PAIR_PLAN), PAIR)

@@ -21,7 +21,7 @@ SCENE = {"skin": "fair", "build": "slim", "hair": "long silver hair", "detail": 
 class SceneVocabulary(unittest.TestCase):
     def setUp(self):
         self.catalog = load_catalog(user_root=False)
-        self.calls, self.entries = [], []
+        self.calls, self.entries, self.fit = [], [], None
         self.backend = MockBackend()
         enter_context(self, patch.object(self.backend, "generate", side_effect=self.generate))
         enter_context(self, patch.object(scenes, "create_backend", return_value=self.backend))
@@ -36,6 +36,11 @@ class SceneVocabulary(unittest.TestCase):
 
     def generate(self, instruction):
         self.calls.append(instruction)
+        if instruction.diagnostic_stage == "dataset_v2:entries":
+            entries = json.loads(instruction.user_message)["entries"]
+            if self.fit is None:
+                return json.dumps({"fit": [int(number) for number in entries]})
+            return json.dumps({"fit": [int(number) for number, entry in entries.items() if entry in self.fit]})
         if instruction.diagnostic_stage != "dataset_v2:scenes":
             return "A finished prompt."
         user = composer_user(instruction.user_message)
@@ -203,6 +208,42 @@ class SceneVocabulary(unittest.TestCase):
         result = self.write(self.brief("A couple", pair, amount=1), ["Actions & Poses/Romance"])
         self.assertEqual(result["scenes"][0]["entry"], "two people holding hands")
         self.assertIn("copied word for word", self.composer()[1].system_message)
+
+    def test_only_entries_that_fit_the_request_are_offered_dealt_and_counted(self):
+        pair = [{"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 1},
+                {"label": "woman", "gender": "female", "custom": "", "pronoun": "she", "count": 1}]
+        self.fit = ["two people slow dancing", "two people holding hands"]
+        self.entries = ["two people slow dancing", "two people holding hands"] * 2 + ["two people slow dancing"]
+        result = self.write(self.brief("A couple dancing", pair, amount=5), ["Actions & Poses/Romance"])
+        fitting = [call for call in self.calls if call.diagnostic_stage == "dataset_v2:entries"]
+        self.assertEqual(len(fitting), 1)
+        self.assertIn("A couple dancing", fitting[0].user_message)
+        self.assertIn('"cast"', fitting[0].user_message)
+        first = self.composer()[0]
+        vocabulary = composer_user(first.user_message)["vocabulary"]
+        self.assertIn("two people slow dancing", vocabulary)
+        self.assertNotIn("one person kissing the other person's forehead", vocabulary, "an entry that does not fit is never offered")
+        self.assertEqual({image["entry"] for image in composer_user(first.user_message)["images"]}, set(self.fit))
+        self.assertIn("used by fewer than 3 images", first.system_message, "five images share two fitting entries")
+        self.assertTrue(result["complete"])
+
+    def test_when_no_entry_fits_the_writer_gets_no_actions_vocabulary(self):
+        pair = [{"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 1},
+                {"label": "woman", "gender": "female", "custom": "", "pronoun": "she", "count": 1}]
+        self.fit = []
+        result = self.write(self.brief("A couple", pair, amount=2), ["Actions & Poses/Romance", "Lighting/Dramatic"])
+        call = self.composer()[0]
+        vocabulary = composer_user(call.user_message)["vocabulary"]
+        self.assertNotIn("Actions & Poses", vocabulary)
+        self.assertIn("Lighting", vocabulary)
+        self.assertNotIn("ACTIONS & POSES ENTRY", call.system_message)
+        self.assertTrue(result["complete"])
+
+    def test_a_failed_fitting_call_keeps_every_entry(self):
+        self.assertEqual(scenes.fitting_entries(Mock(generate=Mock(return_value="not json")),
+                                                {"_family": "qwen", "input": {"request": "x", "seed": 1}, "summary": "",
+                                                 "fixed": "", "must": [], "avoid": [], "characters": []},
+                                                ["a", "b"], progress=lambda _: None), ["a", "b"])
 
     def test_fewer_entries_than_images_raise_the_cap(self):
         self.assertEqual(scenes.entry_cap(["a", "b", "c"], 10), 4)

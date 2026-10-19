@@ -41,7 +41,8 @@ class TargetControlTests(unittest.TestCase):
     def test_krea_only_says_how_to_write_and_leaves_the_medium_to_the_style(self):
         adapter = get_model_adapter("Krea 2")
         self.assertIn("State the medium in words", adapter)
-        self.assertIn("long, exhaustive natural-language description", adapter)
+        self.assertIn("rewards concrete natural-language description", adapter)
+        self.assertNotIn("exhaustive", adapter, "How long the prompt is belongs to Length.")
         self.assertIn('"Composition and camera:"', adapter)
         for owned_elsewhere in ("anime", "photographic", "aesthetic freedom"):
             self.assertNotIn(owned_elsewhere, adapter)
@@ -106,8 +107,9 @@ class TargetControlTests(unittest.TestCase):
     def test_ltx_target_overrides_video_director_motion_invention(self):
         message = self.instruction("LTX 2.5", mode="Video", director_preset="video_director", prompt_length="Maximum Detail")
         self.assertIn("one flowing paragraph of four to eight sentences", message)
-        self.assertIn("Do not invent dialogue, camera movement or cuts unless requested", message)
-        self.assertIn("never change the task, the format or the user's facts", message)
+        self.assertNotIn("Do not invent dialogue", get_model_adapter("LTX 2.5"), "How much is invented belongs to Creativity.")
+        self.assertIn("add words to be read or heard (signs, captions, dialogue) only when the request asks", message)
+        self.assertIn("Creativity alone sets how much is invented", message)
 
     def test_all_lengths_and_creativity_preserve_target_hard_structure(self):
         for length in ("Short", "Medium", "Detailed", "Maximum Detail"):
@@ -115,7 +117,7 @@ class TargetControlTests(unittest.TestCase):
                 with self.subTest(length=length, creativity=creativity):
                     message = self.instruction("Ideogram4", prompt_length=length, creativity=creativity)
                     self.assertIn("All required JSON keys and their order remain intact", message)
-                    self.assertIn("never change the task, the format or the user's facts", message)
+                    self.assertIn("Each setting has one job and none overrides another.", message)
                     self.assertIn("OUTPUT FORMAT — Ideogram4", message)
 
     def test_control_sections_stay_in_order_and_output_contract_is_last(self):

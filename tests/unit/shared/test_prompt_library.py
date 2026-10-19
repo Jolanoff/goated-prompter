@@ -144,7 +144,7 @@ class PromptLibraryTests(unittest.TestCase):
         self.assertLess(settings, templates)
         self.assertLess(templates, contract)
         self.assertIn("DIRECTOR BEHAVIOR — General", system, "The Director keeps deciding the look.")
-        self.assertIn("exhaustive", system[:templates], "The full target adapter keeps its model knowledge.")
+        self.assertIn("rewards concrete natural-language description", system[:templates], "The full target adapter keeps its model knowledge.")
         self.assertNotIn("Clothing and pose:", system[:templates], "The templates decide the layout, not the adapter.")
         flat = " ".join(system.split())
         self.assertIn("Do not take the look of the image from them: the medium, visual style, aesthetic, palette, mood", flat)

@@ -49,9 +49,11 @@ SELECTED VOCABULARY section: just the categories that have a selected pack, each
 entries of those packs (merged per category and shuffled for every batch by a generator seeded with the run's seed),
 plus the shared vocabulary usage rules. Each category sends a seeded sample of at most `VOCABULARY_SAMPLE` (40)
 entries per batch, so a large pack never drowns the request. The request and the approved requirements always win. With an Actions & Poses
-pack selected, every scene names the entry it is built on (`entry`); code checks the entry is one of the selected ones
-and that no entry is used by more than two images (`ENTRY_CAP`, raised to the images-per-entry when there are fewer
-entries than images), and asks again otherwise. No pack is used automatically: character looks come from the request
+pack selected, one call first keeps only the entries that fit the request and the cast (`fitting_entries`, every entry
+when that call fails); only those are offered and dealt, and with none the writer gets no Actions & Poses vocabulary.
+Every scene names the entry it is built on (`entry`); code checks the entry is one of the fitting ones and that no
+entry is used by more than two images (`ENTRY_CAP`, raised to the images-per-entry when fewer entries fit than images
+are requested), and asks again otherwise. No pack is used automatically: character looks come from the request
 and approved requirements, with vocabulary guidance only from manually selected Subjects packs. A known character has
 only an expression in its scene; its look comes from its name, never from the writer or vocabulary.
 A scene holds only the people and their arrangement: subjects, actions, position, space, camera and extras. Each
@@ -79,7 +81,8 @@ prompt has the same structure, and an entry's position name reaches the Builder 
 (an entry the writer had to swap or adapt would otherwise name a different act). Understanding drops a must or avoid
 phrase that only repeats a trigger's text. Capture is Auto in the brief unless the style is Realistic. Any style
 trigger (any use) turns the Style off for every step (`run_style`), so not even Anima's anime default is added. The
-Builder writes each scene with Strict creativity, because Creativity already shaped the scenes, and is told that the
+Builder writes each scene with the run's Creativity, which alone decides how much is invented around the scene's
+fixed people, placements, contact, action and camera, and is told that the
 confirmed requirements win where a scene contradicts them. Those
 requirements are the people, rules and must/avoid; the raw request and `fixed` are left out, since the scene already
 carries them and the model would paste them in as content. An Actions & Poses entry decides how the requested activity
@@ -106,6 +109,17 @@ The draft's `seed` and `seed_mode` (randomize, fixed, increment) work like Comfy
 control. The frontend picks each new batch's seed and sends it with the reviewed request; the
 seed is saved after Confirm starts the run, so a rejected or cancelled review changes nothing.
 The seed is not part of the approval signature, so changing it invalidates nothing.
+The seed decides only the run's random choices: the order and sample of vocabulary entries, which Actions & Poses
+entry each image is dealt, which library templates are used and the model's sampling. The same seed with the same
+settings repeats a run; it never changes what the request asks for.
+
+## One job per setting
+
+The request and rules decide the facts; NSFW whether the run is adult; triggers their exact text, meaning or both;
+the Director what is emphasized; the target how the prompt is written; Length how long it is; Style the medium;
+Creativity alone how much is invented around the facts (its guide text and the writers' temperature); vocabulary
+which verified entries fit the request. `tests/unit/shared/test_layer_independence.py` checks that no other guide
+decides how much is invented.
 
 ## Evidence boundary
 

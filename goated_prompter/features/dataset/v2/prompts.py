@@ -35,8 +35,8 @@ SCENE_ORDER = ("subjects", "position", "actions", "space", "camera", "extras")
 SCENE_RULES = """
 The idea is one scene of an IMAGE, already decided. Write it as one prompt for the
 target model. Keep every person, their appearance, every placement, orientation, support, contact
-and the action exactly as given; do not move anyone, change the action or add contact. Add only
-wording the target format and the Director need. The actions line is the whole action of the image: write
+and the action exactly as given; do not move anyone, change the action or add contact. What the scene
+leaves open follows the Creativity setting. The actions line is the whole action of the image: write
 exactly that, with no other act. When the idea gives a position name, use that name word for word together with
 the action: the target model knows it, so name it instead of only describing the pose.
 Do not add subjects or actions, and do not change the camera. The scene leaves clothing, light and mood to you: choose
