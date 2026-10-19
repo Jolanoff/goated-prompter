@@ -15,6 +15,7 @@ trigger with exact text.
 """
 
 from ....options.dataset import MAX_TRIGGERS, TRIGGER_EXPANSIONS, TRIGGER_KINDS
+from ....options.styles import OFF_STYLE
 
 FIELDS = ("text", "kind", "expand", "start")
 PERSONAL = ("character", "outfit")  # kinds that belong to one person in the image
@@ -84,9 +85,13 @@ def owner(brief, number):
     return next((person["label"] for person in brief["characters"] if number in person.get("triggers", ())), None)
 
 
-def locked(triggers, kind):
-    """Whether an exact-text trigger of this kind exists, so no step may describe what it covers."""
-    return any(trigger["kind"] == kind and trigger["expand"] == "off" for trigger in triggers)
+def run_style(brief):
+    """(style, capture) for every step of a run. A style trigger of any use carries the style, so the Style setting is
+    off entirely (not Auto, which Anima would still read as anime); capture only describes a Realistic image."""
+    if any(trigger["kind"] == "style" for trigger in brief_triggers(brief)):
+        return OFF_STYLE, "Auto"
+    style = brief["settings"]["style"] or "Auto"
+    return style, (brief["settings"].get("capture") or "Auto") if style == "Realistic" else "Auto"
 
 
 def all_text(triggers):

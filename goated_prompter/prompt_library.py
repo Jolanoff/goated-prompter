@@ -260,7 +260,8 @@ def _leading_tags(prompt):
 
 
 def style_profile(prompts):
-    """Measure how the user's prompts are written: length, structure, section labels and a shared lead token."""
+    """Measure how the user's prompts are written: length, structure and section labels. Never their words: a shared
+    opening token could be an artist or style tag, and the library teaches form, not look."""
     if not prompts:
         return None
     lengths = sorted(len(prompt.split()) for prompt in prompts)
@@ -272,11 +273,8 @@ def style_profile(prompts):
                  else "flowing prose paragraphs" if not sectioned and not tagged else "mixed: some sectioned, some prose")
     labels = Counter(label for found in sectioned for label in dict.fromkeys(found))
     order = list(dict.fromkeys(label for found in sectioned for label in found if labels[label] > len(sectioned) / 2))
-    leads = Counter(prompt.strip().split(",")[0].strip() for prompt in prompts if "," in prompt.strip().splitlines()[0])
-    lead, uses = leads.most_common(1)[0] if leads else ("", 0)
     return {"count": len(prompts), "median_words": lengths[len(lengths) // 2], "lengths": lengths, "structure": structure,
-            "sections": order if len(sectioned) >= half else [],
-            "lead": lead if uses >= 2 and uses >= half and len(lead.split()) <= 3 else ""}
+            "sections": order if len(sectioned) >= half else []}
 
 
 def _quantile(values, fraction):
@@ -286,20 +284,26 @@ def _quantile(values, fraction):
     return values[low] + (values[high] - values[low]) * (position - low)
 
 
-def style_profile_text(profile, length):
-    """Describe the library's prompt format (structure and length) and the word target for the selected length."""
+def style_profile_text(profile, length, max_words=None, describe_structure=False):
+    """The library's prompt length and the word target for the selected length, never above the target model's
+    max_words. The structure comes from the templates shown with it (Template 1); only when they are withheld
+    (describe_structure) is the library's structure described instead. No word of a saved prompt is passed on, so
+    a shared opening token (an artist or style tag) never becomes an instruction."""
     lengths = profile.get("lengths") or [profile["median_words"]]
     words = max(25, round(_quantile(lengths, LENGTH_QUANTILE.get(length, .75)) / 5) * 5)
+    capped = max_words is not None and words > max_words
+    words = min(words, max_words) if max_words is not None else words
     spread = (f"from about {lengths[0]} to {lengths[-1]} words, typically {profile['median_words']}"
               if lengths[0] != lengths[-1] else f"about {lengths[0]} words")
-    parts = [spread, f"written as {profile['structure']}"]
-    if profile["sections"]:
-        parts.append("with the sections " + ", ".join(f'"{label}:"' for label in profile["sections"]))
-    if profile["lead"]:
-        parts.append(f'starting with "{profile["lead"]}"')
+    parts = [spread]
+    if describe_structure:
+        parts.append(f"written as {profile['structure']}")
+        if profile["sections"]:
+            parts.append("with the sections " + ", ".join(f'"{label}:"' for label in profile["sections"]))
     saved = f"{profile['count']} saved prompt" + ("" if profile["count"] == 1 else "s")
+    limit = f", the most this target model uses well" if capped else ""
     return (f"YOUR LIBRARY'S PROMPT FORMAT ({saved}): " + "; ".join(parts) + ". "
-            f"Build this prompt in that format at about {words} words for the selected {length} length.")
+            f"Build this prompt at about {words} words for the selected {length} length{limit}.")
 
 
 def load_library(target, directory=None):

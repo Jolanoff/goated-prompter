@@ -21,7 +21,7 @@ class PromptingPackageTests(unittest.TestCase):
 
     def test_adapters_keep_existing_fallbacks(self):
         self.assertEqual(modes.get_mode_adapter("missing"), modes.MODE_ADAPTERS["Enhance"])
-        self.assertEqual(target_models.get_model_adapter("missing"), target_models.MODEL_ADAPTERS["Generic"])
+        self.assertEqual(target_models.get_model_adapter("missing"), target_models.get_model_adapter("Generic"))
         self.assertEqual(builder._LENGTH_ADAPTERS["Maximum"], details.MAXIMUM_DETAIL_GUIDANCE)
 
 

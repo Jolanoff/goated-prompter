@@ -58,6 +58,8 @@ def validate_dataset_draft(value, *, generation=False, planning=False):
                          ("creativity", CREATIVITY_NAMES), ("style", STYLE_NAMES), ("capture", CAPTURE_NAMES), ("length", PROMPT_LENGTH_NAMES)):
         if not isinstance(result[key], str) or result[key] not in allowed:
             raise ValueError(f"Invalid Dataset {key}.")
+    if result["style"] != "Realistic":
+        result["capture"] = "Auto"  # capture only describes a Realistic image
     result["target"] = canonical_target(result["target"])
     if result["target"] not in TARGET_MODEL_NAMES:
         raise ValueError("Invalid target model.")

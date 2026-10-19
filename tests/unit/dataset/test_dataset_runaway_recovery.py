@@ -265,3 +265,47 @@ class RunawayRecoveryTests(unittest.TestCase):
         self.assertEqual([bool(row["prompt"]) for row in job.result["prompts"]], [True, False, True])
         self.assertEqual(job.result["prompts"][1]["attempts"], 3)
         self.assertTrue(any("failed; continuing" in event["message"] for event in job.events))
+
+class MeaningNotesAndTemplates(unittest.TestCase):
+    """A meaning-only trigger is a note: rewritten, never copied, and its numbers survive. One template set per run."""
+
+    def setUp(self):
+        # The recovery tests' scripted backend, without running their tests again.
+        self.h = RunawayRecoveryTests("test_scene_writing_is_one_stage")
+        self.h.setUp()
+        self.addCleanup(self.h.doCleanups)
+        note = {"text": "a 30 yo reader with round glasses", "kind": "character", "expand": "on", "start": False}
+        self.h.data = {**self.h.data, "triggers": [note]}
+        self.h.value = {**self.h.value, "characters": [{**self.h.value["characters"][0], "triggers": [1]}]}
+        self.h.brief = understanding.apply_rules(self.h.value, self.h.data)
+        self.scripts, self.calls, self.write_prompts = self.h.scripts, self.h.calls, self.h.write_prompts
+        self.value, self.data = self.h.value, self.h.data
+
+    def test_a_copied_note_is_rewritten_once(self):
+        self.scripts["final"] = ["Alex, a 30 yo reader with round glasses, reads.",
+                                 "Alex, a reader of 30 in round glasses, reads."]
+        result = self.write_prompts()
+        self.assertEqual(result[0]["prompt"], "Alex, a reader of 30 in round glasses, reads.")
+        self.assertIn("word for word", self.calls[-1].system_message)
+
+    def test_a_lost_number_fails_the_image_after_its_retry(self):
+        self.scripts["final"] = ["Alex, a 25-year-old reader, reads.", "Alex, a young reader, reads."]
+        result = self.write_prompts()
+        self.assertEqual(result[0]["prompt"], "")
+        self.assertIn("number 30", result[0]["error"])
+
+    def test_every_image_of_a_run_gets_the_same_templates(self):
+        with patch.object(prompts, "pick_references", return_value=("Saved template prompt.",)) as pick:
+            self.scripts["final"] = ["Alex, aged 30, reads in round glasses."] * 3
+            self.write_prompts(3)
+        pick.assert_called_once()
+        finals = [call for call in self.calls if call.diagnostic_stage == "final"]
+        self.assertEqual(len(finals), 3)
+        for call in finals:
+            self.assertIn("Template 1:" + chr(10) + "Saved template prompt.", call.system_message)
+
+    def test_must_never_repeats_a_trigger(self):
+        brief = understanding.apply_rules({**self.value, "must": ["A 30 yo reader with  round glasses", "a quiet room"]},
+                                          self.data)
+        self.assertEqual(brief["must"], ["a quiet room"])
+

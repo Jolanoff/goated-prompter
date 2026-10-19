@@ -222,14 +222,17 @@ class FormatRepairTests(unittest.TestCase):
     def test_minimax_malformed_sections_are_repaired_and_not_sanitized(self):
         valid = 'integrated_multimodal_description: [Shot 1] A runner shouts "Go!" (quietly).\noverall_soundscape: Footsteps.\nnon_diegetic_music: None.'
         backend = ScriptedBackend(["A runner moves.", valid])
-        result = self.run_workflow(backend, target="MiniMax H3")
+        result = self.run_workflow(backend, target="MiniMax H3", base=valid)
         self.assertEqual(result["prompt"], valid)
         self.assertEqual(len(backend.calls), 2)
         self.assertIn("MiniMax H3 requires", backend.calls[1].system_message)
+        plain = self.run_workflow(ScriptedBackend(["A runner moves."]), target="MiniMax H3")
+        self.assertEqual(plain["prompt"], "A runner moves.", "A non-video source keeps its own form.")
 
-    def run_workflow(self, backend, target="Anima", checkpoint=lambda: None, progress=None):
+    def run_workflow(self, backend, target="Anima", checkpoint=lambda: None, progress=None,
+                     base="Mira waits in a sunlit urban plaza. Anime illustration."):
         progress = progress if progress is not None else []
-        workflow = {"operation": "refine", "base": "Mira waits in a sunlit urban plaza. Anime illustration.",
+        workflow = {"operation": "refine", "base": base,
                     "changes": "Use stronger framing", "locks": ["identity"]}
         with patch("goated_prompter.features.refine.service.create_backend", return_value=backend):
             return RefineService({"backend": "mock"}, checkpoint).run(

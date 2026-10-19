@@ -36,7 +36,7 @@ from ...presets import get_director_preset
 from ...options.references import REFERENCE_IMAGE_SLOTS
 from ...reference_map import reference_images, resolve_reference_map
 from ...output_repetition import drop_repeated_tags, remove_contradictory_solo
-from ...workflow_output import WorkflowFormatError, normalize_workflow_output, sanitize_prompt_text, requested_visible_text
+from ...workflow_output import WorkflowFormatError, balance_brackets, normalize_workflow_output, sanitize_prompt_text, requested_visible_text
 from ...contracts import GenerationResult, PromptInstruction, _reference_role, effective_model_family
 
 
@@ -48,9 +48,14 @@ class PromptValidationError(BackendGenerationError):
         self.attempts = attempts
 
 
+# Modes whose task is changing a source image: only these turn Qwen Image 2.1 into its editing rewrite. In every other
+# Mode the references are evidence for a new image, so having them never changes the task.
+QWEN_EDIT_MODES = ("Image Edit", "Style Transfer")
+
+
 def _qwen21_source_tokens(request, reference_map=None, text_only=False):
     """Use selected sources even when the final compiler receives evidence, not images."""
-    if text_only:
+    if text_only or request.mode not in QWEN_EDIT_MODES:
         return ()
     labels = tuple(reference_images(request))
     if reference_map is not None:
@@ -104,6 +109,15 @@ def _preservation_section(request, resolved_reference_map, has_image):
         else PRESERVATION_NONE
     )
 
+def remix_scenario(request, idea):
+    """The saved prompt a Remix recasts, chosen once per request."""
+    picks = pick_scenarios(request.target_model, idea, 1)
+    if not picks:
+        raise ValueError(f"Remix needs saved prompts in data/prompt_library/{library_file_name(request.target_model)} "
+                         f"for {request.target_model}.")
+    return picks[0]
+
+
 def assemble_instruction(
     request,
     model_family=None,
@@ -114,7 +128,12 @@ def assemble_instruction(
     compile_user_constraints=True,
     include_target_example=True,
     references=None,
+    scenario=None,
+    keep_library_format=False,
 ):
+    """keep_library_format: the templates are withheld (a retry after copying them) but the library's format and
+    length still apply, so the retry changes the wording, not the writing contract. scenario: the Remix scenario
+    already chosen for this request, so a retry recasts the same one."""
     if text_only:
         resolved_scene = None
     idea = (prompt_scene_plan.compiled_request.writer_request(include_constraints=False) if prompt_scene_plan is not None else request.idea).strip()
@@ -159,16 +178,16 @@ def assemble_instruction(
     ]
     # Any saved library prompt replaces the built-in example; matching ones are picked first.
     if references is None:
+        references = request.library_references
+    if references is None:
         references = () if qwen_images else pick_references(request.target_model, idea)
-    scenario = ""
     if request.mode == "Remix":
-        picks = pick_scenarios(request.target_model, idea, 1)
-        if not picks:
-            raise ValueError(f"Remix needs saved prompts in data/prompt_library/{library_file_name(request.target_model)} "
-                             f"for {request.target_model}.")
-        scenario = picks[0]
+        scenario = scenario or remix_scenario(request, idea)
         # The recast scenario is meant to be reused, so it is neither a style reference nor copy-checked.
         references = tuple(reference for reference in references if reference != scenario)
+    else:
+        scenario = ""
+    uses_library = bool(references) or keep_library_format
     # Library templates go last, right before the output rules, so the user's way of building a
     # prompt is the freshest guidance. Only Qwen editing keeps a built-in worked example.
     library_style = library_reference_section(references, continuation=not include_target_example) if references else ""
@@ -183,17 +202,17 @@ def assemble_instruction(
            "into its roles, main role first; adapt gender, age and relationship wording; drop roles the request does not "
            "fill; never reuse its character names." if scenario else ""),
         "TARGET MODEL ADAPTER\n" + (QWEN21_EDIT_ADAPTER if qwen_images
-                                      else get_model_adapter(request.target_model, templates=bool(references)))
+                                      else get_model_adapter(request.target_model, templates=uses_library,
+                                                             describe_style=request.describe_style))
         + ("\n\n" + target_example if target_example else ""),
         "USER SETTINGS",
         _CREATIVITY_ADAPTERS.get(request.creativity, _CREATIVITY_ADAPTERS["Balanced"]),
         # With a library, structure and length are measured against the user's own prompts.
-        style_profile_text(profile, request.prompt_length) if references and (profile := library_profile(request.target_model))
+        style_profile_text(profile, request.prompt_length, get_target_capabilities(request.target_model).max_words,
+                           describe_structure=not references)
+        if uses_library and (profile := library_profile(request.target_model))
         else resolve_target_length(request.target_model, request.prompt_length),
     ])
-    if style := style_section(request.style, request.target_model, request.capture):
-        sections.append(style)
-
     sections.append(_preservation_section(
         replace(request, linked_references=False) if text_only else request,
         resolved_reference_map, has_visual_context,
@@ -250,6 +269,9 @@ def assemble_instruction(
 
     if library_style:
         sections.append(library_style)
+    # The style comes after the templates, so their look never outweighs it.
+    if style := style_section(request.style, request.target_model, request.capture, request.mode):
+        sections.append(style)
     sections.append(OUTPUT_CONTRACT)
     sections.append(output_contract(request.target_model, qwen_task="edit" if qwen_images else "t2i", qwen_images=qwen_images,
                                     library_style=bool(references)))
@@ -358,6 +380,7 @@ class GoatedPrompterService:
         text_only=False,
         prompt_scene_plan=None,
         references=None,
+        **pinned,
     ):
         return assemble_instruction(
             request,
@@ -367,6 +390,7 @@ class GoatedPrompterService:
             text_only=text_only,
             **({"prompt_scene_plan": prompt_scene_plan} if prompt_scene_plan is not None else {}),
             **({"references": references} if references is not None else {}),
+            **pinned,
         )
 
     def generate(self, request):
@@ -458,10 +482,14 @@ class GoatedPrompterService:
                     session_backend, request, resolved_scene=resolved_scene,
                     family=model_family, checkpoint=self._checkpoint, progress=planning_progress,
                     **({"semantic_validation": True} if validate_semantics else {}))
-            def build(references=None):
+            # Chosen once, so a retry recasts the same scenario.
+            scenario = remix_scenario(request, request.idea.strip()) if request.mode == "Remix" else None
+            def build(references=None, keep_library_format=False):
                 return replace(
                     self.assemble(
                         request,
+                        scenario=scenario,
+                        keep_library_format=keep_library_format,
                         model_family=model_family,
                         resolved_scene=resolved_scene,
                         resolved_reference_map=resolved_reference_map,
@@ -548,7 +576,7 @@ class GoatedPrompterService:
                     if copied:
                         # The templates caused the copy: the one retry is written without them (same request, same
                         # rules), so it cannot repeat their wording and the run does not lose the image to style.
-                        instruction = build(references=())
+                        instruction = build(references=(), keep_library_format=True)
                     instruction = replace(instruction,
                         system_message=(instruction.system_message + "\n\nCONSTRAINT CORRECTION: " + str(exc)
                             + " Preserve the original scene/action and all supplied facts. Apply exclusions silently; change only invalid final wording."
@@ -563,7 +591,7 @@ class GoatedPrompterService:
                 raise recovery.invalid_output()
             raise RuntimeError("Goated Prompter backend returned an empty prompt.")
         if request.target_model != "Ideogram4" and not (request.target_model == "MiniMax H3" and request.mode == "Video"):
-            prompt = sanitize_prompt_text(prompt)
+            prompt = balance_brackets(sanitize_prompt_text(prompt))
         if request.target_model == "Anima":
             prompt = drop_repeated_tags(remove_contradictory_solo(prompt))
         if not prompt:

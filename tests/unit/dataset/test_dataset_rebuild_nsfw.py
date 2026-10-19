@@ -181,8 +181,10 @@ class AdultDatasetTests(unittest.TestCase):
                 result = self.write(brief)
                 prompts.write_prompts(self.config, self.request, brief, result["scenes"], progress=lambda _message: None)
                 final = self.calls[-1]
-                for required in (requirement, "No blindfold", "No collar", "Use a red ribbon",
-                                 "Alex is the only participant and keeps the same identity."):
+                for required in (requirement, "No blindfold", "No collar", "Use a red ribbon"):
                     self.assertIn(required, final.system_message + final.user_message)
+                # The request and "fixed" are already in the scene; repeated, the model pastes them in as content.
+                self.assertNotIn("Alex is the only participant and keeps the same identity.", final.system_message)
+                self.assertNotIn('"request":', final.system_message)
                 adult = "This is an adult dataset: word the act and the bodies in plain, explicit terms"
                 (self.assertIn if nsfw else self.assertNotIn)(adult, final.system_message + final.user_message)

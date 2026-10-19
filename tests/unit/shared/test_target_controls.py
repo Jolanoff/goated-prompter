@@ -38,21 +38,17 @@ class TargetControlTests(unittest.TestCase):
                 self.assertEqual(get_model_adapter(legacy), get_model_adapter(current))
         self.assertIn("Qwen/Qwen-Image checkpoint", get_model_adapter("Qwen Image (original)"))
 
-    def test_krea_preserves_anime_and_all_other_requested_media(self):
+    def test_krea_only_says_how_to_write_and_leaves_the_medium_to_the_style(self):
         adapter = get_model_adapter("Krea 2")
-        for medium in ("anime", "illustration", "graphic design", "3D"):
-            self.assertIn(medium, adapter)
-        self.assertIn("Always name a medium, era or process", adapter)
+        self.assertIn("State the medium in words", adapter)
         self.assertIn("long, exhaustive natural-language description", adapter)
         self.assertIn('"Composition and camera:"', adapter)
-        self.assertNotIn("photographic realism", adapter)
-        self.assertIn("do not force photographic rendering", adapter)
-        message = self.instruction("Krea 2", creativity="Dice")
-        self.assertIn("leave useful aesthetic freedom", message)
+        for owned_elsewhere in ("anime", "photographic", "aesthetic freedom"):
+            self.assertNotIn(owned_elsewhere, adapter)
 
     def test_flux_maximum_detail_stays_moderate(self):
         message = self.instruction("FLUX.2 Klein", prompt_length="Maximum Detail")
-        self.assertIn("Aim for roughly 40 to 100 words", message)
+        self.assertIn("roughly 40 to 100 words", message)
         self.assertIn("The model has no negative prompt", message)
         self.assertIn("Moderately detailed, focused", message)
         self.assertNotIn("Exhaustively cover", message)
@@ -60,6 +56,25 @@ class TargetControlTests(unittest.TestCase):
 
     def test_anima_keeps_negative_terms_out_of_the_positive_prompt(self):
         self.assertIn("Avoid redundant tags, excessive tag counts, negative prompt terms", get_model_adapter("Anima"))
+
+    def test_z_image_exclusions_are_owned_by_the_compiler(self):
+        from goated_prompter.planning.constraints import COMPILED_CONTRACT
+        for idea, forbidden in (("A portrait; no jewelry", "jewelry"),
+                                ("A quiet courtyard; without vehicles", "vehicles")):
+            with self.subTest(idea=idea):
+                instruction = assemble_instruction(GoatedPrompterRequest(idea=idea, target_model="Z-Image"), text_only=True)
+                adapter = instruction.system_message.split("TARGET MODEL ADAPTER\n", 1)[1].split("\n\nUSER SETTINGS", 1)[0]
+                self.assertNotIn("state anything to exclude as a positive fact", adapter)
+                self.assertEqual(instruction.system_message.count(COMPILED_CONTRACT), 1)
+                self.assertIn(f'"forbidden": ["{forbidden}"]', instruction.system_message)
+                self.assertIn("Apply them silently by omission", instruction.system_message)
+                self.assertNotIn(forbidden, instruction.user_message)
+
+    def test_z_image_preserves_negative_words_in_requested_lettering(self):
+        idea = 'A sign with text "No jewelry".'
+        instruction = assemble_instruction(GoatedPrompterRequest(idea=idea, target_model="Z-Image"), text_only=True)
+        self.assertEqual(instruction.user_message, idea)
+        self.assertNotIn('"forbidden":', instruction.system_message)
 
     def test_anima_adapter_uses_the_owner_supplied_plain_text_contract_once(self):
         adapter = get_model_adapter("Anima")
@@ -90,7 +105,7 @@ class TargetControlTests(unittest.TestCase):
 
     def test_ltx_target_overrides_video_director_motion_invention(self):
         message = self.instruction("LTX 2.5", mode="Video", director_preset="video_director", prompt_length="Maximum Detail")
-        self.assertIn("one flowing present-tense paragraph of four to eight sentences", message)
+        self.assertIn("one flowing paragraph of four to eight sentences", message)
         self.assertIn("Do not invent dialogue, camera movement or cuts unless requested", message)
         self.assertIn("never change the task, the format or the user's facts", message)
 

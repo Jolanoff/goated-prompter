@@ -58,7 +58,7 @@ class SceneVariety(Harness):
         system = self.composer()[0].system_message
         self.assertIn("one\n  physically possible arrangement", system)
         self.assertIn("if one person is behind another, that person faces away from them", system)
-        self.assertIn("Never reuse a place, arrangement or camera listed in already_used, and do not follow its order.", system)
+        self.assertIn("Unless fixed keeps it, never reuse a place, arrangement or camera listed in already_used", " ".join(system.split()))
         self.assertIn("Give the people new looks (skin, build, hair, detail) in every image unless fixed keeps the same people", system)
 
     def test_each_person_has_an_expression_field_for_expression_vocabulary(self):

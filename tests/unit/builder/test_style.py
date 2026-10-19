@@ -37,6 +37,24 @@ class StyleTests(unittest.TestCase):
         for capture in set(CAPTURE_ADAPTERS) - {"Auto"}:
             self.assertNotIn(CAPTURE_ADAPTERS[capture], message(target_model="Krea 2", style="Realistic"))
 
+    def test_realistic_style_does_not_countermand_krea_density(self):
+        for length in ("Short", "Maximum Detail"):
+            with self.subTest(length=length):
+                system = message(target_model="Krea 2", style="Realistic", prompt_length=length)
+                style = system.split("VISUAL STYLE — Realistic\n", 1)[1].split("\n\n", 1)[0]
+                self.assertIn("long, exhaustive natural-language description", system)
+                self.assertIn("Photorealistic image", style)
+                self.assertNotIn("instead of a long inventory", style)
+
+    def test_precision_directors_do_not_countermand_krea_density(self):
+        for director in ("krea_2_high_detail", "maximum_detail_director"):
+            with self.subTest(director=director):
+                system = message(target_model="Krea 2", director_preset=director)
+                behavior = system.split("DIRECTOR BEHAVIOR", 1)[1].split("\n\n", 1)[0]
+                self.assertIn("long, exhaustive natural-language description", system)
+                self.assertNotIn("do not exhaustively inventory", behavior.casefold())
+                self.assertNotIn("or exhaustively enumerate", behavior.casefold())
+
     def test_dataset_draft_validates_style(self):
         self.assertEqual(validate_dataset_draft(default_dataset_draft())["style"], "Auto")
         self.assertEqual(validate_dataset_draft({**default_dataset_draft(), "style": "Anime"})["style"], "Anime")
@@ -45,6 +63,10 @@ class StyleTests(unittest.TestCase):
         self.assertEqual(validate_dataset_draft(default_dataset_draft())["capture"], "Auto")
         with self.assertRaises(ValueError):
             validate_dataset_draft({**default_dataset_draft(), "capture": "Polaroid"})
+        anime = validate_dataset_draft({**default_dataset_draft(), "style": "Anime", "capture": "Analog film"})
+        self.assertEqual(anime["capture"], "Auto", "Capture only describes a Realistic image.")
+        self.assertEqual(validate_dataset_draft({**default_dataset_draft(), "style": "Realistic",
+                                                 "capture": "Analog film"})["capture"], "Analog film")
 
     def test_dataset_draft_maps_a_replaced_director_to_style_and_capture(self):
         draft = validate_dataset_draft({**default_dataset_draft(), "director_preset": "smartphone_realism"})

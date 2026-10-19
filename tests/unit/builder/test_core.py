@@ -204,9 +204,9 @@ class CoreTests(unittest.TestCase):
                                     core.PRIORITY_CONTRACT)
                         self.assertIn(contract, message)
                         if path == "text_only":
-                            # The Director outranks creativity, length and Mode when they compete.
-                            self.assertLess(contract.index("Director behavior"), contract.index("prompt-length settings"))
-                            self.assertLess(contract.index("Director behavior"), contract.index("Selected Mode"))
+                            # The request and rules decide the facts; no setting outranks another.
+                            self.assertIn("decide the facts", contract)
+                            self.assertNotIn("1. ", contract)
 
     def test_edited_director_remains_subject_to_control_contract(self):
         request = replace(self.request(), mode="Dataset Caption", prompt_length="Short",
@@ -255,8 +255,11 @@ class CoreTests(unittest.TestCase):
         self.assertNotIn('Qwen Image 2.1 image-editing rewrite', text.system_message)
         self.assertIsNone(text.max_tokens)
         self.assertTrue(text.unlimited_tokens)
-        edit = self.service.assemble(self.request("Image 2", target_model="Qwen2.1"))
+        edit = self.service.assemble(self.request("Image 2", target_model="Qwen2.1", mode="Image Edit"))
         self.assertIn('Qwen Image 2.1 image-editing rewrite', edit.system_message)
+        evidence = self.service.assemble(self.request("Image 2", target_model="Qwen2.1", mode="Enhance"))
+        self.assertNotIn('Qwen Image 2.1 image-editing rewrite', evidence.system_message,
+                         "References alone never turn the task into an edit.")
         self.assertNotIn('Qwen Image 2.1 text-to-image rewrite', edit.system_message)
         self.assertIn('Available source tags: <image2>', edit.system_message)
         self.assertNotIn('Available source tags: <image1>', edit.system_message)
@@ -267,7 +270,7 @@ class CoreTests(unittest.TestCase):
         expected = '{"rewritten_prompt":"Change the sky in the image to sunset.","wh_ratio":"","ratio_follow":"<image2>"}'
         self.session.generate.side_effect = lambda instruction: (
             '{"subject":"observed person"}' if instruction.diagnostic_stage.startswith("evidence:") else expected)
-        result = self.service.generate(self.request("Image 2", target_model="Qwen2.1"))
+        result = self.service.generate(self.request("Image 2", target_model="Qwen2.1", mode="Image Edit"))
         self.assertEqual(result.prompt, json.loads(expected)["rewritten_prompt"])
         self.assertIsNone(result.instruction.image)
         self.assertIsNotNone(result.instruction.resolved_scene)

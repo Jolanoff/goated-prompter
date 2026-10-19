@@ -126,7 +126,9 @@ def copied_input(data):
 
 
 def copied_settings(data):
-    return {"style": data.get("style", ""), "capture": data.get("capture", "Auto"), "target": data.get("target", ""), "director": data.get("director_preset", ""),
+    # Capture only describes a Realistic image; with any other style it is Auto, so a hidden earlier choice never shows.
+    capture = data.get("capture", "Auto") if data.get("style") == "Realistic" else "Auto"
+    return {"style": data.get("style", ""), "capture": capture, "target": data.get("target", ""), "director": data.get("director_preset", ""),
             "length": data.get("length", ""), "creativity": data.get("creativity", "")}
 
 
@@ -325,6 +327,13 @@ def _singular(label):
     return " ".join(words)
 
 
+def _beyond_triggers(items, data):
+    """The phrases without those that only repeat a trigger's text: the trigger already says it, and a repeat would
+    put the same words in front of every later step a second time."""
+    said = {" ".join(trigger["text"].casefold().split()) for trigger in data_triggers(data)}
+    return [item.strip() for item in items if " ".join(item.casefold().split()) not in said]
+
+
 def apply_rules(value, data):
     nsfw = data.get("nsfw") is True
     path = ("non_character" if value["path"] == "non_character" else "nsfw_character" if nsfw else "sfw_character")
@@ -333,7 +342,7 @@ def apply_rules(value, data):
     brief = {"version": VERSION, "path": path, "summary": summary,
             "people": len(characters), "characters": characters,
             "fixed": value["fixed"].strip(), "randomized": value["randomized"].strip(),
-            "must": [item.strip() for item in value["must"]], "avoid": [item.strip() for item in value["avoid"]],
+            "must": _beyond_triggers(value["must"], data), "avoid": _beyond_triggers(value["avoid"], data),
             "input": copied_input(data), "settings": copied_settings(data)}
     validate_content(brief, data)
     return brief

@@ -19,6 +19,8 @@ class TargetCapabilities:
     positive_description_only: bool = False
     supports_cfg: bool | None = None
     detail_envelope: str = "Use relevant description without filler; preserve required target structure."
+    # The most words the model uses well; a library's own length never goes past it. None: no limit.
+    max_words: int | None = None
 
     def resolve_length(self, user_length):
         rules = LENGTH_ADAPTERS
@@ -32,18 +34,18 @@ TARGET_CAPABILITIES = {
         detail_envelope="Keep useful lowercase-style tags, subject counts and scene prose. Density changes prose, never tag/block structure."),
     "Krea 2": TargetCapabilities(supports_image_edit=True,
         detail_envelope="Long, exhaustive natural-language description in the requested medium; more length adds concrete visible detail (pose, fabric, light falloff, background positions, camera), never filler."),
-    "FLUX.2 Klein": TargetCapabilities(supports_image_edit=True, positive_description_only=True,
+    "FLUX.2 Klein": TargetCapabilities(supports_image_edit=True, positive_description_only=True, max_words=100,
         detail_envelope="Moderately detailed, focused natural-language prose at every length; avoid extreme verbosity and keyword piles."),
     # One target for both checkpoints: Base takes a negative prompt and CFG, Turbo neither, so prompts stay positive.
-    "Z-Image": TargetCapabilities(positive_description_only=True,
+    "Z-Image": TargetCapabilities(positive_description_only=True, max_words=200,
         detail_envelope="Concrete camera-direction prose of a few key visual ideas; more length adds specific visible detail, never filler or keyword piles."),
-    "Qwen Image (original)": TargetCapabilities(supports_negative_prompt=True, positive_description_only=False),
+    "Qwen Image (original)": TargetCapabilities(supports_negative_prompt=True, positive_description_only=False, max_words=200),
     "Qwen Image 2.1": TargetCapabilities(supports_image_edit=True, prompt_style="observer_description",
         detail_envelope="Preserve the observer-description structure and whole-frame closing sentence at every length; extra length enriches supported positional, material and lighting descriptions."),
     "MiniMax H3": TargetCapabilities(output_format="minimax_fields", prompt_style="temporal_sections",
         supports_image_edit=True, supports_structured_output=True, supports_audio=True, supports_multishot=True,
         detail_envelope="Keep H3 required sections, reference roles and requested timeline complete at every length; enrich shot staging, not repeated static inventories."),
-    "LTX 2.5": TargetCapabilities(prompt_style="flowing_video_paragraph", supports_audio=True,
+    "LTX 2.5": TargetCapabilities(prompt_style="flowing_video_paragraph", supports_audio=True, max_words=200,
         detail_envelope="One focused flowing paragraph at every length, never an oversized essay. Preserve chronological concrete motion; never invent dialogue, camera movement or cuts."),
     "Ideogram4": TargetCapabilities(output_format="json", prompt_style="structured_caption", supports_structured_output=True,
         detail_envelope="All required JSON keys and their order remain intact at every length. Density changes descriptive string values only."),
@@ -83,50 +85,105 @@ Write a continuous editing directive, without ellipses or truncation. Be decisiv
 
 Descriptive prose is Chinese for a Chinese instruction, otherwise English. Visible image text is a separate language decision: exact user-provided text or requested language first, otherwise the image's dominant text language, otherwise the user's instruction language. Preserve exact readable strings in straight double quotes. Each rendered string is monolingual unless bilingual text was explicitly requested; genre does not change its language. Do not quote descriptive prose as if it were rendered text. Never guess unreadable source text."""
 
+_STYLE_GUIDANCE = {
+    "Anima": " and style",
+    "Krea 2": "State the medium in words: without it the result drifts to a generic house style. ",
+    "Z-Image": "Use one dominant style. ",
+    "Qwen Image (original)": "State the style precisely rather than vaguely. ",
+    "Qwen Image 2.1": "medium, style, ",
+    "Ideogram4": '2. "style_description": an object describing aesthetics, lighting, medium, and the appropriate '
+                 'photographic or artistic treatment. For photographs, use keys in this order: "aesthetics", '
+                 '"lighting", "photo", "medium", then optional "color_palette". For non-photographic work, use '
+                 '"aesthetics", "lighting", "medium", "art_style", then optional "color_palette". All fields except '
+                 'color_palette are descriptive strings. Include exactly one of photo or art_style, never both. '
+                 'Use photo for relevant framing, camera, lens, focus, and exposure details; use art_style for '
+                 'illustration, painting, 3D rendering, or graphic-design treatment. color_palette is an array of up '
+                 'to 16 uppercase #RRGGBB hex strings representing the intended dominant colors, including background, '
+                 'highlights, and shadows where useful.\n',
+}
+
+
 MODEL_ADAPTERS = {
     "Generic": """Generic target: write clean, coherent natural-language visual description without model-specific syntax or tag chains.""",
-    "Anima": """Anima target: use a hybrid of Danbooru/Gelbooru-style tags and concise natural-language scene prose. Start with one comma-separated sequence of relevant lowercase tags in this order: quality and score tags; one safety tag matching the content (safe, sensitive, nsfw or explicit); the correct subject-count tags, and use solo only when exactly one character appears, never with several; each named character's tag followed by its series tag; an artist tag only when the request or a template supplies one, written with @ in front; then appearance, clothing, pose, object, environment and style tags. Write ordinary tags with spaces instead of underscores. After a blank line, follow the tags with at least two sentences of fluent prose describing the composition, actions, expressions, spatial relationships and interactions, giving each character its own sentence with its place in the frame. Preserve each character's supplied identity and attributes, keeping them correctly assigned in multi-character scenes. A named character is identified by its name and series tags: do not add tags or prose describing its face, hair, eyes or body. Avoid redundant tags, excessive tag counts, negative prompt terms, long in-image text and repeating the tag inventory in prose. Preserve supplied tag wording, order, weights, repetitions and locked trigger prefixes when required, including escaped parentheses. Keep the result visually specific, coherent and focused on the requested image.""",
-    "Krea 2": """Krea 2 target: its large language-model text encoder rewards long, exhaustive natural-language description, so describe everything visible rather than summarizing. Cover the subject's apparent age, look, hair styling, makeup and exact expression; clothing with fabric, fit and how it falls or moves; the pose as one coherent body, described once from head to feet; background elements with their positions; light with its source, direction and what it falls on (face, shoulders, fabric) and where shadows land; composition with aspect, one shot size, where the subject sits in the frame, one camera angle, focus and depth of field. Always name a medium, era or process without one the result drifts to a generic house style. For anime, illustration, painting, graphic design or 3D, keep that medium and do not force photographic rendering. Under Creative/Dice leave useful aesthetic freedom in the choices you make, but still write them out in full. Keep any supplied trigger or LoRA token first. Put words to render in the image in double quotes. Avoid keyword piles and empty quality slogans.""",
-    "FLUX.2 Klein": """FLUX.2 Klein target: write focused narrative prose in the order subject, action, style, context; the model weighs what comes first most, so lead with the main subject and action. Aim for roughly 40 to 100 words. Lighting is the most influential detail: name its source, direction and quality. The model has no negative prompt: describe what should be visible, never what to avoid. Put words to render in double quotes with their placement and style. For editing distinguish requested changes from protected content.""",
-    "Z-Image": """Z-Image target: write concrete, objective descriptive prose of roughly 80 to 200 words, like camera direction: a description, not a keyword list. Lead with the subject and action, then the environment (place, time of day, background), the style (medium, lens or film look, palette) and the composition (shot size, framing, depth of field). Keep every subject, count, action, color and text exactly and spell out specific attributes and the exact place; vague wording collapses to the same image every time. Use one dominant style and keep to a few key visual ideas instead of piling up details. There is no reliable negative prompt: state anything to exclude as a positive fact. No metaphors, emotional adjectives or quality slogans. Put text to render in double quotes with its font, layout and material. Keep generator settings out of the prompt.""",
-    "Qwen Image (original)": """Qwen Image (original) target: the original Qwen/Qwen-Image checkpoint, not Qwen Image 2.1. Write one natural descriptive paragraph under about 200 words covering subject attributes, relationships, spatial layout with explicit positions and counts, shot composition, pose/action, anatomical plausibility and lighting. Choose a precise style rather than a vague one. Put requested visible text in double quotes with its placement, unaltered and untranslated.""",
+    "Anima": """Anima target: use a hybrid of Danbooru/Gelbooru-style tags and concise natural-language scene prose. Start with one comma-separated sequence of relevant lowercase tags in this order: quality and score tags; one safety tag matching the content (safe, sensitive, nsfw or explicit); the correct subject-count tags, and use solo only when exactly one character appears, never with several; each named character's tag followed by its series tag; an artist tag only when the request supplies one, written with @ in front; then appearance, clothing, pose, object, environment{style_guidance} tags. Write ordinary tags with spaces instead of underscores. After a blank line, follow the tags with at least two sentences of fluent prose describing the composition, actions, expressions, spatial relationships and interactions, giving each character its own sentence with its place in the frame. Preserve each character's supplied identity and attributes, keeping them correctly assigned in multi-character scenes. A named character is identified by its name and series tags: do not add tags or prose describing its face, hair, eyes or body unless the request changes them. Avoid redundant tags, excessive tag counts, negative prompt terms, long in-image text and repeating the tag inventory in prose. Preserve supplied tag wording, order, weights, repetitions and locked trigger prefixes when required, including escaped parentheses. Keep the result visually specific, coherent and focused on the requested image.""",
+    "Krea 2": """Krea 2 target: its large language-model text encoder rewards long, exhaustive natural-language description, so describe everything visible rather than summarizing. For each subject cover what applies: apparent age, look, hair styling, makeup and exact expression (a character named without a description keeps the look the model already knows); clothing with fabric, fit and how it falls or moves; each person's pose as one coherent body, described once from head to feet; background elements with their positions; light with its source, direction and what it falls on (face, shoulders, fabric) and where shadows land; composition with aspect, one shot size, where each subject sits in the frame, one camera angle and what the eye goes to first. {style_guidance}Keep any supplied trigger or LoRA token first. Put words to render in the image in double quotes. Avoid keyword piles and empty quality slogans.""",
+    "FLUX.2 Klein": """FLUX.2 Klein target: the model weighs what comes first most, so lead with the main subject and action. Lighting is the most influential detail: name its source, direction and quality. The model has no negative prompt: describe what should be visible, never what to avoid. Put words to render in double quotes with their placement and style. For editing distinguish requested changes from protected content.""",
+    "Z-Image": """Z-Image target: write concrete, objective description, like camera direction. Keep every subject, count, action, color and text exactly and spell out specific attributes and the exact place; vague wording collapses to the same image every time. {style_guidance}Keep to a few key visual ideas instead of piling up details. There is no reliable negative prompt. No metaphors, emotional adjectives or quality slogans. Put text to render in double quotes with its font, layout and material. Keep generator settings out of the prompt.""",
+    "Qwen Image (original)": """Qwen Image (original) target: the original Qwen/Qwen-Image checkpoint, not Qwen Image 2.1. Cover subject attributes, relationships, spatial layout with explicit positions and counts, shot composition, pose/action, anatomical plausibility and lighting. {style_guidance}Put requested visible text in double quotes with its placement, unaltered and untranslated.""",
     "Qwen Image 2.1": """Qwen Image 2.1 text-to-image rewrite: return only the complete plain prompt text. No JSON object, metadata fields, commentary or Markdown fences.
 
 Write an English observer's description of the finished image, present tense and third person, never addressing the user or renderer. Preserve every fixed subject, count, color, position, named object and literal visible-text string. Preserve text character-for-character in its original script, punctuation and spacing; only visible text is enclosed in straight double quotes. Do not invent signage where none was requested. Obey job instructions silently instead of echoing them as picture content.
 
 First decide the frame from the user's explicit format when one is part of the creative request; otherwise choose a horizontal, vertical, square or wide composition appropriate to the subject. Apply that choice to natural composition and placement without emitting size metadata.
 
-Open by naming medium, style, subject and background/palette, usually with orientation. Inventory each element and its position, then walk the frame from background and top through left/center/right to bottom, or walk a single subject from background/pose through head, body, garments, contacts and remaining edges. Use concrete positional phrases throughout, including corners and edges. Describe actual materials, nuanced colors, scale, occlusion, spatial relationships, pose and coherent lighting/shadow/reflection behavior. Enumerate items rather than saying various decorations; use object classes unless the user named a brand. Hedge genuinely ambiguous details without weakening user-fixed facts. Name the source, direction and quality of light explicitly, generally in its own sentence. End with exactly one whole-frame composition sentence.
+Open by naming {style_guidance}subject and background/palette, usually with orientation. Inventory each element and its position, then walk the frame from background and top through left/center/right to bottom, or walk a single subject from background/pose through head, body, garments, contacts and remaining edges. Use concrete positional phrases throughout, including corners and edges. Describe actual materials, nuanced colors, scale, occlusion, spatial relationships, pose and coherent lighting/shadow/reflection behavior. Enumerate items rather than saying various decorations; use object classes unless the user named a brand. Hedge genuinely ambiguous details without weakening user-fixed facts. Name the source, direction and quality of light explicitly, generally in its own sentence. End with exactly one whole-frame composition sentence.
 
 Normally use one paragraph; genuinely stacked panels/cards/sections may use one paragraph per region. Keep literal image text in its original language while all descriptive prose is English. Avoid instructions, quality slogans, filler and a second closing summary.""",
     "MiniMax H3": """MiniMax H3 target: in Video mode return H3 named fields, not JSON or a generic prose wrapper: integrated_multimodal_description, overall_soundscape, non_diegetic_music. Put concrete chronological action and synchronized requested sound in the integrated description; use [Shot N] and contiguous time ranges only for requested multishot/timeline staging. Preserve literal dialogue; never invent dialogue or reference contents. With full references use subject_definitions, summary, retention_analysis, detailed_description, overall_soundscape, non_diegetic_music, with registered <Picture N>, <Video N>, <Audio N> labels and only requested transfer/retention roles. Explicit first/last-frame anchors require their corresponding alignment instruction; identity-only references are not first frames. Do not fabricate durations, assets, audio reuse or cuts. In non-video tasks keep the selected Mode's task without inventing a video timeline.""",
-    "LTX 2.5": """LTX 2.5 target: in Video mode write one flowing present-tense paragraph of four to eight sentences, at most about 200 words, in this order: shot type; the scene with its light, palette and texture; the action from start to finish; the characters' age, hair and clothing; any requested camera movement and how subjects look after it; audio with a visible source. Show emotion through physical cues rather than labels. Put any requested dialogue in quotes with its language. Avoid readable text, logos, crowded scenes and chaotic physics. Do not invent dialogue, camera movement or cuts unless requested. In other modes preserve the selected task.""",
+    "LTX 2.5": """LTX 2.5 target: in Video mode write in the present tense and describe the action from start to finish. Show emotion through physical cues rather than labels. Put any requested dialogue in quotes with its language. Avoid readable text, logos, crowded scenes and chaotic physics unless the request asks for them. Do not invent dialogue, camera movement or cuts unless requested. In other modes preserve the selected task.""",
 
     "Ideogram4": """Ideogram4 target: output a detailed, valid Ideogram 4.0 JSON caption, not a prose prompt. Return exactly one JSON object with double-quoted keys and strings, no Markdown fences, comments, trailing commas, or surrounding commentary. Preserve the following key order and use only this schema:
 1. "high_level_description": a string summarizing the complete image in one or two sentences.
-2. "style_description": an object describing aesthetics, lighting, medium, and the appropriate photographic or artistic treatment. For photographs, use keys in this order: "aesthetics", "lighting", "photo", "medium", then optional "color_palette". For non-photographic work, use "aesthetics", "lighting", "medium", "art_style", then optional "color_palette". All fields except color_palette are descriptive strings. Include exactly one of photo or art_style, never both. Use photo for relevant framing, camera, lens, focus, and exposure details; use art_style for illustration, painting, 3D rendering, or graphic-design treatment. color_palette is an array of up to 16 uppercase #RRGGBB hex strings representing the intended dominant colors, including background, highlights, and shadows where useful.
-3. "compositional_deconstruction": an object with "background" first (a detailed environment string), then "elements" (an array of individual subject, object, and in-image text objects).
+{style_guidance}{composition_number}. "compositional_deconstruction": an object with "background" first (a detailed environment string), then "elements" (an array of individual subject, object, and in-image text objects).
 Object element key order: "type": "obj", optional "bbox", "desc", optional "color_palette".
 Text element key order: "type": "text", optional "bbox", "text", "desc", optional "color_palette". Put each distinct requested piece of visible text in its own text element; preserve its literal spelling and case in text, properly JSON-escaped. Describe typography, size, alignment, and styling in desc. Do not invent signage or captions.
 Every desc is a detailed visual string: describe supported appearance, pose or action, materials, texture, colors, scale, spatial relationships, and lighting response where relevant. Separate meaningful elements without fragmenting every small detail into a new object.
 Optional bbox is [y_min, x_min, y_max, x_max]: the vertical values come first, and all four are integers on a 0 to 1000 scale of the whole image (not percentages or pixels), origin at the top-left, each minimum below its maximum. A main subject usually spans a large part of the frame. Include bboxes when placement matters; otherwise omit them to allow free placement. Optional per-element color_palette contains up to 5 uppercase #RRGGBB hex strings.
-Use all three top-level fields. Write rich, concrete descriptions within the fields while respecting the user's concept, evidence, creativity, and preservation constraints. Length settings control descriptive density, never removal of the JSON structure. Any instructions to write fluent prose or natural language apply inside JSON string values only. Finish the complete JSON object within the available output budget.""",
+Use every listed top-level field. Write rich, concrete descriptions within the fields while respecting the user's concept, evidence, creativity, and preservation constraints. Length settings control descriptive density, never removal of the JSON structure. Any instructions to write fluent prose or natural language apply inside JSON string values only. Finish the complete JSON object within the available output budget.""",
 }
 
 # A suggested layout is only a default: when the user's library supplies templates, their
 # structure decides the layout instead.
 ADAPTER_LAYOUTS = {
+    "FLUX.2 Klein": "Write focused narrative prose of roughly 40 to 100 words in the order subject, action, {style_guidance}context.",
+    "Z-Image": "Write descriptive prose of roughly 80 to 200 words, not a keyword list: the subject and action, then the "
+               "environment (place, time of day, background), {style_guidance}the composition (shot size and "
+               "framing).",
+    "Qwen Image (original)": "Write one natural descriptive paragraph under about 200 words.",
+    "LTX 2.5": "In Video mode write one flowing paragraph of four to eight sentences, at most about 200 words, in this "
+               "order: shot type; the scene with its light, palette and texture; the action from start to finish; the "
+               "characters' age, hair and clothing; any requested camera movement and how subjects look after it; audio "
+               "with a visible source.",
     "Krea 2": 'Long prompts may be organized into labeled sections such as "Subject and action:", "Clothing and '
-              'pose:", "Background and lighting:", "Composition and camera:" and "Aesthetic and style:".',
+              'pose:", "Background and lighting:", "Composition and camera:"{style_guidance}.',
+}
+
+_STYLE_LAYOUT_GUIDANCE = {
+    "FLUX.2 Klein": "style, ",
+    "Z-Image": "the style and medium, and ",
+    "Krea 2": ' and "Aesthetic and style:"',
 }
 
 
-def get_model_adapter(name, *, templates=False):
-    """Return the selected adapter, falling back to Generic; without templates it adds the default layout."""
+# How a prompt keeps two or more people apart, so the image model draws separate, complete bodies instead of merging
+# them: the target owns it because it is about how the prompt is written. Anima has its own (one sentence and frame
+# place per character); MiniMax writes timed fields.
+_PEOPLE_RULE = ("When the image has two or more people, place each one in the frame (left, right, centre, front or "
+                "back) and describe them one after another. Give each person one short anchor from their own look and "
+                "repeat it every time they or one of their body parts is mentioned; when people share a pronoun, never "
+                "use the pronoun. For every body part that is shown or touches someone, say whose it is, its state and "
+                "how many there are, and say where the bodies touch and where they stay apart.")
+_PEOPLE_RULES = {
+    "Ideogram4": _PEOPLE_RULE.replace("place each one in the frame (left, right, centre, front or back) and describe "
+                                      "them one after another", "give each person their own element with a bbox"),
+    "Anima": "",
+    "MiniMax H3": "",
+}
+
+
+def get_model_adapter(name, *, templates=False, describe_style=True):
+    """Return the target's writing rules; omit medium-description demands when a trigger carries the style."""
     target = canonical_target(name)
     adapter = MODEL_ADAPTERS.get(target, MODEL_ADAPTERS["Generic"])
+    adapter = adapter.format(style_guidance=_STYLE_GUIDANCE.get(target, "") if describe_style else "",
+                             composition_number=3 if describe_style else 2)
+    if people := _PEOPLE_RULES.get(target, _PEOPLE_RULE):
+        adapter = f"{adapter} {people}"
     layout = ADAPTER_LAYOUTS.get(target)
-    return adapter if templates or not layout else f"{adapter} {layout}"
+    if templates or not layout:
+        return adapter
+    layout = layout.format(style_guidance=_STYLE_LAYOUT_GUIDANCE.get(target, "") if describe_style else "")
+    return f"{adapter} {layout}"
 
 
 # Edit instructions are not covered by the prompt library (it holds generation prompts), so
@@ -146,12 +203,12 @@ def library_reference_section(references, *, continuation=False):
     numbered = "\n\n".join(f"Template {index}:\n{prompt}" for index, prompt in enumerate(references, 1))
     return ("TEMPLATES FROM THE USER'S PROMPT LIBRARY\n"
             "The user saved these prompts as examples of how a good prompt for this model is written. Use them as "
-            "templates for the craft: the structure (one paragraph, labeled sections, a tag list, a trigger word "
-            "first), the order of information, how concretely each subject, pose, outfit, camera and light is "
-            "described, and how dense the detail is. Do not take the look of the image from them: the medium, visual "
-            "style, aesthetic, palette, mood, subjects, names, setting and sentences come from this request, the "
-            "selected Style and the Director. Where the templates differ in structure, follow whichever suits this "
-            "image. The selected length still sets roughly how long, and the target's required format still applies."
+            "templates for the craft: the structure, the order of information, how concretely each subject, pose, "
+            "outfit, camera and light is described, and how dense the detail is. Do not take the look of the image "
+            "from them: the medium, visual style, aesthetic, palette, mood, subjects, names, setting and sentences "
+            "come from this request, the selected Style and the Director. Where the templates differ in structure, "
+            "follow Template 1. The selected length still sets roughly how long, and the target's required format "
+            "still applies."
             "\n\n" + numbered
             + ("\n\nYour output is only the continuation after the app-inserted character tags; do not repeat character tags."
                if continuation else ""))

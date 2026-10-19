@@ -40,8 +40,6 @@ function SceneDetails({ scene }) {
     {Object.entries(scene.subjects).map(([label, person]) => <Line key={`subject-${label}`} label={label}>
       {[person.skin, person.build, person.hair, person.detail, person.expression, person.clothing].filter(Boolean).join(" · ")}</Line>)}
     <Line label="Space">{scene.space}</Line>
-    <Line label="Lighting">{scene.lighting}</Line>
-    <Line label="Mood">{scene.mood}</Line>
     <Line label="Camera">{scene.camera}</Line>
     <Line label="Extras">{scene.extras}</Line>
   </>;

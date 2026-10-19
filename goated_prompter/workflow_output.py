@@ -19,6 +19,33 @@ def sanitize_prompt_text(value):
     return str(value or "").strip()
 
 
+_PAIRS = {")": "(", "]": "[", "}": "{"}
+
+
+def balance_brackets(value):
+    """The prompt without brackets that are never closed or never opened, so no section or weight is left dangling.
+    Escaped brackets (Anima's \\( \\)) and text inside double quotes (words to render) are left as they are."""
+    text, keep, stack, quoted = str(value or ""), [], [], False
+    for index, char in enumerate(text):
+        escaped = index > 0 and text[index - 1] == "\\"
+        if char == '"' and not escaped:
+            quoted = not quoted
+        if quoted or escaped or (char not in _PAIRS and char not in _PAIRS.values()):
+            keep.append(True)
+        elif char in _PAIRS.values():
+            stack.append((char, index))
+            keep.append(True)
+        elif stack and stack[-1][0] == _PAIRS[char]:
+            stack.pop()
+            keep.append(True)
+        else:
+            keep.append(False)
+    for _char, index in stack:
+        keep[index] = False
+    result = "".join(char for char, kept in zip(text, keep) if kept)
+    return re.sub(r"[ \t]{2,}", " ", result).strip() if result != text else text
+
+
 def _unfence(value):
     if not value.startswith("```"):
         return value

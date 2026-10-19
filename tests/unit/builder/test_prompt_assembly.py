@@ -108,8 +108,9 @@ class BuilderPromptAssemblyTests(unittest.TestCase):
                 self.assertEqual(result.prompt, expected)
 
     def test_qwen21_edit_uses_the_edit_example(self):
-        message = system_message(target_model="Qwen Image 2.1", image=IMAGE)
+        message = system_message(target_model="Qwen Image 2.1", image=IMAGE, mode="Image Edit")
         self.assertIn(QWEN21_EDIT_EXAMPLE[1], message)
+        self.assertNotIn(QWEN21_EDIT_EXAMPLE[1], system_message(target_model="Qwen Image 2.1", image=IMAGE, mode="Enhance"))
 
     def test_example_can_be_omitted(self):
         request = GoatedPrompterRequest(idea="make the sky a sunset", target_model="Qwen Image 2.1", image=IMAGE)

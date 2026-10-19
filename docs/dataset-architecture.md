@@ -53,19 +53,37 @@ pack selected, every scene names the entry it is built on (`entry`); code checks
 and that no entry is used by more than two images (`ENTRY_CAP`, raised to the images-per-entry when there are fewer
 entries than images), and asks again otherwise. No pack is used automatically: character looks come from the request
 and approved requirements, with vocabulary guidance only from manually selected Subjects packs. A known character has
-only expression and clothing in its scene; its look comes from its name, never from the writer or vocabulary. Missing images
+only an expression in its scene; its look comes from its name, never from the writer or vocabulary.
+A scene holds only the people and their arrangement: subjects, actions, position, space, camera and extras. Each
+position line places its person in the frame and names the owner of every body part by label. Clothing, lighting and
+mood are left to the final prompt; a selected Clothing, Lighting or Mood & Tone entry goes in extras. Saved scenes
+with the old clothing, lighting and mood fields still load (`retire_fields` drops them). Missing images
 are retried, then reported; the last round keeps an image rather than lose it.
 
 Prompts (`v2/prompts.py`): the existing Builder writes each final prompt from the scene with the run's Director
 preset and target model together, as in the Prompt Builder; the scene writer never sees a Director. The scene rules
-ask Builder to keep every subject, action, object, place, camera and light, add none, and describe people rather
-than labels; known characters are named, never described. The Builder does not parse the scene as user rules
+ask Builder to keep every subject, action, object, place and camera, add none, choose clothing, light and mood to
+suit the scene, and describe people rather than labels; known characters are named, never described. The Builder does not parse the scene as user rules
 (`compile_rules=False`): the approved requirements already carry them. The Builder is told what exact-text triggers
 carry (never describe it) and which meanings to write; an exact style trigger turns the Style and Capture settings off. Code places
 every exact text itself (`place_triggers`): pinned ones first in list order, the rest by type in the Anima tag line,
 at its person's first mention in prose, or in an Ideogram element's description, `style_description.aesthetics` or
-`high_level_description`. The scene writer hears outfit and meaning triggers (`trigger_notes`). Code rewrites once a
-prompt that still uses a numbered label ("man 1").
+`high_level_description`. The scene writer hears meaning triggers (`trigger_notes`). Final prompts use the run's Creativity setting.
+Every prose target carries one rule for two or more people: a place in the frame per person, one short anchor
+repeated at each mention, no shared pronouns, the owner, state and count of each body part that shows or touches,
+and where the bodies touch and stay apart. Meaning triggers reach
+the Builder as notes to rewrite: code asks once more when a prompt copies a note of three or more words or loses a
+number it gives, and fails the image when the number is still missing (`meaning_problem`). Code rewrites once a
+prompt that still uses a numbered label ("man 1"). One set of library templates is picked for the whole run, so every
+prompt has the same structure, and an entry's position name reaches the Builder only when the scene's actions say it
+(an entry the writer had to swap or adapt would otherwise name a different act). Understanding drops a must or avoid
+phrase that only repeats a trigger's text. Capture is Auto in the brief unless the style is Realistic. Any style
+trigger (any use) turns the Style off for every step (`run_style`), so not even Anima's anime default is added. The
+Builder writes each scene with Strict creativity, because Creativity already shaped the scenes, and is told that the
+confirmed requirements win where a scene contradicts them. Those
+requirements are the people, rules and must/avoid; the raw request and `fixed` are left out, since the scene already
+carries them and the model would paste them in as content. An Actions & Poses entry decides how the requested activity
+happens, never what it is: an entry showing a different act does not fit.
 
 ## Owners
 

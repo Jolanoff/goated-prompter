@@ -163,7 +163,9 @@ class SceneVocabulary(unittest.TestCase):
     def test_the_builder_gets_the_position_name_of_the_entry(self):
         scene = {"slot": 1, "subjects": {}, "position": {}, "actions": "they dance", "space": "hall", "lighting": "lamps",
                  "mood": "warm", "camera": "wide", "extras": "none", "entry": "slow dance: two people dancing close"}
-        self.assertIn("actions: they dance\nposition name: slow dance\n", prompts.scene_text(scene))
+        self.assertNotIn("position name", prompts.scene_text(scene), "The writer adapted the entry: its name would mislead.")
+        scene["actions"] = "they hold each other in a Slow  Dance"
+        self.assertIn("in a Slow  Dance\nposition name: slow dance\n", prompts.scene_text(scene))
         self.assertEqual(prompts.position_name({**scene, "entry": "two people holding hands"}), "")
         self.assertIn("use that name word for word", prompts.SCENE_RULES)
 
@@ -192,7 +194,7 @@ class SceneVocabulary(unittest.TestCase):
         retry = self.composer()[1]
         self.assertIn('the entry "two people slow dancing" is already used by 2 images', retry.system_message)
         self.assertEqual(composer_user(retry.user_message)["already_used"]["entries"], {"two people slow dancing": 2})
-        self.assertIn("used by fewer than\n2 images", self.composer()[0].system_message)
+        self.assertIn("used by fewer than 2 images", self.composer()[0].system_message)
 
     def test_an_entry_that_is_not_in_the_vocabulary_is_asked_again(self):
         pair = [{"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 1},

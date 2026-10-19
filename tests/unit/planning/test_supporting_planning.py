@@ -97,17 +97,20 @@ class SupportingPlanningTests(unittest.TestCase):
         # Regenerated for the slimmed Builder prompt, per-target guidance, library templates and no built-in examples.
         # Updated for the merged Z-Image target and the Anima, FLUX.2 Klein, Qwen Image (original) and Ideogram4 adapters.
         # Updated for the Style/Director split: the precedence text, renamed Directors and medium-neutral adapters.
+        # Updated again when each guide was limited to its own job and the Style moved after the library templates.
+        # Updated for one precedence rule, emphasis-only Directors and target layouts that templates replace.
+        # Updated for the two-or-more-people rule and the Length guide that details the subjects first.
         golden = {
-            "Generic": "724e3c6aa833b18524d7e9131a7e5530b1092f3019bdb87ffd9267b60c63d533",
-            "Anima": "73923343ca6d19fdb44446349e9604fb276103eff6b250b0884c9beea870a732",
-            "Krea 2": "0e3fb44261511da7a9f25a3b84a51307258bea849d9e95b77201b445b7bf878e",
-            "FLUX.2 Klein": "1733b9ebea2b39af43f368aeb2600a8a47ae975893b88badec82a75b6fd8db70",
-            "Z-Image": "12e86ccf062d891c75761dba1ca813c9c3b9c9557071ccb5dcf3892de057af2b",
-            "Qwen Image (original)": "38ea075ec39b45a718e751ec0aba537f47d5c6dfa04edc869fdb576749bc5c2d",
-            "Qwen Image 2.1": "2c356c101d040fc9dfcdf0fe18c670f42edfafb2362feaa994591b755cb23526",
-            "MiniMax H3": "b99dab8fc288ca70400e0173a1a6e9f0d3464c9d9fb04b71bafc7a5875aecece",
-            "LTX 2.5": "085d28a38403f35d53b392e18d7ea023bc996faa13b6dfea2ce707cbc05a863e",
-            "Ideogram4": "9b9546de55b5886df88f4faace6079ad56c76508a408447efa334f2fe032b4f9"}
+            "Generic": "0819467f7e25ab33892a38888d56b5b67247fcfb6dce8feddbd26e7ebe1cff68",
+            "Anima": "f9a74d95fdebd5a49ea48f85c604e7bd295c3eb71d9900cd163dd17fed334b28",
+            "Krea 2": "b2c677282ab0b1aac23fb4729a3d8a4b2156ef2897c68885d5643528e697bc2c",
+            "FLUX.2 Klein": "14553cbfdf5f3102d854a0284a67fc85c7217a28ff5464a9152ee89f1fe5cfb9",
+            "Z-Image": "6b319ff89b36aaf9b1c65b512b99d108b6c8c9f8947c8e544f09f94afac3856f",
+            "Qwen Image (original)": "ae0b9b77dadb77d93f541dc003778a2b27dd5d24b893b43f9eb675a9f151b016",
+            "Qwen Image 2.1": "4f546282e96103dda4312456473d908ed5ba3c0911372c4d8424e6daf1a3cfb7",
+            "MiniMax H3": "c5d4c5b455859c96238816c51f257e1303f01dc06b4854fd67dbda0bcb79b1ad",
+            "LTX 2.5": "130562b180e14d8c814d7e6ffbf6b6d3c3325815dc2e61edebbf39deeafa87c6",
+            "Ideogram4": "c70b6535da5e21a66988aab05a350589cb473f4abb1f290abe71442a0f0bfcf4"}
         self.assertEqual(set(golden), set(TARGET_MODEL_NAMES))
         for target, digest in golden.items():
             with self.subTest(target=target):

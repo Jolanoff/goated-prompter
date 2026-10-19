@@ -13,9 +13,10 @@ dealt entry unless it cannot fit the cast. Code checks that the entry is one of
 the selected entries and that no entry is used by more images than ENTRY_CAP allows (two, or more when the selected
 packs have fewer entries than the requested images), and asks again otherwise (the last round keeps the image).
 
-A scene has subjects (per character: skin, build, hair, detail, expression, clothing; a known character, which the
-image model draws from its name or trigger, has only expression and clothing), position (per character), actions,
-space, lighting, mood, camera and extras. Actions & Poses entries may define a pose with their action or leave it open, and
+A scene has subjects (per character: skin, build, hair, detail, expression; a known character, which the
+image model draws from its name or trigger, has only expression), position (per character, with their place in the
+frame and every body part named with its owner), actions, space, camera and extras. Clothing, light and mood are left
+to the final prompt, which chooses them for the scene. Actions & Poses entries may define a pose with their action or leave it open, and
 name people as "one person" / "the other person": the writer maps them to the character labels (and their gender) and
 adapts named objects and supports to the scene.
 
@@ -43,14 +44,16 @@ from ....prompting.creativity import CREATIVITY_ADAPTERS
 from ...vocabulary.catalog import (catalog_for, record as selection_record, selected_vocabulary,
                                    validate_selection, vocabulary_prompt)
 from .assignments import dataset_assignments
-from .triggers import brief_triggers, owner
+from ....options.styles import OFF_STYLE
+from .triggers import brief_triggers, owner, run_style
 from .understanding import validate_brief
 
 BATCH = 10  # one answer holds up to ten images: a model spreads a set out best within one answer
 ROUNDS = 3
-SECTIONS = ("subjects", "actions", "position", "space", "lighting", "mood", "camera", "extras")
-SUBJECT_FIELDS = ("skin", "build", "hair", "detail", "expression", "clothing")
-KNOWN_SUBJECT_FIELDS = ("expression", "clothing")  # a known character's look comes from its name, never the writer
+# Only what decides the picture's people and arrangement: clothing, light and mood are chosen by the final writer.
+SECTIONS = ("subjects", "actions", "position", "space", "camera", "extras")
+SUBJECT_FIELDS = ("skin", "build", "hair", "detail", "expression")
+KNOWN_SUBJECT_FIELDS = ("expression",)  # a known character's look comes from its name, never the writer
 VOCABULARY_SAMPLE = 40  # entries per category in one batch's prompt: enough choice without drowning the request
 FIELDS = SECTIONS
 MAX_FIELD = 2000
@@ -76,12 +79,13 @@ For each image listed under IMAGES, in order, write one complete and coherent sc
   behind a person whose back is against a wall or who lies on their back; say who holds whose weight. The camera must suit this image's own space and positions.
 - Every image is a new scene: unless fixed keeps them, give each one a different place, arrangement and camera.
   When vocabulary is selected, all variations must stay within its selected category themes.
-  Never reuse a place, arrangement or camera listed in already_used, and do not follow its order.
+  Unless fixed keeps it, never reuse a place, arrangement or camera listed in already_used, and do not follow its
+  order.
 - Give the people new looks (skin, build, hair, detail) in every image unless fixed keeps the same people; then keep
   their looks identical in every image. Otherwise no two images share the same people: do not cycle a few looks.
 - A character with "known": true is an established character: the image model already knows their face, hair, eyes,
   skin and body from their name, so never describe or change them, and no vocabulary changes them. Write only their
-  expression and clothing (their usual outfit unless the request or the scene calls for another or for undressing).
+  expression.
 
 ACTION AND POSE COHERENCE
 The actions and position fields are two descriptions of one physical moment, never independently chosen details.
@@ -92,16 +96,19 @@ For each scene:
    decided: keep it with its action and split it across the actions and position fields. If it defines only an
    action, choose a pose that physically supports that action. If it defines only a pose, give it a fitting action.
 3. Entries name people as placeholders. Replace each one with a character label of this scene and write it with that
-   character's own gender, pronouns and body (a male is "he", a female is "she", everything else is "they").
+   character's own gender, pronoun and body as the cast gives them.
    Decide who takes which role from the request and
    the cast. Never leave a placeholder person in the scene.
 4. Objects, furniture and surfaces named in an entry are examples too. Replace them with ones that belong in this
    scene's space or come from the selected Objects, keeping the pose physically the same and the support at the
    height the pose needs. Never place furniture that does not belong in the space.
-5. If an entry needs a body part or object that this cast or space does not have, adapt it to something that does
-   the same job, or choose another entry.
+5. If an entry needs a body part that nobody in this cast has, it does not fit: never adapt it to another body
+   part, choose another entry. If it needs an object or surface this space does not have, replace it with one that
+   does the same job.
 6. Describe every participant's position relative to the action and the other participants, and check that every
-   described action is physically possible in those positions.
+   described action is physically possible in those positions. Before answering, read all positions of the scene
+   together as one arrangement of bodies: each person's support, facing and contact must agree with everyone else's
+   and with the actions.
 7. Keep roles consistent with the pose: whoever rides another person, or sits or squats down onto them, is the
    receiving partner and the person underneath is the active partner. Never reverse these roles.
 A position may change HOW the action happens, but never WHAT action happens. If no entry fits, create a logical
@@ -109,17 +116,17 @@ pose instead of changing the requested action.
 
 Fields:
 subjects: one entry per character label, each with skin (tone), build (body shape), hair (colour and style),
-  detail (one distinguishing feature), expression (their face in this moment) and clothing (what they wear or how
-  undressed they are; it never covers what the action needs to show). A known character has only expression and
-  clothing.
-position: one entry per character label: where that person is, their pose, which way they face, what holds their
-  weight and what they touch. With no characters, position is {{}}.
-actions: who does what to whom, in one sentence. With no characters: how the subject is placed.
+  detail (one distinguishing feature) and expression (their face in this moment). A known character has only
+  expression.
+position: one entry per character label: where that person is in the frame (left, right, centre, front or back) and
+  in the space, their pose, which way they face, what holds their weight and what they touch. Name whose body part it
+  is every time by character label, never a bare his, her or their. With no characters, position is {{}}.
+actions: who does what to whom, in one sentence, naming every person by their character label; no placeholder
+  person from an entry is left. With no characters: how the subject is placed.
 space: the location and its physical details.
-lighting: the light sources, direction and quality.
-mood: the emotional tone and energy.
-camera: framing, viewpoint and lens, chosen so the action is clearly visible.
-extras: objects and background details.
+camera: framing and viewpoint, chosen so the action is clearly visible.
+extras: objects and background details, plus any selected Clothing, Lighting or Mood & Tone entry for this image.
+Clothing, light and mood are otherwise left to the final prompt.
 
 Be concrete and brief: a later step writes the final prompt.
 
@@ -140,9 +147,9 @@ For every scene:
    - Spaces: locations and environments.
    - Objects: props and usable objects.
    - Expressions: facial expressions.
-   - Clothing: outfits and garments.
-   - Mood & Tone: emotional atmosphere.
-   - Lighting: illumination and light sources.
+   - Clothing: outfits and garments (in extras).
+   - Mood & Tone: emotional atmosphere (in extras).
+   - Lighting: illumination and light sources (in extras).
    - Camera & Composition: framing and viewpoint.
    - Effects & Atmosphere: visible environmental effects.
 3. Build the corresponding scene fields using the selected vocabulary
@@ -180,10 +187,10 @@ SFW_RULE = "- This dataset is not adult content: no nudity and nothing explicit.
 NO_PEOPLE_RULE = "- There are no people: describe how the subject is placed instead of a pose."
 GUIDED_RULE = "- An image's input fixes its action: keep it, and build the rest of the scene around it."
 ENTRY_RULE = """ACTIONS & POSES ENTRY
-Every image in IMAGES names the Actions & Poses entry to build it on ("entry"). Build the scene on that entry. Every
-entry counts as the requested activity, never as a lesser or different one. Only when that entry cannot fit this cast
-(it needs a body part or object nobody here has) build the scene on another entry that fits and is used by fewer than
-{cap} images (already_used.entries counts them). Copy the entry you used word for word into the scene's "entry" field.
+Every image in IMAGES names the Actions & Poses entry to build it on ("entry"). Build the scene on that entry: it
+decides how the requested activity happens, never what the activity is. It does not fit when it shows a different
+act than the request names or needs a body part nobody in this cast has; then build the scene on another entry that
+fits and is used by fewer than {cap} images (already_used.entries counts them). Copy the entry you used word for word into the scene's "entry" field.
 When the entry starts with a name followed by a colon, that name is the position: the actions field states the act in
 plain words and names that position, so a later step can name it too."""
 
@@ -193,16 +200,13 @@ def _labels(brief):
 
 
 def trigger_notes(brief):
-    """What the user's triggers mean for the scenes: an exact-text outfit trigger leaves only how much of the outfit is
-    worn, and a meaning trigger (other than style) applies to every scene. Exact-text character triggers make their
-    character known (no looks); style is the final prompt's concern."""
+    """What the user's triggers mean for the scenes: a meaning trigger about a person, object or the whole image applies
+    to every scene. Exact-text character triggers make their character known (no looks); outfits and style are the
+    final prompt's concern."""
     notes = []
     for number, trigger in enumerate(brief_triggers(brief), 1):
         person = owner(brief, number)
-        if trigger["kind"] == "outfit" and trigger["expand"] == "off":
-            notes.append(f"{person or 'The person it belongs to'}'s outfit comes from a trigger: their clothing says only "
-                         "how much of it is worn (fully dressed, partly undressed or nude), never what it looks like.")
-        elif trigger["kind"] != "style" and trigger["expand"] != "off":
+        if trigger["kind"] not in ("style", "outfit") and trigger["expand"] != "off":
             about = f" ({person})" if person else ""
             notes.append(f'"{trigger["text"]}"{about} applies to every image: keep its meaning.')
     return notes
@@ -256,10 +260,12 @@ def compose_message(brief, images, earlier=(), vocabulary="", entries_used=None)
     """The scene writer's user message: the request, the approved requirements, the selected vocabulary (only when
     some was selected) and the images to write. entries_used: {entry: images so far} when entries are tracked."""
     requirements = {"rules": brief["input"]["rules"],
-                    "understanding": {key: brief[key] for key in ("summary", "characters", "fixed", "randomized", "must", "avoid")},
-                    "style": brief["settings"]["style"] or "Auto"}
-    if requirements["style"] == "Realistic" and brief["settings"].get("capture", "Auto") != "Auto":
-        requirements["capture"] = brief["settings"]["capture"]  # how the photograph was taken
+                    "understanding": {key: brief[key] for key in ("summary", "characters", "fixed", "randomized", "must", "avoid")}}
+    style, capture = run_style(brief)
+    if style != OFF_STYLE:  # with a style trigger the trigger carries the style, so no Style is named
+        requirements["style"] = style
+    if capture != "Auto":
+        requirements["capture"] = capture  # how the photograph was taken
     if notes := trigger_notes(brief):
         requirements["triggers"] = notes
     parts = [f"USER REQUEST:\n{brief['input']['request']}",
@@ -330,9 +336,28 @@ def avoid_patterns(brief):
     return patterns
 
 
+# Fields scenes no longer have (the final prompt chooses clothing, light and mood). A writer that still sends them out
+# of habit, or a scene saved before, keeps working: they are dropped, never a reason to ask again.
+RETIRED_SECTIONS = ("lighting", "mood")
+RETIRED_SUBJECT_FIELDS = ("clothing",)
+
+
+def retire_fields(scene):
+    """The scene without retired fields; anything that is not a dict comes back unchanged."""
+    if not isinstance(scene, dict):
+        return scene
+    result = {key: value for key, value in scene.items() if key not in RETIRED_SECTIONS}
+    if isinstance(result.get("subjects"), dict):
+        result["subjects"] = {label: ({key: value for key, value in person.items() if key not in RETIRED_SUBJECT_FIELDS}
+                                      if isinstance(person, dict) else person)
+                              for label, person in result["subjects"].items()}
+    return result
+
+
 def scene_errors(scene, labels, avoid, extra=(), known=frozenset()):
     """Why one composed scene is unusable as an answer; [] when its shape is right. extra: further text fields the
-    answer must have (the Actions & Poses "entry"); known: labels of known characters (expression and clothing only)."""
+    answer must have (the Actions & Poses "entry"); known: labels of known characters (expression only)."""
+    scene = retire_fields(scene)
     plain = [key for key in SECTIONS if key not in ("subjects", "position")]
     if (not isinstance(scene, dict) or set(scene) != set(FIELDS) | set(extra)
             or not all(isinstance(scene[key], str) for key in extra)
@@ -394,6 +419,7 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
             answer, error = None, f"Return one valid JSON object ({exc})."
         checkpoint()
         for number, scene in zip(todo, (answer or []) + [None] * len(todo)):
+            scene = retire_fields(scene)
             tries[number] += max(1, recovery.attempts - before)
             problems = ([error] if error else ["an answer was missing"] if scene is None
                         else scene_errors(scene, labels, avoid, extra, brief["_known"]))

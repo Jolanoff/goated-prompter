@@ -14,6 +14,7 @@ from goated_prompter.features.dataset.v2.draft import default_dataset_draft, val
 from goated_prompter.features.dataset.v2.safety import adults_only_error, minor_reference
 from goated_prompter.workflow_output import ideogram_json
 from tests.helpers import enter_context
+from tests.support.backends import ScriptedBackend
 from tests.support.dataset_scenes import composer_user
 
 NARUTO = "uzumaki naruto, naruto \\(series\\)"
@@ -99,8 +100,20 @@ class TriggerPlacement(unittest.TestCase):
         self.assertEqual(prompts.place_triggers("Mara kneels.", brief), "Mara kneels.")
         self.assertIsNone(prompts.trigger_problem("Mara kneels.", brief))
         rule = prompts._trigger_rule(brief)
-        self.assertIn('Express in every prompt, in your own words: "chibi style" (the visual style of every image)', rule)
+        self.assertIn("never copy their wording, but keep every number they give.\n- the visual style of every image: chibi style", rule)
         self.assertNotIn("the app adds", rule)
+
+    def test_a_meaning_note_is_rewritten_and_keeps_its_numbers(self):
+        note = trigger("21 yo slim man, freckles", "character", expand="on")
+        brief = brief_for("Krea 2", triggers=[note, trigger("chibi style", "style", expand="on")], cast=mara(1))
+        copied, lost = (prompts.meaning_problem("Mara, 21 yo slim man, freckles, kneels.", brief),
+                        prompts.meaning_problem("Mara, a slim 25-year-old man with freckles, kneels.", brief))
+        self.assertIn("word for word", copied[0])
+        self.assertFalse(copied[1], "Copied wording is kept after the retry.")
+        self.assertIn("number 21", lost[0])
+        self.assertTrue(lost[1], "A lost number is a wrong fact.")
+        self.assertIsNone(prompts.meaning_problem("Mara, a slim 21-year-old man with freckles, in chibi style.", brief),
+                          "Short notes may be written as they are.")
 
     def test_rules_say_what_exact_triggers_carry(self):
         triggers = [trigger("clo21", "character"), trigger("mystyle", "style"), trigger("dress_tok", "outfit"),
@@ -109,7 +122,7 @@ class TriggerPlacement(unittest.TestCase):
         self.assertIn('do not write them or a variant of them: "clo21"; "mystyle"; "dress_tok"; "chibi style".', rule)
         self.assertIn("Their texts already carry Mara's face, hair, eyes, skin and body; the visual style, medium and "
                       "rendering; Mara's outfit. Never describe these.", rule)
-        self.assertIn('"chibi style" (the visual style of every image)', rule)
+        self.assertIn("- the visual style of every image: chibi style", rule)
 
     def test_no_trigger_changes_nothing(self):
         self.assertEqual(prompts.place_triggers("A woman reads.", brief_for("Krea 2", triggers=[], cast=mara())), "A woman reads.")
@@ -170,9 +183,8 @@ class TriggerCast(unittest.TestCase):
         brief = brief_for(triggers=[trigger("dress_tok", "outfit"), trigger("rainy city", expand="on"),
                                     trigger("mystyle", "style")], cast=mara(1))
         notes = scenes.trigger_notes(brief)
-        self.assertEqual(len(notes), 2)
-        self.assertIn("Mara's outfit comes from a trigger", notes[0])
-        self.assertIn('"rainy city" applies to every image', notes[1])
+        self.assertEqual(len(notes), 1, "Outfits and style are the final prompt's concern; scenes have no clothing.")
+        self.assertIn('"rainy city" applies to every image', notes[0])
         message = scenes.compose_message({**brief, "_family": "qwen"}, [{"image": 1}])
         self.assertEqual(composer_user(message)["triggers"], notes)
 
@@ -269,13 +281,68 @@ class KnownCharacterScenes(unittest.TestCase):
         final = [call for call in self.calls if call.diagnostic_stage == "final"][0]
         text = final.system_message + final.user_message
         self.assertIn("KNOWN CHARACTERS: Naruto is an established character the target model already knows", text)
-        self.assertIn("Naruto (known character): expression a grin; clothing his orange jumpsuit", final.user_message)
+        self.assertIn("Naruto (known character): expression a grin\n", final.user_message)
+        self.assertNotIn("clothing", final.user_message, "Clothing is chosen by the final prompt, not the scene.")
         self.assertNotIn("COMPILED", final.system_message, "a generated scene is never parsed as user rules")
         self.assertIn("the app adds these exact texts to the prompt itself", text)
         self.assertNotIn("VISUAL STYLE — Realistic", final.system_message, "a style trigger replaces the Style setting")
         self.assertEqual(written[0]["prompt"], f"masterpiece, safe, 1boy, 1girl, {NARUTO}, mystyle, street"
                                                "\n\nNaruto talks with a woman.")
         self.assertTrue(written[0]["trigger_ok"])
+
+    def test_exact_style_trigger_removes_prose_targets_medium_demands(self):
+        for target, demands in (("Anima", ("environment and style tags",)),
+                                ("Krea 2", ("State the medium in words", '"Aesthetic and style:"')),
+                                ("FLUX.2 Klein", ("in the order subject, action, style, context",)),
+                                ("Z-Image", ("Use one dominant style", "the style and medium")),
+                                ("Qwen Image (original)", ("State the style precisely",)),
+                                ("Qwen Image 2.1", ("Open by naming medium, style,",))):
+            with self.subTest(target=target):
+                self.calls.clear()
+                self.brief["settings"]["target"] = target
+                written = prompts.write_prompts({"backend": "mock"}, self.request, self.brief, [self.scene()],
+                                                progress=lambda _: None)
+                final = next(call for call in self.calls if call.diagnostic_stage == "final")
+                adapter = final.system_message.split("TARGET MODEL ADAPTER\n", 1)[1].split("\n\nUSER SETTINGS", 1)[0]
+                self.assertIn("the visual style, medium and rendering. Never describe these.", final.system_message)
+                for demand in demands:
+                    self.assertNotIn(demand, adapter)
+                self.assertIn("mystyle", written[0]["prompt"])
+                self.assertTrue(written[0]["trigger_ok"])
+
+    def test_expanded_style_triggers_still_reach_the_final_writer(self):
+        for expand in ("on", "both"):
+            with self.subTest(expand=expand):
+                self.calls.clear()
+                self.brief["settings"]["target"] = "Krea 2"
+                self.brief["input"]["triggers"][1] = trigger("chibi style", "style", expand=expand)
+                prompts.write_prompts({"backend": "mock"}, self.request, self.brief, [self.scene()],
+                                      progress=lambda _: None)
+                final = next(call for call in self.calls if call.diagnostic_stage == "final")
+                self.assertIn("- the visual style of every image: chibi style", final.system_message)
+                self.assertNotIn("the visual style, medium and rendering. Never describe these.", final.system_message)
+                self.assertIn("State the medium in words", final.system_message)
+
+    def test_exact_style_trigger_ideogram_does_not_require_invented_style_fields(self):
+        self.brief["settings"]["target"] = "Ideogram4"
+        caption = {"high_level_description": "Naruto talks with a woman.",
+                   "compositional_deconstruction": {"background": "A street in noon light.", "elements": [
+                       {"type": "obj", "desc": "Naruto stands on the left, talking with the woman on the right."}]}}
+        backend = ScriptedBackend([ideogram_json(caption)])
+        with patch("goated_prompter.features.builder.service.create_backend", return_value=backend):
+            written = prompts.write_prompts({"backend": "mock"}, self.request, self.brief, [self.scene()],
+                                            progress=lambda _: None)
+        system = backend.calls[0].system_message
+        adapter = system.split("TARGET MODEL ADAPTER\n", 1)[1].split("\n\nUSER SETTINGS", 1)[0]
+        self.assertNotIn('"style_description"', adapter)
+        self.assertNotIn('"medium"', adapter)
+        self.assertNotIn("style_description", system.rsplit("OUTPUT FORMAT", 1)[1])
+        placed = json.loads(written[0]["prompt"])
+        self.assertEqual(list(placed), ["high_level_description", "compositional_deconstruction"])
+        self.assertEqual(placed["high_level_description"], "mystyle, Naruto talks with a woman.")
+        self.assertEqual(written[0]["prompt"].count("mystyle"), 1)
+        self.assertTrue(written[0]["trigger_ok"])
+        self.assertEqual(len(backend.calls), 1)
 
 
 class EverydayWords(unittest.TestCase):

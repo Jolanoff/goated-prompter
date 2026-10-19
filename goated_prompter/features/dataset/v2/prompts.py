@@ -1,57 +1,69 @@
 """Section 3 — Prompts: each composed scene becomes one final prompt through the Builder.
 
 The scene is fixed: the Builder writes it in the target model's format, style and length and may not move anyone,
-change the action, add subjects, objects or a conflicting camera. Builder's own target formatting, library
-references and clean-up apply unchanged. The Director chosen for the run (request.director_preset) and the target
+change the action, add subjects, objects or a conflicting camera. Builder's own target formatting and clean-up apply
+unchanged; one set of library templates is picked for the whole run, so every prompt has the same structure. An
+entry's position name reaches the Builder only when the scene's actions say it (position_name). The Director chosen for the run (request.director_preset) and the target
 model shape the final prompt together, as in the Prompt Builder; the scene rules keep the Director from redesigning
 what happens. The scene writer itself never sees a Director.
 
 The user's triggers (v2/triggers.py) are applied by code, never left to the model. Exact-text triggers are placed by
 place_triggers in the user's exact spelling, pinned ones first, the rest where their kind belongs in the target's
 format (an Anima tag line, prose, an Ideogram caption), and the model is told not to write them and not to describe
-what they carry; a style trigger also turns the Style setting off. Meaning triggers are written by the model in its own
-words. A known character (brief version 12) is named, never described. Code also checks that no numbered character
-label ("man 1", "woman2") is left in the prompt; a prompt that still has one after its retry is kept.
+what they carry; a style trigger also turns the Style setting off. Meaning triggers are notes the model writes in its
+own words: code rejects a prompt that copies a note of COPY_WORDS or more words, or that drops or changes a number
+the note gives (meaning_problem). A known character (brief version 12) is named, never described. Code also checks
+that no numbered character label ("man 1", "woman2") is left in the prompt. After the one retry a label or copied
+wording is kept; a lost number fails the image.
 """
 
 from dataclasses import replace
 import json
+import random
 import re
 
 from ...builder.service import GoatedPrompterService, PromptValidationError
 from ....backends.recovery import GenerationRecovery, RunawayRecoveryError
 from ....options.targets import canonical_target
 from ....output_repetition import anima_tag_key
+from ....prompt_library import pick_references
 from ....workflow_output import ideogram_json
-from .triggers import brief_triggers, locked, owner, placed, trigger_text
+from .triggers import brief_triggers, owner, placed, run_style, trigger_text
 
-SCENE_ORDER = ("subjects", "position", "actions", "space", "lighting", "mood", "camera", "extras")
+SCENE_ORDER = ("subjects", "position", "actions", "space", "camera", "extras")
 
 SCENE_RULES = """
 The idea is one scene of an IMAGE, already decided. Write it as one prompt for the
 target model. Keep every person, their appearance, every placement, orientation, support, contact
 and the action exactly as given; do not move anyone, change the action or add contact. Add only
-wording the target format and the Director need. When the idea gives a position name, use that name word for word
-together with the action: the target model knows it, so name it instead of only describing the pose.
-Do not add subjects, objects or actions, and do not change the camera or light.
-Words such as "the first man" or "woman" only tell the people apart: describe each person by appearance and role
-rather than by that word."""
+wording the target format and the Director need. The actions line is the whole action of the image: write
+exactly that, with no other act. When the idea gives a position name, use that name word for word together with
+the action: the target model knows it, so name it instead of only describing the pose.
+Do not add subjects or actions, and do not change the camera. The scene leaves clothing, light and mood to you: choose
+them to suit the scene and the request (and any Clothing, Lighting or Mood entry in its extras); nothing worn hides a
+body part the action uses.
+Words such as "the first man" or "woman" only tell the people apart: never write them; describe each person by
+appearance instead."""
 
 KNOWN_RULE = """
 KNOWN CHARACTERS: {names} {verb} {noun} the target model already knows. Refer to them by name (with
 the character and series tag on tag-based targets) and never describe or change their face, hair, eyes, skin or body;
-write only their expression, clothing, pose and action from the idea."""
+write only their expression, clothing, pose and action."""
 
 ADULT_RULE = """
 This is an adult dataset: word the act and the bodies in plain, explicit terms, exactly as direct as the scene, in
-every prompt. Never soften them into euphemisms, implications or vague wording, whatever the Director's style."""
+every prompt. Never soften them into euphemisms, implications or vague wording."""
 
 
 def position_name(scene):
-    """The name of the Actions & Poses entry a scene is built on (the words before its colon), or ""."""
+    """The name of the Actions & Poses entry a scene is built on (the words before its colon), or "". The name counts
+    only when the scene's actions say it: a writer that had to adapt or swap the entry wrote other actions, and the
+    entry's name would then describe a different act."""
     entry = scene.get("entry") or ""
     name, colon, _ = entry.partition(":")
-    return name.strip() if colon and name.strip() else ""
+    name = " ".join(name.split())
+    actions = " ".join(str(scene.get("actions") or "").split())
+    return name if colon and name and name.casefold() in actions.casefold() else ""
 
 
 ORDINALS = ("first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth",
@@ -71,7 +83,10 @@ def unlabel(text, brief):
 
 
 def scene_text(scene, known=frozenset()):
-    """The scene as plain labelled lines, the Builder's idea. known: labels of known characters."""
+    """The scene as plain labelled lines, the Builder's idea. known: labels of known characters. A scene saved with
+    retired fields (clothing, light, mood) is read without them: the final prompt chooses those."""
+    from .scenes import retire_fields
+    scene = retire_fields(scene)
     lines = []
     for key in SCENE_ORDER:
         value = scene[key]
@@ -113,9 +128,35 @@ def _trigger_rule(brief):
                    if trigger["expand"] == "off" and (phrase := _covers(trigger, person))]:
         parts.append("Their texts already carry " + "; ".join(covered) + ". Never describe these.")
     if meanings := [(trigger, person) for trigger, person in zip(triggers, people) if trigger["expand"] != "off"]:
-        parts.append("Express in every prompt, in your own words: " + "; ".join(
-            f'"{trigger["text"]}" ({_meaning(trigger, person)})' for trigger, person in meanings) + ".")
+        parts.append("MEANINGS: write in every prompt, in your own words, what each of these notes says. They are notes, "
+                     "not prompt text: never copy their wording, but keep every number they give.\n" + "\n".join(
+                         f"- {_meaning(trigger, person)}: {trigger['text']}" for trigger, person in meanings))
     return "\n".join(parts)
+
+
+# A meaning of one or two words may simply be the natural wording, so only longer ones must be rewritten.
+COPY_WORDS = 3
+
+
+def _flat(text):
+    return " ".join(re.findall(r"\w+", text.casefold()))
+
+
+def meaning_problem(prompt, brief):
+    """(why the prompt mishandles a meaning-only trigger, whether that loses a fact) or None: it copied the note's
+    wording, or it dropped or changed a number the note gives."""
+    flat = _flat(prompt)
+    for trigger in brief_triggers(brief):
+        if trigger["expand"] != "on":
+            continue
+        for number in re.findall(r"\d+(?:[.,]\d+)?", trigger["text"]):
+            if not re.search(r"(?<![\d.,])" + re.escape(number) + r"(?![\d]|[.,]\d)", prompt):
+                return (f'The prompt must keep the number {number} from the note "{trigger["text"]}".', True)
+        words = _flat(trigger["text"])
+        if len(words.split()) >= COPY_WORDS and re.search(r"\b" + re.escape(words) + r"\b", flat):
+            return (f'The prompt copies the note "{trigger["text"]}" word for word. Write what it says in your own '
+                    "words instead.", False)
+    return None
 
 
 def _known_rule(brief):
@@ -320,14 +361,20 @@ def write_prompts(config, request, brief, scenes, *, checkpoint=lambda: None, pr
     position in the list, so a failed earlier image never renumbers a later one."""
     service = GoatedPrompterService(config, checkpoint=checkpoint)
     known = frozenset(person["label"] for person in brief["characters"] if person.get("known") is True)
-    requirements = "CONFIRMED DATASET REQUIREMENTS\n" + json.dumps({
-        "request": brief["input"]["request"], "rules": brief["input"]["rules"],
-        "characters": brief["characters"], "people": brief["people"], "fixed": brief["fixed"],
+    # The raw request and "fixed" are sentences the scene already carries: shown again, the model pastes them into the
+    # prompt as content. The people, rules and must/avoid stay, since a drifted scene could lose them.
+    requirements = ("CONFIRMED DATASET REQUIREMENTS (the scene was written from these: where the scene contradicts them, "
+                    "they win)\n") + json.dumps({
+        "rules": brief["input"]["rules"], "characters": brief["characters"], "people": brief["people"],
         "must": brief["must"], "avoid": brief["avoid"]}, ensure_ascii=False)
     requirements = unlabel(requirements, brief)
-    # An exact-text style trigger carries the style: the Style setting would only fight it.
-    style = "Auto" if locked(brief_triggers(brief), "style") else brief["settings"]["style"] or "Auto"
-    capture = "Auto" if style == "Auto" else brief["settings"].get("capture") or "Auto"
+    # A style trigger carries the style: the Style setting would only fight it.
+    style, capture = run_style(brief)
+    describe_style = not any(trigger["kind"] == "style" and trigger["expand"] == "off"
+                             for trigger in brief_triggers(brief))
+    # One set of library templates for the whole run, so every prompt of the dataset has the same structure.
+    templates = pick_references(brief["settings"]["target"], brief["input"]["request"],
+                                rng=random.Random(brief["input"].get("seed")))
     results = []
     for position, scene in enumerate(scenes, 1):
         number = scene_slot(scene, position)
@@ -342,9 +389,9 @@ def write_prompts(config, request, brief, scenes, *, checkpoint=lambda: None, pr
                                 if part)
             builder_request = replace(request, idea=idea, mode="Enhance", planning_mode="Direct",
                                       target_model=brief["settings"]["target"], prompt_length=brief["settings"]["length"],
-                                      creativity=brief["settings"]["creativity"], style=style, capture=capture,
+                                      creativity=brief["settings"]["creativity"], style=style, capture=capture, describe_style=describe_style,
                                       director_preset=request.director_preset, custom_instructions=rules,
-                                      compile_rules=False)
+                                      compile_rules=False, library_references=templates)
             try:
                 prompt = service.generate_text_only(builder_request, seed=brief["input"].get("seed"), recovery=recovery).prompt
             except RunawayRecoveryError as error:
@@ -359,13 +406,15 @@ def write_prompts(config, request, brief, scenes, *, checkpoint=lambda: None, pr
                                 "stage": "dataset_v2:builder", "attempts": error.attempts})
                 on_prompt(results[-1])
                 break
-            problem = label_problem(prompt, brief)
+            meaning = meaning_problem(prompt, brief)
+            problem = label_problem(prompt, brief) or (meaning[0] if meaning else None)
             if not problem:
                 break
         if results and results[-1]["slot"] == number:
             continue
-        prompt = place_triggers(prompt, brief)  # a label left after the retry is not worth failing the image
-        problem = trigger_problem(prompt, brief)
+        # A label or copied wording left after the retry is not worth failing the image; a lost number is a wrong fact.
+        prompt = place_triggers(prompt, brief)
+        problem = trigger_problem(prompt, brief) or (meaning[0] if meaning and meaning[1] else None)
         recovery.finish("succeeded" if not problem else "failed")
         results.append({"slot": number, "index": number, "prompt": "" if problem else prompt, "trigger_ok": problem is None})
         if problem:

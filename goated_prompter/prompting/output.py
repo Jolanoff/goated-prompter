@@ -11,8 +11,7 @@ def output_contract(target, *, qwen_task="t2i", qwen_images=None, library_style=
     target = canonical_target(target)
     if get_target_capabilities(target).output_format == "json":
         return (
-            "OUTPUT FORMAT — Ideogram4: Return exactly one valid JSON caption using the target adapter's "
-            "high_level_description, style_description and compositional_deconstruction schema. "
+            "OUTPUT FORMAT — Ideogram4: Return exactly one valid JSON caption using the target adapter's schema. "
             "No prompt wrapper, markdown fences, direction label or commentary."
         )
     if target == "Qwen Image 2.1":
