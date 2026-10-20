@@ -32,10 +32,13 @@ class Harness(unittest.TestCase):
 
     @staticmethod
     def scene(place, camera="medium shot", action="man 1 embraces man 2 from behind"):
-        return {"subjects": {"man 1": dict(LOOK), "man 2": dict(LOOK)},
+        # Every image has new people (a look repeated from an earlier image is asked again).
+        look = lambda who: {**LOOK, **{field: f"{who}{place}{camera}{field}".replace(" ", "") for field in ("skin", "build", "hair", "detail")}}
+        return {"subjects": {"man 1": look("a"), "man 2": look("b")},
                 "position": {"man 1": "standing behind his partner", "man 2": "bent over the bed, facing away"},
-                "actions": action, "space": place, "lighting": "lamp light", "mood": "intense",
-                "camera": camera, "extras": "sheets"}
+                "actions": action if "man 2" in action else f"man 1 and man 2: {action}", "space": place,
+                "lighting": "lamp light", "mood": "intense",
+                "camera": camera, "extras": f"sheets{place}{camera}".replace(" ", "")}
 
     def generate(self, instruction):
         self.calls.append(instruction)
@@ -58,7 +61,7 @@ class SceneVariety(Harness):
         system = self.composer()[0].system_message
         self.assertIn("one\n  physically possible arrangement", system)
         self.assertIn("if one person is behind another, that person faces away from them", system)
-        self.assertIn("Never reuse a place, arrangement or camera listed in already_used, and do not follow its order.", system)
+        self.assertIn("Unless fixed keeps it, never reuse a place, arrangement or camera listed in already_used", " ".join(system.split()))
         self.assertIn("Give the people new looks (skin, build, hair, detail) in every image unless fixed keeps the same people", system)
 
     def test_each_person_has_an_expression_field_for_expression_vocabulary(self):
@@ -66,6 +69,19 @@ class SceneVariety(Harness):
         person = self.composer()[0].json_schema["properties"]["scenes"]["items"]["properties"]["subjects"]["properties"]["man 1"]
         self.assertIn("expression", person["required"])
         self.assertIn("expression (their face in this moment)", self.composer()[0].system_message)
+
+    def test_only_what_the_camera_can_see_is_described(self):
+        # A body part turned away, hidden by another body or inside someone is never written as visible.
+        self.write()
+        self.assertIn("which of their\n  body parts the camera can see", self.composer()[0].system_message)
+        self.assertIn("Describe a body part only when the scene's positions and camera let the camera see it",
+                      " ".join(prompts.SCENE_RULES.split()))
+
+    def test_every_act_is_reachable_and_the_positions_agree_with_the_actions(self):
+        self.write()
+        system = " ".join(self.composer()[0].system_message.split())
+        self.assertIn("a person takes part in two acts at once only when their position reaches both partners", system)
+        self.assertIn("The positions and the actions agree on who does what to whom", system)
 
     def test_the_requested_activity_is_every_images_action(self):
         self.write()
@@ -83,7 +99,8 @@ class SceneVariety(Harness):
         first, second = (composer_user(call.user_message) for call in self.composer())
         self.assertNotIn("already_used", first)
         used = second["already_used"]
-        self.assertEqual(set(used), {"places", "arrangements", "cameras", "looks"})
+        self.assertEqual(set(used), {"places", "arrangements", "cameras", "extras", "looks"})
+        self.assertEqual(len(used["extras"]), 10, "props and signs are not repeated either")
         self.assertEqual(used["places"], [f"room {n}" for n in range(1, 11)])
 
     def test_the_live_runs_copied_scenes_are_asked_again(self):
@@ -100,8 +117,18 @@ class SceneVariety(Harness):
         self.assertTrue(result["complete"])
         retry = self.composer()[1]
         self.assertEqual([row["image"] for row in composer_user(retry.user_message)["images"]], [6, 7, 8, 9, 10])
-        self.assertIn("repeats the place and the camera or arrangement of an earlier image", retry.system_message)
+        self.assertIn("repeats the place and the camera, arrangement or signs of an earlier image", retry.system_message)
         self.assertEqual(result["scenes"][5]["space"], "new place 6")
+
+    def test_an_image_asked_again_may_not_copy_an_earlier_images_place_and_signs(self):
+        self.brief["input"]["amount"] = 2
+        first, copy, fresh = (self.scene(*parts) for parts in (("bedroom", "wide shot", "man 2 rides man 1"),
+                                                                ("bedroom", "close-up from above", "man 1 kneels"),
+                                                                ("garden", "low angle", "man 1 kneels")))
+        copy["extras"] = first["extras"] = "a brass bell, a ledger of names"
+        self.replies = [first, copy, fresh]
+        result = self.write()
+        self.assertEqual([scene["space"] for scene in result["scenes"]], ["bedroom", "garden"])
 
     def test_the_same_place_with_a_new_camera_and_arrangement_is_allowed(self):
         self.brief["input"]["amount"] = 2
@@ -109,6 +136,20 @@ class SceneVariety(Harness):
                         self.scene("bedroom", "close-up from above", "man 1 takes man 2 from behind")]
         result = self.write()
         self.assertEqual((result["written"], len(self.composer())), (2, 1))
+
+    def test_repeated_looks_are_kept_and_earlier_looks_are_shown_field_by_field(self):
+        # Asking again for new looks made the writer copy an accepted image; looks only tell the people apart.
+        self.brief["input"]["amount"] = 2
+        same = self.scene("bedroom")
+        self.replies = [same, {**self.scene("kitchen", "wide shot", "man 2 rides man 1"), "subjects": same["subjects"]}]
+        result = self.write()
+        self.assertEqual(([scene["space"] for scene in result["scenes"]], len(self.composer())), (["bedroom", "kitchen"], 1))
+        looks = scenes._summary(result["scenes"][0])["looks"]["man 1"]
+        self.assertEqual(looks, {"skin": same["subjects"]["man 1"]["skin"], "hair": same["subjects"]["man 1"]["hair"]})
+        named = {**self.brief, "characters": [{**person, "label": person["label"].title()} for person in self.brief["characters"]]}
+        self.assertEqual(scenes.varied_labels(named), frozenset())
+        self.assertEqual(scenes.varied_labels({"characters": [{"label": "man 1", "known": True}, {"label": "man 2", "triggers": [1]},
+                                                              {"label": "man 3"}]}), {"man 3"})
 
     def test_the_last_round_keeps_a_repeat_rather_than_lose_the_image(self):
         self.brief["input"]["amount"] = 2
@@ -132,13 +173,19 @@ class FinalLabels(Harness):
         self.assertEqual(len(builder), 2)
         self.assertIn('calls a person "man 1"', builder[1].system_message)
 
-    def test_the_writer_sees_ordinals_instead_of_numbered_labels(self):
+    def test_the_writer_sees_each_person_by_their_own_look_not_a_number_or_order(self):
         self.write(["The taller man kneels behind his partner."])
         final = [call for call in self.calls if call.diagnostic_stage == "final"][0]
         text = final.system_message + final.user_message
-        self.assertIn("the first man:", text)
-        self.assertIn("position of the second man:", text)
+        first, second = prompts.anchors({"subjects": self.scene("kitchen")["subjects"]}, self.brief).values()
+        self.assertIn(f"{first}:", text)
+        self.assertIn(f"position of {second}:", text)
         self.assertNotRegex(text, r"\bman [12]\b")
+        self.assertNotIn("first man", text)
+        named = {**self.brief, "characters": [{**person, "triggers": [1]} for person in self.brief["characters"]]}
+        self.assertEqual(prompts.anchors({"subjects": self.scene("kitchen")["subjects"]}, named), {},
+                         "a triggered person keeps the label its trigger is placed by")
+        self.assertEqual(prompts.name_people("man 1 waves", named, {}), "the first man waves")
 
     def test_a_label_left_after_the_retry_keeps_the_prompt(self):
         written = self.write(["Man1 kneels.", "man_2 leans back."])
@@ -150,7 +197,7 @@ class FinalLabels(Harness):
         self.request = replace(self.request, director_preset="nsfw_director")
         self.write(["The taller man kneels behind his partner."])
         final = [call for call in self.calls if call.diagnostic_stage == "final"][0]
-        self.assertIn("DIRECTOR BEHAVIOR — NSFW Director", final.system_message + final.user_message)
+        self.assertIn("DIRECTOR BEHAVIOR — Explicit Adult", final.system_message + final.user_message)
         self.calls.clear()
         self.brief["input"]["amount"] = 1
         scenes.write_scenes({"backend": "mock"}, self.request, self.brief, progress=lambda _: None)
@@ -159,9 +206,9 @@ class FinalLabels(Harness):
 
     def test_names_and_plain_words_are_not_labels(self):
         brief = {"characters": [{"label": "man 1"}, {"label": "Alex"}, {"label": "woman"}]}
-        for text in ("The first man", "a man 10 feet away", "Alex smiles", "a woman reads", "batman 1"):
+        for text in ("The second man", "a man 10 feet away", "Alex smiles", "a woman reads", "batman 1", "at first, a man"):
             self.assertIsNone(prompts.label_problem(text, brief), text)
-        for text in ("man 1 stands", "Man1 stands", "MAN-1 stands", "man_1 stands"):
+        for text in ("man 1 stands", "Man1 stands", "MAN-1 stands", "man_1 stands", "The first man stands"):
             self.assertIsNotNone(prompts.label_problem(text, brief), text)
 
 

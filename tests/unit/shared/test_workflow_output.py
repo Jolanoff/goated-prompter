@@ -10,7 +10,8 @@ from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.builder.service import GoatedPrompterService
 from goated_prompter.options.targets import TARGET_MODEL_NAMES
 from goated_prompter.features.refine.service import RefineService, refine_instruction
-from goated_prompter.workflow_output import WorkflowFormatError, normalize_workflow_output, requested_visible_text, sanitize_prompt_text
+from goated_prompter.workflow_output import (WorkflowFormatError, ideogram_json, normalize_workflow_output, requested_visible_text,
+                                            sanitize_prompt_text)
 from tests.support.backends import ScriptedBackend
 
 
@@ -65,45 +66,86 @@ class OutputFormatTests(unittest.TestCase):
 
     def test_ideogram_keeps_caption_json_and_rejects_prompt_wrappers(self):
         raw = json.dumps(CAPTION, ensure_ascii=False, indent=2)
-        self.assertEqual(normalize_workflow_output(raw, "Ideogram4"), raw)
-        self.assertEqual(normalize_workflow_output("```json\n" + raw + "\n```", "Ideogram4"), raw)
-        for invalid in ("A sunlit plaza", '{"prompt":"A sunlit plaza"}', '{"high_level_description":"Incomplete"}'):
+        compact = ideogram_json(CAPTION)
+        self.assertEqual(compact, json.dumps(CAPTION, ensure_ascii=False, separators=(",", ":")))
+        for wrapped in (raw, "```json\n" + raw + "\n```", "Here is the caption:\n" + raw + "\nEnjoy!", json.dumps(raw)):
+            with self.subTest(wrapped=wrapped):
+                self.assertEqual(normalize_workflow_output(wrapped, "Ideogram4"), compact)
+        for invalid in ("A sunlit plaza", '{"prompt":"A sunlit plaza"}', '{"high_level_description":"Incomplete"}',
+                        raw[:-20]):
             with self.subTest(invalid=invalid), self.assertRaises(WorkflowFormatError):
                 normalize_workflow_output(invalid, "Ideogram4")
 
-    def test_ideogram_bbox_palettes_and_order_are_strict(self):
+    def test_ideogram_non_ascii_text_is_literal_not_escaped(self):
+        caption = deepcopy(CAPTION)
+        caption["compositional_deconstruction"]["elements"] = [{"type": "text", "text": "你好", "desc": "Title"}]
+        result = normalize_workflow_output(json.dumps(caption), "Ideogram4")
+        self.assertIn("你好", result)
+        self.assertNotIn("\\u", result)
+
+    def test_ideogram_repairs_boxes_palettes_order_and_style(self):
         valid = deepcopy(CAPTION)
         valid["style_description"]["color_palette"] = ["#AABBCC"]
         valid["compositional_deconstruction"]["elements"] = [
             {"type": "text", "bbox": [0, 10, 500, 900], "text": '你好  "OPEN"!',
              "desc": "Exact lettering", "color_palette": ["#FFFFFF"]}]
-        raw = json.dumps(valid, ensure_ascii=False)
-        self.assertEqual(normalize_workflow_output(raw, "Ideogram4"), raw)
-        self.assertEqual(json.loads(raw)["compositional_deconstruction"]["elements"][0]["text"], '你好  "OPEN"!')
-        for box in ([0, 0, 0, 10], [10, 20, 5, 30], [0, 10, 500, 10], [-1, 0, 50, 50],
-                    [0, 0, 1001, 1000], [False, 0, 50, 50], [0.0, 0, 50, 50], [0, 0, 50]):
-            invalid = deepcopy(valid)
-            invalid["compositional_deconstruction"]["elements"][0]["bbox"] = box
-            with self.subTest(box=box), self.assertRaises(WorkflowFormatError):
-                normalize_workflow_output(json.dumps(invalid), "Ideogram4")
-        for palette in (["#aabbcc"], ["red"], ["#ABC"], "#AABBCC", ["#FFFFFF"] * 17):
-            invalid = deepcopy(valid)
-            invalid["style_description"]["color_palette"] = palette
-            with self.subTest(palette=palette), self.assertRaises(WorkflowFormatError):
-                normalize_workflow_output(json.dumps(invalid), "Ideogram4")
-        invalid = deepcopy(valid)
-        invalid["style_description"]["photo"] = "Photographic camera"
+        expected = ideogram_json(valid)
+        self.assertEqual(normalize_workflow_output(json.dumps(valid, ensure_ascii=False), "Ideogram4"), expected)
+        self.assertEqual(json.loads(expected)["compositional_deconstruction"]["elements"][0]["text"], '你好  "OPEN"!')
+
+        def element(caption):
+            return json.loads(normalize_workflow_output(json.dumps(caption), "Ideogram4"))["compositional_deconstruction"]["elements"][0]
+
+        # Fractions and percentages would put everything in the top-left corner: they are rescaled to 0-1000.
+        for box, scaled in (([10, 20, 90, 60], [100, 200, 900, 600]), ([0.1, 0.2, 0.9, 0.6], [100, 200, 900, 600]),
+                            ([0, 0, 1001, 1000], [0, 0, 1000, 1000]), ([100, 150, 900, 850], [100, 150, 900, 850])):
+            caption = deepcopy(valid)
+            caption["compositional_deconstruction"]["elements"][0]["bbox"] = box
+            with self.subTest(box=box):
+                self.assertEqual(element(caption)["bbox"], scaled)
+        # A box that is no box is dropped: the element keeps its description and is placed freely.
+        for box in ([0, 0, 0, 10], [10, 20, 5, 30], [0, 10, 500, 10], [False, 0, 50, 50], [0, 0, 50], "top left"):
+            caption = deepcopy(valid)
+            caption["compositional_deconstruction"]["elements"][0]["bbox"] = box
+            with self.subTest(box=box):
+                self.assertNotIn("bbox", element(caption))
+                self.assertEqual(element(caption)["desc"], "Exact lettering")
+        for palette, cleaned in ((["#aabbcc"], ["#AABBCC"]), (["#ABC"], ["#AABBCC"]), ("#AABBCC", ["#AABBCC"]),
+                                 (["#FFFFFF", "red", "#000000"], ["#FFFFFF", "#000000"]),
+                                 ([f"#{n:06X}" for n in range(17)], [f"#{n:06X}" for n in range(16)])):
+            caption = deepcopy(valid)
+            caption["style_description"]["color_palette"] = palette
+            with self.subTest(palette=palette):
+                self.assertEqual(json.loads(normalize_workflow_output(json.dumps(caption), "Ideogram4"))
+                                 ["style_description"]["color_palette"], cleaned)
+        both = deepcopy(valid)
+        both["style_description"]["photo"] = "Photographic camera"
         wrong_order = {key: valid[key] for key in reversed(valid)}
         unknown = {**valid, "unexpected": "value"}
-        for caption in (invalid, wrong_order, unknown):
+        for caption in (both, wrong_order, unknown):
+            with self.subTest(caption=caption):
+                self.assertEqual(normalize_workflow_output(json.dumps(caption, ensure_ascii=False), "Ideogram4"), expected)
+        no_elements = deepcopy(valid)
+        no_elements["compositional_deconstruction"]["elements"] = []
+        no_desc = deepcopy(valid)
+        del no_desc["compositional_deconstruction"]["elements"][0]["desc"]
+        no_medium = deepcopy(valid)
+        del no_medium["style_description"]["medium"]
+        no_treatment = deepcopy(valid)
+        del no_treatment["style_description"]["art_style"]
+        for caption in (no_elements, no_desc, no_medium, no_treatment):
             with self.subTest(caption=caption), self.assertRaises(WorkflowFormatError):
                 normalize_workflow_output(json.dumps(caption), "Ideogram4")
+
+    def test_ideogram_optional_top_level_fields_follow_the_published_schema(self):
+        minimal = {"compositional_deconstruction": CAPTION["compositional_deconstruction"]}
+        self.assertEqual(normalize_workflow_output(json.dumps(minimal), "Ideogram4"), ideogram_json(minimal))
 
     def test_ideogram_photo_order_and_duplicate_keys(self):
         photo = deepcopy(CAPTION)
         photo["style_description"] = {"aesthetics": "Portrait", "lighting": "Daylight", "photo": "Eye-level view", "medium": "Photograph"}
         raw = json.dumps(photo)
-        self.assertEqual(normalize_workflow_output(raw, "Ideogram4"), raw)
+        self.assertEqual(normalize_workflow_output(raw, "Ideogram4"), ideogram_json(photo))
         duplicate = raw.replace('"high_level_description":', '"high_level_description":"Duplicate", "high_level_description":', 1)
         with self.assertRaises(WorkflowFormatError):
             normalize_workflow_output(duplicate, "Ideogram4")
@@ -114,7 +156,8 @@ class OutputFormatTests(unittest.TestCase):
         caption["compositional_deconstruction"]["elements"] = [{"type": "text", "text": literal, "desc": "Printed title"}]
         expected = requested_visible_text('A poster with the title "你好  OPEN!".')
         self.assertEqual(expected, (literal,))
-        self.assertEqual(normalize_workflow_output(json.dumps(caption), "Ideogram4", expected_visible_text=expected), json.dumps(caption))
+        self.assertEqual(normalize_workflow_output(json.dumps(caption), "Ideogram4", expected_visible_text=expected),
+                         ideogram_json(caption))
         for changed in ("你好 OPEN!", "你好  open!", "OPEN!"):
             caption["compositional_deconstruction"]["elements"][0]["text"] = changed
             with self.subTest(changed=changed), self.assertRaisesRegex(WorkflowFormatError, "exactly"):
@@ -179,14 +222,17 @@ class FormatRepairTests(unittest.TestCase):
     def test_minimax_malformed_sections_are_repaired_and_not_sanitized(self):
         valid = 'integrated_multimodal_description: [Shot 1] A runner shouts "Go!" (quietly).\noverall_soundscape: Footsteps.\nnon_diegetic_music: None.'
         backend = ScriptedBackend(["A runner moves.", valid])
-        result = self.run_workflow(backend, target="MiniMax H3")
+        result = self.run_workflow(backend, target="MiniMax H3", base=valid)
         self.assertEqual(result["prompt"], valid)
         self.assertEqual(len(backend.calls), 2)
         self.assertIn("MiniMax H3 requires", backend.calls[1].system_message)
+        plain = self.run_workflow(ScriptedBackend(["A runner moves."]), target="MiniMax H3")
+        self.assertEqual(plain["prompt"], "A runner moves.", "A non-video source keeps its own form.")
 
-    def run_workflow(self, backend, target="Anima", checkpoint=lambda: None, progress=None):
+    def run_workflow(self, backend, target="Anima", checkpoint=lambda: None, progress=None,
+                     base="Mira waits in a sunlit urban plaza. Anime illustration."):
         progress = progress if progress is not None else []
-        workflow = {"operation": "refine", "base": "Mira waits in a sunlit urban plaza. Anime illustration.",
+        workflow = {"operation": "refine", "base": base,
                     "changes": "Use stronger framing", "locks": ["identity"]}
         with patch("goated_prompter.features.refine.service.create_backend", return_value=backend):
             return RefineService({"backend": "mock"}, checkpoint).run(

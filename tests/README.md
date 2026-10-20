@@ -12,6 +12,7 @@ Run commands from the repository root with the project's Python environment
 | `eval/` | Maintained corpus, synthetic replay examples, annotation rubric, metrics, workflow execution and JSON/Markdown reports. |
 | `evaluation/` | Specialized Direct/Auto supporting-planning probe; shares capture and run metadata with `eval/runner.py`. |
 | `gpu/` | Explicit real-engine entry point (`run.py`), one production-path module per workflow (`workflows/`), shared capture/metadata (`common.py`), seeded random cases (`cases.py`, `fixtures/`) and baseline/candidate comparison (`compare.py`). Not discovered as unit or integration tests. |
+| `quality/` | The quality check (`quality.bat`, `python -m tests.quality`): collision audit, old-versus-new live runs, automatic checks, blind review and verdict. See `quality/README.md`. Its settings (`quality.json`) and results stay local. |
 | `support/`, `helpers.py` | Reused domain fixtures, controlled backends, lifecycle helpers, paths, seeded selection and test-only isolation. |
 | `fixtures/` | Existing fixed scene-planner and Understanding replay fixtures. |
 

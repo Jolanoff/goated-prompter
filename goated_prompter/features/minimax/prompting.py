@@ -142,7 +142,9 @@ def generation_instruction(data, plan, director, family):
         "then [Shot 3] At MM:SS.mmm, with times inside the selected duration. Do not use a shot heading merely to restate a shot in prose.",
     ]), user_message="\n\n".join([
         "STRUCTURED SETTINGS\n" + json.dumps(context, ensure_ascii=False),
-        "DIRECTOR PRESET — CREATIVE GUIDANCE ONLY\n" + json.dumps({"name": director.label, "instructions": director.instructions}, ensure_ascii=False),
+        # A Director made for other targets contributes nothing here, exactly as in the Builder.
+        *(["DIRECTOR PRESET — CREATIVE GUIDANCE ONLY\n" + json.dumps({"name": director.label, "instructions": director.instructions}, ensure_ascii=False)]
+          if not director.supported_targets or "MiniMax H3" in director.supported_targets else []),
         *([COMPILED_CONTRACT + "\n" + json.dumps(compiled.workflow_data(), ensure_ascii=False)]
           if compiled.forbidden or compiled.variable else []),
         "USER REQUEST\n" + compiled.writer_request(include_constraints=False),

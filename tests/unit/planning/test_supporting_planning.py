@@ -95,18 +95,24 @@ class SupportingPlanningTests(unittest.TestCase):
         # built-in Directors ensure saved custom presets cannot affect fixtures.
         # Anima alone uses the updated compact hybrid adapter and flat-prefix format.
         # Regenerated for the slimmed Builder prompt, per-target guidance, library templates and no built-in examples.
+        # Updated for the merged Z-Image target and the Anima, FLUX.2 Klein, Qwen Image (original) and Ideogram4 adapters.
+        # Updated for the Style/Director split: the precedence text, renamed Directors and medium-neutral adapters.
+        # Updated again when each guide was limited to its own job and the Style moved after the library templates.
+        # Updated for one precedence rule, emphasis-only Directors and target layouts that templates replace.
+        # Updated for the two-or-more-people rule and the Length guide that details the subjects first.
+        # Updated when Creativity became the only owner of how much is invented.
+        # Updated for show-don't-tell: the request's abstract words become visible signs.
         golden = {
-            "Generic": "ca973563591fd39b2f5af4ca0bb3b60455c2b082222ebc1adb5d659c5f349e49",
-            "Anima": "2007fb6dc752d4d848fb067bdf5fccd885be11b414e288c3b874d49e89e6a1bd",
-            "Krea 2": "5b714ca610bcba54a62229eea57816f3d85fa223bef9a3ac4bea34035a1c7a25",
-            "FLUX.2 Klein": "c2c8efeecba5f6709093fb51472e76fdb9531be07fc29520d6d3a6c149bddbe6",
-            "Z-Image Base": "a9ee8986ccc24004c8cc604b9940aa181e007fba5ce11d998a0d17c8ccae2881",
-            "Z-Image Turbo": "5fdd9a9111494735231b3e613ded70d20639f71a6fcb08e98a15c8e48185cece",
-            "Qwen Image (original)": "fba6490f03cf79ff667201bff6f10ad81a48a4670d7b5f5fd45077f439089872",
-            "Qwen Image 2.1": "5640e5267445c981da3136e72814c9ff493dd5109a5509e55a5f656e11c4f717",
-            "MiniMax H3": "fe9f699275051a1d04dd0d485d18f1c4d2c2b99b67c4d3bdd8c37609bde05931",
-            "LTX 2.5": "3bef3b1045ba979bc42f6ff6f287672761391952a52d6ebb8c8ef1a496a1b26d",
-            "Ideogram4": "f77126fe2ccd7358dc91d3c5626fb20dc09978b8827b368807d290a4541c24ed"}
+            "Generic": "781f7d8811215dd53637c320a7217859838e4fe20f1f19dbd3d49b4b3a2e9a76",
+            "Anima": "a3c9631152d07d8ad21d39794641c13118d51c009c41bda85403695534477e80",
+            "Krea 2": "3186cf2417b4ce9b33c94f6d3a853238e6746f5e32666df42683badc46d24ff8",
+            "FLUX.2 Klein": "0185c9f19c3e28264502cdad24b3f953f0213a55aeb7e94396259ce41923ac61",
+            "Z-Image": "e3662b2be7d29e90d343070ec3f3bbd2ba38937057236e8d8d15ee2776292c82",
+            "Qwen Image (original)": "2c34c26cfcfea5b06d224f5404c9a97fc35b90be60db10c0e0d5b9c95297872a",
+            "Qwen Image 2.1": "26bec9d57854d4f5de589ecfb4fa75f2740f16ef8efde4df2bfcda6b54ca0556",
+            "MiniMax H3": "7086d0ade15d77e6e1da7821025ab6a5860e233f68ca0795ecc75d9ac98530e9",
+            "LTX 2.5": "f583a882752c561e1cf246a4f071d0e96d9a3a2b2e61cca8b2fd0a2829b91e60",
+            "Ideogram4": "b1ca4371bb23acdac8476d268b682ff4ecf39a83703345316420f0406eb57835"}
         self.assertEqual(set(golden), set(TARGET_MODEL_NAMES))
         for target, digest in golden.items():
             with self.subTest(target=target):
@@ -151,7 +157,8 @@ class SupportingPlanningTests(unittest.TestCase):
         self.assertEqual(result.prompt, HOOP)
         self.assertEqual(backend.calls[0].hard_max_tokens, 1200)
         self.assertTrue(backend.calls[1].unlimited_tokens)
-        self.assertIsNone(backend.calls[1].temperature)
+        self.assertEqual(backend.calls[1].temperature, .3, "The writer's temperature follows Creativity (Strict).")
+        self.assertIn("Creativity — Strict", backend.calls[0].system_message, "The planner's staging follows Creativity too.")
 
     def test_pair_plan_keeps_separate_roles_and_shared_contact(self):
         result, backend = self.builder(GoatedPrompterRequest(idea=PAIR), json.dumps(PAIR_PLAN), PAIR)

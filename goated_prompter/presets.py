@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 from functools import wraps
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -25,7 +26,7 @@ def _serialized(function):
     return wrapped
 from .prompting.directors import (
     DEFAULT_DIRECTOR_PRESET, DIRECTOR_PRESETS, DIRECTOR_PRESET_NAMES,
-    MODE_DIRECTOR_RECOMMENDATIONS, DirectorPreset, _LEGACY_DIRECTOR_ALIASES,
+    MODE_DIRECTOR_RECOMMENDATIONS, DirectorPreset, _LEGACY_DIRECTOR_ALIASES, fold_replaced_director,
 )
 from .options.modes import MODE_NAMES
 
@@ -133,7 +134,22 @@ def list_director_presets(directory=None):
 def _safe_filename(name):
     normalized = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode("ascii")
     slug = re.sub(r"[^a-z0-9]+", "-", normalized.casefold()).strip("-")
-    return (slug[:64] or "user-director") + ".json"
+    if not slug:  # no ASCII letters at all (CJK, Cyrillic, emoji): derive a stable name from the text itself
+        return "director-" + hashlib.sha1(name.casefold().encode("utf-8")).hexdigest()[:10] + ".json"
+    return slug[:64] + ".json"
+
+
+def _free_destination(library_dir, name):
+    """The file for a new Director: its readable name, or the name plus a short hash when that file is taken
+    (names that differ only in accents, punctuation or text past 64 characters share a slug)."""
+    destination = library_dir / _safe_filename(name)
+    if not destination.exists():
+        return destination
+    suffix = hashlib.sha1(name.casefold().encode("utf-8")).hexdigest()[:8]
+    destination = destination.with_name(f"{destination.stem[:55]}-{suffix}.json")
+    if destination.exists():
+        raise DirectorLibraryError("A Director file with that name already exists; choose a new name.")
+    return destination
 
 
 @_serialized
@@ -158,9 +174,7 @@ def save_user_director(name, instructions, recommended_mode="", directory=None):
 
     library_dir = Path(directory).resolve() if directory is not None else resolve_user_director_directory()
     library_dir.mkdir(parents=True, exist_ok=True)
-    destination = library_dir / _safe_filename(clean_name)
-    if destination.exists():
-        raise DirectorLibraryError("A Director file with that name already exists; choose a new name.")
+    destination = _free_destination(library_dir, clean_name)
     payload = {
         "version": 1,
         "name": clean_name,
@@ -172,11 +186,11 @@ def save_user_director(name, instructions, recommended_mode="", directory=None):
         with tempfile.NamedTemporaryFile(
             "w", encoding="utf-8", newline="\n", dir=library_dir, prefix=".goated-prompter-", suffix=".tmp", delete=False
         ) as handle:
+            temporary = Path(handle.name)  # recorded first so a failed write still cleans up
             json.dump(payload, handle, ensure_ascii=False, indent=2)
             handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
-            temporary = Path(handle.name)
         temporary.replace(destination)
     except OSError as exc:
         if temporary is not None:
@@ -229,13 +243,14 @@ def _effective_builtin(builtin, directory):
         return builtin, ""
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
-        ids, labels, modes = {builtin.id}, {builtin.label}, {builtin.recommended_mode}
+        # An override saved before a Director was renamed keeps its old name.
+        labels = {builtin.label.casefold(), *(old for old, new in _LEGACY_DIRECTOR_ALIASES.items() if new == builtin.label)}
+        ids, modes = {builtin.id}, {builtin.recommended_mode}
         if builtin.id == "minimax_director":
             ids.add("minimax_h3_director")
-            labels.add("MiniMax Director")
             modes.add("")
         if (not isinstance(payload, dict) or not isinstance(payload.get("id"), str) or payload.get("id") not in ids
-                or not isinstance(payload.get("name"), str) or payload.get("name") not in labels
+                or not isinstance(payload.get("name"), str) or payload["name"].casefold() not in labels
                 or not isinstance(payload.get("instructions"), str)
                 or not 1 <= len(payload["instructions"].strip()) <= 100000
                 or not isinstance(payload.get("recommended_mode"), str) or payload.get("recommended_mode") not in modes):

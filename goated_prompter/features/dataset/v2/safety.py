@@ -10,15 +10,22 @@ and at confirmation. Moved here from the retired legacy pipeline (features/datas
 import re
 
 from ....presets import get_director_preset
+from .triggers import all_text, data_triggers
 
+
+# A collared garment and a leash for an animal are everyday words, not kink.
+_COLLARED = r"collared(?! (?:shirts?|blouses?|dress(?:es)?|jackets?|coats?|tops?|polos?|sweaters?|uniforms?))"
+_LEASH = (r"(?<!dog on a )(?<!dog's )(?<!puppy on a )(?<!dog on )leash(?:ed)?"
+          r"(?! (?:on|for|to) (?:a |the |his |her |their )?(?:dog|puppy|pet)s?\b)")
 
 # Broad safety detection includes anatomy and styling even when no sexual action is requested.
 _SEXUAL = re.compile(r"\b(?:sex|sexual\w*|intercourse|nsfw|porn\w*|explicit|erotic\w*|nude|nudity|naked|fuck\w*|blowjob\w*|"
-                     r"handjob\w*|oral(?! (?:presentations?|exams?|examinations?|hygiene|history|health|surgery|traditions?|reports?|arguments?))|anal|penetrat\w*|masturbat\w*|cum|cums|cumming|cumshot\w*|orgasm\w*|cocks?|"
+                     r"handjob\w*|oral(?! (?:presentations?|exams?|examinations?|hygiene|history|health|surgery|traditions?|reports?|arguments?))|anal|penetrat\w*|masturbat\w*|cum(?! laude)|cums|cumming|cumshot\w*|orgasm\w*|cocks?|"
                      r"dicks?|pussy|pussies|boobs?|tits|nipples?|genitals?|horny|aroused|"
-                     # Kink and genre words; ambiguous ones need their sexual form ("collared", not "collar").
-                     r"slaves?|sex slaves?|owned by|collared|leash(?:ed)?|pet play|bdsm|dominatrix|dom(?:/| and )sub|"
-                     r"submissive|bondage|kinky|kinks?|yaoi|bara|male[- ]male|mm sex|footjob\w*|foot fetish|feet worship|"
+                     # Kink and genre words; ambiguous ones need their sexual form ("collared", not "collar") and
+                     # everyday uses are left out (a collared shirt, a dog on a leash, kinky hair).
+                     r"slaves?|sex slaves?|" + _COLLARED + r"|" + _LEASH + r"|pet play|bdsm|dominatrix|dom(?:/| and )sub|"
+                     r"submissive|bondage|kinky(?! (?:hair|curls?))|kinks?|yaoi|bara|male[- ]male|mm sex|footjob\w*|foot fetish|feet worship|"
                      r"breeding (?:kink|her|him)|breed (?:her|him|me)|"
                      r"presenting (?:herself|himself|themselves|her ass|his ass))\b")
 
@@ -31,6 +38,8 @@ _MINOR = re.compile(r"\b(?:child|children|childlike|kids?|minors?|underage\w*|te
                     r"tweens?|loli\w*|shota\w*|schoolgirls?|schoolboys?|toddlers?|infants?|bab(?:y|ies)|"
                     r"(?:elementary|primary|middle|high|junior high) school\w*|little (?:girl|boy)s?|young (?:girl|boy)s?|"
                     r"(?:[1-9]|1[0-7])\s*(?:yo|y/o|-?years?[- ]old|-year-old))\b")
+# Everyday words that contain a minor term but describe no person: baby oil, kid gloves, a baby-blue dress.
+_NOT_MINOR = re.compile(r"\b(?:bab(?:y|ies)[- ](?:oil|blue|pink|powder)|kids?[- ](?:gloves?|leather))\b")
 
 
 ADULTS_ONLY = ("Adult content can only show adults. Remove anything that makes a character a child or teen "
@@ -39,7 +48,8 @@ ADULTS_ONLY = ("Adult content can only show adults. Remove anything that makes a
 
 def _request_text(data):
     brief = data.get("_confirmed_intent") or {}
-    parts = [str(data.get(key) or "") for key in ("subject", "constraints", "inputs", "trigger", "custom_type")]
+    parts = [str(data.get(key) or "") for key in ("subject", "constraints", "inputs", "custom_type")]
+    parts.append(all_text(data_triggers(data)))
     parts += [str(item.get(key) or "") for item in brief.get("characters") or () if isinstance(item, dict)
               for key in ("name", "traits")]
     parts += [str(brief.get(field) or "") for field in ("requested_generation", "dataset_contents")]
@@ -52,9 +62,9 @@ def _request_text(data):
 _SEXUAL_ACTION = re.compile(r"\b(?:sex|intercourse|nsfw|porn\w*|erotic\w*|fuck\w*|blowjob\w*|handjob\w*|"
     r"vaginal|cunnilingus|fellatio|self[- ]pleasure|dildos?|vibrators?|strap[- ]?ons?|"
     r"oral(?! (?:presentations?|exams?|examinations?|hygiene|history|health|surgery|traditions?|reports?|arguments?))|"
-    r"anal|penetrat\w*|masturbat\w*|cum(?:s|ming|shots?)?|orgasm\w*|horny|aroused|"
-    r"slaves?|owned by|collared|leash(?:ed)?|pet play|bdsm|dominatrix|dom(?:/| and )sub|"
-    r"submissive|bondage|kinky|kinks?|yaoi|bara|mm sex|footjob\w*|foot fetish|feet worship|"
+    r"anal|penetrat\w*|masturbat\w*|cum(?:s|ming|shots?)?(?! laude)|orgasm\w*|horny|aroused|"
+    r"slaves?|" + _COLLARED + r"|" + _LEASH + r"|pet play|bdsm|dominatrix|dom(?:/| and )sub|"
+    r"submissive|bondage|kinky(?! (?:hair|curls?))|kinks?|yaoi|bara|mm sex|footjob\w*|foot fetish|feet worship|"
     r"breeding (?:kink|her|him)|breed (?:her|him|me)|"
     r"presenting (?:herself|himself|themselves|her ass|his ass)|sexual (?:acts?|scenes?|content|activity|aftercare|roleplay))\b")
 
@@ -75,7 +85,7 @@ def adult_content_request(data, *, include_director=True):
 
 def minor_reference(text):
     """The first wording that makes someone a child or teen, or None."""
-    match = _MINOR.search(str(text or "").casefold())
+    match = _MINOR.search(_NOT_MINOR.sub(" ", str(text or "").casefold()))
     return match.group() if match else None
 
 
@@ -133,8 +143,8 @@ def _asked(text, pattern, *, ignore_conditional=False):
 
 
 def _user_text(data):
-    fields = ("subject", "constraints", "trigger") + (("inputs",) if data.get("source_mode") == "guided" else ())
-    return "\n".join(str(data.get(key) or "") for key in fields).casefold()
+    fields = ("subject", "constraints") + (("inputs",) if data.get("source_mode") == "guided" else ())
+    return "\n".join([*(str(data.get(key) or "") for key in fields), all_text(data_triggers(data))]).casefold()
 
 
 def _director_text(data):

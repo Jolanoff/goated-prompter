@@ -41,7 +41,7 @@ from goated_prompter.json_store import atomic_json, read_store
 from goated_prompter.local_jobs import Job, JobCancelled, TERMINAL
 from goated_prompter.presets import (
     DEFAULT_DIRECTOR_PRESET, DirectorLibraryError, get_director_preset, recommended_director_for_mode,
-    save_user_director,
+    fold_replaced_director, save_user_director,
 )
 from goated_prompter.options.references import REFERENCE_ATTRIBUTES
 from goated_prompter.workflow_runners import execute_workflow
@@ -91,7 +91,7 @@ class LocalState:
                 self.saved_settings = saved
 
     def canonical_builder(self, builder, recover=False):
-        builder = dict(builder)
+        builder = fold_replaced_director(dict(builder))  # a Director that became a Style choice
         selected = builder.get("director_preset")
         try:
             director = get_director_preset(selected or (recommended_director_for_mode(builder.get("mode")) if recover else DEFAULT_DIRECTOR_PRESET), strict=True)
@@ -274,6 +274,8 @@ async def job_endpoint(request):
         if request.method == "POST":
             if job.status in TERMINAL:
                 raise web.HTTPConflict(reason="This job has already finished.")
+            if job.cancel_requested:
+                raise web.HTTPConflict(reason="This job is being cancelled; it can no longer be paused or resumed.")
             if request.match_info["action"] == "pause":
                 job.request_pause()
             else:
@@ -302,7 +304,9 @@ async def release_job_checkpoints(request):
 def create_app(*, port=8190, dist=None, config_loader=load_config, service_factory=GoatedPrompterService,
                settings_path=None, prompts_path=None):
     hosts = {f"127.0.0.1:{port}", f"localhost:{port}"}
-    origins = {f"http://{host}" for host in hosts} | {"http://localhost:5173", "http://127.0.0.1:5173"}
+    # Only the API's own origin is trusted. The Vite dev proxy rewrites Origin to this value (frontend/vite.config.js),
+    # so an unrelated page served from another localhost port cannot call the API.
+    origins = {f"http://{host}" for host in hosts}
 
     @web.middleware
     async def security(request, handler):
@@ -319,6 +323,11 @@ def create_app(*, port=8190, dist=None, config_loader=load_config, service_facto
             response = web.json_response({"ok": False, "error": str(exc)}, status=409)
         except (ValueError, TypeError, GoatedPrompterError, DirectorLibraryError) as exc:
             response = web.json_response({"ok": False, "error": str(exc)}, status=400)
+        except OSError as exc:
+            logging.exception("Local API file operation failed")
+            response = web.json_response({"ok": False, "error": "A file could not be written or read "
+                                          f"({exc.strerror or type(exc).__name__}). Close programs that may be using the "
+                                          "data folder, check permissions, then retry."}, status=500)
         except Exception:
             logging.exception("Local API request failed")
             response = web.json_response({"ok": False, "error": "Request failed. Check the server console and configuration."}, status=500)

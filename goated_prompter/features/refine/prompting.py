@@ -4,10 +4,9 @@ REFINE_SYSTEM_PROMPT = (
     "Refine the supplied source prompt with the minimum changes needed to satisfy "
     "REQUESTED CHANGES. Preserve all unrelated details and the original intent. "
     "Shortening may compress wording without changing locked facts.\n\n"
-    "Write concrete visual content immediately. Avoid boilerplate openers such as "
-    "'A high-quality illustration featuring', generic quality slogans and vague "
-    "cinematic/surreal restyling. Preserve the user's specified medium without "
-    "replacing their scene with a stock genre scene."
+    "Write concrete visual content immediately, without boilerplate openers, generic "
+    "quality slogans or restyling nobody asked for. Preserve the source's medium without "
+    "replacing its scene with a stock genre scene."
 )
 
 

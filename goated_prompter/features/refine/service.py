@@ -1,6 +1,7 @@
 """Refine workflow runtime and validated prompt generation."""
 
 from dataclasses import replace
+import re
 
 from ...backends.base import BackendGenerationError
 from ...backends.factory import create_backend
@@ -8,8 +9,7 @@ from ...contracts import PromptInstruction, effective_model_family
 from ...director_profiles import resolve_director_config
 from .prompting import build_refine_messages, refine_format_repair
 from ...prompting.output import output_contract
-from ...prompting.target_models import get_model_adapter, resolve_target_length
-from ...prompting.creativity import CREATIVITY_ADAPTERS
+from ...prompting.target_models import get_model_adapter
 from ...workflow_output import (
     WorkflowFormatError,
     normalize_workflow_output,
@@ -28,8 +28,8 @@ def refine_instruction(request, base, changes, detail_locks, model_family="qwen"
         contract,
         instructions,
     )
-    system += "\n\n" + resolve_target_length(request.target_model, request.prompt_length)
-    system += "\n\n" + CREATIVITY_ADAPTERS.get(request.creativity, CREATIVITY_ADAPTERS["Balanced"])
+    # No Length or Creativity text: Refine keeps the source's density and changes only what is asked, so a default
+    # length or an invitation to add details would contradict its own contract.
     return PromptInstruction(
         system_message=system,
         user_message=user,
@@ -40,11 +40,20 @@ def refine_instruction(request, base, changes, detail_locks, model_family="qwen"
     )
 
 
+_H3_FIELD = re.compile(r"^\s*(?:integrated_multimodal_description|detailed_description)\b", re.MULTILINE)
+
+
+def source_mode(base):
+    """The task the source prompt was written for, as far as its output needs it: a MiniMax source written as H3 video
+    fields stays a video; any other source keeps its own form (None leaves other targets unchanged)."""
+    return "Video" if _H3_FIELD.search(str(base or "")) else "Enhance" if str(base or "").strip() else None
+
+
 class RefineService:
     def __init__(self, config, checkpoint):
         self.config, self.checkpoint = config, checkpoint
 
-    def _generate_prompt(self, session, instruction, target, progress, *, expected_visible_text=()):
+    def _generate_prompt(self, session, instruction, target, progress, *, expected_visible_text=(), mode=None):
         """Validate before persistence; allow one format-repair inference."""
         for attempt in range(2):
             self.checkpoint()
@@ -53,7 +62,7 @@ class RefineService:
             self.checkpoint()
             try:
                 prompt = normalize_workflow_output(raw, target,
-                    expected_visible_text=expected_visible_text)
+                    expected_visible_text=expected_visible_text, mode=mode)
                 if target not in {"Ideogram4", "MiniMax H3"}:
                     prompt = sanitize_prompt_text(prompt)
                     if not prompt:
@@ -91,5 +100,5 @@ class RefineService:
             self.checkpoint()
             progress("Writing refinement")
             prompt = self._generate_prompt(session, instruction, request.target_model, progress,
-                expected_visible_text=requested_visible_text(workflow["changes"]))
+                expected_visible_text=requested_visible_text(workflow["changes"]), mode=source_mode(workflow["base"]))
         return {"ok": True, "kind": "refine", "prompt": prompt, "backend": backend.name}

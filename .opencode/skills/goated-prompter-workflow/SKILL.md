@@ -76,6 +76,39 @@ Load only skills needed for the approved work; generic skills do not expand it.
   than claim a fix. Deterministic tests alone do not prove model-quality gains;
   one unseeded GPU sample does not prove deterministic correctness.
 
+## 4a. Prompt-quality changes
+
+Any change to prompt text, a guide (Mode, target, Length, Creativity, Director,
+Style, NSFW), the Dataset scene or prompt steps, vocabulary use or sampling is
+verified with the quality check (`tests/quality/README.md`), never by reading
+the code alone.
+
+- Run `python -m tests.quality audit --no-open` (no model) before and after the
+  change. It must show no new collision and no setting that stops building.
+  Never add an `audit_allow.json` entry without the owner's approval and a reason.
+- Before a run, edit `quality.json` yourself: at most 4 requests, all of the
+  workflow the change touches (Dataset requests for a Dataset change, Builder
+  requests for a Builder change, not both), chosen so the change is exercised.
+  Keep `baseline` on the commit before the change and `candidate` on `working`.
+  Use at most 3 seeds. A result "within noise" is reported as unproven, never
+  as a claim.
+- For Dataset runs you may add or edit vocabulary packs in `data/vocabulary/`
+  (the only part of `data/` an agent may touch); keep entries general, never
+  tailored to one test request.
+- With owner GPU approval, run `python -m tests.quality --no-open` (set
+  `QUALITY_NO_PAUSE=1`), or ask the owner to run `quality.bat`. Each request
+  and seed runs once per side: count them against the approved GPU maximum.
+- The verdict decides: **Worse** blocks completion; claim an improvement only
+  for **Better**. Report the verdict, its reasons and the run folder name.
+  Without a run, say the change is unverified; never call it better or fixed.
+- No hard-coded fixes (special cases for a request, word or output) and no
+  explicit or sexual wording in code, guides, tests or examples (`AGENTS.md`).
+- The agent that made a change may review its blind pairs only as
+  `exploratory`. An `independent` review comes from the owner or from a
+  separate agent that has not seen the change.
+- Never list or open `quality-artifacts/worktrees/*/data`: it is the owner's
+  private `data/` folder, linked for the app's own use.
+
 ## 5. GPU execution and process cleanup
 
 - Request a Dataset GPU maximum only if none was explicitly approved: ask
@@ -104,6 +137,8 @@ Create only the directories and files actually needed:
 
 ```text
 quality-artifacts/
+  quality/<run>/          (quality check runs; the owner's, never deleted by an agent)
+  worktrees/<commit>/     (old code copies for comparisons; `python -m tests.quality clean`)
   baselines/
   tasks/<task-key>/
     gpu/results.json

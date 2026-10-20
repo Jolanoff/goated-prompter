@@ -84,30 +84,42 @@ test("changing tasks selects matching directors while manual preset choices rema
   await page.goto("/");
   const task = page.getByLabel("Prompt task", { exact: true });
   const director = page.getByLabel("Instruction preset", { exact: true });
+  const style = page.getByLabel("Style", { exact: true });
+  await style.selectOption("Realistic");
+  await page.getByLabel("Capture", { exact: true }).selectOption("Phone snapshot");
   for (const [mode, id] of [
-    ["Photography", "photography_director"],
+    ["Photography", "general_director"],
     ["Archviz", "archviz_director"],
     ["Image Edit", "surgical_edit"],
     ["Video", "video_director"],
     ["Enhance", "general_director"],
-    ["Photography", "photography_director"],
+    ["Photography", "general_director"],
   ]) {
     await task.selectOption(mode);
     await expect(director).toHaveValue(id);
+    await expect(style).toHaveValue("Realistic");
+    await expect(page.getByLabel("Capture", { exact: true })).toHaveValue("Phone snapshot");
   }
-  await director.selectOption("smartphone_realism");
+  await director.selectOption("surgical_edit");
   await expect(task).toHaveValue("Photography");
+  await expect(style).toHaveValue("Realistic");
   await task.selectOption("Enhance");
   await task.selectOption("Photography");
   await expect(page.getByLabel("Builder save status")).toHaveText("Saved");
-  expect((await (await request.get("/api/settings")).json()).builder.director_preset).toBe("photography_director");
+  expect((await (await request.get("/api/settings")).json()).builder).toMatchObject({
+    director_preset: "general_director", style: "Realistic", capture: "Phone snapshot",
+  });
   await page.reload();
   await expect(task).toHaveValue("Photography");
-  await expect(director).toHaveValue("photography_director");
+  await expect(director).toHaveValue("general_director");
+  await expect(style).toHaveValue("Realistic");
+  await expect(page.getByLabel("Capture", { exact: true })).toHaveValue("Phone snapshot");
   await page.getByLabel("Describe your idea", { exact: true }).fill("A forest portrait");
   const generation = page.waitForRequest("**/api/generate");
   await page.getByRole("button", { name: /^Generate prompt/ }).click();
-  expect((await generation).postDataJSON().settings.director_preset).toBe("photography_director");
+  expect((await generation).postDataJSON().settings).toMatchObject({
+    director_preset: "general_director", style: "Realistic", capture: "Phone snapshot",
+  });
   await expect(page.getByLabel("Generated prompt", { exact: true })).toHaveValue(/forest portrait/);
 });
 
@@ -119,10 +131,10 @@ test("builder JSON restores text fields and resets unavailable reference sources
   await page
     .getByLabel("Describe your idea", { exact: true })
     .fill("Persistent idea");
+  await page.getByLabel("Prompt task", { exact: true }).selectOption("Photography");
   await page
     .getByLabel("Instruction preset", { exact: true })
-    .selectOption({ label: "Photography Director" });
-  await page.getByLabel("Prompt task", { exact: true }).selectOption("Photography");
+    .selectOption({ label: "Fashion & Styling" });
   await page.getByLabel("Prompt length", { exact: true }).selectOption("Maximum Detail");
   await page.getByLabel("Style", { exact: true }).selectOption("Anime");
   await page.getByLabel("Workflow rules").fill("Keep these rules");
@@ -154,8 +166,10 @@ test("builder JSON restores text fields and resets unavailable reference sources
   const saved = await (await request.get("/api/settings")).json();
   expect(saved.builder.idea).toBe("Persistent idea");
   expect(saved.builder.prompt_length).toBe("Maximum Detail");
-  expect(Object.keys(saved.builder)).toHaveLength(21);
+  expect(Object.keys(saved.builder)).toHaveLength(22);
   expect(saved.builder.style).toBe("Anime");
+  expect(saved.builder.capture).toBe("Auto");
+  expect(saved.builder.director_preset).toBe("fashion_editorial");
   expect(saved.builder).not.toHaveProperty("lock_generated_prompt");
   expect(saved.builder.mode).toBe("Photography");
   for (const [index, key] of referenceAttributes.entries())
@@ -312,8 +326,10 @@ test("legacy Maximum hydrates once and generation flushes a linked snapshot firs
   await page.goto("/");
   await expect(page.getByLabel("Prompt length", { exact: true })).toHaveValue("Maximum Detail");
   await expect(page.getByLabel("Instruction preset", { exact: true })).toHaveValue(
-    "photography_director",
+    "general_director",
   );
+  await expect(page.getByLabel("Style", { exact: true })).toHaveValue("Realistic");
+  await expect(page.getByLabel("Capture", { exact: true })).toHaveValue("Pro camera");
   await expect(page.getByLabel("Prompt length", { exact: true }).locator("option")).toHaveText([
     "Short",
     "Medium",
@@ -335,6 +351,9 @@ test("legacy Maximum hydrates once and generation flushes a linked snapshot firs
   );
   expect(generation).toBeGreaterThan(0);
   expect(calls[generation - 1].postDataJSON().builder.idea).toBe("Flush me");
+  for (const settings of [calls[generation - 1].postDataJSON().builder, calls[generation].postDataJSON().settings]) {
+    expect(settings).toMatchObject({ director_preset: "general_director", style: "Realistic", capture: "Pro camera" });
+  }
   expect(calls[generation].postDataJSON().settings.linked_references).toBe(
     true,
   );

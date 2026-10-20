@@ -1,0 +1,24 @@
+{
+  "name": "Vehicles",
+  "category": "Objects & Props",
+  "entries": [
+    "vintage convertible",
+    "motorcycle",
+    "bicycle",
+    "city bus",
+    "delivery van",
+    "pickup truck",
+    "sports car",
+    "taxi",
+    "scooter",
+    "horse-drawn carriage",
+    "sailboat",
+    "rowing boat",
+    "small private plane",
+    "helicopter",
+    "train carriage",
+    "skateboard",
+    "shopping cart",
+    "wheelbarrow"
+  ]
+}

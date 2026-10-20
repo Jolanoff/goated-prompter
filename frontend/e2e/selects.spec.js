@@ -31,7 +31,7 @@ for (const theme of ["dark", "light"]) {
 
       const preset = page.getByLabel("Instruction preset", { exact: true });
       await preset.click();
-      await expect(preset.getByRole("option", { name: "General-Purpose Prompt", exact: true })).toBeVisible();
+      await expect(preset.getByRole("option", { name: "General", exact: true })).toBeVisible();
       const styles = await preset.evaluate((element) => {
         const picker = getComputedStyle(element, "::picker(select)");
         const option = getComputedStyle(element.querySelector("option"));

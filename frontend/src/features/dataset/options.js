@@ -1,11 +1,19 @@
 // Dataset types, seed modes, Directors Dataset does not offer and identity-policy labels.
-// Keep triggerTypes, seedModes, maxSeed and excludedDirectors in sync with goated_prompter/options/dataset.py
+// Keep triggerTypes, seedModes, maxSeed, excludedDirectors, triggerKinds, triggerExpansions and maxTriggers in sync with goated_prompter/options/dataset.py
 // (checked by tests/unit/shared/test_option_parity.py).
 
 export const triggerTypes = ["Character", "Multiple characters", "Animal", "Object / product", "Visual style",
   "Location / environment", "Brand / logo", "Typography / text", "Concept", "Custom"];
 
 export const seedModes = [["randomize", "Randomize"], ["fixed", "Fixed"], ["increment", "Increment"]];
+
+// What a trigger stands for, and how it is used: exact text placed by the app, its meaning written by the model, or both.
+export const triggerKinds = [["character", "Character"], ["style", "Style"], ["outfit", "Outfit"], ["object", "Object / concept"],
+  ["other", "Other"]];
+
+export const triggerExpansions = [["off", "Exact text"], ["on", "Meaning only"], ["both", "Exact text + meaning"]];
+
+export const maxTriggers = 20;
 
 export const maxSeed = 4294967295;
 

@@ -7,6 +7,11 @@ DATASET_TYPES = (
 DATASET_SOURCES = ("random", "guided")
 # Like ComfyUI's control: a new seed each run, the same seed, or the last seed plus one.
 SEED_MODES = ("randomize", "fixed", "increment")
+# Dataset triggers: what each one stands for, and whether its exact text is placed by code ("off"), its meaning is
+# written by the model in every prompt ("on"), or both.
+TRIGGER_KINDS = ("character", "style", "outfit", "object", "other")
+TRIGGER_EXPANSIONS = ("off", "on", "both")
+MAX_TRIGGERS = 20
 MAX_SEED = 2**32 - 1
 # Directors that need reference images, edit a source image or write video do not fit Dataset, which writes
 # text-to-image prompts from scenes. Every other Director, built-in or the user's own, is offered.

@@ -18,7 +18,7 @@ import tempfile
 import threading
 
 from .config import PROJECT_ROOT
-from .options.targets import TARGET_MODEL_NAMES, canonical_target
+from .options.targets import TARGET_ALIASES, TARGET_MODEL_NAMES, canonical_target
 from .output_repetition import anima_tags
 from .workspace_store import text
 
@@ -49,8 +49,12 @@ def library_directory():
     return Path(configured).expanduser() if configured else PROJECT_ROOT / "data" / "prompt_library"
 
 
+def _slug(name):
+    return re.sub(r"[^a-z0-9]+", "-", str(name).casefold()).strip("-") + ".txt"
+
+
 def library_file_name(target):
-    return re.sub(r"[^a-z0-9]+", "-", str(canonical_target(target)).casefold()).strip("-") + ".txt"
+    return _slug(canonical_target(target))
 
 
 def library_path(target, directory=None):
@@ -64,7 +68,21 @@ def ensure_library_files(directory=None):
     for target in TARGET_MODEL_NAMES:
         path = directory / library_file_name(target)
         if not path.exists():
-            path.write_text(HEADER.format(target=target), encoding="utf-8")
+            path.write_text(HEADER.format(target=target) + _merged_legacy_prompts(directory, target), encoding="utf-8")
+
+
+def _merged_legacy_prompts(directory, target):
+    """Prompts saved for targets that were merged into this one (Z-Image Base and Turbo into Z-Image), so a new
+    library file starts with them; the old files are left untouched."""
+    prompts = []
+    for legacy in sorted(name for name, current in TARGET_ALIASES.items() if current == target):
+        try:
+            prompts.extend(parse_library((directory / _slug(legacy)).read_text(encoding="utf-8-sig")))
+        except (OSError, UnicodeError):
+            continue
+    unique = list(dict.fromkeys(prompts))
+    return "".join(f"\n{prompt}\n" + (f"\n{SEPARATOR}\n" if index < len(unique) else "")
+                   for index, prompt in enumerate(unique, 1))
 
 
 def parse_library(text):
@@ -156,7 +174,13 @@ def update_library(target, revision, action, *, prompt=None, index=None, directo
                     blocks.append(content)
                 first, last = blocks[index][0], blocks[index][-1]
                 replacement = prompt.replace("\n", newline) + newline if action == "edit" else ""
+                drop = None
+                if action == "delete":  # remove one neighbouring separator so no orphan "---" lines pile up
+                    drop = next((i for i in range(last + 1, len(lines)) if lines[i].strip() == SEPARATOR), None)
+                    if drop is None:
+                        drop = next((i for i in range(first - 1, -1, -1) if lines[i].strip() == SEPARATOR), None)
                 raw = "".join(
+                    "" if position == drop else
                     (replacement if position == first else "")
                     if first <= position <= last and not line.lstrip().startswith("#") else line
                     for position, line in enumerate(lines)
@@ -181,10 +205,10 @@ def update_library(target, revision, action, *, prompt=None, index=None, directo
 
 
 def tokenize(text):
-    """Words for search: count tags split ("1girl" -> "girl"), simple plurals folded, stopwords dropped."""
+    """Words for search (letters of any script): count tags split ("1girl" -> "girl"), simple plurals folded, stopwords dropped."""
     value = str(text or "").casefold().replace("\\", "").replace("_", " ")
     tokens = []
-    for token in re.findall(r"[a-z]+", value):
+    for token in re.findall(r"[^\W\d_]+", value):  # letters of any script; digits and underscores split words
         if len(token) > 3 and token.endswith("s") and not token.endswith("ss"):
             token = token[:-1]
         if token not in _STOPWORDS:
@@ -236,7 +260,8 @@ def _leading_tags(prompt):
 
 
 def style_profile(prompts):
-    """Measure how the user's prompts are written: length, structure, section labels and a shared lead token."""
+    """Measure how the user's prompts are written: length, structure and section labels. Never their words: a shared
+    opening token could be an artist or style tag, and the library teaches form, not look."""
     if not prompts:
         return None
     lengths = sorted(len(prompt.split()) for prompt in prompts)
@@ -248,11 +273,8 @@ def style_profile(prompts):
                  else "flowing prose paragraphs" if not sectioned and not tagged else "mixed: some sectioned, some prose")
     labels = Counter(label for found in sectioned for label in dict.fromkeys(found))
     order = list(dict.fromkeys(label for found in sectioned for label in found if labels[label] > len(sectioned) / 2))
-    leads = Counter(prompt.strip().split(",")[0].strip() for prompt in prompts if "," in prompt.strip().splitlines()[0])
-    lead, uses = leads.most_common(1)[0] if leads else ("", 0)
     return {"count": len(prompts), "median_words": lengths[len(lengths) // 2], "lengths": lengths, "structure": structure,
-            "sections": order if len(sectioned) >= half else [],
-            "lead": lead if uses >= 2 and uses >= half and len(lead.split()) <= 3 else ""}
+            "sections": order if len(sectioned) >= half else []}
 
 
 def _quantile(values, fraction):
@@ -262,20 +284,26 @@ def _quantile(values, fraction):
     return values[low] + (values[high] - values[low]) * (position - low)
 
 
-def style_profile_text(profile, length):
-    """Describe the library's prompt format (structure and length) and the word target for the selected length."""
+def style_profile_text(profile, length, max_words=None, describe_structure=False):
+    """The library's prompt length and the word target for the selected length, never above the target model's
+    max_words. The structure comes from the templates shown with it (Template 1); only when they are withheld
+    (describe_structure) is the library's structure described instead. No word of a saved prompt is passed on, so
+    a shared opening token (an artist or style tag) never becomes an instruction."""
     lengths = profile.get("lengths") or [profile["median_words"]]
     words = max(25, round(_quantile(lengths, LENGTH_QUANTILE.get(length, .75)) / 5) * 5)
+    capped = max_words is not None and words > max_words
+    words = min(words, max_words) if max_words is not None else words
     spread = (f"from about {lengths[0]} to {lengths[-1]} words, typically {profile['median_words']}"
               if lengths[0] != lengths[-1] else f"about {lengths[0]} words")
-    parts = [spread, f"written as {profile['structure']}"]
-    if profile["sections"]:
-        parts.append("with the sections " + ", ".join(f'"{label}:"' for label in profile["sections"]))
-    if profile["lead"]:
-        parts.append(f'starting with "{profile["lead"]}"')
+    parts = [spread]
+    if describe_structure:
+        parts.append(f"written as {profile['structure']}")
+        if profile["sections"]:
+            parts.append("with the sections " + ", ".join(f'"{label}:"' for label in profile["sections"]))
     saved = f"{profile['count']} saved prompt" + ("" if profile["count"] == 1 else "s")
+    limit = f", the most this target model uses well" if capped else ""
     return (f"YOUR LIBRARY'S PROMPT FORMAT ({saved}): " + "; ".join(parts) + ". "
-            f"Build this prompt in that format at about {words} words for the selected {length} length.")
+            f"Build this prompt at about {words} words for the selected {length} length{limit}.")
 
 
 def load_library(target, directory=None):
@@ -344,7 +372,8 @@ def pick_scenarios(target, query, count, rng=None, directory=None):
     rng.shuffle(strong)
     rng.shuffle(weak)
     ranked = strong + weak
-    rest = [prompt for prompt in index.prompts if prompt not in set(ranked)]
+    taken = set(ranked)
+    rest = [prompt for prompt in index.prompts if prompt not in taken]
     rng.shuffle(rest)
     ordered = ranked + rest
     return tuple(ordered[position % len(ordered)] for position in range(count))

@@ -7,7 +7,9 @@ import select
 import socket
 import ssl
 import threading
-from urllib.request import HTTPHandler, HTTPSHandler, build_opener
+import time
+from urllib.parse import urlparse
+from urllib.request import HTTPHandler, HTTPSHandler, ProxyHandler, build_opener
 
 from .base import BackendGenerationError
 
@@ -20,8 +22,11 @@ class _ResponseSocket:
     keeps its ordinary HTTP parsing, proxy handling and TLS verification.
     """
 
-    def __init__(self, sock, cancelled):
+    def __init__(self, sock, cancelled, deadline):
         self.sock, self.cancelled = sock, cancelled
+        # deadline is shared with the caller: it holds the time the request expires, and the caller pushes it
+        # forward when the model makes real progress (keep-alive bytes alone never do).
+        self.deadline = deadline
         self.readers = 0
         self.close_requested = False
 
@@ -41,6 +46,9 @@ class _ResponseSocket:
                 while True:
                     if owner.cancelled.is_set():
                         raise BackendGenerationError("The model request was interrupted.", completion_state="cancelled")
+                    if time.monotonic() > owner.deadline.at:
+                        owner.deadline.expire()
+                        raise BackendGenerationError("The model request exceeded its total timeout.", completion_state="cancelled")
                     pending = getattr(owner.sock, "pending", None)
                     if (pending and pending()) or select.select([owner.sock], [], [], .1)[0]:
                         previous_timeout = owner.sock.gettimeout()
@@ -73,13 +81,20 @@ def interruptible_urlopen(request, *, timeout, register, unregister):
     connections = []
     timed_out = threading.Event()
 
-    def expire():
-        timed_out.set()
-        for connection in list(connections):
-            connection.stop_request()
+    class Deadline:
+        at = time.monotonic() + timeout
 
-    deadline = threading.Timer(timeout, expire)
-    deadline.daemon = True
+        @staticmethod
+        def expire():
+            timed_out.set()
+            for connection in list(connections):
+                connection.stop_request()
+
+    deadline = Deadline()
+
+    def touch():
+        """Real progress from the model: allow another full timeout period."""
+        deadline.at = time.monotonic() + timeout
 
     def factory(base):
         class Connection(base):
@@ -104,7 +119,7 @@ def interruptible_urlopen(request, *, timeout, register, unregister):
                 if self.cancelled.is_set() or timed_out.is_set():
                     raise BackendGenerationError("The model request was interrupted.", completion_state="cancelled")
                 super().connect()
-                self.sock = _ResponseSocket(self.sock, self.cancelled)
+                self.sock = _ResponseSocket(self.sock, self.cancelled, deadline)
                 self.active_socket = self.sock
                 if self.cancelled.is_set() or timed_out.is_set():
                     self.stop_request()
@@ -121,9 +136,13 @@ def interruptible_urlopen(request, *, timeout, register, unregister):
         def https_open(self, req):
             return self.do_open(factory(HTTPSConnection), req, context=self._context)
 
+    # Loopback engines (the owned llama.cpp server, LM Studio) must never be routed through a system proxy.
+    handlers = [HTTP(), HTTPS()]
+    if (urlparse(request.full_url).hostname or "").lower() in {"127.0.0.1", "localhost", "::1"}:
+        handlers.insert(0, ProxyHandler({}))
     try:
-        deadline.start()
-        with build_opener(HTTP(), HTTPS()).open(request, timeout=timeout) as response:
+        with build_opener(*handlers).open(request, timeout=timeout) as response:
+            response.touch_deadline = touch
             yield response
         if timed_out.is_set():
             raise TimeoutError("The model request exceeded its total timeout.")
@@ -132,7 +151,6 @@ def interruptible_urlopen(request, *, timeout, register, unregister):
             raise TimeoutError("The model request exceeded its total timeout.") from exc
         raise
     finally:
-        deadline.cancel()
         for connection in connections:
             unregister(connection.interrupt)
             connection.close()

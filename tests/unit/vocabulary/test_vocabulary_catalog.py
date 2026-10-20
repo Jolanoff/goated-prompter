@@ -12,7 +12,7 @@ from goated_prompter.features.vocabulary import catalog
 from goated_prompter.features.vocabulary.catalog import (CatalogError, catalog_for, import_pack, load_catalog, record,
                                                          selected_vocabulary, validate_selection, vocabulary_prompt)
 
-CATEGORIES = ["Subjects", "Actions & Poses", "Spaces", "Objects", "Expressions", "Clothing", "Mood & Tone",
+CATEGORIES = ["Subjects", "Actions & Poses", "Spaces", "Objects & Props", "Expressions", "Clothing", "Mood & Tone",
               "Lighting", "Camera & Composition", "Effects & Atmosphere"]
 
 
@@ -33,10 +33,16 @@ class Bundled(unittest.TestCase):
         self.assertEqual(loaded["problems"], [])
         self.assertEqual([row["id"] for row in loaded["categories"]], CATEGORIES)
         for row in loaded["categories"]:
-            self.assertEqual(row["folder"], row["id"])
+            # A renamed category keeps its folder, so pack ids (and saved selections) stay the same.
+            self.assertEqual(row["folder"], "Objects" if row["id"] == "Objects & Props" else row["id"])
             self.assertTrue(row["description"] and row["use_when"])
             self.assertTrue(row["instruction"].startswith(f"{row['id']} provides vocabulary"), row["instruction"])
             self.assertNotIn("{", row["instruction"])
+
+    def test_camera_vocabulary_is_turned_into_what_the_image_shows(self):
+        camera = next(row for row in load_catalog()["categories"] if row["id"] == "Camera & Composition")
+        self.assertIn("Turn an entry into what the image shows", camera["instruction"])
+        self.assertIn("never a reason to cut a person of the cast down to a body part", camera["instruction"])
 
     def test_core_is_exactly_three_files(self):
         self.assertEqual(sorted(path.name for path in (catalog.ROOT / "core").iterdir()),
@@ -44,7 +50,8 @@ class Bundled(unittest.TestCase):
 
     def test_every_starter_pack_is_name_category_entries_in_its_folder(self):
         loaded = load_catalog()
-        self.assertEqual(len(loaded["packs"]), 41)
+        self.assertEqual(len(loaded["packs"]), 48)
+        folders = {row["folder"]: row["id"] for row in loaded["categories"]}
         self.assertEqual({pack["source"] for pack in loaded["packs"]}, {"built-in"})
         for path in sorted(catalog.ROOT.glob("*/*.json")):
             if path.parent.name == "core":
@@ -52,7 +59,7 @@ class Bundled(unittest.TestCase):
             with self.subTest(pack=str(path.relative_to(catalog.ROOT))):
                 data = json.loads(path.read_text(encoding="utf-8"))
                 self.assertEqual(list(data), ["name", "category", "entries"])
-                self.assertEqual(data["category"], path.parent.name)
+                self.assertEqual(data["category"], folders[path.parent.name])
                 self.assertTrue(all(isinstance(entry, str) and entry for entry in data["entries"]))
         names = {pack["id"]: pack["name"] for pack in loaded["packs"]}
         self.assertEqual(names["Spaces/Sci-Fi"], "Sci-Fi")
@@ -98,6 +105,35 @@ class Library(unittest.TestCase):
         self.assertEqual(replaced["entries"], ["sky garden"], "importing the same file again replaces it")
         groups = selected_vocabulary(load_catalog(self.root), {"packs": ["data/Spaces/my-rooftops"]})
         self.assertEqual(groups[0]["packs"][0]["entries"], ["sky garden"])
+
+    def test_a_pack_may_carry_its_authors_description(self):
+        self.pack("Objects", "Paint", {"name": "Paint", "category": "Objects & Props",
+                                       "description": "Paint marks for painterly scenes; entries name the colour.",
+                                       "entries": ["red paint splash"]})
+        self.pack("Objects", "Plain", {"name": "Plain", "category": "Objects & Props", "entries": ["mug"]})
+        packs = {pack["name"]: pack for pack in load_catalog(self.root)["packs"]}
+        self.assertEqual(packs["Paint"]["description"], "Paint marks for painterly scenes; entries name the colour.")
+        self.assertEqual(packs["Plain"]["description"], "", "a pack without a description still loads")
+        saved = import_pack("paint.json", json.dumps({"name": "Paint", "category": "Objects & Props",
+                                                      "description": "  Paint   marks. ", "entries": ["a"]}), self.root)
+        self.assertEqual(saved["description"], "Paint marks.")
+        stored = json.loads((self.user / "Objects" / "paint.json").read_text(encoding="utf-8"))
+        self.assertEqual(list(stored), ["name", "category", "description", "entries"])
+        for bad in ("", 7, "x" * 301):
+            with self.subTest(description=bad), self.assertRaisesRegex(ValueError, "description"):
+                import_pack("bad.json", json.dumps({"name": "X", "category": "Spaces", "description": bad, "entries": ["a"]}),
+                            self.root)
+
+    def test_a_description_stays_with_its_own_entries_in_the_prompt(self):
+        groups = [{"category": "Objects & Props", "instruction": "Objects & Props provides vocabulary.",
+                   "packs": [{"name": "Plain", "description": "", "entries": ["mug", "paint splash"]},
+                             {"name": "Paint", "description": "for painterly scenes", "entries": ["paint splash", "brush"]}]}]
+        text = vocabulary_prompt(groups)
+        self.assertIn('Available vocabulary:\nPack "Paint" (its author\'s note: for painterly scenes):\npaint splash\nbrush\n'
+                      'Pack "Plain":\nmug', text)
+        self.assertEqual(text.count("paint splash"), 1, "an entry in two packs is listed once")
+        self.assertNotIn("Pack ", vocabulary_prompt([{**groups[0], "packs": [groups[0]["packs"][0]]}]),
+                         "without descriptions the list stays plain")
 
     def test_an_import_is_checked_before_anything_is_saved(self):
         for text, problem in (("{ not json", "not valid JSON"),

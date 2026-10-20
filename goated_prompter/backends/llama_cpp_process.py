@@ -13,12 +13,21 @@ import threading
 import time
 from types import ModuleType
 from urllib.error import HTTPError, URLError
-from urllib.request import urlopen
+from urllib.request import ProxyHandler, build_opener
 
 from .base import BackendConfigurationError, BackendGenerationError
 from ..director_profiles import resolve_models_directory
 
 _LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
+# The owned server is on loopback; never send its health checks through a system proxy.
+_DIRECT_OPENER = build_opener(ProxyHandler({}))
+
+
+def as_bool(value):
+    """Same truthiness as contracts.as_bool (kept local: contracts imports this package's neighbours)."""
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
 
 
 def _log(message):
@@ -87,7 +96,9 @@ def _resolve_server_executable(value, runtime_root=None):
         if not candidate:
             continue
         path = Path(candidate).expanduser()
-        if path.is_file():
+        # A bare name is looked up in runtime_root, then PATH; never in the current directory.
+        bare = not path.is_absolute() and len(path.parts) == 1
+        if not bare and path.is_file():
             return path.resolve()
         if not path.is_absolute():
             base = Path(runtime_root).expanduser().resolve() if runtime_root else None
@@ -158,7 +169,7 @@ class LlamaCppLaunchConfig:
             image_min_tokens=_bounded_int(settings.get("image_min_tokens", 1024), "image_min_tokens", 1, 1048576),
             gpu_layers=gpu_layers,
             reasoning=reasoning,
-            keep_model_loaded=bool(settings.get("keep_model_loaded", False)),
+            keep_model_loaded=as_bool(settings.get("keep_model_loaded", False)),
             max_tokens=_bounded_int(settings.get("max_tokens", 4096), "max_tokens", 1, 1048576),
             timeout=_bounded_float(settings.get("timeout", 180), "timeout", 1, 3600),
             startup_timeout=_bounded_float(settings.get("startup_timeout", 180), "startup_timeout", 1, 3600),
@@ -425,7 +436,7 @@ class LlamaCppProcessManager:
             if code is not None:
                 raise BackendGenerationError(f"Owned llama.cpp server exited during startup with code {code}.")
             try:
-                with urlopen(health_url, timeout=1.0) as response:
+                with _DIRECT_OPENER.open(health_url, timeout=1.0) as response:
                     if response.status == 200:
                         return
             except HTTPError as exc:

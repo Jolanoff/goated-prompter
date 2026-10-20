@@ -219,7 +219,12 @@
   .dataset-subject-fields { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, .7fr); gap: 12px; }
   .dataset-configuration .field { gap: 7px; }
   .dataset-configuration .idea-input { height: 116px; min-height: 100px; padding: 12px 14px; line-height: 1.6; }
-  .dataset-configuration .dataset-trigger-input { height: 68px; min-height: 60px; padding: 10px 14px; line-height: 1.6; }
+  .dataset-triggers { display: grid; gap: 8px; }
+  .dataset-triggers-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; font-weight: 600; }
+  .dataset-triggers-heading > span { display: inline-flex; align-items: center; gap: 6px; }
+  .dataset-trigger-row { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1.1fr) auto auto; gap: 8px; align-items: center; }
+  .dataset-trigger-pin { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--color-muted); white-space: nowrap; }
+  .dataset-trigger-actions { display: inline-flex; gap: 4px; }
   .dataset-configuration .director-description { margin-top: 0; }
   .dataset-configuration .choice-card { padding: 14px; }
   .dataset-advanced { border-top: 1px solid var(--color-line); padding-top: 14px; }
@@ -603,6 +608,7 @@
     .dataset-step-number { width: 22px; height: 22px; }
     .dataset-config-column { padding: 18px; }
     .dataset-subject-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .dataset-trigger-row { grid-template-columns: repeat(2, minmax(0, 1fr)); padding-bottom: 8px; border-bottom: 1px solid var(--color-line); }
     .dataset-config-actions { padding: 16px 18px; }
     .dataset-config-actions > div { width: 100%; }
     .dataset-config-actions .button { width: 100%; }

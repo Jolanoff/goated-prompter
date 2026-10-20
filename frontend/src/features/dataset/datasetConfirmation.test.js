@@ -165,9 +165,9 @@ test("review lists the selected vocabulary packs, or says none were selected", a
 
 test("review shows the run's Director beside the target model", async () => {
   const Modal = await loadReviewModal();
-  const markup = renderToStaticMarkup(createElement(Modal, { directorLabel: "NSFW Director",
+  const markup = renderToStaticMarkup(createElement(Modal, { directorLabel: "Explicit Adult",
     review: { status: "ready", input: {}, confirmation_token: "t", brief: brief() } }));
-  assert.match(markup, /<dt>Director<\/dt><dd>NSFW Director<\/dd>/);
+  assert.match(markup, /<dt>Director<\/dt><dd>Explicit Adult<\/dd>/);
 });
 
 test("a saved version 10 brief with an intent shows no intent details", async () => {

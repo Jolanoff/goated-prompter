@@ -5,15 +5,15 @@
   },
   {
     "category": "Actions & Poses",
-    "prompt_text": "{Actions & Poses} provides vocabulary for what subjects do and how they are positioned while doing it. An entry may define the action and the pose together, or only one of them. When it defines both, keep them together as one arrangement. When it defines only the action, choose a pose that physically supports it; when it defines only the pose, choose an action that fits it. Entries name people neutrally (\"the person\", \"one person\", \"the other person\"): replace them with the scene's actual subjects, using each subject's correct gender, pronouns and body. Objects, furniture and surfaces named in an entry are examples: replace them with ones that suit the scene's space and any selected objects, keeping the pose physically the same. If an entry needs something a subject does not have, adapt it or choose another entry. Preserve any action already specified by the user."
+    "prompt_text": "{Actions & Poses} provides vocabulary for what subjects do and how they are positioned while doing it. An entry may define the action and the pose together, or only one of them. When it defines both, keep them together as one arrangement. When it defines only the action, choose a pose that physically supports it; when it defines only the pose, choose an action that fits it. Entries name people neutrally (\"the person\", \"one person\", \"the other person\"): replace them with the scene's actual subjects, using each subject's correct gender, pronouns and body. Objects, furniture and surfaces named in an entry are examples: replace them with ones that suit the scene's space and any selected objects, keeping the pose physically the same. If an entry needs a body part nobody in the cast has, choose another entry; an object or surface the space lacks may be replaced with one that does the same job. Preserve any action already specified by the user."
   },
   {
     "category": "Spaces",
     "prompt_text": "{Spaces} provides vocabulary describing where the action takes place. Use relevant entries as possible locations or environmental inspiration."
   },
   {
-    "category": "Objects",
-    "prompt_text": "{Objects} provides vocabulary for physical objects. Objects can be used by subjects, held by subjects, worn where appropriate, interacted with, or included in the background."
+    "category": "Objects & Props",
+    "prompt_text": "{Objects & Props} provides vocabulary for the things in the scene. An entry can be used by a subject, used on a subject, used for the action, held, carried, worn where it is not clothing, written on, or placed in the space or background. An entry that is text (a word printed, written, engraved or drawn) becomes visible words or marks in the image. Fit each entry to the scene's space and action."
   },
   {
     "category": "Expressions",
@@ -33,7 +33,7 @@
   },
   {
     "category": "Camera & Composition",
-    "prompt_text": "{Camera & Composition} provides vocabulary for shot types, camera angles, framing, and viewpoints. Use relevant entries to compose the scene while keeping required subjects and actions visible."
+    "prompt_text": "{Camera & Composition} provides vocabulary for viewpoints, closeness and composition. Turn an entry into what the image shows: the viewpoint, which parts of each person are in the frame and what lies in front of and behind them. An entry about closeness sets how near the view is, never a reason to cut a person of the cast down to a body part: the action and every cast member's presence come first."
   },
   {
     "category": "Effects & Atmosphere",

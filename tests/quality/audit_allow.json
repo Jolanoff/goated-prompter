@@ -1,0 +1,33 @@
+{
+  "_help": "Sentences the audit may flag but that are correct where they are. owner and decision must match, phrase is a part of the sentence, name is optional (one guide only). decision \"duplicate\" with an \"other\" owner accepts the same rule in two places. Always give the reason.",
+  "allowed": [
+    {"owner": "priority", "decision": "invention", "phrase": "Creativity alone sets how much is invented",
+     "reason": "Names Creativity as the owner; it decides nothing itself."},
+    {"owner": "mode", "name": "Remix", "decision": "invention", "phrase": "recast the saved scenario",
+     "reason": "Recasting a saved scenario is the Remix task itself."},
+    {"owner": "mode", "name": "Dataset Caption", "decision": "invention", "phrase": "invented context",
+     "reason": "A literal caption is the Dataset Caption task."},
+    {"owner": "vision", "decision": "invention", "phrase": "requests a redesign",
+     "reason": "Reference images are facts: keeping visible evidence is fact protection, not invention level."},
+    {"owner": "target", "name": "MiniMax H3", "decision": "invention", "phrase": "never invent dialogue or reference contents",
+     "reason": "MiniMax H3 keeps its own reference and dialogue contract (its own tab)."},
+    {"owner": "target", "name": "MiniMax H3", "decision": "invention", "phrase": "without inventing a video timeline",
+     "reason": "Output structure: no video fields outside Video mode."},
+    {"owner": "director", "name": "Describe Face & Body", "decision": "invention", "phrase": "invent hidden anatomy",
+     "reason": "Describes visible reference evidence only; evidence is a fact."},
+    {"owner": "director", "name": "MiniMax H3", "decision": "invention", "phrase": "invent the contents of unseen media",
+     "reason": "References are facts; MiniMax keeps its own reference contract."},
+    {"owner": "director", "name": "Krea 2 Identity Edit v1.2 (Community)", "decision": "invention", "phrase": "without redesigning the rest of the image",
+     "reason": "Edit task: what is not edited stays as the source image shows it."},
+    {"owner": "director", "name": "Krea 2 Identity Edit v1.2 (Community)", "decision": "invention", "phrase": "inventing unrelated content",
+     "reason": "Edit task: a removal is not an addition."},
+    {"owner": "director", "name": "Krea 2 Identity Edit v1.2 (Community)", "decision": "invention", "phrase": "never invent facial characteristics",
+     "reason": "Identity evidence is a fact."},
+    {"owner": "planner", "decision": "invention", "phrase": "invent a",
+     "reason": "Protects the request's facts (its concept and central activity), not how much is invented."},
+    {"owner": "planner", "decision": "invention", "phrase": "inventing a conven",
+     "reason": "Protects the requested pose and action (facts)."},
+    {"owner": "dataset_scenes", "name": "VOCABULARY_RULES", "decision": "invention", "phrase": "may be invented naturally",
+     "reason": "Says unselected vocabulary categories do not limit the writer; Creativity still decides how far."}
+  ]
+}

@@ -17,11 +17,11 @@ export function packsByCategory(catalog) {
     category, packs: (catalog.packs || []).filter((pack) => pack.category === category.id) }));
 }
 
-/** The packs a search and category filter show: the query matches a pack's name, its category or any entry. */
+/** The packs a search and category filter show: the query matches a pack's name, category, description or any entry. */
 export function filterPacks(catalog, query = "", category = "") {
   const words = query.trim().toLowerCase();
   return (catalog?.packs || []).filter((pack) => (!category || pack.category === category) && (!words
-    || [pack.name, pack.category, ...pack.entries].some((text) => text.toLowerCase().includes(words))));
+    || [pack.name, pack.category, pack.description || "", ...pack.entries].some((text) => text.toLowerCase().includes(words))));
 }
 
 /** The names of the selected packs, for "Selected: Fantasy, Cinematic". */

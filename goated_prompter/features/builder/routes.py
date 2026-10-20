@@ -7,9 +7,12 @@ from aiohttp import web
 
 from ...api.common import STATE, json_object
 from ...contracts import GoatedPrompterRequest, as_bool
-from ...presets import DEFAULT_DIRECTOR_PRESET, get_director_preset
+from ...presets import DEFAULT_DIRECTOR_PRESET, fold_replaced_director, get_director_preset
 from ...uploaded_images import decode_image
 from ..settings.validation import validate_local_paths
+
+
+_SERVER_ONLY_SETTINGS = frozenset({"director_model_path", "director_mmproj_path", "director_llama_server"})
 
 
 async def generate(request):
@@ -22,12 +25,17 @@ async def generate(request):
         raise ValueError("settings must be an object; images must be an array with at most four entries.")
     if not isinstance(text_only, bool):
         raise ValueError("text_only must be a boolean.")
+    # Executable and model locations come from config or model discovery, never from the request body.
+    forbidden = sorted(_SERVER_ONLY_SETTINGS & settings.keys())
+    if forbidden:
+        raise ValueError("These settings can only be configured on the server: " + ", ".join(forbidden) + ".")
     async with state.admission:
         active_job = state.active_job()
         if active_job is not None:
             return web.json_response({"ok": False,
                                       "error": "A job is active. Resume it or wait for completion before generating again.",
                                       "active_job": active_job}, status=409)
+        settings = fold_replaced_director(settings)
         director = get_director_preset(settings.get("director_preset", DEFAULT_DIRECTOR_PRESET), strict=True)
         settings = {**settings, "director_preset": director.id,
                     "mode": settings.get("mode") or director.recommended_mode or "Custom",

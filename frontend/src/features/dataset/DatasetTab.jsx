@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AlignLeft, ChevronDown, CircleHelp, Cpu, Database, Download, Layers3, LoaderCircle, SlidersHorizontal, Sparkles, Tag, WandSparkles } from "lucide-react";
+import { AlignLeft, ChevronDown, CircleHelp, Cpu, Database, Download, Layers3, LoaderCircle, SlidersHorizontal, Sparkles, WandSparkles } from "lucide-react";
 import { ui } from "../../ui.js";
 import { orderDisplayPresets, presetDisplayLabel } from "../../presetPresentation.js";
 import { TargetSelect } from "../../shared/workflow/WorkflowControls.jsx";
@@ -9,11 +9,12 @@ import { datasetGenerationLog } from "./datasetExport.js";
 import { useDatasetWorkflow } from "./useDatasetWorkflow.js";
 import DatasetConfirmationModal from "./DatasetConfirmationModal.jsx";
 import DatasetVocabulary from "./DatasetVocabulary.jsx";
+import DatasetTriggers from "./DatasetTriggers.jsx";
 import { useCatalog } from "../vocabulary/useCatalog.js";
 import { cleanSelection, recordedNames, selectedNames } from "../vocabulary/catalog.js";
 import { RunPrompts, RunScenes } from "./DatasetRunPages.jsx";
 import { excludedDirectors, maxSeed, seedModes } from "./options.js";
-import { styles } from "../../shared/workflow/options.js";
+import { captures, styleChoices, styles } from "../../shared/workflow/options.js";
 
 const datasetPages = [["configure", "Configure"], ["scenes", "Scenes"], ["dataset", "Dataset"]];
 const sceneSources = [
@@ -174,11 +175,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                 </select>
               </label>
             </div>
-             <label className={ui.field}><span><Tag size={14} aria-hidden="true" />Trigger text (optional, for LoRA)</span>
-              <textarea className={`${ui.notesInput} dataset-trigger-input`} aria-label="Trigger text or terms" maxLength={1000} value={draft.trigger}
-                onChange={(event) => update({ trigger: event.target.value })} placeholder="e.g. old lady with dark hair · or woman, cake" />
-               <small className={ui.directorDescription}>Exact wording to include in each prompt. Leave empty for no trigger.</small>
-             </label>
+             <DatasetTriggers triggers={draft.triggers} onChange={(triggers) => update({ triggers })} />
              <details className="dataset-details dataset-advanced">
                <summary><SlidersHorizontal size={14} aria-hidden="true" /><span>Advanced options</span>
                  {draft.constraints.trim() && <span className="dataset-rules-indicator">Rules added</span>}<ChevronDown size={14} aria-hidden="true" /></summary>
@@ -205,19 +202,6 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                    </label>
                  </div>
                  <small className={ui.directorDescription}>Shows the seed of the last batch. Each new batch keeps it (Fixed), adds one (Increment) or picks a new one (Randomize). Regenerating one image stays random.</small>
-              <details className="dataset-details rounded-lg border border-line p-3">
-               <summary><Tag size={14} aria-hidden="true" /><span>Training trigger & controls</span><ChevronDown size={14} aria-hidden="true" /></summary>
-               <div className="mt-4 grid gap-4">
-            <div className="grid gap-2">
-               <label className={ui.choiceCard}>
-                 <input type="checkbox" className="mt-0.5" aria-label="Require trigger at beginning"
-                  checked={draft.trigger_at_start === true} onChange={(event) => update({ trigger_at_start: event.target.checked })} />
-                 <span><strong className="block">Require trigger at start</strong>
-                   <small className="mt-1 block leading-relaxed text-muted">On: every prompt starts with the trigger. Off: the trigger goes wherever it fits naturally in the prompt.</small></span>
-              </label>
-            </div>
-              </div>
-             </details>
                     <HelpDetails>Generate starts a fresh batch: confirm the request once, then scenes and prompts are written in order. Generate scenes only stops after the scenes. Changed settings need a new review.</HelpDetails>
                </div>
              </details>
@@ -250,14 +234,20 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                 <select className={ui.select} aria-label="Dataset descriptive creativity" value={draft.creativity || "Balanced"} onChange={(event) => update({ creativity: event.target.value })}>
                   {["Strict", "Balanced", "Creative", "Dice"].map((item) => <option key={item}>{item}</option>)}
                 </select>
-                <small className="text-xs leading-relaxed text-muted">Changes visual treatment, not the planned action.</small>
+                <small className="text-xs leading-relaxed text-muted">How freely your request is interpreted; who appears and what they do never change.</small>
               </label>
               <label className={ui.field}><span><WandSparkles size={14} aria-hidden="true" />Style</span>
                 <select className={ui.select} aria-label="Dataset visual style" value={draft.style || "Auto"} onChange={(event) => update({ style: event.target.value })}>
-                  {styles.map((item) => <option key={item}>{item}</option>)}
+                  {styleChoices(styles, draft.target, draft.style || "Auto").map(({ value }) => <option key={value}>{value}</option>)}
                 </select>
                 <small className="text-xs leading-relaxed text-muted">Auto follows your concept; with Anima it means anime.</small>
               </label>
+              {draft.style === "Realistic" && draft.target !== "Anima" && <label className={ui.field}><span><WandSparkles size={14} aria-hidden="true" />Capture</span>
+                <select className={ui.select} aria-label="Dataset photo capture" value={draft.capture || "Auto"} onChange={(event) => update({ capture: event.target.value })}>
+                  {captures.map((item) => <option key={item}>{item}</option>)}
+                </select>
+                <small className="text-xs leading-relaxed text-muted">How the photos were taken. Auto picks one per image.</small>
+              </label>}
             </div>
 
             <fieldset className="mt-5 border-t border-line pt-4">

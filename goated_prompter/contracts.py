@@ -33,6 +33,7 @@ class GoatedPrompterRequest:
     target_model: str = "Generic"
     creativity: str = "Balanced"
     style: str = "Auto"
+    capture: str = "Auto"  # how a Realistic image was captured (options/styles.py CAPTURE_NAMES)
     prompt_model: str = "Qwen 3.5 9B"
     director_preset: str = DEFAULT_DIRECTOR_PRESET
     director_ai: str = ""
@@ -64,6 +65,14 @@ class GoatedPrompterRequest:
     image_4: object = None
     linked_references: bool = False
     planning_mode: str = "Auto"
+    # Read the idea and workflow rules as user rules ("no X" exclusions, quoted literals). Dataset turns this off: its
+    # idea is a generated scene and its rules are already approved requirements, not text to parse. Never from the API.
+    compile_rules: bool = True
+    # Library templates chosen by the caller (a Dataset run uses the same ones for every image, so every prompt has
+    # one structure); None picks them per prompt. Never from the API.
+    library_references: tuple = None
+    # Exact-only style triggers already encode the medium/rendering. Internal; never from the API.
+    describe_style: bool = True
 
     def __post_init__(self):
         object.__setattr__(self, "target_model", canonical_target(self.target_model))
@@ -86,6 +95,7 @@ class GoatedPrompterRequest:
             target_model=str(values.get("target_model") or "Generic"),
             creativity=str(values.get("creativity") or "Balanced"),
             style=str(values.get("style") or "Auto"),
+            capture=str(values.get("capture") or "Auto"),
             prompt_model=str(values.get("prompt_model") or values.get("director_ai") or "Qwen 3.5 9B"),
             director_preset=str(preset_value),
             director_profile=str(values.get("director_profile") or ""),
