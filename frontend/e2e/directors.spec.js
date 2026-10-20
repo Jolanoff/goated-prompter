@@ -13,14 +13,14 @@ test("saved instruction presets edit, restore, create, rename with stable IDs, r
   await page.goto("/");
   const builder = page.getByLabel("Instruction preset", { exact: true });
   await expect(builder).toHaveValue("general_director");
-  await expect(builder.locator("option:checked")).toHaveText("General-Purpose Prompt");
+  await expect(builder.locator("option:checked")).toHaveText("General");
   await page
     .getByLabel("Describe your idea", { exact: true })
     .fill("Keep my builder draft");
   await page.getByRole("button", { name: "Instruction presets", exact: true }).click();
   const instructions = page.getByLabel("Preset instructions");
   const original = await instructions.inputValue();
-  await expect(page.getByLabel("Instruction preset name")).toHaveValue("General-Purpose Prompt");
+  await expect(page.getByLabel("Instruction preset name")).toHaveValue("General");
   await expect(page.getByLabel("Instruction preset name")).toHaveAttribute(
     "readonly",
     "",
@@ -34,7 +34,7 @@ test("saved instruction presets edit, restore, create, rename with stable IDs, r
   expect(payload).not.toHaveProperty("recommended_mode");
   expect(payload).toEqual({
     id: "general_director",
-    name: "General Director",
+    name: "General",
     instructions: "Saved built-in instructions",
   });
   await expect(page.getByRole("status")).toContainText("Instruction preset saved");

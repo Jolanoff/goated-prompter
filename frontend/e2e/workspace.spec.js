@@ -11,7 +11,7 @@ test.beforeEach(async ({ request }) => {
 
 test("desktop generation, ending work, saved prompt persistence and deletion", async ({
   page,
-}) => {
+}, testInfo) => {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.setViewportSize({ width: 1448, height: 1086 });
@@ -19,7 +19,7 @@ test("desktop generation, ending work, saved prompt persistence and deletion", a
   await expect(page.getByText("Local backend connected")).toBeVisible();
   await expect(
     page.getByLabel("Instruction preset", { exact: true }).locator("option:checked"),
-  ).toHaveText("General-Purpose Prompt");
+  ).toHaveText("General");
   await expect(page.getByLabel("Prompt task", { exact: true })).toHaveValue("Enhance");
   await page
     .getByLabel("Describe your idea", { exact: true })
@@ -71,7 +71,7 @@ test("desktop generation, ending work, saved prompt persistence and deletion", a
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
-    path: "test-results/desktop-workspace.png",
+    path: testInfo.outputPath("desktop-workspace.png"),
     fullPage: true,
   });
   await page.getByRole("button", { name: /Saved Prompts/ }).click();
@@ -260,7 +260,7 @@ test("local engine discovery, partial selection persistence and empty setup", as
 
 test("four stable image slots, explicit sources, text-only isolation and mobile layout", async ({
   page,
-}) => {
+}, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");
   await expect(page.getByText("Local backend connected")).toBeVisible();
@@ -315,7 +315,7 @@ test("four stable image slots, explicit sources, text-only isolation and mobile 
   ).toBe(true);
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({
-    path: "test-results/mobile-workspace.png",
+    path: testInfo.outputPath("mobile-workspace.png"),
     fullPage: true,
   });
   await page.getByRole("button", { name: "Remove image 1" }).click();
