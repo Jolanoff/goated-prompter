@@ -15,6 +15,7 @@ import DirectorsTab from "./features/directors/DirectorsTab.jsx";
 import BuilderTab from "./features/builder/BuilderTab.jsx";
 import ReferenceImages from "./features/builder/ReferenceImages.jsx";
 import { useReferenceImages } from "./features/builder/useReferenceImages.js";
+import { engineAcceptsImages, noImages } from "./features/builder/engineImages.js";
 import { useDirectorEditor } from "./features/directors/useDirectorEditor.js";
 import SavePromptDialog from "./features/saved-prompts/SavePromptDialog.jsx";
 import { useSavedPrompts } from "./features/saved-prompts/useSavedPrompts.js";
@@ -109,7 +110,7 @@ function App() {
   const connectionRef = useRef(0);
   const active = !!job && activeStatuses.includes(job.status);
   const busy = active || submitting;
-  const { images, uploading, upload, remove: removeImage } = useReferenceImages({ busy, setError });
+  const { images: uploadedImages, uploading, upload, remove: removeImage } = useReferenceImages({ busy, setError });
   const {
     saved, storageReady, storageWarning, storageError, promptsBusy, saveKind, dialogBusy,
     reload: reloadSavedPrompts, deletePrompt, requestPromptSave, requestNewPrompt, dialog: savePromptDialog,
@@ -124,11 +125,14 @@ function App() {
     bootstrap?.backend,
   );
   const profiles =
-    bootstrap?.models.profiles.filter((item) => item.vision_ready) || [];
+    bootstrap?.models.profiles.filter((item) => item.ready) || [];
   const selectedProfile =
     profiles.find((item) => item.id === bootstrap?.settings.selected_profile) ||
     profiles[0];
   const noEngine = !configuredBackend && !selectedProfile;
+  // Text-only engines see no uploads, so mappings fall back to Off and nothing is sent.
+  const imagesEnabled = engineAcceptsImages({ configuredBackend, models: bootstrap?.models, selectedProfile });
+  const images = imagesEnabled ? uploadedImages : noImages;
   const attributes = [
     ...(bootstrap?.reference_attributes ||
       referenceAttributes.map((key) => ({
@@ -730,6 +734,7 @@ function App() {
                 navigate("directors");
               }}>
               <ReferenceImages images={images} settings={settings} attributes={attributes} sources={sources}
+                disabled={!imagesEnabled}
                 missingReferences={missingReferences} sourceAvailable={sourceAvailable} onChange={update}
                 onUpload={upload} onError={setError}
                 onRemove={removeImage} />

@@ -182,7 +182,7 @@ Download these **two files from that same repository**:
 | [Qwen3.5-9B-Q4_K_M.gguf](https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/blob/main/Qwen3.5-9B-Q4_K_M.gguf) | Main language-model weights, approximately 5.68 GB. |
 | [mmproj-BF16.gguf](https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/blob/main/mmproj-BF16.gguf) | Matching vision projector, approximately 922 MB. This lets the model process images. |
 
-Use the download button on each file page; you do not need to download every quantization. Keep the model and its matching projector in the **same folder**, and keep `mmproj` in the projector filename. The local engine selector currently requires a complete pair, even if you plan to start with text-only prompts.
+Use the download button on each file page; you do not need to download every quantization. Keep the model and its matching projector in the **same folder**, and keep `mmproj` in the projector filename. The projector is optional: a folder with only a model GGUF appears as a **text-only** engine, and reference images are disabled while it is selected.
 
 Example model folder:
 
@@ -414,7 +414,7 @@ Existing SQLite settings and browser-saved prompt collections have migration pat
 | --- | --- |
 | `python` or `npm` is not recognized | Install the prerequisites with PATH enabled, then open a new terminal. On Windows, `py -3.12 -m venv .venv` can be used if the Python launcher is installed. |
 | Website says to build `frontend/dist` | Run `npm --prefix frontend ci`, then `npm --prefix frontend run build`. |
-| No prompt engines appear | Save an existing **Models directory**; put a main `.gguf` and matching `mmproj*.gguf` in each model folder; refresh models. |
+| No prompt engines appear | Save an existing **Models directory**; put a main `.gguf` (plus a matching `mmproj*.gguf` for image input) in each model folder; refresh models. |
 | `llama_server executable was not found` | Set the full executable path in `config/config.json`, test it with `--version`, then restart Python. |
 | llama.cpp exits during startup | Run its `--version` check; verify DLLs/drivers, a current build, compatible GGUF/projector files, and available memory. |
 | Loading takes too long | The first request loads the model. Check `startup_timeout` in the config and your hardware. CPU inference can be much slower. |
@@ -432,6 +432,7 @@ For an existing OpenAI-compatible server, replace the configuration with your en
   "openai_compatible": {
     "base_url": "http://127.0.0.1:1234/v1",
     "model": "your-model-name",
+    "vision": true,
     "api_key_env": "GOATED_PROMPTER_API_KEY",
     "temperature": 0.5,
     "timeout": 180
@@ -439,7 +440,7 @@ For an existing OpenAI-compatible server, replace the configuration with your en
 }
 ```
 
-Set `GOATED_PROMPTER_API_KEY` in the environment if authentication is required. The endpoint and model must support vision for reference images. Local model discovery is not required for this backend. `{"backend": "mock"}` is available for text-only UI/assembly checks without an LLM; its output is intentionally just a marked mock result.
+Set `GOATED_PROMPTER_API_KEY` in the environment if authentication is required. Any chat-completions text model works. Set `"vision": false` when the model cannot read images; reference images are then disabled in the Builder. `vision` defaults to `true`. Local model discovery is not required for this backend. `{"backend": "mock"}` is available for text-only UI/assembly checks without an LLM; its output is intentionally just a marked mock result.
 
 Backend names ignore surrounding whitespace, casing and hyphen/underscore differences. Existing aliases (`openai`, `debug`, `llama_cpp`, `llamacpp`) remain supported; the website API publishes their canonical names (`openai_compatible`, `mock`, `local_llama_cpp`).
 

@@ -5,17 +5,31 @@ import asyncio
 from aiohttp import web
 
 from ...api.common import STATE, json_object
+from ...backends.base import BackendConfigurationError
 from ...backends.factory import canonical_backend_name
 from ...backends.llama_cpp_process import get_process_manager
+from ...backends.openai_compatible import openai_compatible_vision
 from ...director_profiles import discover_director_profiles
 from ...prompt_library import library_status
+
+
+def _backend_vision(config):
+    """Image support of a configured remote endpoint; local profiles report their own."""
+    settings = config.get("openai_compatible")
+    try:
+        return openai_compatible_vision(settings if isinstance(settings, dict) else {})
+    except BackendConfigurationError:
+        return False  # Generation reports the configuration error; keep images off meanwhile.
 
 
 async def models_payload(state, refresh=False):
     config = state.config()
     discovered = await asyncio.to_thread(discover_director_profiles, config.get("local_llama_cpp", {}), refresh)
-    return {**discovered.to_public_mapping(), "ok": True,
-            "backend": canonical_backend_name(config.get("backend")) or "auto"}
+    backend = canonical_backend_name(config.get("backend")) or "auto"
+    payload = {**discovered.to_public_mapping(), "ok": True, "backend": backend}
+    if backend == "openai_compatible":
+        payload["backend_vision"] = _backend_vision(config)
+    return payload
 
 
 async def models(request):

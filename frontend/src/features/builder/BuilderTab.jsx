@@ -3,6 +3,7 @@ import { ArrowUpRight, Bookmark, ChevronDown, Copy,
 import { orderDisplayPresets, presetDisplayLabel } from "../../presetPresentation.js";
 import { ui } from "../../ui.js";
 import { taskLabels } from "./options.js";
+import { engineOptionLabel } from "./engineImages.js";
 import { styleChoices } from "../../shared/workflow/options.js";
 import LibraryStatus from "../../shared/workflow/LibraryStatus.jsx";
 
@@ -80,7 +81,7 @@ export default function BuilderTab({ settings, inputs, presets, preset, engine, 
                       disabled={settingsBusy || actionBusy || configuredBackend || noEngine}
                       onChange={(event) => onSelectEngine(event.target.value)}>
                       {configuredBackend ? <option value="configured">Configured backend ({backend})</option>
-                        : profiles.length ? profiles.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)
+                        : profiles.length ? profiles.map((item) => <option key={item.id} value={item.id}>{engineOptionLabel(item)}</option>)
                         : <option value="">No ready local engines</option>}
                     </select><ChevronDown size={14} aria-hidden="true" />
                   </label>
@@ -94,7 +95,7 @@ export default function BuilderTab({ settings, inputs, presets, preset, engine, 
                   Maximum Detail uses the largest output budget, not a guaranteed word count.
                 </p>}
                 {noEngine && <p className={ui.warningNote}>
-                  No complete local model found.{" "}
+                  No local model found.{" "}
                   <button type="button" className={ui.textButton} onClick={() => onNavigate("settings")}>Set up models in Settings</button>
                 </p>}
               </div>

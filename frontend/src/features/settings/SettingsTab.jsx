@@ -24,10 +24,11 @@ export default function SettingsTab({ backend, models, draft, onChange, profiles
             <p className={ui.subtleNote} id="folder-help">
               Enter an existing folder path on the server. This folder
               is scanned directly and recursively; no LLM folder is
-              appended. Put each model GGUF and its matching mmproj GGUF
-              in the same subfolder. A folder containing the pair
-              directly also works. Only complete vision-ready profiles
-              appear in Prompt engine.
+              appended. Put each model GGUF in its own subfolder, with its
+              matching mmproj GGUF beside it for image input. A folder
+              containing the files directly also works. Models without an
+              mmproj appear as text-only engines; reference images are
+              disabled while one is selected.
             </p>
             <Toggle label="Keep model loaded"
               description="Retain the model between generations for faster reuse."
@@ -53,10 +54,10 @@ export default function SettingsTab({ backend, models, draft, onChange, profiles
               {profiles.length} ready prompt engines found.
               {configuredBackend && " Generation uses your configured backend, even without local models."}
             </p>
-            {models.profiles.filter((item) => !item.vision_ready).map((item) => (
+            {models.profiles.filter((item) => !item.ready).map((item) => (
               <p className={ui.warningNote} key={item.id}>
-                {item.label}: incomplete model. Add the model GGUF and
-                matching mmproj to the same folder, then refresh models.
+                {item.label}: incomplete model. Add the model GGUF to
+                this folder, then refresh models.
               </p>
             ))}
             {models.warnings.map((warning, index) => (
