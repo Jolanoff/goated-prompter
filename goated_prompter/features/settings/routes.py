@@ -33,7 +33,8 @@ async def settings_endpoint(request):
                 return web.json_response({"ok": False, "error": "Settings cannot change while a job is active.",
                                           "active_job": active}, status=409)
             async with state.storage_lock:
-                state.save_settings(payload)
+                # Saving fsyncs and replaces files; keep that off the event loop.
+                await asyncio.to_thread(state.save_settings, payload)
     return web.json_response(await asyncio.to_thread(state.settings))
 
 

@@ -39,9 +39,10 @@ async def workspace_endpoint(request):
             settings = payload.get("settings", {})
             if not isinstance(settings, dict):
                 raise ValueError("settings must be an object.")
-            target, length = canonical_target(settings.get("target_model", "Generic")), settings.get("prompt_length", "Medium")
-            if target not in TARGET_MODEL_NAMES or length not in PROMPT_LENGTH_NAMES:
-                raise ValueError("Invalid target model or prompt length.")
+            # The target is always the current version's; only the length comes from the request settings.
+            length = settings.get("prompt_length", "Medium")
+            if length not in PROMPT_LENGTH_NAMES:
+                raise ValueError("Invalid prompt length.")
             workflow = {"operation": "refine", "locks": locks(payload.get("locks", []))}
             saved_workflow = await asyncio.to_thread(state.workflow_settings.snapshot, operation)
             workflow["instructions"] = saved_workflow["instructions"]

@@ -4,8 +4,21 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import time
 
 MAX_STORE_BYTES = 16 * 1024 * 1024
+
+
+def _replace(source, destination, attempts=5, delay=0.05):
+    """os.replace, retrying briefly on Windows where antivirus, indexers or sync clients may hold the target open."""
+    for attempt in range(attempts):
+        try:
+            os.replace(source, destination)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(delay * (attempt + 1))
 
 
 def atomic_json(path, payload):
@@ -20,7 +33,7 @@ def atomic_json(path, payload):
             file.write(data)
             file.flush()
             os.fsync(file.fileno())
-        os.replace(temporary, path)
+        _replace(temporary, path)
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)

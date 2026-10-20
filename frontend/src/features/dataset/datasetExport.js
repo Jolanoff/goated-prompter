@@ -3,8 +3,8 @@ export function datasetCopyText(draft) {
   return (draft?.results || []).map((item) => item.prompt.replace(/[\r\n]+/g, " ").trim()).join("\n");
 }
 
-const settingFields = ["subject", "trigger_type", "custom_type", "constraints", "amount", "trigger",
-  "trigger_at_start", "trigger_connected", "expand_trigger", "director_preset",
+const settingFields = ["subject", "trigger_type", "custom_type", "constraints", "amount", "triggers", "trigger",
+  "trigger_at_start", "director_preset",
   "target", "length", "creativity", "style", "source_mode", "inputs", "seed", "seed_mode"];
 const jobFields = ["id", "kind", "status", "completion_state", "revision", "created_at", "finished_at", "result",
   "error", "progress", "progress_at", "status_reason", "events", "llm_trace", "partial_responses",
@@ -42,7 +42,7 @@ function secretValues(value, sensitive = false, field = "") {
     || (field === "diagnostics" && key === "entry"), key));
 }
 
-const contentFields = new Set(["subject", "trigger", "inputs", "constraints", "input", "idea", "scene", "prompt",
+const contentFields = new Set(["subject", "trigger", "triggers", "inputs", "constraints", "input", "idea", "scene", "prompt",
   "dataset_idea", "requested_generation", "text"]);
 
 function redactText(text, secrets, detectCredentials) {

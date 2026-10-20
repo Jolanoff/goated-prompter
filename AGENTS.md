@@ -31,6 +31,8 @@ not authorize extra scope, operations or workflow artifacts.
   or migrate private `data/` contents. Keep normal app reads/writes and the handoff
   of selected content to the local LLM working; do not implement this assistant
   restriction as a runtime sandbox, file-access ban or prompt-redaction rule.
+  The one exception: for quality runs an assistant may add or edit vocabulary packs
+  in `data/vocabulary/`; nothing else in `data/`.
 - Keep evaluation corpora under `tests/` and generated evaluation artifacts under
   `quality-artifacts/`, separate from app `data/`. Tests run by the assistant use
   synthetic temporary storage; their privacy guards do not belong in app startup.
@@ -52,6 +54,20 @@ not authorize extra scope, operations or workflow artifacts.
 - Never update local or remote `master` by any route; only the owner manually merges it.
 - Before starting, check the working tree, current branch and recent local branches. Another session's uncommitted or unpushed work is never overwritten, reset or discarded; continue it only when the owner agrees.
 - Stacked PRs may target the previous task branch for review only. Retarget each to `test` once the PR below it has merged, and merge only into `test`. A PR merged into another task branch has not been delivered.
+
+## Quality rules
+
+- No hard-coded fixes: never special-case a request, word list, example output or
+  model answer to make a problem disappear. Fix the general behavior at its owner.
+- Keep code and prompt text user friendly: no explicit or sexual wording in code,
+  guides, tests or examples written by an assistant; describe behavior in neutral terms.
+- Never call a change better, improved or fixed unless the quality check
+  (`quality.bat` / `python -m tests.quality`, see `tests/quality/README.md`) shows it.
+  Until then say what changed and that it is unverified; report the verdict and its
+  reasons once a run exists.
+- Test what the change touches: Dataset requests for a Dataset change, Builder requests
+  for a Builder change, never both by default. The assistant edits `quality.json`
+  itself, with at most 4 requests and at most 3 seeds, chosen to exercise the change.
 
 ## Code structure
 

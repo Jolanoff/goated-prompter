@@ -35,7 +35,8 @@ _LEGACY_ROLE_ATTRIBUTES = {
     "Lighting": ("lighting", "colors", "mood"),
 }
 _SECONDARY_AUTO_ATTRIBUTES = {"lighting", "colors", "mood"}
-_PRIMARY_DIRECTORS = {"Reverse Engineer", "Surgical Edit"}
+# Directors that take every attribute from the primary reference, by id so a renamed label still matches.
+_PRIMARY_DIRECTORS = {"reverse_engineer", "surgical_edit"}
 
 _EXPLICIT_PATTERNS = {
     "subject": (
@@ -274,6 +275,14 @@ class ResolvedReferenceMap:
         return "\n\n".join(lines)
 
 
+def _director_id(name):
+    """The id of the Director a name or label refers to, or "" when there is none."""
+    if not name:
+        return ""
+    from .presets import get_director_preset
+    return get_director_preset(name).id
+
+
 def resolve_reference_map(request, director_name=None):
     source_labels = tuple(reference_images(request))
     linked = getattr(request, "linked_references", False)
@@ -315,7 +324,7 @@ def resolve_reference_map(request, director_name=None):
             source, reason = primary, "Preserve lock on primary reference"
         elif not source_labels:
             source, reason = "User Prompt", "text-only request"
-        elif has_image_1 and has_image_2 and director_name not in _PRIMARY_DIRECTORS and attribute in _SECONDARY_AUTO_ATTRIBUTES:
+        elif has_image_1 and has_image_2 and _director_id(director_name) not in _PRIMARY_DIRECTORS and attribute in _SECONDARY_AUTO_ATTRIBUTES:
             source, reason = "Image 2", "automatic secondary-reference treatment source"
         else:
             source, reason = primary, "automatic primary-reference source"

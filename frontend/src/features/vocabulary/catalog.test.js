@@ -7,7 +7,7 @@ const catalog = {
   packs: [
     { id: "Spaces/Fantasy", name: "Fantasy", category: "Spaces", entries: ["enchanted forest", "floating castle"] },
     { id: "Spaces/Horror", name: "Horror", category: "Spaces", entries: ["foggy graveyard"] },
-    { id: "Lighting/Cinematic", name: "Cinematic", category: "Lighting", entries: ["rim lighting"] },
+    { id: "Lighting/Cinematic", name: "Cinematic", category: "Lighting", description: "film-set light", entries: ["rim lighting"] },
   ],
   problems: [],
 };
@@ -17,12 +17,13 @@ test("packs are grouped under every registered category, empty ones included", (
     [["Spaces", 2], ["Lighting", 1], ["Objects", 0]]);
 });
 
-test("search matches pack names, categories and entry text; the category filter narrows it", () => {
+test("search matches pack names, categories, descriptions and entry text; the category filter narrows it", () => {
   const ids = (packs) => packs.map((pack) => pack.id);
   assert.deepEqual(ids(filterPacks(catalog)), ["Spaces/Fantasy", "Spaces/Horror", "Lighting/Cinematic"]);
   assert.deepEqual(ids(filterPacks(catalog, "cinem")), ["Lighting/Cinematic"]);
   assert.deepEqual(ids(filterPacks(catalog, "spaces")), ["Spaces/Fantasy", "Spaces/Horror"]);
   assert.deepEqual(ids(filterPacks(catalog, "CASTLE")), ["Spaces/Fantasy"]);
+  assert.deepEqual(ids(filterPacks(catalog, "film-set")), ["Lighting/Cinematic"]);
   assert.deepEqual(ids(filterPacks(catalog, "", "Lighting")), ["Lighting/Cinematic"]);
   assert.deepEqual(ids(filterPacks(catalog, "forest", "Lighting")), []);
 });

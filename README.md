@@ -61,12 +61,22 @@ Screenshots: save PNGs in docs/media/ with these names, then remove this comment
 
 ### Supported targets
 
-**Images:** Generic · Anima · Krea 2 · FLUX.2 Klein · Z-Image Base · Z-Image Turbo · Qwen Image (original Qwen/Qwen-Image checkpoint) · Qwen Image 2.1 · Ideogram4<br>
+**Images:** Generic · Anima · Krea 2 · FLUX.2 Klein · Z-Image · Qwen Image (original Qwen/Qwen-Image checkpoint) · Qwen Image 2.1 · Ideogram4<br>
 **Video:** MiniMax H3 · LTX 2.5
 
-Target adapters own structure, syntax and useful density envelopes. Length changes descriptive density inside that envelope; creativity changes semantic invention, never serialization. Krea preserves non-photographic media, Klein stays moderately detailed, and LTX uses a focused chronological paragraph without inventing dialogue, camera movement or cuts. Anima supports lowercase-style tags, appropriate quality/score tags and scene prose; negative conditioning stays separate. Ideogram validates ordered JSON keys, normalized bounds and uppercase hex colors while retaining literal text. Lightweight capability metadata lives in `goated_prompter/prompting/target_models.py`. Saved legacy target names migrate to the clarified names.
+Target adapters own structure, syntax and useful density envelopes. Length changes descriptive density inside that envelope; creativity changes semantic invention, never serialization. Krea preserves non-photographic media, Klein stays moderately detailed, and LTX uses a focused chronological paragraph without inventing dialogue, camera movement or cuts. Anima writes its tags in the documented order (quality and score, safety, subject count, character and series, artist, then the rest) followed by scene prose; negative conditioning stays separate. Ideogram output is put into the published caption schema: keys in the encoder's order, uppercase hex colours, boxes on the 0–1000 scale (fractions and percentages are rescaled, impossible boxes dropped) and compact JSON with literal non-ASCII text. Lightweight capability metadata lives in `goated_prompter/prompting/target_models.py`. Saved legacy target names migrate to the clarified names; Z-Image Base and Z-Image Turbo settings become Z-Image, and their library prompts start the new `z-image.txt` (the old files are kept).
 
-The former Maximum Detail and Krea High Detail Directors are repurposed as **Technical Visual Precision** and **Krea 2 Visual Precision**, retaining their stable IDs without controlling verbosity. Krea-specific Directors are inactive on unrelated targets. **Krea 2 Identity Edit v1.2 (Community)** describes the community model/workflow, not an official Krea.ai base capability. The single **MiniMax H3 Director** supplies creative staging and continuity, not target serialization; both former MiniMax preset IDs remain compatible.
+### Target, Style and Director
+
+Three settings shape a prompt, and none overrides another:
+
+- **Target model:** how the prompt is written: format, syntax, order and length.
+- **Style:** the medium and rendering: Auto, Anime, Realistic, Illustration, 3D render, Product or Painting. Choosing **Realistic** shows **Capture**, how the photo was taken: **Auto** (one fitting capture per image), **Pro camera**, **Phone snapshot** or **Analog film**. Realistic asks for one camera, light described as physics, the imperfections a real scene has and no praise words. Anima draws anime, so Realistic is not offered there.
+- **Director:** what is emphasized inside that format and style. Built-in Directors: General, Polish a Rough Prompt, Technical Precision, Recreate a Reference Image, Describe Facial Features, Describe Face & Body, Combine Reference Images, Edit Only the Requested Details, Change the Visual Style, Front-Camera Selfie, Mirror Selfie, First-Person View, Fashion & Styling, Boudoir & Intimate, Character Focus, Architecture & Interiors, Product Focus, Dataset & LoRA Caption, Explicit Adult, Video Action & Camera Movement, MiniMax H3, and on Krea 2 only Krea 2 Precision, Krea 2 Match Reference Pose and Krea 2 Identity Edit v1.2 (Community) (a community workflow, not an official Krea.ai capability).
+- **Mode** sets the task, **Creativity** how much is invented and the **library templates** how a prompt is structured (one structure per prompt; a Dataset run uses the same templates for every image). The Photography and Product Modes set the Style to Realistic or Product while Style is on Auto, so the medium is still chosen in one place. The Style comes after the templates in the instructions, so a template's look never outweighs it. Output brackets that are never closed are removed.
+- One rule decides conflicts: your request and the workflow rules decide the facts (who and what is in the image, what happens, what must or must not appear); every setting only shapes how they are written. A target's own layout (FLUX's order, LTX's paragraph, Z-Image's and Qwen Image's structure) is only a default that your library's Template 1 replaces; the target's word limit still caps the library's length. Saved prompts teach form only: no word of them (not even a shared opening tag) becomes an instruction. A retry after copying a template keeps the same format and the same Remix scenario. Qwen Image 2.1 writes an edit instruction only in the Image Edit and Style Transfer Modes; elsewhere references are evidence for a new image. Refine keeps the source's length and form and only applies the requested changes.
+
+The Photography, Smartphone Realism, Krea 2 Smartphone Realism, Vintage / Analog and Anime Directors set a medium, so they became Style choices. A saved setting that used one becomes General with the matching Style and Capture (Realistic with Pro camera, Phone snapshot or Analog film; Anime), unless you had already picked a Style. Renamed Directors keep their IDs, so saved choices and your edits of them carry over; your own Directors are untouched.
 
 The **target model** shapes the writing instructions and output format. The **prompt engine** is the language/vision model that writes the text. Selecting a target does not download or run that image/video generator.
 
@@ -87,7 +97,7 @@ All Qwen Image 2.1 detail levels (Short, Medium, Detailed and Maximum Detail) us
 <details>
 <summary><strong>MiniMax H3: references, clip timing, and output validation</strong></summary>
 
-Open **MiniMax H3**, choose **Clip Length** (10 seconds by default), leave **Mode** on Auto, and describe your video. Choose **MiniMax H3 Director** or any existing instruction preset for creative direction.
+Open **MiniMax H3**, choose **Clip Length** (10 seconds by default), leave **Mode** on Auto, and describe your video. Choose the **MiniMax H3** Director or any existing instruction preset for creative direction.
 
 Use **+ Image**, **+ Video**, and **+ Audio** to insert symbolic tokens at the cursor. Clicking a chip inserts it again. Valid tokens typed directly into the request are also registered; their numbers stay stable. Example:
 
@@ -317,11 +327,11 @@ Custom workflow instructions replace the corresponding built-in behavior. Target
 
 Build a batch around one request, keep shared details consistent, and vary the scenes. Every batch begins with Understanding and your approval.
 
-1. On **Configure**, write the **Request**, choose **NSFW** and the **Amount** (**1–25**), and add an optional **Trigger** for LoRA training. **Advanced options** hold consistency rules, the seed and whether the trigger must start each prompt.
-2. Choose the Director preset, target model, prompt length, creativity and style. The Director and target model shape the final prompts; the scenes are written without a Director. Directors that need reference images, edit an image or write video are not offered here.
+1. On **Configure**, write the **Request**, choose **NSFW** and the **Amount** (**1–25**), and add **Triggers** for LoRA training with **Add** (up to 20). For each trigger, choose its type (**Character**, **Style**, **Outfit**, **Object / concept** or **Other**) and how it is used: **Exact text** (the app puts your exact spelling in every prompt and nothing it covers is described, such as a character's looks, an outfit or the style), **Meaning only** (the model writes what it means in its own words, without copying a text of three or more words, and keeps every number in it) or **Exact text + meaning**. Tick **Start** to put a trigger first; pinned triggers keep the list order, and the rest go where their type belongs (the Anima tag line in its section order, its person's first mention in prose, an Ideogram element's description). Understanding links each character and outfit trigger to the person in your request it belongs to (adding one when needed), and the review shows the link. **Advanced options** hold consistency rules and the seed.
+2. Choose the Director preset, target model, prompt length, creativity and style (with **Capture** for Realistic). The Director and target model shape the final prompts; the scenes are written without a Director. Directors that need reference images, edit an image or write video are not offered here.
 3. Choose the scene source: **Invent scenes**, or **Use my scene ideas** with one idea per line (lines cycle to fill the batch). Your own scene ideas are used as written, without vocabulary.
-4. With **Invent scenes**, optionally open the **Vocabulary Library** to select vocabulary packs (search, filter by category, preview, then **Apply**). The selection is saved with your Dataset settings. With an **Actions & Poses** pack selected, every scene is built on one of its entries, and no entry is used by more than two images (more only when the pack has fewer entries than images). No pack is used automatically; select a **Subjects** pack yourself if you want it to guide character looks.
-5. Click **Generate** or **Generate scenes only**. Check what the review says stays fixed and what varies, then **Confirm**. Nothing is written before you confirm.
+4. With **Invent scenes**, optionally open the **Vocabulary Library** to select vocabulary packs (search, filter by category, preview, then **Apply**). The selection is saved with your Dataset settings. With an **Actions & Poses** pack selected, every scene is built on one of its entries, and no entry is used by more than two images (more only when the pack has fewer entries than images). Each batch sees a seeded sample of at most 40 entries per category, so large packs do not crowd out your request. No pack is used automatically; select a **Subjects** pack yourself if you want it to guide character looks.
+5. Click **Generate** or **Generate scenes only**. Check what the review says stays fixed and what varies, then **Confirm**. Nothing is written before you confirm, and one review starts one run. The review lists your triggers. A character with an exact-text character trigger, or one the image model already knows by name, keeps the looks its name or trigger carries: only its expression, clothing, pose and action are written.
 6. The **Scenes** page shows each image's scene as soon as it is written, and **Dataset** shows each final prompt as soon as it is written. Copy them or download TXT or JSON. **Export generation log** saves the current state to a file.
 
 Runs are not saved by the app; copy or download what you want to keep. Editing scenes, regenerating single images and continuing a scenes-only run are not available. **Seed** and **Seed control** work like ComfyUI: the seed drives the engine and the order in which vocabulary and looks are offered, so Fixed repeats a batch as closely as the engine allows, and Increment and Randomize give different scenes.
@@ -334,8 +344,8 @@ Freaky stuff are ignored. Generating freaky stuff is at your own risk. I'm not r
 
 #### Vocabulary packs
 
-Each category is a folder under `vocabulary/` (Subjects, Actions & Poses, Spaces, Objects, Expressions, Clothing, Mood & Tone, Lighting, Camera & Composition, Effects & Atmosphere), and each JSON file in it is one pack, for example
-`{"name": "Rooftops", "category": "Spaces", "entries": ["rooftop bar", "water tower"]}`. Click **Import packs** on the **Vocabulary** tab and choose one or more pack files: each is checked and saved in `data/vocabulary/<its category's folder>/`, and importing the same file again replaces it. A pack that cannot be read is listed there with the reason, and every other pack keeps working. The categories are defined in `vocabulary/core/` (`scene_category_registry.json`, `category_definitions.json`, `prompt_instructions.json`); a new category is one entry in each plus its folder.
+Each category is a folder under `vocabulary/` (Subjects, Actions & Poses, Spaces, Objects & Props (folder `Objects`), Expressions, Clothing, Mood & Tone, Lighting, Camera & Composition, Effects & Atmosphere), and each JSON file in it is one pack, for example
+`{"name": "Rooftops", "category": "Spaces", "entries": ["rooftop bar", "water tower"]}`. A pack may also carry an optional `"description"` (up to 300 characters): a short note on what the pack is for and how its entries are written, for example "creative props for painterly scenes; entries name the colour". The scene writer reads it with that pack's entries; it never overrides your request or settings. Click **Import packs** on the **Vocabulary** tab and choose one or more pack files: each is checked and saved in `data/vocabulary/<its category's folder>/`, and importing the same file again replaces it. A pack that cannot be read is listed there with the reason, and every other pack keeps working. The categories are defined in `vocabulary/core/` (`scene_category_registry.json`, `category_definitions.json`, `prompt_instructions.json`); a new category is one entry in each plus its folder.
 
 See the [Dataset architecture](docs/dataset-architecture.md) for how a run is understood, composed and written.
 
@@ -438,6 +448,13 @@ Backend names ignore surrounding whitespace, casing and hyphen/underscore differ
 ## Development and verification
 
 Want to help? Read the [contribution guide](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md). Use the [issue forms](https://github.com/Jolanoff/goated-prompter/issues/new/choose) for bugs and feature requests; report vulnerabilities according to the [security policy](SECURITY.md).
+
+### Is a change better?
+
+Run `quality.bat` from the project folder. It compares the old code with the new code on your model and opens a
+report with a verdict: **Better**, **Worse** or **No real difference**. `quality.bat audit` checks the settings for
+collisions in seconds without a model. Your requests live in `quality.json` and stay local, as do the results; see
+[`tests/quality/README.md`](tests/quality/README.md).
 
 ### Checkpoint privacy and recovery
 

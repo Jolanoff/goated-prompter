@@ -25,6 +25,7 @@ function PackCard({ pack }) {
       <span className="vocabulary-pack-icon" aria-hidden="true"><Box size={18} /></span>
       <div className="vocabulary-pack-title"><h4>{pack.name}</h4><span>{pack.source === "imported" ? "Imported · " : ""}{pack.id}.json</span></div>
     </div>
+    {pack.description && <p className="vocabulary-description">{pack.description}</p>}
     <p className="vocabulary-meta">{pack.entries.length} {pack.entries.length === 1 ? "entry" : "entries"}</p>
     <details className="vocabulary-entries">
       <summary>Entries<ChevronDown size={13} aria-hidden="true" /></summary>
@@ -61,8 +62,9 @@ export default function VocabularyTab({ visible }) {
     </div>
     <div className="vocabulary-guidance"><Package size={18} aria-hidden="true" />
       <p>Import a pack: choose a JSON file such as
-        {" "}<code>{'{"name": "Rooftops", "category": "Spaces", "entries": ["rooftop bar", "water tower"]}'}</code>.
-        It is saved in <code>data/vocabulary/</code>, in the folder of its category; importing the same file again replaces it.</p>
+        {" "}<code>{'{"name": "Rooftops", "category": "Spaces", "description": "City rooftops at night", "entries": ["rooftop bar", "water tower"]}'}</code>.
+        The description is optional: a short note on what the pack is for and how its entries are written, which the
+        scene writer reads with the pack. It is saved in <code>data/vocabulary/</code>, in the folder of its category; importing the same file again replaces it.</p>
     </div>
     {!!imported.length && <ul className="vocabulary-feedback" role="status">{imported.map((row) => <li key={row.file}>
       {row.ok ? `Imported ${row.pack.name} into ${row.pack.category}.` : row.error}</li>)}</ul>}

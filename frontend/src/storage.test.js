@@ -137,7 +137,7 @@ test("director hydration resolves legacy labels and defaults to stable IDs witho
     default: "General Director",
     presets: [
       { id: "general", label: "General Director" },
-      { id: "photo", label: "Photography Director" },
+      { id: "photo", label: "Fashion & Styling" },
     ],
   };
   const inputs = {
@@ -147,7 +147,7 @@ test("director hydration resolves legacy labels and defaults to stable IDs witho
   };
   for (const [saved, id] of [
     [{}, "general"],
-    [{ director_preset: "Photography Director" }, "photo"],
+    [{ director_preset: "Fashion & Styling" }, "photo"],
     [{ director_preset: "photo" }, "photo"],
     [{ director_preset: "deleted" }, "general"],
   ]) {
@@ -168,11 +168,13 @@ test("renamed targets and precision Directors hydrate without losing saved choic
     { id: "maximum_detail_director", label: "Technical Visual Precision" },
     { id: "krea_2_high_detail", label: "Krea 2 Visual Precision" },
     { id: "krea_2_identity_edit", label: "Krea 2 Identity Edit v1.2 (Community)" },
-    { id: "minimax_director", label: "MiniMax H3 Director" },
+    { id: "minimax_director", label: "MiniMax H3" },
+    { id: "general_director", label: "General" },
+    { id: "nsfw_director", label: "Explicit Adult" },
   ];
   for (const [legacy, current] of [
     ["Qwen2.1", "Qwen Image 2.1"], ["Qwen Image", "Qwen Image (original)"],
-    ["Z-Image", "Z-Image Base"], ["MiniMax", "MiniMax H3"],
+    ["Z-Image Base", "Z-Image"], ["Z-Image Turbo", "Z-Image"], ["MiniMax", "MiniMax H3"],
   ]) {
     assert.equal(hydrateBuilder({}, { target_model: legacy }).target_model, current);
   }
@@ -180,9 +182,18 @@ test("renamed targets and precision Directors hydrate without losing saved choic
     ["Maximum Detail Director", "maximum_detail_director"],
     ["Krea 2 High Detail", "krea_2_high_detail"], ["Krea 2 Identity Edit", "krea_2_identity_edit"],
     ["minimax_h3_director", "minimax_director"], ["MiniMax Director", "minimax_director"],
-    ["MiniMax H3 Director", "minimax_director"],
+    ["MiniMax H3 Director", "minimax_director"], ["General Director", "general_director"],
+    ["NSFW Director", "nsfw_director"],
   ]) {
     assert.equal(hydrateBuilder({}, { director_preset: legacy }, { presets }).director_preset, id);
+  }
+  for (const [legacy, saved, expected] of [
+    ["Smartphone Realism", {}, ["Realistic", "Phone snapshot"]],
+    ["vintage_analog", {}, ["Realistic", "Analog film"]],
+    ["anime_director", { style: "Painting" }, ["Painting", undefined]],
+  ]) {
+    const result = hydrateBuilder({}, { director_preset: legacy, ...saved }, { presets });
+    assert.deepEqual([result.director_preset, result.style, result.capture], ["general_director", ...expected]);
   }
 });
 

@@ -59,14 +59,15 @@ class RebuildParityTests(unittest.TestCase):
             out = []
             for row in user["images"]:
                 cast = ["stranger"] if len(calls) == 1 and row["image"] == 2 else labels  # reject image 2 once
-                out.append({"subjects": {label: {field: "visible" for field in scenes.SUBJECT_FIELDS} for label in cast},
-                            "position": {label: "seated" for label in cast}, "actions": row["input"], "space": f"library {row['image']}",
-                            "lighting": "daylight", "mood": "calm", "camera": "wide", "extras": "books"})
+                out.append({"subjects": {label: {field: f"visible{row['image']}{label}{field}".replace(" ", "")
+                                                 for field in scenes.SUBJECT_FIELDS} for label in cast},
+                            "position": {label: "seated" for label in cast}, "actions": f"{' and '.join(cast)}: {row['input']}", "space": f"library {row['image']}",
+                            "lighting": "daylight", "mood": "calm", "camera": "wide", "extras": f"books{row['image']}"})
             return json.dumps({"scenes": out})
         with patch.object(backend, "generate", side_effect=generate), patch.object(scenes, "create_backend", return_value=backend):
             result = scenes.write_scenes({"backend": "mock"}, GoatedPrompterRequest(idea="reading"), self.brief,
                                          progress=lambda _message: None)
-        self.assertEqual([scene["actions"] for scene in result["scenes"]],
+        self.assertEqual([scene["actions"].split(": ", 1)[1] for scene in result["scenes"]],
                          ["Read on a bench", "Read beside a fountain", "Read on a bench"])
         self.assertEqual([row["input"] for row in composer_user(calls[0].user_message)["images"]],
                          ["Read on a bench", "Read beside a fountain", "Read on a bench"])

@@ -13,7 +13,7 @@ class PromptScenePlan:
     def supporting_input(self):
         return ("RESOLVED SCENE PLAN — SUPPORTING INTERPRETATION\n"
                 "The original user intent remains authoritative. Explicit user requirements > "
-                "preserved reference facts > this staging interpretation > optional Director embellishment. "
+                "preserved reference facts > this staging interpretation > Director emphasis. "
                 "Resolve physical relationships only; never replace action, subjects, pose mechanics or literal text. "
                 "Target, Director, Creativity and Length still govern expression and permitted enrichment.\n"
                 + COMPILED_CONTRACT + "\n" + json.dumps(self.details, ensure_ascii=False))

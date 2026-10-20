@@ -8,9 +8,10 @@ Core (vocabulary/core/) is three files:
                                 vocabulary; "{Category name}" in the text is replaced by the name.
 Adding a category is one entry in each file plus its folder; nothing in the code names a category.
 
-A pack is one JSON file in a registered folder, vocabulary/<folder>/<file>.json, with exactly
+A pack is one JSON file in a registered folder, vocabulary/<folder>/<file>.json, with
   {"name": "Fantasy", "category": "Spaces", "entries": ["enchanted forest", "floating castle"]}
-where category is the folder's registered category. Its id is "<folder>/<file name without .json>". Each file is read
+and optionally "description": a short note from the pack's author on what the pack is for and how its entries are
+written, which the scene writer reads with the pack. category is the folder's registered category. Its id is "<folder>/<file name without .json>". Each file is read
 on its own: a broken file is reported with its reason and every other pack still loads.
 
 Imported packs live in the user's own data folder, data/vocabulary/<folder>/<file>.json, in exactly the same format;
@@ -39,6 +40,7 @@ MAX_FILE_BYTES = 2 * 1024 * 1024
 MAX_ENTRIES = 2000
 MAX_TEXT = 300
 PACK_KEYS = {"name", "category", "entries"}
+OPTIONAL_PACK_KEYS = {"description"}
 
 
 class CatalogError(ValueError):
@@ -93,9 +95,10 @@ def _parse(text):
 
 
 def _checked(data):
-    """(name, category, entries) of pack data with exactly the pack keys. Raises ValueError naming the first problem."""
-    if not isinstance(data, dict) or set(data) != PACK_KEYS:
-        raise ValueError('needs exactly "name", "category" and "entries"')
+    """(name, category, entries, description) of pack data: the pack keys and nothing else but an optional
+    description ("" without one). Raises ValueError naming the first problem."""
+    if not isinstance(data, dict) or not PACK_KEYS <= set(data) or set(data) - PACK_KEYS - OPTIONAL_PACK_KEYS:
+        raise ValueError('needs exactly "name", "category" and "entries", and optionally "description"')
     if not isinstance(data["category"], str):
         raise ValueError("category must be text")
     if not isinstance(data["entries"], list) or not data["entries"] or len(data["entries"]) > MAX_ENTRIES:
@@ -106,7 +109,8 @@ def _checked(data):
         if entry.casefold() not in seen:  # a repeated entry is the same entry
             seen.add(entry.casefold())
             entries.append(entry)
-    return _text(data["name"], "name"), data["category"], entries
+    description = _text(data["description"], "description") if "description" in data else ""
+    return _text(data["name"], "name"), data["category"], entries, description
 
 
 def read_pack(path, category, folder, prefix=""):
@@ -118,11 +122,11 @@ def read_pack(path, category, folder, prefix=""):
         text = path.read_text(encoding="utf-8")
     except UnicodeError as error:
         raise ValueError(f"not valid JSON ({error})") from None
-    name, declared, entries = _checked(_parse(text))
+    name, declared, entries, description = _checked(_parse(text))
     if declared != category:
         raise ValueError(f'category is "{declared}", but the {folder} folder holds "{category}" packs')
-    return {"id": f"{prefix}{folder}/{path.stem}", "name": name, "category": category, "entries": entries,
-            "source": "imported" if prefix else "built-in"}
+    return {"id": f"{prefix}{folder}/{path.stem}", "name": name, "category": category, "description": description,
+            "entries": entries, "source": "imported" if prefix else "built-in"}
 
 
 def _roots(root, user_root):
@@ -171,7 +175,7 @@ def import_pack(filename, text, root=None, user_root=None):
     root, user_root = _roots(root, user_root)
     if user_root is None:
         raise ValueError("there is no folder for imported packs")
-    name, category, entries = _checked(_parse(text))
+    name, category, entries, description = _checked(_parse(text))
     categories, _ = read_categories(root)
     match = next((row for row in categories if row["id"] == category), None)
     if match is None:
@@ -179,7 +183,8 @@ def import_pack(filename, text, root=None, user_root=None):
     stem = pack_file_stem(filename, name)
     path = user_root / match["folder"] / f"{stem}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
-    atomic_json(path, {"name": name, "category": category, "entries": entries})
+    atomic_json(path, {"name": name, "category": category, **({"description": description} if description else {}),
+                       "entries": entries})
     return read_pack(path, category, match["folder"], USER_PREFIX)
 
 
@@ -218,12 +223,13 @@ def record(catalog, selection):
 
 
 def selected_vocabulary(catalog, selection):
-    """[{"category", "instruction", "packs": [{"name", "entries"}]}] for the categories that have a selected pack,
-    in registry order; categories without one are left out."""
+    """[{"category", "instruction", "packs": [{"name", "description", "entries"}]}] for the categories that have a
+    selected pack, in registry order; categories without one are left out."""
     chosen = set(selection["packs"])
     groups = []
     for category in catalog["categories"]:
-        packs = [{"name": pack["name"], "entries": list(pack["entries"])} for pack in catalog["packs"]
+        packs = [{"name": pack["name"], "description": pack.get("description", ""), "entries": list(pack["entries"])}
+                 for pack in catalog["packs"]
                  if pack["category"] == category["id"] and pack["id"] in chosen]
         if packs:
             groups.append({"category": category["name"], "instruction": category["instruction"], "packs": packs})
@@ -236,7 +242,17 @@ def vocabulary_prompt(groups):
         return ""
     blocks = []
     for group in groups:
-        entries = list(dict.fromkeys(entry for pack in group["packs"] for entry in pack["entries"]))
+        # A pack with a description is listed under it, so its note stays with its own entries; packs without one
+        # share a plain list. An entry in two packs is listed once.
+        seen, lines = set(), []
+        for pack in sorted(group["packs"], key=lambda pack: not pack.get("description")):
+            entries = [entry for entry in pack["entries"] if entry not in seen]
+            seen.update(entries)
+            if pack.get("description") and entries:
+                lines.append(f'Pack "{pack["name"]}" (its author\'s note: {pack["description"]}):')
+            elif entries and lines and any(other.get("description") for other in group["packs"]):
+                lines.append(f'Pack "{pack["name"]}":')
+            lines.extend(entries)
         blocks.append(f"{group['category']}\nCore instruction:\n{group['instruction']}\n\nAvailable vocabulary:\n"
-                      + "\n".join(entries))
+                      + "\n".join(lines))
     return "SELECTED VOCABULARY:\n\n" + "\n\n".join(blocks)

@@ -4,7 +4,7 @@ from ...options.creativity import CREATIVITY_NAMES
 from ...options.lengths import PROMPT_LENGTH_NAMES
 from ...options.modes import MODE_NAMES
 from ...options.prompt_models import PROMPT_MODEL_NAMES
-from ...options.styles import STYLE_NAMES
+from ...options.styles import CAPTURE_NAMES, STYLE_NAMES
 from ...options.references import REFERENCE_ATTRIBUTES, REFERENCE_ROLE_NAMES, REFERENCE_SOURCE_NAMES
 from ...options.targets import TARGET_MODEL_NAMES
 from ...presets import DEFAULT_DIRECTOR_PRESET
@@ -18,6 +18,7 @@ def builder_input_schema():
         "target_model": (TARGET_MODEL_NAMES, {"default": "Generic"}),
         "creativity": (CREATIVITY_NAMES, {"default": "Balanced"}),
         "style": (STYLE_NAMES, {"default": "Auto"}),
+        "capture": (CAPTURE_NAMES, {"default": "Auto"}),
         "preserve_subject": ("BOOLEAN", {"default": True}),
         "preserve_composition": ("BOOLEAN", {"default": False}),
         "preserve_camera": ("BOOLEAN", {"default": False}),

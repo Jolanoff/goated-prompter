@@ -19,6 +19,7 @@ from .interruptible_http import interruptible_urlopen
 
 
 RUNAWAY_STREAM_CHARACTER_LIMIT = 7000
+_LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 
 
 def _image_url_descriptor(url):
@@ -169,6 +170,8 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
 
         api_key_env = str(settings.get("api_key_env") or "GOATED_PROMPTER_API_KEY").strip()
         self.api_key = str(settings.get("api_key") or os.environ.get(api_key_env, "")).strip()
+        if self.api_key and urlparse(self.url).scheme == "http" and (urlparse(self.url).hostname or "").lower() not in _LOOPBACK:
+            print("[Goated Prompter] Warning: the API key is sent over plain http to a non-loopback host; use https.", flush=True)
         self.runtime_diagnostics = dict(settings.get("_runtime_diagnostics") or {})
         self.activity_callback = settings.get("_activity_callback")
         self.register_interrupt = settings.get("_register_interrupt")
@@ -327,7 +330,10 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
                         protected_terms=protected_terms, tag_loops=tag_loops)
                     log_response(instruction, result)
                     return result
-                body = response.read().decode("utf-8")
+                try:
+                    body = response.read().decode("utf-8")
+                except UnicodeDecodeError as exc:
+                    raise BackendGenerationError("OpenAI-compatible backend returned a response that is not valid UTF-8.") from exc
         except HTTPError as exc:
             detail = ""
             try:
@@ -424,6 +430,9 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
         hard_character_limit = hard_max_tokens * 12 if hard_max_tokens else None
         next_repetition_check = 1200
         finish_reason = None
+        # Real model output (not keep-alive comments) restarts the request deadline, so a slow but healthy stream
+        # is not cut off while a stalled one that only sends heartbeats still is.
+        progress = getattr(response, "touch_deadline", None)
         for raw_line in response:
             line = raw_line.decode("utf-8").strip()
             if not line or line.startswith((":", "event:", "id:", "retry:")):
@@ -445,6 +454,8 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
             chunk_finish_reason = choice.get("finish_reason")
             delta = choice.get("delta") or {}
             reasoning = _stream_part_text(delta.get("reasoning_content") or delta.get("reasoning"))
+            if progress and (reasoning or _stream_part_text(delta.get("content"))):
+                progress()
             if reasoning:
                 streamed_characters += len(reasoning)
                 self.emit_activity("reasoning_delta", text=reasoning)

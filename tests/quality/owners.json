@@ -1,0 +1,106 @@
+{
+  "_help": "Which setting owns which decision. The audit flags a sentence that uses a decision's words inside a guide that does not own that decision. Words are regular expressions, matched case-insensitively at word starts. Accepted exceptions go in audit_allow.json with a reason.",
+  "decisions": {
+    "invention": [
+      "invent(?!or)",
+      "embellish",
+      "conservativ",
+      "recast",
+      "brainstorm",
+      "overdecorat",
+      "redesign",
+      "unrequested",
+      "only when (?:they|it) support"
+    ],
+    "length": [
+      "exhaustive",
+      "concise",
+      "compact",
+      "verbos",
+      "keep it short",
+      "long prompt",
+      "\\d+ to \\d+ words",
+      "under about \\d+ words",
+      "word count"
+    ],
+    "look": [
+      "photorealis",
+      "film grain",
+      "35 ?mm",
+      "bokeh",
+      "cinematic",
+      "8k",
+      "masterpiece",
+      "look defaults?",
+      "quality defaults?",
+      "anime style",
+      "hyperreal"
+    ],
+    "explicitness": [
+      "explicitness",
+      "explicit (?:content|sex|terms|nudity|imagery|adult)",
+      "sanitiz",
+      "soften",
+      "euphemis",
+      "nudity",
+      "moraliz"
+    ],
+    "format": [
+      "json",
+      "comma-separated",
+      "labeled sections",
+      "markdown",
+      "key order",
+      "tag line"
+    ]
+  },
+  "owners": {
+    "core": [],
+    "priority": [],
+    "mode": [],
+    "vision": [],
+    "target": [
+      "format",
+      "length"
+    ],
+    "target_envelope": [
+      "format",
+      "length"
+    ],
+    "output": [
+      "format"
+    ],
+    "length": [
+      "length"
+    ],
+    "preserve": [
+      "invention"
+    ],
+    "creativity": [
+      "invention"
+    ],
+    "director": [],
+    "style": [
+      "look"
+    ],
+    "planner": [
+      "format",
+      "length"
+    ],
+    "repair": [
+      "invention",
+      "format"
+    ],
+    "dataset_understanding": [
+      "format",
+      "invention"
+    ],
+    "dataset_scenes": [
+      "format"
+    ],
+    "dataset_prompts": [],
+    "nsfw": [
+      "explicitness"
+    ]
+  }
+}

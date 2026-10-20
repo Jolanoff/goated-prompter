@@ -15,9 +15,9 @@
     "use_when": "When a location or environment is relevant."
   },
   {
-    "category": "Objects",
-    "description": "Physical items that can be held, used, worn, interacted with, or placed in the environment.",
-    "use_when": "When objects, props, equipment, tools, or furniture are relevant."
+    "category": "Objects & Props",
+    "description": "Every physical thing in or around the scene other than the subjects themselves: anything that can be seen, held, used, worn when it is not clothing, ridden, driven, written on or placed. Tools, devices, kitchenware, toys, games, furniture, vehicles, buildings and structures seen in the scene, food, plants, restraints and equipment, and text: printed, written, engraved or drawn words and marks on signs, objects or skin. Where the scene takes place belongs to Spaces, outfits to Clothing.",
+    "use_when": "When the scene needs things: something used by a subject, used on a subject, used for the action, held, carried, worn, written on or standing in the space or background."
   },
   {
     "category": "Expressions",
@@ -41,8 +41,8 @@
   },
   {
     "category": "Camera & Composition",
-    "description": "The visual viewpoint, framing, shot size, perspective, and composition of the image.",
-    "use_when": "When framing or viewpoint is relevant."
+    "description": "The viewpoint and composition of the image: where the camera stands, how close it is, and how the subjects are arranged in the frame, described through what the image shows.",
+    "use_when": "When the viewpoint, closeness or arrangement of the subjects in the frame matters."
   },
   {
     "category": "Effects & Atmosphere",

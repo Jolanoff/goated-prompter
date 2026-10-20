@@ -19,6 +19,33 @@ def sanitize_prompt_text(value):
     return str(value or "").strip()
 
 
+_PAIRS = {")": "(", "]": "[", "}": "{"}
+
+
+def balance_brackets(value):
+    """The prompt without brackets that are never closed or never opened, so no section or weight is left dangling.
+    Escaped brackets (Anima's \\( \\)) and text inside double quotes (words to render) are left as they are."""
+    text, keep, stack, quoted = str(value or ""), [], [], False
+    for index, char in enumerate(text):
+        escaped = index > 0 and text[index - 1] == "\\"
+        if char == '"' and not escaped:
+            quoted = not quoted
+        if quoted or escaped or (char not in _PAIRS and char not in _PAIRS.values()):
+            keep.append(True)
+        elif char in _PAIRS.values():
+            stack.append((char, index))
+            keep.append(True)
+        elif stack and stack[-1][0] == _PAIRS[char]:
+            stack.pop()
+            keep.append(True)
+        else:
+            keep.append(False)
+    for _char, index in stack:
+        keep[index] = False
+    result = "".join(char for char, kept in zip(text, keep) if kept)
+    return re.sub(r"[ \t]{2,}", " ", result).strip() if result != text else text
+
+
 def _unfence(value):
     if not value.startswith("```"):
         return value
@@ -28,54 +55,124 @@ def _unfence(value):
     return match.group(1).strip()
 
 
+_PHOTO_ORDER = ("aesthetics", "lighting", "photo", "medium", "color_palette")
+_ART_ORDER = ("aesthetics", "lighting", "medium", "art_style", "color_palette")
+_ELEMENT_TYPES = ("obj", "text")  # keys in order: type, bbox, (text,) desc, color_palette
+
+
+def _nonempty(item):
+    return isinstance(item, str) and bool(item.strip())
+
+
+def _palette(value, maximum):
+    """Uppercase #RRGGBB colours (#rgb expanded), invalid entries dropped, at most maximum; None when none are left."""
+    if isinstance(value, str):
+        value = [value]
+    if not isinstance(value, list):
+        return None
+    colours = []
+    for item in value:
+        match = re.fullmatch(r"#?([0-9a-fA-F]{6}|[0-9a-fA-F]{3})", item.strip()) if isinstance(item, str) else None
+        if match:
+            digits = match[1] if len(match[1]) == 6 else "".join(digit * 2 for digit in match[1])
+            colours.append("#" + digits.upper())
+    colours = list(dict.fromkeys(colours))[:maximum]
+    return colours or None
+
+
+def _boxes(elements):
+    """Each element's bbox as four integers on Ideogram's 0-1000 scale, or None when it cannot be one.
+
+    Models often write fractions (0-1) or percentages (0-100) instead of the 0-1000 scale; read literally those
+    boxes squeeze every element into the top-left corner, so a caption whose boxes all fit those scales is rescaled.
+    """
+    raw = [element.get("bbox") for element in elements]
+    numbers = [box for box in raw if isinstance(box, list) and len(box) == 4
+               and all(isinstance(number, (int, float)) and not isinstance(number, bool) for number in box)]
+    values = [number for box in numbers for number in box]
+    scale = 1
+    if values and max(values) <= 1 and any(isinstance(number, float) for number in values):
+        scale = 1000
+    elif values and max(values) <= 100 and max(values) > 1:
+        scale = 10
+    result = []
+    for box in raw:
+        if not any(box is item for item in numbers):
+            result.append(None)
+            continue
+        box = [min(1000, max(0, round(number * scale))) for number in box]
+        result.append(box if box[0] < box[2] and box[1] < box[3] else None)
+    return result
+
+
 def _ideogram_caption(value):
-    required = ["high_level_description", "style_description", "compositional_deconstruction"]
-    if not isinstance(value, dict) or list(value) != required:
-        return False
-    nonempty = lambda item: isinstance(item, str) and bool(item.strip())
-    style, composition = value["style_description"], value["compositional_deconstruction"]
-    if not nonempty(value["high_level_description"]) or not isinstance(style, dict) or not isinstance(composition, dict):
-        return False
-    if not all(nonempty(style.get(key)) for key in ("aesthetics", "lighting", "medium")):
-        return False
-    if ("photo" in style) == ("art_style" in style) or not nonempty(style.get("photo", style.get("art_style"))):
-        return False
-    style_order = (["aesthetics", "lighting", "photo", "medium"] if "photo" in style
-                   else ["aesthetics", "lighting", "medium", "art_style"])
-    if list(style) != style_order + (["color_palette"] if "color_palette" in style else []):
-        return False
-    def palette(item, maximum):
-        return (isinstance(item, list) and len(item) <= maximum
-                and all(isinstance(color, str) and re.fullmatch(r"#[0-9A-F]{6}", color) for color in item))
-    if "color_palette" in style and not palette(style["color_palette"], 16):
-        return False
-    if list(composition) != ["background", "elements"]:
-        return False
-    if not nonempty(composition.get("background")) or not isinstance(composition.get("elements"), list):
-        return False
-    for element in composition["elements"]:
-        if not isinstance(element, dict) or element.get("type") not in ("obj", "text") or not nonempty(element.get("desc")):
-            return False
-        keys = ["type"] + (["bbox"] if "bbox" in element else [])
-        if element["type"] == "text":
-            if not nonempty(element.get("text")):
-                return False
-            keys += ["text"]
-        keys += ["desc"] + (["color_palette"] if "color_palette" in element else [])
-        if list(element) != keys:
-            return False
-        if "bbox" in element:
-            box = element["bbox"]
-            if (not isinstance(box, list) or len(box) != 4
-                    or any(type(number) is not int or not 0 <= number <= 1000 for number in box)
-                    or box[0] >= box[2] or box[1] >= box[3]):
-                return False
-        if "color_palette" in element and not palette(element["color_palette"], 5):
-            return False
-    return True
+    """Ideogram 4 caption JSON in the published schema: keys in the encoder's order, unknown keys dropped,
+    palettes cleaned, unusable boxes dropped (the element is placed freely). Raises WorkflowFormatError
+    naming what cannot be repaired."""
+    if not isinstance(value, dict):
+        raise WorkflowFormatError("Ideogram4 output must be one JSON caption object.")
+    composition = value.get("compositional_deconstruction")
+    if not isinstance(composition, dict):
+        raise WorkflowFormatError("Ideogram4 caption needs compositional_deconstruction with background and elements.")
+    if not _nonempty(composition.get("background")):
+        raise WorkflowFormatError("Ideogram4 compositional_deconstruction.background must be a nonempty description.")
+    elements = composition.get("elements")
+    if not isinstance(elements, list) or not elements:
+        raise WorkflowFormatError("Ideogram4 compositional_deconstruction.elements must list the subjects and objects.")
+    caption = {}
+    if _nonempty(value.get("high_level_description")):
+        caption["high_level_description"] = value["high_level_description"].strip()
+    style = value.get("style_description")
+    if style is not None:
+        if not isinstance(style, dict) or not all(_nonempty(style.get(key)) for key in ("aesthetics", "lighting", "medium")):
+            raise WorkflowFormatError("Ideogram4 style_description needs aesthetics, lighting and medium descriptions.")
+        photo, art = _nonempty(style.get("photo")), _nonempty(style.get("art_style"))
+        if not photo and not art:
+            raise WorkflowFormatError("Ideogram4 style_description needs photo (photographs) or art_style (other media).")
+        if photo and art:  # exactly one is allowed: keep the one the medium describes
+            photo = "photo" in style["medium"].casefold()
+        order = _PHOTO_ORDER if photo else _ART_ORDER
+        cleaned = {key: style[key].strip() for key in order if key != "color_palette" and _nonempty(style.get(key))}
+        if (palette := _palette(style.get("color_palette"), 16)) is not None:
+            cleaned["color_palette"] = palette
+        caption["style_description"] = cleaned
+    boxes = _boxes([element if isinstance(element, dict) else {} for element in elements])
+    normalized = []
+    for number, (element, box) in enumerate(zip(elements, boxes), 1):
+        if not isinstance(element, dict):
+            raise WorkflowFormatError(f"Ideogram4 element {number} must be an object.")
+        kind = element.get("type")
+        if kind not in _ELEMENT_TYPES:
+            kind = "text" if _nonempty(element.get("text")) else "obj"
+        if not _nonempty(element.get("desc")):
+            raise WorkflowFormatError(f"Ideogram4 element {number} needs a nonempty desc.")
+        if kind == "text" and not _nonempty(element.get("text")):
+            raise WorkflowFormatError(f"Ideogram4 text element {number} needs the literal text to render.")
+        item = {"type": kind}
+        if box is not None:
+            item["bbox"] = box
+        if kind == "text":
+            item["text"] = element["text"]
+        item["desc"] = element["desc"].strip()
+        if (palette := _palette(element.get("color_palette"), 5)) is not None:
+            item["color_palette"] = palette
+        normalized.append(item)
+    caption["compositional_deconstruction"] = {"background": composition["background"].strip(), "elements": normalized}
+    return caption
+
+
+def _json_object(value):
+    """The one JSON object in a reply that wraps it in a heading or closing remark, or None."""
+    start, end = value.find("{"), value.rfind("}")
+    return value[start:end + 1] if 0 <= start < end else None
 
 
 _unique_object = reject_duplicate_keys("Duplicate JSON keys are not allowed.", WorkflowFormatError)
+
+
+def ideogram_json(caption):
+    """A caption serialized the way Ideogram 4 reads it: compact, with literal (not escaped) non-ASCII text."""
+    return json.dumps(caption, ensure_ascii=False, separators=(",", ":"))
 
 
 def requested_visible_text(text):
@@ -86,7 +183,8 @@ def requested_visible_text(text):
 
 
 def normalize_workflow_output(raw, target, *, expected_visible_text=(), mode=None):
-    """Unwrap simple containers; never flatten complex objects or salvage broken JSON."""
+    """Unwrap simple containers; never flatten complex objects or salvage broken JSON. Ideogram4 captions are
+    returned in the published schema (see _ideogram_caption), compactly serialized."""
     target = canonical_target(target)
     capabilities = get_target_capabilities(target)
     structured = capabilities.supports_structured_output
@@ -109,7 +207,11 @@ def normalize_workflow_output(raw, target, *, expected_visible_text=(), mode=Non
             raise
         except (ValueError, RecursionError):
             if structured:
-                raise WorkflowFormatError("Ideogram4 requires a complete valid JSON caption.")
+                inner = _json_object(value)
+                if inner is not None and inner != value:
+                    value = inner  # a caption with a heading or remark around it; parse the caption itself
+                    continue
+                raise WorkflowFormatError("Ideogram4 requires one complete, valid JSON caption object.")
             # Catch incomplete wrappers and JSON preceded by a model-written heading.
             if value.startswith("{") or re.search(r'(?m)^\s*[\[{]\s*(?:["{\[]|$)', value) or "```" in value:
                 raise WorkflowFormatError("This target requires prompt text, but structured or incomplete output was returned.")
@@ -117,14 +219,16 @@ def normalize_workflow_output(raw, target, *, expected_visible_text=(), mode=Non
                 raise WorkflowFormatError("Anima allows at most 100 tags, including supplied tags. Keep the fixed prefix, "
                                           "reduce added tags and then describe the scene normally; do not truncate the scene.")
             return value
+        if structured and isinstance(decoded, str):
+            value = _unfence(decoded.strip())  # the caption sent as one JSON string
+            continue
         if structured:
-            if not _ideogram_caption(decoded):
-                raise WorkflowFormatError("Ideogram4 output is missing the required caption fields or has invalid field types.")
-            rendered = [element["text"] for element in decoded["compositional_deconstruction"]["elements"]
+            caption = _ideogram_caption(decoded)
+            rendered = [element["text"] for element in caption["compositional_deconstruction"]["elements"]
                         if element["type"] == "text"]
             if any(literal not in rendered for literal in expected_visible_text):
                 raise WorkflowFormatError("Ideogram4 literal text fields must preserve the requested text exactly.")
-            return value
+            return ideogram_json(caption)
         if (target == "Qwen Image 2.1" and isinstance(decoded, dict) and "rewritten_prompt" in decoded
                 and set(decoded) <= {"rewritten_prompt", "wh_ratio", "ratio_follow"}
                 and isinstance(decoded["rewritten_prompt"], str)):

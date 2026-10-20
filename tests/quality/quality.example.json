@@ -1,0 +1,23 @@
+{
+  "_help": "Copy of the quality check settings. baseline: the old code (a commit, branch or tag; HEAD is the last commit). candidate: the new code (working = this folder as it is now, or a commit). model_profile: which model to use (its id or name; empty = the one selected in the app, else the first ready one). seeds: every case runs once per seed on both sides. live: false runs only the audit (no model). judge.mode: manual (you review in the report), llm (the model in judge.config judges blind; same model as the run = a hint only) or off. Each case is builder (idea) or dataset (subject). Optional per case: target, director (id), length, creativity, style, capture, mode (builder), rules, amount, nsfw, triggers, vocabulary_packs, inputs (dataset).",
+  "baseline": "HEAD",
+  "candidate": "working",
+  "model_config": "config/config.json",
+  "app_settings": "data/settings.json",
+  "model_profile": "",
+  "seeds": [1, 2, 3],
+  "live": true,
+  "judge": {"mode": "manual"},
+  "cases": [
+    {"id": "builder-one-person", "kind": "builder", "idea": "an old fisherman mending a net at dawn",
+     "target": "Krea 2", "director": "general_director", "length": "Medium", "creativity": "Creative", "style": "Realistic"},
+    {"id": "builder-abstract", "kind": "builder", "idea": "a lonely king",
+     "target": "FLUX.2 Klein", "director": "general_director", "length": "Medium", "creativity": "Creative", "style": "Painting"},
+    {"id": "dataset-two-people", "kind": "dataset", "subject": "two dancers rehearse a lift in an empty studio",
+     "amount": 4, "target": "Krea 2", "director": "general_director", "length": "Detailed", "creativity": "Balanced",
+     "style": "Realistic"},
+    {"id": "dataset-three-people", "kind": "dataset", "subject": "three friends share a secret at a campfire",
+     "amount": 4, "target": "Anima", "director": "character_director", "length": "Medium", "creativity": "Creative",
+     "style": "Anime"}
+  ]
+}

@@ -23,14 +23,13 @@ class TargetControlTests(unittest.TestCase):
         self.assertEqual(get_target_capabilities("Ideogram4").output_format, "json")
         self.assertTrue(get_target_capabilities("MiniMax H3").supports_multishot)
         self.assertTrue(get_target_capabilities("LTX 2.5").supports_audio)
-        self.assertTrue(get_target_capabilities("Z-Image Base").supports_negative_prompt)
-        self.assertFalse(get_target_capabilities("Z-Image Turbo").supports_negative_prompt)
-        self.assertTrue(get_target_capabilities("Z-Image Base").supports_cfg)
-        self.assertFalse(get_target_capabilities("Z-Image Turbo").supports_cfg)
+        # One Z-Image target serves Base and Turbo, so its prompts never rely on a negative prompt.
+        self.assertTrue(get_target_capabilities("Z-Image").positive_description_only)
+        self.assertFalse(get_target_capabilities("Z-Image").supports_negative_prompt)
 
     def test_legacy_targets_migrate_without_ambiguous_selector_entries(self):
         for legacy, current in (("Qwen2.1", "Qwen Image 2.1"), ("Qwen Image", "Qwen Image (original)"),
-                                ("Z-Image", "Z-Image Base"), ("MiniMax", "MiniMax H3")):
+                                ("Z-Image Base", "Z-Image"), ("Z-Image Turbo", "Z-Image"), ("MiniMax", "MiniMax H3")):
             with self.subTest(legacy=legacy):
                 self.assertNotIn(legacy, TARGET_MODEL_NAMES)
                 self.assertEqual(GoatedPrompterRequest(idea="A book", target_model=legacy).target_model, current)
@@ -39,21 +38,18 @@ class TargetControlTests(unittest.TestCase):
                 self.assertEqual(get_model_adapter(legacy), get_model_adapter(current))
         self.assertIn("Qwen/Qwen-Image checkpoint", get_model_adapter("Qwen Image (original)"))
 
-    def test_krea_preserves_anime_and_all_other_requested_media(self):
+    def test_krea_only_says_how_to_write_and_leaves_the_medium_to_the_style(self):
         adapter = get_model_adapter("Krea 2")
-        for medium in ("anime", "illustration", "graphic design", "3D"):
-            self.assertIn(medium, adapter)
-        self.assertIn("Always name a medium, era or process", adapter)
-        self.assertIn("long, exhaustive natural-language description", adapter)
+        self.assertIn("State the medium in words", adapter)
+        self.assertIn("rewards concrete natural-language description", adapter)
+        self.assertNotIn("exhaustive", adapter, "How long the prompt is belongs to Length.")
         self.assertIn('"Composition and camera:"', adapter)
-        self.assertNotIn("photographic realism", adapter)
-        self.assertIn("do not force photographic rendering", adapter)
-        message = self.instruction("Krea 2", creativity="Dice")
-        self.assertIn("leave useful aesthetic freedom", message)
+        for owned_elsewhere in ("anime", "photographic", "aesthetic freedom"):
+            self.assertNotIn(owned_elsewhere, adapter)
 
     def test_flux_maximum_detail_stays_moderate(self):
         message = self.instruction("FLUX.2 Klein", prompt_length="Maximum Detail")
-        self.assertIn("Aim for roughly 40 to 100 words", message)
+        self.assertIn("roughly 40 to 100 words", message)
         self.assertIn("The model has no negative prompt", message)
         self.assertIn("Moderately detailed, focused", message)
         self.assertNotIn("Exhaustively cover", message)
@@ -61,6 +57,25 @@ class TargetControlTests(unittest.TestCase):
 
     def test_anima_keeps_negative_terms_out_of_the_positive_prompt(self):
         self.assertIn("Avoid redundant tags, excessive tag counts, negative prompt terms", get_model_adapter("Anima"))
+
+    def test_z_image_exclusions_are_owned_by_the_compiler(self):
+        from goated_prompter.planning.constraints import COMPILED_CONTRACT
+        for idea, forbidden in (("A portrait; no jewelry", "jewelry"),
+                                ("A quiet courtyard; without vehicles", "vehicles")):
+            with self.subTest(idea=idea):
+                instruction = assemble_instruction(GoatedPrompterRequest(idea=idea, target_model="Z-Image"), text_only=True)
+                adapter = instruction.system_message.split("TARGET MODEL ADAPTER\n", 1)[1].split("\n\nUSER SETTINGS", 1)[0]
+                self.assertNotIn("state anything to exclude as a positive fact", adapter)
+                self.assertEqual(instruction.system_message.count(COMPILED_CONTRACT), 1)
+                self.assertIn(f'"forbidden": ["{forbidden}"]', instruction.system_message)
+                self.assertIn("Apply them silently by omission", instruction.system_message)
+                self.assertNotIn(forbidden, instruction.user_message)
+
+    def test_z_image_preserves_negative_words_in_requested_lettering(self):
+        idea = 'A sign with text "No jewelry".'
+        instruction = assemble_instruction(GoatedPrompterRequest(idea=idea, target_model="Z-Image"), text_only=True)
+        self.assertEqual(instruction.user_message, idea)
+        self.assertNotIn('"forbidden":', instruction.system_message)
 
     def test_anima_adapter_uses_the_owner_supplied_plain_text_contract_once(self):
         adapter = get_model_adapter("Anima")
@@ -91,9 +106,10 @@ class TargetControlTests(unittest.TestCase):
 
     def test_ltx_target_overrides_video_director_motion_invention(self):
         message = self.instruction("LTX 2.5", mode="Video", director_preset="video_director", prompt_length="Maximum Detail")
-        self.assertIn("one flowing present-tense paragraph of four to eight sentences", message)
-        self.assertIn("Do not invent dialogue, camera movement or cuts unless requested", message)
-        self.assertIn("never change the task, the format or the user's facts", message)
+        self.assertIn("one flowing paragraph of four to eight sentences", message)
+        self.assertNotIn("Do not invent dialogue", get_model_adapter("LTX 2.5"), "How much is invented belongs to Creativity.")
+        self.assertIn("words to be read or heard (signs, captions, dialogue) only when the request asks", message)
+        self.assertIn("Creativity alone sets how much is invented", message)
 
     def test_all_lengths_and_creativity_preserve_target_hard_structure(self):
         for length in ("Short", "Medium", "Detailed", "Maximum Detail"):
@@ -101,7 +117,7 @@ class TargetControlTests(unittest.TestCase):
                 with self.subTest(length=length, creativity=creativity):
                     message = self.instruction("Ideogram4", prompt_length=length, creativity=creativity)
                     self.assertIn("All required JSON keys and their order remain intact", message)
-                    self.assertIn("never change the task, the format or the user's facts", message)
+                    self.assertIn("Each setting has one job and none overrides another.", message)
                     self.assertIn("OUTPUT FORMAT — Ideogram4", message)
 
     def test_control_sections_stay_in_order_and_output_contract_is_last(self):
@@ -122,7 +138,7 @@ class TargetControlTests(unittest.TestCase):
         self.assertIn("Community", get_director_preset("Krea 2 Identity Edit").label)
 
     def test_krea_specific_directors_are_target_gated_even_with_working_copy(self):
-        for director in ("krea_2_smartphone_realism", "krea_2_pose_lock", "krea_2_identity_edit", "krea_2_high_detail"):
+        for director in ("krea_2_pose_lock", "krea_2_identity_edit", "krea_2_high_detail"):
             with self.subTest(director=director):
                 preset = get_director_preset(director)
                 self.assertIn(preset.instructions, self.instruction("Krea 2", director_preset=director))

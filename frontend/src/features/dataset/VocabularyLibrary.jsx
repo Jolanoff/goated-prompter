@@ -56,6 +56,7 @@ export default function VocabularyLibrary({ open, catalog, selected, onApply, on
         {preview ? <>
           <p className="vocabulary-library-preview-name">{preview.name}</p>
           <p className="vocabulary-library-preview-category">{preview.category}</p>
+          {preview.description && <p className="vocabulary-library-preview-description">{preview.description}</p>}
           <ul>{preview.entries.map((entry) => <li key={entry}>{entry}</li>)}</ul>
         </> : <p className="vocabulary-library-empty">Click a pack to see its entries.</p>}
       </section>

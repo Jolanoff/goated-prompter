@@ -12,6 +12,7 @@ from .understanding import validate_brief
 
 # Run-to-run choices that do not change what was understood (Understanding never reads vocabulary).
 UNSIGNED = frozenset({"seed", "seed_mode", "vocabulary_packs"})
+USED = "This review was already used to start a run. Generate again to review a new batch."
 
 
 def intent_signature(data):
@@ -27,6 +28,7 @@ class DatasetIntentTickets:
     def __init__(self, *, clock=time.monotonic, limit=32, lifetime=3600):
         self.clock, self.limit, self.lifetime = clock, limit, lifetime
         self.items = OrderedDict()
+        self.used = OrderedDict()  # recently consumed tickets, to name the reason a repeated Confirm is refused
         self.lock = threading.RLock()
 
     def register(self, data, brief):
@@ -41,8 +43,20 @@ class DatasetIntentTickets:
     def approve(self, token, data):
         with self.lock:
             item = self.items.get(token) if isinstance(token, str) else None
+            if item is None and token in self.used:
+                raise ValueError(USED)
             if item is None or self.clock() - item[0] >= self.lifetime:
                 raise ValueError("Review and confirm the Dataset request before generating. Approval expired or is missing.")
             if item[1] != intent_signature(data):
                 raise ValueError("Dataset input changed after analysis. Review the updated request before generating.")
             return deepcopy(item[2])
+
+    def consume(self, token):
+        """Use a ticket for the one run it approved; False when it was already used or has expired since approve."""
+        with self.lock:
+            item = self.items.pop(token, None) if isinstance(token, str) else None
+            if item is not None:
+                self.used[token] = True
+                while len(self.used) > self.limit:
+                    self.used.popitem(last=False)
+            return item is not None and self.clock() - item[0] < self.lifetime

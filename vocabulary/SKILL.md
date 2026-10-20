@@ -20,8 +20,12 @@ entries, grouped under the category's Core instruction and shuffled by the run's
 }
 ```
 
-- Exactly `name`, `category` and `entries`, nothing else.
-- `category` must be the folder's registered category (`vocabulary/Spaces/Fantasy.json` → `"Spaces"`).
+- `name`, `category` and `entries`, plus an optional `description` (1–300 characters), nothing else. The description
+  says what the pack is for and how its entries are written ("adult men with heavy muscle; entries already describe
+  men"); the scene writer reads it with the pack's entries, and it never overrides the request or the run's settings.
+- `category` must be the folder's registered category (`vocabulary/Spaces/Fantasy.json` → `"Spaces"`). The
+  `Objects` folder holds `"Objects & Props"`: every thing in a scene (tools, toys, kitchenware, vehicles,
+  buildings seen in the scene, restraints, and text: words or marks printed, written or drawn on things or skin).
 - `entries`: 1–2000 non-empty texts of up to 300 characters; repeats (ignoring case) count once.
 - File name: words joined by hyphens (`Solo-Activities.json`); the pack id is `<folder>/<file name>`.
 
@@ -50,8 +54,8 @@ asked.
   entry ("on the floor", "over a table", "a toy") are examples it adapts to the scene's space.
 - With an `Actions & Poses` pack selected, every scene names the entry it uses and no entry is used by more than two
   images, so a pack needs enough distinct entries for the batch sizes it is used with.
-- `Subjects/Humans` holds people's looks (skin, build, hair, one detail); when no Subjects pack is selected, every
-  image is dealt looks from it.
+- `Subjects/Humans` holds people's looks (skin, build, hair, one detail). It is used only when selected, and never
+  for a known character, whose look comes from its name.
 - Keep adult content out of `vocabulary/`; it belongs in the user's own imported packs.
 - Every person is an adult.
 

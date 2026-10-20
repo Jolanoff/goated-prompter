@@ -143,28 +143,30 @@ class PromptLibraryTests(unittest.TestCase):
                                          system.index("USER SETTINGS"), system.index("Output contract:"))
         self.assertLess(settings, templates)
         self.assertLess(templates, contract)
-        self.assertIn("DIRECTOR BEHAVIOR — General Director", system, "The Director keeps deciding the look.")
-        self.assertIn("exhaustive", system[:templates], "The full target adapter keeps its model knowledge.")
+        self.assertIn("DIRECTOR BEHAVIOR — General", system, "The Director keeps deciding the look.")
+        self.assertIn("rewards concrete natural-language description", system[:templates], "The full target adapter keeps its model knowledge.")
         self.assertNotIn("Clothing and pose:", system[:templates], "The templates decide the layout, not the adapter.")
         flat = " ".join(system.split())
         self.assertIn("Do not take the look of the image from them: the medium, visual style, aesthetic, palette, mood", flat)
         self.assertIn("come from this request, the selected Style and the Director", flat)
         self.assertNotIn("wins over", flat)
-        self.assertIn('YOUR LIBRARY\'S PROMPT FORMAT (1 saved prompt): about 11 words; written as labeled sections; '
-                      'with the sections "Subject and action:", "Composition and camera:"', system)
+        self.assertIn("YOUR LIBRARY'S PROMPT FORMAT (1 saved prompt): about 11 words. Build this prompt at about", system)
+        self.assertNotIn("written as labeled sections", system, "Template 1 shows the structure: one source, not two.")
         self.assertIn("built like the user's library templates above, including labeled sections", system)
         self.assertNotIn("headings", system[contract:])
         empty = assemble_instruction(GoatedPrompterRequest(idea="a chef plating dessert", target_model="Generic")).system_message
         self.assertIn("in the target adapter's writing style", empty)
 
-    def test_style_profile_measures_structure_sections_and_a_shared_trigger(self):
+    def test_style_profile_measures_structure_and_sections_never_words(self):
         sectioned = ["Subject and action:\nA courier sprints.\n\nLighting:\nNoon sun.",
                      "Subject and action:\nA cook laughs.\n\nLighting:\nWindow light.\n\nMood:\nWarm."]
         profile = style_profile(sectioned + ["A plain paragraph about a dog in the rain."])
         self.assertEqual((profile["structure"], profile["sections"]), ("labeled sections", ["Subject and action", "Lighting"]))
         trigger = [f"zidiusArt, snapshot of a woman {word}, windy, shy smile" for word in ("reading", "cooking", "running")]
         profile = style_profile(trigger)
-        self.assertEqual((profile["structure"], profile["lead"], profile["median_words"]), ("flowing prose paragraphs", "zidiusArt", 9))
+        self.assertEqual((profile["structure"], profile["median_words"]), ("flowing prose paragraphs", 9))
+        self.assertNotIn("zidiusArt", style_profile_text(profile, "Medium", describe_structure=True),
+                         "A shared opening tag may be an artist or style: the library teaches form, not look.")
         tags = ["1girl, solo, rain, umbrella, street, night\n\nA girl waits.", "1boy, running, park, dog, sunny\n\nA boy runs."]
         self.assertEqual(style_profile(tags)["structure"], "a leading tag list, then prose")
         self.assertIsNone(style_profile(()))
@@ -178,7 +180,10 @@ class PromptLibraryTests(unittest.TestCase):
         self.assertEqual(targets, {"Short": 65, "Medium": 90, "Detailed": 210, "Maximum Detail": 405})
         self.assertIn("from about 40 to 545 words, typically 95", style_profile_text(mixed, "Medium"))
         even = style_profile([" ".join(["word"] * 120)] * 3)
-        self.assertIn("about 120 words;", style_profile_text(even, "Short"))
+        self.assertIn("about 120 words.", style_profile_text(even, "Short"))
+        capped = style_profile_text(mixed, "Maximum Detail", max_words=100)
+        self.assertIn("at about 100 words for the selected Maximum Detail length, the most this target model uses well", capped)
+        self.assertIn("written as", style_profile_text(mixed, "Medium", describe_structure=True))
         self.assertIn("at about 120 words for the selected Short length", style_profile_text(even, "Short"))
 
     def test_builder_retries_once_when_the_output_copies_a_reference(self):
