@@ -53,7 +53,10 @@ pack selected, one call first keeps only the entries that fit the request and th
 when that call fails); only those are offered and dealt, and with none the writer gets no Actions & Poses vocabulary.
 Every scene names the entry it is built on (`entry`); code checks the entry is one of the fitting ones and that no
 entry is used by more than two images (`ENTRY_CAP`, raised to the images-per-entry when fewer entries fit than images
-are requested), and asks again otherwise. No pack is used automatically: character looks come from the request
+are requested), and asks again otherwise. Every other selected category deals each image `HAND` (3) suggested
+entries from a seeded deck, without repeats until the whole category has been dealt (`deal_hands`), so the
+vocabulary spreads over the set; suggestions are optional: the writer uses the ones that fit the image, or none,
+and never adds a subject or object only to use one. No pack is used automatically: character looks come from the request
 and approved requirements, with vocabulary guidance only from manually selected Subjects packs. A known character has
 only an expression in its scene; its look comes from its name, never from the writer or vocabulary.
 A scene holds only the people and their arrangement: subjects, actions, position, space, camera and extras. Each

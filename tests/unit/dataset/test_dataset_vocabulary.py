@@ -86,7 +86,8 @@ class SceneVocabulary(unittest.TestCase):
             self.assertNotIn(unselected, vocabulary)
         self.assertIn("Treat vocabulary entries as creative possibilities, not mandatory instructions.", call.system_message)
         self.assertIn("Do not create missing subjects merely to satisfy vocabulary entries.", call.system_message)
-        self.assertIn("A selected category shapes that part of every image", call.system_message)
+        self.assertIn("A selected category shapes that part of the images it fits", call.system_message)
+        self.assertIn("It is optional for each image", call.system_message)
 
     def test_example_c_packs_of_an_adult_run_are_optional_material_beside_the_request(self):
         cast = [{"label": "model", "gender": "female", "custom": "", "pronoun": "she", "count": 1}]
@@ -111,8 +112,28 @@ class SceneVocabulary(unittest.TestCase):
         self.write(brief, ["Lighting/Dramatic"])
         calls = self.composer()
         self.assertEqual(len(calls), 2)
-        self.assertEqual(composer_user(calls[0].user_message)["vocabulary"], composer_user(calls[1].user_message)["vocabulary"])
+        # The same entries in every batch (each batch gets its own seeded order).
+        self.assertEqual(*(sorted(composer_user(call.user_message)["vocabulary"].splitlines()) for call in calls))
         self.assertEqual({call.diagnostic_stage for call in self.calls}, {"dataset_v2:scenes"}, "no extra LLM call")
+
+    def test_every_image_gets_its_own_optional_suggestions_so_the_whole_pack_spreads(self):
+        brief = self.brief("A knight", [{"label": "knight", "gender": "male", "custom": "", "pronoun": "he", "count": 1}], amount=4)
+        self.write(brief, ["Lighting/Dramatic", "Objects/Furniture"])
+        images = composer_user(self.composer()[0].user_message)["images"]
+        hands = [image["suggested"] for image in images]
+        self.assertEqual({tuple(sorted(hand)) for hand in hands}, {("Lighting", "Objects & Props")})
+        for category in ("Lighting", "Objects & Props"):
+            dealt = [entry for hand in hands for entry in hand[category]]
+            self.assertTrue(all(len(set(hand[category])) == len(hand[category]) for hand in hands), "no repeat in a hand")
+            pack = {"Lighting": "Lighting/Dramatic", "Objects & Props": "Objects/Furniture"}[category]
+            self.assertEqual(set(dealt), set(next(p for p in load_catalog()["packs"] if p["id"] == pack)["entries"]),
+                             "every entry is dealt")
+        self.assertIn('none at all when the category does not fit the image', self.composer()[0].system_message)
+
+    def test_a_request_without_people_still_works_with_vocabulary(self):
+        brief = self.brief("An empty throne room", [], amount=2)
+        result = self.write(brief, ["Objects/Furniture", "Lighting/Dramatic"])
+        self.assertEqual(result["written"], 2)
 
     def test_final_prompts_and_understanding_never_see_the_vocabulary(self):
         brief = self.brief("A knight", [{"label": "knight", "gender": "male", "custom": "", "pronoun": "he", "count": 1}], amount=1)

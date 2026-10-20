@@ -39,7 +39,8 @@ looks and the action exactly as given; do not move anyone, change the action or 
 cannot reach. What the scene
 leaves open follows the Creativity setting. The actions line is the whole action of the image: write
 exactly that, with no other act. When the idea gives a position name, use that name word for word together with
-the action: the target model knows it, so name it instead of only describing the pose.
+the action, as plain words and never in quotes (quotes mark text drawn in the image): the target model knows it, so
+name it instead of only describing the pose.
 Do not add subjects or actions, and do not change the camera. The scene leaves clothing, light and mood to you: choose
 them to suit the scene and the request (and any Clothing, Lighting or Mood entry in its extras); nothing worn hides a
 body part the action uses.
