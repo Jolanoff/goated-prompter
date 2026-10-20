@@ -394,8 +394,8 @@ class RolesShownNotTold(unittest.TestCase):
         scene = {"subjects": {"guard": {"skin": "pale, freckled", "hair": "short, dark"},
                               "prisoner": {"skin": "pale, freckled", "hair": "long blond hair"}}}
         self.assertEqual(prompts.anchors(scene, brief),
-                         {"guard": "the man with pale freckled skin and short dark hair",
-                          "prisoner": "the man with pale freckled skin and long blond hair"})
+                         {"guard": "the man with pale skin and short dark hair",
+                          "prisoner": "the man with pale skin and long blond hair"})
 
     def test_named_known_or_triggered_people_keep_their_name(self):
         brief = {"characters": [{"label": "Mara", "gender": "female"}, {"label": "guard", "gender": "male", "triggers": [1]}],

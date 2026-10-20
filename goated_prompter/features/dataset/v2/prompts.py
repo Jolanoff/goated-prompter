@@ -109,7 +109,9 @@ def anchors(scene, brief):
         noun = noun or (found[1] if found else person["label"])
         hair = plain(look.get("hair"))
         hair = hair if not hair or re.search(r"\bhair\b", hair) else f"{hair} hair"
-        details = [part for part in (f"{plain(look.get('skin'))} skin" if look.get("skin") else "", hair,
+        # The name takes the skin's tone (its first part); the full skin description still reaches the prompt.
+        tone = plain(str(look.get("skin") or "").split(",")[0])
+        details = [part for part in (f"{tone} skin" if tone else "", hair,
                                      plain(look.get("detail"))) if part]
         if details:
             people[person["label"]] = (noun, details)

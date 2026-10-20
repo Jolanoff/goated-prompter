@@ -126,18 +126,19 @@ A position may change HOW the action happens, but never WHAT action happens. If 
 pose instead of changing the requested action.
 
 Fields:
-subjects: one entry per character label, each with skin (tone), build (body shape), hair (colour and style),
-  detail (one distinguishing feature) and expression (their face in this moment). A known character has only
-  expression.
+subjects: one entry per character label, each with skin (tone first, then any surface detail that suits the request
+  and the style), build (body shape), hair (colour and style), detail (one distinguishing feature) and
+  expression (their face in this moment). A known character has only expression.
 position: one entry per character label: where that person is in the frame (left, right, centre, front or back) and
   in the space, their pose, which way they face, what holds their weight and what they touch. Name whose body part it
   is every time by character label, never a bare his, her or their. With no characters, position is {{}}.
-actions: who does what to whom, in one sentence, naming every person by their character label; no placeholder
-  person from an entry is left. With no characters: how the subject is placed.
+actions: who does what to whom in this image, in one sentence: the concrete physical action, never the request
+  repeated. Name every person by their character label; no placeholder person from an entry is left. With no
+  characters: how the subject is placed.
 extras: first the objects, marks and details that make the request's abstract words visible in this image (who
   someone is, their status, their relationship, what they feel), each specific enough that a viewer could name that
-  word without being told, then background details, plus any selected Clothing,
-  Lighting or Mood & Tone entry. Clothing, light and mood are otherwise left to the final prompt, except a garment
+  word without being told, saying whose each worn, held or written sign is, then background details, plus any
+  selected Clothing, Lighting or Mood & Tone entry. Clothing, light and mood are otherwise left to the final prompt, except a garment
   that is one of those signs.
 space: the location and its physical details.
 camera: framing and viewpoint, chosen so the action is clearly visible.
