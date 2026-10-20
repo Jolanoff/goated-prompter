@@ -133,7 +133,7 @@ subjects: one entry per character label, each with skin (tone first, then any su
   and the style), build (body shape), hair (colour and style), detail (one distinguishing feature) and
   expression (their face in this moment). A known character has only expression.
 position: one entry per character label: where that person is in the frame (left, right, centre, front or back) and
-  in the space, their pose, which way they face, what holds their weight and what they touch. Also say which of their
+  in the space relative to the others, how much of the frame they take, their pose, which way they face, what holds their weight and what they touch. Also say which of their
   body parts the camera can see from this camera: a body part turned away from the camera, hidden behind or under
   another body, or inside someone is not visible. The positions and the actions agree on who does what to whom:
   whoever acts with their mouth has it at the other person's body, never the reverse. Name whose body part it is
@@ -147,7 +147,15 @@ extras: first the objects, marks and details that make the request's abstract wo
   selected Clothing, Lighting or Mood & Tone entry. Clothing, light and mood are otherwise left to the final prompt, except a garment
   that is one of those signs.
 space: the location and its physical details.
-camera: framing and viewpoint, chosen so the action is clearly visible.
+camera: what the image shows, written after the action and positions and never as a shot name alone: the viewpoint
+  (side, height, distance), then for each person which of their body parts are inside the frame and which edge of the
+  frame they reach, and what lies in front of, beside and behind them. Every person in the cast is a primary subject
+  with a real presence in the image: their role in the action (giving, receiving, leading) never makes one of them
+  more important, and nobody is reduced to a hand, an arm or one body part. How much of each person shows follows
+  what the action needs: enough of each participant's body to make the action understandable, head to feet when the
+  pose needs it, a coherent crop when it does not. Every visible body part stays joined to its owner inside the frame.
+  When the arrangement cannot show the action and everyone at once, change the arrangement or the viewpoint instead of
+  cropping a person out. People who are not in the cast (background figures) may be partly visible.
 
 Be concrete and brief: a later step writes the final prompt.
 
@@ -591,11 +599,12 @@ def _overlap(first, second, ignore=frozenset()):
 
 def _repeats(scene, other, labels=()):
     """A new scene is a repeat when it reuses another image's place together with its camera, arrangement or extras
-    (an image asked again tends to copy an accepted one's place and signs). The same place alone is fine (fixed may
-    keep it)."""
+    (an image asked again tends to copy an accepted one's place and signs). Only the camera's opening (its viewpoint) is
+    compared: the rest says what each person shows, which reads alike in every image. The same place alone is fine
+    (fixed may keep it)."""
     ignore = frozenset(word for label in labels for word in re.findall(r"[a-z0-9]+", label.casefold()))
     return _overlap(scene["space"], other["space"]) >= .7 and (
-        _overlap(scene["camera"], other["camera"]) >= .6 or _overlap(scene["actions"], other["actions"], ignore) >= .6
+        _overlap(scene["camera"][:80], other["camera"][:80]) >= .6 or _overlap(scene["actions"], other["actions"], ignore) >= .6
         or _overlap(scene.get("extras"), other.get("extras"), ignore) >= .7)
 
 

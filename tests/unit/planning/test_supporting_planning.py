@@ -103,16 +103,16 @@ class SupportingPlanningTests(unittest.TestCase):
         # Updated when Creativity became the only owner of how much is invented.
         # Updated for show-don't-tell: the request's abstract words become visible signs.
         golden = {
-            "Generic": "e1a969732904e4b0c79b223b0cc3288b5d34a0bb1f56a4a3e19d77f6887dae6b",
-            "Anima": "544595b95e62d924135bb36b78b231f1da48c942ab4ef4cade702a889cc90e4c",
-            "Krea 2": "94c8b03c19f12f924c1ef5faf4ead065bf154d98d310c3b1c46b1618195ad9dc",
-            "FLUX.2 Klein": "a946d8c808bf9f29d135e198ad6905e72d3cf5edd138a5b07d20385cbcd69706",
-            "Z-Image": "11e7c8b91c1c568d830f6c1249a3c10ec0dc580bd394e48ef91c502188d2191b",
-            "Qwen Image (original)": "aeb2cc0963e8a72c6448d13b999ec62ec1a9c7077034165abac001f73720981b",
-            "Qwen Image 2.1": "3697861b43abc5bfb841a9f6449c3736c00a85464598566d8aa920357ef6df03",
-            "MiniMax H3": "ef445a631210370b9124acd6a3a59540d6ecfd63420cf19a1b46a4757d0268e0",
-            "LTX 2.5": "94722e59a2ed4aca6f0675e55c4df856fb1d4d76f52f603a78c1e7a23cf9a61b",
-            "Ideogram4": "31ab6cf4adcb6e86379a9cf8a771ec8209b79438cb6205efa5f62cb36cb909d0"}
+            "Generic": "781f7d8811215dd53637c320a7217859838e4fe20f1f19dbd3d49b4b3a2e9a76",
+            "Anima": "a3c9631152d07d8ad21d39794641c13118d51c009c41bda85403695534477e80",
+            "Krea 2": "3186cf2417b4ce9b33c94f6d3a853238e6746f5e32666df42683badc46d24ff8",
+            "FLUX.2 Klein": "0185c9f19c3e28264502cdad24b3f953f0213a55aeb7e94396259ce41923ac61",
+            "Z-Image": "e3662b2be7d29e90d343070ec3f3bbd2ba38937057236e8d8d15ee2776292c82",
+            "Qwen Image (original)": "2c34c26cfcfea5b06d224f5404c9a97fc35b90be60db10c0e0d5b9c95297872a",
+            "Qwen Image 2.1": "26bec9d57854d4f5de589ecfb4fa75f2740f16ef8efde4df2bfcda6b54ca0556",
+            "MiniMax H3": "7086d0ade15d77e6e1da7821025ab6a5860e233f68ca0795ecc75d9ac98530e9",
+            "LTX 2.5": "f583a882752c561e1cf246a4f071d0e96d9a3a2b2e61cca8b2fd0a2829b91e60",
+            "Ideogram4": "b1ca4371bb23acdac8476d268b682ff4ecf39a83703345316420f0406eb57835"}
         self.assertEqual(set(golden), set(TARGET_MODEL_NAMES))
         for target, digest in golden.items():
             with self.subTest(target=target):

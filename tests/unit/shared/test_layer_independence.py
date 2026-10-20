@@ -40,12 +40,24 @@ class LayerIndependence(unittest.TestCase):
         self.assertNotIn("lighting", SECTIONS)
         self.assertNotIn("mood", SECTIONS)
         self.assertNotIn("clothing", SUBJECT_FIELDS)
-        self.assertIn("camera: framing and viewpoint,", COMPOSE_SYSTEM)
+        self.assertIn("camera: what the image shows,", COMPOSE_SYSTEM)
         self.assertIn("never a bare his, her or their", COMPOSE_SYSTEM)
         self.assertIn("where that person is in the frame", COMPOSE_SYSTEM)
+        self.assertIn("nobody is reduced to a hand, an arm or one body part", " ".join(COMPOSE_SYSTEM.split()))
+        self.assertIn("change the arrangement or the viewpoint instead of cropping a person out", " ".join(COMPOSE_SYSTEM.split()))
         self.assertIn("The scene leaves clothing, light and mood to you", " ".join(SCENE_RULES.split()))
         self.assertEqual(retire_fields({"lighting": "x", "mood": "y", "subjects": {"a": {"clothing": "z", "hair": "h"}}}),
                          {"subjects": {"a": {"hair": "h"}}}, "A scene with retired fields still works.")
+
+    def test_framing_is_shown_by_what_is_visible_not_by_a_shot_name(self):
+        from goated_prompter.prompting.base import CORE_SYSTEM_PROMPT
+        from goated_prompter.prompting.target_models import MODEL_ADAPTERS
+        from goated_prompter.features.dataset.v2.prompts import SCENE_RULES
+        self.assertIn("Image models frame by what the prompt says is visible, not by shot names", CORE_SYSTEM_PROMPT)
+        self.assertNotIn("one shot size", MODEL_ADAPTERS["Krea 2"])
+        self.assertIn("composition shown through what is visible rather than a shot size", MODEL_ADAPTERS["Krea 2"])
+        self.assertIn('A shot name or a phrase such as "fully visible" never stands in for that description', " ".join(SCENE_RULES.split()))
+        self.assertIn("every body part shown is joined to its owner, who is described in the frame", " ".join(SCENE_RULES.split()))
 
     def test_two_or_more_people_are_kept_apart_by_every_prose_target(self):
         for target in TARGET_MODEL_NAMES:

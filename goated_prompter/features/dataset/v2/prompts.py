@@ -41,7 +41,14 @@ leaves open follows the Creativity setting. The actions line is the whole action
 exactly that, with no other act. When the idea gives a position name, use that name word for word together with
 the action, as plain words and never in quotes (quotes mark text drawn in the image): the target model knows it, so
 name it instead of only describing the pose.
-Do not add subjects or actions, and do not change the camera. The scene leaves clothing, light and mood to you: choose
+Do not add subjects or actions. Keep the camera's viewpoint (side and height); its distance gives way only when it
+would show a person of the scene as nothing more than a body part: then show enough of that person to join the part to
+them. Show the framing by describing what the camera sees: where each
+person is relative to the others, which parts of each body are visible and where their faces, torsos, hands and feet
+are when it matters, how much space each takes, and what lies in the foreground, middle ground and background. A
+shot name or a phrase such as "fully visible" never stands in for that description. Every person of the scene gets a
+real presence in the prompt, not only the body parts of the action, and every body part shown is joined to its
+owner, who is described in the frame. The scene leaves clothing, light and mood to you: choose
 them to suit the scene and the request (and any Clothing, Lighting or Mood entry in its extras); nothing worn hides a
 body part the action uses. Describe a body part only when the scene's positions and camera let the camera see it; a
 body part turned away, hidden behind or under another body, or inside someone is never described as visible.

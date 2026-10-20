@@ -25,7 +25,24 @@ CHECKS = (
     ("words", "average prompt length in words", "info", True),
     ("seconds", "average time per run in seconds (more retries cost time)", "info", False),
     ("request_words_echoed", "share of the request's own words repeated in the prompts (told, not shown; a hint)", "info", False),
+    ("shot_named", "share of prompts that name a shot size instead of showing the framing (a hint)", "info", False),
+    ("extent_shown", "share of prompts that say how far bodies reach in the frame and what is around them (a hint)", "info", True),
 )
+
+# Framing hints: a named shot size ("medium shot") versus framing shown through what is visible (feet on the floor,
+# knees on a mattress, something in the foreground or background).
+SHOT_NAME = re.compile(r"\b(?:(?:extreme |medium |full[- ]body |wide |long |cowboy )?close[- ]?up|(?:medium|wide|long|"
+                       r"full[- ]body|cowboy|establishing|two|three)[- ]shot|mid[- ]shot)\b", re.IGNORECASE)
+EXTENT = re.compile(r"\b(?:feet|foot|toes|ankles?|knees?|shins?|soles?|floor|ground|mattress|from (?:the )?head|"
+                    r"foreground|background)\b", re.IGNORECASE)
+
+
+def _framing(prompts):
+    if not prompts:
+        return {"shot_named": None, "extent_shown": None}
+    return {"shot_named": round(sum(bool(SHOT_NAME.search(prompt)) for prompt in prompts) / len(prompts), 3),
+            "extent_shown": round(sum(len(set(match.casefold() for match in EXTENT.findall(prompt))) >= 2
+                                      for prompt in prompts) / len(prompts), 3)}
 
 
 def _words(text):
@@ -126,7 +143,8 @@ def _case_checks(row, normalize=None):
                 "cast_ok": None, "avoid_hits": None, "label_leaks": None, "repeated_looks": None,
                 "repeated_places": None, "repeated_extras": None, "prompt_similarity": None,
                 "words": len(prompt.split()) if prompt else None,
-                "request_words_echoed": _echoed(case.get("idea", ""), [prompt] if prompt else [])}
+                "request_words_echoed": _echoed(case.get("idea", ""), [prompt] if prompt else []),
+                **_framing([prompt] if prompt else [])}
     if not row.get("ok"):
         return {"written": 0.0, **{name: None for name, *_ in CHECKS if name != "written"}}
     brief, scenes = output.get("brief") or {}, output.get("scenes") or []
@@ -157,6 +175,7 @@ def _case_checks(row, normalize=None):
                                    / max(1, len(prompts) * (len(prompts) - 1) // 2), 3) if len(prompts) > 1 else None,
         "words": round(sum(len(prompt.split()) for prompt in prompts) / len(prompts)) if prompts else None,
         "request_words_echoed": _echoed(case.get("subject", ""), prompts),
+        **_framing(prompts),
         **_anima_checks(target, brief, prompts),
     }
 

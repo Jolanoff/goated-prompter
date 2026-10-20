@@ -89,6 +89,12 @@ class Checks(unittest.TestCase):
         values = checks.case_checks(row)
         self.assertEqual((values["count_tags_ok"], values["bad_tags"]), (0.5, 0.5))
 
+    def test_framing_hints_count_shot_names_and_shown_extents(self):
+        named = "A medium shot of two people talking in a kitchen."
+        shown = "Two people stand with their feet on the tiled floor, a table in the foreground and a window behind."
+        values = checks.case_checks(dataset_row([scene("fair", "a hall")], [named, shown]))
+        self.assertEqual((values["shot_named"], values["extent_shown"]), (0.5, 0.5))
+
     def test_a_failed_case_counts_as_nothing_written(self):
         self.assertEqual(checks.case_checks(dataset_row([], [], ok=False))["written"], 0.0)
 
