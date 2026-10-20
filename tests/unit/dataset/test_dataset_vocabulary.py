@@ -55,9 +55,9 @@ class SceneVocabulary(unittest.TestCase):
             **({"entry": self.entries.pop(0) if self.entries else "two people slow dancing"} if wants_entry else {})}
             for row in user["images"]]})
 
-    def write(self, brief, packs=()):
+    def write(self, brief, packs=(), catalog=None):
         return scenes.write_scenes({"backend": "mock"}, self.request, brief, progress=lambda _: None,
-                                   vocabulary={"packs": list(packs)}, catalog=self.catalog)
+                                   vocabulary={"packs": list(packs)}, catalog=catalog or self.catalog)
 
     def composer(self):
         return [call for call in self.calls if call.diagnostic_stage == "dataset_v2:scenes"]
@@ -129,6 +129,27 @@ class SceneVocabulary(unittest.TestCase):
             self.assertEqual(set(dealt), set(next(p for p in load_catalog()["packs"] if p["id"] == pack)["entries"]),
                              "every entry is dealt")
         self.assertIn('none at all when the category does not fit the image', self.composer()[0].system_message)
+
+    def test_pack_descriptions_reach_the_scene_writer_and_the_fitting_call(self):
+        catalog = load_catalog(user_root=False)
+        for pack in catalog["packs"]:
+            if pack["id"] in ("Actions & Poses/Solo-Activities", "Lighting/Dramatic"):
+                pack["description"] = f"note for {pack['name']}"
+        brief = self.brief("A knight", [{"label": "knight", "gender": "male", "custom": "", "pronoun": "he", "count": 1}], amount=2)
+        self.write(brief, ["Actions & Poses/Solo-Activities", "Lighting/Dramatic"], catalog=catalog)
+        vocabulary = composer_user(self.composer()[0].user_message)["vocabulary"]
+        self.assertIn('Pack "Dramatic" (its author\'s note: note for Dramatic):', vocabulary)
+        self.assertIn("its author's note", self.composer()[0].system_message)
+        fit = next(call for call in self.calls if call.diagnostic_stage == "dataset_v2:entries")
+        self.assertEqual(json.loads(fit.user_message)["notes"], {"Solo Activities": "note for Solo Activities"})
+
+    def test_the_sample_keeps_every_pack_and_its_description(self):
+        groups = [{"category": "Objects & Props", "instruction": "",
+                   "packs": [{"name": "A", "description": "a", "entries": [f"a{n}" for n in range(50)]},
+                             {"name": "B", "description": "", "entries": [f"b{n}" for n in range(50)]}]}]
+        packs = scenes._shuffled(groups, __import__("random").Random(1), 40)[0]["packs"]
+        self.assertEqual([(pack["name"], pack["description"], len(pack["entries"])) for pack in packs],
+                         [("A", "a", 20), ("B", "", 20)])
 
     def test_a_request_without_people_still_works_with_vocabulary(self):
         brief = self.brief("An empty throne room", [], amount=2)

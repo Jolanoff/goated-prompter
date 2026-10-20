@@ -47,7 +47,9 @@ Scenes (`v2/scenes.py`): the scene writer (`dataset_v2:scenes`, one call per bat
 USER REQUEST, the EXISTING APPROVED REQUIREMENTS (rules, Understanding, style, and the capture when the style is Realistic) and, only when packs are selected, a
 SELECTED VOCABULARY section: just the categories that have a selected pack, each with its Core instruction and the
 entries of those packs (merged per category and shuffled for every batch by a generator seeded with the run's seed),
-plus the shared vocabulary usage rules. Each category sends a seeded sample of at most `VOCABULARY_SAMPLE` (40)
+plus the shared vocabulary usage rules. A pack with a description (its author's note on what it is for and how its
+entries are written) is listed under that note so it stays with its own entries; the Actions & Poses fitting call
+sees the notes too. A note guides the choice of entries and never overrides the request or the settings. Each category sends a seeded sample of at most `VOCABULARY_SAMPLE` (40)
 entries per batch, so a large pack never drowns the request. The request and the approved requirements always win. With an Actions & Poses
 pack selected, one call first keeps only the entries that fit the request and the cast (`fitting_entries`, every entry
 when that call fails); only those are offered and dealt, and with none the writer gets no Actions & Poses vocabulary.

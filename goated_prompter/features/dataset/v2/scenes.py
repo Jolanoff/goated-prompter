@@ -182,10 +182,14 @@ For every scene:
 8. Actions & Poses entries follow ACTION AND POSE COHERENCE: keep a defined pose with its
    action, replace the people with this scene's characters and their correct gender, and
    replace objects and supports with ones that suit this scene.
-9. An image may list "suggested" entries per category: they spread the vocabulary over the
-   set. Consider them first for that image and use the ones that fit; take another entry
-   only when none of them fits, and none at all when the category does not fit the image.
-   Never add a subject, object or detail only to use an entry.
+9. A pack may come with its author's note: what the pack is for and how its entries are
+   written. Use it to choose and adapt that pack's entries (an entry already written the
+   way the note says needs no rewording); it never overrides the request, these rules or
+   the run's settings.
+10. An image may list "suggested" entries per category: they spread the vocabulary over the
+    set. Consider them first for that image and use the ones that fit; take another entry
+    only when none of them fits, and none at all when the category does not fit the image.
+    Never add a subject, object or detail only to use an entry.
 
 PRIORITY:
 1. Original user request and approved constraints.
@@ -225,6 +229,7 @@ An entry fits when both are true:
   fits when it shows one of the acts that activity covers. When the request names no activity, this is always true.
 - This cast can perform it: it needs no body part that nobody in the cast has and no more people than the cast has.
 Entries name people as placeholders and their objects are only examples: judge the act and the pose, not the words.
+A pack's author's note (notes), when given, says what that pack's entries are for.
 Return one JSON object: {"fit": [the number of every entry that fits]}; an empty list when none fits."""
 
 
@@ -232,12 +237,13 @@ def _labels(brief):
     return [item["label"] for item in brief["characters"]]
 
 
-def fitting_instruction(brief, entries):
-    """One fitting call: which of these Actions & Poses entries (numbered from 1) fit the request and the cast."""
+def fitting_instruction(brief, entries, notes=None):
+    """One fitting call: which of these Actions & Poses entries (numbered from 1) fit the request and the cast.
+    notes: {pack name: its author's note} of the selected packs that have one."""
     cast = [{key: person[key] for key in ("label", "gender", "count") if key in person} for person in brief["characters"]]
     data = {"request": brief["input"]["request"], "summary": brief["summary"], "fixed": brief["fixed"],
             "must": brief["must"], "avoid": brief["avoid"], "cast": cast,
-            "entries": {str(number): entry for number, entry in enumerate(entries, 1)}}
+            "entries": {str(number): entry for number, entry in enumerate(entries, 1)}, **({"notes": notes} if notes else {})}
     schema = {"type": "object", "additionalProperties": False, "required": ["fit"],
               "properties": {"fit": {"type": "array", "items": {"type": "integer"}}}}
     return PromptInstruction(system_message=ENTRY_FIT_SYSTEM, user_message=json.dumps(data, ensure_ascii=False, indent=1),
@@ -247,7 +253,7 @@ def fitting_instruction(brief, entries):
                              seed=brief["input"].get("seed"))
 
 
-def fitting_entries(session, brief, entries, checkpoint=lambda: None, progress=print):
+def fitting_entries(session, brief, entries, checkpoint=lambda: None, progress=print, notes=None):
     """The Actions & Poses entries that fit the request and the cast, in their order. The vocabulary only offers
     what the request asks for, so an unrelated entry never fills an image. When a fitting call fails, every entry
     stays (the writer still checks each dealt entry against the request)."""
@@ -256,7 +262,7 @@ def fitting_entries(session, brief, entries, checkpoint=lambda: None, progress=p
         chunk = entries[start:start + FIT_CHUNK]
         checkpoint()
         try:
-            raw = session.generate(fitting_instruction(brief, chunk))
+            raw = session.generate(fitting_instruction(brief, chunk, notes))
             numbers = json.loads(re.sub(r"^\s*```(?:json)?\s*|\s*```\s*$", "", str(raw or "")))["fit"]
             if not isinstance(numbers, list) or not all(type(number) is int for number in numbers):
                 raise ValueError("fit must be a list of numbers")
@@ -589,14 +595,25 @@ def _repeats(scene, other, labels=()):
 
 
 def _shuffled(groups, rng, limit=None):
-    """The selected vocabulary with each category's entries merged and shuffled; with limit, only the first limit
-    entries of each category (a different seeded sample every batch), so large packs never drown the request."""
+    """The selected vocabulary with each pack's entries shuffled (an entry in two packs counted once); with limit, at
+    most limit entries per category, taken from its packs in turn (a different seeded sample every batch), so large
+    packs never drown the request. Each pack keeps its name and description."""
     result = []
     for group in groups:
-        entries = list(dict.fromkeys(entry for pack in group["packs"] for entry in pack["entries"]))
-        rng.shuffle(entries)
-        result.append({**group, "packs": [{"name": ", ".join(pack["name"] for pack in group["packs"]),
-                                           "entries": entries[:limit] if limit else entries}]})
+        seen, packs = set(), []
+        for pack in group["packs"]:
+            entries = [entry for entry in dict.fromkeys(pack["entries"]) if entry not in seen]
+            seen.update(entries)
+            rng.shuffle(entries)
+            packs.append({**pack, "entries": entries})
+        if limit:
+            kept, queues = [[] for _ in packs], [list(pack["entries"]) for pack in packs]
+            while sum(map(len, kept)) < limit and any(queues):
+                for index, queue in enumerate(queues):
+                    if queue and sum(map(len, kept)) < limit:
+                        kept[index].append(queue.pop(0))
+            packs = [{**pack, "entries": entries} for pack, entries in zip(packs, kept)]
+        result.append({**group, "packs": [pack for pack in packs if pack["entries"]]})
     return result
 
 
@@ -671,7 +688,8 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
     with create_backend(effective).generation_session() as session:
         if action_entries:
             progress("Choosing the Actions & Poses entries that fit the request...")
-            action_entries = fitting_entries(session, brief, action_entries, checkpoint, progress)
+            notes = {pack["name"]: pack["description"] for pack in actions["packs"] if pack.get("description")}
+            action_entries = fitting_entries(session, brief, action_entries, checkpoint, progress, notes)
             groups = _only(groups, ACTIONS_CATEGORY, action_entries)
         plan = {"entries": {_entry_key(entry): entry for entry in action_entries} or None,
                 "cap": entry_cap(action_entries, total), "used": {}, "dealt": deal_entries(action_entries, total, rng),

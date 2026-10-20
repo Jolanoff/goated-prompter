@@ -20,7 +20,9 @@ entries, grouped under the category's Core instruction and shuffled by the run's
 }
 ```
 
-- Exactly `name`, `category` and `entries`, nothing else.
+- `name`, `category` and `entries`, plus an optional `description` (1–300 characters), nothing else. The description
+  says what the pack is for and how its entries are written ("adult men with heavy muscle; entries already describe
+  men"); the scene writer reads it with the pack's entries, and it never overrides the request or the run's settings.
 - `category` must be the folder's registered category (`vocabulary/Spaces/Fantasy.json` → `"Spaces"`). The
   `Objects` folder holds `"Objects & Props"`: every thing in a scene (tools, toys, kitchenware, vehicles,
   buildings seen in the scene, restraints, and text: words or marks printed, written or drawn on things or skin).
