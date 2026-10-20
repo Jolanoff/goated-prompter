@@ -6,6 +6,7 @@ from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.builder.service import assemble_instruction
 from goated_prompter.features.dataset.v2.draft import default_dataset_draft, validate_dataset_draft
 from goated_prompter.options.styles import CAPTURE_NAMES, STYLE_NAMES
+from goated_prompter.prompting.details import LENGTH_ADAPTERS
 from goated_prompter.prompting.styles import CAPTURE_ADAPTERS, STYLE_ADAPTERS, resolve_style
 
 
@@ -42,18 +43,21 @@ class StyleTests(unittest.TestCase):
             with self.subTest(length=length):
                 system = message(target_model="Krea 2", style="Realistic", prompt_length=length)
                 style = system.split("VISUAL STYLE — Realistic\n", 1)[1].split("\n\n", 1)[0]
-                self.assertIn("long, exhaustive natural-language description", system)
+                self.assertIn("TARGET MODEL ADAPTER\nKrea 2 target:", system)
+                self.assertEqual(system.count(LENGTH_ADAPTERS[length]), 1)
                 self.assertIn("Photorealistic image", style)
                 self.assertNotIn("instead of a long inventory", style)
 
     def test_precision_directors_do_not_countermand_krea_density(self):
         for director in ("krea_2_high_detail", "maximum_detail_director"):
-            with self.subTest(director=director):
-                system = message(target_model="Krea 2", director_preset=director)
-                behavior = system.split("DIRECTOR BEHAVIOR", 1)[1].split("\n\n", 1)[0]
-                self.assertIn("long, exhaustive natural-language description", system)
-                self.assertNotIn("do not exhaustively inventory", behavior.casefold())
-                self.assertNotIn("or exhaustively enumerate", behavior.casefold())
+            for length in ("Short", "Maximum Detail"):
+                with self.subTest(director=director, length=length):
+                    system = message(target_model="Krea 2", director_preset=director, prompt_length=length)
+                    behavior = system.split("DIRECTOR BEHAVIOR", 1)[1].split("\n\n", 1)[0]
+                    self.assertIn("TARGET MODEL ADAPTER\nKrea 2 target:", system)
+                    self.assertEqual(system.count(LENGTH_ADAPTERS[length]), 1)
+                    self.assertNotIn("do not exhaustively inventory", behavior.casefold())
+                    self.assertNotIn("or exhaustively enumerate", behavior.casefold())
 
     def test_dataset_draft_validates_style(self):
         self.assertEqual(validate_dataset_draft(default_dataset_draft())["style"], "Auto")
