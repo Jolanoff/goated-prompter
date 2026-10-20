@@ -7,6 +7,7 @@ import { readTheme, saveTheme } from "./theme.js";
 import CreativeWorkspace from "./features/refine/CreativeWorkspace.jsx";
 import MiniMaxTab from "./features/minimax/MiniMaxTab.jsx";
 import DatasetTab from "./features/dataset/DatasetTab.jsx";
+import CaptionTab from "./features/caption/CaptionTab.jsx";
 import SavedPromptsTab from "./features/saved-prompts/SavedPromptsTab.jsx";
 import PromptLibraryTab from "./features/prompt-library/PromptLibraryTab.jsx";
 import VocabularyTab from "./features/vocabulary/VocabularyTab.jsx";
@@ -52,6 +53,7 @@ const workspaceViews = [
   { id: "refine", label: "Refine", icon: WandSparkles },
   { id: "minimax", label: "MiniMax H3", icon: Film },
   { id: "dataset", label: "Dataset", icon: Database },
+  { id: "caption", label: "Caption", icon: FileText },
   { id: "saved", label: "Saved Prompts", icon: Bookmark },
   { id: "library", label: "Prompt Library", icon: Library },
   { id: "vocabulary", label: "Vocabulary", icon: Package },
@@ -203,6 +205,7 @@ function App() {
         }
         if (next.result.history_error) setError(next.result.history_error);
         setNotice(next.kind === "refine" ? "Prompt refined."
+          : next.kind === "caption" ? `Captioning finished: ${next.result.saved} saved, ${next.result.skipped} existing, ${next.result.errors} errors.`
           : next.kind === "dataset_understanding" ? "Review your Dataset request before generating."
           : "Your prompt is ready. Make it yours.");
       } else if (next.status === "cancelled") {
@@ -666,7 +669,11 @@ function App() {
             presets={bootstrap.presets.presets} targets={bootstrap.inputs.target_model[0]}
             lengths={bootstrap.inputs.prompt_length[0]} onGenerate={startWorkflow}
              onCancel={endGeneration} onCopy={copy} />}
-          {active && view !== "builder" && view !== "refine" && view !== "minimax" && view !== "dataset" && (
+          {bootstrap && <CaptionTab visible={view === "caption"} job={job}
+            busy={busy || actionBusy || settingsBusy || !!uploading} active={active} noEngine={noEngine}
+            engineLabel={configuredBackend ? `Configured backend (${bootstrap.backend})` : selectedProfile?.label}
+            onGenerate={startWorkflow} onCancel={endGeneration} />}
+          {active && view !== "builder" && view !== "refine" && view !== "minimax" && view !== "dataset" && (view !== "caption" || job.kind !== "caption") && (
             <div className={`${ui.panel} mb-5 flex flex-wrap items-center justify-between gap-3`} role="status">
               <span>{job.progress || "Generating prompt…"}</span>
               <button className={ui.button} onClick={endGeneration} disabled={actionBusy || job.status === "cancelling"}>End generation</button>
