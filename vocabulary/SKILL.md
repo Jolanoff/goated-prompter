@@ -21,7 +21,9 @@ entries, grouped under the category's Core instruction and shuffled by the run's
 ```
 
 - Exactly `name`, `category` and `entries`, nothing else.
-- `category` must be the folder's registered category (`vocabulary/Spaces/Fantasy.json` → `"Spaces"`).
+- `category` must be the folder's registered category (`vocabulary/Spaces/Fantasy.json` → `"Spaces"`). The
+  `Objects` folder holds `"Objects & Props"`: every thing in a scene (tools, toys, kitchenware, vehicles,
+  buildings seen in the scene, restraints, and text: words or marks printed, written or drawn on things or skin).
 - `entries`: 1–2000 non-empty texts of up to 300 characters; repeats (ignoring case) count once.
 - File name: words joined by hyphens (`Solo-Activities.json`); the pack id is `<folder>/<file name>`.
 

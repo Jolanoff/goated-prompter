@@ -66,3 +66,6 @@ Desktop.ini
 /.opencode/plans/
 /.openchamber/
 /skills-lock.json
+
+# Your quality-check settings (requests and results stay local)
+/quality.json

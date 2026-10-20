@@ -12,8 +12,8 @@
     "prompt_text": "{Spaces} provides vocabulary describing where the action takes place. Use relevant entries as possible locations or environmental inspiration."
   },
   {
-    "category": "Objects",
-    "prompt_text": "{Objects} provides vocabulary for physical objects. Objects can be used by subjects, held by subjects, worn where appropriate, interacted with, or included in the background."
+    "category": "Objects & Props",
+    "prompt_text": "{Objects & Props} provides vocabulary for the things in the scene. An entry can be used by a subject, used on a subject, used for the action, held, carried, worn where it is not clothing, written on, or placed in the space or background. An entry that is text (a word printed, written, engraved or drawn) becomes visible words or marks in the image. Fit each entry to the scene's space and action."
   },
   {
     "category": "Expressions",

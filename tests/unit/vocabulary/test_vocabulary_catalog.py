@@ -12,7 +12,7 @@ from goated_prompter.features.vocabulary import catalog
 from goated_prompter.features.vocabulary.catalog import (CatalogError, catalog_for, import_pack, load_catalog, record,
                                                          selected_vocabulary, validate_selection, vocabulary_prompt)
 
-CATEGORIES = ["Subjects", "Actions & Poses", "Spaces", "Objects", "Expressions", "Clothing", "Mood & Tone",
+CATEGORIES = ["Subjects", "Actions & Poses", "Spaces", "Objects & Props", "Expressions", "Clothing", "Mood & Tone",
               "Lighting", "Camera & Composition", "Effects & Atmosphere"]
 
 
@@ -33,7 +33,8 @@ class Bundled(unittest.TestCase):
         self.assertEqual(loaded["problems"], [])
         self.assertEqual([row["id"] for row in loaded["categories"]], CATEGORIES)
         for row in loaded["categories"]:
-            self.assertEqual(row["folder"], row["id"])
+            # A renamed category keeps its folder, so pack ids (and saved selections) stay the same.
+            self.assertEqual(row["folder"], "Objects" if row["id"] == "Objects & Props" else row["id"])
             self.assertTrue(row["description"] and row["use_when"])
             self.assertTrue(row["instruction"].startswith(f"{row['id']} provides vocabulary"), row["instruction"])
             self.assertNotIn("{", row["instruction"])
@@ -44,7 +45,8 @@ class Bundled(unittest.TestCase):
 
     def test_every_starter_pack_is_name_category_entries_in_its_folder(self):
         loaded = load_catalog()
-        self.assertEqual(len(loaded["packs"]), 41)
+        self.assertEqual(len(loaded["packs"]), 47)
+        folders = {row["folder"]: row["id"] for row in loaded["categories"]}
         self.assertEqual({pack["source"] for pack in loaded["packs"]}, {"built-in"})
         for path in sorted(catalog.ROOT.glob("*/*.json")):
             if path.parent.name == "core":
@@ -52,7 +54,7 @@ class Bundled(unittest.TestCase):
             with self.subTest(pack=str(path.relative_to(catalog.ROOT))):
                 data = json.loads(path.read_text(encoding="utf-8"))
                 self.assertEqual(list(data), ["name", "category", "entries"])
-                self.assertEqual(data["category"], path.parent.name)
+                self.assertEqual(data["category"], folders[path.parent.name])
                 self.assertTrue(all(isinstance(entry, str) and entry for entry in data["entries"]))
         names = {pack["id"]: pack["name"] for pack in loaded["packs"]}
         self.assertEqual(names["Spaces/Sci-Fi"], "Sci-Fi")

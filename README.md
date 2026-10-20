@@ -344,7 +344,7 @@ Freaky stuff are ignored. Generating freaky stuff is at your own risk. I'm not r
 
 #### Vocabulary packs
 
-Each category is a folder under `vocabulary/` (Subjects, Actions & Poses, Spaces, Objects, Expressions, Clothing, Mood & Tone, Lighting, Camera & Composition, Effects & Atmosphere), and each JSON file in it is one pack, for example
+Each category is a folder under `vocabulary/` (Subjects, Actions & Poses, Spaces, Objects & Props (folder `Objects`), Expressions, Clothing, Mood & Tone, Lighting, Camera & Composition, Effects & Atmosphere), and each JSON file in it is one pack, for example
 `{"name": "Rooftops", "category": "Spaces", "entries": ["rooftop bar", "water tower"]}`. Click **Import packs** on the **Vocabulary** tab and choose one or more pack files: each is checked and saved in `data/vocabulary/<its category's folder>/`, and importing the same file again replaces it. A pack that cannot be read is listed there with the reason, and every other pack keeps working. The categories are defined in `vocabulary/core/` (`scene_category_registry.json`, `category_definitions.json`, `prompt_instructions.json`); a new category is one entry in each plus its folder.
 
 See the [Dataset architecture](docs/dataset-architecture.md) for how a run is understood, composed and written.
@@ -448,6 +448,13 @@ Backend names ignore surrounding whitespace, casing and hyphen/underscore differ
 ## Development and verification
 
 Want to help? Read the [contribution guide](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md). Use the [issue forms](https://github.com/Jolanoff/goated-prompter/issues/new/choose) for bugs and feature requests; report vulnerabilities according to the [security policy](SECURITY.md).
+
+### Is a change better?
+
+Run `quality.bat` from the project folder. It compares the old code with the new code on your model and opens a
+report with a verdict: **Better**, **Worse** or **No real difference**. `quality.bat audit` checks the settings for
+collisions in seconds without a model. Your requests live in `quality.json` and stay local, as do the results; see
+[`tests/quality/README.md`](tests/quality/README.md).
 
 ### Checkpoint privacy and recovery
 

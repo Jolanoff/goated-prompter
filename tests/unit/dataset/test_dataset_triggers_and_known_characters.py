@@ -365,5 +365,72 @@ class EverydayWords(unittest.TestCase):
         self.assertIsNotNone(self.check("A leashed woman in bdsm gear", trigger_type="Animal"))
 
 
+class RolesShownNotTold(unittest.TestCase):
+    """At Creative and Dice a role label is replaced by the person's look; the scene's signs carry the role."""
+
+    brief = {"characters": [{"label": "servant", "gender": "male", "known": False, "triggers": []},
+                            {"label": "ruler", "gender": "female", "known": False, "triggers": []}]}
+    scene = {"subjects": {"servant": {"skin": "pale", "hair": "short dark hair"}, "ruler": {"skin": "tan", "hair": "long red hair"}}}
+
+    def named(self, creativity, text):
+        return prompts.name_people(text, {**self.brief, "settings": {"creativity": creativity}}, self.scene)
+
+    def test_creative_and_dice_name_people_by_look(self):
+        for level in ("Creative", "Dice"):
+            self.assertEqual(self.named(level, "the ruler lifts her servant's chin"),
+                             "the woman with tan skin lifts the man with pale skin's chin")
+
+    def test_strict_and_balanced_keep_the_role(self):
+        for level in ("Strict", "Balanced"):
+            self.assertEqual(self.named(level, "the ruler lifts her servant's chin"), "the ruler lifts her servant's chin")
+
+    def test_words_written_on_something_stay(self):
+        self.assertEqual(self.named("Creative", 'a tag reading "servant" on the servant'),
+                         'a tag reading "servant" on the man with pale skin')
+
+    def test_people_who_share_a_look_are_told_apart_without_brackets_or_commas(self):
+        brief = {"characters": [{"label": "guard", "gender": "male"}, {"label": "prisoner", "gender": "male"}],
+                 "settings": {"creativity": "Creative"}}
+        scene = {"subjects": {"guard": {"skin": "pale, freckled", "hair": "short, dark"},
+                              "prisoner": {"skin": "pale, freckled", "hair": "long blond hair"}}}
+        self.assertEqual(prompts.anchors(scene, brief),
+                         {"guard": "the man with pale freckled skin and short dark hair",
+                          "prisoner": "the man with pale freckled skin and long blond hair"})
+
+    def test_named_known_or_triggered_people_keep_their_name(self):
+        brief = {"characters": [{"label": "Mara", "gender": "female"}, {"label": "guard", "gender": "male", "triggers": [1]}],
+                 "settings": {"creativity": "Dice"}}
+        self.assertEqual(prompts.name_people("Mara passes the guard", brief, {"subjects": {}}), "Mara passes the guard")
+
+
+class AnimaTagLine(unittest.TestCase):
+    """The Dataset knows its cast, so the count tags come from it; the tag line is written in Anima's own format."""
+
+    cast = {"characters": [{"label": "knight", "gender": "male"}, {"label": "queen", "gender": "female"}]}
+
+    def test_count_tags_come_from_the_cast(self):
+        line = prompts.anima_tag_line("score_9, masterpiece, 2girls, 1boy, solo, 2people, knight, throne room\n\nProse.", self.cast)
+        self.assertEqual(line, "score_9, masterpiece, 1boy, 1girl, knight, throne room\n\nProse.")
+        self.assertEqual(prompts.count_tags([{"gender": "male"}]), ["1boy", "solo"])
+        self.assertEqual(prompts.count_tags([{"gender": "male", "count": 2}, {"gender": ""}]), ["2boys", "1other"])
+
+    def test_underscores_become_spaces_except_score_tags_and_low_quality_tags_go(self):
+        line = prompts.anima_tag_line("score_8_up, low_quality, worst quality, lowres, knight_is_kneeling, \\(armor\\)\n\nA_b.",
+                                      self.cast)
+        self.assertEqual(line, "score_8_up, 1boy, 1girl, knight is kneeling, \\(armor\\)\n\nA_b.")
+
+    def test_quality_then_one_safety_tag_then_counts_and_no_invented_score_or_solo_tags(self):
+        line = prompts.anima_tag_line("1boy, rating: explicit, score_7_sub, score_9_of_9, solo man, solo focus, safe, "
+                                      "kneeling, masterpiece, score_9\n\nProse.", self.cast)
+        self.assertEqual(line, "masterpiece, score_9, explicit, 1boy, 1girl, solo focus, kneeling\n\nProse.")
+
+    def test_tag_blocks_split_by_blank_lines_become_one_line(self):
+        line = prompts.anima_tag_line("masterpiece, 1boy\n\nkneeling, collar,\n\nA knight kneels. He waits.", self.cast)
+        self.assertEqual(line, "masterpiece, 1boy, 1girl, kneeling, collar\n\nA knight kneels. He waits.")
+
+    def test_a_prompt_without_a_tag_line_is_left_alone(self):
+        self.assertEqual(prompts.anima_tag_line("A knight kneels.", self.cast), "A knight kneels.")
+
+
 if __name__ == "__main__":
     unittest.main()

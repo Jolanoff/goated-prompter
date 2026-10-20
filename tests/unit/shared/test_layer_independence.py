@@ -90,7 +90,23 @@ class LayerIndependence(unittest.TestCase):
         for level in CREATIVITY_ADAPTERS.values():
             self.assertIn("Never add or replace a subject or an act", level)
         self.assertIn("Avoid the most obvious way to show it", CREATIVITY_ADAPTERS["Creative"])
-        self.assertIn("decide boldly everything the request leaves open", CREATIVITY_ADAPTERS["Dice"])
+        self.assertIn("decide boldly", CREATIVITY_ADAPTERS["Dice"])
+
+    def test_abstract_words_become_signs_without_examples(self):
+        from goated_prompter.features.dataset.v2.scenes import _system
+        from goated_prompter.prompting.base import SHOW_DONT_TELL
+        self.assertIn(SHOW_DONT_TELL, message())
+        self.assertIn(SHOW_DONT_TELL, _system({"path": "sfw_character", "characters": [], "input": {},
+                                               "settings": {"creativity": "Balanced"}}, []))
+        for level in ("Strict", "Balanced"):
+            self.assertIn("only when the request asks for them", CREATIVITY_ADAPTERS[level])
+            self.assertNotIn("written on a prop", CREATIVITY_ADAPTERS[level])
+        for level in ("Creative", "Dice"):
+            self.assertIn("may come from the request's own words or meaning", CREATIVITY_ADAPTERS[level])
+        for leak in ("e.g.", "for example", "such as", "like a "):
+            self.assertNotIn(leak, SHOW_DONT_TELL.casefold())
+            for level in CREATIVITY_ADAPTERS.values():
+                self.assertNotIn(leak, level.casefold())
 
     def test_the_writing_temperature_follows_creativity(self):
         temperatures = [assemble_instruction(GoatedPrompterRequest(idea="a cat", creativity=level)).temperature

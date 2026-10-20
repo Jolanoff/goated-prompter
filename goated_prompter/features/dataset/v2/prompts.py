@@ -34,16 +34,17 @@ SCENE_ORDER = ("subjects", "position", "actions", "space", "camera", "extras")
 
 SCENE_RULES = """
 The idea is one scene of an IMAGE, already decided. Write it as one prompt for the
-target model. Keep every person, their appearance, every placement, orientation, support, contact
-and the action exactly as given; do not move anyone, change the action or add contact. What the scene
+target model. Keep every person, their appearance, every placement, orientation, support, contact, where each one
+looks and the action exactly as given; do not move anyone, change the action or add a touch or gaze the positions
+cannot reach. What the scene
 leaves open follows the Creativity setting. The actions line is the whole action of the image: write
 exactly that, with no other act. When the idea gives a position name, use that name word for word together with
 the action: the target model knows it, so name it instead of only describing the pose.
 Do not add subjects or actions, and do not change the camera. The scene leaves clothing, light and mood to you: choose
 them to suit the scene and the request (and any Clothing, Lighting or Mood entry in its extras); nothing worn hides a
 body part the action uses.
-Words such as "the first man" or "woman" only tell the people apart: never write them; describe each person by
-appearance instead."""
+A person's label or number only tells the people apart: never write it, and never call a person by their order;
+describe each person by their own appearance instead."""
 
 KNOWN_RULE = """
 KNOWN CHARACTERS: {names} {verb} {noun} the target model already knows. Refer to them by name (with
@@ -80,6 +81,67 @@ def unlabel(text, brief):
             text = re.sub(r"\b(?:the\s+)?" + re.escape(found[0]) + r"\b", f"the {ORDINALS[int(found[2]) - 1]} {found[1]}",
                           text, flags=re.IGNORECASE)
     return text
+
+
+# At Creative and Dice a person's role ("the slave", "the queen") is shown, not told: the final writer sees them by
+# their own look, and the scene's signs carry the role.
+SHOWN_ROLES = ("Creative", "Dice")
+_NOUN = {"male": "man", "female": "woman"}
+
+
+def anchors(scene, brief):
+    """{label: how the writer sees that person}: a person whose looks change from image to image is named by their
+    own look in this scene ("the man with tan skin") instead of an order ("man 1") or, at Creative and
+    Dice, a role ("slave"), so the prompt has an anchor to repeat. Known, triggered and named people keep their label
+    (a trigger is placed at its person's mention)."""
+    from .scenes import varied_labels
+    varied, people = varied_labels(brief), {}
+    shown = (brief.get("settings") or {}).get("creativity") in SHOWN_ROLES
+    # Written as words, never in brackets or with commas: brackets weigh tags in tag-based targets and commas split a
+    # tag line, so an anchor reads the same in prose and in a tag line.
+    plain = lambda value: re.sub(r"\s*[,;()\[\]]+\s*", " ", str(value or "")).strip()
+    for person in brief["characters"]:
+        found = re.fullmatch(r"(.+?)\s+(\d+)", person["label"].strip())
+        look = (scene.get("subjects") or {}).get(person["label"]) or {}
+        if person["label"] not in varied or not (found or shown):
+            continue
+        noun = _NOUN.get(person.get("gender")) if shown else None
+        noun = noun or (found[1] if found else person["label"])
+        hair = plain(look.get("hair"))
+        hair = hair if not hair or re.search(r"\bhair\b", hair) else f"{hair} hair"
+        details = [part for part in (f"{plain(look.get('skin'))} skin" if look.get("skin") else "", hair,
+                                     plain(look.get("detail"))) if part]
+        if details:
+            people[person["label"]] = (noun, details)
+    # Everyone gets the same amount of look: the least that tells them all apart, so no anchor is part of another.
+    for size in range(1, 4):
+        result = {label: f"the {noun} with {' and '.join(details[:size])}" for label, (noun, details) in people.items()}
+        if len(set(result.values())) == len(result):
+            return result
+    return {label: anchor for label, anchor in result.items() if list(result.values()).count(anchor) == 1}
+
+
+def name_people(text, brief, scene):
+    """The text with every anchored label replaced by its person's look anchor in this scene (anchors), and any
+    numbered label without one by its ordinal (unlabel). Quoted words (text written on something) stay as they are."""
+    found = anchors(scene, brief)
+    parts = re.split(r'("[^"]*"|“[^”]*”)', text)
+    for index in range(0, len(parts), 2):
+        for label, anchor in found.items():
+            parts[index] = re.sub(r"\b(?:(?:the|a|an|his|her|their|its)\s+)?" + re.escape(label) + r"\b",
+                                  lambda _match: anchor, parts[index], flags=re.IGNORECASE)
+    return unlabel("".join(parts), brief)
+
+
+def _requirements(brief, scene):
+    """The confirmed requirements for one scene's final prompt, with every person named as in that scene's idea."""
+    name = lambda text: name_people(text, brief, scene)
+    return ("CONFIRMED DATASET REQUIREMENTS (the scene was written from these: where the scene contradicts them, "
+            "they win)\n") + json.dumps({
+        "rules": [name(rule) for rule in brief["input"]["rules"]],
+        "characters": [{**person, "label": name(person["label"])} for person in brief["characters"]],
+        "people": brief["people"], "must": [name(item) for item in brief["must"]],
+        "avoid": [name(item) for item in brief["avoid"]]}, ensure_ascii=False)
 
 
 def scene_text(scene, known=frozenset()):
@@ -182,6 +244,67 @@ def _tag_line(text):
     fields = [field.strip() for field in text.split(",") if field.strip()]
     return (len(fields) >= 2 and "\n" not in text.strip() and all(1 <= len(field.split()) <= 8 for field in fields)
             and not re.search(r"[a-z]{2,}[.!?](?:\s+[A-Z]|\s*$)", text))
+
+
+# Anima's people-count tags (danbooru): 1boy, 2girls, 1other, solo, and the loose forms models invent ("2people").
+# "solo focus" is a tag of its own; any other solo phrase a model invents ("solo man") is a count tag.
+_COUNT_TAG = re.compile(r"\d+\+?\s*(?:boy|girl|other|people|person|persons|man|men|woman|women)s?|"
+                        r"solo(?!\s+focus$)(?:[\s-].*)?|multiple (?:boys|girls|others|people)", re.IGNORECASE)
+# Quality tags that belong in a negative prompt, never in the positive one.
+_LOW_QUALITY_TAG = re.compile(r"(?:worst|low|bad) quality|lowres", re.IGNORECASE)
+# Anima's score tags keep their underscores; every other tag is written with spaces.
+_SCORE_TAG = re.compile(r"score_\d+(?:_up)?", re.IGNORECASE)
+# Anima's quality tags (score, quality and year tags) and its safety tags, which come first and in that order.
+_QUALITY_TAG = re.compile(r"score \d+(?: up)?|masterpiece|(?:best|good|normal|high|amazing) quality|absurdres|highres|"
+                          r"newest|recent|mid|early|old|year \d{4}", re.IGNORECASE)
+_SAFETY_TAG = re.compile(r"(?:rating\s*:?\s*)?(safe|sensitive|nsfw|explicit|questionable|general)", re.IGNORECASE)
+
+
+def count_tags(characters):
+    """The cast as Anima count tags: men are boys, women are girls, anyone else other; solo for one person."""
+    counts = {}
+    for person in characters:
+        kind = {"male": "boy", "female": "girl"}.get(person.get("gender"), "other")
+        counts[kind] = counts.get(kind, 0) + int(person.get("count") or 1)
+    tags = [f"{number}{kind}{'s' if number > 1 else ''}" for kind in ("boy", "girl", "other")
+            if (number := counts.get(kind))]
+    return tags + (["solo"] if sum(counts.values()) == 1 else [])
+
+
+def anima_tag_line(prompt, brief):
+    """An Anima prompt's tag line in Anima's own format: the cast's count tags (the app knows the cast; a model guesses
+    them), quality tags first, then one safety tag, then the count tags; spaces instead of underscores (score tags keep
+    theirs); no low-quality, unknown score or invented solo tags. Prose is left as written."""
+    # The tag lines are the leading lines that are tag lines (a model sometimes breaks them over several lines or
+    # blocks); everything after them is prose, separated by one blank line as Anima expects.
+    lines = prompt.strip().splitlines()
+    count = end = 0
+    while count < len(lines) and (not lines[count].strip() or _tag_line(lines[count].strip().rstrip(","))):
+        count += 1
+        end = count if lines[count - 1].strip() else end
+    count = end
+    if not count:
+        return prompt
+    head = ", ".join(line.strip().rstrip(",") for line in lines[:count] if line.strip())
+    prose = "\n".join(lines[count:]).strip()
+    separator, rest = ("\n\n", prose) if prose else ("", "")
+    quality, safety, tags = [], [], []
+    for field in (field.strip() for field in head.split(",")):
+        plain = _plain_tag(field).strip("[]").strip()
+        if not field or _COUNT_TAG.fullmatch(plain) or _LOW_QUALITY_TAG.fullmatch(plain):
+            continue
+        if plain.casefold().startswith("score") and not _QUALITY_TAG.fullmatch(plain):
+            continue  # a score tag Anima does not know
+        if rating := _SAFETY_TAG.fullmatch(plain):
+            safety.append(rating[1].casefold())  # one safety tag, in Anima's spelling
+            continue
+        if not _SCORE_TAG.search(field):
+            field = re.sub(r"(?<!\\)_", " ", field)
+        group = quality if _QUALITY_TAG.fullmatch(plain) else tags
+        if field.casefold() not in (tag.casefold() for tag in quality + tags):
+            group.append(field)
+    people = count_tags(brief["characters"]) if brief["characters"] else []
+    return ", ".join([*quality, *safety[:1], *people, *tags]) + separator + rest
 
 
 def _ordered(triggers):
@@ -336,16 +459,21 @@ _UNIT = r"(?!\s*(?:m|cm|mm|km|ft|in|meters?|metres?|feet|foot|inch(?:es)?|yards?
 
 
 def label_problem(prompt, brief):
-    """A numbered character label ("man 1", "woman_2") left in the prompt, which should describe people instead."""
+    """A numbered character label ("man 1", "woman_2") or the ordinal the writer saw for it ("the first man") left in
+    the prompt, which should describe people by their look instead."""
     for person in brief["characters"]:
         found = re.fullmatch(r"(.+?)\s+(\d+)", person["label"].strip())
         if not found:
             continue  # a name or a single unnumbered label reads naturally in prose
         stem, number = found.groups()
-        if re.search(r"\b" + r"\W*".join(map(re.escape, stem.split())) + r"[\s_-]*" + number + r"\b" + _UNIT,
-                     prompt, re.IGNORECASE):
+        words = r"\W*".join(map(re.escape, stem.split()))
+        if re.search(r"\b" + words + r"[\s_-]*" + number + r"\b" + _UNIT, prompt, re.IGNORECASE):
             return (f'The prompt calls a person "{person["label"]}". Describe each person by appearance and role '
                     "and never use these labels.")
+        if 0 < int(number) <= len(ORDINALS) and (match := re.search(
+                r"\b" + ORDINALS[int(number) - 1] + r"\s+" + words + r"\b", prompt, re.IGNORECASE)):
+            return (f'The prompt calls a person "{match[0]}". Name each person by one short anchor from their own '
+                    "look instead, and never by their order.")
     return None
 
 
@@ -363,11 +491,6 @@ def write_prompts(config, request, brief, scenes, *, checkpoint=lambda: None, pr
     known = frozenset(person["label"] for person in brief["characters"] if person.get("known") is True)
     # The raw request and "fixed" are sentences the scene already carries: shown again, the model pastes them into the
     # prompt as content. The people, rules and must/avoid stay, since a drifted scene could lose them.
-    requirements = ("CONFIRMED DATASET REQUIREMENTS (the scene was written from these: where the scene contradicts them, "
-                    "they win)\n") + json.dumps({
-        "rules": brief["input"]["rules"], "characters": brief["characters"], "people": brief["people"],
-        "must": brief["must"], "avoid": brief["avoid"]}, ensure_ascii=False)
-    requirements = unlabel(requirements, brief)
     # A style trigger carries the style: the Style setting would only fight it.
     style, capture = run_style(brief)
     describe_style = not any(trigger["kind"] == "style" and trigger["expand"] == "off"
@@ -379,12 +502,13 @@ def write_prompts(config, request, brief, scenes, *, checkpoint=lambda: None, pr
     for position, scene in enumerate(scenes, 1):
         number = scene_slot(scene, position)
         progress(f"Writing final prompt {position} of {len(scenes)} (image {number})...")
-        idea = unlabel(scene_text(scene, known), brief)
+        idea = name_people(scene_text(scene, known), brief, scene)
+        named = _requirements(brief, scene)
         problem = None
         recovery = GenerationRecovery("dataset_v2:builder", [number], progress=progress)
         for _ in (1, 2):
             adult = ADULT_RULE if brief["path"] == "nsfw_character" else ""
-            rules = "\n\n".join(part for part in (SCENE_RULES, _known_rule(brief), adult, requirements,
+            rules = "\n\n".join(part for part in (SCENE_RULES, _known_rule(brief), adult, named,
                                                   _trigger_rule(brief), f"CORRECTION: {problem}" if problem else "")
                                 if part)
             builder_request = replace(request, idea=idea, mode="Enhance", planning_mode="Direct",
@@ -413,6 +537,8 @@ def write_prompts(config, request, brief, scenes, *, checkpoint=lambda: None, pr
         if results and results[-1]["slot"] == number:
             continue
         # A label or copied wording left after the retry is not worth failing the image; a lost number is a wrong fact.
+        if canonical_target(brief["settings"]["target"]) == "Anima":
+            prompt = anima_tag_line(prompt, brief)
         prompt = place_triggers(prompt, brief)
         problem = trigger_problem(prompt, brief) or (meaning[0] if meaning and meaning[1] else None)
         recovery.finish("succeeded" if not problem else "failed")

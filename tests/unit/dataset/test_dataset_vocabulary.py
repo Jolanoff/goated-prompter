@@ -47,9 +47,11 @@ class SceneVocabulary(unittest.TestCase):
         labels = [person["label"] for person in user["understanding"]["characters"]]
         wants_entry = "entry" in instruction.json_schema["properties"]["scenes"]["items"]["required"]
         return json.dumps({"scenes": [{
-            "subjects": {label: dict(SCENE) for label in labels}, "position": {label: "standing" for label in labels},
-            "actions": user["request"], "space": f"clearing {row['image']}", "lighting": "moonlight",
-            "mood": "calm", "camera": "wide shot", "extras": "none",
+            "subjects": {label: {**SCENE, **{field: f"{field}{row['image']}{label}".replace(" ", "")
+                                             for field in ("skin", "build", "hair", "detail")}} for label in labels},
+            "position": {label: "standing" for label in labels},
+            "actions": f"{' and '.join(labels)}: {user['request']}", "space": f"clearing {row['image']}", "lighting": "moonlight",
+            "mood": "calm", "camera": "wide shot", "extras": f"extras{row['image']}",
             **({"entry": self.entries.pop(0) if self.entries else "two people slow dancing"} if wants_entry else {})}
             for row in user["images"]]})
 
@@ -92,8 +94,8 @@ class SceneVocabulary(unittest.TestCase):
                  "Clothing/Modern-Fashion", "Objects/Furniture"]
         result = self.write(self.brief("A seductive adult character posing with a prop", cast, nsfw=True), packs)
         vocabulary = composer_user(self.composer()[0].user_message)["vocabulary"]
-        self.assertEqual([line for line in vocabulary.split("\n") if line in {"Actions & Poses", "Expressions", "Clothing", "Objects"}],
-                         ["Actions & Poses", "Objects", "Expressions", "Clothing"], "registry order")
+        self.assertEqual([line for line in vocabulary.split("\n") if line in {"Actions & Poses", "Expressions", "Clothing", "Objects & Props"}],
+                         ["Actions & Poses", "Objects & Props", "Expressions", "Clothing"], "registry order")
         self.assertEqual(len(result["vocabulary"]["selection"]["packs"]), 4)
 
     def test_example_d_a_group_keeps_its_cast_from_understanding(self):

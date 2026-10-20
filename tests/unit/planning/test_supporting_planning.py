@@ -101,17 +101,18 @@ class SupportingPlanningTests(unittest.TestCase):
         # Updated for one precedence rule, emphasis-only Directors and target layouts that templates replace.
         # Updated for the two-or-more-people rule and the Length guide that details the subjects first.
         # Updated when Creativity became the only owner of how much is invented.
+        # Updated for show-don't-tell: the request's abstract words become visible signs.
         golden = {
-            "Generic": "20e0cb8f150f378911d1fd7e27ac8b3b197594cdc8582d8c96e45abb7ef5c278",
-            "Anima": "104eaccaa48dbeac45ad8fe0166ededa486bfa4ae7f7c772548b5810b27ad5f3",
-            "Krea 2": "4dbddd9bfa66a41d849cc76c2b0d89a3edad66f2997f204d8dbf3c227c724433",
-            "FLUX.2 Klein": "3297d5a7b60cb9864379c4e25355acffd9209ae351201584c357cc6e530b011b",
-            "Z-Image": "97b7b6c8ee245b8982f80e9d9de6c99b7dd5f38265778d81a1e66084eda91139",
-            "Qwen Image (original)": "080a6eb4a372db3d5ce6675f6d41e66e71540a5a32777856f5e89671ec36a9c8",
-            "Qwen Image 2.1": "f1c92cc0a37209d68aac21c51f514ea97818b63e0b0c5db4c3d15ce46488970f",
-            "MiniMax H3": "136575398489f09702173097b81e1e8cfd7d2d354f391e8fba31ac0a9ff52916",
-            "LTX 2.5": "40103e65a70f74a5d96ba9b0b9247fed029f701f752e0ab2a536ede966ec8878",
-            "Ideogram4": "5b447cfc30e8731547038e0dea86c0930b3d22bdedfc31640c32c39d180a0c4c"}
+            "Generic": "e1a969732904e4b0c79b223b0cc3288b5d34a0bb1f56a4a3e19d77f6887dae6b",
+            "Anima": "8aaed62b8341710b3afa51a212bd571bf6fc934e541b0c6aeb3dbaa2cee5892b",
+            "Krea 2": "94c8b03c19f12f924c1ef5faf4ead065bf154d98d310c3b1c46b1618195ad9dc",
+            "FLUX.2 Klein": "a946d8c808bf9f29d135e198ad6905e72d3cf5edd138a5b07d20385cbcd69706",
+            "Z-Image": "11e7c8b91c1c568d830f6c1249a3c10ec0dc580bd394e48ef91c502188d2191b",
+            "Qwen Image (original)": "aeb2cc0963e8a72c6448d13b999ec62ec1a9c7077034165abac001f73720981b",
+            "Qwen Image 2.1": "3697861b43abc5bfb841a9f6449c3736c00a85464598566d8aa920357ef6df03",
+            "MiniMax H3": "ef445a631210370b9124acd6a3a59540d6ecfd63420cf19a1b46a4757d0268e0",
+            "LTX 2.5": "94722e59a2ed4aca6f0675e55c4df856fb1d4d76f52f603a78c1e7a23cf9a61b",
+            "Ideogram4": "31ab6cf4adcb6e86379a9cf8a771ec8209b79438cb6205efa5f62cb36cb909d0"}
         self.assertEqual(set(golden), set(TARGET_MODEL_NAMES))
         for target, digest in golden.items():
             with self.subTest(target=target):

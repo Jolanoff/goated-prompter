@@ -108,7 +108,7 @@ class TargetControlTests(unittest.TestCase):
         message = self.instruction("LTX 2.5", mode="Video", director_preset="video_director", prompt_length="Maximum Detail")
         self.assertIn("one flowing paragraph of four to eight sentences", message)
         self.assertNotIn("Do not invent dialogue", get_model_adapter("LTX 2.5"), "How much is invented belongs to Creativity.")
-        self.assertIn("add words to be read or heard (signs, captions, dialogue) only when the request asks", message)
+        self.assertIn("words to be read or heard (signs, captions, dialogue) only when the request asks", message)
         self.assertIn("Creativity alone sets how much is invented", message)
 
     def test_all_lengths_and_creativity_preserve_target_hard_structure(self):

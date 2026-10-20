@@ -59,7 +59,8 @@ only an expression in its scene; its look comes from its name, never from the wr
 A scene holds only the people and their arrangement: subjects, actions, position, space, camera and extras. Each
 position line places its person in the frame and names the owner of every body part by label. Clothing, lighting and
 mood are left to the final prompt; a selected Clothing, Lighting or Mood & Tone entry goes in extras. Saved scenes
-with the old clothing, lighting and mood fields still load (`retire_fields` drops them). Missing images
+with the old clothing, lighting and mood fields still load (`retire_fields` drops them). Repeated looks are not asked again (an image asked again tends to copy an accepted
+one); later batches see earlier looks field by field. Missing images
 are retried, then reported; the last round keeps an image rather than lose it.
 
 Prompts (`v2/prompts.py`): the existing Builder writes each final prompt from the scene with the run's Director
@@ -76,7 +77,17 @@ repeated at each mention, no shared pronouns, the owner, state and count of each
 and where the bodies touch and stay apart. Meaning triggers reach
 the Builder as notes to rewrite: code asks once more when a prompt copies a note of three or more words or loses a
 number it gives, and fails the image when the number is still missing (`meaning_problem`). Code rewrites once a
-prompt that still uses a numbered label ("man 1"). One set of library templates is picked for the whole run, so every
+prompt that still uses a numbered label ("man 1") or its ordinal ("the first man"). The writer never sees those for a
+person whose looks change: each is named by the least of their own look in that scene that tells everyone apart, in words without brackets
+or commas ("the man with pale skin"; `anchors`, `name_people`); known,
+triggered and named people keep their label. A scene whose actions do not name every person (an entry copied with
+its placeholder people) is asked again (`unnamed_people`). At Creative and Dice, a role label ("servant", "ruler") is also replaced by the person's look, so the role is shown by
+the scene's signs instead of named; quoted words stay. On Anima, code writes the tag line's people-count tags from
+the cast, puts quality tags first and keeps one safety tag before the counts, writes tags with spaces (score tags
+keep their underscores) and drops low-quality tags, score tags Anima does not know and invented solo tags
+(`anima_tag_line`). Each scene shows the request through its own signs, specific enough to name without being told; the scene
+writer writes them (extras) right after the pose, before the place and camera, and an image that reuses an
+earlier image's place with its camera, arrangement or signs is asked again (`_repeats`). One set of library templates is picked for the whole run, so every
 prompt has the same structure, and an entry's position name reaches the Builder only when the scene's actions say it
 (an entry the writer had to swap or adapt would otherwise name a different act). Understanding drops a must or avoid
 phrase that only repeats a trigger's text. Capture is Auto in the brief unless the style is Realistic. Any style
@@ -118,7 +129,12 @@ settings repeats a run; it never changes what the request asks for.
 The request and rules decide the facts; NSFW whether the run is adult; triggers their exact text, meaning or both;
 the Director what is emphasized; the target how the prompt is written; Length how long it is; Style the medium;
 Creativity alone how much is invented around the facts (its guide text and the writers' temperature); vocabulary
-which verified entries fit the request. `tests/unit/shared/test_layer_independence.py` checks that no other guide
+which verified entries fit the request. The Builder and the scene writer both turn the request's abstract words (a
+role, status, relationship, feeling or theme) into visible signs (`SHOW_DONT_TELL`, kinds of sign only, never
+examples); Creativity decides how far the signs go, and only Creative and Dice may write the request's own words on
+a prop, garment or body. The NSFW switch only allows adult content: the request decides whether an image shows an
+act, a role, a display or a mood, and nothing adds nudity, acts or kinks the request does not call for. Later
+batches also see earlier images' extras, so props and signs are not repeated. `tests/unit/shared/test_layer_independence.py` checks that no other guide
 decides how much is invented.
 
 ## Evidence boundary

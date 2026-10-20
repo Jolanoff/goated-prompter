@@ -23,8 +23,10 @@ name people as "one person" / "the other person": the writer maps them to the ch
 adapts named objects and supports to the scene.
 
 Code checks the shape of each answer (every section filled, exactly the character labels, no phrase from the avoid
-list) and that no image reuses another one's place together with its camera or arrangement (_repeats; the last round
-keeps a repeat rather than lose the image), and asks again for the images still missing, up to ROUNDS times per batch.
+list), that no image reuses another one's place together with its camera, arrangement or signs (_repeats) and that
+the actions name every person (unnamed_people), so no entry is copied with its placeholder people. Repeated looks are
+not asked again: an image asked again tends to copy an accepted one, and the people only need to differ by look. The last round keeps a repeat rather than lose the image; images still missing are
+asked again, up to ROUNDS times per batch.
 Later batches see what earlier images used as lists (already_used), not as scenes to imitate.
 
 Slot identity: image N is slot N from start to finish; a failed slot never shifts its siblings. result["slots"] has
@@ -43,6 +45,7 @@ from ....backends.factory import create_backend
 from ....backends.recovery import GenerationRecovery, RunawayRecoveryError
 from ....contracts import PromptInstruction, effective_model_family
 from ....director_profiles import resolve_director_config
+from ....prompting.base import SHOW_DONT_TELL
 from ....prompting.creativity import creativity_adapter, creativity_temperature
 from ...vocabulary.catalog import (catalog_for, record as selection_record, selected_vocabulary,
                                    validate_selection, vocabulary_prompt)
@@ -54,7 +57,9 @@ from .understanding import validate_brief
 BATCH = 10  # one answer holds up to ten images: a model spreads a set out best within one answer
 ROUNDS = 3
 # Only what decides the picture's people and arrangement: clothing, light and mood are chosen by the final writer.
-SECTIONS = ("subjects", "actions", "position", "space", "camera", "extras")
+# The signs (extras) are written right after the people and their pose, before the place and camera: written last, a
+# model fills them with leftover atmosphere.
+SECTIONS = ("subjects", "actions", "position", "extras", "space", "camera")
 SUBJECT_FIELDS = ("skin", "build", "hair", "detail", "expression")
 KNOWN_SUBJECT_FIELDS = ("expression",)  # a known character's look comes from its name, never the writer
 VOCABULARY_SAMPLE = 40  # entries per category in one batch's prompt: enough choice without drowning the request
@@ -79,11 +84,14 @@ For each image listed under IMAGES, in order, write one complete and coherent sc
 - Give everyone a clear role, pose and place that fit the action and each other. All positions together must be one
   physically possible arrangement: if one person is behind another, that person faces away from them; if someone
   lies on their back facing a partner, the partner is above or between their legs, not behind them; nobody can be
-  behind a person whose back is against a wall or who lies on their back; say who holds whose weight. The camera must suit this image's own space and positions.
-- Every image is a new scene: unless fixed keeps them, give each one a different place, arrangement and camera.
+  behind a person whose back is against a wall or who lies on their back; say who holds whose weight. Every touch,
+  grip and gaze must be possible from the positions given: nobody touches a body part that rests against a surface,
+  and nobody faces a person who is behind them. The camera must suit this image's own space and positions.
+- Every image is a new scene: unless fixed keeps them, give each one a different place, arrangement, camera and signs.
   When vocabulary is selected, all variations must stay within its selected category themes.
-  Unless fixed keeps it, never reuse a place, arrangement or camera listed in already_used, and do not follow its
-  order.
+  Unless fixed keeps it, never reuse a place, arrangement or camera listed in already_used, do not repeat the props
+  and signs of its extras, and do not follow its order.
+- {show}
 - Give the people new looks (skin, build, hair, detail) in every image unless fixed keeps the same people; then keep
   their looks identical in every image. Otherwise no two images share the same people: do not cycle a few looks.
 - A character with "known": true is an established character: the image model already knows their face, hair, eyes,
@@ -103,7 +111,7 @@ For each scene:
    Decide who takes which role from the request and
    the cast. Never leave a placeholder person in the scene.
 4. Objects, furniture and surfaces named in an entry are examples too. Replace them with ones that belong in this
-   scene's space or come from the selected Objects, keeping the pose physically the same and the support at the
+   scene's space or come from the selected Objects & Props, keeping the pose physically the same and the support at the
    height the pose needs. Never place furniture that does not belong in the space.
 5. If an entry needs a body part that nobody in this cast has, it does not fit: never adapt it to another body
    part, choose another entry. If it needs an object or surface this space does not have, replace it with one that
@@ -126,10 +134,13 @@ position: one entry per character label: where that person is in the frame (left
   is every time by character label, never a bare his, her or their. With no characters, position is {{}}.
 actions: who does what to whom, in one sentence, naming every person by their character label; no placeholder
   person from an entry is left. With no characters: how the subject is placed.
+extras: first the objects, marks and details that make the request's abstract words visible in this image (who
+  someone is, their status, their relationship, what they feel), each specific enough that a viewer could name that
+  word without being told, then background details, plus any selected Clothing,
+  Lighting or Mood & Tone entry. Clothing, light and mood are otherwise left to the final prompt, except a garment
+  that is one of those signs.
 space: the location and its physical details.
 camera: framing and viewpoint, chosen so the action is clearly visible.
-extras: objects and background details, plus any selected Clothing, Lighting or Mood & Tone entry for this image.
-Clothing, light and mood are otherwise left to the final prompt.
 
 Be concrete and brief: a later step writes the final prompt.
 
@@ -148,7 +159,7 @@ For every scene:
    - Subjects: subject choices or characteristics (never the looks of a known character).
    - Actions & Poses: what subjects do and how they are positioned for it (actions and position fields).
    - Spaces: locations and environments.
-   - Objects: props and usable objects.
+   - Objects & Props: things used, held, worn when not clothing, written on or placed, including text (in extras).
    - Expressions: facial expressions.
    - Clothing: outfits and garments (in extras).
    - Mood & Tone: emotional atmosphere (in extras).
@@ -181,11 +192,14 @@ Do not force every individual vocabulary entry into a scene.
 Unselected categories remain unrestricted and may be invented naturally.
 If no vocabulary is selected, generate normally."""
 
-NSFW_RULE = ("- This dataset is explicit sexual content: the action is the sexual activity the request asks for, "
-             "shown clearly and directly, in a position that is physically possible for this cast. Every image "
-             "shows that activity itself; kissing, touching, undressing or foreplay alone never stand in for it "
-             "unless the request asks for them. The actions name the act plainly: which body part of whom goes "
-             "where and in what state, together with the position's usual name, and every position agrees with that act.")
+# The NSFW switch only allows adult content; the request decides what each image shows.
+NSFW_RULE = ("- This dataset is adult content: nudity and sex are allowed wherever the request calls for them, and the "
+             "request decides what each image shows. When it asks for a sexual act, every image shows that act "
+             "itself, clearly and directly, in a position that is physically possible for this cast; kissing, "
+             "touching, undressing or foreplay alone never stand in for it unless the request asks for them. The "
+             "actions then name the act plainly: which body part of whom goes where and in what state, together "
+             "with the position's usual name, and every position agrees with that act. When the request asks for a "
+             "role, status, display or mood, show that. Never add nudity, acts or kinks the request does not call for.")
 SFW_RULE = "- This dataset is not adult content: no nudity and nothing explicit."
 NO_PEOPLE_RULE = "- There are no people: describe how the subject is placed instead of a pose."
 GUIDED_RULE = "- An image's input fixes its action: keep it, and build the rest of the scene around it."
@@ -302,7 +316,7 @@ def _system(brief, errors, vocabulary="", entry_cap=None):
         content += "\n" + NO_PEOPLE_RULE
     if brief["input"].get("source_mode") == "guided":
         content += "\n" + GUIDED_RULE
-    system = COMPOSE_SYSTEM.format(content_rule=content)
+    system = COMPOSE_SYSTEM.format(content_rule=content, show=SHOW_DONT_TELL)
     if vocabulary:
         system += "\n\n" + VOCABULARY_RULES
     if entry_cap:
@@ -335,7 +349,8 @@ def compose_message(brief, images, earlier=(), vocabulary="", entries_used=None)
     if vocabulary:
         parts.append(vocabulary)
     used = {"places": [item["space"] for item in earlier], "arrangements": [item["actions"] for item in earlier],
-            "cameras": [item["camera"] for item in earlier], "looks": [item["looks"] for item in earlier]}
+            "cameras": [item["camera"] for item in earlier], "extras": [item.get("extras", "") for item in earlier],
+            "looks": [item["looks"] for item in earlier]}
     if entries_used:
         used["entries"] = dict(entries_used)
     parts.append("IMAGES:\n" + json.dumps({"images": list(images), **({"already_used": used} if earlier or entries_used else {})},
@@ -464,7 +479,9 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
         if not todo or recovery.exhausted:
             break
         recovery.items = tuple(todo)
-        progress(f"Composing scene{'s' if len(todo) > 1 else ''} {', '.join(map(str, todo))}...")
+        progress(f"Composing scene{'s' if len(todo) > 1 else ''} {', '.join(map(str, todo))}"
+                 + (" again: " + "; ".join(f"{number}: {reasons[number][0][:70]}" for number in todo if reasons[number])
+                    if round_ > 1 else "") + "...")
         images = [{"image": number, **({"input": inputs[number]} if inputs[number] else {}),
                    **({"entry": plan["dealt"][number]} if plan.get("dealt") else {})} for number in todo]
         errors = sorted({f"image {number}: {reason}" for number in todo for reason in reasons[number]})
@@ -488,8 +505,11 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
             entry = entries.get(_entry_key(scene["entry"])) if entries and not problems else None
             if not problems and round_ < ROUNDS:  # the last round accepts a repeat rather than lose the image
                 if any(_repeats(scene, item, labels) for item in [*earlier, *scenes.values()]):
-                    problems = ["it repeats the place and the camera or arrangement of an earlier image; write a "
-                                "different scene"]
+                    problems = ["it repeats the place and the camera, arrangement or signs of an earlier image; "
+                                "write a different scene"]
+                elif missing := unnamed_people(scene, labels):
+                    problems = [f"its actions do not name {', '.join(missing)}: name every person by their character "
+                                "label and never leave a placeholder person from an entry"]
                 elif entries and entry is None:
                     problems = ['its "entry" must be copied word for word from the Actions & Poses vocabulary']
                 elif entries and used.get(entry, 0) >= cap:
@@ -513,11 +533,26 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
     return scenes, failed
 
 
+def unnamed_people(scene, labels):
+    """The character labels a scene's actions never name (an entry copied with its placeholder people)."""
+    actions = str(scene.get("actions") or "")
+    return [label for label in labels if not re.search(r"(?<![\w-])" + re.escape(label) + r"(?![\w-])", actions, re.IGNORECASE)]
+
+
+def varied_labels(brief):
+    """Labels whose looks change from image to image: not a known character, not a person with a character
+    trigger, and not a person the user named (Understanding labels unnamed people with a lowercase role noun)."""
+    return frozenset(person["label"] for person in brief["characters"]
+                     if not person.get("known") and not person.get("triggers") and person["label"][:1].islower())
+
+
 def _summary(scene):
     """What a later request reads of an earlier scene, so the set spreads out (known characters have no looks)."""
-    looks = {label: f"{person['skin']}, {person['hair']}" for label, person in scene["subjects"].items()
+    # Field by field, so a writer that copies an earlier look never puts its hair into the skin field.
+    looks = {label: {"skin": person["skin"], "hair": person["hair"]} for label, person in scene["subjects"].items()
              if "skin" in person and "hair" in person}
-    return {"space": scene["space"][:120], "camera": scene["camera"][:80], "actions": scene["actions"][:120], "looks": looks}
+    return {"space": scene["space"][:120], "camera": scene["camera"][:80], "actions": scene["actions"][:120],
+            "extras": scene["extras"][:120], "looks": looks}
 
 
 _FILLER = frozenset("a an the and with of in on at to from for by into over his her their its is are".split())
@@ -535,11 +570,13 @@ def _overlap(first, second, ignore=frozenset()):
 
 
 def _repeats(scene, other, labels=()):
-    """A new scene is a repeat when it reuses another image's place together with its camera or arrangement. The same
-    place alone is fine (fixed may keep it)."""
+    """A new scene is a repeat when it reuses another image's place together with its camera, arrangement or extras
+    (an image asked again tends to copy an accepted one's place and signs). The same place alone is fine (fixed may
+    keep it)."""
     ignore = frozenset(word for label in labels for word in re.findall(r"[a-z0-9]+", label.casefold()))
     return _overlap(scene["space"], other["space"]) >= .7 and (
-        _overlap(scene["camera"], other["camera"]) >= .6 or _overlap(scene["actions"], other["actions"], ignore) >= .6)
+        _overlap(scene["camera"], other["camera"]) >= .6 or _overlap(scene["actions"], other["actions"], ignore) >= .6
+        or _overlap(scene.get("extras"), other.get("extras"), ignore) >= .7)
 
 
 def _shuffled(groups, rng, limit=None):

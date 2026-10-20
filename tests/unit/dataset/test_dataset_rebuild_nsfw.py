@@ -50,7 +50,7 @@ class AdultDatasetTests(unittest.TestCase):
         self.scene = {"subjects": {label: {"skin": "warm brown", "build": "adult", "hair": "short dark hair",
             "detail": f"{label}'s recognizable face", "expression": "a soft smile", "clothing": "no clothing"} for label in labels},
             "position": {label: f"{label} sits on the bench, feet on the floor, holding a red ribbon in the right hand."
-                         for label in labels}, "actions": "The adults display their red ribbons without changing places.",
+                         for label in labels}, "actions": f"{' and '.join(labels)} display their red ribbons without changing places.",
             "space": "A studio with a wide bench", "lighting": "daylight", "mood": "calm", "camera": "wide shot",
             "extras": "A plain wall"}
         return data
@@ -96,14 +96,16 @@ class AdultDatasetTests(unittest.TestCase):
                 user = self.users("scenes")[0]
                 self.assertEqual(user["understanding"]["characters"], brief["characters"])
                 self.assertEqual(user["understanding"]["fixed"], brief["fixed"])
-                self.assertIn("This dataset is explicit", self.composer()[0].system_message)
+                system = self.composer()[0].system_message
+                self.assertIn("This dataset is adult content", system)
+                self.assertIn("Never add nudity, acts or kinks the request does not call for", system, "the switch allows, the request decides")
                 written = prompts.write_prompts(self.config, self.request, brief, result["scenes"], progress=lambda _message: None)
                 final = self.calls[-1]
                 for label in labels:
-                    self.assertIn(prompts.unlabel(self.scene["position"][label], brief), final.user_message)
-                    self.assertIn(prompts.unlabel(f"{label}'s recognizable face", brief), final.user_message)
+                    self.assertIn(prompts.name_people(self.scene["position"][label], brief, scene), final.user_message)
+                    self.assertIn(prompts.name_people(f"{label}'s recognizable face", brief, scene), final.user_message)
                 self.assertNotIn("performer 1", final.user_message)
-                self.assertIn(self.scene["actions"], final.user_message)
+                self.assertIn(prompts.name_people(self.scene["actions"], brief, scene), final.user_message)
                 self.assertTrue(written[0]["trigger_ok"])
                 self.assertEqual(final.seed, 73)
 
