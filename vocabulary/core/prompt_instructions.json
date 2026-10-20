@@ -33,7 +33,7 @@
   },
   {
     "category": "Camera & Composition",
-    "prompt_text": "{Camera & Composition} provides vocabulary for shot types, camera angles, framing, and viewpoints. Use relevant entries to compose the scene while keeping required subjects and actions visible."
+    "prompt_text": "{Camera & Composition} provides vocabulary for viewpoints, closeness and composition. Turn an entry into what the image shows: the viewpoint, which parts of each person are in the frame and what lies in front of and behind them. An entry about closeness sets how near the view is, never a reason to cut a person of the cast down to a body part: the action and every cast member's presence come first."
   },
   {
     "category": "Effects & Atmosphere",

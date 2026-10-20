@@ -39,13 +39,18 @@ class Bundled(unittest.TestCase):
             self.assertTrue(row["instruction"].startswith(f"{row['id']} provides vocabulary"), row["instruction"])
             self.assertNotIn("{", row["instruction"])
 
+    def test_camera_vocabulary_is_turned_into_what_the_image_shows(self):
+        camera = next(row for row in load_catalog()["categories"] if row["id"] == "Camera & Composition")
+        self.assertIn("Turn an entry into what the image shows", camera["instruction"])
+        self.assertIn("never a reason to cut a person of the cast down to a body part", camera["instruction"])
+
     def test_core_is_exactly_three_files(self):
         self.assertEqual(sorted(path.name for path in (catalog.ROOT / "core").iterdir()),
                          ["category_definitions.json", "prompt_instructions.json", "scene_category_registry.json"])
 
     def test_every_starter_pack_is_name_category_entries_in_its_folder(self):
         loaded = load_catalog()
-        self.assertEqual(len(loaded["packs"]), 47)
+        self.assertEqual(len(loaded["packs"]), 48)
         folders = {row["folder"]: row["id"] for row in loaded["categories"]}
         self.assertEqual({pack["source"] for pack in loaded["packs"]}, {"built-in"})
         for path in sorted(catalog.ROOT.glob("*/*.json")):

@@ -41,8 +41,8 @@
   },
   {
     "category": "Camera & Composition",
-    "description": "The visual viewpoint, framing, shot size, perspective, and composition of the image.",
-    "use_when": "When framing or viewpoint is relevant."
+    "description": "The viewpoint and composition of the image: where the camera stands, how close it is, and how the subjects are arranged in the frame, described through what the image shows.",
+    "use_when": "When the viewpoint, closeness or arrangement of the subjects in the frame matters."
   },
   {
     "category": "Effects & Atmosphere",

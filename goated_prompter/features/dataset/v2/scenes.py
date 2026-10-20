@@ -179,7 +179,7 @@ For every scene:
    - Clothing: outfits and garments (in extras).
    - Mood & Tone: emotional atmosphere (in extras).
    - Lighting: illumination and light sources (in extras).
-   - Camera & Composition: framing and viewpoint.
+   - Camera & Composition: viewpoint, closeness and arrangement (in camera), written as what the image shows.
    - Effects & Atmosphere: visible environmental effects.
 3. Build the corresponding scene fields using the selected vocabulary
    as the source of creative direction.
