@@ -62,7 +62,11 @@ and never adds a subject or object only to use one. No pack is used automaticall
 and approved requirements, with vocabulary guidance only from manually selected Subjects packs. A known character has
 only an expression in its scene; its look comes from its name, never from the writer or vocabulary.
 A scene holds only the people and their arrangement: subjects, actions, position, space, camera and extras. Each
-position line places its person in the frame and names the owner of every body part by label. Clothing, lighting and
+position line places its person in the frame, names the owner of every body part by label and says which body
+parts the camera can see; the final prompt describes a body part only when it is visible (not turned away, hidden
+by another body or inside someone). Every act needs the bodies to reach each other (two acts at once only when a
+position reaches both partners, never a closed loop through everyone), and positions and actions agree on who does
+what to whom. Clothing, lighting and
 mood are left to the final prompt; a selected Clothing, Lighting or Mood & Tone entry goes in extras. Saved scenes
 with the old clothing, lighting and mood fields still load (`retire_fields` drops them). Repeated looks are not asked again (an image asked again tends to copy an accepted
 one); later batches see earlier looks field by field. Missing images

@@ -43,7 +43,8 @@ the action, as plain words and never in quotes (quotes mark text drawn in the im
 name it instead of only describing the pose.
 Do not add subjects or actions, and do not change the camera. The scene leaves clothing, light and mood to you: choose
 them to suit the scene and the request (and any Clothing, Lighting or Mood entry in its extras); nothing worn hides a
-body part the action uses.
+body part the action uses. Describe a body part only when the scene's positions and camera let the camera see it; a
+body part turned away, hidden behind or under another body, or inside someone is never described as visible.
 A person's label or number only tells the people apart: never write it, and never call a person by their order;
 describe each person by their own appearance instead."""
 

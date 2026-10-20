@@ -104,7 +104,7 @@ class SupportingPlanningTests(unittest.TestCase):
         # Updated for show-don't-tell: the request's abstract words become visible signs.
         golden = {
             "Generic": "e1a969732904e4b0c79b223b0cc3288b5d34a0bb1f56a4a3e19d77f6887dae6b",
-            "Anima": "8aaed62b8341710b3afa51a212bd571bf6fc934e541b0c6aeb3dbaa2cee5892b",
+            "Anima": "544595b95e62d924135bb36b78b231f1da48c942ab4ef4cade702a889cc90e4c",
             "Krea 2": "94c8b03c19f12f924c1ef5faf4ead065bf154d98d310c3b1c46b1618195ad9dc",
             "FLUX.2 Klein": "a946d8c808bf9f29d135e198ad6905e72d3cf5edd138a5b07d20385cbcd69706",
             "Z-Image": "11e7c8b91c1c568d830f6c1249a3c10ec0dc580bd394e48ef91c502188d2191b",

@@ -70,6 +70,19 @@ class SceneVariety(Harness):
         self.assertIn("expression", person["required"])
         self.assertIn("expression (their face in this moment)", self.composer()[0].system_message)
 
+    def test_only_what_the_camera_can_see_is_described(self):
+        # A body part turned away, hidden by another body or inside someone is never written as visible.
+        self.write()
+        self.assertIn("which of their\n  body parts the camera can see", self.composer()[0].system_message)
+        self.assertIn("Describe a body part only when the scene's positions and camera let the camera see it",
+                      " ".join(prompts.SCENE_RULES.split()))
+
+    def test_every_act_is_reachable_and_the_positions_agree_with_the_actions(self):
+        self.write()
+        system = " ".join(self.composer()[0].system_message.split())
+        self.assertIn("a person takes part in two acts at once only when their position reaches both partners", system)
+        self.assertIn("The positions and the actions agree on who does what to whom", system)
+
     def test_the_requested_activity_is_every_images_action(self):
         self.write()
         system = self.composer()[0].system_message

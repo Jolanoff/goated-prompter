@@ -87,7 +87,9 @@ For each image listed under IMAGES, in order, write one complete and coherent sc
   lies on their back facing a partner, the partner is above or between their legs, not behind them; nobody can be
   behind a person whose back is against a wall or who lies on their back; say who holds whose weight. Every touch,
   grip and gaze must be possible from the positions given: nobody touches a body part that rests against a surface,
-  and nobody faces a person who is behind them. The camera must suit this image's own space and positions.
+  and nobody faces a person who is behind them. Every act needs the bodies to reach each other from their
+  positions: a person takes part in two acts at once only when their position reaches both partners, and the acts
+  never form a closed loop through every person. The camera must suit this image's own space and positions.
 - Every image is a new scene: unless fixed keeps them, give each one a different place, arrangement, camera and signs.
   When vocabulary is selected, all variations must stay within its selected category themes.
   Unless fixed keeps it, never reuse a place, arrangement or camera listed in already_used, do not repeat the props
@@ -131,8 +133,11 @@ subjects: one entry per character label, each with skin (tone first, then any su
   and the style), build (body shape), hair (colour and style), detail (one distinguishing feature) and
   expression (their face in this moment). A known character has only expression.
 position: one entry per character label: where that person is in the frame (left, right, centre, front or back) and
-  in the space, their pose, which way they face, what holds their weight and what they touch. Name whose body part it
-  is every time by character label, never a bare his, her or their. With no characters, position is {{}}.
+  in the space, their pose, which way they face, what holds their weight and what they touch. Also say which of their
+  body parts the camera can see from this camera: a body part turned away from the camera, hidden behind or under
+  another body, or inside someone is not visible. The positions and the actions agree on who does what to whom:
+  whoever acts with their mouth has it at the other person's body, never the reverse. Name whose body part it is
+  every time by character label, never a bare his, her or their. With no characters, position is {{}}.
 actions: who does what to whom in this image, in one sentence: the concrete physical action, never the request
   repeated. Name every person by their character label; no placeholder person from an entry is left. With no
   characters: how the subject is placed.
