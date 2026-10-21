@@ -1,9 +1,27 @@
 {
   "name": "Dark",
   "category": "Mood & Tone",
+  "description": "Unease, isolation and somber emotional tones. Entries do not prescribe low lighting, danger or a specific setting.",
   "entries": [
+    "distrustful",
+    "foreboding stillness",
+    "quiet dread",
+    "melancholic reflection",
+    "bitter disappointment",
+    "emotional distance",
+    "suppressed resentment",
+    "solemn remembrance",
+    "weary disillusionment",
+    "anxious hesitation",
+    "regretful silence",
+    "fragile composure",
     "ominous",
     "brooding",
-    "menacing"
+    "menacing",
+    "mournful",
+    "isolated",
+    "uneasy anticipation",
+    "resigned",
+    "haunted by uncertainty"
   ]
 }

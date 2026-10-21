@@ -1,0 +1,27 @@
+{
+  "name": "Fantasy Peoples",
+  "category": "Subjects",
+  "description": "Adult people from imagined fantasy lineages. Entries define visible anatomy without assigning an occupation, morality or activity.",
+  "entries": [
+    "adult elf with long pointed ears and silver-streaked dark hair",
+    "adult dwarf with a short broad build and a braided beard",
+    "adult orc with green-grey skin and small lower tusks",
+    "adult goblin with broad ears and a narrow angular face",
+    "adult halfling with a compact build and thick curly hair",
+    "adult gnome with a slender build and oversized pointed ears",
+    "adult horned humanoid with copper skin and a tapering tail",
+    "adult winged humanoid with feathered wings rooted at the shoulder blades",
+    "adult merfolk with a scaled tail and finned forearms",
+    "adult centaur with a human torso above a horse's body",
+    "adult cyclops with one central eye and a broad forehead",
+    "adult giant with a massive build and coarse dark hair",
+    "adult stone-skinned humanoid with mineral veins across their face",
+    "adult plantlike humanoid with bark-textured skin and leaflike hair",
+    "adult aquatic humanoid with neck gills and webbed fingers",
+    "adult crystalline humanoid with translucent faceted features",
+    "adult fire-touched humanoid with ember-colored freckles and dark hair",
+    "adult frost-touched humanoid with pale blue skin and white eyelashes",
+    "adult moth-winged fairy with a human-sized body and fine antennae",
+    "adult four-armed humanoid with two distinct shoulder pairs"
+  ]
+}

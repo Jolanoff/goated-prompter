@@ -1,9 +1,27 @@
 {
   "name": "Natural",
   "category": "Lighting",
+  "description": "Sun, sky, moon and reflected daylight. Entries describe direction and diffusion suitable for different times and environments.",
   "entries": [
+    "low sunrise light grazing a frost-covered surface",
+    "high midday sun producing short defined shadows",
+    "soft dawn light beneath a thin cloud layer",
+    "late afternoon sun entering through a western window",
+    "light reflected upward from a snowfield",
+    "rippling sunlight reflected from water onto nearby walls",
+    "open shade beneath a tree with brighter sky beyond",
+    "sunlight diffused through sea fog",
+    "a narrow sunbeam entering a cave opening",
+    "cool skylight within a shaded canyon",
+    "low winter sun casting elongated shadows",
+    "sunlight transmitted through thin green leaves",
     "golden hour sunlight",
     "overcast daylight",
-    "window light"
+    "window light",
+    "dappled sunlight passing through foliage",
+    "blue twilight with soft residual light from the sky",
+    "sunlight reflected from a pale wall into shade",
+    "moonlight with a faint ambient sky fill",
+    "diffuse skylight entering through an open roof"
   ]
 }

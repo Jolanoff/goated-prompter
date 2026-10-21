@@ -1,9 +1,27 @@
 {
   "name": "Fantasy",
   "category": "Spaces",
+  "description": "Imagined magical worlds, settlements and ruins. Entries supply fantasy architecture and terrain with space for the requested activity.",
   "entries": [
+    "sky harbor with mooring towers linked by stone bridges",
+    "sunken palace hall beneath a transparent dome",
+    "market built along the roots of a colossal tree",
+    "mountaintop sanctuary surrounding a suspended bell",
+    "desert citadel carved into a sandstone mesa",
+    "ice palace gallery with translucent pillars",
+    "library built inside the shell of an enormous fossil",
+    "garden of oversized flowers around a tiled pavilion",
+    "subterranean canal city with terraced landing stages",
+    "abandoned golem workshop with broad assembly platforms",
     "enchanted forest",
     "ancient dragon temple",
-    "floating castle"
+    "floating castle",
+    "dwarven forge hall with a central hearth and work alcoves along its walls",
+    "treehouse settlement linked by broad suspended walkways",
+    "underground crystal cavern with flat ledges around a deep pool",
+    "wizard's archive with reading bays between tall shelves",
+    "ruined mountain gate opening onto a narrow stone causeway",
+    "giant mushroom grove with clear paths between the stems",
+    "castle courtyard with a well and covered perimeter walk"
   ]
 }

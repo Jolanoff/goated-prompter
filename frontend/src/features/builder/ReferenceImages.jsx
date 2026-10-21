@@ -2,20 +2,22 @@ import { ChevronDown, ImagePlus, Settings2, X } from "lucide-react";
 import { Panel } from "../../components/StudioPrimitives.jsx";
 import { ui } from "../../ui.js";
 
-export default function ReferenceImages({ images, settings, attributes, sources,
+export default function ReferenceImages({ images, settings, attributes, sources, disabled = false,
   missingReferences, sourceAvailable, onChange, onUpload, onRemove, onError }) {
   const hasImages = images.some(Boolean);
   return (
     <>
-      <Panel icon={ImagePlus} title="Reference images" subtitle="Add up to four images to guide your prompt."
+      <Panel icon={ImagePlus} title="Reference images"
+        subtitle={disabled ? "The selected prompt engine is text-only." : "Add up to four images to guide your prompt."}
         className={ui.referencePanel}
         action={<span className={ui.countChip}>{images.filter(Boolean).length} / 4</span>}>
-        <div className={ui.filmstrip}>
+        <div className={ui.filmstrip} data-disabled={disabled}>
           {images.map((image, index) => (
             <div className={ui.imageSlot} data-image={!!image} key={index}
               onDragOver={(event) => event.preventDefault()}
               onDrop={(event) => {
                 event.preventDefault();
+                if (disabled) return;
                 if (event.dataTransfer.files.length !== 1)
                   onError("Drop one image into each slot. The limit is four references.");
                 else onUpload(event.dataTransfer.files[0], index);
@@ -32,7 +34,7 @@ export default function ReferenceImages({ images, settings, attributes, sources,
               ) : (
                 <label className={ui.uploadLabel}>
                   <input type="file" aria-label={`Upload image ${index + 1}`}
-                    accept="image/png,image/jpeg,image/webp"
+                    accept="image/png,image/jpeg,image/webp" disabled={disabled}
                     onChange={(event) => {
                       onUpload(event.target.files[0], index);
                       event.target.value = "";
@@ -48,8 +50,8 @@ export default function ReferenceImages({ images, settings, attributes, sources,
           ))}
         </div>
         <p className={ui.subtleNote}>
-          Images are not saved. References need reuploading after
-          reload; unavailable preserve mappings reset to Off.
+          {disabled ? "This engine cannot read images. Choose an engine with a matching mmproj, or a configured endpoint with vision enabled, to use references."
+            : "Images are not saved. References need reuploading after reload; unavailable preserve mappings reset to Off."}
         </p>
       </Panel>
       <Panel icon={Settings2} title="Keep from reference images"

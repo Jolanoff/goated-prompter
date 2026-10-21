@@ -487,6 +487,9 @@
   .image-slot[data-image=true] { border-style: solid; border-color: transparent; }
   .image-slot[data-image=true]:hover { border-color: var(--color-accent); background: var(--control); }
   .image-slot img { width: 100%; height: 100%; object-fit: cover; }
+  .filmstrip[data-disabled=true] .image-slot { opacity: .5; }
+  .filmstrip[data-disabled=true] .image-slot:hover { border-color: var(--control-border); background: var(--control); }
+  .filmstrip[data-disabled=true] .upload-label, .filmstrip[data-disabled=true] .upload-label input { cursor: not-allowed; }
   .upload-label { position: relative; display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; flex-direction: column; gap: 4px; padding: 8px; text-align: center; cursor: pointer; }
   .upload-label input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
   .upload-label:focus-within { outline: 2px solid var(--focus); outline-offset: -4px; }

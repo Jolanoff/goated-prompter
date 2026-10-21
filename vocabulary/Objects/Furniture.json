@@ -1,9 +1,27 @@
 {
   "name": "Furniture",
   "category": "Objects & Props",
+  "description": "Seating, storage and working surfaces. Entries are individual furnishings, not complete rooms or fixed poses.",
   "entries": [
+    "wall-mounted coat rack",
+    "round pedestal dining table",
+    "reclining chaise longue",
+    "narrow console table",
+    "bunk bed with a fixed ladder",
+    "drawer cabinet with metal label holders",
+    "padded window seat",
+    "wooden rocking chair",
+    "upholstered footstool",
+    "glass-fronted display cabinet",
     "velvet armchair",
     "four-poster bed",
-    "wooden table"
+    "wooden table",
+    "long backless bench",
+    "freestanding shelving unit",
+    "adjustable drafting desk",
+    "folding stool",
+    "low storage chest",
+    "room divider with hinged panels",
+    "wheeled work cart"
   ]
 }

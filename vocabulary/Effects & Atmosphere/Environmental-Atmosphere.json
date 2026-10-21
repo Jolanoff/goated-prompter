@@ -1,9 +1,27 @@
 {
   "name": "Environmental Atmosphere",
   "category": "Effects & Atmosphere",
+  "description": "Visible air, moisture and surface effects in a setting. Entries describe physical phenomena without prescribing mood or a lighting treatment.",
   "entries": [
+    "salt crust forming along evaporating puddles",
+    "dew beading on broad leaves",
+    "ripples spreading from a dripping pipe",
+    "frost coating the edges of metal fittings",
+    "oily rainbow sheen across a shallow puddle",
+    "silt clouding the water near a disturbed riverbed",
+    "sea foam collecting between shore rocks",
+    "rainwater running down a windowpane",
+    "ash coating an undisturbed ledge",
+    "damp footprints fading across a dry floor",
+    "mineral deposits streaking a stone wall",
+    "vapor curling from a cold vent",
     "thick fog",
     "heat haze",
-    "steam rising"
+    "steam rising from a warm surface",
+    "condensation beading on a cold surface",
+    "windblown sand skimming close to the ground",
+    "spray suspended beside turbulent water",
+    "thin smoke dispersing above a cooling ember bed",
+    "low mist pooling in a hollow"
   ]
 }

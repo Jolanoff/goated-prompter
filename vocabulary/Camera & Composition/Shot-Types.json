@@ -1,10 +1,27 @@
 {
   "name": "Shot Types",
   "category": "Camera & Composition",
+  "description": "Framing distance and extent of the scene. Entries describe what stays visible, including the contact points and supports needed to understand an activity.",
   "entries": [
-    "close view: the main subject fills the frame, its key details sharp, still recognizable as a whole",
-    "middle view: the main subjects from their middle up, with a little space around them",
+    "detail view: one task-relevant object fills the frame with the hands using it visible",
+    "head-and-shoulders view: faces and upper shoulders dominate when the activity does not require lower-body context",
+    "hands-and-workpiece view: the shared task fills the frame, with wrists and sleeves distinguishing participants",
+    "full-body pair view: both existing participants fit completely within the frame",
+    "ensemble view: the requested cast fits together with each participant separately readable",
+    "panoramic establishing view: the landscape extends broadly around a small but identifiable main activity",
+    "vertical full-length view: the frame follows the subjects from overhead space to their supporting surface",
+    "square medium view: the main activity sits within a balanced frame with nearby context on every side",
+    "object-and-user view: a whole device and the participant using it share the frame",
+    "room-wide view: the room boundaries and the main subjects' positions within them remain visible",
+    "threshold view: both sides of a doorway and the activity at the opening fit within the frame",
+    "ground-contact view: the lower bodies and supporting terrain dominate when foot placement is the action's focus",
+    "close view: the main subjects fill most of the frame, with the contact points and details needed to understand their action still visible",
+    "middle view: the main subjects from their middle up, widening or lowering the frame when their hands, supports or lower-body action must be visible",
     "full view: every main subject whole in the frame, from its top to where it rests on the ground, with space around it",
-    "distant view: the main subjects small within a wide place, the surroundings filling most of the frame"
+    "distant view: the main subjects small within a wide place, the surroundings filling most of the frame",
+    "shared close view: the main subjects' faces and interacting hands share the frame, with enough surrounding context to distinguish who does what",
+    "knee-up view: the main subjects are shown from above their heads to below their knees, retaining the spacing between their bodies",
+    "environmental view: the main subjects occupy a readable part of the frame while the surrounding workspace or terrain explains the activity",
+    "wide horizontal view: the frame extends to either side of the main subjects, keeping their lateral relationships and the nearby space visible"
   ]
 }

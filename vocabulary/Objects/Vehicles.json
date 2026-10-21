@@ -1,7 +1,12 @@
 {
   "name": "Vehicles",
   "category": "Objects & Props",
+  "description": "Vehicles as scene objects, transport or background details. Entries do not require the subjects to ride or operate them.",
   "entries": [
+    "electric cargo tricycle",
+    "tracked snow vehicle",
+    "hot-air balloon with a wicker basket",
+    "inflatable kayak",
     "vintage convertible",
     "motorcycle",
     "bicycle",

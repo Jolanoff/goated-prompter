@@ -1,9 +1,27 @@
 {
   "name": "Romantic",
   "category": "Mood & Tone",
+  "description": "Affection, familiarity and longing between adults. Entries describe emotional atmosphere without requiring a particular gesture or relationship history.",
   "entries": [
+    "joyful reunion",
+    "gentle admiration",
+    "newfound trust",
+    "wistful affection",
+    "mutual reassurance",
+    "quiet devotion",
+    "nervous anticipation of a first date",
+    "warm companionship",
+    "fond nostalgia",
+    "hopeful attraction",
+    "shared vulnerability",
+    "contented closeness",
     "tender",
     "intimate",
-    "dreamy"
+    "dreamy",
+    "shyly affectionate",
+    "playfully flirtatious",
+    "bittersweet longing",
+    "comfortable familiarity",
+    "reassured after separation"
   ]
 }
