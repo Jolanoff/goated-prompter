@@ -1,6 +1,12 @@
 import { test, expect } from "@playwright/test";
 import AxeBuilder from "@axe-core/playwright";
 
+test.beforeEach(async ({ request }) => {
+  const path = "/api/workspace/settings/dataset";
+  const current = await (await request.get(path)).json();
+  expect((await request.put(path, { data: { revision: current.revision, draft: {} } })).ok()).toBe(true);
+});
+
 test("the Vocabulary tab lists every registered category and its packs", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Vocabulary", exact: true }).click();
@@ -11,7 +17,7 @@ test("the Vocabulary tab lists every registered category and its packs", async (
   await expect(page.getByRole("region", { name: "Spaces", exact: true }).getByRole("heading", { name: "Fantasy" })).toBeVisible();
 });
 
-test("the Vocabulary Library searches, previews, and applies or discards a selection", async ({ page }) => {
+test("the Vocabulary Library searches, previews, and applies or discards a selection", async ({ page, request }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "Dataset", exact: true }).click();
   await page.getByRole("button", { name: "Vocabulary Library" }).click();
@@ -40,6 +46,10 @@ test("the Vocabulary Library searches, previews, and applies or discards a selec
   await library.getByRole("button", { name: "Cancel" }).click();
   await expect(library).not.toBeVisible();
   await expect(selection).toHaveText("Selected: Fantasy, Cinematic");
+  await expect.poll(async () => {
+    const record = await (await request.get("/api/workspace/settings/dataset")).json();
+    return record.draft.vocabulary_packs;
+  }).toEqual(["Spaces/Fantasy", "Lighting/Cinematic"]);
 });
 
 test("the library sorts, expands entries, browses related packs and clears staged selections", async ({ page }) => {
