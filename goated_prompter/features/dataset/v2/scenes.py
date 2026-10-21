@@ -146,7 +146,10 @@ extras: first the objects, marks and details that make the request's abstract wo
   word without being told, saying whose each worn, held or written sign is, then background details, plus any
   selected Clothing, Lighting or Mood & Tone entry. Clothing, light and mood are otherwise left to the final prompt, except a garment
   that is one of those signs.
-space: the location and its physical details.
+space: the place the request or fixed names, or when they name none one specific place a viewer would recognise;
+  then what the camera sees of it around the people: what each person stands, sits or lies on and its material, what
+  is directly behind them, and one or two physical features of this spot that the other images do not show (another
+  part of the same place when the request keeps one place). Light is left to the final prompt.
 camera: what the image shows, written after the action and positions and never as a shot name alone: the viewpoint
   (side, height, distance), then for each person which of their body parts are inside the frame and which edge of the
   frame they reach, and what lies in front of, beside and behind them. Every person in the cast is a primary subject
@@ -645,16 +648,57 @@ def deal_entries(entries, total, rng):
     return dealt
 
 
-def deal_hands(groups, total, rng, size=HAND):
+def requested_words(brief):
+    """The words of the request and of what it fixes or requires."""
+    return frozenset(_words(" ".join((brief["input"]["request"], brief.get("fixed", ""), *brief.get("must", ())))))
+
+
+def requested_entries(entries, words):
+    """The entries about something the request itself names: they share a word with it that is rare in this category
+    (in at most a quarter of its entries), so a word every entry repeats never counts."""
+    found = {word: sum(word in _words(entry) for entry in entries) for word in words}
+    rare = {word for word, count in found.items() if 0 < count <= max(1, len(entries) // 4)}
+    return [entry for entry in entries if _words(entry) & rare]
+
+
+def named_entries(entries, words):
+    """Of the entries about the request, the ones whose name (the text before ": ", else the whole entry) the request
+    says in full: "dildo" over "double dildo" when only "dildo" was asked for. All of them when none is named in full."""
+    named = [entry for entry in entries if _words(entry.split(": ", 1)[0]) <= words]
+    return named or entries
+
+
+def deal_hands(groups, total, rng, size=HAND, words=frozenset()):
     """{slot: {category: [entries]}}: a few suggested entries of every selected category except Actions & Poses (dealt
     on its own) for every image, from a seeded shuffle, without repeats until every entry has been dealt, so the whole
     vocabulary spreads over the set instead of the same few favourites. Suggestions are optional: the writer uses the
-    ones that fit the image, or none."""
+    ones that fit the image, or none.
+
+    words: the request's words (requested_words). In a category whose entries are about something the request names:
+    - the request names only that thing (not the category or one of its packs): every image gets only the entry the
+      request names (named_entries), so asking for one thing gives that one thing;
+    - the request also names the category or a pack of it ("sex toys" for a pack called Sex Toys), so it asks for the
+      kind in general: every image gets one entry about what it names and one other, and the vocabulary adds variety."""
     hands = {number: {} for number in range(1, total + 1)}
     for group in groups:
         if group["category"] == ACTIONS_CATEGORY:
             continue
         entries = list(dict.fromkeys(entry for pack in group["packs"] for entry in pack["entries"]))
+        if related := requested_entries(entries, words):
+            general = words & _words(" ".join([group["category"], *(pack.get("name", "") for pack in group["packs"])]))
+            if general:
+                others = [entry for entry in entries if entry not in related]
+            else:
+                related, others = named_entries(related, words), []
+            decks = [[], []]
+            for number in range(1, total + 1):
+                for deck, pool in zip(decks, (related, others)):
+                    if pool:
+                        if not deck:
+                            deck.extend(pool)
+                            rng.shuffle(deck)
+                        hands[number].setdefault(group["category"], []).append(deck.pop())
+            continue
         deck = []
         for number in range(1, total + 1):
             hand = []
@@ -707,7 +751,7 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
             groups = _only(groups, ACTIONS_CATEGORY, action_entries)
         plan = {"entries": {_entry_key(entry): entry for entry in action_entries} or None,
                 "cap": entry_cap(action_entries, total), "used": {}, "dealt": deal_entries(action_entries, total, rng),
-                "hands": deal_hands(groups, total, rng)}
+                "hands": deal_hands(groups, total, rng, words=requested_words(brief))}
         for start in range(0, total, BATCH):
             numbers = list(range(start + 1, min(total, start + BATCH) + 1))
             earlier = [_summary(scenes[number]) for number in sorted(scenes)][-EARLIER:]

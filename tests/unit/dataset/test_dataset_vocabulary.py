@@ -134,6 +134,38 @@ class SceneVocabulary(unittest.TestCase):
                              "every entry is dealt")
         self.assertIn('none at all when the category does not fit the image', self.composer()[0].system_message)
 
+    def lights(self, request):
+        catalog = load_catalog(user_root=False)
+        catalog["packs"].append({"id": "Objects/Test-Lights", "name": "Light Sources", "category": "Objects & Props",
+                                 "description": "", "source": "builtin",
+                                 "entries": ["lantern: a lantern swinging from a hook", "double lantern: two lanterns on one pole",
+                                             "candle stub", "oil lamp", "torch", "glow stick", "string lights", "desk lamp",
+                                             "flashlight beam"]})
+        self.calls.clear()
+        knight = [{"label": "knight", "gender": "male", "custom": "", "pronoun": "he", "count": 1}]
+        self.write(self.brief(request, knight, amount=4), ["Objects/Test-Lights"], catalog=catalog)
+        return [image["suggested"]["Objects & Props"] for image in composer_user(self.composer()[0].user_message)["images"]]
+
+    def test_a_request_naming_one_thing_gets_that_entry_in_every_image_and_nothing_else(self):
+        # A live run gave every image three unrelated entries of a pack and almost never the entry about the one object
+        # the request names.
+        self.assertEqual(self.lights("A knight holding a red lantern"), [["lantern: a lantern swinging from a hook"]] * 4,
+                         "the entry named in full wins over one that only shares the word")
+
+    def test_a_request_asking_for_the_kind_in_general_gets_its_named_entry_and_one_other(self):
+        hands = self.lights("A knight carrying light sources, among them a lantern")
+        self.assertTrue(all(len(hand) == 2 and "lantern" in hand[0] and "lantern" not in hand[1] for hand in hands), hands)
+
+    def test_a_request_word_that_most_entries_share_never_counts_and_other_runs_deal_as_before(self):
+        entries = [f"the one who serves with toy {n}" for n in range(8)]
+        self.assertEqual(scenes.requested_entries(entries, frozenset({"serves", "toy"})), [])
+        self.assertEqual(scenes.requested_entries(["a lantern", "a lamp"], frozenset({"lamp"})), ["a lamp"])
+        import random
+        groups = [{"category": "Lighting", "packs": [{"entries": ["spotlight", "chiaroscuro", "red light"]}]}]
+        self.assertEqual(scenes.deal_hands(groups, 4, random.Random(3)),
+                         scenes.deal_hands(groups, 4, random.Random(3), words=frozenset({"knight"})),
+                         "no entry about the request: the same seeded deal as before")
+
     def test_pack_descriptions_reach_the_scene_writer_and_the_fitting_call(self):
         catalog = load_catalog(user_root=False)
         for pack in catalog["packs"]:

@@ -57,7 +57,10 @@ Every scene names the entry it is built on (`entry`); code checks the entry is o
 entry is used by more than two images (`ENTRY_CAP`, raised to the images-per-entry when fewer entries fit than images
 are requested), and asks again otherwise. Every other selected category deals each image `HAND` (3) suggested
 entries from a seeded deck, without repeats until the whole category has been dealt (`deal_hands`), so the
-vocabulary spreads over the set; suggestions are optional: the writer uses the ones that fit the image, or none,
+vocabulary spreads over the set. In a category with entries about something the request names (they share a word
+with it that is rare in that category, `requested_entries`): when the request names only that thing, every image gets
+only the entry it names (`named_entries`); when it also names the category or one of its packs (it asks for the kind in
+general), every image gets one of those entries and one other; suggestions are optional: the writer uses the ones that fit the image, or none,
 and never adds a subject or object only to use one. No pack is used automatically: character looks come from the request
 and approved requirements, with vocabulary guidance only from manually selected Subjects packs. A known character has
 only an expression in its scene; its look comes from its name, never from the writer or vocabulary.

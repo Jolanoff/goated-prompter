@@ -5,9 +5,9 @@ import unittest
 from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.builder.service import assemble_instruction
 from goated_prompter.features.dataset.v2.draft import default_dataset_draft, validate_dataset_draft
-from goated_prompter.options.styles import CAPTURE_NAMES, STYLE_NAMES
+from goated_prompter.options.styles import CAPTURE_NAMES, STYLE_FAMILIES, STYLE_NAMES, SUB_STYLES
 from goated_prompter.prompting.details import LENGTH_ADAPTERS
-from goated_prompter.prompting.styles import CAPTURE_ADAPTERS, STYLE_ADAPTERS, resolve_style
+from goated_prompter.prompting.styles import CAPTURE_ADAPTERS, STYLE_ADAPTERS, SUB_STYLE_ADAPTERS, resolve_style
 
 
 def message(**changes):
@@ -16,10 +16,23 @@ def message(**changes):
 
 class StyleTests(unittest.TestCase):
     def test_every_named_style_has_text_and_auto_follows_the_request(self):
-        self.assertEqual(set(STYLE_NAMES) - {"Auto"}, set(STYLE_ADAPTERS))
+        self.assertEqual(set(STYLE_FAMILIES) - {"Auto"}, set(STYLE_ADAPTERS))
+        self.assertEqual({family: set(subs) for family, subs in SUB_STYLES.items()},
+                         {family: set(texts) for family, texts in SUB_STYLE_ADAPTERS.items()}, "every sub-style has its text")
+        self.assertEqual(set(CAPTURE_NAMES), set(CAPTURE_ADAPTERS), "every capture has its text")
         self.assertEqual(resolve_style("Auto", "Generic"), "Auto")
         self.assertEqual(resolve_style("Auto", "Anima"), "Anime")
         self.assertEqual(resolve_style("Realistic", "Anima"), "Anime", "Anima cannot render photographs.")
+
+    def test_a_sub_style_adds_its_line_to_its_familys_text(self):
+        system = message(target_model="Krea 2", style="Anime / 90s cel anime")
+        self.assertEqual(system.count("VISUAL STYLE — Anime / 90s cel anime"), 1)
+        self.assertIn(STYLE_ADAPTERS["Anime"] + " " + SUB_STYLE_ADAPTERS["Anime"]["90s cel anime"], system)
+        self.assertNotIn(SUB_STYLE_ADAPTERS["Anime"]["Chibi"], system)
+        self.assertEqual(resolve_style("Cinematic / Neo-noir", "Anima"), "Anime", "a photographic family stays off Anima")
+        self.assertEqual(resolve_style("Painting / Oil", "Anima"), "Painting / Oil")
+        self.assertEqual(resolve_style("Anime / Not a sub-style", "Krea 2"), "Auto")
+        self.assertEqual(validate_dataset_draft({**default_dataset_draft(), "style": "Comic / Noir"})["style"], "Comic / Noir")
 
     def test_builder_adds_the_selected_style_once(self):
         self.assertNotIn("VISUAL STYLE", message())

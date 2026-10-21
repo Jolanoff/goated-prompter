@@ -14,7 +14,7 @@ import { useCatalog } from "../vocabulary/useCatalog.js";
 import { cleanSelection, recordedNames, selectedNames } from "../vocabulary/catalog.js";
 import { RunPrompts, RunScenes } from "./DatasetRunPages.jsx";
 import { excludedDirectors, maxSeed, seedModes } from "./options.js";
-import { captures, styleChoices, styles } from "../../shared/workflow/options.js";
+import { captures, styleChoices, styleFamily, styles, subStyleChoices } from "../../shared/workflow/options.js";
 
 const datasetPages = [["configure", "Configure"], ["scenes", "Scenes"], ["dataset", "Dataset"]];
 const sceneSources = [
@@ -237,11 +237,16 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                 <small className="text-xs leading-relaxed text-muted">How freely your request is interpreted; who appears and what they do never change.</small>
               </label>
               <label className={ui.field}><span><WandSparkles size={14} aria-hidden="true" />Style</span>
-                <select className={ui.select} aria-label="Dataset visual style" value={draft.style || "Auto"} onChange={(event) => update({ style: event.target.value })}>
+                <select className={ui.select} aria-label="Dataset visual style" value={styleFamily(draft.style)} onChange={(event) => update({ style: event.target.value })}>
                   {styleChoices(styles, draft.target, draft.style || "Auto").map(({ value }) => <option key={value}>{value}</option>)}
                 </select>
                 <small className="text-xs leading-relaxed text-muted">Auto follows your concept; with Anima it means anime.</small>
               </label>
+              {subStyleChoices(styles, draft.style).length > 0 && <label className={ui.field}><span><WandSparkles size={14} aria-hidden="true" />Sub-style</span>
+                <select className={ui.select} aria-label="Dataset sub-style" value={draft.style} onChange={(event) => update({ style: event.target.value })}>
+                  {subStyleChoices(styles, draft.style).map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
+                </select>
+              </label>}
               {draft.style === "Realistic" && draft.target !== "Anima" && <label className={ui.field}><span><WandSparkles size={14} aria-hidden="true" />Capture</span>
                 <select className={ui.select} aria-label="Dataset photo capture" value={draft.capture || "Auto"} onChange={(event) => update({ capture: event.target.value })}>
                   {captures.map((item) => <option key={item}>{item}</option>)}
