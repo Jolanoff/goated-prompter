@@ -88,7 +88,7 @@ test("the library sorts, expands entries, browses related packs and clears stage
     .toHaveText("No packs selected: scenes come from your request alone.");
 });
 
-for (const width of [1448, 768, 390, 320]) {
+for (const width of [1448, 1024, 768, 390, 320]) {
   test(`the library stays usable at ${width}px in both themes`, async ({ page }) => {
     const height = width === 320 ? 640 : width === 390 ? 844 : 1086;
     await page.setViewportSize({ width, height });
@@ -163,6 +163,18 @@ for (const [width, height] of [[1448, 1086], [1366, 768], [1280, 720], [1920, 10
     expect(bounds.height).toBeLessThanOrEqual(820);
     const categories = library.getByRole("group", { name: "Vocabulary category" });
     expect(await categories.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+    const alignment = await categories.evaluate((node) => {
+      const buttons = [...node.querySelectorAll("button")];
+      return {
+        rows: new Set(buttons.map((button) => Math.round(button.getBoundingClientRect().top))).size,
+        growing: buttons.some((button) => getComputedStyle(button).flexGrow !== "0"),
+        rightGap: node.getBoundingClientRect().right - parseFloat(getComputedStyle(node).paddingRight)
+          - buttons.at(-1).getBoundingClientRect().right,
+      };
+    });
+    expect(alignment.rows).toBe(1);
+    expect(alignment.growing).toBe(false);
+    expect(Math.abs(alignment.rightGap)).toBeLessThanOrEqual(1);
     for (const button of await categories.getByRole("button").all()) await expect(button).toBeInViewport();
     await library.getByRole("button", { name: "Preview Happy Expressions (Expressions)" }).click();
     const preview = library.getByRole("region", { name: "Pack Preview" });

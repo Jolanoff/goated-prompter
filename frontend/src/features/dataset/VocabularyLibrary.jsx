@@ -12,6 +12,10 @@ const categoryIcons = {
   "Camera & Composition": Image, "Effects & Atmosphere": Cloud,
 };
 
+const categoryLabels = {
+  "Actions & Poses": "Poses", "Camera & Composition": "Camera", "Effects & Atmosphere": "Effects",
+};
+
 function CategoryIcon({ category, size = 16 }) {
   const Icon = categoryIcons[category] || Box;
   return <Icon size={size} aria-hidden="true" />;
@@ -88,7 +92,8 @@ export default function VocabularyLibrary({ open, catalog, selected, onApply, on
       <div className="vocabulary-library-categories" role="group" aria-label="Vocabulary category">
         <button type="button" aria-pressed={!category} onClick={() => setCategory("")}>All</button>
         {(catalog?.categories || []).map((item) => <button type="button" key={item.id} aria-pressed={category === item.id}
-          onClick={() => setCategory(item.id)}><CategoryIcon category={item.id} size={19} />{item.name}</button>)}
+          aria-label={item.name} title={item.name}
+          onClick={() => setCategory(item.id)}><CategoryIcon category={item.id} size={19} />{categoryLabels[item.id] || item.name}</button>)}
       </div>
     </div>
     <div className="vocabulary-library-panes">
@@ -130,7 +135,7 @@ export default function VocabularyLibrary({ open, catalog, selected, onApply, on
           <div className="vocabulary-library-samples">
             <div className="vocabulary-library-section-heading"><h4>Sample Entries</h4>
               <span>Showing {entries.length} of {preview.entries.length}</span></div>
-            <ul className="vocabulary-library-entry-list" data-expanded={expanded}>{entries.map((entry) =>
+            <ul className="vocabulary-library-entry-list" data-expanded={expanded} tabIndex={0} aria-label="Sample entries">{entries.map((entry) =>
               <li key={entry} title={expanded ? undefined : entry}><span>{entry}</span></li>)}</ul>
             {preview.entries.length > 12 && <button className={`${ui.textButton} vocabulary-library-expand`} type="button"
               aria-expanded={expanded} onClick={() => setExpandedId(expanded ? "" : preview.id)}>
