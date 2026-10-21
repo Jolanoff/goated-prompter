@@ -146,7 +146,10 @@ extras: first the objects, marks and details that make the request's abstract wo
   word without being told, saying whose each worn, held or written sign is, then background details, plus any
   selected Clothing, Lighting or Mood & Tone entry. Clothing, light and mood are otherwise left to the final prompt, except a garment
   that is one of those signs.
-space: the location and its physical details.
+space: the place the request or fixed names, or when they name none one specific place a viewer would recognise;
+  then what the camera sees of it around the people: what each person stands, sits or lies on and its material, what
+  is directly behind them, and one or two physical features of this spot that the other images do not show (another
+  part of the same place when the request keeps one place). Light is left to the final prompt.
 camera: what the image shows, written after the action and positions and never as a shot name alone: the viewpoint
   (side, height, distance), then for each person which of their body parts are inside the frame and which edge of the
   frame they reach, and what lies in front of, beside and behind them. Every person in the cast is a primary subject
