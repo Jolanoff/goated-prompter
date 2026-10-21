@@ -2,8 +2,13 @@
   "name": "Perspectives",
   "category": "Camera & Composition",
   "entries": [
-    "first-person POV",
-    "over-the-shoulder view",
-    "bird's-eye view"
+    "first-person POV: the view belongs to an existing participant looking toward the interaction, with their visible hands or body establishing their presence when relevant",
+    "over-the-shoulder view: part of an existing participant's shoulder occupies one edge, with the other subjects and their interaction visible beyond it",
+    "bird's-eye view: the subjects and their surroundings are seen from far above, making their relative positions in the space readable",
+    "side view: the main action is seen across the subjects' profiles, with the space between participants visible",
+    "three-quarter front view: the view shows the front and one side of the main subjects, revealing depth without a flat head-on arrangement",
+    "rear view: the view looks past the backs of the main subjects toward what they are facing",
+    "view from across a shared surface: the near edge of the surface leads toward the subjects and the objects they are using",
+    "view through an opening: the main subjects remain visible beyond a nearby doorway or gap, with the opening's edges establishing the viewing position"
   ]
 }

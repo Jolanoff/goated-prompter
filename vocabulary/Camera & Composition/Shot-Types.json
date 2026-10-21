@@ -2,9 +2,13 @@
   "name": "Shot Types",
   "category": "Camera & Composition",
   "entries": [
-    "close view: the main subject fills the frame, its key details sharp, still recognizable as a whole",
-    "middle view: the main subjects from their middle up, with a little space around them",
+    "close view: the main subjects fill most of the frame, with the contact points and details needed to understand their action still visible",
+    "middle view: the main subjects from their middle up, widening or lowering the frame when their hands, supports or lower-body action must be visible",
     "full view: every main subject whole in the frame, from its top to where it rests on the ground, with space around it",
-    "distant view: the main subjects small within a wide place, the surroundings filling most of the frame"
+    "distant view: the main subjects small within a wide place, the surroundings filling most of the frame",
+    "shared close view: the main subjects' faces and interacting hands share the frame, with enough surrounding context to distinguish who does what",
+    "knee-up view: the main subjects are shown from above their heads to below their knees, retaining the spacing between their bodies",
+    "environmental view: the main subjects occupy a readable part of the frame while the surrounding workspace or terrain explains the activity",
+    "wide horizontal view: the frame extends to either side of the main subjects, keeping their lateral relationships and the nearby space visible"
   ]
 }

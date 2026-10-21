@@ -2,8 +2,17 @@
   "name": "Group Interactions",
   "category": "Actions & Poses",
   "entries": [
-    "a group seated in a circle",
-    "a group standing shoulder to shoulder in a line",
-    "a group tangled together on a bed"
+    "A group seated in a circle facing inward, one person holding up an object for discussion while the others turn toward it with space between their seats.",
+    "A group standing shoulder to shoulder in a line, each facing forward on their own feet while one person at the end gestures toward a shared destination.",
+    "A group resting on a broad platform, one person seated upright at one edge, another reclining with their back supported, and the others sitting with separate space for their legs.",
+    "A group gathered around a worktable, one person steadying a workpiece, another aligning a tool and the others sorting parts along separate edges.",
+    "A group passing one supply item along a line, one person receiving it at one end, another handing it over and the others waiting within reach along the line with hands free.",
+    "A group carrying a rigid frame horizontally, one person at each end and the others spaced along its sides, each gripping a separate section and sharing the load.",
+    "A group examining a map laid flat, one person pointing from one side, another holding a corner and the others leaning in from the remaining sides without overlapping hands.",
+    "A group assembling a shelter, one person bracing an upright pole, another tensioning a line and the others securing separate supports around its perimeter.",
+    "A group sorting supplies into containers, one person checking a list, another placing an item and the others arranging separate piles around the shared surface.",
+    "A group rehearsing a performance, one person facing the others and marking the rhythm while the others stand in a shallow arc with room to move their arms.",
+    "A group planting a garden bed, one person kneeling to dig, another holding a seedling and the others spacing containers along the outside edge, keeping the bed clear of feet.",
+    "A group loading a cart, one person holding its handles steady, another placing a box in its center and the others waiting beside separate boxes outside the loading path."
   ]
 }

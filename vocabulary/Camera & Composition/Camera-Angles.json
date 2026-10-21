@@ -2,8 +2,13 @@
   "name": "Camera Angles",
   "category": "Camera & Composition",
   "entries": [
-    "low angle",
-    "high angle",
-    "Dutch angle"
+    "low angle: the view looks upward from below the main subjects, showing their undersides and the space above them",
+    "high angle: the view looks downward from above the main subjects, showing their upper surfaces and the ground around them",
+    "Dutch angle: the view is rolled sideways so the horizon is diagonal, without tilting the subjects' physical supports",
+    "eye-level angle: the view meets the main subjects at their eye height, without looking up or down at them",
+    "ground-level angle: the view looks across the ground from beside the subjects' feet or bases, with foreground surfaces prominent",
+    "overhead angle: the view looks straight down onto the main subjects and the layout around them",
+    "waist-level angle: the view looks horizontally across the subjects at the height of their middle, keeping vertical supports upright",
+    "raised oblique angle: the view looks diagonally down from one side, revealing both the fronts and upper surfaces of the main subjects"
   ]
 }

@@ -65,6 +65,22 @@ class Bundled(unittest.TestCase):
         self.assertEqual(names["Spaces/Sci-Fi"], "Sci-Fi")
         self.assertEqual(names["Actions & Poses/Solo-Activities"], "Solo Activities")
 
+    def test_bundled_entries_load_without_silent_deduplication_or_truncation(self):
+        loaded = load_catalog(user_root=False)
+        packs = {pack["id"]: pack for pack in loaded["packs"]}
+        self.assertEqual(loaded["problems"], [])
+        for path in sorted(catalog.ROOT.glob("*/*.json")):
+            if path.parent.name == "core":
+                continue
+            ident = f"{path.parent.name}/{path.stem}"
+            with self.subTest(pack=ident):
+                raw = json.loads(path.read_text(encoding="utf-8"))
+                entries = raw["entries"]
+                self.assertEqual(packs[ident]["entries"], entries)
+                self.assertEqual(len({entry.casefold() for entry in entries}), len(entries))
+                self.assertTrue(all(0 < len(entry) <= 300 for entry in entries))
+                self.assertLessEqual(len(entries), 2000)
+
 
 class Library(unittest.TestCase):
     """A synthetic library copied from the bundled Core."""
@@ -229,7 +245,7 @@ class Selection(unittest.TestCase):
     def test_record(self):
         selection = validate_selection(self.catalog, ["Lighting/Cinematic", "Lighting/Cinematic"])
         self.assertEqual(record(self.catalog, selection),
-                         {"packs": [{"id": "Lighting/Cinematic", "name": "Cinematic", "category": "Lighting", "entries": 3}]})
+                         {"packs": [{"id": "Lighting/Cinematic", "name": "Cinematic", "category": "Lighting", "entries": 8}]})
 
 
 if __name__ == "__main__":

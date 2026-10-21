@@ -49,11 +49,21 @@ asked.
   or only the pose ("the person posing with an arched back"); the scene writer keeps a defined pose with its action
   and picks a fitting one when it is missing. When an action only makes sense in one arrangement, write both in one
   entry.
+- When an established action or position name exists, use `Name: arrangement.` Keep the name and its physical
+  description together; do not invent a technique name for an ordinary activity. State the participants, their
+  relative positions, orientation, support and contact only as needed to make the arrangement clear. One entry is
+  one coherent arrangement, not a sequence of different actions or a complete image prompt.
 - Name people "the person" (solo), "one person" and "the other person" (couples) or "a group", never "partner" or a
   gender: the scene writer replaces them with the scene's characters and their gender. Objects and surfaces in an
   entry ("on the floor", "over a table", "a toy") are examples it adapts to the scene's space.
-- With an `Actions & Poses` pack selected, every scene names the entry it uses and no entry is used by more than two
-  images, so a pack needs enough distinct entries for the batch sizes it is used with.
+- In group entries, distinguish roles with "one person", "another" and "the others", including where each works or
+  rests. Make room for the intended cast without adding incidental people or animals to a solo activity. Keep
+  camera, lighting, clothing and atmosphere out of an action entry unless essential to that interaction.
+- Expand a pack with different arrangements, uses or environments, not adjective swaps. Check for near-duplicates
+  within the pack and avoid repeating the same item in overlapping packs without a distinct purpose.
+- With an `Actions & Poses` pack selected and fitting entries available, every scene names the entry it uses.
+  The normal reuse cap is two images per entry; the existing writer raises it when too few fitting entries remain
+  for the requested batch. Supply enough genuinely distinct entries rather than relying on that fallback.
 - `Subjects/Humans` holds people's looks (skin, build, hair, one detail). It is used only when selected, and never
   for a known character, whose look comes from its name.
 - Keep adult content out of `vocabulary/`; it belongs in the user's own imported packs.

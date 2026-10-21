@@ -2,8 +2,17 @@
   "name": "Combat",
   "category": "Actions & Poses",
   "entries": [
-    "two people in a sword duel",
-    "one person dodging the other person's punch",
-    "the person firing a bow"
+    "Sword duel: two people facing each other with staggered feet, each holding a sword forward, their blades meeting between them while their bodies remain apart.",
+    "Slip: one person throwing a straight punch while the other person bends their knees and shifts their head outside its path, both keeping their feet grounded.",
+    "Archery draw: the person standing side-on with feet apart, bow arm extended toward the target and the other hand drawing the string to the cheek, arrow aligned with the bow.",
+    "Shield block: one person advancing with a raised practice weapon while the other person braces behind a shield, front knee bent and rear foot planted.",
+    "Parry: two people facing each other at arm's length, one extending a practice blade while the other redirects it to the side with their own blade.",
+    "Boxing guard: the person standing with one foot forward, knees slightly bent, fists near the cheeks and elbows close to the ribs.",
+    "Front kick: the person balancing on one slightly bent leg, extending the other foot forward with their torso upright and hands raised for balance.",
+    "Side kick: the person balancing on one leg with their torso leaning away, the other leg extended sideways and the heel directed toward the target.",
+    "Kneeling guard: the person resting one knee on the ground with the other foot planted ahead, holding a shield in front without resting it on the raised knee.",
+    "Back-to-back defense: two people standing back-to-back with feet apart, facing opposite directions and each guarding the space in front of them.",
+    "Wrist release: two people facing each other, one gripping the other's wrist while the held person turns their wrist toward the opening between the gripping thumb and fingers.",
+    "The person crouching behind low cover with both feet planted, keeping their head below its upper edge while looking around one side."
   ]
 }
