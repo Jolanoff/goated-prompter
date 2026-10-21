@@ -7,6 +7,7 @@ stays in ``LocalState.execute``.
 """
 
 from .features.builder.runner import run_builder
+from .features.caption.runner import run_caption
 from .features.dataset.runner import run_dataset_understanding, run_dataset_v2_scenes
 from .features.minimax.runner import run_minimax
 from .features.refine.runner import run_refine
@@ -14,6 +15,7 @@ from .features.refine.runner import run_refine
 
 WORKFLOW_RUNNERS = {
     "builder": run_builder,
+    "caption": run_caption,
     "minimax": run_minimax,
     "dataset_understanding": run_dataset_understanding,
     "dataset_v2_scenes": run_dataset_v2_scenes,

@@ -11,7 +11,10 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
-from .base import BackendConfigurationError, BackendGenerationError, BackendRunawayError, GoatedPrompterBackend
+from .base import (
+    BackendConfigurationError, BackendConnectionError, BackendGenerationError,
+    BackendRunawayError, GoatedPrompterBackend,
+)
 from ..diagnostics import (debug_prompts_enabled, diagnostic_finish_reason, log_request, log_response,
                            payload_without_binary_images, private_error_message)
 from ..output_repetition import repeated_tag
@@ -353,7 +356,7 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
                 raise BackendGenerationError(message) from exc
             message = f"Could not reach the OpenAI-compatible backend: {exc.reason}"
             self.emit_activity("error", message=message)
-            raise BackendGenerationError(message) from exc
+            raise BackendConnectionError(message) from exc
         except TimeoutError as exc:
             message = (f"The prompt engine did not respond within {self.timeout:g} seconds. "
                        "Check that the engine is healthy, or increase its timeout before retrying.")
@@ -362,7 +365,7 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
         except OSError as exc:
             message = f"The connection to the prompt engine failed while reading its response: {exc}"
             self.emit_activity("error", message=message)
-            raise BackendGenerationError(message) from exc
+            raise BackendConnectionError(message) from exc
         except BackendGenerationError as exc:
             self.emit_activity("error", message=str(exc), completion_state=exc.completion_state,
                                partial_text=exc.partial_text, finish_reason=exc.finish_reason)
@@ -420,7 +423,7 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
             raise BackendGenerationError("OpenAI-compatible backend returned an invalid streaming event.",
                 completion_state="malformed_stream", partial_text="".join(pieces)) from exc
         except (OSError, EOFError) as exc:
-            raise BackendGenerationError("The prompt engine disconnected before completion; partial text was not accepted.",
+            raise BackendConnectionError("The prompt engine disconnected before completion; partial text was not accepted.",
                 completion_state="interrupted", partial_text="".join(pieces)) from exc
 
     def _consume_stream(self, response, unlimited, hard_max_tokens, stream_character_limit, pieces,

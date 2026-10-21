@@ -20,6 +20,7 @@ from goated_prompter.config import load_config
 from goated_prompter.contracts import as_bool
 from goated_prompter.director_profiles import discover_director_profiles, resolve_director_config
 from goated_prompter.features.builder import routes as builder_routes
+from goated_prompter.features.caption import routes as caption_routes
 from goated_prompter.features.builder.input_schema import builder_input_schema
 from goated_prompter.options.references import REFERENCE_SOURCES
 from goated_prompter.features.builder.service import GoatedPrompterService
@@ -345,7 +346,7 @@ def create_app(*, port=8190, dist=None, config_loader=load_config, service_facto
                     web.get("/api/jobs/{id}", job_endpoint),
                     web.post("/api/jobs/{id}/{action:pause|resume|cancel}", job_endpoint)])
     for routes in (builder_routes, settings_routes, presets_routes, saved_prompts_routes, prompt_library_routes,
-                   minimax_routes, dataset_routes, workflow_settings_routes, refine_routes, vocabulary_routes):
+                   minimax_routes, dataset_routes, workflow_settings_routes, refine_routes, vocabulary_routes, caption_routes):
         routes.register(app)
     root = Path(dist or Path(__file__).parent / "frontend" / "dist").resolve()
 

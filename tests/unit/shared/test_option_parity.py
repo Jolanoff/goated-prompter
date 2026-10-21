@@ -4,7 +4,7 @@ import json
 import re
 import unittest
 
-from goated_prompter.options import dataset, detail_locks, minimax, styles
+from goated_prompter.options import caption, dataset, detail_locks, minimax, styles
 from tests.support.paths import ROOT
 
 FRONTEND = ROOT / "frontend" / "src"
@@ -22,6 +22,11 @@ def exported(path, name):
 
 
 class OptionParityTests(unittest.TestCase):
+    def test_caption_options_match_backend(self):
+        self.assertEqual(tuple(exported("features/caption/options.js", "targets")), caption.TARGETS)
+        self.assertEqual(tuple(value for value, _ in exported("features/caption/options.js", "lengths")), caption.LENGTHS)
+        self.assertEqual(tuple(value for value, _ in exported("features/caption/options.js", "loraTypes")), caption.LORA_TYPES)
+
     def test_minimax_options_match_backend(self):
         self.assertEqual(tuple(exported("features/minimax/options.js", "models")), minimax.MODELS)
         self.assertEqual(tuple(value for value, _label in exported("features/minimax/options.js", "modes")), minimax.MODES)

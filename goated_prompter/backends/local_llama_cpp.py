@@ -3,9 +3,29 @@
 from contextlib import contextmanager
 from dataclasses import replace
 
-from .base import GoatedPrompterBackend
+from .base import BackendConnectionError, GoatedPrompterBackend
 from .llama_cpp_process import LlamaCppLaunchConfig, get_process_manager
 from .openai_compatible import OpenAICompatibleBackend
+
+
+class _OwnedServerClient:
+    """The HTTP client of an owned server; a dropped connection also reports why the server stopped."""
+
+    def __init__(self, client, process_manager, owned):
+        self._client, self._process_manager, self._owned = client, process_manager, owned
+
+    def __getattr__(self, name):
+        return getattr(self._client, name)
+
+    def generate(self, instruction):
+        try:
+            return self._client.generate(instruction)
+        except BackendConnectionError as exc:
+            report = self._process_manager.failure_report(self._owned)
+            if isinstance(report, str) and report:
+                exc.args = (f"{exc} {report}",)
+                self._client.emit_activity("error", message=str(exc))
+            raise
 
 
 class LocalLlamaCppBackend(GoatedPrompterBackend):
@@ -47,7 +67,7 @@ class LocalLlamaCppBackend(GoatedPrompterBackend):
             # Keep request-level sampling/token settings current while routing
             # through the authoritative manager's actual runtime port.
             runtime_config = replace(self.config, port=owned.config.port)
-            yield self._client(runtime_config, {
+            yield _OwnedServerClient(self._client(runtime_config, {
                 "model": self.config.requested_model,
                 "gguf": str(self.config.model_path),
                 "mmproj": str(self.config.mmproj_path),
@@ -55,7 +75,7 @@ class LocalLlamaCppBackend(GoatedPrompterBackend):
                 "port": owned.config.port,
                 "reused": bool(acquisition["reused"]),
                 "restarted": bool(acquisition["restarted"]),
-            })
+            }), self.process_manager, owned)
         finally:
             self.process_manager.release(owned)
 

@@ -52,6 +52,7 @@ Screenshots: save PNGs in docs/media/ with these names, then remove this comment
 | **Refine** | Paste a prompt or send one from Builder, request targeted edits, compare changes and undo a refinement. |
 | **MiniMax H3** | Write video prompts for **4–15-second clips**, with symbolic references, automatic role analysis, H3 schemas, and Director presets. |
 | **Dataset** | Create **1–25 varied prompts** from one request, for LoRA training sets. You confirm the request first; optional vocabulary packs you pick add creative material, and a seed repeats or varies a batch. TXT/JSON export. |
+| **Caption** | Caption an existing image folder for Krea 2 LoRA training. Choose character, style or action captions, whole-image or focused detail, and an optional trigger phrase. Matching TXT files are saved beside images; existing captions are kept. |
 | **Saved Prompts** | Add your own prompts directly, keep named outputs, and open saved text in Builder. |
 | **Prompt Library** | Add, edit and delete target-specific writing examples in a compact list. Stored in the same plain-text files. |
 
@@ -322,6 +323,14 @@ Expand **Refine advanced settings** to edit its built-in behavior. **Save instru
 Custom workflow instructions replace the corresponding built-in behavior. Target formatting and detail locks are still applied separately, including JSON validation for Ideogram4. Instruction changes are blocked during generation, and each job uses a snapshot of the saved instructions. Builder's instruction-preset library stays independent of these workflow-specific editors.
 
 </details>
+
+### Caption an image folder
+
+Open **Caption**, choose a folder (or paste its path), and describe what the images are about. Select the LoRA type and caption length, then click **Caption folder**. Krea 2 is the training target; the vision-capable engine selected in Builder or Settings inspects each image in sequence. A configured remote engine receives image contents.
+
+The tab accepts PNG, JPG, JPEG and WebP images up to 20 MiB each, directly inside the selected folder. Each caption is saved as a UTF-8 file with the same stem (`image.png` → `image.txt`). Existing captions are never overwritten. Images with the same stem must be renamed first. Stop at any time; completed files remain, and another run skips them. Individual image errors are listed when the job finishes. A failed engine connection stops the job instead of trying every remaining image; completed captions are kept, and partial responses are not saved as captions.
+
+Style captions describe content rather than the visual style; character captions describe variable scene details; action captions describe the visible action or pose without inventing a movement sequence. Optional trigger phrases are prepended unchanged. Review the text before training. These conventions follow [Krea's caption guidance](https://www.krea.ai/blog/krea-2-lora-training) and the [Krea 2 trainer's sidecar format](https://fal.ai/models/fal-ai/krea-2-trainer/llms.txt); action is a captioning choice here, not a claim of a separate Krea training mode. Caption drafts are kept only while the page is open.
 
 ### Dataset prompt batches
 

@@ -6,6 +6,7 @@ import unittest
 from goated_prompter.contracts import GenerationResult, GoatedPrompterRequest
 from goated_prompter.local_jobs import Job
 from goated_prompter.features.dataset.runner import run_dataset_v2_scenes
+from goated_prompter.features.caption.runner import run_caption
 from goated_prompter.workflow_runners import WORKFLOW_RUNNERS, execute_workflow
 
 
@@ -47,7 +48,8 @@ class WorkflowRunnerTests(unittest.TestCase):
         FakeService.calls = []
 
     def test_every_admitted_operation_has_a_runner(self):
-        self.assertEqual(set(WORKFLOW_RUNNERS), {"builder", "minimax", "dataset_understanding", "dataset_v2_scenes", "refine"})
+        self.assertEqual(set(WORKFLOW_RUNNERS), {"builder", "caption", "minimax", "dataset_understanding", "dataset_v2_scenes", "refine"})
+        self.assertIs(WORKFLOW_RUNNERS["caption"], run_caption)
         self.assertIs(WORKFLOW_RUNNERS["dataset_v2_scenes"], run_dataset_v2_scenes)
 
     def test_unknown_operation_is_rejected(self):
