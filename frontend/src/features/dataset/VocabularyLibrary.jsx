@@ -122,7 +122,8 @@ export default function VocabularyLibrary({ open, catalog, selected, onApply, on
             <div className="vocabulary-library-preview-info">
               <div className="vocabulary-library-preview-title"><h3>{preview.name}</h3><CategoryBadge category={preview.category} />
                 <small>{preview.entries.length} entries</small></div>
-              <p className="vocabulary-library-preview-description">{preview.description || `Vocabulary choices from ${preview.category}.`}</p>
+              <p className="vocabulary-library-preview-description" title={preview.description || undefined}>
+                {preview.description || `Vocabulary choices from ${preview.category}.`}</p>
               {preview.source === "imported" && <small className="vocabulary-library-source">Imported pack</small>}
             </div>
           </div>

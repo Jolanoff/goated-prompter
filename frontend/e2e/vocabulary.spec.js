@@ -108,6 +108,7 @@ for (const width of [1448, 768, 390, 320]) {
       expect(bounds.y).toBeGreaterThanOrEqual(8);
       expect(bounds.y + bounds.height).toBeLessThanOrEqual(height - 8);
       expect(await library.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+      expect(await library.locator(".vocabulary-library-categories").evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
       await expect(library.getByRole("button", { name: "Apply (3)", exact: true })).toBeInViewport();
       await expect(library).toHaveCSS("background-color", theme === "dark" ? "rgb(26, 26, 24)" : "rgb(255, 255, 255)");
       await page.evaluate(() => document.fonts.ready);
@@ -149,3 +150,32 @@ test("the reference layout previews entries and keeps keyboard selection inside 
   await page.mouse.move(0, 0);
   await page.screenshot({ path: test.info().outputPath("vocabulary-library-desktop.png"), animations: "disabled" });
 });
+
+for (const [width, height] of [[1448, 1086], [1366, 768], [1280, 720], [1920, 1080]]) {
+  test(`the compact desktop library fits every section at ${width}x${height}`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await page.goto("/");
+    await page.getByRole("button", { name: "Dataset", exact: true }).click();
+    await page.getByRole("button", { name: "Vocabulary Library" }).click();
+    const library = page.getByRole("dialog", { name: "Vocabulary Library" });
+    const bounds = await library.boundingBox();
+    expect(bounds.width).toBeLessThanOrEqual(1180);
+    expect(bounds.height).toBeLessThanOrEqual(820);
+    const categories = library.getByRole("group", { name: "Vocabulary category" });
+    expect(await categories.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
+    for (const button of await categories.getByRole("button").all()) await expect(button).toBeInViewport();
+    await library.getByRole("button", { name: "Preview Happy Expressions (Expressions)" }).click();
+    const preview = library.getByRole("region", { name: "Pack Preview" });
+    expect(await preview.evaluate((node) => node.scrollHeight <= node.clientHeight)).toBe(true);
+    await expect(preview.locator(".vocabulary-library-entry-list > li")).toHaveCount(12);
+    await expect(preview.locator(".vocabulary-library-related-list > li")).toHaveCount(4);
+    const box = await preview.boundingBox();
+    for (const item of await preview.locator(".vocabulary-library-entry-list > li, .vocabulary-library-related-list > li").all()) {
+      const rect = await item.boundingBox();
+      expect(rect.height).toBeGreaterThanOrEqual(24);
+      expect(rect.y + rect.height).toBeLessThanOrEqual(box.y + box.height);
+    }
+    await page.evaluate(() => document.fonts.ready);
+    await page.screenshot({ path: test.info().outputPath(`compact-${width}-${height}.png`), animations: "disabled" });
+  });
+}
