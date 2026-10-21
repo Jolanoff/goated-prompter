@@ -9,8 +9,7 @@ sent. With no pack selected the prompt has no vocabulary section. No Director ta
 
 Actions & Poses: when that category has a selected pack, one call first keeps only the entries that fit the request
 and the cast (fitting_entries; every entry when that call fails). Only those reach the writer: every image is dealt a
-different one from a seeded shuffle (deal_entries). Canonical text is sent once in action_entries; pack lists keep
-the IDs and their author's notes. The writer returns an entry_id, not canonical text; the app
+different one from a seeded shuffle (deal_entries). The writer returns an entry_id, not canonical text; the app
 resolves it to the original "entry" stored with the scene. The writer keeps the dealt entry unless it cannot fit
 the request or cast. Code checks that its ID is one of the fitting entries and that no entry is used by more images
 than ENTRY_CAP allows (two, or more when fewer entries fit than images are requested), and asks again otherwise
@@ -233,7 +232,7 @@ ENTRY_RULE = """ACTIONS & POSES ENTRY
 Every image in IMAGES names the Actions & Poses entry to build it on ("entry_id"). Build the scene on that entry: it
 decides how the requested activity happens, never what the activity is. It does not fit when it shows a different
 act than the request names or needs a body part nobody in this cast has; then build the scene on another entry that
-fits and is used by fewer than {cap} images (already_used.entries counts them by entry ID).
+fits and is used by fewer than {cap} images (already_used.entries counts them).
 action_entries maps entry IDs to their canonical vocabulary text. Return only the chosen ID in "entry_id";
 the application retains the original text. Write actions and position as this cast's interpretation of the entry,
 not a copy of its placeholder people. Assign roles from the request and the scene, never from the order of labels.
@@ -518,9 +517,8 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
                    **({"suggested": plan["hands"][number]} if (plan.get("hands") or {}).get(number) else {})}
                   for number in todo]
         errors = sorted({f"image {number}: {reason}" for number in todo for reason in reasons[number]})
-        used_ids = {entry_id: used[entry] for entry_id, entry in (entries or {}).items() if entry in used}
         prompt = compose_instruction(brief, images, earlier + [_summary(scenes[n]) for n in sorted(scenes)], errors,
-                                     plan["vocabulary"], cap if entries else None, used_ids if entries else None, entries)
+                                     plan["vocabulary"], cap if entries else None, used if entries else None, entries)
         checkpoint()
         before = recovery.attempts
         try:
@@ -719,12 +717,7 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
         for start in range(0, total, BATCH):
             numbers = list(range(start + 1, min(total, start + BATCH) + 1))
             earlier = [_summary(scenes[number]) for number in sorted(scenes)][-EARLIER:]
-            batch_groups = _shuffled(groups, rng, VOCABULARY_SAMPLE)
-            for group in batch_groups:
-                if group["category"] == ACTIONS_CATEGORY:
-                    for pack in group["packs"]:
-                        pack["entries"] = [f"entry_id: {entry_ids[entry]}" for entry in pack["entries"]]
-            plan["vocabulary"] = vocabulary_prompt(batch_groups)
+            plan["vocabulary"] = vocabulary_prompt(_shuffled(groups, rng, VOCABULARY_SAMPLE))
             written, missing = _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progress, on_slot)
             scenes.update(written)
             failed.update(missing)
