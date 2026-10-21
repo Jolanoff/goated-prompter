@@ -189,7 +189,7 @@ class SceneVocabulary(unittest.TestCase):
         call = self.composer()[0]
         vocabulary = composer_user(call.user_message)["vocabulary"]
         self.assertIn("Actions & Poses\nCore instruction:\nActions & Poses provides vocabulary", vocabulary)
-        self.assertIn(self.romance[1], vocabulary)
+        self.assertIn(self.romance[1], composer_user(call.user_message)["action_entries"].values())
         for rule in ("If it does, that pose is\n   decided", "If it defines only an\n   action, choose a pose",
                      "correct gender", "Objects, furniture and surfaces named in an entry", "keeping the pose physically the same"):
             self.assertIn(rule, call.system_message)
@@ -222,6 +222,29 @@ class SceneVocabulary(unittest.TestCase):
         self.assertEqual(set(item["properties"]["entry_id"]["enum"]), set(choices))
         self.assertEqual(list(choices.values()), self.romance)
         self.assertNotIn("Copy the entry you used word for word", call.system_message)
+
+    def test_actions_text_is_sent_once_with_pack_notes_and_seeded_references_intact(self):
+        cast = [{"label": "guide", "gender": "", "custom": "", "pronoun": "", "count": 2}]
+        catalog = {**self.catalog, "packs": [{**pack, "description": "Shared arrangements for two adults."}
+                                            if pack["id"] == "Actions & Poses/Romance" else pack
+                                            for pack in self.catalog["packs"]]}
+        result = self.write(self.brief("Two guides", cast, amount=13), ["Actions & Poses/Romance"], catalog=catalog)
+        self.assertTrue(result["complete"])
+        for call in self.composer():
+            user = composer_user(call.user_message)
+            for entry_id, entry in user["action_entries"].items():
+                self.assertEqual(call.user_message.count(entry), 1, "canonical text belongs only in action_entries")
+                self.assertIn(f"entry_id: {entry_id}", user["vocabulary"])
+            self.assertIn("Shared arrangements for two adults.", user["vocabulary"])
+            self.assertIn("Actions & Poses provides vocabulary", user["vocabulary"])
+        import random
+        expected = scenes.deal_entries(self.romance, 13, random.Random(7))
+        actual = {}
+        for call in self.composer():
+            user = composer_user(call.user_message)
+            actual.update({image["image"]: user["action_entries"][image["entry_id"]] for image in user["images"]})
+        self.assertEqual(actual, expected, "catalog rendering must not consume randomness or alter dealing")
+        self.assertEqual([scene["entry"] for scene in result["scenes"]], list(expected.values()))
 
     def test_placeholder_actions_are_repaired_without_assigning_roles_in_code(self):
         for count in (2, 4):
@@ -389,7 +412,9 @@ class SceneVocabulary(unittest.TestCase):
                          [first, first, second])
         retry = self.composer()[1]
         self.assertIn(f'the entry "{first}" is already used by 2 images', retry.system_message)
-        self.assertEqual(composer_user(retry.user_message)["already_used"]["entries"], {first: 2})
+        user = composer_user(retry.user_message)
+        self.assertEqual({user["action_entries"][entry_id]: count
+                          for entry_id, count in user["already_used"]["entries"].items()}, {first: 2})
         self.assertIn("used by fewer than 2 images", self.composer()[0].system_message)
 
     def test_an_entry_that_is_not_in_the_vocabulary_is_asked_again(self):
@@ -414,9 +439,9 @@ class SceneVocabulary(unittest.TestCase):
         first = self.composer()[0]
         vocabulary = composer_user(first.user_message)["vocabulary"]
         for entry in self.fit:
-            self.assertIn(entry, vocabulary)
-        self.assertNotIn(self.romance[2], vocabulary, "an entry that does not fit is never offered")
+            self.assertIn(entry, composer_user(first.user_message)["action_entries"].values())
         user = composer_user(first.user_message)
+        self.assertNotIn(self.romance[2], user["action_entries"].values(), "an entry that does not fit is never offered")
         self.assertEqual({user["action_entries"][image["entry_id"]] for image in user["images"]}, set(self.fit))
         self.assertIn("used by fewer than 3 images", first.system_message, "five images share two fitting entries")
         self.assertTrue(result["complete"])
