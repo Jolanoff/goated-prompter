@@ -207,6 +207,10 @@ For every scene:
     Consider suggestions first for that image and use the ones that fit; take another entry
     only when none of them fits, and none at all when the category does not fit the image.
     Never add a subject, object or detail only to use an entry.
+    For Spaces, an image's suggestions are optional location examples, not a closed list of locations.
+    If absent, unsuitable or already used, choose a new compatible location within the selected spatial pack themes.
+    The shared Spaces section carries those themes, not locations to reuse from other images' suggestions.
+    Keep the request and its activity first; never force a suggested location.
 
 PRIORITY:
 1. Original user request and approved constraints.
@@ -684,6 +688,15 @@ def deal_hands(groups, total, rng, size=HAND):
         category = group["category"]
         entries = list(dict.fromkeys(entry for pack in group["packs"] for entry in pack["entries"]))
         dealt = list(deal_entries(entries, total * size, rng).values())
+        if category == "Spaces":
+            # Keep other categories' seeded stream unchanged; spatial offers never refill the deck.
+            spatial_rng = random.Random()
+            spatial_rng.setstate(rng.getstate())
+            numbers = list(hands)
+            spatial_rng.shuffle(numbers)
+            for number, entry in zip(numbers, dict.fromkeys(dealt)):
+                hands[number][category] = [entry]
+            continue
         for number in range(1, total + 1):
             hand = list(dict.fromkeys(dealt[(number - 1) * size:number * size]))
             if hand:
@@ -714,6 +727,12 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
     catalog = catalog if catalog is not None else catalog_for(vocabulary)
     selection = validate_selection(catalog, vocabulary)
     groups = selected_vocabulary(catalog, selection)
+    spatial = next((group for group in groups if group["category"] == "Spaces"), None)
+    if spatial:
+        themes = "\n".join(f'Pack "{pack["name"]}"' + (f': {pack["description"]}' if pack.get("description") else "")
+                           for pack in spatial["packs"])
+        spatial = {**spatial, "instruction": spatial["instruction"] + "\nSelected spatial pack themes:\n" + themes,
+                   "packs": []}
     seed = brief["input"].get("seed")
     rng = random.Random(seed) if isinstance(seed, int) else random.Random()
     effective, profile = resolve_director_config(config, request)
@@ -744,6 +763,8 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
                     offered.update(action_entries)
                 batch_groups = _only(batch_groups, category, offered)
             batch_groups = _shuffled(batch_groups, rng, VOCABULARY_SAMPLE)
+            if spatial:
+                batch_groups = [group for group in batch_groups if group["category"] != "Spaces"] + [spatial]
             plan["vocabulary"] = vocabulary_prompt(batch_groups)
             written, missing = _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progress, on_slot)
             scenes.update(written)

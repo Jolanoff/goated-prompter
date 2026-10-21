@@ -94,7 +94,10 @@ class SceneVocabulary(unittest.TestCase):
         self.assertIn("Spaces\nCore instruction:\nSpaces provides vocabulary describing where the action takes place.", vocabulary)
         self.assertIn("Effects & Atmosphere\nCore instruction:", vocabulary)
         fantasy = next(pack["entries"] for pack in self.catalog["packs"] if pack["id"] == "Spaces/Fantasy")
-        self.assertTrue(any(entry in vocabulary for entry in fantasy))
+        self.assertIn('Pack "Fantasy"', vocabulary)
+        images = composer_user(call.user_message)["images"]
+        self.assertTrue(any(entry in fantasy for image in images for entry in image.get("suggested", {}).get("Spaces", [])))
+        self.assertFalse(any(entry in vocabulary for entry in fantasy), "spatial entries belong to individual images")
         self.assertIn("glowing aura", vocabulary)
         for unselected in ("Subjects\n", "Clothing\n", "Actions & Poses\n", "foggy graveyard", "athletic woman"):
             self.assertNotIn(unselected, vocabulary)
@@ -500,7 +503,9 @@ class SceneVocabulary(unittest.TestCase):
         self.assertTrue(all("both keep walking" in scene["actions"] for scene in result["scenes"]))
         for image in user["images"]:
             self.assertEqual(image["suggested"]["Objects & Props"], ["a folded paper map"])
-            self.assertEqual(image["suggested"]["Spaces"], ["a covered market"])
+        self.assertEqual([entry for image in user["images"] for entry in image["suggested"].get("Spaces", [])],
+                         ["a covered market"], "one spatial offer, not ten recycled offers")
+        self.assertIn('Pack "City"', user["vocabulary"])
         self.assertTrue(any("0/10 scenes bound; 10 without" in message for message in messages))
         text = prompts.scene_text(result["scenes"][0])
         self.assertNotIn(self.fit[0], text)
@@ -646,7 +651,9 @@ class SceneVocabulary(unittest.TestCase):
         user = composer_user(self.composer()[0].user_message)
         self.assertNotIn("action_entries", user)
         self.assertNotIn("Actions & Poses", user["vocabulary"])
-        self.assertIn("a covered market", user["vocabulary"])
+        self.assertEqual([entry for image in user["images"] for entry in image.get("suggested", {}).get("Spaces", [])],
+                         ["a covered market"])
+        self.assertIn('Pack "City"', user["vocabulary"])
         self.assertIn("a folded paper map", user["vocabulary"])
         self.assertTrue(all("entry" not in scene for scene in result["scenes"]))
 
@@ -678,6 +685,110 @@ class SceneVocabulary(unittest.TestCase):
         self.assertEqual(len(set(first_six)), 6)
         self.assertEqual({entry for hand in hands.values() for entry in hand["Actions & Poses"]},
                          {f"idea {n}" for n in range(8)})
+
+    def test_three_spatial_entries_are_offered_once_instead_of_recycled_across_ten_images(self):
+        import random
+        from collections import Counter
+        groups = [{"category": "Spaces", "packs": [{"entries": ["market", "courtyard", "canal"]}]}]
+        for total in (1, 10, 25):
+            with self.subTest(total=total):
+                hands = scenes.deal_hands(groups, total, random.Random(173))
+                dealt = [entry for hand in hands.values() for entry in hand.get("Spaces", [])]
+                self.assertEqual(len(dealt), min(total, 3))
+                self.assertTrue(all(count == 1 for count in Counter(dealt).values()))
+                self.assertTrue(all(len(hand.get("Spaces", [])) <= 1 for hand in hands.values()))
+                self.assertEqual(hands, scenes.deal_hands(groups, total, random.Random(173)))
+        self.assertNotEqual(scenes.deal_hands(groups, 10, random.Random(173)),
+                            scenes.deal_hands(groups, 10, random.Random(271)))
+
+    def test_spatial_dealing_preserves_other_categories_and_their_random_stream(self):
+        import random
+        groups = [{"category": category, "packs": [{"entries": [f"{category} {n}" for n in range(4)]}]}
+                  for category in ("Actions & Poses", "Spaces", "Objects & Props", "Lighting")]
+        expected, rng = {}, random.Random(173)
+        for group in groups:
+            dealt = list(scenes.deal_entries(group["packs"][0]["entries"], 30, rng).values())
+            if group["category"] != "Spaces":
+                for number in range(1, 11):
+                    expected.setdefault(number, {})[group["category"]] = list(dict.fromkeys(dealt[(number - 1) * 3:number * 3]))
+        actual_rng = random.Random(173)
+        actual = scenes.deal_hands(groups, 10, actual_rng)
+        self.assertEqual({number: {category: hand for category, hand in hands.items() if category != "Spaces"}
+                          for number, hands in actual.items()}, expected)
+        self.assertEqual(actual_rng.getstate(), rng.getstate())
+
+    def test_spatial_suggestions_and_theme_only_shared_prompt_allow_new_locations_without_changing_binding(self):
+        catalog = self.map_catalog()
+        places = ["covered market", "public courtyard", "urban canal path"]
+        catalog["packs"][-1]["entries"] = places
+        walking = catalog["packs"][1]["entries"][0]
+        self.entries = [walking, None] * 5
+        original = self.generate
+
+        def generate(instruction):
+            response = original(instruction)
+            if instruction.diagnostic_stage != "dataset_v2:scenes":
+                return response
+            user = composer_user(instruction.user_message)
+            rows = json.loads(response)["scenes"]
+            for image, scene in zip(user["images"], rows):
+                suggestions = image.get("suggested", {}).get("Spaces", [])
+                scene["space"] = suggestions[0] if suggestions else f"city garden sector{image['image']}"
+            return json.dumps({"scenes": rows})
+
+        self.backend.generate.side_effect = generate
+        result = self.write(self.map_brief(), [pack["id"] for pack in catalog["packs"]], catalog)
+        self.assertTrue(result["complete"])
+        self.assertEqual(len(self.composer()), 1)
+        self.assertEqual(sum(call.diagnostic_stage == "dataset_v2:entries" for call in self.calls), 1)
+        call = self.composer()[0]
+        user = composer_user(call.user_message)
+        self.assertEqual(sum(bool(image.get("suggested", {}).get("Spaces")) for image in user["images"]), 3)
+        self.assertEqual(sum(scene["space"] in places for scene in result["scenes"]), 3)
+        self.assertEqual(sum(scene["space"].startswith("city garden") for scene in result["scenes"]), 7)
+        for place in places:
+            self.assertNotIn(place, user["vocabulary"], "shared entries must not bypass per-image dealing")
+        self.assertIn('City', user["vocabulary"])
+        self.assertIn("choose a new compatible location", call.system_message)
+        self.assertIn("selected spatial pack themes", call.system_message)
+        self.assertEqual([scene.get("entry") for scene in result["scenes"]], [walking, None] * 5)
+        self.assertTrue(all("both keep walking" in scene["actions"] for scene in result["scenes"]))
+
+    def test_all_selected_spatial_pack_themes_survive_empty_shortlists_and_later_batches(self):
+        catalog = {**self.catalog, "packs": [
+            {"id": "spaces/orbital", "name": "Orbital", "category": "Spaces",
+             "description": "Science-fiction habitats in orbit.", "entries": ["rotating station concourse"]},
+            {"id": "spaces/planetary", "name": "Planetary", "category": "Spaces",
+             "description": "Science-fiction settlements on distant planets.", "entries": ["sealed crater plaza"]}]}
+        original = self.generate
+        for selected in ([], ["rotating station concourse"], ["rotating station concourse", "sealed crater plaza"]):
+            with self.subTest(selected=selected):
+                self.calls.clear()
+
+                def generate(instruction):
+                    if instruction.diagnostic_stage == "dataset_v2:entries":
+                        self.calls.append(instruction)
+                        rows = json.loads(instruction.user_message)["entries"]
+                        return json.dumps({"entries": [int(number) for number, row in rows.items() if row["text"] in selected]})
+                    return original(instruction)
+
+                self.backend.generate.side_effect = generate
+                result = self.write(self.brief("Two explorers crossing a settlement", [], amount=25),
+                                    [pack["id"] for pack in catalog["packs"]], catalog)
+                self.assertTrue(result["complete"])
+                self.assertEqual(len(self.composer()), 3)
+                offered = []
+                for call in self.composer():
+                    user = composer_user(call.user_message)
+                    for name in ("Orbital", "Planetary", "Science-fiction habitats in orbit.",
+                                 "Science-fiction settlements on distant planets."):
+                        self.assertIn(name, user["vocabulary"])
+                    for entry in ("rotating station concourse", "sealed crater plaza"):
+                        self.assertNotIn(entry, user["vocabulary"])
+                    offered.extend(entry for image in user["images"] for entry in image.get("suggested", {}).get("Spaces", []))
+                    self.assertIn("choose a new compatible location", call.system_message)
+                    self.assertIn("not a closed list of locations", call.system_message)
+                self.assertCountEqual(offered, selected)
 
     def test_same_seed_repeats_retrieval_input_suggestions_and_scene_reference_mapping(self):
         catalog = self.map_catalog()
