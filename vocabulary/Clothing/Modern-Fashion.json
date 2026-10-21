@@ -1,9 +1,27 @@
 {
   "name": "Modern Fashion",
   "category": "Clothing",
+  "description": "Contemporary casual, formal and practical clothing. Entries are garment choices, not prescribed appearances, professions or poses.",
   "entries": [
+    "plain T-shirt with straight-leg jeans",
+    "linen button-down shirt with rolled cuffs",
+    "midi dress with a gathered waist",
+    "double-breasted wool overcoat",
+    "polo shirt with chinos",
+    "striped sweater with corduroy trousers",
+    "pleated skirt with an opaque blouse",
+    "canvas sneakers with contrasting laces",
+    "quilted vest over a flannel shirt",
+    "wide-brimmed sun hat with a woven band",
+    "structured blazer over a crew-neck top",
+    "lightweight jumpsuit with a tied belt",
     "oversized hoodie",
     "tailored suit",
-    "denim jacket"
+    "denim jacket",
+    "coveralls with reinforced knees",
+    "lightweight raincoat with a hood",
+    "knitted cardigan over a plain shirt",
+    "tracksuit with a zip-front top",
+    "pleated trousers with a sleeveless vest"
   ]
 }

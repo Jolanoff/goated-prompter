@@ -1,9 +1,27 @@
 {
   "name": "Modern",
   "category": "Spaces",
+  "description": "Contemporary urban interiors and outdoor public spaces. Entries describe layouts and usable surfaces rather than prescribing activities or occupants.",
   "entries": [
+    "neighborhood laundromat with folding counters between machine rows",
+    "office meeting room with a long table and writable wall",
+    "train concourse with departure boards above open walking lanes",
+    "corner cafe with small tables beside broad windows",
+    "public playground plaza viewed from a clear pedestrian path",
+    "airport waiting lounge with seats facing large windows",
+    "hospital reception area with a desk beside a seating alcove",
+    "supermarket produce section with wide aisles between displays",
+    "museum gallery with freestanding exhibits and clear circulation space",
+    "residential balcony with a small table and planters along the railing",
     "rooftop bar",
     "loft apartment",
-    "subway platform"
+    "subway platform",
+    "community workshop with shared worktables and tool storage along the walls",
+    "public courtyard with movable seating around a central open area",
+    "covered market aisle with separate stalls along both sides",
+    "small apartment kitchen with counters around a central preparation area",
+    "library reading room with long tables and aisles between shelves",
+    "indoor sports hall with a clear floor and seating along one side",
+    "urban canal path with steps connecting it to the street above"
   ]
 }

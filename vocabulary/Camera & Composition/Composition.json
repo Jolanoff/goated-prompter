@@ -1,18 +1,27 @@
 {
   "name": "Composition",
   "category": "Camera & Composition",
+  "description": "Placement of existing subjects and objects within the frame. Entries describe visual relationships without requiring additional participants.",
   "entries": [
+    "the main subjects centered within a symmetrical setting, with equal space on either side",
+    "a broad area of empty space above the subjects emphasizing the scale of the setting",
+    "curved edges in the environment guiding the eye toward the shared activity",
+    "the main subject placed where a horizontal surface meets a strong vertical edge",
     "the main subjects spread across the frame from left to right with space between them",
     "one subject in the foreground, the others a step behind in the middle ground",
     "two subjects facing each other from the two sides of the frame",
     "the subjects in a diagonal line from the near corner to the far side of the frame",
-    "the subjects grouped in a tight triangle, the tallest at the back",
+    "three main visual anchors forming a triangle in the frame, with the subjects and shared objects supplying the anchors without adding people",
     "the main subject framed by a doorway, arch or window in the foreground",
     "a low object in the foreground, the main subject behind it and the background far behind",
     "the main subject off-center, open space on the other side of the frame",
     "the main subject seen through a gap between foreground objects",
-    "the subjects stacked from the bottom to the top of the frame on stairs or a slope",
-    "the main subject reflected in a mirror, window or still water beside it",
-    "the main subject small at the bottom of the frame under a large sky or ceiling"
+    "the subjects at different visible heights along an existing staircase or slope, each supported on its own step or patch of ground",
+    "the main subject and its reflection visible together in a mirror, window or still water, with their positions consistent with the reflecting surface",
+    "the main subject small at the bottom of the frame under a large sky or ceiling",
+    "the shared object near the center of the frame, with the participants' separate hands leading toward it from different sides",
+    "the subjects arranged along an open arc in the frame, leaving their shared working area visible in the center",
+    "parallel edges in the setting leading toward the main subjects without crossing their faces or obscuring their interaction",
+    "a clear gap between each subject's silhouette and nearby background edges, keeping their limbs and contact points distinct"
   ]
 }

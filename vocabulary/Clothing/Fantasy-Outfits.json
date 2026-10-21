@@ -1,9 +1,27 @@
 {
   "name": "Fantasy Outfits",
   "category": "Clothing",
+  "description": "Fantasy travel, ceremonial and protective clothing. Garments are alternatives suited to different roles, without assigning a gender or a new activity.",
   "entries": [
+    "embroidered waistcoat over a loose linen shirt",
+    "bark-textured shoulder mantle with leaf-shaped clasps",
+    "long brocade coat lined with patterned silk",
+    "fur-lined boots with wrapped leather uppers",
+    "lamellar cuirass tied over a padded jacket",
+    "layered desert robes with a broad head wrap",
+    "feather-trimmed ceremonial cape",
+    "studded leather jerkin over woven sleeves",
+    "patchwork traveling coat with many repaired seams",
+    "wide sash threaded with small metal charms",
+    "crystal-beaded veil over a high-collared gown",
+    "sleeveless wool overdress with side lacing",
     "elven armor",
-    "flowing sorceress robe",
-    "ranger cloak"
+    "flowing spellcaster robe",
+    "ranger cloak",
+    "layered traveling tunic with a split hem",
+    "quilted gambeson with side fastenings",
+    "ceremonial mantle over a plain long robe",
+    "scale vest over a flexible woven undershirt",
+    "weatherproof hooded cape with arm openings"
   ]
 }

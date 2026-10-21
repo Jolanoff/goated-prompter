@@ -1,7 +1,12 @@
 {
   "name": "Text & Signs",
   "category": "Objects & Props",
+  "description": "Surfaces and objects carrying visible writing. Entries specify where text appears; requested wording and scene context determine its content.",
   "entries": [
+    "a departure board with rows of destinations",
+    "a folded menu with section headings",
+    "a numbered ticket",
+    "a directional placard with an arrow and place name",
     "a sign with one word painted on it",
     "a name tag",
     "a handwritten note",
@@ -16,7 +21,7 @@
     "an engraved plaque",
     "a sticky note",
     "a book with a visible title",
-    "a T-shirt with a printed word",
+    "a word printed on fabric",
     "a street sign",
     "a license plate",
     "a price tag"

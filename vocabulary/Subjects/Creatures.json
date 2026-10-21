@@ -1,9 +1,27 @@
 {
   "name": "Creatures",
   "category": "Subjects",
+  "description": "Animals and imagined creatures described by visible anatomy. Entries are subject alternatives, not instructions to add wildlife or perform an action.",
   "entries": [
-    "fire-breathing dragon",
+    "manticore with a lion's body, leathery wings and a segmented tail",
+    "phoenix with layered flame-colored feathers",
+    "hippocampus with a horse's forequarters and a coiled fish tail",
+    "basilisk with a crested head and heavy scaled body",
+    "wyvern with two hind legs and clawed wings",
+    "unicorn with a spiral horn and a long tufted tail",
+    "giant stag beetle with ridged wing covers",
+    "armored burrowing creature with spade-shaped forelimbs",
+    "amphibious salamander with branching external gills",
+    "cloudlike creature with a translucent bell-shaped body",
+    "stone-backed grazing creature with pillar-like legs",
+    "long-necked marsh creature with broad splayed toes",
+    "scaled dragon with four legs, broad wings and a long tail",
     "grey wolf",
-    "griffin"
+    "griffin",
+    "giant tortoise with a ridged shell",
+    "antlered forest creature with a moss-covered back",
+    "six-legged desert reptile with broad padded feet",
+    "feathered serpent with a long flexible body",
+    "deep-sea creature with translucent fins and luminous spots"
   ]
 }

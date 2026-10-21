@@ -1,9 +1,27 @@
 {
   "name": "Anime Expressions",
   "category": "Expressions",
+  "description": "Stylized facial reactions and graphic expression symbols. Entries use anime conventions rather than literal anatomical changes.",
   "entries": [
-    "sparkling eyes",
-    "pouting cheeks",
-    "sweat drop"
+    "large sparkling pupils and a small hopeful smile",
+    "a comic cross-shaped mark beside a lowered brow",
+    "vertical stress lines shading the upper face",
+    "a tiny sideways mouth beneath blank circular eyes",
+    "a triangular open mouth with sharply raised brows",
+    "heart-shaped pupils and a dazed smile",
+    "a trembling wavy mouth beneath glossy eyes",
+    "a small fanged grin and narrowed playful eyes",
+    "a dotted mouth and half-closed unimpressed eyes",
+    "tear streams drawn as simple vertical bands",
+    "a broad square-toothed grin with tightly closed eyes",
+    "a pale blank face with a tiny shocked mouth",
+    "star-shaped highlights in wide eyes",
+    "puffed cheeks with pursed lips",
+    "stylized sweat drop beside one temple",
+    "flat half-lidded eyes and a straight mouth",
+    "spiral eyes with an unsteady open mouth",
+    "crescent-shaped closed eyes and a broad smile",
+    "tiny pupils in wide eyes with a small round mouth",
+    "eyes hidden under a shaded brow with a tense mouth"
   ]
 }

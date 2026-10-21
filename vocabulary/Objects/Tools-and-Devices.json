@@ -1,12 +1,17 @@
 {
   "name": "Tools & Devices",
   "category": "Objects & Props",
+  "description": "Hand tools, measuring equipment and devices. Entries are objects that may be used or placed nearby when compatible with the requested activity.",
   "entries": [
+    "adjustable wrench",
+    "digital multimeter with two probes",
+    "bench vise with a screw handle",
+    "handheld navigation compass",
     "hammer",
     "paintbrush",
     "camera",
     "headphones",
-    "smartphone",
+    "spirit level",
     "laptop",
     "flashlight",
     "rope",

@@ -1,0 +1,27 @@
+{
+  "name": "Animals",
+  "category": "Subjects",
+  "description": "Real animals described by visible features. These are subject alternatives, not instructions to add wildlife to a scene with a fixed cast.",
+  "entries": [
+    "red fox with a white-tipped tail and dark lower legs",
+    "brown bear with shaggy fur and a broad muzzle",
+    "barn owl with a pale heart-shaped face",
+    "red deer stag with branching antlers",
+    "snow leopard with thick spotted fur and a long tail",
+    "African elephant with broad ears and wrinkled grey skin",
+    "reticulated giraffe with angular brown patches",
+    "Bactrian camel with two humps and a woolly coat",
+    "river otter with a streamlined body and short dense fur",
+    "harbor seal with a spotted coat and rounded head",
+    "bottlenose dolphin with a curved dorsal fin",
+    "green sea turtle with broad flippers and a patterned shell",
+    "common octopus with textured skin and eight arms",
+    "emperor penguin with yellow patches beside its neck",
+    "scarlet macaw with red plumage and blue wing tips",
+    "peacock with a long train of eye-patterned feathers",
+    "domestic cat with a striped coat and white paws",
+    "border collie with a black-and-white coat and alert ears",
+    "draft horse with a broad chest and feathered lower legs",
+    "praying mantis with folded forelegs and a triangular head"
+  ]
+}
