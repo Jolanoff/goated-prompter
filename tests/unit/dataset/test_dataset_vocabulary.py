@@ -24,6 +24,7 @@ class SceneVocabulary(unittest.TestCase):
         self.romance = next(pack["entries"] for pack in self.catalog["packs"] if pack["id"] == "Actions & Poses/Romance")
         self.calls, self.entries, self.fit = [], [], None
         self.relevance = {}
+        self.incompatible = set()
         self.backend = MockBackend()
         enter_context(self, patch.object(self.backend, "generate", side_effect=self.generate))
         enter_context(self, patch.object(scenes, "create_backend", return_value=self.backend))
@@ -47,6 +48,9 @@ class SceneVocabulary(unittest.TestCase):
                     if self.fit is not None and row["category"] == scenes.ACTIONS_CATEGORY and row["text"] not in self.fit:
                         level = "conflict"
                     result[level].append(int(number))
+                if "incompatible" in instruction.json_schema["properties"]:
+                    result["incompatible"] = [int(number) for number, row in entries.items()
+                                              if (row["category"], row["text"]) in self.incompatible]
                 return json.dumps(result)
             raise AssertionError("The fitting contract must classify every entry's relevance")
         if instruction.diagnostic_stage != "dataset_v2:scenes":
@@ -498,6 +502,88 @@ class SceneVocabulary(unittest.TestCase):
         self.assertIn("a secure anchor", [entry for hand in suggestions for entry in hand.get("Objects & Props", [])])
         self.assertEqual(len(set(scene["entry"] for scene in result["scenes"])), 4)
 
+    def test_captured_seated_direct_rank_cannot_replace_required_walking(self):
+        seated = ("One person seated while the other person stands beside them, leaning slightly toward the same "
+                  "open page and pointing to a detail on it.")
+        walking = ("Two people walking side by side in the same direction, one turning their head toward the other "
+                   "while both keep space for their strides.")
+        catalog = {**self.catalog, "packs": [
+            {"id": "actions/page", "name": "Page", "category": scenes.ACTIONS_CATEGORY, "entries": [seated]},
+            {"id": "actions/travel", "name": "Travel", "category": scenes.ACTIONS_CATEGORY, "entries": [walking]}]}
+        self.incompatible = {(scenes.ACTIONS_CATEGORY, seated)}
+        cast = [{"label": "companion", "count": 2, "gender": "", "custom": "", "pronoun": ""}]
+        brief = self.brief("Two companions keep walking side by side while consulting the same open paper map", cast, amount=10)
+        original = self.generate
+        def generate(instruction):
+            response = original(instruction)
+            if instruction.diagnostic_stage == "dataset_v2:scenes":
+                user = composer_user(instruction.user_message)
+                answer = json.loads(response)
+                for image, scene in zip(user["images"], answer["scenes"]):
+                    if user.get("action_entries", {}).get(image.get("entry_id")) == seated:
+                        scene["actions"] = "companion 1 sits on a low stone wall while companion 2 stands beside them"
+                        scene["position"] = {"companion 1": "seated on a stone wall", "companion 2": "standing beside the wall"}
+                return json.dumps(answer)
+            return response
+        self.backend.generate.side_effect = generate
+        result = self.write(brief, [pack["id"] for pack in catalog["packs"]], catalog=catalog)
+        self.assertTrue(result["complete"])
+        user = composer_user(self.composer()[0].user_message)
+        self.assertEqual(set(user["action_entries"].values()), {walking})
+        self.assertNotIn(seated, self.composer()[0].user_message)
+        self.assertTrue(all(scene["entry"] == walking and "walking" in scene["actions"] for scene in result["scenes"]))
+
+    def test_hard_incompatibility_veto_applies_to_all_positive_ranks_not_only_actions(self):
+        catalog = self.relevance_catalog()
+        self.incompatible = {("Actions & Poses", catalog["packs"][0]["entries"][0]),
+                             ("Actions & Poses", "One person checks a knot."),
+                             ("Actions & Poses", "One person polishes a medal."),
+                             ("Objects & Props", "a polished medal")}
+        brief = self.brief("Three workers stabilize a bridge together", [], amount=10)
+        result = self.write(brief, [pack["id"] for pack in catalog["packs"]], catalog=catalog)
+        self.assertTrue(result["complete"])
+        sent = self.composer()[0].user_message
+        for _, entry in self.incompatible:
+            self.assertNotIn(entry, sent)
+        self.assertIn("a secure anchor", sent, "compatible supporting ideas survive")
+        self.assertTrue(any("entry" in scene for scene in result["scenes"]))
+
+    def test_general_request_keeps_varied_compatible_actions_and_optional_support_with_fixed_seed(self):
+        catalog = self.relevance_catalog()
+        brief = self.brief("A team spends the day together", [], amount=10)
+        packs = [pack["id"] for pack in catalog["packs"]]
+        first = self.write(brief, packs, catalog=catalog)
+        sent = self.composer()[0].user_message
+        self.assertEqual(len({scene["entry"] for scene in first["scenes"]}), 4)
+        self.assertIn("One person checks a knot.", sent)
+        self.assertIn("One person polishes a medal.", sent)
+        self.calls.clear()
+        second = self.write(brief, packs, catalog=catalog)
+        self.assertEqual(first["scenes"], second["scenes"])
+        self.assertEqual(sent, self.composer()[0].user_message)
+
+    def test_invalid_compatibility_veto_never_bypasses_relevance_validation(self):
+        brief = {"_family": "qwen", "input": {"request": "work", "seed": 1}, "summary": "",
+                 "fixed": "", "must": [], "avoid": [], "characters": []}
+        groups = [{"category": "Actions & Poses", "packs": [{"entries": ["one", "two"]}]}]
+        for veto in ([0], [3], [1, 1], [True], ["1"], "1"):
+            with self.subTest(veto=veto):
+                response = {"incompatible": veto, "direct": [1, 2], "supporting": [], "optional": [], "conflict": []}
+                self.assertEqual(scenes.fitting_entries(Mock(generate=Mock(return_value=json.dumps(response))),
+                                                       brief, groups, progress=lambda _: None), {})
+
+    def test_partial_recovery_keeps_compatibility_veto_and_canonical_entry_identity(self):
+        brief = {"_family": "qwen", "input": {"request": "work", "seed": 1}, "summary": "",
+                 "fixed": "", "must": [], "avoid": [], "characters": []}
+        groups = [{"category": "Actions & Poses", "packs": [{"entries": ["one", "two", "three"]}]}]
+        responses = [dict(incompatible=[1], direct=[1, 2], supporting=[], optional=[], conflict=[]),
+                     dict(incompatible=[], direct=[], supporting=[1], optional=[], conflict=[])]
+        backend = Mock(generate=Mock(side_effect=[json.dumps(row) for row in responses]))
+        fit = scenes.fitting_entries(backend, brief, groups, progress=lambda _: None)
+        self.assertEqual(fit, {"Actions & Poses": {"two": "direct", "three": "supporting"}})
+        retry = json.loads(backend.generate.call_args_list[1].args[0].user_message)
+        self.assertEqual(retry["entries"], {"1": {"category": "Actions & Poses", "text": "three"}})
+
     def test_relevance_preferences_are_seeded_and_optional_does_not_dominate(self):
         import random
         entries = [f"entry {n}" for n in range(20)]
@@ -586,7 +672,7 @@ class SceneVocabulary(unittest.TestCase):
         for direct, supporting in (([1, 1, 2], []), ([1, 2, 3], []), ([1, 2], [1]), ([0, 1, 2], []),
                                    ([-1, 1, 2], []), ([True, 2], []), (["1", 2], [])):
             with self.subTest(direct=direct, supporting=supporting):
-                response = json.dumps({"direct": direct, "supporting": supporting, "optional": [], "conflict": []})
+                response = json.dumps({"incompatible": [], "direct": direct, "supporting": supporting, "optional": [], "conflict": []})
                 self.assertEqual(scenes.fitting_entries(Mock(generate=Mock(return_value=response)), brief, groups,
                                                        progress=lambda _: None), {})
 
@@ -602,8 +688,8 @@ class SceneVocabulary(unittest.TestCase):
         groups = [{"category": "Spaces", "packs": [{"entries": [f"place {n}" for n in range(1, 81)]}]}]
         brief = {"_family": "qwen", "input": {"request": "work", "seed": 173}, "summary": "",
                  "fixed": "", "must": [], "avoid": [], "characters": []}
-        recovery = {"direct": [], "supporting": list(range(1, 29)), "optional": [], "conflict": []}
-        backend = Mock(generate=Mock(side_effect=[json.dumps(response), json.dumps(recovery)]))
+        recovery = {"incompatible": [], "direct": [], "supporting": list(range(1, 29)), "optional": [], "conflict": []}
+        backend = Mock(generate=Mock(side_effect=[json.dumps({"incompatible": [], **response}), json.dumps(recovery)]))
         with patch.object(scenes, "FIT_CHUNK", 80):
             fit = scenes.fitting_entries(backend, brief, groups, progress=lambda _: None)
         expected = {f"place {n}": level for level in scenes.RELEVANCE[:-1] for n in response[level]}
@@ -618,8 +704,8 @@ class SceneVocabulary(unittest.TestCase):
         brief = {"_family": "qwen", "input": {"request": "work", "seed": 1}, "summary": "",
                  "fixed": "", "must": [], "avoid": [], "characters": []}
         backend = Mock(generate=Mock(side_effect=[
-            json.dumps({"direct": [1], "supporting": [], "optional": [], "conflict": [2]}),
-            json.dumps({"direct": [], "supporting": [1], "optional": [], "conflict": []})]))
+            json.dumps({"incompatible": [], "direct": [1], "supporting": [], "optional": [], "conflict": [2]}),
+            json.dumps({"incompatible": [], "direct": [], "supporting": [1], "optional": [], "conflict": []})]))
         messages = []
         fit = scenes.fitting_entries(backend, brief, groups, progress=messages.append)
         self.assertEqual(fit, {"Spaces": {"one": "direct", "three": "supporting"}})
@@ -630,10 +716,10 @@ class SceneVocabulary(unittest.TestCase):
         groups = [{"category": "Spaces", "packs": [{"entries": ["one", "two"]}]}]
         brief = {"_family": "qwen", "input": {"request": "work", "seed": 1}, "summary": "",
                  "fixed": "", "must": [], "avoid": [], "characters": []}
-        for recovery in ("not json", '{"direct":[1],"supporting":[1],"optional":[],"conflict":[]}'):
+        for recovery in ("not json", '{"incompatible":[],"direct":[1],"supporting":[1],"optional":[],"conflict":[]}'):
             with self.subTest(recovery=recovery):
                 backend = Mock(generate=Mock(side_effect=[
-                    '{"direct":[1],"supporting":[],"optional":[],"conflict":[]}', recovery]))
+                    '{"incompatible":[],"direct":[1],"supporting":[],"optional":[],"conflict":[]}', recovery]))
                 self.assertEqual(scenes.fitting_entries(backend, brief, groups, progress=lambda _: None),
                                  {"Spaces": {"one": "direct"}})
                 self.assertEqual(backend.generate.call_count, 2)
@@ -653,7 +739,7 @@ class SceneVocabulary(unittest.TestCase):
             self.assertTrue(all(row.get("notes") for row in rows.values()))
             if len(calls) == 2:
                 return "not json"
-            result = {level: [] for level in scenes.RELEVANCE}
+            result = {"incompatible": [], **{level: [] for level in scenes.RELEVANCE}}
             for number, row in rows.items():
                 level = scenes.RELEVANCE[(int(number) - 1) % 4]
                 result[level].append(int(number))
@@ -683,8 +769,8 @@ class SceneVocabulary(unittest.TestCase):
         groups = [{"category": "Spaces", "packs": [{"entries": ["one", "two", "three", "four", "five"]}]}]
         brief = {"_family": "qwen", "input": {"request": "work", "seed": 1}, "summary": "",
                  "fixed": "", "must": [], "avoid": [], "characters": []}
-        responses = [json.dumps({"direct": [1], "supporting": [], "optional": [], "conflict": [2]}), "not json",
-                     json.dumps({"direct": [], "supporting": [1], "optional": [], "conflict": []})]
+        responses = [json.dumps({"incompatible": [], "direct": [1], "supporting": [], "optional": [], "conflict": [2]}), "not json",
+                     json.dumps({"incompatible": [], "direct": [], "supporting": [1], "optional": [], "conflict": []})]
         backend = Mock(generate=Mock(side_effect=responses))
         with patch.object(scenes, "FIT_CHUNK", 2):
             fit = scenes.fitting_entries(backend, brief, groups, progress=lambda _: None)
