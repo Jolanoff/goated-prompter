@@ -29,6 +29,7 @@ class Audit(unittest.TestCase):
         self.assertEqual(audit.summary(self.dump)["errors"], {})
         for owner in ("creativity", "length", "director", "target", "style", "dataset_scenes", "nsfw"):
             self.assertIn(owner, self.dump["owners"])
+        self.assertIn("SHORTLIST_SYSTEM", self.dump["owners"]["dataset_scenes"])
         self.assertIn("director Explicit Adult", self.dump["assembled"])
 
     def test_a_guide_speaking_for_another_setting_is_flagged_unless_accepted(self):

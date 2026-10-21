@@ -51,7 +51,8 @@ def _owners(gp):
             ("repair", "goated_prompter.planning.semantic_validation", ("AUDIT_CONTRACT",)),
             ("dataset_understanding", "goated_prompter.features.dataset.v2.understanding", ("SYSTEM",)),
             ("dataset_scenes", "goated_prompter.features.dataset.v2.scenes",
-             ("COMPOSE_SYSTEM", "VOCABULARY_RULES", "NO_PEOPLE_RULE", "GUIDED_RULE", "ENTRY_RULE", "ENTRY_FIT_SYSTEM")),
+             ("COMPOSE_SYSTEM", "VOCABULARY_RULES", "NO_PEOPLE_RULE", "GUIDED_RULE", "ENTRY_RULE", "ENTRY_FIT_SYSTEM",
+              "SHORTLIST_SYSTEM")),
             ("dataset_prompts", "goated_prompter.features.dataset.v2.prompts", ("SCENE_RULES", "KNOWN_RULE")),
             ("nsfw", "goated_prompter.features.dataset.v2.scenes", ("NSFW_RULE", "SFW_RULE")),
             ("nsfw", "goated_prompter.features.dataset.v2.prompts", ("ADULT_RULE",))):
