@@ -2,7 +2,7 @@
 
 import base64
 
-from ...backends.base import GoatedPrompterError
+from ...backends.base import BackendConnectionError, GoatedPrompterError
 from ...backends.factory import create_backend
 from ...contracts import effective_model_family
 from ...director_profiles import resolve_director_config
@@ -58,6 +58,14 @@ def run_caption(state, job, request, config, workflow):
                     row["status"] = job.commit(lambda: save_caption(sidecar, caption))
                     if row["status"] == "saved":
                         row["caption"] = caption
+            except BackendConnectionError as exc:
+                job.checkpoint()
+                raise BackendConnectionError(
+                    "Captioning stopped because the prompt engine connection failed. Check the engine configuration "
+                    "and server status, then retry the remaining images. Completed caption files have been kept. "
+                    + str(exc), completion_state=exc.completion_state,
+                    partial_text=exc.partial_text, finish_reason=exc.finish_reason,
+                ) from exc
             except (OSError, ValueError, GoatedPrompterError) as exc:
                 job.checkpoint()
                 row.update(status="error", error=str(exc))

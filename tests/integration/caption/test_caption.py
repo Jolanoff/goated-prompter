@@ -2,12 +2,15 @@
 
 from unittest import IsolatedAsyncioTestCase
 from unittest.mock import AsyncMock, patch
+from io import BytesIO
 import json
+from urllib.error import URLError
 
 from PIL import Image
 
 import local_app
 from goated_prompter.api.common import STATE
+from goated_prompter.backends.openai_compatible import OpenAICompatibleBackend
 from goated_prompter.features.caption.routes import caption_endpoint
 from goated_prompter.local_jobs import Job
 from tests.helpers import enter_context
@@ -79,3 +82,75 @@ class CaptionAdmissionTests(IsolatedAsyncioTestCase):
             with self.subTest(payload=payload), self.assertRaises(ValueError):
                 await caption_endpoint(self.request(payload))
         self.assertEqual(self.started, [])
+
+    async def test_refused_or_reset_connection_fails_job_without_trying_every_image(self):
+        Image.new("RGB", (12, 16)).save(self.folder / "second.png")
+        await caption_endpoint(self.request(self.payload()))
+        kind, request, config, text_only, workflow = self.started[0]
+        engine = OpenAICompatibleBackend({"base_url": "http://127.0.0.1:8189/v1", "model": "synthetic"})
+        for failure in (URLError(ConnectionRefusedError("Connection refused")), ConnectionResetError("Connection reset")):
+            with self.subTest(failure=type(failure).__name__):
+                job = Job()
+                job.kind = kind
+                with patch("goated_prompter.features.caption.runner.create_backend", return_value=engine), \
+                        patch("goated_prompter.backends.openai_compatible.urlopen", side_effect=failure) as transport, \
+                        self.assertLogs(level="ERROR"):
+                    self.state.execute(job, request, config, text_only, workflow)
+                self.assertEqual(job.status, "failed")
+                self.assertEqual(transport.call_count, 1)
+                self.assertIsNone(job.result)
+                self.assertIn("remaining images", job.error)
+                self.assertEqual(list(self.folder.glob("*.txt")), [])
+
+    async def test_connection_loss_preserves_finished_caption_and_stops_remaining_images(self):
+        for name in ("a.png", "b.png"):
+            Image.new("RGB", (12, 16)).save(self.folder / name)
+        await caption_endpoint(self.request(self.payload()))
+        kind, request, config, text_only, workflow = self.started[0]
+        job = Job()
+        job.kind = kind
+        engine = OpenAICompatibleBackend({"base_url": "http://127.0.0.1:8189/v1", "model": "synthetic"})
+        response = BytesIO(json.dumps({"choices": [{"message": {"content": "A blue rectangle."},
+                                                   "finish_reason": "stop"}]}).encode())
+        response.headers = {}
+        failure = URLError(ConnectionResetError("Connection reset"))
+        with patch("goated_prompter.features.caption.runner.create_backend", return_value=engine), \
+                patch("goated_prompter.backends.openai_compatible.urlopen", side_effect=[response, failure, failure]) as transport, \
+                self.assertLogs(level="ERROR"):
+            self.state.execute(job, request, config, text_only, workflow)
+        self.assertEqual(job.status, "failed")
+        self.assertEqual(transport.call_count, 2)
+        self.assertEqual((self.folder / "a.txt").read_text(encoding="utf-8"), "A blue rectangle.\n")
+        self.assertFalse((self.folder / "b.txt").exists())
+        self.assertFalse((self.folder / "sample.txt").exists())
+
+    async def test_stream_disconnect_stops_job_without_saving_partial_caption(self):
+        Image.new("RGB", (12, 16)).save(self.folder / "second.png")
+        await caption_endpoint(self.request(self.payload()))
+        kind, request, config, text_only, workflow = self.started[0]
+        job = Job()
+        job.kind = kind
+        engine = OpenAICompatibleBackend({"base_url": "http://127.0.0.1:8189/v1", "model": "synthetic",
+                                          "_activity_callback": job.record_llm_activity})
+        class DisconnectedResponse:
+            headers = {"Content-Type": "text/event-stream"}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def __iter__(self):
+                yield b'data: {"choices":[{"delta":{"content":"An unfinished caption"},"finish_reason":null}]}\n'
+                raise ConnectionResetError("Connection reset")
+
+        with patch("goated_prompter.features.caption.runner.create_backend", return_value=engine), \
+                patch("goated_prompter.backends.openai_compatible.urlopen", return_value=DisconnectedResponse()) as transport, \
+                self.assertLogs(level="ERROR"):
+            self.state.execute(job, request, config, text_only, workflow)
+        self.assertEqual(job.status, "interrupted")
+        self.assertEqual(transport.call_count, 1)
+        self.assertIn("remaining images", job.error)
+        self.assertEqual(list(self.folder.glob("*.txt")), [])
+        self.assertEqual(job.partial_responses[0]["partial_text"], "An unfinished caption")

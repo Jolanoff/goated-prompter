@@ -23,6 +23,10 @@ class BackendGenerationError(GoatedPrompterError):
         self.finish_reason = finish_reason
 
 
+class BackendConnectionError(BackendGenerationError):
+    """The prompt engine could not be reached or its connection failed."""
+
+
 class BackendRunawayError(BackendGenerationError):
     """A bounded workflow exceeded its limit or entered a repetition loop."""
 
