@@ -158,15 +158,23 @@ def _repetition_issue(text, protected_terms=(), *, tag_loops=False):
     return None
 
 
+def openai_compatible_vision(settings):
+    """Whether the endpoint's model accepts images; text-only models set ``"vision": false``."""
+    vision = settings.get("vision", True)
+    if not isinstance(vision, bool):
+        raise BackendConfigurationError("openai_compatible vision must be true or false.")
+    return vision
+
+
 class OpenAICompatibleBackend(GoatedPrompterBackend):
     name = "openai_compatible"
-    supports_vision = True
 
     def __init__(self, settings):
         self.url = _chat_completions_url(settings.get("base_url"))
         self.model = str(settings.get("model") or "").strip()
         if not self.model:
             raise BackendConfigurationError("OpenAI-compatible model is not configured.")
+        self.supports_vision = openai_compatible_vision(settings)
 
         api_key_env = str(settings.get("api_key_env") or "GOATED_PROMPTER_API_KEY").strip()
         self.api_key = str(settings.get("api_key") or os.environ.get(api_key_env, "")).strip()

@@ -108,8 +108,13 @@ class DirectorProfile:
     warning: str = ""
 
     @property
+    def ready(self):
+        """A main model is enough to generate; the mmproj only adds image input."""
+        return self.model_path is not None
+
+    @property
     def vision_ready(self):
-        return self.model_path is not None and self.mmproj_path is not None
+        return self.ready and self.mmproj_path is not None
 
     def to_public_mapping(self):
         return {
@@ -119,6 +124,7 @@ class DirectorProfile:
             "prompt_model": self.prompt_model,
             "model_family": self.model_family,
             "folder": self.folder.name,
+            "ready": self.ready,
             "vision_ready": self.vision_ready,
             "warning": self.warning,
         }
@@ -133,7 +139,7 @@ class DiscoveryResult:
 
     def preferred(self, slot):
         return next(
-            (profile for profile in self.profiles if profile.slot == slot and profile.vision_ready),
+            (profile for profile in self.profiles if profile.slot == slot and profile.ready),
             None,
         )
 
@@ -142,7 +148,7 @@ class DiscoveryResult:
             (
                 profile
                 for profile in self.profiles
-                if profile.prompt_model == prompt_model and profile.vision_ready
+                if profile.prompt_model == prompt_model and profile.ready
             ),
             None,
         )
@@ -255,8 +261,6 @@ def _folder_profile(folder, llm_root):
         warning_parts.append(f"Multiple mmproj files found; selected {mmproj_path.name} deterministically.")
     if model_path is None:
         warning_parts.append("Missing main model GGUF; this folder is incomplete.")
-    if mmproj_path is None:
-        warning_parts.append("Missing mmproj GGUF; text-only model file detected but vision is unavailable.")
 
     relative = folder.relative_to(llm_root).as_posix()
     return DirectorProfile(
@@ -344,20 +348,20 @@ def resolve_director_config(config, request, refresh=False):
             profile = discovery.preferred("Uncensored")
         if profile is None:
             raise BackendConfigurationError(
-                f"Prompt Model {selection} is unavailable. Add a complete matching model + mmproj folder under {discovery.llm_root}."
+                f"Prompt Model {selection} is unavailable. Add a folder with its model GGUF under {discovery.llm_root}."
             )
     else:
         if request.director_profile:
             profile = discovery.by_id(request.director_profile)
             if profile is None:
                 raise BackendConfigurationError("The selected Custom Prompt Model profile was not found. Refresh Models and select it again.")
-            if not profile.vision_ready:
+            if not profile.ready:
                 raise BackendConfigurationError(
-                    f"Custom Prompt Model profile '{profile.label}' is incomplete: {profile.warning or 'matching model and mmproj are required.'}"
+                    f"Custom Prompt Model profile '{profile.label}' is incomplete: {profile.warning or 'a model GGUF is required.'}"
                 )
         elif request.director_model_path or request.director_mmproj_path:
-            if not request.director_model_path or not request.director_mmproj_path:
-                raise BackendConfigurationError("Custom Prompt Model requires both model and mmproj paths.")
+            if not request.director_model_path:
+                raise BackendConfigurationError("Custom Prompt Model requires a model path; the mmproj path is optional.")
             local_settings.update(_custom_runtime_settings(request))
             local_settings["model_path"] = request.director_model_path
             local_settings["mmproj_path"] = request.director_mmproj_path
@@ -370,7 +374,7 @@ def resolve_director_config(config, request, refresh=False):
             return effective, None
         else:
             raise BackendConfigurationError(
-                "Custom Prompt Model selected, but no custom model is configured. Choose a discovered profile or provide both model and mmproj paths in Advanced."
+                "Custom Prompt Model selected, but no custom model is configured. Choose a discovered profile or provide a model path (and optional mmproj path) in Advanced."
             )
 
     local_settings.update(profile.runtime_defaults)
@@ -379,7 +383,8 @@ def resolve_director_config(config, request, refresh=False):
         if request.director_llama_server:
             local_settings["llama_server"] = request.director_llama_server
     local_settings["model_path"] = str(profile.model_path)
-    local_settings["mmproj_path"] = str(profile.mmproj_path)
+    # Clear any configured projector so a text-only profile never pairs with another folder's mmproj.
+    local_settings["mmproj_path"] = str(profile.mmproj_path) if profile.mmproj_path else ""
     local_settings["requested_model"] = selection
     local_settings["keep_model_loaded"] = request.director_keep_model_loaded
     effective = dict(config)

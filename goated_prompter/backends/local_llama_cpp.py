@@ -1,4 +1,4 @@
-"""Optional local multimodal backend powered by an owned llama.cpp server."""
+"""Optional local backend powered by an owned llama.cpp server; multimodal when an mmproj is configured."""
 
 from contextlib import contextmanager
 from dataclasses import replace
@@ -14,6 +14,7 @@ class LocalLlamaCppBackend(GoatedPrompterBackend):
 
     def __init__(self, settings, process_manager=None):
         self.config = LlamaCppLaunchConfig.from_mapping(settings)
+        self.supports_vision = self.config.supports_vision
         self.context_reserve_tokens = settings.get("context_reserve_tokens", 1024)
         self.activity_callback = settings.get("_activity_callback")
         self.register_interrupt = settings.get("_register_interrupt")
@@ -32,6 +33,7 @@ class LocalLlamaCppBackend(GoatedPrompterBackend):
                 "context_size": active_config.context_size,
                 "context_reserve_tokens": self.context_reserve_tokens,
                 "image_min_tokens": active_config.image_min_tokens,
+                "vision": active_config.supports_vision,
                 "_is_llama_cpp": True,
                 "_runtime_diagnostics": runtime_diagnostics or {},
                 "_activity_callback": self.activity_callback,
@@ -50,7 +52,7 @@ class LocalLlamaCppBackend(GoatedPrompterBackend):
             yield self._client(runtime_config, {
                 "model": self.config.requested_model,
                 "gguf": str(self.config.model_path),
-                "mmproj": str(self.config.mmproj_path),
+                "mmproj": str(self.config.mmproj_path) if self.config.mmproj_path else None,
                 "pid": getattr(owned.process, "pid", "UNKNOWN"),
                 "port": owned.config.port,
                 "reused": bool(acquisition["reused"]),

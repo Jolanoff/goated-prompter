@@ -176,11 +176,14 @@ test("local engine discovery, partial selection persistence and empty setup", as
   try {
     await mkdir(join(root, "nested"));
     await mkdir(join(root, "incomplete"));
+    await mkdir(join(root, "text-only"));
     for (const folder of [root, join(root, "nested")]) {
       await writeFile(join(folder, "model.gguf"), "");
       await writeFile(join(folder, "mmproj.gguf"), "");
     }
-    await writeFile(join(root, "incomplete", "model.gguf"), "");
+    // A projector alone is incomplete; a model alone is a text-only engine.
+    await writeFile(join(root, "incomplete", "mmproj.gguf"), "");
+    await writeFile(join(root, "text-only", "model.gguf"), "");
     expect(
       (
         await request.put("/api/settings", {
@@ -200,7 +203,11 @@ test("local engine discovery, partial selection persistence and empty setup", as
     await expect(page.getByLabel("Prompt engine")).toHaveValue("nested");
     await expect(
       page.getByLabel("Prompt engine").locator("option"),
-    ).toHaveCount(2);
+    ).toHaveCount(3);
+    await expect(page.getByLabel("Upload image 1")).toBeEnabled();
+    await expect(
+      page.getByLabel("Prompt engine").locator('option[value="text-only"]'),
+    ).toHaveText("text-only (text only)");
     let finishSave;
     const saveGate = new Promise((resolve) => {
       finishSave = resolve;

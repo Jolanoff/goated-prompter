@@ -139,15 +139,18 @@ class LlamaCppLaunchConfig:
             raise BackendConfigurationError("local_llama_cpp configuration must be an object.")
         models_dir = resolve_models_directory(settings)
         model_path = _resolve_model_file(settings.get("model_path"), models_dir, "model_path")
-        mmproj_path = _resolve_model_file(settings.get("mmproj_path"), models_dir, "mmproj_path")
-        if model_path == mmproj_path:
-            raise BackendConfigurationError("local_llama_cpp model_path and mmproj_path must be different files.")
-        if "mmproj" not in mmproj_path.name.lower():
-            raise BackendConfigurationError("local_llama_cpp mmproj filename must contain 'mmproj'.")
-        if model_path.parent != mmproj_path.parent:
-            raise BackendConfigurationError(
-                "local_llama_cpp model and mmproj must be stored in the same model folder to prevent accidental pairing."
-            )
+        # A projector is optional: without one the model runs text-only.
+        mmproj_path = None
+        if str(settings.get("mmproj_path") or "").strip():
+            mmproj_path = _resolve_model_file(settings.get("mmproj_path"), models_dir, "mmproj_path")
+            if model_path == mmproj_path:
+                raise BackendConfigurationError("local_llama_cpp model_path and mmproj_path must be different files.")
+            if "mmproj" not in mmproj_path.name.lower():
+                raise BackendConfigurationError("local_llama_cpp mmproj filename must contain 'mmproj'.")
+            if model_path.parent != mmproj_path.parent:
+                raise BackendConfigurationError(
+                    "local_llama_cpp model and mmproj must be stored in the same model folder to prevent accidental pairing."
+                )
 
         host = str(settings.get("host") or "127.0.0.1").strip().lower()
         if host not in _LOOPBACK_HOSTS:
@@ -196,18 +199,22 @@ class LlamaCppLaunchConfig:
         )
 
     @property
+    def supports_vision(self):
+        return self.mmproj_path is not None
+
+    @property
     def base_url(self):
         host = "127.0.0.1" if self.host == "localhost" else self.host
         bracketed = f"[{host}]" if ":" in host else host
         return f"http://{bracketed}:{self.port}"
 
     def command(self):
+        vision = ["--mmproj", str(self.mmproj_path), "--image-min-tokens", str(self.image_min_tokens)] if self.supports_vision else []
         return [
             str(self.executable),
             "--model", str(self.model_path),
-            "--mmproj", str(self.mmproj_path),
+            *vision,
             "--ctx-size", str(self.context_size),
-            "--image-min-tokens", str(self.image_min_tokens),
             "--n-gpu-layers", self.gpu_layers,
             "--reasoning", self.reasoning,
             "--host", self.host,
