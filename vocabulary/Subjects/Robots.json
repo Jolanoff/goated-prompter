@@ -1,9 +1,27 @@
 {
   "name": "Robots",
   "category": "Subjects",
+  "description": "Mechanical subjects with different bodies and movement systems. Entries describe physical designs without prescribing a task, allegiance or emotion.",
   "entries": [
+    "bipedal robot with exposed cable tendons and broad rubber feet",
+    "tiny crawler robot with six magnetic legs",
+    "underwater robot with paired thrusters and a glass sensor dome",
+    "tall telescoping robot with a narrow wheeled base",
+    "humanoid robot with ceramic face panels and fabric-covered joints",
+    "serpentine robot made of linked metal segments",
+    "hovering survey robot with a ring-shaped body",
+    "heavy loader robot with hydraulic arms and stabilizing outriggers",
+    "spiderlike robot with eight slender folding legs",
+    "transparent-bodied robot with visible gears and a compact central motor",
+    "solar-powered rover with folding panels and wide mesh wheels",
+    "modular robot assembled from interlocking cubic units",
     "sleek android",
     "rusty service robot",
-    "giant combat mech"
+    "giant combat mech",
+    "compact tracked robot with a rotating sensor head",
+    "quadruped inspection robot with articulated legs",
+    "spherical drone with recessed lift fans",
+    "multi-armed maintenance robot on a broad wheeled base",
+    "soft-bodied research robot with flexible grippers"
   ]
 }

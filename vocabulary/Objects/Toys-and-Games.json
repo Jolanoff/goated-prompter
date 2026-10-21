@@ -1,7 +1,12 @@
 {
   "name": "Toys & Games",
   "category": "Objects & Props",
+  "description": "Game pieces, puzzles and recreational objects. Entries can furnish adult activities or surroundings without adding a new participant.",
   "entries": [
+    "tabletop pinball machine",
+    "wooden ring-toss set",
+    "set of domino tiles",
+    "mechanical puzzle box",
     "teddy bear",
     "chess board",
     "deck of cards",
@@ -17,7 +22,7 @@
     "paper airplane",
     "spinning top",
     "balloon",
-    "plush rabbit",
+    "kaleidoscope",
     "marbles",
     "rocking horse"
   ]

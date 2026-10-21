@@ -1,7 +1,12 @@
 {
   "name": "Buildings & Structures",
   "category": "Objects & Props",
+  "description": "Buildings and structures seen as objects within a scene. Entries supply visible architecture rather than replacing the scene's overall environment.",
   "entries": [
+    "stone aqueduct on repeated arches",
+    "covered pedestrian footbridge",
+    "brick chimney with an iron cap",
+    "wooden watchtower with an exterior ladder",
     "lighthouse",
     "red telephone box",
     "wooden pier",

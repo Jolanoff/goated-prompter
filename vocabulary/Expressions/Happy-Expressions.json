@@ -1,9 +1,27 @@
 {
   "name": "Happy Expressions",
   "category": "Expressions",
+  "description": "Facial signs of pleasure, amusement and relief. Entries describe expressions without changing identity, appearance or the requested activity.",
   "entries": [
+    "dimples deepening beside a cheerful smile",
+    "wide grin with raised cheeks and crinkled eye corners",
+    "relieved smile beneath softly raised inner brows",
+    "open-mouthed laugh with relaxed jaw",
+    "shy smile with eyes turned downward",
+    "proud smile with a gently lifted chin",
+    "amused smirk with one lifted eyebrow",
+    "warm smile with slightly parted lips",
+    "delighted surprise with raised brows and an open smile",
+    "contented smile with eyes softly closed",
+    "restrained grin behind a lightly bitten lower lip",
+    "fond smile with a softened gaze",
     "beaming smile",
     "laughing with eyes closed",
-    "soft grin"
+    "soft grin",
+    "smiling through tears with relaxed brows",
+    "small closed-mouth smile with relaxed eyelids",
+    "uneven smile with one corner of the mouth raised",
+    "eyes bright and eyebrows lifted in pleased surprise",
+    "lips pressed together to hold back laughter"
   ]
 }

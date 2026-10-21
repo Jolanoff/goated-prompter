@@ -1,7 +1,12 @@
 {
   "name": "Kitchen & Dining",
   "category": "Objects & Props",
+  "description": "Food preparation and dining objects. Entries name utensils, containers and tableware rather than requiring cooking or a meal.",
   "entries": [
+    "colander with side handles",
+    "mortar and pestle",
+    "rolling pin",
+    "ceramic baking dish",
     "wooden spoon",
     "cast-iron pan",
     "teapot",
@@ -17,7 +22,7 @@
     "kettle",
     "measuring cups",
     "serving tray",
-    "candle on a dinner table",
+    "candlestick",
     "pet bowl",
     "picnic basket"
   ]

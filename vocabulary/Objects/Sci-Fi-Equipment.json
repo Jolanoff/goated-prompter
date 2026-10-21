@@ -1,0 +1,27 @@
+{
+  "name": "Sci-Fi Equipment",
+  "category": "Objects & Props",
+  "description": "Futuristic tools and field equipment with visible physical features. Objects need not occupy a hand and do not prescribe a new task.",
+  "entries": [
+    "folding holographic projector with a circular emitter",
+    "handheld scanner with a segmented display",
+    "sealed sample canister with a transparent inspection strip",
+    "portable power cell with recessed contacts",
+    "magnetic tether reel with a locking clip",
+    "compact fabricator with a transparent build chamber",
+    "wrist-mounted communicator with a hinged screen",
+    "environmental sensor mast with folding legs",
+    "robotic gripper attachment in a fitted carrying case",
+    "navigation beacon with a rotating indicator ring",
+    "modular breathing unit with paired filter cylinders",
+    "insulated cryogenic flask with a pressure gauge",
+    "gravity anchor with a broad circular base",
+    "data crystal held inside a protective frame",
+    "flexible tablet rolled around a rigid handle",
+    "portable airlock patch with an inflatable sealing rim",
+    "plasma cutting tool with a ceramic nozzle",
+    "drone charging dock with a recessed landing pad",
+    "field microscope with an enclosed sample slot",
+    "translation device with a small speaker grille and waveform screen"
+  ]
+}

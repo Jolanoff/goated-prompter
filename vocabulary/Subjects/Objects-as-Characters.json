@@ -1,9 +1,27 @@
 {
   "name": "Objects as Characters",
   "category": "Subjects",
+  "description": "Personified everyday objects and animated constructs. Entries describe the character's physical features rather than requiring speech or a mood.",
   "entries": [
-    "talking teapot",
-    "living sword",
-    "grumpy toaster"
+    "walking grandfather clock with carved wooden feet",
+    "animated umbrella with jointed ribs and eyes on its canopy",
+    "potted cactus with a face between its spines",
+    "ink bottle with glass arms and a hinged cap",
+    "accordion with eyes above its expanding bellows",
+    "chest with a carved face and sturdy wooden legs",
+    "candle with a face molded below its flame",
+    "ceramic bowl with small feet around its base",
+    "mailbox with eyes above its hinged slot",
+    "sewing machine with articulated feet and a face on its casing",
+    "traffic cone with a face and flexible striped arms",
+    "origami crane with drawn eyes and folded paper legs",
+    "teapot with a face molded into its round body",
+    "living sword with eyes set into its guard",
+    "toaster with a face on its front panel",
+    "walking lantern with hinged metal legs",
+    "clockwork book with small jointed arms",
+    "stone statue with flexible joints and worn carved features",
+    "watering can with a face beneath its spout",
+    "rolling suitcase with eyes above its front pocket"
   ]
 }

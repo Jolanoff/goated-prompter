@@ -1,9 +1,27 @@
 {
   "name": "Everyday Props",
   "category": "Objects & Props",
+  "description": "Portable everyday belongings. Entries name objects, not mandatory hand-held items; placement depends on the scene's available hands and space.",
   "entries": [
+    "wallet with a snap closure",
+    "folded pair of reading glasses",
+    "reusable shopping bag",
+    "small zippered coin purse",
+    "wristwatch with a woven strap",
+    "compact travel mirror",
+    "lidded lunch container",
+    "soft-sided suitcase",
+    "comb with wide teeth",
+    "portable radio with a telescoping antenna",
     "coffee mug",
     "smartphone",
-    "umbrella"
+    "umbrella",
+    "folded paper map",
+    "canvas shoulder bag",
+    "reusable water bottle",
+    "key ring",
+    "pocket notebook",
+    "rolled blanket",
+    "small wrapped parcel"
   ]
 }

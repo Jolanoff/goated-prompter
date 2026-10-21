@@ -1,9 +1,27 @@
 {
   "name": "Horror",
   "category": "Spaces",
+  "description": "Abandoned and unsettling environments. Entries describe physical layouts and decay without requiring danger, injuries or extra occupants.",
   "entries": [
+    "boarded-up seaside arcade with salt-corroded machines",
+    "empty municipal swimming pool with cracked tiles",
+    "abandoned weather station with a partly detached antenna",
+    "silent hotel corridor with peeling wallpaper and crooked doors",
+    "disused water-treatment hall with drained circular tanks",
+    "overgrown rail cutting leading toward a dark tunnel",
+    "vacant apartment with rooms connected by missing doors",
+    "old ferry interior with rusted seat frames and a listing floor",
+    "sealed museum storage room with covered display cases",
+    "deserted roadside diner with dust-covered booths",
     "abandoned asylum",
     "foggy graveyard",
-    "flickering basement"
+    "basement with exposed pipes, low beams and a narrow stairway",
+    "abandoned theater with torn seating facing an empty stage",
+    "flooded cellar with a raised walkway along one wall",
+    "derelict greenhouse with broken panes and overgrown planting beds",
+    "deserted motel courtyard with doors opening onto a covered walkway",
+    "empty hospital service corridor with recessed storage bays",
+    "collapsed mine passage with a stable chamber beside the blocked route",
+    "disused observatory with a cracked dome above a circular platform"
   ]
 }

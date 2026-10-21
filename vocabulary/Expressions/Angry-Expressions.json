@@ -1,9 +1,27 @@
 {
   "name": "Angry Expressions",
   "category": "Expressions",
+  "description": "Visible facial tension, irritation and anger. Entries describe features of an expression, not an action or a change to facial anatomy.",
   "entries": [
+    "brows drawn together above a fixed stare",
+    "upper lip raised in a brief sneer",
+    "tight smile with no movement around the eyes",
+    "lower lip pushed forward beneath a wrinkled chin",
+    "one side of the mouth curled in contempt",
+    "eyes squeezed shut beneath deeply creased brows",
+    "mouth open mid-protest with eyebrows lowered",
+    "flushed cheeks and a rigid closed mouth",
+    "eyes turned sideways with a pinched mouth",
+    "raised inner brows above a frustrated frown",
+    "lips parted over clenched teeth",
+    "lower eyelids tightened beneath a level glare",
     "clenched jaw",
     "furrowed brow",
-    "bared teeth"
+    "bared teeth",
+    "lips pressed into a firm line",
+    "narrowed eyes beneath lowered brows",
+    "one eyebrow raised with a tight, skeptical mouth",
+    "eyes widened and nostrils flared",
+    "downturned mouth with a tense chin"
   ]
 }
