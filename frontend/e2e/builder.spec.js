@@ -64,7 +64,9 @@ test("task and instruction preset lead the controls on desktop and mobile", asyn
   }
   await expect(page.getByLabel("Style", { exact: true })).toHaveValue("Auto");
   await expect(page.getByLabel("Style", { exact: true }).locator("option")).toHaveText([
-    "Auto", "Anime", "Realistic", "Illustration", "3D render", "Product", "Painting",
+    "Auto", "Anime", "Realistic", "Cinematic", "Semi-realistic", "Illustration",
+    "Concept art", "Comic", "Manga", "Pixel art", "Sketch", "3D render",
+    "Product", "Painting",
   ]);
   await expect(page.getByLabel("Prompt task").locator("option:checked")).toHaveText("Improve a prompt");
   await page.getByLabel("Prompt task").selectOption({ label: "Architecture & interiors" });

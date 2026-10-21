@@ -9,7 +9,7 @@
   },
   {
     "category": "Spaces",
-    "prompt_text": "{Spaces} provides vocabulary describing where the action takes place. Use relevant entries as possible locations or environmental inspiration."
+    "prompt_text": "{Spaces} provides vocabulary describing where the action takes place. An entry names a kind of place: build the scene's space on it with its own concrete physical details (the surfaces the people are on, what is behind them, the features that make it this place), never the bare name alone."
   },
   {
     "category": "Objects & Props",
