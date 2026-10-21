@@ -46,14 +46,19 @@ class SceneVocabulary(unittest.TestCase):
             return "A finished prompt."
         user = composer_user(instruction.user_message)
         labels = [person["label"] for person in user["understanding"]["characters"]]
-        wants_entry = "entry" in instruction.json_schema["properties"]["scenes"]["items"]["required"]
+        wants_entry = "entry_id" in instruction.json_schema["properties"]["scenes"]["items"]["required"]
+        def entry_id(row):
+            if not self.entries:
+                return row["entry_id"]
+            selected = self.entries.pop(0)
+            return next((key for key, text in user["action_entries"].items() if text == selected), "unknown")
         return json.dumps({"scenes": [{
             "subjects": {label: {**SCENE, **{field: f"{field}{row['image']}{label}".replace(" ", "")
                                              for field in ("skin", "build", "hair", "detail")}} for label in labels},
             "position": {label: "standing" for label in labels},
             "actions": f"{' and '.join(labels)}: {user['request']}", "space": f"clearing {row['image']}", "lighting": "moonlight",
             "mood": "calm", "camera": "wide shot", "extras": f"extras{row['image']}",
-            **({"entry": self.entries.pop(0) if self.entries else row["entry"]} if wants_entry else {})}
+            **({"entry_id": entry_id(row)} if wants_entry else {})}
             for row in user["images"]]})
 
     def write(self, brief, packs=(), catalog=None):
@@ -197,7 +202,7 @@ class SceneVocabulary(unittest.TestCase):
                 {"label": "woman", "gender": "female", "custom": "", "pronoun": "she", "count": 1}]
         self.entries = self.romance[:3].copy()
         self.write(self.brief("A couple", pair, amount=3), ["Actions & Poses/Romance"])
-        dealt = [image["entry"] for image in composer_user(self.composer()[0].user_message)["images"]]
+        dealt = [image["entry_id"] for image in composer_user(self.composer()[0].user_message)["images"]]
         self.assertEqual(len(set(dealt)), 3, "no entry is dealt twice while the pack has more")
         import random
         entries = [f"entry {number}" for number in range(10)]
@@ -205,6 +210,127 @@ class SceneVocabulary(unittest.TestCase):
         self.assertNotEqual(scenes.deal_entries(entries, 10, random.Random(4)), scenes.deal_entries(entries, 10, random.Random(5)))
         self.assertEqual(sorted(scenes.deal_entries(entries, 10, random.Random(4)).values()), sorted(entries))
         self.assertEqual(scenes.deal_entries([], 3, random.Random(4)), {})
+
+    def test_composer_selects_a_reference_instead_of_returning_canonical_text(self):
+        cast = [{"label": "guide", "gender": "", "custom": "", "pronoun": "", "count": 2}]
+        self.write(self.brief("Two guides consulting a map", cast, amount=1), ["Actions & Poses/Romance"])
+        call = self.composer()[0]
+        item = call.json_schema["properties"]["scenes"]["items"]
+        self.assertNotIn("entry", item["properties"])
+        self.assertIn("entry_id", item["required"])
+        choices = composer_user(call.user_message)["action_entries"]
+        self.assertEqual(set(item["properties"]["entry_id"]["enum"]), set(choices))
+        self.assertEqual(list(choices.values()), self.romance)
+        self.assertNotIn("Copy the entry you used word for word", call.system_message)
+
+    def test_placeholder_actions_are_repaired_without_assigning_roles_in_code(self):
+        for count in (2, 4):
+            with self.subTest(people=count):
+                self.calls.clear()
+                labels = ["curator", "courier", *[f"observer {n}" for n in range(1, count - 1)]]
+                cast = [{"label": label, "gender": "", "custom": "", "pronoun": "", "count": 1} for label in labels]
+                entry = "one person passes a map to the other person" if count == 2 else (
+                    "one person passes a map to another while the others watch from beside them")
+                catalog = {**self.catalog, "packs": [{**pack, "entries": [entry]} if pack["id"] == "Actions & Poses/Romance"
+                                                    else pack for pack in self.catalog["packs"]]}
+                action = "courier passes the map to curator" + (" while observer 1 and observer 2 watch" if count == 4 else "")
+                positions = {"courier": "left, standing facing curator, holding the map out",
+                             "curator": "right, standing facing courier, reaching for the map"}
+                positions.update({label: "standing beside curator, watching courier hand over the map" for label in labels[2:]})
+                emitted = []
+
+                def generate(instruction):
+                    response = self.generate(instruction)
+                    if instruction.diagnostic_stage != "dataset_v2:scenes":
+                        return response
+                    scene = json.loads(response)["scenes"][0]
+                    scene.update(actions=entry if not emitted else action, position=positions)
+                    emitted.append(scene)
+                    return json.dumps({"scenes": [scene]})
+
+                self.backend.generate.side_effect = generate
+                result = self.write(self.brief("courier hands a map to curator; any observers watch", cast, amount=1),
+                                    ["Actions & Poses/Romance"], catalog=catalog)
+                self.assertTrue(result["complete"])
+                self.assertEqual(len(self.composer()), 2, "placeholder leakage must still trigger repair")
+                self.assertIn("its actions do not name", self.composer()[1].system_message)
+                finished = result["scenes"][0]
+                self.assertEqual(finished["actions"], action, "giver follows request, not first cast label")
+                self.assertEqual(finished["position"], positions)
+                self.assertEqual(finished["entry"], entry)
+                self.assertNotIn("entry_id", finished)
+                self.assertEqual(set(finished["subjects"]), set(labels))
+                for field in ("subjects", "extras", "space", "camera"):
+                    self.assertEqual(finished[field], scenes.retire_fields(emitted[-1])[field])
+
+    def test_a_compatible_alternative_keeps_its_exact_reference_and_named_builder_handoff(self):
+        first = "one person carries the other person in their arms"
+        alternative = "Piggyback: one person carries the other person on their back."
+        catalog = {**self.catalog, "packs": [{**pack, "entries": [alternative, first]} if pack["id"] == "Actions & Poses/Romance"
+                                            else pack for pack in self.catalog["packs"]]}
+        cast = [{"label": label, "gender": "", "custom": "", "pronoun": "", "count": 1} for label in ("rider", "carrier")]
+        action = "carrier carries rider in a Piggyback"
+        positions = {"carrier": "standing, supporting rider on carrier's back with both arms under rider's thighs",
+                     "rider": "on carrier's back, facing forward, arms around carrier's shoulders"}
+
+        def generate(instruction):
+            response = self.generate(instruction)
+            if instruction.diagnostic_stage != "dataset_v2:scenes":
+                return response
+            user = composer_user(instruction.user_message)
+            self.assertEqual(user["images"][0]["entry_id"], "2", "seed deals the other compatible entry")
+            scene = json.loads(response)["scenes"][0]
+            scene.update(entry_id="1", actions=action, position=positions)
+            return json.dumps({"scenes": [scene]})
+
+        self.backend.generate.side_effect = generate
+        result = self.write(self.brief("carrier carries rider", cast, amount=1), ["Actions & Poses/Romance"], catalog=catalog)
+        self.assertTrue(result["complete"])
+        self.assertEqual(len(self.composer()), 1)
+        scene = result["scenes"][0]
+        self.assertEqual(scene["entry"], alternative)
+        self.assertEqual(scene["actions"], action)
+        self.assertEqual(scene["position"], positions)
+        self.assertEqual(set(scene["subjects"]), {"rider", "carrier"})
+        prompts.write_prompts({"backend": "mock"}, self.request, self.brief("carrier carries rider", cast, amount=1),
+                              result["scenes"], progress=lambda _: None)
+        builder = self.calls[-1]
+        self.assertIn("position name: Piggyback", builder.user_message)
+        self.assertIn(action, builder.user_message)
+        self.assertNotIn(alternative, builder.user_message, "canonical placeholder text is not Builder input")
+
+    def test_unknown_entry_ids_never_become_saved_vocabulary_references(self):
+        cast = [{"label": "guide", "gender": "", "custom": "", "pronoun": "", "count": 2}]
+        self.entries = ["unknown vocabulary"] * scenes.ROUNDS
+        result = self.write(self.brief("Two guides", cast, amount=1), ["Actions & Poses/Romance"])
+        self.assertFalse(result["complete"])
+        self.assertEqual(result["scenes"], [])
+        self.assertEqual(len(self.composer()), scenes.ROUNDS)
+        self.assertIn("entry_id", result["missing"][0]["reasons"][0])
+
+    def test_reference_binding_does_not_admit_an_extra_participant(self):
+        cast = [{"label": "guide", "gender": "", "custom": "", "pronoun": "", "count": 2}]
+        emitted = []
+
+        def generate(instruction):
+            response = self.generate(instruction)
+            if instruction.diagnostic_stage != "dataset_v2:scenes":
+                return response
+            scene = json.loads(response)["scenes"][0]
+            if not emitted:
+                scene["subjects"]["visitor"] = dict(SCENE)
+                scene["position"]["visitor"] = "beside the guides"
+            emitted.append(scene)
+            return json.dumps({"scenes": [scene]})
+
+        self.backend.generate.side_effect = generate
+        result = self.write(self.brief("Two guides", cast, amount=1), ["Actions & Poses/Romance"])
+        self.assertTrue(result["complete"])
+        self.assertEqual(len(self.composer()), 2)
+        self.assertIn("exactly guide 1, guide 2", self.composer()[1].system_message)
+        scene = result["scenes"][0]
+        self.assertEqual(set(scene["subjects"]), {"guide 1", "guide 2"})
+        self.assertEqual(set(scene["position"]), {"guide 1", "guide 2"})
 
     def test_a_scene_may_keep_neutral_wording_from_an_entry(self):
         labels = ["man", "woman"]
@@ -270,10 +396,10 @@ class SceneVocabulary(unittest.TestCase):
         pair = [{"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 1},
                 {"label": "woman", "gender": "female", "custom": "", "pronoun": "she", "count": 1}]
         expected = self.romance[2]
-        self.entries = ["a made-up entry", expected.swapcase().replace(" ", "   ")]
+        self.entries = ["a made-up entry", expected]
         result = self.write(self.brief("A couple", pair, amount=1), ["Actions & Poses/Romance"])
         self.assertEqual(result["scenes"][0]["entry"], expected)
-        self.assertIn("copied word for word", self.composer()[1].system_message)
+        self.assertIn('"entry_id" must be one of the IDs in action_entries', self.composer()[1].system_message)
 
     def test_only_entries_that_fit_the_request_are_offered_dealt_and_counted(self):
         pair = [{"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 1},
@@ -290,7 +416,8 @@ class SceneVocabulary(unittest.TestCase):
         for entry in self.fit:
             self.assertIn(entry, vocabulary)
         self.assertNotIn(self.romance[2], vocabulary, "an entry that does not fit is never offered")
-        self.assertEqual({image["entry"] for image in composer_user(first.user_message)["images"]}, set(self.fit))
+        user = composer_user(first.user_message)
+        self.assertEqual({user["action_entries"][image["entry_id"]] for image in user["images"]}, set(self.fit))
         self.assertIn("used by fewer than 3 images", first.system_message, "five images share two fitting entries")
         self.assertTrue(result["complete"])
 

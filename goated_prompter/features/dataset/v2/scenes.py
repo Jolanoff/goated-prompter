@@ -9,10 +9,11 @@ sent. With no pack selected the prompt has no vocabulary section. No Director ta
 
 Actions & Poses: when that category has a selected pack, one call first keeps only the entries that fit the request
 and the cast (fitting_entries; every entry when that call fails). Only those reach the writer: every image is dealt a
-different one from a seeded shuffle (deal_entries) and every scene names the entry it is built on ("entry", copied
-word for word); the writer keeps the dealt entry unless it cannot fit the cast. Code checks that the entry is one of
-the fitting entries and that no entry is used by more images than ENTRY_CAP allows (two, or more when fewer entries
-fit than images are requested), and asks again otherwise (the last round keeps the image). When no entry fits, the
+different one from a seeded shuffle (deal_entries). The writer returns an entry_id, not canonical text; the app
+resolves it to the original "entry" stored with the scene. The writer keeps the dealt entry unless it cannot fit
+the request or cast. Code checks that its ID is one of the fitting entries and that no entry is used by more images
+than ENTRY_CAP allows (two, or more when fewer entries fit than images are requested), and asks again otherwise
+(the last round allows overuse, never an unknown ID). When no entry fits, the
 writer gets no Actions & Poses vocabulary and builds a logical pose for the request.
 
 A scene has subjects (per character: skin, build, hair, detail, expression; a known character, which the
@@ -228,10 +229,13 @@ SFW_RULE = "- This dataset is not adult content: no nudity and nothing explicit.
 NO_PEOPLE_RULE = "- There are no people: describe how the subject is placed instead of a pose."
 GUIDED_RULE = "- An image's input fixes its action: keep it, and build the rest of the scene around it."
 ENTRY_RULE = """ACTIONS & POSES ENTRY
-Every image in IMAGES names the Actions & Poses entry to build it on ("entry"). Build the scene on that entry: it
+Every image in IMAGES names the Actions & Poses entry to build it on ("entry_id"). Build the scene on that entry: it
 decides how the requested activity happens, never what the activity is. It does not fit when it shows a different
 act than the request names or needs a body part nobody in this cast has; then build the scene on another entry that
-fits and is used by fewer than {cap} images (already_used.entries counts them). Copy the entry you used word for word into the scene's "entry" field.
+fits and is used by fewer than {cap} images (already_used.entries counts them).
+action_entries maps entry IDs to their canonical vocabulary text. Return only the chosen ID in "entry_id";
+the application retains the original text. Write actions and position as this cast's interpretation of the entry,
+not a copy of its placeholder people. Assign roles from the request and the scene, never from the order of labels.
 When the entry starts with a name followed by a colon, that name is the position: the actions field states the act in
 plain words and names that position, so a later step can name it too."""
 
@@ -358,7 +362,7 @@ def _keyed(labels, value):
             "properties": {label: value for label in labels}}
 
 
-def compose_message(brief, images, earlier=(), vocabulary="", entries_used=None):
+def compose_message(brief, images, earlier=(), vocabulary="", entries_used=None, action_entries=None):
     """The scene writer's user message: the request, the approved requirements, the selected vocabulary (only when
     some was selected) and the images to write. entries_used: {entry: images so far} when entries are tracked."""
     requirements = {"rules": brief["input"]["rules"],
@@ -379,14 +383,16 @@ def compose_message(brief, images, earlier=(), vocabulary="", entries_used=None)
             "looks": [item["looks"] for item in earlier]}
     if entries_used:
         used["entries"] = dict(entries_used)
-    parts.append("IMAGES:\n" + json.dumps({"images": list(images), **({"already_used": used} if earlier or entries_used else {})},
+    parts.append("IMAGES:\n" + json.dumps({"images": list(images), **({"action_entries": action_entries} if action_entries else {}),
+                                          **({"already_used": used} if earlier or entries_used else {})},
                                           ensure_ascii=False, indent=1))
     return "\n\n".join(parts)
 
 
-def compose_instruction(brief, images, earlier=(), errors=(), vocabulary="", entry_cap=None, entries_used=None):
-    """One composition request. images: [{"image": n, "input"?: guided text}]; vocabulary:
-    the SELECTED VOCABULARY section ("" for none); entry_cap: set when scenes name their Actions & Poses entry."""
+def compose_instruction(brief, images, earlier=(), errors=(), vocabulary="", entry_cap=None, entries_used=None,
+                        action_entries=None):
+    """One composition request. images: [{"image": n, "input"?: guided text, "entry_id"?: dealt ID}]; vocabulary:
+    the SELECTED VOCABULARY section ("" for none); action_entries: {ID: canonical text} when entry_cap is set."""
     labels = _labels(brief)
     text = {"type": "string", "maxLength": MAX_FIELD}
 
@@ -396,17 +402,19 @@ def compose_instruction(brief, images, earlier=(), errors=(), vocabulary="", ent
                 "properties": {field: text for field in fields}}
     subjects = {"type": "object", "additionalProperties": False, "required": labels,
                 "properties": {label: person(label) for label in labels}}
-    fields = [*FIELDS, "entry"] if entry_cap else list(FIELDS)
+    fields = [*FIELDS, "entry_id"] if entry_cap else list(FIELDS)
     item = {"type": "object", "additionalProperties": False, "required": fields,
             "properties": {field: subjects if field == "subjects" else _keyed(labels, text)
                            if field == "position" else text for field in fields}}
+    if entry_cap:
+        item["properties"]["entry_id"] = {"type": "string", "enum": list(action_entries or {})}
     count = len(images)
     schema = {"type": "object", "additionalProperties": False, "required": ["scenes"],
               "properties": {"scenes": {"type": "array", "minItems": count, "maxItems": count, "items": item}}}
     per_image = 700 + 300 * len(labels)
     creativity = brief["settings"]["creativity"] or "Balanced"
     return PromptInstruction(system_message=_system(brief, errors, vocabulary, entry_cap),
-                             user_message=compose_message(brief, images, earlier, vocabulary, entries_used),
+                             user_message=compose_message(brief, images, earlier, vocabulary, entries_used, action_entries),
                              model_family=brief["_family"], diagnostic_stage="dataset_v2:scenes",
                              max_tokens=per_image * count, hard_max_tokens=per_image * count,
                              stream_character_limit=per_image * 4 * count,
@@ -459,7 +467,7 @@ def retire_fields(scene):
 
 def scene_errors(scene, labels, avoid, extra=(), known=frozenset()):
     """Why one composed scene is unusable as an answer; [] when its shape is right. extra: further text fields the
-    answer must have (the Actions & Poses "entry"); known: labels of known characters (expression only)."""
+    answer must have (the Actions & Poses "entry_id"); known: labels of known characters (expression only)."""
     scene = retire_fields(scene)
     plain = [key for key in SECTIONS if key not in ("subjects", "position")]
     if (not isinstance(scene, dict) or set(scene) != set(FIELDS) | set(extra)
@@ -487,16 +495,12 @@ def _parse(raw):
     return value["scenes"]
 
 
-def _entry_key(text):
-    return " ".join(str(text or "").split()).casefold()
-
-
 def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progress, on_slot):
     """Compose one batch, asking again for the images still missing: ({number: scene}, {number: failure}).
-    plan: {"vocabulary": section, "entries": {key: entry} or None, "cap", "used": {entry: images}, "dealt": {slot: entry}}."""
+    plan: {"vocabulary": section, "entries": {id: entry} or None, "cap", "used": {entry: images}, "dealt": {slot: id}}."""
     labels, avoid = _labels(brief), brief["_avoid"]
     entries, cap, used = plan["entries"], plan["cap"], plan["used"]
-    extra = ("entry",) if entries else ()
+    extra = ("entry_id",) if entries else ()
     scenes, reasons, tries = {}, {number: [] for number in numbers}, {number: 0 for number in numbers}
     failed = {}
     recovery = GenerationRecovery("dataset_v2:scenes", numbers, progress=progress)
@@ -509,12 +513,12 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
                  + (" again: " + "; ".join(f"{number}: {reasons[number][0][:70]}" for number in todo if reasons[number])
                     if round_ > 1 else "") + "...")
         images = [{"image": number, **({"input": inputs[number]} if inputs[number] else {}),
-                   **({"entry": plan["dealt"][number]} if plan.get("dealt") else {}),
+                   **({"entry_id": plan["dealt"][number]} if plan.get("dealt") else {}),
                    **({"suggested": plan["hands"][number]} if (plan.get("hands") or {}).get(number) else {})}
                   for number in todo]
         errors = sorted({f"image {number}: {reason}" for number in todo for reason in reasons[number]})
         prompt = compose_instruction(brief, images, earlier + [_summary(scenes[n]) for n in sorted(scenes)], errors,
-                                     plan["vocabulary"], cap if entries else None, used if entries else None)
+                                     plan["vocabulary"], cap if entries else None, used if entries else None, entries)
         checkpoint()
         before = recovery.attempts
         try:
@@ -530,7 +534,9 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
             tries[number] += max(1, recovery.attempts - before)
             problems = ([error] if error else ["an answer was missing"] if scene is None
                         else scene_errors(scene, labels, avoid, extra, brief["_known"]))
-            entry = entries.get(_entry_key(scene["entry"])) if entries and not problems else None
+            entry = entries.get(scene["entry_id"]) if entries and not problems else None
+            if entries and not problems and entry is None:
+                problems = ['its "entry_id" must be one of the IDs in action_entries']
             if not problems and round_ < ROUNDS:  # the last round accepts a repeat rather than lose the image
                 if any(_repeats(scene, item, labels) for item in [*earlier, *scenes.values()]):
                     problems = ["it repeats the place and the camera, arrangement or signs of an earlier image; "
@@ -538,8 +544,6 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
                 elif missing := unnamed_people(scene, labels):
                     problems = [f"its actions do not name {', '.join(missing)}: name every person by their character "
                                 "label and never leave a placeholder person from an entry"]
-                elif entries and entry is None:
-                    problems = ['its "entry" must be copied word for word from the Actions & Poses vocabulary']
                 elif entries and used.get(entry, 0) >= cap:
                     problems = [f'the entry "{entry}" is already used by {used[entry]} images; build this scene on '
                                 "another entry that fits"]
@@ -550,7 +554,7 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
             if not labels:
                 finished["position"] = {}
             if entries:
-                finished["entry"] = entry or " ".join(scene["entry"].split())
+                finished["entry"] = entry
                 used[finished["entry"]] = used.get(finished["entry"], 0) + 1
             scenes[number] = finished
             on_slot("description", number, finished)
@@ -705,8 +709,10 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
             notes = {pack["name"]: pack["description"] for pack in actions["packs"] if pack.get("description")}
             action_entries = fitting_entries(session, brief, action_entries, checkpoint, progress, notes)
             groups = _only(groups, ACTIONS_CATEGORY, action_entries)
-        plan = {"entries": {_entry_key(entry): entry for entry in action_entries} or None,
-                "cap": entry_cap(action_entries, total), "used": {}, "dealt": deal_entries(action_entries, total, rng),
+        entry_ids = {entry: str(number) for number, entry in enumerate(action_entries, 1)}
+        plan = {"entries": {entry_id: entry for entry, entry_id in entry_ids.items()} or None,
+                "cap": entry_cap(action_entries, total), "used": {},
+                "dealt": {number: entry_ids[entry] for number, entry in deal_entries(action_entries, total, rng).items()},
                 "hands": deal_hands(groups, total, rng)}
         for start in range(0, total, BATCH):
             numbers = list(range(start + 1, min(total, start + BATCH) + 1))
