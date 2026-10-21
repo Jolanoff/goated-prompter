@@ -23,6 +23,7 @@ class SceneVocabulary(unittest.TestCase):
         self.catalog = load_catalog(user_root=False)
         self.romance = next(pack["entries"] for pack in self.catalog["packs"] if pack["id"] == "Actions & Poses/Romance")
         self.calls, self.entries, self.fit = [], [], None
+        self.relevance = {}
         self.backend = MockBackend()
         enter_context(self, patch.object(self.backend, "generate", side_effect=self.generate))
         enter_context(self, patch.object(scenes, "create_backend", return_value=self.backend))
@@ -39,9 +40,15 @@ class SceneVocabulary(unittest.TestCase):
         self.calls.append(instruction)
         if instruction.diagnostic_stage == "dataset_v2:entries":
             entries = json.loads(instruction.user_message)["entries"]
-            if self.fit is None:
-                return json.dumps({"fit": [int(number) for number in entries]})
-            return json.dumps({"fit": [int(number) for number, entry in entries.items() if entry in self.fit]})
+            if "direct" in instruction.json_schema["properties"]:
+                result = {level: [] for level in ("direct", "supporting", "optional", "conflict")}
+                for number, row in entries.items():
+                    level = self.relevance.get((row["category"], row["text"]), "direct")
+                    if self.fit is not None and row["category"] == scenes.ACTIONS_CATEGORY and row["text"] not in self.fit:
+                        level = "conflict"
+                    result[level].append(int(number))
+                return json.dumps(result)
+            raise AssertionError("The fitting contract must classify every entry's relevance")
         if instruction.diagnostic_stage != "dataset_v2:scenes":
             return "A finished prompt."
         user = composer_user(instruction.user_message)
@@ -113,14 +120,18 @@ class SceneVocabulary(unittest.TestCase):
         self.assertEqual([person["label"] for person in user["understanding"]["characters"]], ["adult 1", "adult 2", "adult 3"])
         self.assertTrue(all(set(scene["subjects"]) == {"adult 1", "adult 2", "adult 3"} for scene in result["scenes"]))
 
-    def test_every_batch_gets_the_same_vocabulary_and_the_writer_is_called_once_per_batch(self):
+    def test_every_batch_gets_its_suggestions_and_the_writer_is_called_once_per_batch(self):
         brief = self.brief("A knight", [{"label": "knight", "gender": "male", "custom": "", "pronoun": "he", "count": 1}], amount=13)
         self.write(brief, ["Lighting/Dramatic"])
         calls = self.composer()
         self.assertEqual(len(calls), 2)
-        # The same entries in every batch (each batch gets its own seeded order).
-        self.assertEqual(*(sorted(composer_user(call.user_message)["vocabulary"].splitlines()) for call in calls))
-        self.assertEqual({call.diagnostic_stage for call in self.calls}, {"dataset_v2:scenes"}, "no extra LLM call")
+        for call in calls:
+            user = composer_user(call.user_message)
+            offered = {entry for image in user["images"] for entry in image["suggested"]["Lighting"]}
+            self.assertEqual(set(user["vocabulary"].partition("Available vocabulary:\n")[2].splitlines()),
+                             {f"[direct fit] {entry}" for entry in offered})
+        self.assertEqual(sum(call.diagnostic_stage == "dataset_v2:entries" for call in self.calls), 1,
+                         "one relevance pass is reused across batches")
 
     def test_every_image_gets_its_own_optional_suggestions_so_the_whole_pack_spreads(self):
         brief = self.brief("A knight", [{"label": "knight", "gender": "male", "custom": "", "pronoun": "he", "count": 1}], amount=4)
@@ -132,7 +143,7 @@ class SceneVocabulary(unittest.TestCase):
             dealt = [entry for hand in hands for entry in hand[category]]
             self.assertTrue(all(len(set(hand[category])) == len(hand[category]) for hand in hands), "no repeat in a hand")
             pack = {"Lighting": "Lighting/Dramatic", "Objects & Props": "Objects/Furniture"}[category]
-            self.assertEqual(set(dealt), set(next(p for p in load_catalog()["packs"] if p["id"] == pack)["entries"]),
+            self.assertEqual(set(dealt), set(next(p for p in self.catalog["packs"] if p["id"] == pack)["entries"]),
                              "every entry is dealt")
         self.assertIn('none at all when the category does not fit the image', self.composer()[0].system_message)
 
@@ -147,7 +158,10 @@ class SceneVocabulary(unittest.TestCase):
         self.assertIn('Pack "Dramatic" (its author\'s note: note for Dramatic):', vocabulary)
         self.assertIn("its author's note", self.composer()[0].system_message)
         fit = next(call for call in self.calls if call.diagnostic_stage == "dataset_v2:entries")
-        self.assertEqual(json.loads(fit.user_message)["notes"], {"Solo Activities": "note for Solo Activities"})
+        rows = json.loads(fit.user_message)["entries"].values()
+        self.assertEqual({row["category"] for row in rows}, {"Actions & Poses", "Lighting"})
+        for row in rows:
+            self.assertEqual(row["notes"], ["note for " + {"Actions & Poses": "Solo Activities", "Lighting": "Dramatic"}[row["category"]]])
 
     def test_the_sample_keeps_every_pack_and_its_description(self):
         groups = [{"category": "Objects & Props", "instruction": "",
@@ -166,7 +180,7 @@ class SceneVocabulary(unittest.TestCase):
         brief = self.brief("A knight", [{"label": "knight", "gender": "male", "custom": "", "pronoun": "he", "count": 1}], amount=1)
         result = self.write(brief, ["Lighting/Dramatic"])
         prompts.write_prompts({"backend": "mock"}, self.request, brief, result["scenes"], progress=lambda _: None)
-        builder = [call for call in self.calls if call.diagnostic_stage != "dataset_v2:scenes"]
+        builder = [call for call in self.calls if call.diagnostic_stage not in ("dataset_v2:scenes", "dataset_v2:entries")]
         self.assertTrue(builder)
         for call in builder:
             self.assertNotIn("hard chiaroscuro", call.system_message + call.user_message)
@@ -376,6 +390,7 @@ class SceneVocabulary(unittest.TestCase):
         self.assertNotIn("SELECTED VOCABULARY", call.user_message)
         self.assertNotIn("ACTIONS & POSES ENTRY", call.system_message)
         self.assertNotIn("looks", json.dumps(composer_user(call.user_message)["images"]))
+        self.assertFalse(any(call.diagnostic_stage == "dataset_v2:entries" for call in self.calls))
         self.assertEqual(result["vocabulary"], {"selection": {"packs": []}})
 
     def test_an_entry_is_used_by_at_most_two_images_and_an_overused_one_is_asked_again(self):
@@ -433,11 +448,170 @@ class SceneVocabulary(unittest.TestCase):
         self.assertNotIn("ACTIONS & POSES ENTRY", call.system_message)
         self.assertTrue(result["complete"])
 
-    def test_a_failed_fitting_call_keeps_every_entry(self):
+    def test_a_failed_fitting_call_keeps_no_unassessed_entry(self):
         self.assertEqual(scenes.fitting_entries(Mock(generate=Mock(return_value="not json")),
                                                 {"_family": "qwen", "input": {"request": "x", "seed": 1}, "summary": "",
                                                  "fixed": "", "must": [], "avoid": [], "characters": []},
-                                                ["a", "b"], progress=lambda _: None), ["a", "b"])
+                                                 [{"category": "Spaces", "packs": [{"entries": ["a", "b"]}]}],
+                                                 progress=lambda _: None), {})
+
+    def relevance_catalog(self):
+        packs = [
+            {"id": "actions/team", "name": "Team", "category": "Actions & Poses", "entries": [
+                "Three people brace a beam together.", "Three people carry a beam together.",
+                "Three people lift a beam together.", "Three people lower a beam together."]},
+            {"id": "actions/other", "name": "Other", "category": "Actions & Poses", "entries": [
+                "One person checks a knot.", "One person polishes a medal.", "Five people race each other."]},
+            {"id": "objects/other", "name": "Other", "category": "Objects & Props", "entries": [
+                "a load-bearing rope", "a secure anchor", "a polished medal", "a ceremonial banner"]},
+            {"id": "spaces/works", "name": "Works", "category": "Spaces", "entries": [
+                "a damaged bridge", "a supported walkway", "a ballroom"]}]
+        self.relevance = {
+            ("Actions & Poses", "One person checks a knot."): "supporting",
+            ("Actions & Poses", "One person polishes a medal."): "optional",
+            ("Actions & Poses", "Five people race each other."): "conflict",
+            ("Objects & Props", "a secure anchor"): "supporting",
+            ("Objects & Props", "a polished medal"): "optional",
+            ("Objects & Props", "a ceremonial banner"): "conflict",
+            ("Spaces", "a ballroom"): "conflict"}
+        return {**self.catalog, "packs": packs}
+
+    def test_relevance_keeps_group_anchors_and_individual_support_separate(self):
+        catalog = self.relevance_catalog()
+        cast = [{"label": "worker", "gender": "", "custom": "", "pronoun": "", "count": 3}]
+        brief = self.brief("Three workers stabilize a damaged bridge together", cast, amount=10)
+        result = self.write(brief, [pack["id"] for pack in catalog["packs"]], catalog=catalog)
+        user = composer_user(self.composer()[0].user_message)
+        team = catalog["packs"][0]["entries"]
+        self.assertEqual(set(user["action_entries"].values()), set(team))
+        self.assertTrue(all(scene["entry"] in team for scene in result["scenes"]))
+        self.assertEqual({label for scene in result["scenes"] for label in scene["subjects"]},
+                         {"worker 1", "worker 2", "worker 3"})
+        self.assertTrue(all(set(scene["subjects"]) == set(scene["position"]) for scene in result["scenes"]))
+        self.assertTrue(all(not scenes.unnamed_people(scene, ["worker 1", "worker 2", "worker 3"])
+                            for scene in result["scenes"]))
+        sent = self.composer()[0].user_message
+        for entry in ("Five people race each other.", "a ceremonial banner", "a ballroom"):
+            self.assertNotIn(entry, sent)
+        suggestions = [image.get("suggested", {}) for image in user["images"]]
+        self.assertIn("One person checks a knot.", [entry for hand in suggestions for entry in hand.get("Actions & Poses", [])])
+        self.assertIn("a secure anchor", [entry for hand in suggestions for entry in hand.get("Objects & Props", [])])
+        self.assertEqual(len(set(scene["entry"] for scene in result["scenes"])), 4)
+
+    def test_relevance_preferences_are_seeded_and_optional_does_not_dominate(self):
+        import random
+        entries = [f"entry {n}" for n in range(20)]
+        levels = {entry: "direct" if n < 4 else "supporting" if n < 8 else "optional"
+                  for n, entry in enumerate(entries)}
+        dealt = scenes.deal_entries(entries, 10, random.Random(7), levels)
+        self.assertEqual(dealt, scenes.deal_entries(entries, 10, random.Random(7), levels))
+        self.assertNotEqual(dealt, scenes.deal_entries(entries, 10, random.Random(8), levels))
+        self.assertGreaterEqual(sum(levels[entry] == "direct" for entry in dealt.values()), 5)
+        self.assertLessEqual(sum(levels[entry] == "optional" for entry in dealt.values()), 2)
+        self.assertGreaterEqual(len(set(dealt.values())), 6)
+
+    def test_relevance_failure_omits_unassessed_vocabulary_without_losing_scenes(self):
+        catalog = self.relevance_catalog()
+        original = self.generate
+        def generate(instruction):
+            if instruction.diagnostic_stage == "dataset_v2:entries":
+                self.calls.append(instruction)
+                return "not json"
+            return original(instruction)
+        self.backend.generate.side_effect = generate
+        result = self.write(self.brief("Workers stabilize a bridge", [
+            {"label": "worker", "gender": "", "custom": "", "pronoun": "", "count": 3}], amount=2),
+                            [pack["id"] for pack in catalog["packs"]], catalog=catalog)
+        self.assertTrue(result["complete"])
+        self.assertNotIn("SELECTED VOCABULARY", self.composer()[0].user_message)
+        self.assertNotIn("entry_id", self.composer()[0].json_schema["properties"]["scenes"]["items"]["required"])
+        self.assertTrue(all("entry" not in scene for scene in result["scenes"]))
+
+    def test_fitting_covers_actual_entries_constraints_and_roles_not_pack_names(self):
+        catalog = self.relevance_catalog()
+        brief = self.brief("Three workers stabilize a damaged bridge together", [
+            {"label": "worker", "gender": "", "custom": "", "pronoun": "", "count": 3}])
+        brief.update(fixed="worker 1 steadies the beam", must=["worker 2 secures a rope"], avoid=["no racing"])
+        brief["input"]["rules"] = ["worker 3 directs the lift"]
+        brief["_family"] = "qwen"
+        catalog["packs"][2]["description"] = "These objects can support practical work."
+        groups = scenes.selected_vocabulary(catalog, {"packs": [pack["id"] for pack in catalog["packs"]]})
+        fit = scenes.fitting_entries(self.backend, brief, groups, progress=lambda _: None)
+        self.assertEqual(fit["Objects & Props"], {"a load-bearing rope": "direct", "a secure anchor": "supporting",
+                                                   "a polished medal": "optional"})
+        self.assertNotIn("Five people race each other.", fit["Actions & Poses"])
+        data = json.loads(self.calls[0].user_message)
+        self.assertEqual([person["label"] for person in data["cast"]], ["worker 1", "worker 2", "worker 3"])
+        for field in ("fixed", "must", "avoid"):
+            self.assertEqual(data[field], brief[field])
+        self.assertEqual(data["rules"], brief["input"]["rules"])
+        anchor = next(row for row in data["entries"].values() if row["text"] == "a secure anchor")
+        self.assertEqual(anchor["notes"], [catalog["packs"][2]["description"]])
+        self.assertNotIn("name", anchor, "pack titles are not a relevance proxy")
+
+    def test_all_conflicts_generate_from_request_and_support_alone_never_binds_the_main_action(self):
+        for level in ("conflict", "supporting", "optional"):
+            with self.subTest(level=level):
+                self.calls.clear()
+                catalog = self.relevance_catalog()
+                catalog["packs"] = [catalog["packs"][1]]
+                self.relevance = {("Actions & Poses", entry): level for entry in catalog["packs"][0]["entries"]}
+                brief = self.brief("A team braces a beam", [], amount=10)
+                result = self.write(brief, ["actions/other"], catalog=catalog)
+                user = composer_user(self.composer()[0].user_message)
+                self.assertTrue(result["complete"])
+                self.assertNotIn("action_entries", user)
+                self.assertTrue(all("entry" not in scene for scene in result["scenes"]))
+                if level == "conflict":
+                    self.assertFalse(user["vocabulary"])
+                    self.assertTrue(all("suggested" not in image for image in user["images"]))
+                else:
+                    self.assertTrue(any("suggested" in image for image in user["images"]))
+
+    def test_optional_only_category_is_occasional_and_never_requires_every_pack(self):
+        import random
+        catalog = self.relevance_catalog()
+        groups = scenes.selected_vocabulary(catalog, {"packs": ["objects/other"]})
+        entries = catalog["packs"][2]["entries"]
+        levels = {"Objects & Props": {entry: "optional" for entry in entries}}
+        hands = scenes.deal_hands(groups, 10, random.Random(7), levels)
+        self.assertEqual(set(hands), {4, 8})
+        self.assertTrue(all(len(hand["Objects & Props"]) == 1 for hand in hands.values()))
+        self.assertEqual(hands, scenes.deal_hands(groups, 10, random.Random(7), levels))
+
+    def test_invalid_relevance_partitions_fail_closed(self):
+        brief = {"_family": "qwen", "input": {"request": "work", "seed": 1}, "summary": "",
+                 "fixed": "", "must": [], "avoid": [], "characters": []}
+        groups = [{"category": "Spaces", "packs": [{"entries": ["one", "two"]}]}]
+        for direct, supporting in (([1], []), ([1, 2, 3], []), ([1, 2], [1]), ([True, 2], []), (["1", 2], [])):
+            with self.subTest(direct=direct, supporting=supporting):
+                response = json.dumps({"direct": direct, "supporting": supporting, "optional": [], "conflict": []})
+                self.assertEqual(scenes.fitting_entries(Mock(generate=Mock(return_value=response)), brief, groups,
+                                                       progress=lambda _: None), {})
+
+    def test_failed_chunk_does_not_restore_conflicts_or_erase_successful_chunks(self):
+        groups = [{"category": "Spaces", "packs": [{"entries": ["one", "two", "three", "four", "five"]}]}]
+        brief = {"_family": "qwen", "input": {"request": "work", "seed": 1}, "summary": "",
+                 "fixed": "", "must": [], "avoid": [], "characters": []}
+        responses = [json.dumps({"direct": [1], "supporting": [], "optional": [], "conflict": [2]}), "not json",
+                     json.dumps({"direct": [], "supporting": [1], "optional": [], "conflict": []})]
+        backend = Mock(generate=Mock(side_effect=responses))
+        with patch.object(scenes, "FIT_CHUNK", 2):
+            fit = scenes.fitting_entries(backend, brief, groups, progress=lambda _: None)
+        self.assertEqual(fit, {"Spaces": {"one": "direct", "five": "supporting"}})
+        self.assertEqual(backend.generate.call_count, 3, "no extra retry stage")
+
+    def test_request_aware_prompt_and_dealing_repeat_for_the_same_seed(self):
+        catalog = self.relevance_catalog()
+        brief = self.brief("A team stabilizes a damaged bridge", [], amount=10)
+        packs = [pack["id"] for pack in catalog["packs"]]
+        def run(seed):
+            self.calls.clear()
+            brief["input"]["seed"] = seed
+            result = self.write(brief, packs, catalog=catalog)
+            return self.composer()[0].user_message, result["scenes"]
+        self.assertEqual(run(7), run(7))
+        self.assertNotEqual(run(7), run(8))
 
     def test_fewer_entries_than_images_raise_the_cap(self):
         self.assertEqual(scenes.entry_cap(["a", "b", "c"], 10), 4)
@@ -471,8 +645,8 @@ class SceneVocabulary(unittest.TestCase):
                 self.assertIn("Subjects\nCore instruction:", user["vocabulary"])
                 pack = next(pack for pack in self.catalog["packs"] if pack["id"] == pack_id)
                 sent = [entry for entry in pack["entries"] if entry in user["vocabulary"]]
-                # A large pack is sampled (a different seeded sample per batch) so it never drowns the request.
-                self.assertEqual(len(sent), min(len(pack["entries"]), scenes.VOCABULARY_SAMPLE))
+                self.assertEqual(set(sent), set(user["images"][0]["suggested"]["Subjects"]),
+                                 "the prompt offers the batch's request-aware suggestions")
                 self.assertEqual([pack["id"] for pack in result["vocabulary"]["selection"]["packs"]], [pack_id])
 
     def test_the_seed_shuffles_the_vocabulary_order(self):
