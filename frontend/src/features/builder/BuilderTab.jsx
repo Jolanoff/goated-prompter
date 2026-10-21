@@ -4,7 +4,7 @@ import { orderDisplayPresets, presetDisplayLabel } from "../../presetPresentatio
 import { ui } from "../../ui.js";
 import { taskLabels } from "./options.js";
 import { engineOptionLabel } from "./engineImages.js";
-import { styleChoices } from "../../shared/workflow/options.js";
+import { styleChoices, styleFamily, subStyleChoices } from "../../shared/workflow/options.js";
 import LibraryStatus from "../../shared/workflow/LibraryStatus.jsx";
 
 function BuilderField({ name, label, short, schema, value, choices: override, onChange }) {
@@ -70,7 +70,10 @@ export default function BuilderTab({ settings, inputs, presets, preset, engine, 
                   })))}
                   {field("target_model", "Target model", "Model")}
                   {field("creativity", "Creativity")}
-                  {field("style", "Style", undefined, styleChoices(inputs.style[0], settings.target_model, settings.style))}
+                  <BuilderField name="style" label="Style" schema={inputs.style} value={styleFamily(settings.style)}
+                    choices={styleChoices(inputs.style[0], settings.target_model, settings.style)} onChange={onChange} />
+                  {subStyleChoices(inputs.style[0], settings.style).length > 0 && <BuilderField name="style" label="Sub-style"
+                    schema={inputs.style} value={settings.style} choices={subStyleChoices(inputs.style[0], settings.style)} onChange={onChange} />}
                   {settings.style === "Realistic" && settings.target_model !== "Anima" && field("capture", "Capture")}
                   {field("prompt_length", "Prompt length", "Length", ["Short", "Medium", "Detailed", "Maximum Detail"].map(
                     (value) => ({ value, label: value })))}
