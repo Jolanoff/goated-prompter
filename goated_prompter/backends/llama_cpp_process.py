@@ -9,6 +9,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from types import ModuleType
@@ -21,6 +22,13 @@ from ..director_profiles import resolve_models_directory
 _LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 # The owned server is on loopback; never send its health checks through a system proxy.
 _DIRECT_OPENER = build_opener(ProxyHandler({}))
+# llama-server's own console output, overwritten at each start, so a crash can be explained.
+SERVER_LOG_PATH = Path(tempfile.gettempdir()) / "goated-prompter-llama-server.log"
+_SERVER_LOG_TAIL_LINES = 8
+# Vision encoders with non-causal attention must read one image's tokens in a single physical batch,
+# and an image can use more than image_min_tokens. Unless batch_size is configured, the batch is the larger
+# of this floor and twice the image minimum.
+_MIN_IMAGE_BATCH = 2048
 
 
 def as_bool(value):
@@ -132,6 +140,7 @@ class LlamaCppLaunchConfig:
     temperature: float
     alias: str
     requested_model: str
+    batch_size: int = _MIN_IMAGE_BATCH
 
     @classmethod
     def from_mapping(cls, settings):
@@ -155,6 +164,14 @@ class LlamaCppLaunchConfig:
         gpu_layers = str(settings.get("gpu_layers", "auto")).strip().lower()
         if gpu_layers not in {"auto", "all"}:
             gpu_layers = str(_bounded_int(gpu_layers, "gpu_layers", 0, 999))
+        image_min_tokens = _bounded_int(settings.get("image_min_tokens", 1024), "image_min_tokens", 1, 1048576)
+        batch_size = settings.get("batch_size")
+        batch_size = (max(_MIN_IMAGE_BATCH, 2 * image_min_tokens) if batch_size in (None, "", "auto")
+                      else _bounded_int(batch_size, "batch_size", 1, 1048576))
+        if batch_size < image_min_tokens:
+            raise BackendConfigurationError(
+                "local_llama_cpp batch_size must be at least image_min_tokens so one image fits in a single batch."
+            )
         reasoning = str(settings.get("reasoning", "off")).strip().lower()
         if reasoning not in {"on", "off", "auto"}:
             raise BackendConfigurationError("local_llama_cpp reasoning must be on, off, or auto.")
@@ -166,7 +183,8 @@ class LlamaCppLaunchConfig:
             host=host,
             port=_bounded_int(settings.get("port", 8189), "port", 1024, 65535),
             context_size=_bounded_int(settings.get("context_size", 32768), "context_size", 512, 1048576),
-            image_min_tokens=_bounded_int(settings.get("image_min_tokens", 1024), "image_min_tokens", 1, 1048576),
+            image_min_tokens=image_min_tokens,
+            batch_size=batch_size,
             gpu_layers=gpu_layers,
             reasoning=reasoning,
             keep_model_loaded=as_bool(settings.get("keep_model_loaded", False)),
@@ -182,7 +200,7 @@ class LlamaCppLaunchConfig:
     def key(self):
         return (
             str(self.executable), str(self.model_path), str(self.mmproj_path), self.host,
-            self.port, self.context_size, self.image_min_tokens, self.gpu_layers,
+            self.port, self.context_size, self.image_min_tokens, self.batch_size, self.gpu_layers,
             self.reasoning, self.alias,
         )
 
@@ -191,7 +209,7 @@ class LlamaCppLaunchConfig:
         """Restart-critical identity, excluding the manager-selected runtime port."""
         return (
             str(self.executable), str(self.model_path), str(self.mmproj_path), self.host,
-            self.context_size, self.image_min_tokens, self.gpu_layers,
+            self.context_size, self.image_min_tokens, self.batch_size, self.gpu_layers,
             self.reasoning, self.alias,
         )
 
@@ -208,6 +226,9 @@ class LlamaCppLaunchConfig:
             "--mmproj", str(self.mmproj_path),
             "--ctx-size", str(self.context_size),
             "--image-min-tokens", str(self.image_min_tokens),
+            # Logical and physical batch: an image's tokens must fit in one physical batch.
+            "--batch-size", str(self.batch_size),
+            "--ubatch-size", str(self.batch_size),
             "--n-gpu-layers", self.gpu_layers,
             "--reasoning", self.reasoning,
             "--host", self.host,
@@ -412,11 +433,15 @@ class LlamaCppProcessManager:
         _log(f"Model: {config.model_path}")
         _log(f"mmproj: {_path_text(config.mmproj_path)}")
         _log(f"Command: {_command_text(command)}")
+        try:
+            log = SERVER_LOG_PATH.open("wb")
+        except OSError:
+            log = None
         kwargs = {
             "cwd": str(config.executable.parent),
             "stdin": subprocess.DEVNULL,
-            "stdout": subprocess.DEVNULL,
-            "stderr": subprocess.DEVNULL,
+            "stdout": log or subprocess.DEVNULL,
+            "stderr": subprocess.STDOUT if log else subprocess.DEVNULL,
             "shell": False,
         }
         if os.name == "nt":
@@ -427,6 +452,44 @@ class LlamaCppProcessManager:
             return subprocess.Popen(command, **kwargs)
         except OSError as exc:
             raise BackendGenerationError(f"Could not start local llama.cpp server: {exc}") from exc
+        finally:
+            if log is not None:
+                log.close()  # The server keeps its own handle.
+
+    @staticmethod
+    def failure_report(owned, wait_seconds=3.0):
+        """Explain a dropped connection: whether the server stopped, its exit code and its last log lines."""
+        process = getattr(owned, "process", None)
+        if process is None:
+            return ""
+        try:
+            code = process.wait(timeout=wait_seconds)
+        except subprocess.TimeoutExpired:
+            code = None
+        except (OSError, AttributeError, TypeError):
+            return ""
+        try:
+            with SERVER_LOG_PATH.open("rb") as stream:
+                stream.seek(0, os.SEEK_END)
+                stream.seek(max(0, stream.tell() - 8192))
+                lines = [line.strip() for line in stream.read().decode("utf-8", errors="replace").splitlines()]
+            tail = " | ".join([line for line in lines if line][-_SERVER_LOG_TAIL_LINES:])[-1200:]
+        except OSError:
+            tail = ""
+        if "n_ubatch" in tail:
+            hint = ("The image needed more tokens than the server's batch size. Raise batch_size in the "
+                    "local_llama_cpp engine configuration (or lower image_min_tokens), then retry.")
+        else:
+            hint = ("This usually means it crashed, for example by running out of GPU memory while reading the "
+                    "image. Lower image_min_tokens, context_size or gpu_layers in the engine configuration, or try "
+                    "another model.")
+        if code is None:
+            state = "The llama.cpp server is still running, so the connection was closed without the server stopping."
+        else:
+            shown = f"0x{code & 0xFFFFFFFF:08X}" if code < 0 or code > 255 else str(code)
+            state = f"The llama.cpp server stopped while answering (exit code {shown}). {hint}"
+        log = f" Last server log lines: {tail}" if tail else ""
+        return f"{state}{log} Full server log: {SERVER_LOG_PATH}"
 
     def _wait_until_ready(self, owned):
         deadline = time.monotonic() + owned.config.startup_timeout

@@ -20,6 +20,7 @@
     "context_size": 32768,
     "reasoning": "off",
     "image_min_tokens": 1024,
+    "batch_size": "auto",
     "max_tokens": 4096,
     "gpu_layers": "auto",
     "keep_model_loaded": false,

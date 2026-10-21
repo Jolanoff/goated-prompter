@@ -684,7 +684,7 @@ function App() {
             targets={bootstrap.inputs.target_model[0]} initialTarget={settings.target_model}
             onNotice={setNotice} />}
           {bootstrap && <VocabularyTab visible={view === "vocabulary"} />}
-          {view === "refine" || view === "minimax" || view === "dataset" || view === "library" || view === "vocabulary" ? null : view === "saved" ? (
+          {view === "refine" || view === "minimax" || view === "dataset" || view === "caption" || view === "library" || view === "vocabulary" ? null : view === "saved" ? (
             <SavedPromptsTab records={saved} ready={storageReady} busy={busy}
               deletingDisabled={!storageReady || promptsBusy || dialogBusy}
               addingDisabled={!bootstrap || !storageReady || promptsBusy || dialogBusy || !!saveKind}

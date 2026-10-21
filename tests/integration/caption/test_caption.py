@@ -7,11 +7,13 @@ import json
 from urllib.error import URLError
 
 from PIL import Image
+from PIL.PngImagePlugin import PngInfo
 
 import local_app
 from goated_prompter.api.common import STATE
 from goated_prompter.backends.openai_compatible import OpenAICompatibleBackend
-from goated_prompter.features.caption.routes import caption_endpoint
+from goated_prompter.features.caption.routes import (caption_endpoint, files_endpoint, image_endpoint,
+                                                     metadata_endpoint, save_text_endpoint)
 from goated_prompter.local_jobs import Job
 from tests.helpers import enter_context
 from tests.support.artifacts import task_paths
@@ -83,7 +85,7 @@ class CaptionAdmissionTests(IsolatedAsyncioTestCase):
                 await caption_endpoint(self.request(payload))
         self.assertEqual(self.started, [])
 
-    async def test_refused_or_reset_connection_fails_job_without_trying_every_image(self):
+    async def test_refused_or_reset_connection_stops_job_after_retrying_without_trying_every_image(self):
         Image.new("RGB", (12, 16)).save(self.folder / "second.png")
         await caption_endpoint(self.request(self.payload()))
         kind, request, config, text_only, workflow = self.started[0]
@@ -97,7 +99,8 @@ class CaptionAdmissionTests(IsolatedAsyncioTestCase):
                         self.assertLogs(level="ERROR"):
                     self.state.execute(job, request, config, text_only, workflow)
                 self.assertEqual(job.status, "failed")
-                self.assertEqual(transport.call_count, 1)
+                # Each of the two images is tried once more on a fresh session, then the run stops.
+                self.assertEqual(transport.call_count, 4)
                 self.assertIsNone(job.result)
                 self.assertIn("remaining images", job.error)
                 self.assertEqual(list(self.folder.glob("*.txt")), [])
@@ -115,11 +118,11 @@ class CaptionAdmissionTests(IsolatedAsyncioTestCase):
         response.headers = {}
         failure = URLError(ConnectionResetError("Connection reset"))
         with patch("goated_prompter.features.caption.runner.create_backend", return_value=engine), \
-                patch("goated_prompter.backends.openai_compatible.urlopen", side_effect=[response, failure, failure]) as transport, \
+                patch("goated_prompter.backends.openai_compatible.urlopen", side_effect=[response] + [failure] * 4) as transport, \
                 self.assertLogs(level="ERROR"):
             self.state.execute(job, request, config, text_only, workflow)
         self.assertEqual(job.status, "failed")
-        self.assertEqual(transport.call_count, 2)
+        self.assertEqual(transport.call_count, 5)
         self.assertEqual((self.folder / "a.txt").read_text(encoding="utf-8"), "A blue rectangle.\n")
         self.assertFalse((self.folder / "b.txt").exists())
         self.assertFalse((self.folder / "sample.txt").exists())
@@ -150,7 +153,51 @@ class CaptionAdmissionTests(IsolatedAsyncioTestCase):
                 self.assertLogs(level="ERROR"):
             self.state.execute(job, request, config, text_only, workflow)
         self.assertEqual(job.status, "interrupted")
-        self.assertEqual(transport.call_count, 1)
+        self.assertEqual(transport.call_count, 4)
         self.assertIn("remaining images", job.error)
         self.assertEqual(list(self.folder.glob("*.txt")), [])
         self.assertEqual(job.partial_responses[0]["partial_text"], "An unfinished caption")
+
+
+class CaptionMetadataEndpointTests(IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        _, scratch = task_paths("issue-118", "integration")
+        self.storage = enter_context(self, synthetic_storage(scratch))
+        self.folder = self.storage / "generated"
+        self.folder.mkdir()
+        info = PngInfo()
+        info.add_text("prompt", json.dumps({
+            "6": {"class_type": "CLIPTextEncode", "inputs": {"text": "a lighthouse at dawn"}},
+            "7": {"class_type": "CLIPTextEncode", "inputs": {"text": "blurry"}},
+            "3": {"class_type": "KSampler", "inputs": {"positive": ["6", 0], "negative": ["7", 0], "model": ["4", 0]}},
+        }))
+        Image.new("RGB", (12, 16)).save(self.folder / "sample.png", pnginfo=info)
+
+    def request(self, payload):
+        class Request:
+            json = AsyncMock(return_value=payload)
+        return Request()
+
+    async def test_metadata_endpoint_writes_prompt_without_an_engine(self):
+        response = await metadata_endpoint(self.request({"input": {"folder": str(self.folder), "trigger": "lighthouse"}}))
+        result = json.loads(response.text)
+        self.assertEqual(result["saved"], 1)
+        self.assertEqual((self.folder / "sample.txt").read_text(encoding="utf-8"), "lighthouse, a lighthouse at dawn\n")
+
+    async def test_metadata_endpoint_rejects_unexpected_fields(self):
+        with self.assertRaises(ValueError):
+            await metadata_endpoint(self.request({"input": {"folder": str(self.folder)}, "settings": {}}))
+
+
+    async def test_editor_lists_previews_and_saves_captions(self):
+        listing = json.loads((await files_endpoint(self.request({"input": {"folder": str(self.folder)}}))).text)
+        self.assertEqual([row["image"] for row in listing["files"]], ["sample.png"])
+
+        class Query:
+            query = {"folder": str(self.folder), "name": "sample.png"}
+        preview = await image_endpoint(Query())
+        self.assertTrue(preview.body.startswith(b"\xff\xd8"))
+        saved = await save_text_endpoint(self.request({"input": {"folder": str(self.folder), "image": "sample.png",
+                                                                 "caption": "An edited caption."}}))
+        self.assertEqual(json.loads(saved.text)["caption"], "An edited caption.")
+        self.assertEqual((self.folder / "sample.txt").read_text(encoding="utf-8"), "An edited caption.\n")
