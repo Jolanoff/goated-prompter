@@ -65,7 +65,7 @@ SECTIONS = ("subjects", "actions", "position", "extras", "space", "camera")
 SUBJECT_FIELDS = ("skin", "build", "hair", "detail", "expression")
 KNOWN_SUBJECT_FIELDS = ("expression",)  # a known character's look comes from its name, never the writer
 VOCABULARY_SAMPLE = 40  # entries per category in one batch's prompt: enough choice without drowning the request
-FIT_CHUNK = 80  # selected entries judged in one fitting call
+FIT_CHUNK = 20  # keep coverage tractable across mixed categories; one missing-only recovery per chunk
 FIELDS = SECTIONS
 MAX_FIELD = 2000
 EARLIER = 25  # every earlier image of a run (25 is the largest amount)
@@ -264,7 +264,8 @@ When the activity is general or unspecified, many different acts may be direct f
 People in entries are placeholders and objects are examples; adapt them only while preserving the essential act,
 pose and participant roles. A group entry's remaining roles can be shared by the remaining requested participants.
 For other categories, judge that scene aspect only; a usable location or tool need not describe the whole action.
-Return one JSON object with direct, supporting, optional and conflict arrays of entry numbers, including empty arrays."""
+Return one JSON object with direct, supporting, optional and conflict arrays of entry numbers, including empty arrays.
+Before finishing, check that every supplied number appears exactly once. Do not skip less relevant entries."""
 
 
 def _labels(brief):
@@ -279,16 +280,19 @@ def fitting_instruction(brief, entries):
             "must": brief["must"], "avoid": brief["avoid"], "rules": brief["input"].get("rules", []), "cast": cast,
             "entries": {str(number): entry for number, entry in enumerate(entries, 1)}}
     schema = {"type": "object", "additionalProperties": False, "required": list(RELEVANCE),
-              "properties": {level: {"type": "array", "items": {"type": "integer"}} for level in RELEVANCE}}
+              "properties": {level: {"type": "array", "uniqueItems": True,
+                                      "items": {"type": "integer", "enum": list(range(1, len(entries) + 1))}}
+                             for level in RELEVANCE}}
     return PromptInstruction(system_message=ENTRY_FIT_SYSTEM, user_message=json.dumps(data, ensure_ascii=False, indent=1),
                              model_family=brief["_family"], diagnostic_stage="dataset_v2:entries",
-                             max_tokens=8 * len(entries) + 64, hard_max_tokens=8 * len(entries) + 64,
+                             max_tokens=8 * len(entries) + 128, hard_max_tokens=8 * len(entries) + 128,
                              temperature=0.0, top_p=1.0, json_output=True, json_schema=schema,
                              seed=brief["input"].get("seed"))
 
 
 def fitting_entries(session, brief, groups, checkpoint=lambda: None, progress=print):
-    """{category: {entry: relevance}}. Conflicts and failed chunks never reach the writer; other chunks survive."""
+    """Validated compatible classifications. Missing IDs get one recovery call per chunk, never an assumed level.
+    Malformed/ambiguous responses are rejected; verified judgments from earlier calls and chunks survive."""
     rows = {}
     for group in groups:
         for pack in group["packs"]:
@@ -296,30 +300,44 @@ def fitting_entries(session, brief, groups, checkpoint=lambda: None, progress=pr
                 row = rows.setdefault((group["category"], entry), {"category": group["category"], "text": entry})
                 if pack.get("description") and pack["description"] not in row.get("notes", []):
                     row.setdefault("notes", []).append(pack["description"])
-    entries, fit = list(rows.values()), {}
+    entries, fit, assessed = list(rows.values()), {}, 0
     for start in range(0, len(entries), FIT_CHUNK):
         chunk = entries[start:start + FIT_CHUNK]
-        checkpoint()
-        try:
-            raw = session.generate(fitting_instruction(brief, chunk))
-            result = json.loads(re.sub(r"^\s*```(?:json)?\s*|\s*```\s*$", "", str(raw or "")))
-            if not isinstance(result, dict) or set(result) != set(RELEVANCE):
-                raise ValueError("each relevance list is required")
-            if any(not isinstance(numbers, list) or any(type(number) is not int for number in numbers)
-                   for numbers in result.values()):
-                raise ValueError("relevance lists must contain entry numbers")
-            numbers = [number for values in result.values() for number in values]
-            if sorted(numbers) != list(range(1, len(chunk) + 1)):
-                raise ValueError("each entry must be judged exactly once")
-        except (GoatedPrompterError, ValueError, KeyError, TypeError):
-            progress("Could not judge this vocabulary group; leaving its entries out and keeping the request.")
+        pending = chunk
+        for attempt in range(2):
             checkpoint()
-            continue
-        checkpoint()
-        for level in RELEVANCE[:-1]:
-            for number in sorted(result[level]):
-                row = chunk[number - 1]
-                fit.setdefault(row["category"], {})[row["text"]] = level
+            try:
+                raw = session.generate(fitting_instruction(brief, pending))
+                result = json.loads(re.sub(r"^\s*```(?:json)?\s*|\s*```\s*$", "", str(raw or "")))
+                if not isinstance(result, dict) or set(result) != set(RELEVANCE):
+                    raise ValueError("each relevance list is required")
+                if any(not isinstance(numbers, list) or any(type(number) is not int for number in numbers)
+                       for numbers in result.values()):
+                    raise ValueError("relevance lists must contain entry numbers")
+                numbers = [number for values in result.values() for number in values]
+                if len(set(numbers)) != len(numbers) or any(number < 1 or number > len(pending) for number in numbers):
+                    raise ValueError("entry numbers must be unique and in range")
+            except (GoatedPrompterError, ValueError, KeyError, TypeError):
+                progress("Could not judge this vocabulary group; keeping earlier verified choices.")
+                checkpoint()
+                break
+            checkpoint()
+            for level in RELEVANCE[:-1]:
+                for number in sorted(result[level]):
+                    row = pending[number - 1]
+                    fit.setdefault(row["category"], {})[row["text"]] = level
+            assessed += len(numbers)
+            missing = set(range(1, len(pending) + 1)) - set(numbers)
+            if not missing:
+                pending = []
+                break
+            pending = [row for number, row in enumerate(pending, 1) if number in missing]
+            if attempt == 0:
+                progress(f"Vocabulary judgment incomplete; checking the {len(pending)} missing entries once more.")
+        if pending:
+            progress(f"Leaving {len(pending)} unassessed vocabulary entries out; keeping verified choices.")
+    progress(f"Vocabulary assessed: {assessed}/{len(entries)} entries; "
+             f"{sum(len(values) for values in fit.values())} compatible choices retained.")
     return fit
 
 

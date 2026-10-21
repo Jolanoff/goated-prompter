@@ -583,11 +583,101 @@ class SceneVocabulary(unittest.TestCase):
         brief = {"_family": "qwen", "input": {"request": "work", "seed": 1}, "summary": "",
                  "fixed": "", "must": [], "avoid": [], "characters": []}
         groups = [{"category": "Spaces", "packs": [{"entries": ["one", "two"]}]}]
-        for direct, supporting in (([1], []), ([1, 2, 3], []), ([1, 2], [1]), ([True, 2], []), (["1", 2], [])):
+        for direct, supporting in (([1, 1, 2], []), ([1, 2, 3], []), ([1, 2], [1]), ([0, 1, 2], []),
+                                   ([-1, 1, 2], []), ([True, 2], []), (["1", 2], [])):
             with self.subTest(direct=direct, supporting=supporting):
                 response = json.dumps({"direct": direct, "supporting": supporting, "optional": [], "conflict": []})
                 self.assertEqual(scenes.fitting_entries(Mock(generate=Mock(return_value=response)), brief, groups,
                                                        progress=lambda _: None), {})
+
+    def test_captured_52_of_80_judgment_preserves_verified_entries_and_recovers_only_missing(self):
+        # Exact numbered response from 20261021-161511; synthetic texts keep the regression independent of packs.
+        response = {"direct": [21, 24], "supporting": [18, 30, 56, 57, 58],
+                    "optional": [53, 54, 55, 59, 60, 65, 66],
+                    "conflict": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+                                 19, 20, 22, 23, 25, 26, 27, 28, 29, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42]}
+        classified = {number for numbers in response.values() for number in numbers}
+        self.assertEqual(len(classified), 52)
+        missing = [number for number in range(1, 81) if number not in classified]
+        groups = [{"category": "Spaces", "packs": [{"entries": [f"place {n}" for n in range(1, 81)]}]}]
+        brief = {"_family": "qwen", "input": {"request": "work", "seed": 173}, "summary": "",
+                 "fixed": "", "must": [], "avoid": [], "characters": []}
+        recovery = {"direct": [], "supporting": list(range(1, 29)), "optional": [], "conflict": []}
+        backend = Mock(generate=Mock(side_effect=[json.dumps(response), json.dumps(recovery)]))
+        with patch.object(scenes, "FIT_CHUNK", 80):
+            fit = scenes.fitting_entries(backend, brief, groups, progress=lambda _: None)
+        expected = {f"place {n}": level for level in scenes.RELEVANCE[:-1] for n in response[level]}
+        expected.update({f"place {n}": "supporting" for n in missing})
+        self.assertEqual(fit, {"Spaces": expected})
+        self.assertEqual(backend.generate.call_count, 2)
+        retry = json.loads(backend.generate.call_args_list[1].args[0].user_message)
+        self.assertEqual([row["text"] for row in retry["entries"].values()], [f"place {n}" for n in missing])
+
+    def test_incomplete_recovery_is_bounded_and_unassessed_entries_are_not_promoted(self):
+        groups = [{"category": "Spaces", "packs": [{"entries": ["one", "two", "three", "four"]}]}]
+        brief = {"_family": "qwen", "input": {"request": "work", "seed": 1}, "summary": "",
+                 "fixed": "", "must": [], "avoid": [], "characters": []}
+        backend = Mock(generate=Mock(side_effect=[
+            json.dumps({"direct": [1], "supporting": [], "optional": [], "conflict": [2]}),
+            json.dumps({"direct": [], "supporting": [1], "optional": [], "conflict": []})]))
+        messages = []
+        fit = scenes.fitting_entries(backend, brief, groups, progress=messages.append)
+        self.assertEqual(fit, {"Spaces": {"one": "direct", "three": "supporting"}})
+        self.assertEqual(backend.generate.call_count, 2)
+        self.assertTrue(any("1" in message and "unassessed" in message for message in messages))
+
+    def test_malformed_recovery_preserves_valid_judgments_without_extra_retries(self):
+        groups = [{"category": "Spaces", "packs": [{"entries": ["one", "two"]}]}]
+        brief = {"_family": "qwen", "input": {"request": "work", "seed": 1}, "summary": "",
+                 "fixed": "", "must": [], "avoid": [], "characters": []}
+        for recovery in ("not json", '{"direct":[1],"supporting":[1],"optional":[],"conflict":[]}'):
+            with self.subTest(recovery=recovery):
+                backend = Mock(generate=Mock(side_effect=[
+                    '{"direct":[1],"supporting":[],"optional":[],"conflict":[]}', recovery]))
+                self.assertEqual(scenes.fitting_entries(backend, brief, groups, progress=lambda _: None),
+                                 {"Spaces": {"one": "direct"}})
+                self.assertEqual(backend.generate.call_count, 2)
+
+    def test_small_mixed_chunks_preserve_valid_packs_when_another_chunk_is_malformed(self):
+        groups = [{"category": category, "packs": [
+            {"entries": [f"{category} idea {pack}-{n}" for n in range(10)], "description": f"note {pack}"}
+            for pack in range(2)]} for category in ("Spaces", "Objects & Props", "Actions & Poses")]
+        brief = {"_family": "qwen", "input": {"request": "work", "seed": 173}, "summary": "",
+                 "fixed": "", "must": [], "avoid": [], "characters": []}
+        calls, expected = [], {}
+        def generate(instruction):
+            calls.append(instruction)
+            rows = json.loads(instruction.user_message)["entries"]
+            self.assertLessEqual(len(rows), 20)
+            self.assertEqual(instruction.seed, 173)
+            self.assertTrue(all(row.get("notes") for row in rows.values()))
+            if len(calls) == 2:
+                return "not json"
+            result = {level: [] for level in scenes.RELEVANCE}
+            for number, row in rows.items():
+                level = scenes.RELEVANCE[(int(number) - 1) % 4]
+                result[level].append(int(number))
+                if level != "conflict":
+                    expected.setdefault(row["category"], {})[row["text"]] = level
+            return json.dumps(result)
+        messages = []
+        fit = scenes.fitting_entries(Mock(generate=Mock(side_effect=generate)), brief, groups, progress=messages.append)
+        self.assertEqual(fit, expected)
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(set(fit), {"Spaces", "Actions & Poses"})
+        self.assertEqual(sum(map(len, fit.values())), 30)
+        self.assertIn("Vocabulary assessed: 40/60 entries; 30 compatible choices retained.", messages)
+
+    def test_complete_small_chunk_needs_no_recovery_and_reports_full_coverage(self):
+        catalog = self.relevance_catalog()
+        brief = self.brief("A team stabilizes a bridge", [], amount=10)
+        brief["_family"] = "qwen"
+        groups = scenes.selected_vocabulary(catalog, {"packs": [pack["id"] for pack in catalog["packs"]]})
+        messages = []
+        fit = scenes.fitting_entries(self.backend, brief, groups, progress=messages.append)
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(set(fit), {"Actions & Poses", "Spaces", "Objects & Props"})
+        self.assertIn("Vocabulary assessed: 14/14 entries; 11 compatible choices retained.", messages)
 
     def test_failed_chunk_does_not_restore_conflicts_or_erase_successful_chunks(self):
         groups = [{"category": "Spaces", "packs": [{"entries": ["one", "two", "three", "four", "five"]}]}]
