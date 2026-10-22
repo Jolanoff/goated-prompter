@@ -1,0 +1,89 @@
+"""Composing one batch: asking again for the images still missing."""
+
+import json
+import re
+
+from .....backends.recovery import GenerationRecovery, RunawayRecoveryError
+
+from .checks import _repeats, _summary, retire_fields, scene_errors, unnamed_people
+from .entries import _entry_key
+from .request import _labels, compose_instruction
+from .settings import ROUNDS, SECTIONS
+
+
+def _parse(raw):
+    text = re.sub(r"^\s*```(?:json)?\s*|\s*```\s*$", "", str(raw or ""))
+    value = json.loads(text)
+    if not isinstance(value, dict) or set(value) != {"scenes"} or not isinstance(value["scenes"], list):
+        raise ValueError('the answer must be {"scenes": [...]}')
+    return value["scenes"]
+
+
+def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progress, on_slot):
+    """Compose one batch, asking again for the images still missing: ({number: scene}, {number: failure}).
+    plan: {"vocabulary": section, "entries": {key: entry} or None, "cap", "used": {entry: images}, "dealt": {slot: entry}}."""
+    labels, avoid = _labels(brief), brief["_avoid"]
+    entries, cap, used = plan["entries"], plan["cap"], plan["used"]
+    extra = ("entry",) if entries else ()
+    scenes, reasons, tries = {}, {number: [] for number in numbers}, {number: 0 for number in numbers}
+    failed = {}
+    recovery = GenerationRecovery("dataset_v2:scenes", numbers, progress=progress)
+    for round_ in range(1, ROUNDS + 1):
+        todo = [number for number in numbers if number not in scenes and number not in failed]
+        if not todo or recovery.exhausted:
+            break
+        recovery.items = tuple(todo)
+        progress(f"Composing scene{'s' if len(todo) > 1 else ''} {', '.join(map(str, todo))}"
+                 + (" again: " + "; ".join(f"{number}: {reasons[number][0][:70]}" for number in todo if reasons[number])
+                    if round_ > 1 else "") + "...")
+        images = [{"image": number, **({"input": inputs[number]} if inputs[number] else {}),
+                   **({"entry": plan["dealt"][number]} if plan.get("dealt") else {}),
+                   **({"suggested": plan["hands"][number]} if (plan.get("hands") or {}).get(number) else {})}
+                  for number in todo]
+        errors = sorted({f"image {number}: {reason}" for number in todo for reason in reasons[number]})
+        prompt = compose_instruction(brief, images, earlier + [_summary(scenes[n]) for n in sorted(scenes)], errors,
+                                     plan["vocabulary"], cap if entries else None, used if entries else None)
+        checkpoint()
+        before = recovery.attempts
+        try:
+            raw = recovery.generate(session, prompt, checkpoint)
+            answer, error = _parse(raw), None
+        except RunawayRecoveryError as exc:
+            raw, answer, error = "", None, str(exc)
+        except ValueError as exc:  # json.JSONDecodeError is a ValueError
+            answer, error = None, f"Return one valid JSON object ({exc})."
+        checkpoint()
+        for number, scene in zip(todo, (answer or []) + [None] * len(todo)):
+            scene = retire_fields(scene)
+            tries[number] += max(1, recovery.attempts - before)
+            problems = ([error] if error else ["an answer was missing"] if scene is None
+                        else scene_errors(scene, labels, avoid, extra, brief["_known"]))
+            entry = entries.get(_entry_key(scene["entry"])) if entries and not problems else None
+            if not problems and round_ < ROUNDS:  # the last round accepts a repeat rather than lose the image
+                if any(_repeats(scene, item, labels) for item in [*earlier, *scenes.values()]):
+                    problems = ["it repeats the place and the camera, arrangement or signs of an earlier image; "
+                                "write a different scene"]
+                elif missing := unnamed_people(scene, labels):
+                    problems = [f"its actions do not name {', '.join(missing)}: name every person by their character "
+                                "label and never leave a placeholder person from an entry"]
+                elif entries and entry is None:
+                    problems = ['its "entry" must be copied word for word from the Actions & Poses vocabulary']
+                elif entries and used.get(entry, 0) >= cap:
+                    problems = [f'the entry "{entry}" is already used by {used[entry]} images; build this scene on '
+                                "another entry that fits"]
+            if problems:
+                reasons[number] = problems
+                continue
+            finished = {"slot": number, **{key: scene[key] for key in SECTIONS}}
+            if not labels:
+                finished["position"] = {}
+            if entries:
+                finished["entry"] = entry or " ".join(scene["entry"].split())
+                used[finished["entry"]] = used.get(finished["entry"], 0) + 1
+            scenes[number] = finished
+            on_slot("description", number, finished)
+    recovery.finish("succeeded" if len(scenes) == len(numbers) else "failed")
+    for number in numbers:
+        if number not in scenes and number not in failed:
+            failed[number] = {"tries": tries[number], "reasons": reasons[number] or ["no usable scene was written"]}
+    return scenes, failed

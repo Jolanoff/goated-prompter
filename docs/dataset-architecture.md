@@ -1,7 +1,7 @@
 # Dataset architecture
 
 Dataset produces prompts, not images. The rebuilt workflow uses
-`features/dataset/v2/understanding.py`, `scenes.py` and `prompts.py`:
+`features/dataset/v2/understanding.py`, the `scenes/` package and `prompts.py`:
 Understanding → source-bound human confirmation → the scene writer (with any selected vocabulary) → final Builder prompts.
 Scenes-only generation stops before Builder. This is the only Dataset workflow; the
 earlier pipeline (ideas with scenes, per-scene actions, Continue, saved scene plans, durable
@@ -43,7 +43,7 @@ number) to exactly one person, the character's `triggers` (code checks it; a cha
 and the review shows the link. Each character carries `known`: its looks come from its name or an
 exact-text character trigger, so no step invents them. Version 9 to 12 briefs in saved runs stay readable.
 
-Scenes (`v2/scenes.py`): the scene writer (`dataset_v2:scenes`, one call per batch of up to ten images) receives the
+Scenes (`v2/scenes/`): the scene writer (`dataset_v2:scenes`, one call per batch of up to ten images) receives the
 USER REQUEST, the EXISTING APPROVED REQUIREMENTS (rules, Understanding, style, and the capture when the style is Realistic) and, only when packs are selected, a
 SELECTED VOCABULARY section: just the categories that have a selected pack, each with its Core instruction and the
 entries of those packs (merged per category and shuffled for every batch by a generator seeded with the run's seed),
@@ -127,7 +127,7 @@ happens, never what it is: an entry showing a different act does not fit.
 | Source-bound, expiring, single-use approval tickets | `v2/tickets.py` |
 | Guided input assignment | `v2/assignments.py` |
 | Vocabulary categories, pack discovery and the vocabulary prompt section | `features/vocabulary/catalog.py` |
-| Scene composition | `v2/scenes.py` |
+| Scene composition | `v2/scenes/` (`texts.py` instructions, `request.py` what the writer is asked, `entries.py` vocabulary dealing and fitting, `checks.py` scene checks, `writer.py` batch and retries, `settings.py` limits; `write_scenes` in `__init__.py`) |
 | Final prompts through the Builder | `v2/prompts.py` |
 
 ## Seeds

@@ -1,4 +1,4 @@
-"""Reading the Dataset scene writer's user message back in scripted tests (v2/scenes.py compose_message)."""
+"""Reading the Dataset scene writer's user message back in scripted tests (v2/scenes/request.py compose_message)."""
 
 import json
 
