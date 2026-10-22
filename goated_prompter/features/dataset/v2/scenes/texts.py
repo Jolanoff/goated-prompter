@@ -169,6 +169,10 @@ SFW_RULE = "- This dataset is not adult content: no nudity and nothing explicit.
 NO_PEOPLE_RULE = "- There are no people: describe how the subject is placed instead of a pose."
 
 
+# Live runs' first answers copied an entry's "one man", "another" and "the others" for a group of numbered people, so
+# every scene was asked again; the retries, which list the labels last, were right. So the labels come last here too.
+LABELS_RULE = ("In every image, the actions name each of {labels} by that label, also whoever waits, holds or watches; "
+               "never \"one man\", \"another\", \"the others\" or \"the men\", even when the entry says so.")
 GUIDED_RULE = "- An image's input fixes its action: keep it, and build the rest of the scene around it."
 
 

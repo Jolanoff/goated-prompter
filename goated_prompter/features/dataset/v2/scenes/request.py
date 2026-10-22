@@ -11,7 +11,7 @@ from ..triggers import brief_triggers, owner, run_style
 
 from .entries import entry_cap
 from .settings import FIELDS, KNOWN_SUBJECT_FIELDS, MAX_FIELD, SUBJECT_FIELDS
-from .texts import COMPOSE_SYSTEM, ENTRY_RULE, GUIDED_RULE, NO_PEOPLE_RULE, NSFW_RULE, SFW_RULE, VOCABULARY_RULES
+from .texts import COMPOSE_SYSTEM, ENTRY_RULE, GUIDED_RULE, LABELS_RULE, NO_PEOPLE_RULE, NSFW_RULE, SFW_RULE, VOCABULARY_RULES
 
 
 def _labels(brief):
@@ -65,6 +65,8 @@ def _system(brief, errors, vocabulary="", entry_cap=None):
     if entry_cap:
         system += "\n\n" + ENTRY_RULE.format(cap=entry_cap)
     system += "\n\n" + creativity_adapter(brief["settings"]["creativity"] or "Balanced")
+    if len(labels := _labels(brief)) > 1:  # last, where the retries that fixed it put the labels
+        system += "\n\n" + LABELS_RULE.format(labels=", ".join(labels[:-1]) + " and " + labels[-1])
     if errors:
         system += "\n\nYour previous answer broke these rules. Answer again correctly:\n- " + "\n- ".join(errors)
     return system

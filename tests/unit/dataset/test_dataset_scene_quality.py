@@ -129,6 +129,22 @@ class SceneVariety(Harness):
         copy = self.scene("hotel room", "low angle, man 1's head and man 2's torso are in view", "man 2 sits")
         self.assertIn("camera", scenes.checks.repeated_parts(copy, first, labels), "the same viewpoint is still a repeat")
 
+    def test_the_first_request_lists_this_runs_labels(self):
+        # A live run's first answers wrote "one man" and "the others" for numbered people and were all asked again.
+        self.write()
+        system = " ".join(self.composer()[0].system_message.split())
+        self.assertIn("In every image, the actions name each of man 1 and man 2 by that label", system)
+        self.assertTrue(system.endswith('even when the entry says so.'), "last, where the retries put it")
+
+    def test_the_log_says_why_an_image_is_asked_again_and_what_it_said(self):
+        from goated_prompter.features.dataset.v2.scenes.writer import rejected_note
+        scene = {**self.scene("bedroom"), "actions": "the first man   kneels"}
+        self.assertEqual(rejected_note(3, "its actions do not name man 2", scene),
+                         'Image 3 is asked again: its actions do not name man 2. Its actions were: "the first man kneels"')
+        self.assertEqual(rejected_note(4, "an answer was missing", None), "Image 4 is asked again: an answer was missing.")
+        long = {**scene, "actions": "x" * 400}
+        self.assertTrue(rejected_note(5, "reason", long).endswith('..."'))
+
     def test_a_repeat_names_the_image_and_the_parts_it_reuses(self):
         first = self.scene("bedroom", "wide shot", "man 2 rides man 1")
         same = self.scene("bedroom", "wide shot", "man 2 rides man 1")

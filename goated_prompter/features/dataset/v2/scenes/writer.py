@@ -19,6 +19,14 @@ def _parse(raw):
     return value["scenes"]
 
 
+def rejected_note(number, reason, scene):
+    """One log line saying why an image is asked again and what its answer's actions said, so a run's log shows what
+    the writer wrote instead (the run's output never changes)."""
+    actions = " ".join(str(scene.get("actions") or "").split()) if isinstance(scene, dict) else ""
+    said = f' Its actions were: "{actions[:300]}{"..." if len(actions) > 300 else ""}"' if actions else ""
+    return f"Image {number} is asked again: {reason}.{said}"
+
+
 def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progress, on_slot):
     """Compose one batch, asking again for the images still missing: ({number: scene}, {number: failure}).
     plan: {"vocabulary": section, "entries": {key: entry} or None, "cap", "used": {entry: images}, "dealt": {slot: entry}}."""
@@ -73,6 +81,7 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
                                 "another entry that fits"]
             if problems:
                 reasons[number] = problems
+                progress(rejected_note(number, problems[0], scene))
                 continue
             finished = {"slot": number, **{key: scene[key] for key in SECTIONS}}
             if not labels:
