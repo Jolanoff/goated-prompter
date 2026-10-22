@@ -53,7 +53,6 @@
 .vocabulary-library-expand { margin-top: 6px; flex-shrink: 0; }
 .vocabulary-library-related { padding-top: 10px; flex-shrink: 0; }
 .vocabulary-library-section-heading h4 { display: inline-flex; align-items: center; gap: 12px; }
-.vocabulary-library-related > p { font-size: 12px; color: var(--muted); margin: 2px 0 6px; }
 .vocabulary-library-related-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; list-style: none; margin: 0; padding: 0; }
 .vocabulary-library-related-list li { display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); border-radius: 10px; padding: 6px; background: var(--surface); min-width: 0; }
 .vocabulary-library-related-open { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; padding: 0; background: none; border: 0; color: var(--ink); font: inherit; text-align: left; }
@@ -79,8 +78,7 @@
 .vocabulary-library-selection-empty { flex: 1; margin: 0; font-size: 12px; color: var(--muted); }
 .vocabulary-library-actions { display: flex; justify-content: flex-end; gap: 10px; flex-shrink: 0; }
 .vocabulary-library-actions .button { min-height: 40px; padding-inline: 20px; border-radius: 11px; margin-top: 0; font-size: 14px; }
-.vocabulary-library-preview:has(.vocabulary-library-links) { overflow-y: auto; }
-.vocabulary-library-links { margin-bottom: 10px; }
+.vocabulary-library-preview:has(.vocabulary-library-links .vocabulary-library-related-list) { overflow-y: auto; }
 .vocabulary-library-links .vocabulary-library-related-list { margin-top: 6px; max-height: 96px; overflow-y: auto; }
 .vocabulary-library-missing { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 4px; max-height: 72px; overflow-y: auto; font-size: 12px; color: var(--muted); }
 .vocabulary-library-missing li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; overflow-wrap: anywhere; }
@@ -106,7 +104,6 @@
   .vocabulary-library-entry-list li { font-size: 12px; padding: 4px 6px; }
   .vocabulary-library-expand { margin-top: 4px; min-height: 24px; font-size: 12px; }
   .vocabulary-library-related { padding-top: 6px; }
-  .vocabulary-library-related > p { display: none; }
   .vocabulary-library-related-list { margin-top: 4px; }
   .vocabulary-library-related-open strong { white-space: nowrap; text-overflow: ellipsis; overflow: hidden; font-size: 12px; }
   .vocabulary-library-related-list li { padding: 5px; }

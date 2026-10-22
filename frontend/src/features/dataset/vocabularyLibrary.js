@@ -6,8 +6,3 @@ export function sortPacks(packs, sort = "name") {
     return byName(a, b);
   });
 }
-
-export function relatedPacks(packs, preview, limit = 4) {
-  if (!preview) return [];
-  return sortPacks(packs.filter((pack) => pack.id !== preview.id && pack.category === preview.category)).slice(0, limit);
-}
