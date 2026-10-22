@@ -160,7 +160,12 @@ NSFW_RULE = ("- This dataset is adult content: nudity and sex are allowed wherev
              "touching, undressing or foreplay alone never stand in for it unless the request asks for them. The "
              "actions then name the act plainly: which body part of whom goes where and in what state, together "
              "with the position's usual name, and every position agrees with that act. When the request asks for a "
-             "role, status, display or mood, show that. Never add nudity, acts or kinks the request does not call for.")
+             "role, status, display or mood, show that. Never add nudity, acts or kinks the request does not call for.\n"
+             "- Each person's subjects also have genitals: what that person's genitals look like (size, shape and state), "
+             "in plain anatomical words, the same in every image for the same person when fixed keeps them. Each "
+             "position also says where that person's genitals are and what they touch: inside someone, in someone's "
+             "hand or mouth, pressed against a body or a surface, or hanging free, so they are always part of their "
+             "owner's body. A mouth on someone names the tongue or lips it uses, never the genitals.")
 
 
 SFW_RULE = "- This dataset is not adult content: no nudity and nothing explicit."

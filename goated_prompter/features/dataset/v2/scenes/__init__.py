@@ -51,7 +51,7 @@ from ..understanding import validate_brief
 
 from .checks import _summary, avoid_patterns, retire_fields, scene_errors
 from .entries import _entry_key, _only, _shuffled, cast_size, deal_entries, deal_hands, entry_cap, fit_cast, fitting_entries, requested_entries, requested_words
-from .request import _system, compose_instruction, compose_message, known_labels, slot_inputs, trigger_notes, varied_labels
+from .request import _system, compose_instruction, compose_message, known_labels, slot_inputs, subject_fields, trigger_notes, varied_labels
 from .settings import ACTIONS_CATEGORY, BATCH, EARLIER, KNOWN_SUBJECT_FIELDS, ROUNDS, SECTIONS, SUBJECT_FIELDS, VOCABULARY_SAMPLE
 from .slots import only_fillable
 from .texts import COMPOSE_SYSTEM, ENTRY_FIT_SYSTEM, ENTRY_RULE, GUIDED_RULE, NO_PEOPLE_RULE, NSFW_RULE, SFW_RULE, VOCABULARY_RULES

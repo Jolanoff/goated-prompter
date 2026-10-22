@@ -52,9 +52,10 @@ def retire_fields(scene):
     return result
 
 
-def scene_errors(scene, labels, avoid, extra=(), known=frozenset()):
+def scene_errors(scene, labels, avoid, extra=(), known=frozenset(), subject_fields=SUBJECT_FIELDS):
     """Why one composed scene is unusable as an answer; [] when its shape is right. extra: further text fields the
-    answer must have (the Actions & Poses "entry"); known: labels of known characters (expression only)."""
+    answer must have (the Actions & Poses "entry"); known: labels of known characters (expression only);
+    subject_fields: what everyone else's subjects need (request.subject_fields)."""
     scene = retire_fields(scene)
     plain = [key for key in SECTIONS if key not in ("subjects", "position")]
     if (not isinstance(scene, dict) or set(scene) != set(FIELDS) | set(extra)
@@ -62,9 +63,9 @@ def scene_errors(scene, labels, avoid, extra=(), known=frozenset()):
             or not _filled({key: scene[key] for key in plain}, plain)
             or not (_filled(scene["position"], labels) if labels else scene["position"] in ({}, None))
             or not isinstance(scene["subjects"], dict) or set(scene["subjects"]) != set(labels)
-            or not all(_filled(person, KNOWN_SUBJECT_FIELDS if label in known else SUBJECT_FIELDS)
+            or not all(_filled(person, KNOWN_SUBJECT_FIELDS if label in known else subject_fields)
                        for label, person in scene["subjects"].items())):
-        fields = f"subjects each with {', '.join(SUBJECT_FIELDS)}"
+        fields = f"subjects each with {', '.join(subject_fields)}"
         if known:
             fields += f" (known characters {', '.join(sorted(known))} only with {', '.join(KNOWN_SUBJECT_FIELDS)})"
         return [f"each scene needs {', '.join(FIELDS)}; subjects and position have exactly "

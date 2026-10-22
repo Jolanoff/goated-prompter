@@ -16,6 +16,9 @@ SECTIONS = ("subjects", "actions", "position", "extras", "space", "camera")
 SUBJECT_FIELDS = ("skin", "build", "hair", "detail", "expression")
 
 
+# Adult datasets also describe each person's genitals, so the final prompt has them as data for every person whose
+# genitals the camera sees (a rule alone left most of them undescribed) and never draws one without its owner.
+ADULT_SUBJECT_FIELDS = ("genitals",)
 KNOWN_SUBJECT_FIELDS = ("expression",)  # a known character's look comes from its name, never the writer
 
 

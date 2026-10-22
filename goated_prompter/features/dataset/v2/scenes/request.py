@@ -10,7 +10,7 @@ from ..assignments import dataset_assignments
 from ..triggers import brief_triggers, owner, run_style
 
 from .entries import entry_cap
-from .settings import FIELDS, KNOWN_SUBJECT_FIELDS, MAX_FIELD, SUBJECT_FIELDS
+from .settings import ADULT_SUBJECT_FIELDS, FIELDS, KNOWN_SUBJECT_FIELDS, MAX_FIELD, SUBJECT_FIELDS
 from .texts import COMPOSE_SYSTEM, ENTRY_RULE, GUIDED_RULE, LABELS_RULE, NO_PEOPLE_RULE, NSFW_RULE, SFW_RULE, VOCABULARY_RULES
 
 
@@ -37,7 +37,11 @@ def known_labels(brief):
 
 
 def subject_fields(brief, label):
-    return KNOWN_SUBJECT_FIELDS if label in known_labels(brief) else SUBJECT_FIELDS
+    """The subject fields one person's scene needs: a known character only its expression; in an adult dataset
+    everyone else also their genitals."""
+    if label in known_labels(brief):
+        return KNOWN_SUBJECT_FIELDS
+    return SUBJECT_FIELDS + (ADULT_SUBJECT_FIELDS if brief["path"] == "nsfw_character" else ())
 
 
 def guided_assignments(brief):
@@ -129,7 +133,7 @@ def compose_instruction(brief, images, earlier=(), errors=(), vocabulary="", ent
                              model_family=brief["_family"], diagnostic_stage="dataset_v2:scenes",
                              max_tokens=per_image * count, hard_max_tokens=per_image * count,
                              stream_character_limit=per_image * 4 * count,
-                             repetition_protected_terms=tuple([*labels, *FIELDS, *SUBJECT_FIELDS]),
+                             repetition_protected_terms=tuple([*labels, *FIELDS, *SUBJECT_FIELDS, *ADULT_SUBJECT_FIELDS]),
                              temperature=creativity_temperature(creativity, scene=True), top_p=.95,
                              json_output=True, json_schema=schema, seed=brief["input"].get("seed"))
 

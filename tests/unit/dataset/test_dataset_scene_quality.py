@@ -13,7 +13,8 @@ from goated_prompter.features.dataset.v2.draft import default_dataset_draft
 from tests.support.dataset_scenes import composer_user
 
 MEN = [{"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 2}]
-LOOK = {"skin": "tan", "build": "athletic", "hair": "short dark hair", "detail": "stubble", "expression": "a soft smile", "clothing": "no clothing"}
+LOOK = {"skin": "tan", "build": "athletic", "hair": "short dark hair", "detail": "stubble", "expression": "a soft smile",
+        "genitals": "average size, relaxed", "clothing": "no clothing"}
 
 
 class Harness(unittest.TestCase):
@@ -69,6 +70,19 @@ class SceneVariety(Harness):
         person = self.composer()[0].json_schema["properties"]["scenes"]["items"]["properties"]["subjects"]["properties"]["man 1"]
         self.assertIn("expression", person["required"])
         self.assertIn("expression (their face in this moment)", self.composer()[0].system_message)
+
+    def test_an_adult_dataset_describes_each_persons_genitals_and_where_they_are(self):
+        # Live runs named genitals only inside the action: most were never described, and some were drawn without
+        # their owner or in place of a tongue.
+        self.write()
+        person = self.composer()[0].json_schema["properties"]["scenes"]["items"]["properties"]["subjects"]["properties"]["man 1"]
+        adult = self.brief["path"] == "nsfw_character"
+        (self.assertIn if adult else self.assertNotIn)("genitals", person["required"])
+        system = " ".join(self.composer()[0].system_message.split())
+        (self.assertIn if adult else self.assertNotIn)("Each position also says where that person's genitals are", system)
+        sfw = {**self.brief, "path": "character"}
+        self.assertNotIn("genitals", scenes.subject_fields(sfw, "man 1"), "never outside an adult dataset")
+        self.assertEqual(scenes.subject_fields({**self.brief, "path": "nsfw_character"}, "man 1")[-1], "genitals")
 
     def test_only_what_the_camera_can_see_is_described(self):
         # A body part turned away, hidden by another body or inside someone is never written as visible.
