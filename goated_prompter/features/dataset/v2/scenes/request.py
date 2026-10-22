@@ -10,8 +10,8 @@ from ..assignments import dataset_assignments
 from ..triggers import brief_triggers, owner, run_style
 
 from .entries import entry_cap
-from .settings import ADULT_SUBJECT_FIELDS, FIELDS, KNOWN_SUBJECT_FIELDS, MAX_FIELD, SUBJECT_FIELDS
-from .texts import COMPOSE_SYSTEM, ENTRY_RULE, GUIDED_RULE, LABELS_RULE, NO_PEOPLE_RULE, NSFW_RULE, SFW_RULE, VOCABULARY_RULES
+from .settings import ADULT_SUBJECT_FIELDS, FACES, FIELDS, KNOWN_SUBJECT_FIELDS, MAX_FIELD, SHOWS, SUBJECT_FIELDS
+from .texts import COMPOSE_SYSTEM, ENTRY_RULE, FRAME_RULE, GUIDED_RULE, LABELS_RULE, NO_PEOPLE_RULE, NSFW_RULE, SFW_RULE, VOCABULARY_RULES
 
 
 def _labels(brief):
@@ -69,6 +69,8 @@ def _system(brief, errors, vocabulary="", entry_cap=None):
     if entry_cap:
         system += "\n\n" + ENTRY_RULE.format(cap=entry_cap)
     system += "\n\n" + creativity_adapter(brief["settings"]["creativity"] or "Balanced")
+    if known := known_labels(brief):
+        system += "\n\n" + FRAME_RULE.format(known=", ".join(sorted(known)))
     if len(labels := _labels(brief)) > 1:  # last, where the retries that fixed it put the labels
         system += "\n\n" + LABELS_RULE.format(labels=", ".join(labels[:-1]) + " and " + labels[-1])
     if errors:
@@ -119,9 +121,13 @@ def compose_instruction(brief, images, earlier=(), errors=(), vocabulary="", ent
                 "properties": {field: text for field in fields}}
     subjects = {"type": "object", "additionalProperties": False, "required": labels,
                 "properties": {label: person(label) for label in labels}}
-    fields = [*FIELDS, "entry"] if entry_cap else list(FIELDS)
+    framed = {"type": "object", "additionalProperties": False, "required": ["shows", "face"],
+              "properties": {"shows": {"type": "string", "enum": list(SHOWS)}, "face": {"type": "string", "enum": list(FACES)}}}
+    frame = {"type": "object", "additionalProperties": False, "required": labels,
+             "properties": {label: framed for label in labels}}
+    fields = [*FIELDS, *(["frame"] if known_labels(brief) else []), *(["entry"] if entry_cap else [])]
     item = {"type": "object", "additionalProperties": False, "required": fields,
-            "properties": {field: subjects if field == "subjects" else _keyed(labels, text)
+            "properties": {field: subjects if field == "subjects" else frame if field == "frame" else _keyed(labels, text)
                            if field == "position" else text for field in fields}}
     count = len(images)
     schema = {"type": "object", "additionalProperties": False, "required": ["scenes"],

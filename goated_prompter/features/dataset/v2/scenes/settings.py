@@ -11,6 +11,14 @@ ROUNDS = 3
 # The signs (extras) are written right after the people and their pose, before the place and camera: written last, a
 # model fills them with leftover atmosphere.
 SECTIONS = ("subjects", "actions", "position", "extras", "space", "camera")
+# A cast with known characters (exact-text character triggers) also has "frame": how much of each person the camera
+# shows ("shows", widest first) and whether their face is visible ("face"), data the writer fills for every person so a
+# known character never drops out of the image while the action stays (checks.framing_problems). Each image is dealt
+# the frame its known characters get (entries.deal_frames), so the set spreads over full body, head to knees and head
+# to hips instead of the tight crops a writer picks on its own.
+SHOWS = ("full body", "head to knees", "head to hips", "head and shoulders")
+FACES = ("visible", "hidden")
+AT_LEAST_HIPS = SHOWS[:3]
 
 
 SUBJECT_FIELDS = ("skin", "build", "hair", "detail", "expression")

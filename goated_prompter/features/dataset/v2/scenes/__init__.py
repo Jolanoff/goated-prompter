@@ -50,7 +50,7 @@ from ....vocabulary.catalog import catalog_for, selected_vocabulary, record as s
 from ..understanding import validate_brief
 
 from .checks import _summary, avoid_patterns, retire_fields, scene_errors
-from .entries import _entry_key, _only, _shuffled, cast_size, deal_entries, deal_hands, entry_cap, fit_cast, fitting_entries, requested_entries, requested_words
+from .entries import _entry_key, deal_frames, _only, _shuffled, cast_size, deal_entries, deal_hands, entry_cap, fit_cast, fitting_entries, requested_entries, requested_words
 from .request import _system, compose_instruction, compose_message, known_labels, slot_inputs, subject_fields, trigger_notes, varied_labels
 from .settings import ACTIONS_CATEGORY, BATCH, EARLIER, KNOWN_SUBJECT_FIELDS, ROUNDS, SECTIONS, SUBJECT_FIELDS, VOCABULARY_SAMPLE
 from .slots import only_fillable
@@ -92,6 +92,8 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
         plan = {"entries": {_entry_key(entry): entry for entry in action_entries} or None,
                 "cap": entry_cap(action_entries, total), "used": {}, "dealt": deal_entries(action_entries, total, rng),
                 "hands": deal_hands(groups, total, rng, words=requested_words(brief))}
+        if brief["_known"]:  # dealt last, so runs without known characters deal exactly as before
+            plan["frames"] = deal_frames(total, rng)
         for start in range(0, total, BATCH):
             numbers = list(range(start + 1, min(total, start + BATCH) + 1))
             earlier = [_summary(scenes[number]) for number in sorted(scenes)][-EARLIER:]

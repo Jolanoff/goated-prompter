@@ -207,7 +207,9 @@ class LivePipeline(unittest.TestCase):
             return json.dumps({"scenes": [{"subjects": {"dancer 1": person, "dancer 2": person},
                                            "position": {"dancer 1": "left", "dancer 2": "right"},
                                            "actions": "dancer 1 lifts dancer 2", "space": f"studio {row['image']}",
-                                           "camera": "wide", "extras": "a mirror"} for row in images]})
+                                           "camera": "wide", "extras": "a mirror",
+                                           "frame": {label: {"shows": "full body", "face": "visible"}
+                                                     for label in ("dancer 1", "dancer 2")}} for row in images]})
         return "Two dancers rehearse a lift in a bright studio."
 
     def test_a_dataset_case_returns_the_brief_scenes_and_prompts(self):

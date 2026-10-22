@@ -53,7 +53,7 @@ class AdultDatasetTests(unittest.TestCase):
             "position": {label: f"{label} sits on the bench, feet on the floor, holding a red ribbon in the right hand."
                          for label in labels}, "actions": f"{' and '.join(labels)} display their red ribbons without changing places.",
             "space": "A studio with a wide bench", "lighting": "daylight", "mood": "calm", "camera": "wide shot",
-            "extras": "A plain wall"}
+            "extras": "A plain wall", "frame": {label: {"shows": "full body", "face": "visible"} for label in labels}}
         return data
 
     def understand(self, data):

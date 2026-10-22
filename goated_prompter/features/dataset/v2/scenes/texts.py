@@ -165,7 +165,8 @@ NSFW_RULE = ("- This dataset is adult content: nudity and sex are allowed wherev
              "in plain anatomical words, the same in every image for the same person when fixed keeps them. Each "
              "position also says where that person's genitals are and what they touch: inside someone, in someone's "
              "hand or mouth, pressed against a body or a surface, or hanging free, so they are always part of their "
-             "owner's body. A mouth on someone names the tongue or lips it uses, never the genitals.")
+             "owner's body. A mouth on someone names the tongue or lips it uses, never the genitals. Everyone who "
+             "takes part is framed at least head to hips, so their genitals never appear without their body.")
 
 
 SFW_RULE = "- This dataset is not adult content: no nudity and nothing explicit."
@@ -176,6 +177,14 @@ NO_PEOPLE_RULE = "- There are no people: describe how the subject is placed inst
 
 # Live runs' first answers copied an entry's "one man", "another" and "the others" for a group of numbered people, so
 # every scene was asked again; the retries, which list the labels last, were right. So the labels come last here too.
+# Only for a cast with known characters: the frame field and the frame dealt to each image.
+FRAME_RULE = """FRAMES
+Each scene also has frame: one entry per character label, chosen together with the camera: "shows" is how much of
+that person the camera shows (full body, head to knees, head to hips or head and shoulders) and "face" whether their
+face is visible or hidden. Every body part the action uses is inside each person's frame: contact at the feet or legs
+needs head to knees or full body. Each image in IMAGES names the frame its known characters ({known}) get ("frame"):
+show each of them at that frame, wider only when the action needs it, always with the face visible, and arrange the
+bodies and the viewpoint so this is possible."""
 LABELS_RULE = ("In every image, the actions name each of {labels} by that label, also whoever waits, holds or watches; "
                "never \"one man\", \"another\", \"the others\" or \"the men\", even when the entry says so.")
 GUIDED_RULE = "- An image's input fixes its action: keep it, and build the rest of the scene around it."
