@@ -24,6 +24,7 @@ CHECKS = (
     ("prompt_similarity", "how alike the prompts are (a set's images; a Builder case's seeds), 0 to 1", "aim", False),
     ("words", "average prompt length in words", "info", True),
     ("seconds", "average time per run in seconds (more retries cost time)", "info", False),
+    ("redone", "average images asked again per run (each one costs writing time)", "info", False),
     ("request_words_echoed", "share of the request's own words repeated in the prompts (told, not shown; a hint)", "info", False),
     ("shot_named", "share of prompts that name a shot size instead of showing the framing (a hint)", "info", False),
     ("extent_shown", "share of prompts that say how far bodies reach in the frame and what is around them (a hint)", "info", True),
@@ -33,6 +34,8 @@ CHECKS = (
 # knees on a mattress, something in the foreground or background).
 SHOT_NAME = re.compile(r"\b(?:(?:extreme |medium |full[- ]body |wide |long |cowboy )?close[- ]?up|(?:medium|wide|long|"
                        r"full[- ]body|cowboy|establishing|two|three)[- ]shot|mid[- ]shot)\b", re.IGNORECASE)
+# A log line of an image the scene writer asks for again (scenes/writer.py rejected_note).
+REDONE = re.compile(r"\bImage \d+ is asked again\b")
 EXTENT = re.compile(r"\b(?:feet|foot|toes|ankles?|knees?|shins?|soles?|floor|ground|mattress|from (?:the )?head|"
                     r"foreground|background)\b", re.IGNORECASE)
 
@@ -131,7 +134,8 @@ def _looks(scene):
 def case_checks(row, normalize=None):
     """{check: value} for one case run (None when a check does not apply)."""
     seconds = row.get("seconds")
-    return {**_case_checks(row, normalize), "seconds": seconds}
+    redone = sum(bool(REDONE.search(line)) for line in row.get("log") or [] if isinstance(line, str))
+    return {**_case_checks(row, normalize), "seconds": seconds, "redone": redone if row["kind"] != "builder" else None}
 
 
 def _case_checks(row, normalize=None):

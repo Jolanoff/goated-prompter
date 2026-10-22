@@ -140,16 +140,41 @@ def _overlap(first, second, ignore=frozenset()):
     return len(first & second) / min(len(first), len(second)) if first and second else 0.0
 
 
+def _without(text, labels=()):
+    """The text without the character labels themselves ("man 1, man 2 and man 3 on a bed" -> ", and on a bed"); other
+    numbers stay ("2 chairs")."""
+    for label in sorted(labels, key=len, reverse=True):
+        text = re.sub(r"(?<![\w-])" + re.escape(label) + r"(?![\w-])", " ", str(text or ""), flags=re.IGNORECASE)
+    return str(text or "")
+
+
+def _viewpoint(camera, labels=()):
+    """The camera's opening, up to where it first names a person: the viewpoint ("side view, low angle"), without
+    what each person shows, which reads alike in every image."""
+    camera = str(camera or "")[:80]
+    found = [match.start() for label in labels
+             if (match := re.search(r"(?<![\w-])" + re.escape(label) + r"(?![\w-])", camera, re.IGNORECASE))]
+    return camera[:min(found)] if found and min(found) else camera
+
+
+def _arrangement(scene):
+    """Where each person is, as one text: the scene's position field."""
+    position = scene.get("position")
+    return " ".join(map(str, position.values())) if isinstance(position, dict) else str(position or "")
+
+
 def repeated_parts(scene, other, labels=()):
     """What a new scene reuses of another image, as a list: [] unless it reuses that image's place together with its
-    camera, actions or extras (an image asked again tends to copy an accepted one's place and signs). Only the camera's
-    opening (its viewpoint) is compared: the rest says what each person shows, which reads alike in every image. The
-    character labels never count (every camera names them), and the same place alone is fine (fixed may keep it)."""
+    camera, actions or extras (an image asked again tends to copy an accepted one's place and signs). The camera
+    counts only when its viewpoint and the people's arrangement (position) both match: a fixed place seen from the
+    usual side view is not a copy while the people are arranged differently. The character labels never count (every
+    place, camera and position names them), and the same place alone is fine (fixed may keep it)."""
     ignore = frozenset(word for label in labels for word in re.findall(r"[a-z0-9]+", label.casefold()))
-    if _overlap(scene["space"], other["space"]) < .7:
+    if _overlap(_without(scene["space"], labels), _without(other["space"], labels)) < .7:
         return []
     return [name for name, repeated in (
-        ("camera", _overlap(scene["camera"][:80], other["camera"][:80], ignore) >= .6),
+        ("camera", _overlap(_viewpoint(scene["camera"], labels), _viewpoint(other["camera"], labels)) >= .6
+         and _overlap(_without(_arrangement(scene), labels), _without(_arrangement(other), labels)) >= .6),
         ("actions", _overlap(scene["actions"], other["actions"], ignore) >= .6),
         ("extras", _overlap(scene.get("extras"), other.get("extras"), ignore) >= .7)) if repeated]
 

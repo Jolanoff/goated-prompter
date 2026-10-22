@@ -190,6 +190,25 @@ class SceneVariety(Harness):
         copy = self.scene("hotel room", "low angle, man 1's head and man 2's torso are in view", "man 2 sits")
         self.assertIn("camera", scenes.checks.repeated_parts(copy, first, labels), "the same viewpoint is still a repeat")
 
+    def test_the_character_labels_never_make_two_places_the_same(self):
+        # A live run read these two rooms as one place: the labels were most of their words.
+        labels = ["man 1", "man 2", "man 3"]
+        first = self.scene("bedroom, man 1, man 2, and man 3 lie on a soft mattress, a wooden headboard is behind man 1",
+                           "side view, eye level, man 1 is framed head to hips", "man 1 kneels")
+        second = self.scene("bedroom, man 1, man 2, and man 3 lie on a soft mattress, a bookshelf is against the wall",
+                            "side view, eye level, man 1 is framed head to hips", "man 1 kneels")
+        self.assertEqual(scenes.checks.repeated_parts(second, first, labels), [])
+        self.assertEqual(scenes.checks._without("2 chairs by man 2", labels).split(), ["2", "chairs", "by"])
+
+    def test_the_same_viewpoint_is_a_repeat_only_with_the_same_arrangement(self):
+        labels = ["man 1", "man 2"]
+        first = self.scene("hotel room", "side view, eye level, man 1's head and man 2's hips are in frame", "man 1 kneels")
+        moved = {**self.scene("hotel room", "side view, eye level, man 2's back is in frame", "man 2 sits"),
+                 "position": {"man 1": "lying on the couch", "man 2": "sitting on the armrest"}}
+        self.assertEqual(scenes.checks.repeated_parts(moved, first, labels), [], "same room and angle, new arrangement")
+        same = self.scene("hotel room", "side view, eye level, man 2's back is in frame", "man 2 sits")
+        self.assertEqual(scenes.checks.repeated_parts(same, first, labels), ["camera"])
+
     def test_the_first_request_lists_this_runs_labels(self):
         # A live run's first answers wrote "one man" and "the others" for numbered people and were all asked again.
         self.write()
