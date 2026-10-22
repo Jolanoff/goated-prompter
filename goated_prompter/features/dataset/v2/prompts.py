@@ -30,7 +30,9 @@ from ....prompt_library import pick_references
 from ....workflow_output import ideogram_json
 from .triggers import brief_triggers, owner, placed, run_style, trigger_text
 
-SCENE_ORDER = ("subjects", "position", "actions", "space", "camera", "extras")
+SCENE_ORDER = ("subjects", "position", "actions", "space", "camera", "frame", "extras")
+FRAME_TAGS = {"full body": "full body", "head to knees": "cowboy shot", "head to hips": "upper body",
+              "head and shoulders": "portrait"}
 
 SCENE_RULES = """
 The idea is one scene of an IMAGE, already decided. Write it as one prompt for the
@@ -43,7 +45,9 @@ the action, as plain words and never in quotes (quotes mark text drawn in the im
 name it instead of only describing the pose.
 Do not add subjects or actions. Keep the camera's viewpoint (side and height); its distance gives way only when it
 would show a person of the scene as nothing more than a body part: then show enough of that person to join the part to
-them. Show the framing by describing what the camera sees: where each
+them. Each person's frame is decided: show at least that much of them, and
+their face when it is visible; on a tag-based target write the frame's tag for the image (the widest frame of the
+scene), never a tighter shot tag. Show the framing by describing what the camera sees: where each
 person is relative to the others, which parts of each body are visible and where their faces, torsos, hands and feet
 are when it matters, how much space each takes, and what lies in the foreground, middle ground and background. A
 shot name or a phrase such as "fully visible" never stands in for that description. Every person of the scene gets a
@@ -166,11 +170,16 @@ def scene_text(scene, known=frozenset()):
     scene = retire_fields(scene)
     lines = []
     for key in SCENE_ORDER:
+        if key not in scene:  # a scene saved before frames
+            continue
         value = scene[key]
         if key == "subjects":
             for label, person in value.items():
                 prefix = f"{label} (known character)" if label in known else label
                 lines.append(f"{prefix}: " + "; ".join(f"{field} {text}" for field, text in person.items()))
+        elif key == "frame":
+            lines.extend(f"frame of {label}: shows {item['shows']} (tag: {FRAME_TAGS[item['shows']]}), face {item['face']}"
+                         for label, item in value.items())
         elif isinstance(value, dict):
             lines.extend(f"{key} of {label}: {text}" for label, text in value.items())
         else:
@@ -273,6 +282,8 @@ _SCORE_TAG = re.compile(r"score_\d+(?:_up)?", re.IGNORECASE)
 _QUALITY_TAG = re.compile(r"score \d+(?: up)?|masterpiece|(?:best|good|normal|high|amazing) quality|absurdres|highres|"
                           r"newest|recent|mid|early|old|year \d{4}", re.IGNORECASE)
 _SAFETY_TAG = re.compile(r"(?:rating\s*:?\s*)?(safe|sensitive|nsfw|explicit|questionable|general)", re.IGNORECASE)
+# Anima's framing tags, widest first: a scene's widest frame decides the one the image gets (FRAME_TAGS).
+SHOT_TAGS = ("full body", "cowboy shot", "upper body", "portrait", "close-up")
 
 
 def count_tags(characters):
@@ -286,10 +297,19 @@ def count_tags(characters):
     return tags + (["solo"] if sum(counts.values()) == 1 else [])
 
 
-def anima_tag_line(prompt, brief):
+def scene_shot(scene):
+    """The framing tag of a scene's widest frame ("full body", "cowboy shot"...), or None for a scene without frames."""
+    shows = [item["shows"] for item in ((scene or {}).get("frame") or {}).values() if isinstance(item, dict)]
+    tags = [FRAME_TAGS[value] for value in shows if value in FRAME_TAGS]
+    return min(tags, key=SHOT_TAGS.index) if tags else None
+
+
+def anima_tag_line(prompt, brief, scene=None):
     """An Anima prompt's tag line in Anima's own format: the cast's count tags (the app knows the cast; a model guesses
     them), quality tags first, then one safety tag, then the count tags; spaces instead of underscores (score tags keep
-    theirs); no low-quality, unknown score or invented solo tags. Prose is left as written."""
+    theirs); no low-quality, unknown score or invented solo tags. With a scene, its framing tag is the one framing tag
+    (scene_shot: a model's tighter shot tag would crop the people the scene keeps in frame), and with several people
+    "solo focus" is dropped. Prose is left as written."""
     # The tag lines are the leading lines that are tag lines (a model sometimes breaks them over several lines or
     # blocks); everything after them is prose, separated by one blank line as Anima expects.
     lines = prompt.strip().splitlines()
@@ -304,9 +324,13 @@ def anima_tag_line(prompt, brief):
     prose = "\n".join(lines[count:]).strip()
     separator, rest = ("\n\n", prose) if prose else ("", "")
     quality, safety, tags = [], [], []
+    shot = scene_shot(scene)
+    several = sum(int(person.get("count") or 1) for person in brief["characters"]) > 1
     for field in (field.strip() for field in head.split(",")):
         plain = _plain_tag(field).strip("[]").strip()
         if not field or _COUNT_TAG.fullmatch(plain) or _LOW_QUALITY_TAG.fullmatch(plain):
+            continue
+        if (shot and plain.casefold() in SHOT_TAGS) or (several and plain.casefold() == "solo focus"):
             continue
         if plain.casefold().startswith("score") and not _QUALITY_TAG.fullmatch(plain):
             continue  # a score tag Anima does not know
@@ -319,12 +343,19 @@ def anima_tag_line(prompt, brief):
         if field.casefold() not in (tag.casefold() for tag in quality + tags):
             group.append(field)
     people = count_tags(brief["characters"]) if brief["characters"] else []
-    return ", ".join([*quality, *safety[:1], *people, *tags]) + separator + rest
+    return ", ".join([*quality, *safety[:1], *people, *([shot] if shot else []), *tags]) + separator + rest
 
 
 def _ordered(triggers):
     """(pinned, the rest), each in list order."""
     return [trigger for trigger in triggers if trigger["start"]], [trigger for trigger in triggers if not trigger["start"]]
+
+
+def _tag_base(tag):
+    """A tag's key without its qualifiers in parentheses, nested ones too ("cu chulainn (fate)" -> "cuchulainn",
+    "fate (fate (series))" -> "fate")."""
+    plain = re.sub(r":\d+(?:\.\d+)?\)?$", "", tag.strip())
+    return anima_tag_key(re.split(r"\s*\\?\(", plain, maxsplit=1)[0] or plain)
 
 
 def _anima_with_triggers(prompt, triggers):
@@ -339,7 +370,11 @@ def _anima_with_triggers(prompt, triggers):
         # No leading tag line to edit: the triggers become one.
         return ", ".join(trigger_text(trigger) for trigger in pinned + others) + "\n\n" + prompt.strip()
     keys = {anima_tag_key(tag) for text in texts for tag in text.split(",") if tag.strip()}
-    kept = [field.strip() for field in head.split(",") if field.strip() and anima_tag_key(field) not in keys]
+    # A trigger is exact text: the model's own forms of its tags go, also the name without its qualifier ("cu chulainn"
+    # for "cu chulainn \(fate\)") and the name with another qualifier ("fate \(fate_series\)" for "fate \(series\)").
+    bases = {_tag_base(tag) for text in texts for tag in text.split(",") if _tag_base(tag) != anima_tag_key(tag)}
+    kept = [field.strip() for field in head.split(",") if field.strip() and anima_tag_key(field) not in keys
+            and _tag_base(field) not in bases]
     meta = next((index for index, field in enumerate(kept) if not _META_TAG.fullmatch(_plain_tag(field))), len(kept))
     group = lambda *kinds: [trigger_text(trigger) for trigger in others if trigger["kind"] in kinds]
     fields = [*map(trigger_text, pinned), *kept[:meta], *group("character", "outfit"), *group("style", "other"),
@@ -553,7 +588,7 @@ def write_prompts(config, request, brief, scenes, *, checkpoint=lambda: None, pr
             continue
         # A label or copied wording left after the retry is not worth failing the image; a lost number is a wrong fact.
         if canonical_target(brief["settings"]["target"]) == "Anima":
-            prompt = anima_tag_line(prompt, brief)
+            prompt = anima_tag_line(prompt, brief, scene)
         prompt = place_triggers(prompt, brief)
         problem = trigger_problem(prompt, brief) or (meaning[0] if meaning and meaning[1] else None)
         recovery.finish("succeeded" if not problem else "failed")

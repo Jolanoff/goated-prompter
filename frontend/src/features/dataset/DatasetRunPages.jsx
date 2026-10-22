@@ -38,9 +38,11 @@ function SceneDetails({ scene }) {
     <Line label="Action">{scene.actions}</Line>
     {scene.entry && <Line label="Vocabulary entry">{scene.entry}</Line>}
     {Object.entries(scene.subjects).map(([label, person]) => <Line key={`subject-${label}`} label={label}>
-      {[person.skin, person.build, person.hair, person.detail, person.expression, person.clothing].filter(Boolean).join(" · ")}</Line>)}
+      {[person.skin, person.build, person.hair, person.detail, person.expression, person.genitals, person.clothing].filter(Boolean).join(" · ")}</Line>)}
     <Line label="Space">{scene.space}</Line>
     <Line label="Camera">{scene.camera}</Line>
+    {Object.entries(scene.frame || {}).map(([label, frame]) => <Line key={`frame-${label}`} label={`Frame · ${label}`}>
+      {frame.shows}, face {frame.face}</Line>)}
     <Line label="Extras">{scene.extras}</Line>
   </>;
 }

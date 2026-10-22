@@ -95,6 +95,12 @@ class Checks(unittest.TestCase):
         values = checks.case_checks(dataset_row([scene("fair", "a hall")], [named, shown]))
         self.assertEqual((values["shot_named"], values["extent_shown"]), (0.5, 0.5))
 
+    def test_images_asked_again_are_counted_from_the_log(self):
+        row = {**dataset_row([scene("fair", "a hall")], ["A prompt."]),
+               "log": ["  3.1s Composing scenes", " 40.2s Image 6 is asked again: it repeats image 1's place",
+                       " 40.2s Image 9 is asked again: its actions do not name man 2"]}
+        self.assertEqual(checks.case_checks(row)["redone"], 2)
+
     def test_a_failed_case_counts_as_nothing_written(self):
         self.assertEqual(checks.case_checks(dataset_row([], [], ok=False))["written"], 0.0)
 
@@ -207,7 +213,9 @@ class LivePipeline(unittest.TestCase):
             return json.dumps({"scenes": [{"subjects": {"dancer 1": person, "dancer 2": person},
                                            "position": {"dancer 1": "left", "dancer 2": "right"},
                                            "actions": "dancer 1 lifts dancer 2", "space": f"studio {row['image']}",
-                                           "camera": "wide", "extras": "a mirror"} for row in images]})
+                                           "camera": "wide", "extras": "a mirror",
+                                           "frame": {label: {"shows": "full body", "face": "visible"}
+                                                     for label in ("dancer 1", "dancer 2")}} for row in images]})
         return "Two dancers rehearse a lift in a bright studio."
 
     def test_a_dataset_case_returns_the_brief_scenes_and_prompts(self):

@@ -52,7 +52,16 @@ test("the Vocabulary Library searches, previews, and applies or discards a selec
   }).toEqual(["Spaces/Fantasy", "Lighting/Cinematic"]);
 });
 
-test("the library sorts, expands entries, browses related packs and clears staged selections", async ({ page }) => {
+test("the library sorts, expands entries, browses linked packs and clears staged selections", async ({ page }) => {
+  await page.route("**/api/vocabulary/catalog", async (route) => {
+    const response = await route.fetch();
+    const catalog = await response.json();
+    catalog.packs.find((pack) => pack.id === "Spaces/Fantasy").links = [
+      { slot: "Historical", packs: ["Spaces/Historical"] },
+      { slot: "Cinematic", packs: ["Lighting/Cinematic"] },
+    ];
+    await route.fulfill({ response, json: catalog });
+  });
   await page.goto("/");
   await page.getByRole("button", { name: "Dataset", exact: true }).click();
   await page.getByRole("button", { name: "Vocabulary Library" }).click();
@@ -68,12 +77,15 @@ test("the library sorts, expands entries, browses related packs and clears stage
   await expect(preview.getByText("Showing 20 of 20", { exact: true })).toBeVisible();
   await preview.getByRole("button", { name: "Show fewer entries" }).click();
   await expect(preview.getByText("Showing 12 of 20", { exact: true })).toBeVisible();
-  await preview.getByRole("button", { name: "Select Historical (Spaces)" }).click();
+  await expect(preview.getByRole("heading", { name: "Linked Packs" })).toBeVisible();
+  await expect(preview.getByRole("heading", { name: "Related Packs" })).toHaveCount(0);
+  await preview.getByRole("button", { name: "Select linked Historical (Spaces)" }).click();
   await expect(library.getByRole("checkbox", { name: "Select Historical (Spaces)" })).toBeChecked();
-  await preview.getByRole("button", { name: "Preview related Historical (Spaces)" }).click();
-  await expect(preview.getByRole("heading", { name: "Historical", exact: true })).toBeVisible();
-  await preview.getByRole("button", { name: "View all related packs" }).click();
-  await expect(library.getByRole("button", { name: "Spaces", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await library.getByLabel("Search vocabulary").fill("floating castle");
+  await preview.getByRole("button", { name: "Preview linked Cinematic (Lighting)" }).click();
+  await expect(preview.getByRole("heading", { name: "Cinematic", exact: true })).toBeVisible();
+  await expect(library.getByLabel("Search vocabulary")).toHaveValue("");
+  await expect(library.getByRole("button", { name: "All", exact: true })).toHaveAttribute("aria-pressed", "true");
   await library.getByRole("button", { name: "Remove Historical (Spaces)" }).click();
   await expect(library.getByRole("checkbox", { name: "Select Historical (Spaces)" })).not.toBeChecked();
   await library.getByRole("checkbox", { name: "Select Fantasy (Spaces)" }).check();
@@ -146,7 +158,7 @@ test("the reference layout previews entries and keeps keyboard selection inside 
   await page.keyboard.press("Space");
   await expect(checkbox).not.toBeChecked();
   await checkbox.check();
-  await library.getByRole("button", { name: "Select Angry Expressions (Expressions)" }).click();
+  await library.getByRole("checkbox", { name: "Select Angry Expressions (Expressions)" }).check();
   await library.getByRole("button", { name: "All", exact: true }).click();
   await library.getByRole("button", { name: "Apply (2)", exact: true }).focus();
   for (const [key, name] of [["Tab", "Close Vocabulary Library"], ["Shift+Tab", "Apply (2)"]]) {
@@ -190,7 +202,8 @@ for (const [width, height] of [[1448, 1086], [1366, 768], [1280, 720], [1920, 10
     const preview = library.getByRole("region", { name: "Pack Preview" });
     expect(await preview.evaluate((node) => node.scrollHeight <= node.clientHeight)).toBe(true);
     await expect(preview.locator(".vocabulary-library-entry-list > li")).toHaveCount(12);
-    await expect(preview.locator(".vocabulary-library-related-list > li")).toHaveCount(4);
+    await expect(preview.locator(".vocabulary-library-related-list > li")).toHaveCount(0);
+    await expect(preview.getByText("No linked packs.", { exact: true })).toBeVisible();
     const box = await preview.boundingBox();
     for (const item of await preview.locator(".vocabulary-library-entry-list > li, .vocabulary-library-related-list > li").all()) {
       const rect = await item.boundingBox();

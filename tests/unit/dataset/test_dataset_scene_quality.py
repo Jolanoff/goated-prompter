@@ -13,7 +13,8 @@ from goated_prompter.features.dataset.v2.draft import default_dataset_draft
 from tests.support.dataset_scenes import composer_user
 
 MEN = [{"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 2}]
-LOOK = {"skin": "tan", "build": "athletic", "hair": "short dark hair", "detail": "stubble", "expression": "a soft smile", "clothing": "no clothing"}
+LOOK = {"skin": "tan", "build": "athletic", "hair": "short dark hair", "detail": "stubble", "expression": "a soft smile",
+        "genitals": "average size, relaxed", "clothing": "no clothing"}
 
 
 class Harness(unittest.TestCase):
@@ -38,7 +39,8 @@ class Harness(unittest.TestCase):
                 "position": {"man 1": "standing behind his partner", "man 2": "bent over the bed, facing away"},
                 "actions": action if "man 2" in action else f"man 1 and man 2: {action}", "space": place,
                 "lighting": "lamp light", "mood": "intense",
-                "camera": camera, "extras": f"sheets{place}{camera}".replace(" ", "")}
+                "camera": camera, "extras": f"sheets{place}{camera}".replace(" ", ""),
+                "frame": {label: {"shows": "full body", "face": "visible"} for label in ("man 1", "man 2")}}
 
     def generate(self, instruction):
         self.calls.append(instruction)
@@ -69,6 +71,65 @@ class SceneVariety(Harness):
         person = self.composer()[0].json_schema["properties"]["scenes"]["items"]["properties"]["subjects"]["properties"]["man 1"]
         self.assertIn("expression", person["required"])
         self.assertIn("expression (their face in this moment)", self.composer()[0].system_message)
+
+    def test_an_adult_dataset_describes_each_persons_genitals_and_where_they_are(self):
+        # Live runs named genitals only inside the action: most were never described, and some were drawn without
+        # their owner or in place of a tongue.
+        self.write()
+        person = self.composer()[0].json_schema["properties"]["scenes"]["items"]["properties"]["subjects"]["properties"]["man 1"]
+        adult = self.brief["path"] == "nsfw_character"
+        (self.assertIn if adult else self.assertNotIn)("genitals", person["required"])
+        system = " ".join(self.composer()[0].system_message.split())
+        (self.assertIn if adult else self.assertNotIn)("Each position also says where that person's genitals are", system)
+        sfw = {**self.brief, "path": "character"}
+        self.assertNotIn("genitals", scenes.subject_fields(sfw, "man 1"), "never outside an adult dataset")
+        self.assertEqual(scenes.subject_fields({**self.brief, "path": "nsfw_character"}, "man 1")[-1], "genitals")
+
+    def test_every_person_has_a_frame_and_nobody_needed_drops_out(self):
+        # Live runs kept the action and cropped a character to the upper body or dropped their body around the genitals.
+        frame = lambda shows, face="visible": {"shows": shows, "face": face}
+        tight = {**self.scene("bedroom"), "frame": {"man 1": frame("head and shoulders"), "man 2": frame("full body")}}
+        self.assertEqual(scenes.checks.framing_problems(tight), [], "only known characters have a minimum in code")
+        hidden = {**tight, "frame": {"man 1": frame("full body", "hidden"), "man 2": frame("head to knees")}}
+        self.assertIn("man 1 is a known character", scenes.checks.framing_problems(hidden, frozenset({"man 1"}))[0])
+        self.assertEqual(scenes.checks.framing_problems(hidden, frozenset({"man 2"})), [])
+        self.assertIn("this image shows man 1 full body", scenes.checks.framing_problems(
+            {**tight, "frame": {"man 1": frame("head to knees"), "man 2": frame("full body")}}, frozenset({"man 1"}),
+            "full body")[0], "a known character gets the frame dealt to the image, or wider")
+        self.assertEqual(scenes.checks.framing_problems(
+            {**tight, "frame": {"man 1": frame("full body"), "man 2": frame("head and shoulders")}}, frozenset({"man 1"}),
+            "head to hips"), [])
+        # Without known characters there is no frame to fill.
+        self.write()
+        self.assertNotIn("frame", self.composer()[0].json_schema["properties"]["scenes"]["items"]["properties"])
+        self.assertNotIn("FRAMES", self.composer()[0].system_message)
+        # With one, every image is dealt a frame, the writer is asked again below it and the next answer is kept.
+        self.calls.clear()
+        self.brief["input"]["amount"] = 3
+        self.brief["characters"][0]["known"] = True  # man 1 as a known character
+        known = lambda shows: {**self.scene(f"room {shows}"), "frame": {"man 1": frame(shows), "man 2": frame("full body")},
+                               "subjects": {**self.scene("x")["subjects"], "man 1": {"expression": "a smile"}}}
+        self.replies = [known("head and shoulders"), known("full body"), known("full body"), known("full body")]
+        result = self.write()
+        first = self.composer()[0]
+        self.assertEqual(sorted(image["frame"] for image in composer_user(first.user_message)["images"]),
+                         sorted(scenes.settings.AT_LEAST_HIPS), "the set spreads over the three frames")
+        self.assertIn("FRAMES", first.system_message)
+        self.assertIn("this image shows man 1", " ".join(self.composer()[1].system_message.split()))
+        self.assertTrue(all(scene["frame"]["man 1"]["shows"] == "full body" for scene in result["scenes"]))
+        schema = first.json_schema["properties"]["scenes"]["items"]["properties"]["frame"]
+        self.assertEqual(schema["properties"]["man 1"]["properties"]["shows"]["enum"], list(scenes.settings.SHOWS))
+
+    def test_the_final_prompt_gets_each_frame_and_its_tag(self):
+        from goated_prompter.features.dataset.v2 import prompts
+        scene = {"slot": 1, **self.scene("bedroom"),
+                 "frame": {"man 1": {"shows": "head to knees", "face": "visible"},
+                           "man 2": {"shows": "full body", "face": "hidden"}}}
+        text = prompts.scene_text(scene)
+        self.assertIn("frame of man 1: shows head to knees (tag: cowboy shot), face visible", text)
+        self.assertIn("frame of man 2: shows full body (tag: full body), face hidden", text)
+        old = {key: value for key, value in scene.items() if key != "frame"}
+        self.assertNotIn("frame of", prompts.scene_text(old), "a scene saved before frames still reads")
 
     def test_only_what_the_camera_can_see_is_described(self):
         # A body part turned away, hidden by another body or inside someone is never written as visible.
@@ -128,6 +189,25 @@ class SceneVariety(Harness):
         self.assertEqual(scenes.checks.repeated_parts(second, first, labels), [])
         copy = self.scene("hotel room", "low angle, man 1's head and man 2's torso are in view", "man 2 sits")
         self.assertIn("camera", scenes.checks.repeated_parts(copy, first, labels), "the same viewpoint is still a repeat")
+
+    def test_the_character_labels_never_make_two_places_the_same(self):
+        # A live run read these two rooms as one place: the labels were most of their words.
+        labels = ["man 1", "man 2", "man 3"]
+        first = self.scene("bedroom, man 1, man 2, and man 3 lie on a soft mattress, a wooden headboard is behind man 1",
+                           "side view, eye level, man 1 is framed head to hips", "man 1 kneels")
+        second = self.scene("bedroom, man 1, man 2, and man 3 lie on a soft mattress, a bookshelf is against the wall",
+                            "side view, eye level, man 1 is framed head to hips", "man 1 kneels")
+        self.assertEqual(scenes.checks.repeated_parts(second, first, labels), [])
+        self.assertEqual(scenes.checks._without("2 chairs by man 2", labels).split(), ["2", "chairs", "by"])
+
+    def test_the_same_viewpoint_is_a_repeat_only_with_the_same_arrangement(self):
+        labels = ["man 1", "man 2"]
+        first = self.scene("hotel room", "side view, eye level, man 1's head and man 2's hips are in frame", "man 1 kneels")
+        moved = {**self.scene("hotel room", "side view, eye level, man 2's back is in frame", "man 2 sits"),
+                 "position": {"man 1": "lying on the couch", "man 2": "sitting on the armrest"}}
+        self.assertEqual(scenes.checks.repeated_parts(moved, first, labels), [], "same room and angle, new arrangement")
+        same = self.scene("hotel room", "side view, eye level, man 2's back is in frame", "man 2 sits")
+        self.assertEqual(scenes.checks.repeated_parts(same, first, labels), ["camera"])
 
     def test_the_first_request_lists_this_runs_labels(self):
         # A live run's first answers wrote "one man" and "the others" for numbered people and were all asked again.
