@@ -21,6 +21,10 @@ SCENE = {"skin": "fair", "build": "slim", "hair": "long silver hair", "detail": 
 class SceneVocabulary(unittest.TestCase):
     def setUp(self):
         self.catalog = load_catalog(user_root=False)
+        romance = next(pack for pack in self.catalog["packs"] if pack["id"] == "Actions & Poses/Romance")["entries"]
+        self.dance = next(entry for entry in romance if entry.startswith("Slow dance:"))
+        self.hands = next(entry for entry in romance if "inner hands joined" in entry)
+        self.forehead = next(entry for entry in romance if "kiss the other person's forehead" in entry)
         self.calls, self.entries, self.fit, self.copy_dealt = [], [], None, False
         self.backend = MockBackend()
         enter_context(self, patch.object(self.backend, "generate", side_effect=self.generate))
@@ -54,7 +58,7 @@ class SceneVocabulary(unittest.TestCase):
             "mood": "calm", "camera": "wide shot", "extras": f"extras{row['image']}",
             "frame": {label: {"shows": "full body", "face": "visible"} for label in labels},
             **({"entry": self.entries.pop(0) if self.entries else row["entry"] if self.copy_dealt
-                  else "two people slow dancing"} if wants_entry else {})}
+                  else self.dance} if wants_entry else {})}
             for row in user["images"]]})
 
     def write(self, brief, packs=(), catalog=None):
@@ -119,9 +123,11 @@ class SceneVocabulary(unittest.TestCase):
         self.assertEqual({call.diagnostic_stage for call in self.calls}, {"dataset_v2:scenes"}, "no extra LLM call")
 
     def test_every_image_gets_its_own_optional_suggestions_so_the_whole_pack_spreads(self):
-        brief = self.brief("A knight", [{"label": "knight", "gender": "male", "custom": "", "pronoun": "he", "count": 1}], amount=4)
-        self.write(brief, ["Lighting/Dramatic", "Objects/Furniture"])
-        images = composer_user(self.composer()[0].user_message)["images"]
+        packs = ["Lighting/Dramatic", "Objects/Furniture"]
+        amount = max(len(pack["entries"]) for pack in self.catalog["packs"] if pack["id"] in packs)
+        brief = self.brief("A knight", [{"label": "knight", "gender": "male", "custom": "", "pronoun": "he", "count": 1}], amount=amount)
+        self.write(brief, packs)
+        images = [image for call in self.composer() for image in composer_user(call.user_message)["images"]]
         hands = [image["suggested"] for image in images]
         self.assertEqual({tuple(sorted(hand)) for hand in hands}, {("Lighting", "Objects & Props")})
         for category in ("Lighting", "Objects & Props"):
@@ -297,7 +303,7 @@ class SceneVocabulary(unittest.TestCase):
         call = self.composer()[0]
         vocabulary = composer_user(call.user_message)["vocabulary"]
         self.assertIn("Actions & Poses\nCore instruction:\nActions & Poses provides vocabulary", vocabulary)
-        self.assertIn("one person kissing the other person's forehead", vocabulary)
+        self.assertIn(self.forehead, vocabulary)
         for rule in ("If it does, that pose is\n   decided", "If it defines only an\n   action, choose a pose",
                      "correct gender", "Objects, furniture and surfaces named in an entry", "keeping the pose physically the same"):
             self.assertIn(rule, call.system_message)
@@ -305,7 +311,7 @@ class SceneVocabulary(unittest.TestCase):
     def test_every_image_is_dealt_its_own_entry_by_the_seed(self):
         pair = [{"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 1},
                 {"label": "woman", "gender": "female", "custom": "", "pronoun": "she", "count": 1}]
-        self.entries = ["two people slow dancing", "two people holding hands", "one person kissing the other person's forehead"]
+        self.entries = [self.dance, self.hands, self.forehead]
         self.write(self.brief("A couple", pair, amount=3), ["Actions & Poses/Romance"])
         dealt = [image["entry"] for image in composer_user(self.composer()[0].user_message)["images"]]
         self.assertEqual(len(set(dealt)), 3, "no entry is dealt twice while the pack has more")
@@ -350,29 +356,29 @@ class SceneVocabulary(unittest.TestCase):
     def test_an_entry_is_used_by_at_most_two_images_and_an_overused_one_is_asked_again(self):
         pair = [{"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 1},
                 {"label": "woman", "gender": "female", "custom": "", "pronoun": "she", "count": 1}]
-        self.entries = ["two people slow dancing"] * 3 + ["two people holding hands"]
+        self.entries = [self.dance] * 3 + [self.hands]
         result = self.write(self.brief("A couple", pair, amount=3), ["Actions & Poses/Romance"])
         self.assertTrue(result["complete"])
         self.assertEqual([scene["entry"] for scene in result["scenes"]],
-                         ["two people slow dancing", "two people slow dancing", "two people holding hands"])
+                         [self.dance, self.dance, self.hands])
         retry = self.composer()[1]
-        self.assertIn('the entry "two people slow dancing" is already used by 2 images', retry.system_message)
-        self.assertEqual(composer_user(retry.user_message)["already_used"]["entries"], {"two people slow dancing": 2})
+        self.assertIn(f'the entry "{self.dance}" is already used by 2 images', retry.system_message)
+        self.assertEqual(composer_user(retry.user_message)["already_used"]["entries"], {self.dance: 2})
         self.assertIn("used by fewer than 2 images", self.composer()[0].system_message)
 
     def test_an_entry_that_is_not_in_the_vocabulary_is_asked_again(self):
         pair = [{"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 1},
                 {"label": "woman", "gender": "female", "custom": "", "pronoun": "she", "count": 1}]
-        self.entries = ["a made-up entry", "Two People   Holding Hands"]
+        self.entries = ["a made-up entry", self.hands.upper().replace(" ", "   ")]
         result = self.write(self.brief("A couple", pair, amount=1), ["Actions & Poses/Romance"])
-        self.assertEqual(result["scenes"][0]["entry"], "two people holding hands")
+        self.assertEqual(result["scenes"][0]["entry"], self.hands)
         self.assertIn("copied word for word", self.composer()[1].system_message)
 
     def test_only_entries_that_fit_the_request_are_offered_dealt_and_counted(self):
         pair = [{"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 1},
                 {"label": "woman", "gender": "female", "custom": "", "pronoun": "she", "count": 1}]
-        self.fit = ["two people slow dancing", "two people holding hands"]
-        self.entries = ["two people slow dancing", "two people holding hands"] * 2 + ["two people slow dancing"]
+        self.fit = [self.dance, self.hands]
+        self.entries = [self.dance, self.hands] * 2 + [self.dance]
         result = self.write(self.brief("A couple dancing", pair, amount=5), ["Actions & Poses/Romance"])
         fitting = [call for call in self.calls if call.diagnostic_stage == "dataset_v2:entries"]
         self.assertEqual(len(fitting), 1)
@@ -381,8 +387,8 @@ class SceneVocabulary(unittest.TestCase):
         self.assertIn('"cast"', fitting[0].user_message)
         first = self.composer()[0]
         vocabulary = composer_user(first.user_message)["vocabulary"]
-        self.assertIn("two people slow dancing", vocabulary)
-        self.assertNotIn("one person kissing the other person's forehead", vocabulary, "an entry that does not fit is never offered")
+        self.assertIn(self.dance, vocabulary)
+        self.assertNotIn(self.forehead, vocabulary, "an entry that does not fit is never offered")
         self.assertEqual({image["entry"] for image in composer_user(first.user_message)["images"]}, set(self.fit))
         self.assertIn("used by fewer than 3 images", first.system_message, "five images share two fitting entries")
         self.assertTrue(result["complete"])
