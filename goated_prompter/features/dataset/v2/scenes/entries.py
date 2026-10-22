@@ -8,7 +8,7 @@ from .....backends.base import GoatedPrompterError
 from .....contracts import PromptInstruction
 
 from .checks import _words
-from .settings import ACTIONS_CATEGORY, ENTRY_CAP, FIT_CHUNK, HAND
+from .settings import ACTIONS_CATEGORY, AT_LEAST_HIPS, ENTRY_CAP, FIT_CHUNK, HAND
 from .texts import ENTRY_FIT_SYSTEM
 
 
@@ -166,6 +166,18 @@ def deal_hands(groups, total, rng, size=HAND, words=frozenset()):
             if hand:
                 hands[number][group["category"]] = hand
     return {number: hand for number, hand in hands.items() if hand}
+
+
+def deal_frames(total, rng):
+    """{slot: frame}: the frame each image's known characters get, from a seeded deck of the frames that keep them at
+    least head to hips (full body, head to knees, head to hips), so a set spreads over all three."""
+    deck, dealt = [], {}
+    for number in range(1, total + 1):
+        if not deck:
+            deck = list(AT_LEAST_HIPS)
+            rng.shuffle(deck)
+        dealt[number] = deck.pop()
+    return dealt
 
 
 def cast_size(brief):

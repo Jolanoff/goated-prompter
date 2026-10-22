@@ -59,7 +59,8 @@ class RunawayRecoveryTests(unittest.TestCase):
     def description(self, place="library"):
         return {"subjects": {"Alex": {field: f"visible {field}" for field in scenes.SUBJECT_FIELDS}},
                 "actions": "Alex reads", "position": {"Alex": "Seated, feet on the floor"},
-                "space": place, "lighting": "daylight", "mood": "calm", "camera": "wide", "extras": "books"}
+                "space": place, "lighting": "daylight", "mood": "calm", "camera": "wide", "extras": "books",
+                "frame": {"Alex": {"shows": "full body", "face": "visible"}}}
 
     def scene(self):
         return self.description()

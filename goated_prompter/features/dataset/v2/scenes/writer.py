@@ -5,9 +5,9 @@ import re
 
 from .....backends.recovery import GenerationRecovery, RunawayRecoveryError
 
-from .checks import _summary, repeat_reason, repeated_parts, retire_fields, scene_errors, unnamed_people
+from .checks import _summary, framing_problems, repeat_reason, repeated_parts, retire_fields, scene_errors, unnamed_people
 from .entries import _entry_key
-from .request import _labels, compose_instruction
+from .request import _labels, compose_instruction, subject_fields
 from .settings import ROUNDS, SECTIONS
 
 
@@ -31,6 +31,7 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
     """Compose one batch, asking again for the images still missing: ({number: scene}, {number: failure}).
     plan: {"vocabulary": section, "entries": {key: entry} or None, "cap", "used": {entry: images}, "dealt": {slot: entry}}."""
     labels, avoid = _labels(brief), brief["_avoid"]
+    people_fields = subject_fields(brief, None)  # everyone who is not a known character
     entries, cap, used = plan["entries"], plan["cap"], plan["used"]
     extra = ("entry",) if entries else ()
     scenes, reasons, tries = {}, {number: [] for number in numbers}, {number: 0 for number in numbers}
@@ -46,6 +47,7 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
                     if round_ > 1 else "") + "...")
         images = [{"image": number, **({"input": inputs[number]} if inputs[number] else {}),
                    **({"entry": plan["dealt"][number]} if plan.get("dealt") else {}),
+                   **({"frame": plan["frames"][number]} if plan.get("frames") else {}),
                    **({"suggested": plan["hands"][number]} if (plan.get("hands") or {}).get(number) else {})}
                   for number in todo]
         errors = sorted({f"image {number}: {reason}" for number in todo for reason in reasons[number]})
@@ -65,10 +67,12 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
             scene = retire_fields(scene)
             tries[number] += max(1, recovery.attempts - before)
             problems = ([error] if error else ["an answer was missing"] if scene is None
-                        else scene_errors(scene, labels, avoid, extra, brief["_known"]))
+                        else scene_errors(scene, labels, avoid, extra, brief["_known"], people_fields))
             entry = entries.get(_entry_key(scene["entry"])) if entries and not problems else None
             if not problems and round_ < ROUNDS:  # the last round accepts a repeat rather than lose the image
-                if repeat := next(((item, parts) for item in [*earlier, *scenes.values()]
+                if framing := framing_problems(scene, brief["_known"], (plan.get("frames") or {}).get(number)):
+                    problems = framing
+                elif repeat := next(((item, parts) for item in [*earlier, *scenes.values()]
                                    if (parts := repeated_parts(scene, item, labels))), None):
                     problems = [repeat_reason(*repeat)]
                 elif missing := unnamed_people(scene, labels):
@@ -84,6 +88,8 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
                 progress(rejected_note(number, problems[0], scene))
                 continue
             finished = {"slot": number, **{key: scene[key] for key in SECTIONS}}
+            if brief["_known"]:
+                finished["frame"] = scene["frame"]
             if not labels:
                 finished["position"] = {}
             if entries:

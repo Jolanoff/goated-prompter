@@ -61,7 +61,7 @@ class SlotIdentityTests(unittest.TestCase):
                 out.append({"subjects": {label: {field: f"visible {field}" for field in scenes.SUBJECT_FIELDS}},
                             "actions": "Alex reads the book", "position": {label: f"Seated at location{number}"},
                             "space": f"location{number}", "lighting": "daylight", "mood": "calm", "camera": "wide",
-                            "extras": "books"})
+                            "extras": "books", "frame": {label: {"shows": "full body", "face": "visible"}}})
             return json.dumps({"scenes": out})
         # Builder: echo the image the scene came from, so prompt-to-scene association is checkable.
         found = PLACE.search(instruction.user_message or "") or PLACE.search(instruction.system_message or "")

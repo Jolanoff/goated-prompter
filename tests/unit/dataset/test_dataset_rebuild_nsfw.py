@@ -48,11 +48,12 @@ class AdultDatasetTests(unittest.TestCase):
             "characters": cast, "fixed": "The named adults retain their identities, roles and assigned support.",
             "randomized": "Lighting and camera", "must": ["Use a red ribbon"], "avoid": ["No blindfold", "No collar"]}
         self.scene = {"subjects": {label: {"skin": "warm brown", "build": "adult", "hair": "short dark hair",
-            "detail": f"{label}'s recognizable face", "expression": "a soft smile", "clothing": "no clothing"} for label in labels},
+            "detail": f"{label}'s recognizable face", "expression": "a soft smile", "genitals": "average size, relaxed",
+            "clothing": "no clothing"} for label in labels},
             "position": {label: f"{label} sits on the bench, feet on the floor, holding a red ribbon in the right hand."
                          for label in labels}, "actions": f"{' and '.join(labels)} display their red ribbons without changing places.",
             "space": "A studio with a wide bench", "lighting": "daylight", "mood": "calm", "camera": "wide shot",
-            "extras": "A plain wall"}
+            "extras": "A plain wall", "frame": {label: {"shows": "full body", "face": "visible"} for label in labels}}
         return data
 
     def understand(self, data):
@@ -177,6 +178,7 @@ class AdultDatasetTests(unittest.TestCase):
                 if not nsfw:
                     data.update(nsfw=False, subject="An adult posing with a red ribbon.")
                     self.scene["subjects"]["Alex"]["clothing"] = "blue shirt"
+                    self.scene["subjects"]["Alex"].pop("genitals")  # only adult datasets describe them
                 self.understood["must"].append(requirement)
                 self.understood["fixed"] = "Alex is the only participant and keeps the same identity."
                 brief = self.understand(data)

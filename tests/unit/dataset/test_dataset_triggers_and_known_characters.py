@@ -251,7 +251,8 @@ class KnownCharacterScenes(unittest.TestCase):
         return {"subjects": {"Naruto": {"expression": "a grin", "clothing": "his orange jumpsuit"},
                              "woman": {field: f"her {field}" for field in scenes.SUBJECT_FIELDS}},
                 "position": {"Naruto": "standing left", "woman": "standing right"}, "actions": "they talk",
-                "space": f"street {number}", "lighting": "noon", "mood": "warm", "camera": "wide shot", "extras": "stalls"}
+                "space": f"street {number}", "lighting": "noon", "mood": "warm", "camera": "wide shot", "extras": "stalls",
+                "frame": {label: {"shows": "full body", "face": "visible"} for label in ("Naruto", "woman")}}
 
     def generate(self, instruction):
         self.calls.append(instruction)
@@ -286,7 +287,7 @@ class KnownCharacterScenes(unittest.TestCase):
         self.assertNotIn("COMPILED", final.system_message, "a generated scene is never parsed as user rules")
         self.assertIn("the app adds these exact texts to the prompt itself", text)
         self.assertNotIn("VISUAL STYLE — Realistic", final.system_message, "a style trigger replaces the Style setting")
-        self.assertEqual(written[0]["prompt"], f"masterpiece, safe, 1boy, 1girl, {NARUTO}, mystyle, street"
+        self.assertEqual(written[0]["prompt"], f"masterpiece, safe, 1boy, 1girl, {NARUTO}, mystyle, full body, street"
                                                "\n\nNaruto talks with a woman.")
         self.assertTrue(written[0]["trigger_ok"])
 
@@ -422,7 +423,26 @@ class AnimaTagLine(unittest.TestCase):
     def test_quality_then_one_safety_tag_then_counts_and_no_invented_score_or_solo_tags(self):
         line = prompts.anima_tag_line("1boy, rating: explicit, score_7_sub, score_9_of_9, solo man, solo focus, safe, "
                                       "kneeling, masterpiece, score_9\n\nProse.", self.cast)
-        self.assertEqual(line, "masterpiece, score_9, explicit, 1boy, 1girl, solo focus, kneeling\n\nProse.")
+        # With two people "solo focus" goes: a model adds it and the image then drops one of them.
+        self.assertEqual(line, "masterpiece, score_9, explicit, 1boy, 1girl, kneeling\n\nProse.")
+
+    def test_the_scenes_widest_frame_is_the_one_framing_tag(self):
+        scene = {"frame": {"knight": {"shows": "head to knees", "face": "visible"},
+                           "lady": {"shows": "head to hips", "face": "visible"}}}
+        line = prompts.anima_tag_line("masterpiece, upper body, close-up, kneeling\n\nProse.", self.cast, scene)
+        self.assertEqual(line, "masterpiece, 1boy, 1girl, cowboy shot, kneeling\n\nProse.")
+        self.assertEqual(prompts.anima_tag_line("masterpiece, upper body\n\nProse.", self.cast),
+                         "masterpiece, 1boy, 1girl, upper body\n\nProse.", "a scene without frames keeps the model's tag")
+
+    def test_exact_trigger_text_replaces_every_form_of_its_tags(self):
+        # Live runs kept "cu chulainn", "fate" and invented "fate \(fate_series\)" and "fate \(fate \(series\)\)"
+        # beside the exact trigger text.
+        triggers = [{"text": "uchiha madara, naruto \\(series\\)", "kind": "character", "expand": "off", "start": False},
+                    {"text": "cu chulainn \\(fate\\), fate \\(series\\)", "kind": "character", "expand": "off", "start": False}]
+        prompt = ("masterpiece, 2boys, cu chulainn, fate \\(fate\\_series\\), fate \\(fate \\(series\\)\\), fate, Uchiha_Madara, naked\n\nProse.")
+        line = prompts._anima_with_triggers(prompt, triggers)
+        self.assertEqual(line, "masterpiece, 2boys, uchiha madara, naruto \\(series\\), cu chulainn \\(fate\\), "
+                               "fate \\(series\\), naked\n\nProse.")
 
     def test_tag_blocks_split_by_blank_lines_become_one_line(self):
         line = prompts.anima_tag_line("masterpiece, 1boy\n\nkneeling, collar,\n\nA knight kneels. He waits.", self.cast)

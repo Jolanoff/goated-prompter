@@ -56,6 +56,7 @@ class SceneVocabulary(unittest.TestCase):
             "position": {label: "standing" for label in labels},
             "actions": f"{' and '.join(labels)}: {user['request']}", "space": f"clearing {row['image']}", "lighting": "moonlight",
             "mood": "calm", "camera": "wide shot", "extras": f"extras{row['image']}",
+            "frame": {label: {"shows": "full body", "face": "visible"} for label in labels},
             **({"entry": self.entries.pop(0) if self.entries else row["entry"] if self.copy_dealt
                   else self.dance} if wants_entry else {})}
             for row in user["images"]]})
@@ -325,7 +326,8 @@ class SceneVocabulary(unittest.TestCase):
         labels = ["man", "woman"]
         scene = {"subjects": {label: dict(SCENE) for label in labels}, "position": {"man": "kneeling", "woman": "on all fours"},
                  "actions": "one person kneels behind the other person", "space": "a cabin", "lighting": "lamp",
-                 "mood": "warm", "camera": "side view", "extras": "rug"}
+                 "mood": "warm", "camera": "side view", "extras": "rug",
+                 "frame": {label: {"shows": "full body", "face": "visible"} for label in labels}}
         self.assertEqual(scenes.scene_errors(scene, labels, []), [])
 
     def test_the_builder_gets_the_position_name_of_the_entry(self):

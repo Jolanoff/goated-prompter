@@ -62,7 +62,8 @@ class RebuildParityTests(unittest.TestCase):
                 out.append({"subjects": {label: {field: f"visible{row['image']}{label}{field}".replace(" ", "")
                                                  for field in scenes.SUBJECT_FIELDS} for label in cast},
                             "position": {label: "seated" for label in cast}, "actions": f"{' and '.join(cast)}: {row['input']}", "space": f"library {row['image']}",
-                            "lighting": "daylight", "mood": "calm", "camera": "wide", "extras": f"books{row['image']}"})
+                            "lighting": "daylight", "mood": "calm", "camera": "wide", "extras": f"books{row['image']}",
+                            "frame": {label: {"shows": "full body", "face": "visible"} for label in cast}})
             return json.dumps({"scenes": out})
         with patch.object(backend, "generate", side_effect=generate), patch.object(scenes, "create_backend", return_value=backend):
             result = scenes.write_scenes({"backend": "mock"}, GoatedPrompterRequest(idea="reading"), self.brief,
@@ -96,7 +97,7 @@ class RebuildParityTests(unittest.TestCase):
 
     def test_final_builder_instruction_keeps_dataset_seed(self):
         scene = {"subjects": {}, "position": {}, "actions": "reading", "space": "library", "lighting": "daylight",
-                 "mood": "calm", "camera": "wide", "extras": "shelves"}
+                 "mood": "calm", "camera": "wide", "extras": "shelves", "frame": {}}
         backend = MockBackend()
         with patch("goated_prompter.features.builder.service.create_backend", return_value=backend), \
                 patch.object(backend, "generate", return_value="Two adults reading in a library.") as generate:
