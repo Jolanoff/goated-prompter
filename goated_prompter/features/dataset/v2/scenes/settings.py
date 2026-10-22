@@ -40,4 +40,5 @@ ACTIONS_CATEGORY = "Actions & Poses"
 ENTRY_CAP = 2
 
 
-HAND = 3  # suggested entries per category for each image (every category but Actions & Poses)
+HAND = 1  # suggested entries per category for each image (every category but Actions & Poses): one each, so a pack
+# never piles several of its entries into one image

@@ -125,7 +125,7 @@ def named_entries(entries, words):
 
 
 def deal_hands(groups, total, rng, size=HAND, words=frozenset()):
-    """{slot: {category: [entries]}}: a few suggested entries of every selected category except Actions & Poses (dealt
+    """{slot: {category: [entries]}}: suggested entries (size, one by default) of every selected category except Actions & Poses (dealt
     on its own) for every image, from a seeded shuffle, without repeats until every entry has been dealt, so the whole
     vocabulary spreads over the set instead of the same few favourites. Suggestions are optional: the writer uses the
     ones that fit the image, or none.

@@ -130,6 +130,8 @@ class SceneVocabulary(unittest.TestCase):
             self.assertEqual(set(dealt), set(next(p for p in load_catalog()["packs"] if p["id"] == pack)["entries"]),
                              "every entry is dealt")
         self.assertIn('none at all when the category does not fit the image', self.composer()[0].system_message)
+        self.assertTrue(all(len(hand[category]) == 1 for hand in hands for category in hand), "one suggestion per category")
+        self.assertIn("Use at most one entry per category in an image", self.composer()[0].system_message)
 
     def lights(self, request):
         catalog = load_catalog(user_root=False)
@@ -372,6 +374,7 @@ class SceneVocabulary(unittest.TestCase):
         result = self.write(self.brief("A couple dancing", pair, amount=5), ["Actions & Poses/Romance"])
         fitting = [call for call in self.calls if call.diagnostic_stage == "dataset_v2:entries"]
         self.assertEqual(len(fitting), 1)
+        self.assertIn("the entry keeps those roles and that number", " ".join(fitting[0].system_message.split()))
         self.assertIn("A couple dancing", fitting[0].user_message)
         self.assertIn('"cast"', fitting[0].user_message)
         first = self.composer()[0]

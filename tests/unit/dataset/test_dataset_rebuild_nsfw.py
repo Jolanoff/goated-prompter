@@ -190,3 +190,7 @@ class AdultDatasetTests(unittest.TestCase):
                 self.assertNotIn('"request":', final.system_message)
                 adult = "This is an adult dataset: word the act and the bodies in plain, explicit terms"
                 (self.assertIn if nsfw else self.assertNotIn)(adult, final.system_message + final.user_message)
+                visible = "they get their own short description in that person's description"
+                (self.assertIn if nsfw else self.assertNotIn)(visible, " ".join(final.system_message.split()))
+                self.assertIn("a body part the action uses is bare, so no garment covers it",
+                              " ".join(final.system_message.split()), "clothing never covers what the action uses")

@@ -55,7 +55,7 @@ pack selected, one call first keeps only the entries that fit the request and th
 when that call fails); only those are offered and dealt, and with none the writer gets no Actions & Poses vocabulary.
 Every scene names the entry it is built on (`entry`); code checks the entry is one of the fitting ones and that no
 entry is used by more than two images (`ENTRY_CAP`, raised to the images-per-entry when fewer entries fit than images
-are requested), and asks again otherwise. Every other selected category deals each image `HAND` (3) suggested
+are requested), and asks again otherwise. Every other selected category deals each image `HAND` (1) suggested
 entries from a seeded deck, without repeats until the whole category has been dealt (`deal_hands`), so the
 vocabulary spreads over the set. In a category with entries about something the request names (they share a word
 with it that is rare in that category, `requested_entries`): when the request names only that thing, every image gets
