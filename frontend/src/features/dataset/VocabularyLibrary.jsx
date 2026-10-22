@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Search, X } from "lucide-react";
 import { ui } from "../../ui.js";
-import { filterPacks, selectedNames, togglePack } from "../vocabulary/catalog.js";
+import { filterPacks, linkedPacks, missingLinks, selectedNames, togglePack } from "../vocabulary/catalog.js";
 
 /** The Vocabulary Library: pick the packs the Dataset scene writer may draw on. Changes apply only on Apply. */
 export default function VocabularyLibrary({ open, catalog, selected, onApply, onCancel }) {
@@ -19,6 +19,9 @@ export default function VocabularyLibrary({ open, catalog, selected, onApply, on
   const packs = filterPacks(catalog, query, category);
   const preview = (catalog?.packs || []).find((pack) => pack.id === previewId);
   const names = selectedNames(catalog, chosen);
+  const links = preview ? linkedPacks(catalog, preview.id) : { uses: [], usedBy: [] };
+  const linkedList = [...links.uses, ...links.usedBy.filter((pack) => !links.uses.includes(pack))];
+  const missing = missingLinks(catalog, chosen);
   return <dialog ref={dialog} className="app-dialog vocabulary-library" aria-labelledby="vocabulary-library-title"
     aria-describedby="vocabulary-library-description" onCancel={(event) => { event.preventDefault(); onCancel(); }}>
     <header className="vocabulary-library-header">
@@ -57,11 +60,27 @@ export default function VocabularyLibrary({ open, catalog, selected, onApply, on
           <p className="vocabulary-library-preview-name">{preview.name}</p>
           <p className="vocabulary-library-preview-category">{preview.category}</p>
           {preview.description && <p className="vocabulary-library-preview-description">{preview.description}</p>}
+          {!!linkedList.length && <div className="vocabulary-library-links" aria-label="Works with">
+            <h4>Works with</h4>
+            <ul>{linkedList.map((pack) => <li key={pack.id}>
+              <input type="checkbox" aria-label={`Select ${pack.name} (${pack.category})`} checked={chosen.includes(pack.id)}
+                onChange={() => setChosen(togglePack(chosen, pack.id))} />
+              <button type="button" onClick={() => setPreviewId(pack.id)} aria-label={`Preview ${pack.name} (${pack.category})`}>
+                <span>{pack.name}</span><small>{links.uses.includes(pack) ? "named in its entries" : "names this pack"}</small></button>
+            </li>)}</ul>
+          </div>}
           <ul>{preview.entries.map((entry) => <li key={entry}>{entry}</li>)}</ul>
         </> : <p className="vocabulary-library-empty">Click a pack to see its entries.</p>}
       </section>
     </div>
     <p className="vocabulary-library-selected" role="status">Selected: {names.length ? names.join(", ") : "none"}</p>
+    {!!missing.length && <ul className="vocabulary-library-missing" aria-label="Packs that complete your selection">
+      {missing.map(({ pack, slot, options }) => <li key={`${pack.id}-${slot}`}>
+        <span>{pack.name}: entries with [{slot}] are skipped{options.length ? " until you select" : " (no such pack)"}</span>
+        {options.map((option) => <button key={option.id} type="button" className="vocabulary-library-add"
+          onClick={() => setChosen(togglePack(chosen, option.id))}>+ {option.name}</button>)}
+      </li>)}
+    </ul>}
     <footer className="vocabulary-library-actions">
       <button className={ui.button} type="button" onClick={onCancel}>Cancel</button>
       <button className={ui.primaryButton} type="button" onClick={() => onApply(chosen)}>Apply</button>

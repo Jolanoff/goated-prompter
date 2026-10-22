@@ -20,7 +20,8 @@ entries, grouped under the category's Core instruction and shuffled by the run's
 }
 ```
 
-- `name`, `category` and `entries`, plus an optional `description` (1–300 characters), nothing else. The description
+- `name`, `category` and `entries`, plus an optional `description` (1–300 characters) and an optional `people`,
+  nothing else. The description
   says what the pack is for and how its entries are written ("adult men with heavy muscle; entries already describe
   men"); the scene writer reads it with the pack's entries, and it never overrides the request or the run's settings.
 - `category` must be the folder's registered category (`vocabulary/Spaces/Fantasy.json` → `"Spaces"`). The
@@ -28,6 +29,38 @@ entries, grouped under the category's Core instruction and shuffled by the run's
   buildings seen in the scene, restraints, and text: words or marks printed, written or drawn on things or skin).
 - `entries`: 1–2000 non-empty texts of up to 300 characters; repeats (ignoring case) count once.
 - File name: words joined by hyphens (`Solo-Activities.json`); the pack id is `<folder>/<file name>`.
+
+### Optional: how many people an entry needs
+
+A pack of plain texts works as it is. When entries need a certain number of people, say so and a run never offers an
+entry to a cast that is too small (a solo request never gets an entry that needs a second person):
+
+```json
+{
+  "name": "Couple Dances",
+  "category": "Actions & Poses",
+  "people": 2,
+  "entries": ["two people waltzing", {"text": "the person bowing to the room", "people": 1}]
+}
+```
+
+- `people` on the pack (1–20) applies to every entry; `{"text": ..., "people": n}` gives one entry its own count.
+- An entry with no count is offered to every cast.
+
+### Optional: slots that link two packs
+
+An entry may name another pack or a category in square brackets, so one entry can join a pose with a prop; the scene
+writer takes a fitting entry from the named pack:
+
+- `"kneeling by the table, holding [Kitchen-and-Dining]"`: an entry of that pack.
+- `"seated in [Objects & Props]"`: an entry of any selected pack of that category.
+- `"seated in [Furniture: armchair]"`: one of that pack's entries containing "armchair".
+
+Names ignore case, spaces, hyphens and "&" written as "and", so the pack's file name works as well as its name
+(`[Kitchen-and-Dining]` is the pack named "Kitchen & Dining"). The pack or category must be selected in the run: an entry whose slot names a pack or category that is not selected,
+or whose words match none of its entries, is never used. Slots work in every category, not only objects. The
+Vocabulary Library shows a pack's linked packs so they can be selected together. Entries without brackets are
+unchanged.
 
 ## Categories
 

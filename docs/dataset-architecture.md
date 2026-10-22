@@ -127,6 +127,7 @@ happens, never what it is: an entry showing a different act does not fit.
 | Source-bound, expiring, single-use approval tickets | `v2/tickets.py` |
 | Guided input assignment | `v2/assignments.py` |
 | Vocabulary categories, pack discovery and the vocabulary prompt section | `features/vocabulary/catalog.py` |
+| Optional pack features (people count, slots) | `features/vocabulary/catalog.py`, `v2/scenes/entries.py` `fit_cast`, `v2/scenes/slots.py` |
 | Scene composition | `v2/scenes/` (`texts.py` instructions, `request.py` what the writer is asked, `entries.py` vocabulary dealing and fitting, `checks.py` scene checks, `writer.py` batch and retries, `settings.py` limits; `write_scenes` in `__init__.py`) |
 | Final prompts through the Builder | `v2/prompts.py` |
 

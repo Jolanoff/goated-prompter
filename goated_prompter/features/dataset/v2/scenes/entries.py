@@ -168,6 +168,27 @@ def deal_hands(groups, total, rng, size=HAND, words=frozenset()):
     return {number: hand for number, hand in hands.items() if hand}
 
 
+def cast_size(brief):
+    """How many people the run's cast has (a character with a count stands for that many)."""
+    return sum(person.get("count") if type(person.get("count")) is int else 1 for person in brief["characters"])
+
+
+def fit_cast(groups, size):
+    """The selected vocabulary without the entries that need more people than the cast has (a pack's "people"); a
+    pack or category left with no entry is left out. Entries that give no count always stay."""
+    result = []
+    for group in groups:
+        packs = []
+        for pack in group["packs"]:
+            needs = pack.get("people") or {}
+            entries = [entry for entry in pack["entries"] if needs.get(entry, 0) <= size]
+            if entries:
+                packs.append({**pack, "entries": entries})
+        if packs:
+            result.append({**group, "packs": packs})
+    return result
+
+
 def entry_cap(entries, total):
     """How many images may use one Actions & Poses entry: ENTRY_CAP, or more when there are fewer entries than
     images."""

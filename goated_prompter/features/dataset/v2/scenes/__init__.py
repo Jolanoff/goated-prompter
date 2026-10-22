@@ -15,6 +15,12 @@ the fitting entries and that no entry is used by more images than ENTRY_CAP allo
 fit than images are requested), and asks again otherwise (the last round keeps the image). When no entry fits, the
 writer gets no Actions & Poses vocabulary and builds a logical pose for the request.
 
+Optional pack features: entries that need more people than the cast (a pack's "people") are removed before anything
+else (fit_cast), and so are entries with a slot ("holding [Kitchen-and-Dining]") that names a pack or category the run
+did not select (only_fillable). A slot that is kept stays as written: the writer sees the pack it names among the
+selected vocabulary and takes a fitting entry from it (a live run merged them correctly; filling slots in code gave
+more retries). Packs without them are used exactly as before.
+
 A scene has subjects (per character: skin, build, hair, detail, expression; a known character, which the
 image model draws from its name or trigger, has only expression), position (per character, with their place in the
 frame and every body part named with its owner), actions, space, camera and extras. Clothing, light and mood are left
@@ -44,9 +50,10 @@ from ....vocabulary.catalog import catalog_for, selected_vocabulary, record as s
 from ..understanding import validate_brief
 
 from .checks import _summary, avoid_patterns, retire_fields, scene_errors
-from .entries import _entry_key, _only, _shuffled, deal_entries, deal_hands, entry_cap, fitting_entries, requested_entries, requested_words
+from .entries import _entry_key, _only, _shuffled, cast_size, deal_entries, deal_hands, entry_cap, fit_cast, fitting_entries, requested_entries, requested_words
 from .request import _system, compose_instruction, compose_message, known_labels, slot_inputs, trigger_notes, varied_labels
 from .settings import ACTIONS_CATEGORY, BATCH, EARLIER, KNOWN_SUBJECT_FIELDS, ROUNDS, SECTIONS, SUBJECT_FIELDS, VOCABULARY_SAMPLE
+from .slots import only_fillable
 from .texts import COMPOSE_SYSTEM, ENTRY_FIT_SYSTEM, ENTRY_RULE, GUIDED_RULE, NO_PEOPLE_RULE, NSFW_RULE, SFW_RULE, VOCABULARY_RULES
 from .writer import _compose
 
@@ -67,7 +74,7 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
     vocabulary = None if guided else vocabulary  # the user's own scene ideas use no vocabulary
     catalog = catalog if catalog is not None else catalog_for(vocabulary)
     selection = validate_selection(catalog, vocabulary)
-    groups = selected_vocabulary(catalog, selection)
+    groups = only_fillable(fit_cast(selected_vocabulary(catalog, selection), cast_size(brief)))
     seed = brief["input"].get("seed")
     rng = random.Random(seed) if isinstance(seed, int) else random.Random()
     actions = next((group for group in groups if group["category"] == ACTIONS_CATEGORY), None)
