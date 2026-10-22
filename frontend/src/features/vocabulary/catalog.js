@@ -24,6 +24,28 @@ export function filterPacks(catalog, query = "", category = "") {
     || [pack.name, pack.category, pack.description || "", ...pack.entries].some((text) => text.toLowerCase().includes(words))));
 }
 
+/** The packs that work with a pack through slots: the ones its entries name in [brackets] ("uses") and the ones whose
+ * entries name it ("usedBy"). The server lists each pack's slots as links: [{ slot, packs: [ids] }]. */
+export function linkedPacks(catalog, id) {
+  const packs = catalog?.packs || [];
+  const byId = new Map(packs.map((pack) => [pack.id, pack]));
+  const uses = [...new Set((byId.get(id)?.links || []).flatMap((link) => link.packs))].map((ident) => byId.get(ident))
+    .filter(Boolean);
+  const usedBy = packs.filter((pack) => pack.id !== id && (pack.links || []).some((link) => link.packs.includes(id)));
+  return { uses, usedBy };
+}
+
+/** The slots of the chosen packs that no chosen pack fills: [{ pack, slot, options }]. A run skips the entries that
+ * hold them until one of the options is chosen. */
+export function missingLinks(catalog, ids) {
+  const chosen = new Set(ids || []);
+  const byId = new Map((catalog?.packs || []).map((pack) => [pack.id, pack]));
+  return (ids || []).flatMap((id) => (byId.get(id)?.links || [])
+    .filter((link) => !link.packs.some((ident) => chosen.has(ident)))
+    .map((link) => ({ pack: byId.get(id), slot: link.slot,
+      options: link.packs.map((ident) => byId.get(ident)).filter(Boolean) })));
+}
+
 /** The names of the selected packs, for "Selected: Fantasy, Cinematic". */
 export function selectedNames(catalog, ids) {
   const packs = new Map((catalog?.packs || []).map((pack) => [pack.id, pack]));

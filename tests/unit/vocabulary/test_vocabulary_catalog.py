@@ -130,6 +130,51 @@ class Library(unittest.TestCase):
                 import_pack("bad.json", json.dumps({"name": "X", "category": "Spaces", "description": bad, "entries": ["a"]}),
                             self.root)
 
+    def test_a_pack_may_say_how_many_people_its_entries_need(self):
+        self.pack("Actions & Poses", "Pairs", {"name": "Pairs", "category": "Actions & Poses", "people": 2,
+                                               "entries": ["two people dancing", {"text": "the person bowing", "people": 1}]})
+        self.pack("Actions & Poses", "Mixed", {"name": "Mixed", "category": "Actions & Poses",
+                                               "entries": ["a person waving", {"text": "a group of three posing", "people": 3}]})
+        self.pack("Actions & Poses", "Plain", {"name": "Plain", "category": "Actions & Poses", "entries": ["a person sitting"]})
+        packs = {pack["name"]: pack for pack in load_catalog(self.root)["packs"]}
+        self.assertEqual(packs["Pairs"]["entries"], ["two people dancing", "the person bowing"], "entries stay texts")
+        self.assertEqual(packs["Pairs"]["people"], {"two people dancing": 2, "the person bowing": 1})
+        self.assertEqual(packs["Mixed"]["people"], {"a group of three posing": 3}, "an entry without a count gives none")
+        self.assertNotIn("people", packs["Plain"], "a pack of plain texts is unchanged")
+        groups = selected_vocabulary(load_catalog(self.root), {"packs": ["Actions & Poses/Mixed", "Actions & Poses/Plain"]})
+        self.assertEqual([pack.get("people") for pack in groups[0]["packs"]], [{"a group of three posing": 3}, None])
+        text = json.dumps({"name": "Pairs", "category": "Actions & Poses", "people": 2,
+                           "entries": ["two people dancing", {"text": "the person bowing", "people": 1},
+                                       {"text": "two people bowing", "people": 2}]})
+        saved = import_pack("pairs.json", text, self.root)
+        self.assertEqual(saved["people"], {"two people dancing": 2, "the person bowing": 1, "two people bowing": 2})
+        stored = json.loads((self.user / "Actions & Poses" / "pairs.json").read_text(encoding="utf-8"))
+        self.assertEqual(stored["people"], 2)
+        self.assertEqual(stored["entries"], ["two people dancing", {"text": "the person bowing", "people": 1},
+                                             "two people bowing"], "saved as written, the pack's count once")
+        for bad, problem in ((0, "people"), ("2", "people"), (21, "people"), (True, "people")):
+            with self.subTest(people=bad), self.assertRaisesRegex(ValueError, problem):
+                import_pack("bad.json", json.dumps({"name": "X", "category": "Spaces", "people": bad, "entries": ["a"]}),
+                            self.root)
+        for entry in ({"text": "a", "people": 0}, {"text": "a", "extra": 1}, {"people": 2}, {"text": ""}):
+            with self.subTest(entry=entry), self.assertRaisesRegex(ValueError, "entries"):
+                import_pack("bad.json", json.dumps({"name": "X", "category": "Spaces", "entries": [entry]}), self.root)
+
+    def test_each_pack_lists_the_packs_its_slots_name(self):
+        self.pack("Objects", "Kitchen-and-Dining", {"name": "Kitchen & Dining", "category": "Objects & Props",
+                                                     "entries": ["teapot", "wine glass"]})
+        self.pack("Objects", "Furniture", {"name": "Furniture", "category": "Objects & Props", "entries": ["armchair"]})
+        self.pack("Actions & Poses", "Dinner", {"name": "Dinner", "category": "Actions & Poses", "entries": [
+            "two people at a table, one holding [Kitchen-and-Dining]", "one person seated in [Furniture: armchair]",
+            "two people beside [Objects & Props]", "two people near [Nowhere]", "two people dancing"]})
+        packs = {pack["id"]: pack for pack in load_catalog(self.root)["packs"]}
+        self.assertEqual(packs["Actions & Poses/Dinner"]["links"], [
+            {"slot": "Kitchen-and-Dining", "packs": ["Objects/Kitchen-and-Dining"]},
+            {"slot": "Furniture", "packs": ["Objects/Furniture"]},
+            {"slot": "Objects & Props", "packs": ["Objects/Furniture", "Objects/Kitchen-and-Dining"]},
+            {"slot": "Nowhere", "packs": []}])
+        self.assertNotIn("links", packs["Objects/Furniture"], "a pack without slots has no links")
+
     def test_a_description_stays_with_its_own_entries_in_the_prompt(self):
         groups = [{"category": "Objects & Props", "instruction": "Objects & Props provides vocabulary.",
                    "packs": [{"name": "Plain", "description": "", "entries": ["mug", "paint splash"]},

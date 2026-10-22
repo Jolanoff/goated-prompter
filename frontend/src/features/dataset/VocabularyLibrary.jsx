@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowRight, Box, Check, ChevronRight, Cloud, Image, Link, PersonStanding, Plus, Search,
   Shirt, Smile, Sparkles, Sun, Trash2, UserRound, X } from "lucide-react";
 import { ui } from "../../ui.js";
-import { cleanSelection, filterPacks, togglePack } from "../vocabulary/catalog.js";
+import { cleanSelection, filterPacks, linkedPacks, missingLinks, togglePack } from "../vocabulary/catalog.js";
 import { relatedPacks, sortPacks } from "./vocabularyLibrary.js";
 import "./vocabulary-library.css";
 
@@ -56,6 +56,9 @@ export default function VocabularyLibrary({ open, catalog, selected, onApply, on
   const selection = cleanSelection(catalog, chosen);
   const selectedPacks = selection.map((id) => allPacks.find((pack) => pack.id === id));
   const related = relatedPacks(allPacks, preview);
+  const links = preview ? linkedPacks(catalog, preview.id) : { uses: [], usedBy: [] };
+  const linkedList = [...links.uses, ...links.usedBy.filter((pack) => !links.uses.includes(pack))];
+  const missing = missingLinks(catalog, selection);
   const expanded = !!preview && expandedId === preview.id;
   const entries = preview ? preview.entries.slice(0, expanded ? undefined : 12) : [];
   useEffect(() => {
@@ -142,6 +145,20 @@ export default function VocabularyLibrary({ open, catalog, selected, onApply, on
               {expanded ? "Show fewer entries" : "Show all entries"}</button>}
           </div>
           <div className="vocabulary-library-related">
+            {!!linkedList.length && <div className="vocabulary-library-links" aria-label="Works with">
+              <div className="vocabulary-library-section-heading"><h4>Works with</h4></div>
+              <ul className="vocabulary-library-related-list">{linkedList.map((pack) => <li key={pack.id}>
+                <button className="vocabulary-library-related-open" type="button"
+                  onClick={() => { resetFilters(); previewPack(pack); }} aria-label={`Preview linked ${pack.name} (${pack.category})`}>
+                  <span><strong>{pack.name}</strong><small>{links.uses.includes(pack) ? "named in its entries" : "names this pack"}</small></span>
+                </button>
+                <button className={ui.iconButton} type="button"
+                  aria-label={`${selection.includes(pack.id) ? "Deselect" : "Select"} linked ${pack.name} (${pack.category})`}
+                  aria-pressed={selection.includes(pack.id)} onClick={() => toggle(pack)}>
+                  {selection.includes(pack.id) ? <Check size={18} aria-hidden="true" /> : <Plus size={18} aria-hidden="true" />}
+                </button>
+              </li>)}</ul>
+            </div>}
             <div className="vocabulary-library-section-heading"><h4><Link size={18} aria-hidden="true" />Related Packs</h4>
               <button className={ui.textButton} type="button" aria-label="View all related packs"
                 onClick={() => { setQuery(""); setCategory(preview.category); }}>View all <ArrowRight size={15} aria-hidden="true" /></button>
@@ -164,6 +181,13 @@ export default function VocabularyLibrary({ open, catalog, selected, onApply, on
       </section>
     </div>
     <footer className="vocabulary-library-footer">
+      {!!missing.length && <ul className="vocabulary-library-missing" aria-label="Packs that complete your selection">
+        {missing.map(({ pack, slot, options }) => <li key={`${pack.id}-${slot}`}>
+          <span>{pack.name}: entries with [{slot}] are skipped{options.length ? " until you select" : " (no such pack)"}</span>
+          {options.map((option) => <button key={option.id} type="button" className="vocabulary-library-add"
+            onClick={() => toggle(option)}>+ {option.name}</button>)}
+        </li>)}
+      </ul>}
       <div className="vocabulary-library-selection-heading"><h3 aria-live="polite">Selected Packs ({selection.length})</h3>
         <button className={ui.textButton} type="button" disabled={!selection.length} onClick={() => setChosen([])}>
           <Trash2 size={15} aria-hidden="true" />Clear all</button></div>

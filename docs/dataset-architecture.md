@@ -1,7 +1,7 @@
 # Dataset architecture
 
 Dataset produces prompts, not images. The rebuilt workflow uses
-`features/dataset/v2/understanding.py`, `scenes.py` and `prompts.py`:
+`features/dataset/v2/understanding.py`, the `scenes/` package and `prompts.py`:
 Understanding → source-bound human confirmation → the scene writer (with any selected vocabulary) → final Builder prompts.
 Scenes-only generation stops before Builder. This is the only Dataset workflow; the
 earlier pipeline (ideas with scenes, per-scene actions, Continue, saved scene plans, durable
@@ -43,7 +43,7 @@ number) to exactly one person, the character's `triggers` (code checks it; a cha
 and the review shows the link. Each character carries `known`: its looks come from its name or an
 exact-text character trigger, so no step invents them. Version 9 to 12 briefs in saved runs stay readable.
 
-Scenes (`v2/scenes.py`): the scene writer (`dataset_v2:scenes`, one call per batch of up to ten images) receives the
+Scenes (`v2/scenes/`): the scene writer (`dataset_v2:scenes`, one call per batch of up to ten images) receives the
 USER REQUEST, the EXISTING APPROVED REQUIREMENTS (rules, Understanding, style, and the capture when the style is Realistic) and, only when packs are selected, a
 SELECTED VOCABULARY section: just the categories that have a selected pack, each with its Core instruction and the
 entries of those packs (merged per category and shuffled for every batch by a generator seeded with the run's seed),
@@ -55,7 +55,7 @@ pack selected, one call first keeps only the entries that fit the request and th
 when that call fails); only those are offered and dealt, and with none the writer gets no Actions & Poses vocabulary.
 Every scene names the entry it is built on (`entry`); code checks the entry is one of the fitting ones and that no
 entry is used by more than two images (`ENTRY_CAP`, raised to the images-per-entry when fewer entries fit than images
-are requested), and asks again otherwise. Every other selected category deals each image `HAND` (3) suggested
+are requested), and asks again otherwise. Every other selected category deals each image `HAND` (1) suggested
 entries from a seeded deck, without repeats until the whole category has been dealt (`deal_hands`), so the
 vocabulary spreads over the set. In a category with entries about something the request names (they share a word
 with it that is rare in that category, `requested_entries`): when the request names only that thing, every image gets
@@ -127,7 +127,8 @@ happens, never what it is: an entry showing a different act does not fit.
 | Source-bound, expiring, single-use approval tickets | `v2/tickets.py` |
 | Guided input assignment | `v2/assignments.py` |
 | Vocabulary categories, pack discovery and the vocabulary prompt section | `features/vocabulary/catalog.py` |
-| Scene composition | `v2/scenes.py` |
+| Optional pack features (people count, slots) | `features/vocabulary/catalog.py`, `v2/scenes/entries.py` `fit_cast`, `v2/scenes/slots.py` |
+| Scene composition | `v2/scenes/` (`texts.py` instructions, `request.py` what the writer is asked, `entries.py` vocabulary dealing and fitting, `checks.py` scene checks, `writer.py` batch and retries, `settings.py` limits; `write_scenes` in `__init__.py`) |
 | Final prompts through the Builder | `v2/prompts.py` |
 
 ## Seeds
