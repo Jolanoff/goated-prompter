@@ -11,7 +11,13 @@ Adding a category is one entry in each file plus its folder; nothing in the code
 A pack is one JSON file in a registered folder, vocabulary/<folder>/<file>.json, with
   {"name": "Fantasy", "category": "Spaces", "entries": ["enchanted forest", "floating castle"]}
 and optionally "description": a short note from the pack's author on what the pack is for and how its entries are
-written, which the scene writer reads with the pack. category is the folder's registered category. Its id is "<folder>/<file name without .json>". Each file is read
+written, which the scene writer reads with the pack, and "people": how many people every entry of the pack needs.
+An entry is a text, or {"text": ..., "people": n} when that one entry needs a different number of people; an entry
+that needs more people than a run's cast is never offered to it. Both are optional: a pack of plain texts needs no
+count. An entry may also name another pack or category in square brackets, a slot ("holding [Kitchen-and-Dining]",
+"[Furniture: armchair]"): a run uses it only when that pack or category is selected, and the scene writer takes a
+fitting entry from it (dataset/v2/scenes/slots.py). Each pack lists the packs its slots name ("links"), so the
+Library can show packs that work together. category is the folder's registered category. Its id is "<folder>/<file name without .json>". Each file is read
 on its own: a broken file is reported with its reason and every other pack still loads.
 
 Imported packs live in the user's own data folder, data/vocabulary/<folder>/<file>.json, in exactly the same format;
@@ -39,8 +45,41 @@ INSTRUCTIONS = "prompt_instructions.json"
 MAX_FILE_BYTES = 2 * 1024 * 1024
 MAX_ENTRIES = 2000
 MAX_TEXT = 300
+MAX_PEOPLE = 20
 PACK_KEYS = {"name", "category", "entries"}
-OPTIONAL_PACK_KEYS = {"description"}
+OPTIONAL_PACK_KEYS = {"description", "people"}
+ENTRY_KEYS = {"text"}
+OPTIONAL_ENTRY_KEYS = {"people"}
+
+
+# A slot: [Pack or Category] or [Pack or Category: wanted words]. Names ignore case, spaces, hyphens and "&" written as
+# "and", so a pack's file name works as well as its name ([Kitchen-and-Dining] is the pack "Kitchen & Dining").
+SLOT = re.compile(r"\[([^\[\]:]+)(?::([^\[\]]*))?\]")
+
+
+def slot_key(name):
+    return re.sub(r"[^a-z0-9]", "", str(name).casefold().replace("&", "and"))
+
+
+def has_slot(text):
+    return bool(SLOT.search(str(text)))
+
+
+def pack_links(packs):
+    """Each pack's slots with the packs they name: {pack id: [{"slot": name as written, "packs": [ids]}]}, for the
+    packs that have slots. A slot names a pack by its name or file name, or every pack of a category by its name."""
+    names = {}
+    for pack in packs:
+        for key in {slot_key(pack["name"]), slot_key(pack["id"].rsplit("/", 1)[-1]), slot_key(pack["category"])}:
+            names.setdefault(key, []).append(pack["id"])
+    links = {}
+    for pack in packs:
+        slots = dict.fromkeys(" ".join(match.group(1).split()) for entry in pack["entries"] for match in SLOT.finditer(entry))
+        rows = [{"slot": slot, "packs": [ident for ident in names.get(slot_key(slot), []) if ident != pack["id"]]}
+                for slot in slots]
+        if rows:
+            links[pack["id"]] = rows
+    return links
 
 
 class CatalogError(ValueError):
@@ -94,23 +133,41 @@ def _parse(text):
         raise ValueError(f"not valid JSON ({error})") from None
 
 
+def _people(value, where):
+    if type(value) is not int or not 1 <= value <= MAX_PEOPLE:
+        raise ValueError(f"{where} must be a whole number of people from 1 to {MAX_PEOPLE}.")
+    return value
+
+
 def _checked(data):
-    """(name, category, entries, description) of pack data: the pack keys and nothing else but an optional
-    description ("" without one). Raises ValueError naming the first problem."""
+    """(name, category, entries, description, people) of pack data: the pack keys and nothing else but an optional
+    description ("" without one) and people. entries are texts; people is {entry: how many people it needs} for the
+    entries that say so, themselves or through the pack's own "people" ({} for a pack of plain texts). Raises
+    ValueError naming the first problem."""
     if not isinstance(data, dict) or not PACK_KEYS <= set(data) or set(data) - PACK_KEYS - OPTIONAL_PACK_KEYS:
-        raise ValueError('needs exactly "name", "category" and "entries", and optionally "description"')
+        raise ValueError('needs exactly "name", "category" and "entries", and optionally "description" and "people"')
     if not isinstance(data["category"], str):
         raise ValueError("category must be text")
     if not isinstance(data["entries"], list) or not data["entries"] or len(data["entries"]) > MAX_ENTRIES:
         raise ValueError(f"entries must be a list of 1 to {MAX_ENTRIES} texts")
-    entries, seen = [], set()
+    every = _people(data["people"], "people") if "people" in data else None
+    entries, people, seen = [], {}, set()
     for number, value in enumerate(data["entries"], 1):
-        entry = _text(value, f"entries[{number}]")
+        where, need = f"entries[{number}]", every
+        if isinstance(value, dict):
+            if not ENTRY_KEYS <= set(value) or set(value) - ENTRY_KEYS - OPTIONAL_ENTRY_KEYS:
+                raise ValueError(f'{where} must be a text, or {{"text": ..., "people": n}}')
+            if "people" in value:
+                need = _people(value["people"], f"{where}.people")
+            value = value["text"]
+        entry = _text(value, where)
         if entry.casefold() not in seen:  # a repeated entry is the same entry
             seen.add(entry.casefold())
             entries.append(entry)
+            if need is not None:
+                people[entry] = need
     description = _text(data["description"], "description") if "description" in data else ""
-    return _text(data["name"], "name"), data["category"], entries, description
+    return _text(data["name"], "name"), data["category"], entries, description, people
 
 
 def read_pack(path, category, folder, prefix=""):
@@ -122,11 +179,11 @@ def read_pack(path, category, folder, prefix=""):
         text = path.read_text(encoding="utf-8")
     except UnicodeError as error:
         raise ValueError(f"not valid JSON ({error})") from None
-    name, declared, entries, description = _checked(_parse(text))
+    name, declared, entries, description, people = _checked(_parse(text))
     if declared != category:
         raise ValueError(f'category is "{declared}", but the {folder} folder holds "{category}" packs')
     return {"id": f"{prefix}{folder}/{path.stem}", "name": name, "category": category, "description": description,
-            "entries": entries, "source": "imported" if prefix else "built-in"}
+            "entries": entries, **({"people": people} if people else {}), "source": "imported" if prefix else "built-in"}
 
 
 def _roots(root, user_root):
@@ -153,6 +210,8 @@ def load_catalog(root=None, user_root=None):
                     packs.append(read_pack(path, category["id"], category["folder"], prefix))
                 except (OSError, ValueError) as error:
                     problems.append({"file": f"{prefix}{category['folder']}/{path.name}", "problem": str(error)})
+    links = pack_links(packs)
+    packs = [{**pack, "links": links[pack["id"]]} if pack["id"] in links else pack for pack in packs]
     return {"categories": categories, "packs": packs, "problems": problems}
 
 
@@ -175,7 +234,8 @@ def import_pack(filename, text, root=None, user_root=None):
     root, user_root = _roots(root, user_root)
     if user_root is None:
         raise ValueError("there is no folder for imported packs")
-    name, category, entries, description = _checked(_parse(text))
+    data = _parse(text)
+    name, category, entries, description, people = _checked(data)
     categories, _ = read_categories(root)
     match = next((row for row in categories if row["id"] == category), None)
     if match is None:
@@ -183,8 +243,11 @@ def import_pack(filename, text, root=None, user_root=None):
     stem = pack_file_stem(filename, name)
     path = user_root / match["folder"] / f"{stem}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
+    every = data.get("people")  # saved as written: the pack's count, and an entry's own count when it differs
     atomic_json(path, {"name": name, "category": category, **({"description": description} if description else {}),
-                       "entries": entries})
+                       **({"people": every} if every is not None else {}),
+                       "entries": [{"text": entry, "people": people[entry]} if people.get(entry, every) != every
+                                   else entry for entry in entries]})
     return read_pack(path, category, match["folder"], USER_PREFIX)
 
 
@@ -228,7 +291,8 @@ def selected_vocabulary(catalog, selection):
     chosen = set(selection["packs"])
     groups = []
     for category in catalog["categories"]:
-        packs = [{"name": pack["name"], "description": pack.get("description", ""), "entries": list(pack["entries"])}
+        packs = [{"name": pack["name"], "description": pack.get("description", ""), "entries": list(pack["entries"]),
+                  **({"people": dict(pack["people"])} if pack.get("people") else {})}
                  for pack in catalog["packs"]
                  if pack["category"] == category["id"] and pack["id"] in chosen]
         if packs:

@@ -79,6 +79,13 @@
 .vocabulary-library-selection-empty { flex: 1; margin: 0; font-size: 12px; color: var(--muted); }
 .vocabulary-library-actions { display: flex; justify-content: flex-end; gap: 10px; flex-shrink: 0; }
 .vocabulary-library-actions .button { min-height: 40px; padding-inline: 20px; border-radius: 11px; margin-top: 0; font-size: 14px; }
+.vocabulary-library-preview:has(.vocabulary-library-links) { overflow-y: auto; }
+.vocabulary-library-links { margin-bottom: 10px; }
+.vocabulary-library-links .vocabulary-library-related-list { margin-top: 6px; max-height: 96px; overflow-y: auto; }
+.vocabulary-library-missing { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 4px; max-height: 72px; overflow-y: auto; font-size: 12px; color: var(--muted); }
+.vocabulary-library-missing li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; overflow-wrap: anywhere; }
+.vocabulary-library-add { border: 1px solid var(--line); border-radius: 999px; background: none; color: inherit; font: inherit; font-size: 11px; padding: 2px 8px; cursor: pointer; }
+.vocabulary-library-add:hover { border-color: var(--select-border); }
 @media (min-width: 951px) and (max-height: 850px) {
   .vocabulary-library-header { padding: 12px 18px 8px; }
   .vocabulary-library-header h2 { font-size: 24px; }

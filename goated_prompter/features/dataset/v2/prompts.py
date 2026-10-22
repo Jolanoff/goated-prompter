@@ -49,8 +49,9 @@ are when it matters, how much space each takes, and what lies in the foreground,
 shot name or a phrase such as "fully visible" never stands in for that description. Every person of the scene gets a
 real presence in the prompt, not only the body parts of the action, and every body part shown is joined to its
 owner, who is described in the frame. The scene leaves clothing, light and mood to you: choose
-them to suit the scene and the request (and any Clothing, Lighting or Mood entry in its extras); nothing worn hides a
-body part the action uses. Describe a body part only when the scene's positions and camera let the camera see it; a
+them to suit the scene and the request (and any Clothing, Lighting or Mood entry in its extras). Dress each person
+after reading the action: a body part the action uses is bare, so no garment covers it (no underwear, shorts or
+trousers over hips the action uses, no top over a chest it uses); clothing goes only on the rest of the body. Describe a body part only when the scene's positions and camera let the camera see it; a
 body part turned away, hidden behind or under another body, or inside someone is never described as visible.
 A person's label or number only tells the people apart: never write it, and never call a person by their order;
 describe each person by their own appearance instead."""
@@ -62,7 +63,10 @@ write only their expression, clothing, pose and action."""
 
 ADULT_RULE = """
 This is an adult dataset: word the act and the bodies in plain, explicit terms, exactly as direct as the scene, in
-every prompt. Never soften them into euphemisms, implications or vague wording."""
+every prompt. Never soften them into euphemisms, implications or vague wording. Whenever the positions and camera let
+the camera see a person's genitals, they get their own short description in that person's description, as concrete as
+their skin and build: size, shape and state (relaxed or aroused). Naming them only in the action is not enough.
+Genitals the camera cannot see are not described."""
 
 
 def position_name(scene):
