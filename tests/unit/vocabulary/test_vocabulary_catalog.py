@@ -48,9 +48,9 @@ class Bundled(unittest.TestCase):
         self.assertEqual(sorted(path.name for path in (catalog.ROOT / "core").iterdir()),
                          ["category_definitions.json", "prompt_instructions.json", "scene_category_registry.json"])
 
-    def test_every_starter_pack_is_name_category_entries_in_its_folder(self):
+    def test_every_starter_pack_has_a_description_and_20_to_40_entries_in_its_folder(self):
         loaded = load_catalog()
-        self.assertEqual(len(loaded["packs"]), 48)
+        self.assertEqual(len(loaded["packs"]), 63)
         folders = {row["folder"]: row["id"] for row in loaded["categories"]}
         self.assertEqual({pack["source"] for pack in loaded["packs"]}, {"built-in"})
         for path in sorted(catalog.ROOT.glob("*/*.json")):
@@ -58,9 +58,15 @@ class Bundled(unittest.TestCase):
                 continue
             with self.subTest(pack=str(path.relative_to(catalog.ROOT))):
                 data = json.loads(path.read_text(encoding="utf-8"))
-                self.assertEqual(list(data), ["name", "category", "entries"])
+                self.assertEqual(set(data), {"name", "category", "description", "entries"})
                 self.assertEqual(data["category"], folders[path.parent.name])
                 self.assertTrue(all(isinstance(entry, str) and entry for entry in data["entries"]))
+                self.assertIsInstance(data["description"], str)
+                self.assertTrue(1 <= len(data["description"].strip()) <= 300)
+                self.assertTrue(20 <= len(data["entries"]) <= 40)
+                self.assertTrue(all(len(entry) <= 300 for entry in data["entries"]))
+                self.assertEqual(len({" ".join(entry.casefold().split()) for entry in data["entries"]}),
+                                 len(data["entries"]), "entries must be distinct")
         names = {pack["id"]: pack["name"] for pack in loaded["packs"]}
         self.assertEqual(names["Spaces/Sci-Fi"], "Sci-Fi")
         self.assertEqual(names["Actions & Poses/Solo-Activities"], "Solo Activities")
@@ -254,7 +260,8 @@ class Selection(unittest.TestCase):
             self.assertEqual(text.count(heading), 1)
         for absent in ("Subjects", "Actions & Poses", "Lighting"):
             self.assertNotIn(f"\n{absent}\nCore instruction:", text)
-        self.assertIn("Available vocabulary:\nenchanted forest\nancient dragon temple\nfloating castle", text)
+        self.assertIn('Pack "Fantasy" (its author\'s note:', text)
+        self.assertIn("enchanted forest\nancient dragon temple\nfloating castle", text)
         self.assertNotIn("foggy graveyard", text, "an unselected pack of a selected category is not sent")
 
     def test_two_packs_of_one_category_share_one_block(self):
@@ -274,7 +281,7 @@ class Selection(unittest.TestCase):
     def test_record(self):
         selection = validate_selection(self.catalog, ["Lighting/Cinematic", "Lighting/Cinematic"])
         self.assertEqual(record(self.catalog, selection),
-                         {"packs": [{"id": "Lighting/Cinematic", "name": "Cinematic", "category": "Lighting", "entries": 3}]})
+                         {"packs": [{"id": "Lighting/Cinematic", "name": "Cinematic", "category": "Lighting", "entries": 20}]})
 
 
 if __name__ == "__main__":

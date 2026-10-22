@@ -1,9 +1,27 @@
 {
   "name": "Weather",
   "category": "Effects & Atmosphere",
+  "description": "Weather and its visible effects on exposed surroundings. Entries describe precipitation, wind and cloud conditions rather than an emotional tone.",
   "entries": [
+    "a clear still day with sharply defined distant terrain",
+    "high thin cloud veiling the sky",
+    "dense low cloud covering the ridgelines",
+    "freezing rain glazing branches and railings",
+    "a snow squall obscuring the far end of a path",
+    "dust-laden wind reducing visibility near the horizon",
+    "a waterspout beneath a distant storm cloud",
+    "a rainbow over receding rain",
+    "morning frost on exposed grass",
+    "a coastal fog bank rolling over headlands",
+    "thick summer humidity with moisture on shaded surfaces",
+    "virga trailing beneath a high cloud without reaching the ground",
     "heavy rain",
     "falling snow",
-    "thunderstorm"
+    "thunderstorm",
+    "sleet collecting along exposed edges",
+    "gusting wind bending loose vegetation in one direction",
+    "hailstones bouncing from hard ground",
+    "fine drizzle forming beads on exposed surfaces",
+    "a break in storm clouds above wet terrain"
   ]
 }

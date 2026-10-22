@@ -1,9 +1,27 @@
 {
   "name": "Weapons",
   "category": "Objects & Props",
+  "description": "Historical and fictional weapons and defensive equipment. Entries identify equipment without requiring its use or adding a conflict.",
   "entries": [
+    "wooden practice sword",
+    "buckler with a raised metal rim",
+    "halberd with a hooked blade",
+    "flintlock pistol with an engraved stock",
+    "curved saber with a knuckle guard",
+    "trident with three evenly spaced prongs",
+    "two-handed poleaxe",
+    "compact science-fiction stun device",
+    "folding energy shield with a visible emitter",
+    "ceremonial mace with an inlaid handle",
     "longsword",
     "crossbow",
-    "plasma rifle"
+    "plasma rifle",
+    "round shield with a central grip",
+    "long spear",
+    "recurved bow with a taut string",
+    "quarterstaff",
+    "sling with a leather pouch",
+    "single-headed war hammer",
+    "short dagger in a sheath"
   ]
 }

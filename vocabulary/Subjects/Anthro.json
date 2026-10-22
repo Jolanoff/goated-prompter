@@ -1,9 +1,27 @@
 {
   "name": "Anthro",
   "category": "Subjects",
+  "description": "Adult humanoids with animal traits. Entries specify anatomy and appearance without assigning gender, occupation or activity.",
   "entries": [
-    "fox-eared woman",
-    "wolf-headed warrior",
-    "catgirl"
+    "adult rabbit-like humanoid with long ears and short dense fur",
+    "adult bear-like humanoid with a broad muzzle and rounded ears",
+    "adult goat-like humanoid with swept horns and a short beard",
+    "adult frog-like humanoid with smooth skin and broad fingertips",
+    "adult shark-like humanoid with rough skin and a dorsal fin",
+    "adult bat-like humanoid with large ears and folded membranous wings",
+    "adult horse-like humanoid with a long mane and sturdy hooved legs",
+    "adult tiger-like humanoid with striped fur and rounded ears",
+    "adult armadillo-like humanoid with a plated back and tapered tail",
+    "adult chameleon-like humanoid with textured scales and a curled tail",
+    "adult elephant-like humanoid with a flexible trunk and broad ears",
+    "adult red-panda-like humanoid with russet fur and a ringed tail",
+    "adult humanoid with fox ears and a brush-like tail",
+    "adult wolf-headed humanoid with dense fur and upright ears",
+    "adult humanoid with cat ears, whiskers and a long tail",
+    "adult otter-like humanoid with short fur and broad webbed hands",
+    "adult deer-like humanoid with antlers and cloven feet",
+    "adult bird-like humanoid with a curved beak and feathered arms",
+    "adult lizard-like humanoid with scales and a thick tapering tail",
+    "adult moth-like humanoid with broad patterned wings and feathery antennae"
   ]
 }

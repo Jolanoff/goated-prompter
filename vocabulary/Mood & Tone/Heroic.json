@@ -1,9 +1,27 @@
 {
   "name": "Heroic",
   "category": "Mood & Tone",
+  "description": "Courage, resolve and protective intent. Entries describe emotional tone without assigning a new role, victory or action.",
   "entries": [
+    "steadfast loyalty",
+    "calm leadership",
+    "shared resolve",
+    "principled defiance",
+    "selfless generosity",
+    "patient endurance",
+    "earned confidence",
+    "dignified restraint",
+    "compassionate strength",
+    "renewed purpose",
+    "undaunted curiosity",
+    "unwavering commitment",
     "triumphant",
     "defiant",
-    "noble"
+    "noble",
+    "resolute under pressure",
+    "quietly courageous",
+    "hopeful after hardship",
+    "protective",
+    "determined despite exhaustion"
   ]
 }

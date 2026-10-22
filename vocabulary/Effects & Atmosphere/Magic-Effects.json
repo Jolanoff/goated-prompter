@@ -1,9 +1,27 @@
 {
   "name": "Magic Effects",
   "category": "Effects & Atmosphere",
+  "description": "Visible supernatural phenomena for settings that allow magic. Entries describe shapes and material effects without requiring a new character or action.",
   "entries": [
+    "a suspended ribbon of liquid curving through the air",
+    "a circular portal with a wavering inner surface",
+    "a shattered object reassembling with gaps between its pieces",
+    "threads of light connecting engraved symbols",
+    "a miniature storm contained inside a glass sphere",
+    "a shadow moving independently of its source",
+    "vines unfurling from cracks in bare stone",
+    "crystalline growth spreading over a metal surface",
+    "a reflection showing a different season",
+    "a translucent duplicate hovering beside an object",
+    "a hovering staircase made of separate stone slabs",
+    "an ink drawing lifting away from its page",
     "swirling arcane runes",
     "glowing aura",
-    "sparkling energy trails"
+    "sparkling energy trails",
+    "translucent geometric barrier with visible edges",
+    "small stones suspended above a circular mark",
+    "rippling distortion around an enchanted object",
+    "frost patterns spreading across a touched surface",
+    "floating glyphs arranged in a ring around an object"
   ]
 }

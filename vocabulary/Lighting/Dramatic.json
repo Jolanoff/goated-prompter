@@ -1,9 +1,27 @@
 {
   "name": "Dramatic",
   "category": "Lighting",
+  "description": "High-contrast and directional illumination. Entries describe light sources and shadow patterns without assigning mood or changing the action.",
   "entries": [
+    "light passing through a partly open door into an otherwise dark room",
+    "a bare bulb casting crisp shadows beneath nearby objects",
+    "a searchlight sweeping through suspended mist",
+    "a furnace opening illuminating nearby surfaces from one side",
+    "alternating red and blue warning lights reflected on metal",
+    "lightning briefly outlining an exterior against storm clouds",
+    "a bright doorway silhouetting subjects just inside it",
+    "a narrow beam from a flashlight crossing a dark interior",
+    "a low fire casting irregular shadows on surrounding walls",
+    "high-mounted floodlights producing long shadows across the ground",
+    "light filtering through a rotating fan and striping the wall beyond",
+    "a bright overhead opening leaving deep shadows beneath ledges",
     "hard chiaroscuro",
     "single spotlight",
-    "red emergency light"
+    "red emergency light",
+    "strong backlight leaving the subjects' fronts in shadow",
+    "a narrow side light separating illuminated and shaded halves of the subjects",
+    "light from below casting upward shadows across the subjects",
+    "a shaft of light through a high opening isolating a small part of the space",
+    "alternating pools of light and shadow from widely spaced fixtures"
   ]
 }

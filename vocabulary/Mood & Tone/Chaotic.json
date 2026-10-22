@@ -1,9 +1,27 @@
 {
   "name": "Chaotic",
   "category": "Mood & Tone",
+  "description": "Restless, urgent and disordered emotional tones. Entries describe atmosphere rather than requiring destruction, extra actions or participants.",
   "entries": [
+    "restless anticipation",
+    "barely contained excitement",
+    "comic confusion",
+    "festive exuberance",
+    "mounting frustration",
+    "scattered attention",
+    "competitive intensity",
+    "reckless confidence",
+    "nervous improvisation",
+    "breathless astonishment",
+    "rambunctious delight",
+    "hurried uncertainty",
     "frantic",
-    "explosive",
-    "unhinged"
+    "frenetic",
+    "unpredictable",
+    "playfully disordered",
+    "overwhelmed",
+    "impatient",
+    "boisterous",
+    "urgent but coordinated"
   ]
 }

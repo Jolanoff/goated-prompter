@@ -1,9 +1,27 @@
 {
   "name": "Particles",
   "category": "Effects & Atmosphere",
+  "description": "Small visible material suspended or moving through a scene. Entries identify the particles rather than changing the main subject or camera.",
   "entries": [
+    "wood shavings falling beside a workbench",
+    "fine flour dust above a mixing bowl",
+    "metal sparks scattering from a grinding wheel",
+    "ice crystals blowing from a frozen ridge",
+    "sea salt droplets carried inland by wind",
+    "seed fluff drifting from dried flower heads",
+    "paper scraps tumbling along a pavement",
+    "fine ash descending through still air",
+    "sawdust settling on nearby tools",
+    "grit thrown up beside a turning wheel",
+    "loose feathers suspended in a draft",
+    "dry snow grains streaming across an icy surface",
     "floating embers",
     "drifting dust motes",
-    "cherry blossom petals"
+    "cherry blossom petals",
+    "pollen grains suspended near open flowers",
+    "windblown dry leaves",
+    "soap bubbles with thin iridescent surfaces",
+    "tiny droplets scattered above splashing water",
+    "confetti pieces settling at different heights"
   ]
 }

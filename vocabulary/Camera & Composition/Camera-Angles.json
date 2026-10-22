@@ -1,9 +1,27 @@
 {
   "name": "Camera Angles",
   "category": "Camera & Composition",
+  "description": "Camera height and tilt relative to the subjects. Entries explain the visible viewpoint without moving subjects or their physical supports.",
   "entries": [
-    "low angle",
-    "high angle",
-    "Dutch angle"
+    "chest-height front angle: the view meets the subjects below eye level while keeping the horizon level",
+    "shoulder-height angle: the view looks horizontally just below the subjects' eyes",
+    "seated eye-level angle: the view meets seated subjects at their eye height rather than looking down from standing height",
+    "table-height angle: the view looks across the working surface with the subjects rising beyond it",
+    "stair-level angle: the view looks horizontally from an existing step toward subjects on another level",
+    "balcony angle: the view looks downward from the edge of an elevated gallery",
+    "upward architectural angle: the view rises past the subjects toward the structure overhead",
+    "shallow downward angle: the view looks slightly down, keeping faces and nearby hand placement visible",
+    "steep upward angle: the view looks sharply up from near the base of the main subjects",
+    "ceiling-corner angle: the view looks diagonally across the space from a high corner",
+    "waterline angle: the view sits just above the water surface and looks horizontally toward the subjects",
+    "bank-level angle: the view looks down from a raised shore toward subjects on lower ground",
+    "low angle: the view looks upward from below the main subjects, showing their undersides and the space above them",
+    "high angle: the view looks downward from above the main subjects, showing their upper surfaces and the ground around them",
+    "Dutch angle: the view is rolled sideways so the horizon is diagonal, without tilting the subjects' physical supports",
+    "eye-level angle: the view meets the main subjects at their eye height, without looking up or down at them",
+    "ground-level angle: the view looks across the ground from beside the subjects' feet or bases, with foreground surfaces prominent",
+    "overhead angle: the view looks straight down onto the main subjects and the layout around them",
+    "waist-level angle: the view looks horizontally across the subjects at the height of their middle, keeping vertical supports upright",
+    "raised oblique angle: the view looks diagonally down from one side, revealing both the fronts and upper surfaces of the main subjects"
   ]
 }

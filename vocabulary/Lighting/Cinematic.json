@@ -1,9 +1,27 @@
 {
   "name": "Cinematic",
   "category": "Lighting",
+  "description": "Arrangements of key, fill, reflected and practical light. Entries describe illumination rather than imposing a camera, composition or color grade.",
   "entries": [
+    "a large soft source above and in front of the subjects",
+    "crossed side lights outlining both outer edges of the subjects",
+    "a small hard key light balanced by broad reflected fill",
+    "a rectangular soft source reflected in nearby polished surfaces",
+    "a low table lamp providing warm local light beneath cooler room illumination",
+    "a ceiling fixture illuminating only the central work surface",
+    "light passing through patterned glass onto nearby walls",
+    "a diffused window source with dark fabric absorbing light on the opposite side",
+    "a thin edge light separating dark clothing from a dark wall",
+    "light bounced from a colored wall tinting one side of the subjects",
+    "an illuminated display casting soft light across faces close to it",
+    "small background lamps forming separated points behind a softly lit subject",
     "rim lighting",
     "volumetric god rays",
-    "teal and orange grade"
+    "warm key light balanced by cool ambient fill",
+    "soft key light from one side with a dimmer fill from the opposite side",
+    "light reflected upward from a pale surface below the subjects",
+    "narrow strips of light crossing the scene through slatted openings",
+    "a visible practical lamp illuminating the nearby subjects while the background remains dim",
+    "broad overhead diffusion producing soft shadows beneath the subjects"
   ]
 }

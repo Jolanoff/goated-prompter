@@ -1,9 +1,27 @@
 {
   "name": "Cyberpunk Clothing",
   "category": "Clothing",
+  "description": "Futuristic streetwear and practical technical garments. Entries describe clothing and wearable accessories rather than changing the wearer's anatomy.",
   "entries": [
+    "reflective shell jacket with segmented sleeves",
+    "woven tunic threaded with fiber-optic patterns",
+    "insulated city poncho with magnetic closures",
+    "asymmetric street coat with a rigid shoulder panel",
+    "ankle boots with replaceable tread plates",
+    "fingerless gloves with flexible sensor patches",
+    "cargo skirt with reinforced hanging pockets",
+    "hooded mesh overshirt over an opaque base layer",
+    "respirator mask with interchangeable filter cartridges",
+    "wide-legged trousers with reflective piping",
+    "cropped bomber jacket with illuminated sleeve badges",
+    "wraparound glasses with a transparent data display",
     "neon-trimmed jacket",
     "techwear harness",
-    "glowing visor"
+    "glowing visor",
+    "modular coat with detachable weather panels",
+    "reinforced cargo trousers with tool pockets",
+    "translucent rain cape with sealed seams",
+    "high-collared bodysuit with flexible joint panels",
+    "lightweight utility vest with flat storage compartments"
   ]
 }
