@@ -93,7 +93,8 @@ _FILLER = frozenset("a an the and with of in on at to from for by into over his 
 
 
 def _words(text, ignore=frozenset()):
-    return {word for word in re.findall(r"[a-z0-9]+", str(text).casefold())
+    """The words of a text without filler, the ignored words and the possessive "'s" ("man 1's" is the label alone)."""
+    return {word for word in re.findall(r"[a-z0-9]+", re.sub(r"['’]s\b", "", str(text).casefold()))
             if word not in _FILLER and word not in ignore}
 
 
@@ -103,12 +104,22 @@ def _overlap(first, second, ignore=frozenset()):
     return len(first & second) / min(len(first), len(second)) if first and second else 0.0
 
 
-def _repeats(scene, other, labels=()):
-    """A new scene is a repeat when it reuses another image's place together with its camera, arrangement or extras
-    (an image asked again tends to copy an accepted one's place and signs). Only the camera's opening (its viewpoint) is
-    compared: the rest says what each person shows, which reads alike in every image. The same place alone is fine
-    (fixed may keep it)."""
+def repeated_parts(scene, other, labels=()):
+    """What a new scene reuses of another image, as a list: [] unless it reuses that image's place together with its
+    camera, actions or extras (an image asked again tends to copy an accepted one's place and signs). Only the camera's
+    opening (its viewpoint) is compared: the rest says what each person shows, which reads alike in every image. The
+    character labels never count (every camera names them), and the same place alone is fine (fixed may keep it)."""
     ignore = frozenset(word for label in labels for word in re.findall(r"[a-z0-9]+", label.casefold()))
-    return _overlap(scene["space"], other["space"]) >= .7 and (
-        _overlap(scene["camera"][:80], other["camera"][:80]) >= .6 or _overlap(scene["actions"], other["actions"], ignore) >= .6
-        or _overlap(scene.get("extras"), other.get("extras"), ignore) >= .7)
+    if _overlap(scene["space"], other["space"]) < .7:
+        return []
+    return [name for name, repeated in (
+        ("camera", _overlap(scene["camera"][:80], other["camera"][:80], ignore) >= .6),
+        ("actions", _overlap(scene["actions"], other["actions"], ignore) >= .6),
+        ("extras", _overlap(scene.get("extras"), other.get("extras"), ignore) >= .7)) if repeated]
+
+
+def repeat_reason(other, parts):
+    """Why a scene is asked again: which image it repeats ("an earlier image" when it is from an earlier batch) and
+    what it reuses."""
+    name = f"image {other['slot']}" if "slot" in other else "an earlier image"
+    return f"it repeats {name}'s place together with its {' and '.join(parts)}; write a different scene"

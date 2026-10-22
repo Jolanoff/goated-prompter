@@ -5,7 +5,7 @@ import re
 
 from .....backends.recovery import GenerationRecovery, RunawayRecoveryError
 
-from .checks import _repeats, _summary, retire_fields, scene_errors, unnamed_people
+from .checks import _summary, repeat_reason, repeated_parts, retire_fields, scene_errors, unnamed_people
 from .entries import _entry_key
 from .request import _labels, compose_instruction
 from .settings import ROUNDS, SECTIONS
@@ -60,9 +60,9 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
                         else scene_errors(scene, labels, avoid, extra, brief["_known"]))
             entry = entries.get(_entry_key(scene["entry"])) if entries and not problems else None
             if not problems and round_ < ROUNDS:  # the last round accepts a repeat rather than lose the image
-                if any(_repeats(scene, item, labels) for item in [*earlier, *scenes.values()]):
-                    problems = ["it repeats the place and the camera, arrangement or signs of an earlier image; "
-                                "write a different scene"]
+                if repeat := next(((item, parts) for item in [*earlier, *scenes.values()]
+                                   if (parts := repeated_parts(scene, item, labels))), None):
+                    problems = [repeat_reason(*repeat)]
                 elif missing := unnamed_people(scene, labels):
                     problems = [f"its actions do not name {', '.join(missing)}: name every person by their character "
                                 "label and never leave a placeholder person from an entry"]
