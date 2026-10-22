@@ -52,6 +52,46 @@ def retire_fields(scene):
     return result
 
 
+_PENIS = r"(?:penis|shaft|genitals)"
+_FREE = re.compile(r"\bhanging free\b", re.IGNORECASE)
+_AT_REST = re.compile(r"\b(?:unaroused|flaccid|limp|soft)\b,?\s*", re.IGNORECASE)
+
+
+def _genitals_used(scene, label):
+    """Whether the scene puts this person's genitals in or on someone: another person's position or the actions say
+    "<label>'s penis", or the person's own position puts "his penis" in, inside or against something."""
+    position = scene.get("position") if isinstance(scene.get("position"), dict) else {}
+    others = " ".join([str(scene.get("actions") or "")] + [str(text) for who, text in position.items() if who != label])
+    own = str(position.get(label) or "")
+    return bool(re.search(r"(?<![\w-])" + re.escape(label) + r"['’]s " + _PENIS + r"\b", others, re.IGNORECASE)
+                or re.search(r"\b(?:his|her|their) " + _PENIS + r" (?:is|are) (?:\w+ )?(?:in|inside|into|deep|"
+                             r"pressed|between|being)\b", own, re.IGNORECASE))
+
+
+def _at_work(text):
+    """A genitals description without its resting state ("thick, unaroused penis" -> "thick penis")."""
+    return re.sub(r",\s*(?=" + _PENIS + r"\b)", " ", _AT_REST.sub("", text)).strip(", ")
+
+
+def placed_genitals(scene, labels):
+    """The accepted scene without "hanging free" or a resting state for genitals the scene uses: a live writer put a
+    penis in someone's mouth and also left "his genitals are hanging free" (the image showed it twice or floating), and
+    described penises inside someone as "unaroused". Only those words go; the act that places them stays."""
+    position = scene.get("position")
+    if not isinstance(position, dict):
+        return scene
+    used = [label for label in labels if _genitals_used(scene, label)]
+    if not used:
+        return scene
+    clean = lambda text: ", ".join(part for part in str(text).split(", ") if not _FREE.search(part))
+    subjects = scene.get("subjects") if isinstance(scene.get("subjects"), dict) else {}
+    return {**scene,
+            "position": {who: clean(text) if who in used else text for who, text in position.items()},
+            "subjects": {who: ({**person, "genitals": _at_work(clean(person["genitals"])) or person["genitals"]}
+                               if who in used and isinstance(person, dict) and isinstance(person.get("genitals"), str)
+                               else person) for who, person in subjects.items()}}
+
+
 def scene_errors(scene, labels, avoid, extra=(), known=frozenset(), subject_fields=SUBJECT_FIELDS):
     """Why one composed scene is unusable as an answer; [] when its shape is right. extra: further text fields the
     answer must have (the Actions & Poses "entry"); known: labels of known characters (expression only), whose cast

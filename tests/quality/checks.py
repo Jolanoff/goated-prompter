@@ -22,6 +22,8 @@ CHECKS = (
     ("repeated_places", "share of image pairs set in the same place", "aim", False),
     ("repeated_extras", "share of image pairs with the same props and signs", "aim", False),
     ("prompt_similarity", "how alike the prompts are (a set's images; a Builder case's seeds), 0 to 1", "aim", False),
+    ("mouth_mixed", "share of prompts with a sentence that puts a mouth on a buttock or anus and genitals together (read as genitals where the tongue is)", "aim", False),
+    ("genitals_conflict", "share of scenes where someone's genitals hang free while the act puts them in or on another person (drawn twice or floating)", "aim", False),
     ("words", "average prompt length in words", "info", True),
     ("seconds", "average time per run in seconds (more retries cost time)", "info", False),
     ("redone", "average images asked again per run (each one costs writing time)", "info", False),
@@ -36,6 +38,10 @@ SHOT_NAME = re.compile(r"\b(?:(?:extreme |medium |full[- ]body |wide |long |cowb
                        r"full[- ]body|cowboy|establishing|two|three)[- ]shot|mid[- ]shot)\b", re.IGNORECASE)
 # A log line of an image the scene writer asks for again (scenes/writer.py rejected_note).
 REDONE = re.compile(r"\bImage \d+ is asked again\b")
+# A sentence with a mouth at someone's rear and genitals in it: the image puts the genitals at the rear.
+MOUTH_ON_REAR = re.compile(r"\b(?:mouth|lips?|tongue)\b[^.,;]{0,40}?\b(?:anus|buttocks?|rear)\b",
+                           re.IGNORECASE)
+GENITALS = re.compile(r"\b(?:penis|testicles|genitals)\b", re.IGNORECASE)
 EXTENT = re.compile(r"\b(?:feet|foot|toes|ankles?|knees?|shins?|soles?|floor|ground|mattress|from (?:the )?head|"
                     r"foreground|background)\b", re.IGNORECASE)
 
@@ -126,6 +132,24 @@ def _echoed(request, prompts):
     return round(sum(len(words & _words(prompt)) / len(words) for prompt in prompts) / len(prompts), 3)
 
 
+def _mouth_mixed(prompt):
+    """Whether one sentence of the prompt puts a mouth on a buttock or anus and also names genitals."""
+    return any(MOUTH_ON_REAR.search(part) and GENITALS.search(part)
+               for part in re.split(r"(?<=[.!?])\s+|\n+", prompt))
+
+
+def _genitals_conflict(scene):
+    """Whether a person's own position says their genitals hang free while another person's position or the actions
+    put that person's genitals in or on someone ("man 1's penis in man 2's mouth")."""
+    position = scene.get("position") if isinstance(scene.get("position"), dict) else {}
+    others = lambda label: " ".join([str(scene.get("actions") or "")] + [str(text) for who, text in position.items()
+                                                                         if who != label])
+    return any(re.search(r"\bhanging free\b", str(text), re.IGNORECASE)
+               and re.search(re.escape(label) + r"(?:'s|’s) (?:penis|shaft|genitals)\b", others(label),
+                             re.IGNORECASE)
+               for label, text in position.items())
+
+
 def _looks(scene):
     return tuple(sorted((label, person.get("skin", ""), person.get("hair", ""), person.get("build", ""))
                         for label, person in (scene.get("subjects") or {}).items()))
@@ -177,6 +201,10 @@ def _case_checks(row, normalize=None):
         "repeated_extras": _share(pairs, lambda a, b: _overlap(a.get("extras"), b.get("extras")) >= .7),
         "prompt_similarity": round(sum(_jaccard(a, b) for a, b in itertools.combinations(prompts, 2))
                                    / max(1, len(prompts) * (len(prompts) - 1) // 2), 3) if len(prompts) > 1 else None,
+        "mouth_mixed": round(sum(_mouth_mixed(prompt) for prompt in prompts) / len(prompts), 3)
+        if prompts and brief.get("path") == "nsfw_character" else None,
+        "genitals_conflict": round(sum(_genitals_conflict(scene) for scene in scenes) / len(scenes), 3)
+        if scenes and brief.get("path") == "nsfw_character" else None,
         "words": round(sum(len(prompt.split()) for prompt in prompts) / len(prompts)) if prompts else None,
         "request_words_echoed": _echoed(case.get("subject", ""), prompts),
         **_framing(prompts),

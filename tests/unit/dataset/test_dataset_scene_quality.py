@@ -80,10 +80,31 @@ class SceneVariety(Harness):
         adult = self.brief["path"] == "nsfw_character"
         (self.assertIn if adult else self.assertNotIn)("genitals", person["required"])
         system = " ".join(self.composer()[0].system_message.split())
-        (self.assertIn if adult else self.assertNotIn)("Each position also says where that person's genitals are", system)
+        (self.assertIn if adult else self.assertNotIn)("Each position also says, for that image, where that person's "
+                                                       "genitals are", system)
+        # A live run's genitals hung free while the act had them in someone's mouth, and "uses his hole" or "takes his
+        # mouth" stood for acts that then never showed; the bound person stayed soft in every image.
+        for rule in ('"hanging free" is only for genitals nothing touches', "(size and shape only)",
+                     'A verb such as "uses", "takes" or "has" never stands for the act'):
+            (self.assertIn if adult else self.assertNotIn)(rule, system)
         sfw = {**self.brief, "path": "character"}
         self.assertNotIn("genitals", scenes.subject_fields(sfw, "man 1"), "never outside an adult dataset")
         self.assertEqual(scenes.subject_fields({**self.brief, "path": "nsfw_character"}, "man 1")[-1], "genitals")
+
+    def test_genitals_the_scene_uses_never_also_hang_free_or_rest(self):
+        # A live writer put a penis in someone's mouth and also left "his genitals are hanging free", and called a
+        # penis inside someone "unaroused": the image drew it twice, floating, or soft.
+        scene = {**self.scene("bedroom"), "actions": "man 2 has man 1's penis in his mouth",
+                 "position": {"man 1": "standing, his penis is deep in man 2's mouth, his genitals are hanging free and hard",
+                              "man 2": "kneeling, his mouth around man 1's penis, his genitals are hanging free"}}
+        scene["subjects"]["man 1"]["genitals"] = "thick, unaroused penis, hanging free"
+        placed = scenes.checks.placed_genitals(scene, ["man 1", "man 2"])
+        self.assertEqual(placed["position"]["man 1"], "standing, his penis is deep in man 2's mouth")
+        self.assertEqual(placed["position"]["man 2"], scene["position"]["man 2"], "nothing touches his genitals")
+        self.assertEqual(placed["subjects"]["man 1"]["genitals"], "thick penis")
+        self.assertEqual(placed["subjects"]["man 2"], scene["subjects"]["man 2"])
+        plain = self.scene("bedroom")
+        self.assertEqual(scenes.checks.placed_genitals(plain, ["man 1", "man 2"]), plain)
 
     def test_every_person_has_a_frame_and_nobody_needed_drops_out(self):
         # Live runs kept the action and cropped a character to the upper body or dropped their body around the genitals.
