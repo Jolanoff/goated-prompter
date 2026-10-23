@@ -28,7 +28,7 @@ Agents and terminals use the same commands as `python -m tests.quality [audit|re
 | `seeds` | Every case runs once per seed, on both sides, with the same seed. |
 | `live` | `false` runs only the audit. |
 | `judge.mode` | `manual` (you review in the report), `llm` (a model judges; `judge.config` picks it, `judge.kind` says whether that review counts) or `off`. |
-| `cases` | The requests. `kind` is `builder` (with `idea`) or `dataset` (with `subject`); optional `target`, `director` (id), `length`, `creativity`, `style`, `capture`, `mode`, `rules`, `amount`, `nsfw`, `triggers`, `vocabulary_packs`, `inputs`. |
+| `cases` | The requests. `kind` is `builder` (with `idea`) or `dataset` (with `subject`); optional `target`, `director` (id), `length`, `creativity`, `style`, `capture`, `aspect` (dataset: a ratio such as `3:4`), `mode`, `rules`, `amount`, `nsfw`, `triggers`, `vocabulary_packs`, `inputs`. |
 
 ## What a run does
 

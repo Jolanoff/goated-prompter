@@ -28,8 +28,11 @@ from ....options.targets import canonical_target
 from ....output_repetition import anima_tag_key
 from ....prompt_library import pick_references
 from ....workflow_output import ideogram_json
+from .aspect import brief_aspect, shape_rule
 from .triggers import brief_triggers, owner, placed, run_style, trigger_text
 
+SHAPE_RULE = ("IMAGE SHAPE: the image is {ratio}, a {shape} frame. Describe the framing for it: the people and the action "
+              "spread over {along}. Keep the scene's arrangement and camera, and never write the ratio itself.")
 SCENE_ORDER = ("subjects", "position", "actions", "space", "camera", "frame", "extras")
 FRAME_TAGS = {"full body": "full body", "head to knees": "cowboy shot", "head to hips": "upper body",
               "head and shoulders": "portrait"}
@@ -559,7 +562,7 @@ def write_prompts(config, request, brief, scenes, *, checkpoint=lambda: None, pr
         for _ in (1, 2):
             adult = ADULT_RULE if brief["path"] == "nsfw_character" else ""
             rules = "\n\n".join(part for part in (SCENE_RULES, _known_rule(brief), adult, named,
-                                                  _trigger_rule(brief), f"CORRECTION: {problem}" if problem else "")
+                                                  shape_rule(brief_aspect(brief), SHAPE_RULE), _trigger_rule(brief), f"CORRECTION: {problem}" if problem else "")
                                 if part)
             builder_request = replace(request, idea=idea, mode="Enhance", planning_mode="Direct",
                                       target_model=brief["settings"]["target"], prompt_length=brief["settings"]["length"],

@@ -92,6 +92,30 @@ def placed_genitals(scene, labels):
                                else person) for who, person in subjects.items()}}
 
 
+_ENTRY_HEAD = re.compile(r"((?:^|;\s*))([^:;\n]{3,80}):\s*([^,;\n]*)(?:,\s*|;\s*|$)")
+
+
+def without_entry_copy(scene, labels):
+    """The accepted scene without a copied Actions & Poses entry head in its actions: a live writer began the act with
+    the entry's name and its placeholder people ("two tops: one person bound, man 1's penis ...", also with an unfilled
+    [slot]), so the final prompt named a pack label as the position. A head is dropped only when neither its name nor its
+    wording names anyone of the cast and the rest of the act still names everyone; otherwise the act stays as written."""
+    names = lambda text: any(re.search(r"(?<![\w-])" + re.escape(label) + r"(?![\w-])", text, re.IGNORECASE)
+                             for label in labels)
+
+    def drop(found):
+        before, name, wording = found.groups()
+        if names(name) or names(wording):
+            return found[0]
+        return "; " if before else ""
+
+    actions = str(scene.get("actions") or "")
+    cleaned = _ENTRY_HEAD.sub(drop, actions).strip(" ,;")
+    if cleaned == actions.strip(" ,;") or unnamed_people({"actions": cleaned}, labels):
+        return scene
+    return {**scene, "actions": cleaned}
+
+
 def scene_errors(scene, labels, avoid, extra=(), known=frozenset(), subject_fields=SUBJECT_FIELDS):
     """Why one composed scene is unusable as an answer; [] when its shape is right. extra: further text fields the
     answer must have (the Actions & Poses "entry"); known: labels of known characters (expression only), whose cast

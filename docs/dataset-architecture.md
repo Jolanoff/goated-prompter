@@ -106,7 +106,7 @@ writer writes them (extras) right after the pose, before the place and camera, a
 earlier image's place with its camera, arrangement or signs is asked again (`_repeats`). One set of library templates is picked for the whole run, so every
 prompt has the same structure, and an entry's position name reaches the Builder only when the scene's actions say it
 (an entry the writer had to swap or adapt would otherwise name a different act). Understanding drops a must or avoid
-phrase that only repeats a trigger's text. Capture is Auto in the brief unless the style is Realistic. Any style
+phrase that only repeats a trigger's text. Capture is Auto in the brief unless the style is Realistic. The Aspect ratio setting (Auto by default; `aspect.py`) reaches the scene writer and the Builder as one rule each, only when a ratio is chosen: poses, arrangement and framing are written for a tall, wide or square frame. Any style
 trigger (any use) turns the Style off for every step (`run_style`), so not even Anima's anime default is added. The
 Builder writes each scene with the run's Creativity, which alone decides how much is invented around the scene's
 fixed people, placements, contact, action and camera, and is told that the

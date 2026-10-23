@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AlignLeft, ChevronDown, CircleHelp, Cpu, Database, Download, Layers3, LoaderCircle, SlidersHorizontal, Sparkles, WandSparkles } from "lucide-react";
+import { AlignLeft, ChevronDown, CircleHelp, Cpu, Database, Download, Frame, Layers3, LoaderCircle, SlidersHorizontal, Sparkles, WandSparkles } from "lucide-react";
 import { ui } from "../../ui.js";
 import { orderDisplayPresets, presetDisplayLabel } from "../../presetPresentation.js";
 import { TargetSelect } from "../../shared/workflow/WorkflowControls.jsx";
@@ -14,7 +14,7 @@ import { useCatalog } from "../vocabulary/useCatalog.js";
 import { cleanSelection, recordedNames, selectedNames } from "../vocabulary/catalog.js";
 import { RunPrompts, RunScenes } from "./DatasetRunPages.jsx";
 import { excludedDirectors, maxSeed, seedModes } from "./options.js";
-import { captures, styleChoices, styleFamily, styles, subStyleChoices } from "../../shared/workflow/options.js";
+import { aspectRatios, captures, styleChoices, styleFamily, styles, subStyleChoices } from "../../shared/workflow/options.js";
 
 const datasetPages = [["configure", "Configure"], ["scenes", "Scenes"], ["dataset", "Dataset"]];
 const sceneSources = [
@@ -228,6 +228,12 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                 </select>
               </label>
             </div>
+            <label className={`${ui.field} mt-4`}><span><Frame size={14} aria-hidden="true" />Aspect ratio</span>
+              <select className={ui.select} aria-label="Dataset aspect ratio" value={draft.aspect || "Auto"} onChange={(event) => update({ aspect: event.target.value })}>
+                {aspectRatios.map((item) => <option key={item}>{item}</option>)}
+              </select>
+              <small className="text-xs leading-relaxed text-muted">The shape you generate in. The poses and framing are written to fit it; Auto lets each scene choose.</small>
+            </label>
 
             <div className="mt-4 grid grid-cols-2 gap-4 tiny:grid-cols-1">
               <label className={ui.field}><span><Sparkles size={14} aria-hidden="true" />Creativity</span>

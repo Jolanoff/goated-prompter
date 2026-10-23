@@ -6,7 +6,7 @@ switch); they are dropped when the draft is read, and nothing on disk is rewritt
 """
 
 from ....options.creativity import CREATIVITY_NAMES
-from ....options.dataset import DATASET_SOURCES, DATASET_TYPES, MAX_SEED, SEED_MODES
+from ....options.dataset import ASPECT_RATIO_NAMES, DATASET_SOURCES, DATASET_TYPES, MAX_SEED, SEED_MODES
 from ....options.lengths import PROMPT_LENGTH_NAMES
 from ....options.styles import CAPTURE_NAMES, STYLE_NAMES
 from ....prompting.directors import fold_replaced_director
@@ -24,7 +24,7 @@ def default_dataset_draft():
         "amount": 12,
         "source_mode": "random", "inputs": "", "target": "Generic", "length": "Medium",
         "director_preset": "general_director", "constraints": "",
-        "creativity": "Balanced", "style": "Auto", "capture": "Auto",
+        "creativity": "Balanced", "style": "Auto", "capture": "Auto", "aspect": "Auto",
         "seed": 0, "seed_mode": "randomize",
         "vocabulary_packs": [],
     }
@@ -55,7 +55,8 @@ def validate_dataset_draft(value, *, generation=False, planning=False):
                               ("inputs", "Guided inputs", 50000), ("constraints", "Dataset constraints", 10000)):
         result[key] = _text(result[key], label, limit)
     for key, allowed in (("trigger_type", DATASET_TYPES), ("source_mode", DATASET_SOURCES),
-                         ("creativity", CREATIVITY_NAMES), ("style", STYLE_NAMES), ("capture", CAPTURE_NAMES), ("length", PROMPT_LENGTH_NAMES)):
+                         ("creativity", CREATIVITY_NAMES), ("style", STYLE_NAMES), ("capture", CAPTURE_NAMES), ("aspect", ASPECT_RATIO_NAMES),
+                         ("length", PROMPT_LENGTH_NAMES)):
         if not isinstance(result[key], str) or result[key] not in allowed:
             raise ValueError(f"Invalid Dataset {key}.")
     if result["style"] != "Realistic":

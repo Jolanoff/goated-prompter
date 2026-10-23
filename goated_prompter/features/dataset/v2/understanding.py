@@ -129,7 +129,8 @@ def copied_settings(data):
     # Capture only describes a Realistic image; with any other style it is Auto, so a hidden earlier choice never shows.
     capture = data.get("capture", "Auto") if data.get("style") == "Realistic" else "Auto"
     return {"style": data.get("style", ""), "capture": capture, "target": data.get("target", ""), "director": data.get("director_preset", ""),
-            "length": data.get("length", ""), "creativity": data.get("creativity", "")}
+            "length": data.get("length", ""), "creativity": data.get("creativity", ""),
+            "aspect": data.get("aspect", "Auto")}
 
 
 def _schema():

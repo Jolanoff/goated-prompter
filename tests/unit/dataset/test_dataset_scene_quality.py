@@ -295,6 +295,27 @@ class SceneVariety(Harness):
         self.assertEqual(len(self.composer()), scenes.ROUNDS)
 
 
+class EntryCopy(unittest.TestCase):
+    labels = ["22 yo male", "man 1", "man 2"]
+
+    def clean(self, actions):
+        return scenes.checks.without_entry_copy({"actions": actions}, self.labels)["actions"]
+
+    def test_a_copied_entry_head_with_placeholder_people_is_dropped(self):
+        rest = "man 1's penis is inside 22 yo male's anus while man 2 holds 22 yo male"
+        for head in ("two tops: one person held in [Restraint Gear] between two men", "two tops: one person bound"):
+            self.assertEqual(self.clean(f"{head}, {rest}"), rest)
+            self.assertEqual(self.clean(f"{rest}; {head}"), rest)
+            self.assertEqual(self.clean(f"{rest}; {head}, {rest}"), f"{rest}; {rest}")
+
+    def test_a_name_with_people_or_an_act_that_would_lose_someone_stays(self):
+        for kept in ("hogtie: man 1 binds 22 yo male while man 2 watches",
+                     "man 1 and man 2: they take turns with 22 yo male",
+                     # Dropping this head would leave man 2 out of the act.
+                     "two tops: one person bound, man 1's penis is in 22 yo male's mouth"):
+            self.assertEqual(self.clean(kept), kept)
+
+
 class FinalLabels(Harness):
     def write(self, final):
         self.final = list(final)
@@ -346,6 +367,53 @@ class FinalLabels(Harness):
             self.assertIsNone(prompts.label_problem(text, brief), text)
         for text in ("man 1 stands", "Man1 stands", "MAN-1 stands", "man_1 stands", "The first man stands"):
             self.assertIsNotNone(prompts.label_problem(text, brief), text)
+
+
+class AspectRatio(Harness):
+    """The Aspect ratio setting reaches both writers as one rule, only when a ratio is chosen."""
+
+    def run_with(self, ratio):
+        brief = {**self.brief, "settings": {**self.brief["settings"], **({"aspect": ratio} if ratio else {})}, "input": {**self.brief["input"], "amount": 1}}
+        scenes.write_scenes({"backend": "mock"}, self.request, brief, progress=lambda _: None)
+        self.final = ["A prompt about two men."]
+        prompts.write_prompts({"backend": "mock"}, self.request, brief, [{"slot": 1, **self.scene("kitchen")}], progress=lambda _: None)
+        writer = " ".join(self.composer()[0].system_message.split())
+        final = " ".join([call for call in self.calls if call.diagnostic_stage == "final"][0].system_message.split())
+        return writer, final
+
+    def test_the_shape_comes_from_the_numbers(self):
+        from goated_prompter.features.dataset.v2.aspect import aspect_shape
+        self.assertEqual(aspect_shape("3:4")[0], "tall")
+        self.assertEqual(aspect_shape("16:9")[0], "wide")
+        self.assertEqual(aspect_shape("1:1")[0], "square")
+        for ratio in ("Auto", "", None, "3x4", "0:4", "-3:4"):
+            self.assertIsNone(aspect_shape(ratio), ratio)
+
+    def test_no_ratio_adds_nothing_to_either_writer(self):
+        for ratio in (None, "Auto"):
+            self.calls.clear()
+            for text in self.run_with(ratio):
+                self.assertNotIn("IMAGE SHAPE", text)
+
+    def test_a_chosen_ratio_is_told_to_both_writers_with_its_shape(self):
+        writer, final = self.run_with("3:4")
+        self.assertIn("Every image is 3:4, a tall frame", writer)
+        self.assertIn("spread the people and the action over its height", writer)
+        self.assertIn("IMAGE SHAPE: the image is 3:4, a tall frame", final)
+        self.calls.clear()
+        writer, final = self.run_with("16:9")
+        self.assertIn("a wide frame", writer)
+        self.assertIn("over its width, from left to right", final)
+
+    def test_the_draft_accepts_the_listed_ratios_and_nothing_else(self):
+        from goated_prompter.features.dataset.v2.draft import validate_dataset_draft
+        from goated_prompter.options.dataset import ASPECT_RATIO_NAMES
+        for ratio in ASPECT_RATIO_NAMES:
+            self.assertEqual(validate_dataset_draft({**default_dataset_draft(), "aspect": ratio})["aspect"], ratio)
+        self.assertEqual(default_dataset_draft()["aspect"], "Auto")
+        with self.assertRaises(ValueError):
+            validate_dataset_draft({**default_dataset_draft(), "aspect": "7:5"})
+        self.assertEqual(understanding.copied_settings({**default_dataset_draft(), "aspect": "2:3"})["aspect"], "2:3")
 
 
 if __name__ == "__main__":

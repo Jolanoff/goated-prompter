@@ -6,12 +6,13 @@ from .....contracts import PromptInstruction
 from .....options.styles import OFF_STYLE
 from .....prompting.base import SHOW_DONT_TELL
 from .....prompting.creativity import creativity_adapter, creativity_temperature
+from ..aspect import brief_aspect, shape_rule
 from ..assignments import dataset_assignments
 from ..triggers import brief_triggers, owner, run_style
 
 from .entries import entry_cap
 from .settings import ADULT_SUBJECT_FIELDS, FACES, FIELDS, KNOWN_SUBJECT_FIELDS, MAX_FIELD, SHOWS, SUBJECT_FIELDS
-from .texts import COMPOSE_SYSTEM, ENTRY_RULE, FRAME_RULE, GUIDED_RULE, LABELS_RULE, NO_PEOPLE_RULE, NSFW_RULE, SFW_RULE, VOCABULARY_RULES
+from .texts import ASPECT_RULE, COMPOSE_SYSTEM, ENTRY_RULE, FRAME_RULE, GUIDED_RULE, LABELS_RULE, NO_PEOPLE_RULE, NSFW_RULE, SFW_RULE, VOCABULARY_RULES
 
 
 def _labels(brief):
@@ -71,6 +72,8 @@ def _system(brief, errors, vocabulary="", entry_cap=None):
     system += "\n\n" + creativity_adapter(brief["settings"]["creativity"] or "Balanced")
     if known := known_labels(brief):
         system += "\n\n" + FRAME_RULE.format(known=", ".join(sorted(known)))
+    if rule := shape_rule(brief_aspect(brief), ASPECT_RULE):
+        system += "\n\n" + rule
     if len(labels := _labels(brief)) > 1:  # last, where the retries that fixed it put the labels
         system += "\n\n" + LABELS_RULE.format(labels=", ".join(labels[:-1]) + " and " + labels[-1])
     if errors:

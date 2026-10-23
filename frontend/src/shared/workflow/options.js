@@ -19,6 +19,8 @@ const subStyleSeparator = " / ";
 // How a Realistic image was photographed. Keep in sync with CAPTURE_NAMES.
 export const captures = ["Auto", "Pro camera", "Phone snapshot", "Analog film", "Instant film", "Disposable camera", "Black-and-white film", "Medium format", "Studio portrait",
   "Fashion editorial", "Documentary", "Street photography", "Flash snapshot", "Mirror selfie", "Webcam", "Security camera", "Action camera", "Drone"];
+// The shape every image of a dataset is made in. Keep in sync with ASPECT_RATIO_NAMES.
+export const aspectRatios = ["Auto", "1:1", "4:5", "3:4", "2:3", "9:16", "5:4", "4:3", "3:2", "16:9"];
 // Styles a target cannot render (Anima draws anime, never photographs). Keep in sync with UNSUPPORTED_STYLES.
 export const unsupportedStyles = { Anima: ["Realistic", "Cinematic"] };
 
