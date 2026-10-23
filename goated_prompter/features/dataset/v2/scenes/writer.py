@@ -5,7 +5,8 @@ import re
 
 from .....backends.recovery import GenerationRecovery, RunawayRecoveryError
 
-from .checks import _summary, framing_problems, repeat_reason, repeated_parts, retire_fields, scene_errors, unnamed_people
+from .checks import (_summary, framing_problems, placed_genitals, repeat_reason, repeated_parts, retire_fields,
+                     scene_errors, unnamed_people)
 from .entries import _entry_key
 from .request import _labels, compose_instruction, subject_fields
 from .settings import ROUNDS, SECTIONS
@@ -87,6 +88,7 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
                 reasons[number] = problems
                 progress(rejected_note(number, problems[0], scene))
                 continue
+            scene = placed_genitals(scene, labels)
             finished = {"slot": number, **{key: scene[key] for key in SECTIONS}}
             if brief["_known"]:
                 finished["frame"] = scene["frame"]

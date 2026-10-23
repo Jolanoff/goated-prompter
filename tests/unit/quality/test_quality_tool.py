@@ -101,6 +101,18 @@ class Checks(unittest.TestCase):
                        " 40.2s Image 9 is asked again: its actions do not name man 2"]}
         self.assertEqual(checks.case_checks(row)["redone"], 2)
 
+    def test_a_mouth_on_a_rear_with_genitals_in_the_same_sentence_is_counted(self):
+        mixed = "His mouth is around the man's anus, his large, semi-erect penis resting against the floor."
+        apart = "His tongue presses against the man's anus. His penis hangs between his thighs."
+        both_acts = "His penis is in the mouth of the man in front, while his anus is entered from behind."
+        self.assertEqual([checks._mouth_mixed(text) for text in (mixed, apart, both_acts)], [True, False, False])
+
+    def test_genitals_that_hang_free_while_the_act_uses_them_are_counted(self):
+        used = {"actions": "man 2 has man 1's penis in his mouth", "position": {"man 1": "sitting, his genitals are hanging free",
+                                                             "man 2": "kneeling, his mouth around man 1's penis"}}
+        placed = {**used, "position": {**used["position"], "man 1": "sitting, his penis in man 2's mouth, aroused"}}
+        self.assertEqual([checks._genitals_conflict(scene) for scene in (used, placed)], [True, False])
+
     def test_a_failed_case_counts_as_nothing_written(self):
         self.assertEqual(checks.case_checks(dataset_row([], [], ok=False))["written"], 0.0)
 
