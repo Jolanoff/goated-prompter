@@ -106,6 +106,29 @@ class SceneVariety(Harness):
         plain = self.scene("bedroom")
         self.assertEqual(scenes.checks.placed_genitals(plain, ["man 1", "man 2"]), plain)
 
+    def test_a_penis_inside_someone_is_not_called_unaroused_in_its_position(self):
+        # A live run wrote "his penis inside 22 yo male's anus, his genitals visible and unaroused" (no "is").
+        scene = {**self.scene("bedroom"), "actions": "man 1 and man 2 take turns",
+                 "position": {"man 1": "standing, his penis inside man 2's anus, his genitals visible and unaroused",
+                              "man 2": "bent over a table, his genitals hanging free and unaroused"}}
+        scene["subjects"]["man 1"]["genitals"] = "thick, long, unaroused penis and testicles"
+        placed = scenes.checks.placed_genitals(scene, ["man 1", "man 2"])
+        self.assertEqual(placed["position"]["man 1"], "standing, his penis inside man 2's anus, his genitals visible")
+        self.assertEqual(placed["subjects"]["man 1"]["genitals"], "thick, long penis and testicles")
+        self.assertEqual(placed["position"]["man 2"], scene["position"]["man 2"], "nothing touches his genitals")
+
+    def test_a_prop_copied_from_an_earlier_image_is_dropped(self):
+        # A live writer put the prop suggested for one image into all twelve images.
+        props = ["two matching candles", "a leather collar", "a silk scarf"]
+        scene = {"extras": "two matching candles burn on the shelf, a leather collar, dark shadows"}
+        earlier = ["two matching candles burn on the shelf, a leather collar, a belt on the floor"]
+        self.assertEqual(scenes.checks.without_copied_props(scene, props, ["a leather collar"], earlier)["extras"],
+                         "a leather collar, dark shadows", "the collar was suggested for this image")
+        self.assertEqual(scenes.checks.without_copied_props(scene, props, [], [])["extras"], scene["extras"],
+                         "the first image to use a prop keeps it")
+        self.assertEqual(scenes.checks.without_copied_props(scene, props, ["two matching candles", "a leather collar"],
+                                                            earlier), scene, "a prop suggested for every image stays")
+
     def test_every_person_has_a_frame_and_nobody_needed_drops_out(self):
         # Live runs kept the action and cropped a character to the upper body or dropped their body around the genitals.
         frame = lambda shows, face="visible": {"shows": shows, "face": face}
@@ -323,7 +346,7 @@ class OpeningConflicts(Harness):
 
     def test_a_contradiction_is_a_reason_to_ask_again_but_two_in_one_mouth_is_not(self):
         reasons = scenes.checks.opening_conflicts(self.gagged, self.labels)
-        self.assertEqual(reasons, ["man 2 wears a gag that fills the mouth while man 1's body part is in it: keep one of them"])
+        self.assertEqual(reasons, ["man 2's mouth is covered while man 1's body part is in it: keep one of them"])
         ring = {**self.gagged, "position": {**self.gagged["position"], "man 2": "kneeling, a ring gag holds his mouth open"}}
         self.assertEqual(scenes.checks.opening_conflicts(ring, self.labels), [])
         three = ["man 1", "man 2", "man 3"]
@@ -343,7 +366,7 @@ class OpeningConflicts(Harness):
         self.assertEqual(len(self.composer()), 2)
         retry = composer_user(self.composer()[1].user_message)
         self.assertEqual([row["image"] for row in retry["images"]], [1], "the other image is kept as written")
-        self.assertIn("man 2 wears a gag that fills the mouth", self.composer()[1].system_message)
+        self.assertIn("man 2's mouth is covered", self.composer()[1].system_message)
         self.assertEqual(written["scenes"][1]["space"], "attic")
 
 
@@ -398,6 +421,31 @@ class FinalLabels(Harness):
             self.assertIsNone(prompts.label_problem(text, brief), text)
         for text in ("man 1 stands", "Man1 stands", "MAN-1 stands", "man_1 stands", "The first man stands"):
             self.assertIsNotNone(prompts.label_problem(text, brief), text)
+
+
+class RequestedProps(unittest.TestCase):
+    def test_a_count_in_the_request_never_names_a_prop(self):
+        # A request about "two men" was read as asking for a prop named "two ...", suggested for every image.
+        from goated_prompter.features.dataset.v2.scenes import entries
+        props = ["two matching candles", "a silk scarf", "soft rope", "a leather collar", "a wooden chair"]
+        brief = {"input": {"request": "the 22 yo with 2 men"}, "fixed": "a man with two men", "must": []}
+        self.assertEqual(entries.requested_entries(props, entries.requested_words(brief)), [])
+        named = {**brief, "input": {"request": "a man with two men, wearing a silk scarf"}}
+        self.assertEqual(entries.requested_entries(props, entries.requested_words(named)), ["a silk scarf"])
+
+
+class CaptureLine(Harness):
+    def test_the_final_writer_reads_the_capture_as_part_of_the_scene(self):
+        # A live run's final writer left "black-and-white" out of 5 of 12 prompts when the capture was only a rule.
+        self.final = ["A prompt about two men.", "Another prompt."]
+        for capture, expected in (("Black-and-white film", True), ("Auto", False)):
+            self.calls.clear()
+            brief = {**self.brief, "settings": {**self.brief["settings"], "style": "Realistic", "capture": capture},
+                     "input": {**self.brief["input"], "amount": 1}}
+            prompts.write_prompts({"backend": "mock"}, self.request, brief, [{"slot": 1, **self.scene("kitchen")}],
+                                  progress=lambda _: None)
+            final = [call for call in self.calls if call.diagnostic_stage == "final"][0]
+            (self.assertIn if expected else self.assertNotIn)("capture: Black-and-white film", final.user_message)
 
 
 class AspectRatio(Harness):

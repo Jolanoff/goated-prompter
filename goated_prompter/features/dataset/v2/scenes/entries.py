@@ -104,9 +104,15 @@ def deal_entries(entries, total, rng):
     return dealt
 
 
+# How many of something there are never names a thing: a request about "two men" was read as asking for a prop whose
+# name also says "two" (like "two matching candles"), and that one prop was then suggested for every image.
+COUNT_WORDS = frozenset("one two three four five six seven eight nine ten both pair couple several few many".split())
+
+
 def requested_words(brief):
-    """The words of the request and of what it fixes or requires."""
-    return frozenset(_words(" ".join((brief["input"]["request"], brief.get("fixed", ""), *brief.get("must", ())))))
+    """The words of the request and of what it fixes or requires, without counts (words and digits)."""
+    words = _words(" ".join((brief["input"]["request"], brief.get("fixed", ""), *brief.get("must", ()))))
+    return frozenset(word for word in words if word not in COUNT_WORDS and not word.isdigit())
 
 
 def requested_entries(entries, words):

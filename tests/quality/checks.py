@@ -28,7 +28,7 @@ CHECKS = (
     ("repeated_acts", "share of image pairs built on the same Actions & Poses entry (without entries: near-identical "
      "actions)", "aim", False),
     ("opening_conflicts", "share of scenes that contradict themselves about who is in whose mouth or anus (the "
-     "actions and positions disagree, or a gag that fills the mouth shares it)", "aim", False),
+     "actions and positions disagree, or the mouth is covered while something is in it)", "aim", False),
     ("subject_parts_missing", "share of the body parts the request names that no scene's actions or positions mention",
      "aim", False),
     ("pose_act_gap", "share of scenes where two people the act joins are named in neither one's position", "aim", False),

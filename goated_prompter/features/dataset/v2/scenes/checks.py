@@ -58,13 +58,14 @@ _AT_REST = re.compile(r"\b(?:unaroused|flaccid|limp|soft)\b,?\s*", re.IGNORECASE
 
 
 def _genitals_used(scene, label):
-    """Whether the scene puts this person's genitals in or on someone: another person's position or the actions say
-    "<label>'s penis", or the person's own position puts "his penis" in, inside or against something."""
+    """Whether the scene puts this person's genitals in or on someone: the actions or another person's position name
+    this person's genitals, or the person's own position puts their genitals in, inside or against something (written
+    with or without "is")."""
     position = scene.get("position") if isinstance(scene.get("position"), dict) else {}
     others = " ".join([str(scene.get("actions") or "")] + [str(text) for who, text in position.items() if who != label])
     own = str(position.get(label) or "")
     return bool(re.search(r"(?<![\w-])" + re.escape(label) + r"['’]s " + _PENIS + r"\b", others, re.IGNORECASE)
-                or re.search(r"\b(?:his|her|their) " + _PENIS + r" (?:is|are) (?:\w+ )?(?:in|inside|into|deep|"
+                or re.search(r"\b(?:his|her|their) " + _PENIS + r" (?:(?:is|are) )?(?:\w+ )?(?:in|inside|into|deep|"
                              r"pressed|between|being)\b", own, re.IGNORECASE))
 
 
@@ -73,10 +74,19 @@ def _at_work(text):
     return re.sub(r",\s*(?=" + _PENIS + r"\b)", " ", _AT_REST.sub("", text)).strip(", ")
 
 
+def _awake(text):
+    """A position without a resting state on its genitals ("his genitals visible and unaroused" -> "his genitals
+    visible"); only the parts that name the genitals change."""
+    return ", ".join(re.sub(r"\s*(?:and\s+)?\b(?:unaroused|flaccid|limp|soft)\b", "", part, flags=re.IGNORECASE)
+                     if re.search(r"\b" + _PENIS + r"\b", part, re.IGNORECASE) else part
+                     for part in str(text).split(", "))
+
+
 def placed_genitals(scene, labels):
     """The accepted scene without "hanging free" or a resting state for genitals the scene uses: a live writer put a
     penis in someone's mouth and also left "his genitals are hanging free" (the image showed it twice or floating), and
-    described penises inside someone as "unaroused". Only those words go; the act that places them stays."""
+    described penises inside someone as "unaroused", in the look and in the position. Only those words go; the act that
+    places them stays."""
     position = scene.get("position")
     if not isinstance(position, dict):
         return scene
@@ -86,10 +96,28 @@ def placed_genitals(scene, labels):
     clean = lambda text: ", ".join(part for part in str(text).split(", ") if not _FREE.search(part))
     subjects = scene.get("subjects") if isinstance(scene.get("subjects"), dict) else {}
     return {**scene,
-            "position": {who: clean(text) if who in used else text for who, text in position.items()},
+            "position": {who: _awake(clean(text)) if who in used else text for who, text in position.items()},
             "subjects": {who: ({**person, "genitals": _at_work(clean(person["genitals"])) or person["genitals"]}
                                if who in used and isinstance(person, dict) and isinstance(person.get("genitals"), str)
                                else person) for who, person in subjects.items()}}
+
+
+def _bare(entry):
+    """An entry without its leading article, as it reads inside a sentence ("a leather collar" -> "leather collar")."""
+    return re.sub(r"^(?:a|an|the)\s+", "", " ".join(str(entry).split()).casefold())
+
+
+def without_copied_props(scene, props, suggested, earlier_extras):
+    """The accepted scene without a vocabulary prop copied from an earlier image: a live writer put the prop suggested
+    for one image into all twelve, so every image showed the same object. An extras item that names one of the
+    selected props stays when that prop was suggested for this image or no earlier image has it; props the request
+    names are suggested for every image, so they always stay."""
+    earlier = " ".join(map(str, earlier_extras)).casefold()
+    offered = {_bare(entry) for entry in suggested}
+    copied = [prop for prop in {_bare(entry) for entry in props} if prop not in offered and prop in earlier]
+    items = str(scene.get("extras") or "").split(", ")
+    kept = [item for item in items if not any(prop in item.casefold() for prop in copied)]
+    return {**scene, "extras": ", ".join(kept)} if kept and len(kept) < len(items) else scene
 
 
 _ENTRY_HEAD = re.compile(r"((?:^|;\s*))([^:;\n]{3,80}):\s*([^,;\n]*)(?:,\s*|;\s*|$)")
@@ -116,12 +144,12 @@ def without_entry_copy(scene, labels):
     return {**scene, "actions": cleaned}
 
 
-# Openings and the body parts that go into them. How many things one opening holds is the request's choice (two penises
-# in one mouth is an act of its own); what code checks is that the scene does not contradict itself.
+# Openings and the body parts that go into them. How many things one opening holds is the request's choice; what code
+# checks is that the scene does not contradict itself.
 OPENINGS = ("mouth", "anus", "vagina")
 FILLING_PARTS = "(?:penis|tongue|fingers?|fist)"
-# A gag that fills the mouth (a ring gag holds it open and leaves room).
-GAG = re.compile(r"\b(?:ball|bit|bar|panel|tape)[- ]gag\w*|\bgagged\b", re.IGNORECASE)
+# Something that covers or fills the mouth so nothing else fits (a ring that holds the mouth open leaves room).
+MOUTH_COVER = re.compile(r"\b(?:ball|bit|bar|panel|tape)[- ]gag\w*|\bgagged\b", re.IGNORECASE)
 
 
 def _named(label):
@@ -148,9 +176,9 @@ def _openings_used(texts, person, other, labels):
 
 def opening_conflicts(scene, labels):
     """Why a scene contradicts itself about who is in whose mouth or anus, as reasons to ask that image again ([] when
-    it does not): the actions and the positions put someone's body part in different openings (a live scene's act had
-    man 1 in the mouth while the positions had him in the anus), or a gag that fills the mouth shares it with a body
-    part. How many things one opening holds is never judged: the request decides that."""
+    it does not): the actions and the positions put someone's body part in different places (a live scene's actions
+    and positions swapped who was where), or the mouth is covered while a body part is in it. How many things one
+    opening holds is never judged: the request decides that."""
     position = scene.get("position") if isinstance(scene.get("position"), dict) else {}
     actions = [str(scene.get("actions") or "")]
     # In a position, "his" is that position's own person.
@@ -163,9 +191,8 @@ def opening_conflicts(scene, labels):
                 reasons.append(f"the actions put {other}'s body part in {person}'s {' and '.join(sorted(said))} but the "
                                f"positions put it in their {' and '.join(sorted(placed))}: make the actions and every "
                                "position agree")
-            if GAG.search(str(position.get(person) or "")) and "mouth" in said | placed:
-                reasons.append(f"{person} wears a gag that fills the mouth while {other}'s body part is in it: keep one "
-                               "of them")
+            if MOUTH_COVER.search(str(position.get(person) or "")) and "mouth" in said | placed:
+                reasons.append(f"{person}'s mouth is covered while {other}'s body part is in it: keep one of them")
     return reasons
 
 

@@ -556,6 +556,8 @@ def write_prompts(config, request, brief, scenes, *, checkpoint=lambda: None, pr
         number = scene_slot(scene, position)
         progress(f"Writing final prompt {position} of {len(scenes)} (image {number})...")
         idea = name_people(scene_text(scene, known), brief, scene)
+        if capture != "Auto":  # a live run's final writer left "black-and-white" out of 5 of 12 prompts given only as a rule
+            idea += f"\ncapture: {capture}"
         named = _requirements(brief, scene)
         problem = None
         recovery = GenerationRecovery("dataset_v2:builder", [number], progress=progress)

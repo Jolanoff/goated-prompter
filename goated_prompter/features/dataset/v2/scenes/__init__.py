@@ -92,7 +92,9 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
             groups = _only(groups, ACTIONS_CATEGORY, action_entries)
         plan = {"entries": {_entry_key(entry): entry for entry in action_entries} or None,
                 "cap": entry_cap(action_entries, total), "used": {}, "dealt": deal_entries(action_entries, total, rng),
-                "hands": deal_hands(groups, total, rng, words=requested_words(brief))}
+                "hands": deal_hands(groups, total, rng, words=requested_words(brief)),
+                "props": [entry for group in groups if group["category"] != ACTIONS_CATEGORY
+                          for pack in group["packs"] for entry in pack["entries"]]}
         if brief["_known"]:  # dealt last, so runs without known characters deal exactly as before
             plan["frames"] = deal_frames(total, rng)
         for start in range(0, total, BATCH):
