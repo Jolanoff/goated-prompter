@@ -74,29 +74,129 @@ def _at_work(text):
     return re.sub(r",\s*(?=" + _PENIS + r"\b)", " ", _AT_REST.sub("", text)).strip(", ")
 
 
-def _awake(text):
-    """A position without a resting state on its genitals ("his genitals visible and unaroused" -> "his genitals
-    visible"); only the parts that name the genitals change."""
-    return ", ".join(re.sub(r"\s*(?:and\s+)?\b(?:unaroused|flaccid|limp|soft)\b", "", part, flags=re.IGNORECASE)
-                     if re.search(r"\b" + _PENIS + r"\b", part, re.IGNORECASE) else part
-                     for part in str(text).split(", "))
+def _edit_parts(text, edit):
+    """The text with each of its comma or semicolon parts replaced by edit(part); a part edit returns empty for goes."""
+    pieces = re.split(r"\s*([,;])\s+", str(text))
+    kept = [(sep, new) for sep, part in zip([""] + pieces[1::2], pieces[0::2]) if (new := edit(part))]
+    return "".join((f"{sep} " if index else "") + part for index, (sep, part) in enumerate(kept))
+
+
+def _awake_part(part):
+    """A part without a resting state on its genitals ("his genitals visible and unaroused" -> "his genitals visible",
+    "soft and pressed against" -> "pressed against"); a part that said nothing but the state ("man 2's genitals are
+    unaroused") goes rather than dangle."""
+    if not re.search(r"\b" + _PENIS + r"\b", part, re.IGNORECASE):
+        return part
+    part = re.sub(r"\s*\b(?:unaroused|flaccid|limp|soft)\b(?:\s+and\b)?|\s*(?:and\s+)?\b(?:unaroused|flaccid|limp|soft)\b",
+                  "", part, flags=re.IGNORECASE)
+    return "" if re.search(r"\b(?:is|are)\s*$", part, re.IGNORECASE) else part
+
+
+def _own(label):
+    """How a position names its own person's body part: "his", "her", "their" or the label's possessive."""
+    return r"(?:\b(?:his|her|their)|(?<![\w-])" + re.escape(label) + r"['’]s) "
+
+
+def _enters(scene, label, labels):
+    """Whether the actions or the person's own position put this person's penis in or into another person's body
+    ("in man 1's anus"), not into a toy that is in them."""
+    position = scene.get("position") if isinstance(scene.get("position"), dict) else {}
+    someone = "(?:" + "|".join(re.escape(other) for other in labels if other != label) + r")['’]s\b"
+    into = (r"(?:penis|shaft)\b[^,;.]{0,20}?\b(?:in|inside|into|enter\w*|penetrat\w*)\s+(?:(?:deep|the)\s+)?"
+            + someone)
+    return len(labels) > 1 and bool(
+        re.search(r"(?<![\w-])" + re.escape(label) + r"['’]s " + into, str(scene.get("actions") or ""), re.IGNORECASE)
+        or re.search(_own(label) + into, str(position.get(label) or ""), re.IGNORECASE))
+
+
+def _into(giver, taker):
+    """A pattern for giver's penis in or into taker's body; giver is a label or a pattern ("his")."""
+    return (giver + r"(?:penis|shaft)\b[^,;.]{0,20}?\b(?:in|inside|into|enter\w*|penetrat\w*)\s+(?:(?:deep|the)\s+)?"
+            + r"(?<![\w-])" + re.escape(taker) + r"['’]s\b")
+
+
+def _reversed_part(scene, label, labels):
+    """edit dropping a part of this person's own position that puts their penis into the person whose penis the actions
+    put into them: a live receiver's position said "his penis is inside man 2's anus" while the actions said "man 2's
+    penis in man 1's anus". When the actions also put this person's penis into that person (two acts), it stays."""
+    actions = str(scene.get("actions") or "")
+    named = lambda who: r"(?<![\w-])" + re.escape(who) + r"['’]s "
+    givers = [other for other in labels if other != label
+              and re.search(_into(named(other), label), actions, re.IGNORECASE)
+              and not re.search(_into(named(label), other), actions, re.IGNORECASE)]
+    if not givers:
+        return lambda part: part
+    return lambda part: "" if any(re.search(_into(_own(label), giver), part, re.IGNORECASE) for giver in givers) else part
+
+
+def _named_by_act(scene, label, alone):
+    """Whether the actions or another person's position name this person's genitals; for a cast of one, the actions'
+    "his penis" is theirs."""
+    position = scene.get("position") if isinstance(scene.get("position"), dict) else {}
+    others = " ".join([str(scene.get("actions") or "")] + [str(text) for who, text in position.items() if who != label])
+    # "man 3's and man 4's penises" names both.
+    return bool(re.search(r"(?<![\w-])" + re.escape(label) + r"['’]s(?: and [\w ]{1,20}?['’]s)? " + _PENIS, others,
+                          re.IGNORECASE)
+                or (alone and re.search(r"\b(?:his|her|their) " + _PENIS + r"\b", str(scene.get("actions") or ""),
+                                        re.IGNORECASE)))
+
+
+def _stray_part(scene, label, labels):
+    """edit for one person's position parts that give their genitals a place the act does not: genitals whose penis is
+    already in someone get no second place ("his penis is in man 1's anus; his genitals are near man 1's chest"), and
+    genitals the actions do not name touch nothing and nobody ("his penis is joined to a toy", "pressed against the
+    toy", "inside a toy that is in man 1's anus"). What the camera sees of them ("his genitals visible"), "hanging
+    free", what they wear ("in a harness"), their own body the pose rests them on ("pressed against his chest") and
+    what someone does to them ("being stroked") are no place and stay. A part that only goes on describing dropped
+    genitals ("his genitals are his thick, | long penis and testicles") goes with it."""
+    own = _own(label)
+    kept = re.compile(r"\bvisible\b|\bbeing\b|\b(?:against|on) (?:his|her|their) |" + _FREE.pattern, re.IGNORECASE)
+    if _enters(scene, label, labels):
+        stray = lambda part: (re.search(own + r"(?:genitals|testicles)\b", part, re.IGNORECASE)
+                              and not re.search(r"\b(?:penis|shaft)\b", part, re.IGNORECASE))
+    elif _named_by_act(scene, label, len(labels) == 1):
+        return lambda part: part
+    else:
+        others = "|".join(re.escape(other) for other in labels if other != label)
+        stray = lambda part: re.search(own + _PENIS + r"\b[^,;]*(?:\b(?:against|pressed|joined|attached|rubbing|"
+                                       r"touching|resting)\b" + (rf"|(?<![\w-])(?:{others})['’]s\b" if others else "")
+                                       + ")", part, re.IGNORECASE)
+    dropped = [False]
+
+    def edit(part):
+        going = bool(stray(part)) and not kept.search(part)
+        # A part with no verb of its own that names genitals right after a dropped one only goes on describing them.
+        going = going or (dropped[0] and not re.search(r"\b(?:is|are)\b", part, re.IGNORECASE)
+                          and re.search(r"\b(?:penis|testicles)\b", part, re.IGNORECASE))
+        dropped[0] = bool(going)
+        return "" if going else part
+    return edit
 
 
 def placed_genitals(scene, labels):
     """The accepted scene without "hanging free" or a resting state for genitals the scene uses: a live writer put a
     penis in someone's mouth and also left "his genitals are hanging free" (the image showed it twice or floating), and
-    described penises inside someone as "unaroused", in the look and in the position. Only those words go; the act that
-    places them stays."""
+    described penises inside someone as "unaroused", in the look and in the position. Nor a penetration the actions
+    reverse (_reversed_part) or a place the act does not give them (_stray_part): live writers joined a penis to the toy
+    its owner moved and pressed genitals against a toy in someone else. Only those words go; the act that places them
+    stays."""
     position = scene.get("position")
     if not isinstance(position, dict):
         return scene
+    position = {who: _edit_parts(text, _reversed_part(scene, who, list(labels)))
+                if who in labels and isinstance(text, str) else text for who, text in position.items()}
+    scene = {**scene, "position": position}
+    position = {who: _edit_parts(text, _stray_part(scene, who, list(labels)))
+                if who in labels and isinstance(text, str) else text for who, text in position.items()}
+    scene = {**scene, "position": position}
     used = [label for label in labels if _genitals_used(scene, label)]
     if not used:
         return scene
-    clean = lambda text: ", ".join(part for part in str(text).split(", ") if not _FREE.search(part))
+    clean = lambda text: _edit_parts(text, lambda part: "" if _FREE.search(part) else part)
     subjects = scene.get("subjects") if isinstance(scene.get("subjects"), dict) else {}
     return {**scene,
-            "position": {who: _awake(clean(text)) if who in used else text for who, text in position.items()},
+            "position": {who: _edit_parts(clean(text), _awake_part) if who in used else text
+                         for who, text in position.items()},
             "subjects": {who: ({**person, "genitals": _at_work(clean(person["genitals"])) or person["genitals"]}
                                if who in used and isinstance(person, dict) and isinstance(person.get("genitals"), str)
                                else person) for who, person in subjects.items()}}

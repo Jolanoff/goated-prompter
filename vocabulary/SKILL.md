@@ -77,14 +77,45 @@ asked.
 
 - One idea per entry, named the way a person would say it ("arched back", "rim lighting").
 - Keep a pack to one category and one theme.
-- `Actions & Poses` holds what subjects do and how they are positioned. An entry can define both ("one person on all
-  fours, the other person kneeling behind them"), only the action ("one person giving the other person a massage")
-  or only the pose ("the person posing with an arched back"); the scene writer keeps a defined pose with its action
-  and picks a fitting one when it is missing. When an action only makes sense in one arrangement, write both in one
-  entry.
-- Name people "the person" (solo), "one person" and "the other person" (couples) or "a group", never "partner" or a
-  gender: the scene writer replaces them with the scene's characters and their gender. Objects and surfaces in an
-  entry ("on the floor", "over a table", "a toy") are examples it adapts to the scene's space.
+- `Actions & Poses` holds what subjects do and how they are positioned. An entry can define both, only the action or
+  only the pose; the scene writer keeps a defined pose with its action and picks a fitting one when it is missing.
+  When an action only makes sense in one arrangement, write both in one entry.
+
+### Actions & Poses entries for two or more people
+
+Write each entry as one complete arrangement in one fixed shape, so it is short, easy to check and easy to keep:
+
+```text
+[position name: ]A <position>; B <where B is, relative to A>; C <where C is>; <what happens, part by part>
+```
+
+```text
+waltz turn: A standing, leaning back in B's arms; B standing facing A, one hand at A's waist; C standing behind A, holding A's raised hand
+```
+
+1. **Letters for people.** A is the person the act centres on; B and C are placed relative to A. Never "his", a
+   gender, "partner" or "the other one": every body part names its owner's letter ("B's hand on A's waist"). The
+   scene writer replaces the letters with the scene's characters.
+2. **One entry per different act or arrangement, never per wording.** Two entries with the same act and the bodies
+   placed the same way are one entry. A different arrangement is a different support, facing or reach (on all fours,
+   lying on the back, bent over, standing, held up).
+3. **No objects inside the act.** Write "a toy" or "a surface" instead of a named thing or a `[slot]`; the run's
+   Objects & Props packs supply the actual thing for each image, so a new prop never needs a changed act.
+4. **Plain anatomical words** for body parts, the same words the app's rules and checks use.
+5. **One cast size per pack**: set `"people"` on the pack (a Threesome pack, a Couple pack), not on each entry. A pack
+   that already mixes cast sizes keeps its file, so saved selections still find it: `"people"` on the pack for the
+   most common size and `{"text": ..., "people": n}` only on the other entries.
+6. **A name only when it is the position's real name.** The final prompt calls the position by the words before the
+   colon, so write them only when people name that position that way (several entries may share it); otherwise start
+   the entry with "A". A label that only describes the entry ("watch", "toy ride") would read as a position that does
+   not exist.
+
+Check each line before keeping it: in A's position, can B and C reach what the act says, with their own weight
+supported? Older entries written with "one person" and "the other person" keep working.
+
+- Name people in other categories "the person" (solo) or "a group", never a gender: the scene writer replaces them
+  with the scene's characters and their gender. Surfaces in an entry ("on the floor", "over a table") are examples it
+  adapts to the scene's space.
 - With an `Actions & Poses` pack selected, every scene names the entry it uses and no entry is used by more than two
   images, so a pack needs enough distinct entries for the batch sizes it is used with.
 - `Subjects/Humans` holds people's looks (skin, build, hair, one detail). It is used only when selected, and never

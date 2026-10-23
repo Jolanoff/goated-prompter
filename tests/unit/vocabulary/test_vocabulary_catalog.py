@@ -58,8 +58,12 @@ class Bundled(unittest.TestCase):
                 continue
             with self.subTest(pack=str(path.relative_to(catalog.ROOT))):
                 data = json.loads(path.read_text(encoding="utf-8"))
-                self.assertEqual(set(data), {"name", "category", "description", "entries"})
+                # Actions & Poses packs give their cast size (vocabulary/SKILL.md): on the pack, and on an entry that differs.
+                acts = path.parent.name == "Actions & Poses"
+                self.assertEqual(set(data) - ({"people"} if acts else set()), {"name", "category", "description", "entries"})
                 self.assertEqual(data["category"], folders[path.parent.name])
+                data["entries"] = [entry["text"] if acts and isinstance(entry, dict) and set(entry) == {"text", "people"}
+                                   else entry for entry in data["entries"]]
                 self.assertTrue(all(isinstance(entry, str) and entry for entry in data["entries"]))
                 self.assertIsInstance(data["description"], str)
                 self.assertTrue(1 <= len(data["description"].strip()) <= 300)

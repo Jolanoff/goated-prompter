@@ -63,7 +63,9 @@ class SceneVariety(Harness):
         system = self.composer()[0].system_message
         self.assertIn("one\n  physically possible arrangement", system)
         self.assertIn("if one person is behind another, that person faces away from them", system)
-        self.assertIn("Unless fixed keeps it, never reuse a place, arrangement or camera listed in already_used", " ".join(system.split()))
+        # A live party set gave three of six images the same four looks, which already_used listed.
+        self.assertIn("Unless fixed keeps it, never reuse a place, arrangement, camera or look listed in already_used",
+                      " ".join(system.split()))
         self.assertIn("Give the people new looks (skin, build, hair, detail) in every image unless fixed keeps the same people", system)
 
     def test_each_person_has_an_expression_field_for_expression_vocabulary(self):
@@ -84,8 +86,10 @@ class SceneVariety(Harness):
                                                        "genitals are", system)
         # A live run's genitals hung free while the act had them in someone's mouth, and "uses his hole" or "takes his
         # mouth" stood for acts that then never showed; the bound person stayed soft in every image.
+        # A live writer wrote only "man 1 is riding man 2's penis" and the prose put man 1's penis in man 2.
         for rule in ('"hanging free" is only for genitals nothing touches', "(size and shape only)",
-                     'A verb such as "uses", "takes" or "has" never stands for the act'):
+                     'A verb such as "uses", "takes" or "has" never stands for the act',
+                     "A position verb (rides, mounts, sits on) never replaces it either"):
             (self.assertIn if adult else self.assertNotIn)(rule, system)
         sfw = {**self.brief, "path": "character"}
         self.assertNotIn("genitals", scenes.subject_fields(sfw, "man 1"), "never outside an adult dataset")
@@ -116,6 +120,55 @@ class SceneVariety(Harness):
         self.assertEqual(placed["position"]["man 1"], "standing, his penis inside man 2's anus, his genitals visible")
         self.assertEqual(placed["subjects"]["man 1"]["genitals"], "thick, long penis and testicles")
         self.assertEqual(placed["position"]["man 2"], scene["position"]["man 2"], "nothing touches his genitals")
+
+    def test_a_resting_state_goes_without_leaving_half_a_sentence(self):
+        # A live cleanup left "man 2's genitals are" when the writer had called a penis inside someone "unaroused".
+        scene = {**self.scene("bedroom"), "actions": "man 2's penis is in man 1's anus",
+                 "position": {"man 1": "on all fours, his genitals are hanging free",
+                              "man 2": "kneeling, man 2's penis is in man 1's anus, man 2's genitals are unaroused"}}
+        self.assertEqual(scenes.checks.placed_genitals(scene, ["man 1", "man 2"])["position"]["man 2"],
+                         "kneeling, man 2's penis is in man 1's anus")
+        scene["position"]["man 2"] = "kneeling, his penis is soft and pressed against man 1's buttocks"
+        self.assertEqual(scenes.checks.placed_genitals(scene, ["man 1", "man 2"])["position"]["man 2"],
+                         "kneeling, his penis is pressed against man 1's buttocks")
+
+    def test_genitals_get_no_place_the_act_does_not_give_them(self):
+        # Live positions joined a penis to the toy its owner moved, pressed a solo man's genitals against the toy in him
+        # and gave a penis already in someone a second place "near man 1's chest".
+        scene = {**self.scene("bedroom"), "actions": "man 2 is moving a toy in and out of man 1's anus",
+                 "position": {"man 1": "on all fours; his genitals are pressed against man 2's knee",
+                              "man 2": "kneeling, his hands grip man 1's waist, his penis is joined to a toy that is "
+                                       "entering man 1's anus"}}
+        placed = scenes.checks.placed_genitals(scene, ["man 1", "man 2"])
+        self.assertEqual(placed["position"], {"man 1": "on all fours", "man 2": "kneeling, his hands grip man 1's waist"})
+        scene["actions"] = "man 2's penis is in man 1's mouth"
+        scene["position"] = {"man 1": "kneeling, his mouth around man 2's penis",
+                             "man 2": "standing; his penis is in man 1's mouth; his genitals are near man 1's chest"}
+        self.assertEqual(scenes.checks.placed_genitals(scene, ["man 1", "man 2"])["position"]["man 2"],
+                         "standing; his penis is in man 1's mouth")
+        scene["actions"] = "man 1's hands are stroking man 2's and man 3's penises"
+        scene["position"] = {"man 1": "kneeling, his legs folded, his genitals are pressed against his thighs",
+                             "man 2": "standing, his penis is being stroked by man 1's hand"}
+        self.assertEqual(scenes.checks.placed_genitals(scene, ["man 1", "man 2"])["position"], scene["position"],
+                         "the act names both penises, and his own thighs are no other body")
+        # A live receiver's position said "his penis is inside man 2's anus" while the actions put man 2's in his.
+        scene["actions"] = "man 2's penis in man 1's anus, man 1 riding man 2"
+        scene["position"] = {"man 1": "sitting astride man 2, his penis is inside man 2's anus, his hands on man 2",
+                             "man 2": "sitting on a toilet, his penis is in man 1's anus"}
+        self.assertEqual(scenes.checks.placed_genitals(scene, ["man 1", "man 2"])["position"],
+                         {"man 1": "sitting astride man 2, his hands on man 2",
+                          "man 2": "sitting on a toilet, his penis is in man 1's anus"})
+        scene["actions"] = "man 2's penis in man 1's anus while man 1's penis is in man 2's mouth"
+        scene["position"]["man 1"] = "bent over man 2, his penis is in man 2's mouth"
+        self.assertEqual(scenes.checks.placed_genitals(scene, ["man 1", "man 2"])["position"]["man 1"],
+                         scene["position"]["man 1"], "the actions give both acts: nothing is reversed")
+        solo = {**self.scene("bedroom"), "actions": "the man is sitting on a chair, a toy fixed to the seat in his anus",
+                "position": {"man": "sitting on a chair, his genitals are pressed against the toy, his hands grip the arms"}}
+        self.assertEqual(scenes.checks.placed_genitals(solo, ["man"])["position"]["man"],
+                         "sitting on a chair, his hands grip the arms")
+        solo["actions"] = "the man is stroking his penis, a toy pressed against it"
+        self.assertEqual(scenes.checks.placed_genitals(solo, ["man"])["position"], solo["position"],
+                         "the actions name his penis: its contact stays")
 
     def test_a_prop_copied_from_an_earlier_image_is_dropped(self):
         # A live writer put the prop suggested for one image into all twelve images.

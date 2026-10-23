@@ -88,6 +88,13 @@ class Checks(unittest.TestCase):
         row["case"]["target"] = "Anima"
         values = checks.case_checks(row)
         self.assertEqual((values["count_tags_ok"], values["bad_tags"]), (0.5, 0.5))
+        # A couple of open genders that the scenes wrote as a woman and a man is counted as the scene gives them.
+        couple = [{"label": "person 1"}, {"label": "person 2"}]
+        lines = ["masterpiece, 1boy, 1girl, walking\n\nThey walk.", "masterpiece, 2others, walking\n\nThey walk.",
+                 "masterpiece, 2boys, 1girl, walking\n\nThey walk."]
+        row = dataset_row([scene("fair", "a street")], lines, characters=couple)
+        row["case"]["target"] = "Anima"
+        self.assertEqual(checks.case_checks(row)["count_tags_ok"], round(2 / 3, 3), "three people for two is wrong")
 
     def test_framing_hints_count_shot_names_and_shown_extents(self):
         named = "A medium shot of two people talking in a kitchen."
@@ -112,6 +119,36 @@ class Checks(unittest.TestCase):
                                                              "man 2": "kneeling, his mouth around man 1's penis"}}
         placed = {**used, "position": {**used["position"], "man 1": "sitting, his penis in man 2's mouth, aroused"}}
         self.assertEqual([checks._genitals_conflict(scene) for scene in (used, placed)], [True, False])
+
+    def test_genitals_given_two_places_are_counted(self):
+        actions = "man 2's penis in man 1's anus, man 1 sitting on man 2's lap"
+        twice = {"actions": actions, "position": {"man 1": "his genitals are pressed against man 2's, his penis is "
+                                                            "tucked under him", "man 2": "sitting, hands on man 1's hips"}}
+        tucked = {"actions": actions, "position": {"man 1": "sitting astride, his penis resting on man 2's belly",
+                                                   "man 2": "his penis is tucked under him"}}
+        one = {"actions": actions, "position": {"man 1": "sitting astride, his penis is hanging free",
+                                                "man 2": "his genitals are pressed against man 1's buttocks"}}
+        self.assertEqual([checks._genitals_conflict(scene) for scene in (twice, tucked, one)], [True, True, False])
+
+    def test_a_person_being_entered_meets_the_other_at_the_hips(self):
+        labels = ["man 1", "man 2"]
+        chest = {"actions": "man 2's penis in man 1's anus", "position": {
+            "man 1": "lying on his back, his buttocks are pressed against man 2's chest", "man 2": "kneeling"}}
+        hips = {"actions": "man 2's penis in man 1's anus", "position": {
+            "man 1": "on all fours", "man 2": "kneeling, man 1's buttocks pressed against his hips"}}
+        touch = {"actions": "man 2's fingers on man 1's back", "position": {
+            "man 1": "lying down, his buttocks against man 2's chest", "man 2": "kneeling"}}
+        self.assertEqual([checks._contact_misplaced(scene, labels) for scene in (chest, hips, touch)],
+                         [True, False, False])
+
+    def test_anima_tags_for_an_act_the_scene_does_not_show_or_beside_their_opposite_are_counted(self):
+        entered = {"actions": "man 2's penis in man 1's anus", "position": {}}
+        touched = {"actions": "man 2's fingers spreading man 1's buttocks", "position": {}}
+        self.assertEqual([checks._tags_misfit(prompt, scene) for prompt, scene in (
+            ("masterpiece, 2boys, anal, kneeling\n\nProse.", entered),
+            ("masterpiece, 2boys, sex, anal, kneeling\n\nProse.", touched),
+            ("masterpiece, 2boys, aroused, unaroused\n\nProse.", entered),
+            ("masterpiece, 2boys, kneeling\n\nProse.", touched))], [False, True, True, False])
 
     def test_template_text_left_in_a_scene_is_counted(self):
         labels = ["man 1", "man 2"]
@@ -145,6 +182,19 @@ class Checks(unittest.TestCase):
         two_acts = {"actions": "man 1 grips man 2's hair, and man 2's hand holds the bed", "position": {
             "man 1": "standing, his hand in man 2's hair", "man 2": "kneeling"}}
         self.assertEqual([checks._pose_act_gap(scene, labels) for scene in (joined, loose, two_acts)], [False, True, False])
+        three = ["man 1", "man 2", "man 3"]
+        sharing = {"actions": "man 2 and man 3 are holding man 1's arms", "position": {
+            "man 1": "kneeling", "man 2": "standing, holding man 1's left arm", "man 3": "standing, holding man 1's right arm"}}
+        waiting = {"actions": "man 1's fingers are in man 2's mouth, man 3 and man 2 are waiting", "position": {
+            "man 1": "standing", "man 2": "kneeling at man 1's hips", "man 3": "sitting nearby"}}
+        apart = {**sharing, "position": {**sharing["position"], "man 3": "standing at the door"}}
+        both = {"actions": "man 1's hands are holding man 2's and man 3's wrists", "position": {
+            "man 1": "kneeling between man 2 and man 3", "man 2": "standing", "man 3": "standing"}}
+        during = {"actions": "man 2's fingers are in man 1's mouth as man 1 sits on man 3's lap", "position": {
+            "man 1": "sitting on man 3's lap", "man 2": "standing in front of man 1, fingers in man 1's mouth", "man 3": "sitting on a chair"}}
+        self.assertEqual([checks._pose_act_gap(scene, three) for scene in (sharing, waiting, apart, both, during)],
+                         [False, False, True, False, False],
+                         "people who share a role are not joined; each must still reach whoever they act on")
 
     def test_a_lower_body_part_the_visible_parts_leave_out_is_counted(self):
         labels = ["man 1", "man 2"]

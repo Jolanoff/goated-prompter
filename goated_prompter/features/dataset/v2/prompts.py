@@ -45,7 +45,8 @@ cannot reach. What the scene
 leaves open follows the Creativity setting. The actions line is the whole action of the image: write
 exactly that, with no other act. When the idea gives a position name, use that name word for word together with
 the action, as plain words and never in quotes (quotes mark text drawn in the image): the target model knows it, so
-name it instead of only describing the pose.
+name it instead of only describing the pose. When the idea gives no position name, name no position, in a tag or in
+prose (no doggystyle, missionary or cowgirl): describe the pose instead.
 Do not add subjects or actions. Keep the camera's viewpoint (side and height); its distance gives way only when it
 would show a person of the scene as nothing more than a body part: then show enough of that person to join the part to
 them. Each person's frame is decided: show at least that much of them, and
@@ -60,6 +61,8 @@ them to suit the scene and the request (and any Clothing, Lighting or Mood entry
 after reading the action: a body part the action uses is bare, so no garment covers it (no underwear, shorts or
 trousers over hips the action uses, no top over a chest it uses); clothing goes only on the rest of the body. Describe a body part only when the scene's positions and camera let the camera see it; a
 body part turned away, hidden behind or under another body, or inside someone is never described as visible.
+Never mention anything the image does not show: no hidden or covered body part, nothing outside the frame and no
+object the scene does not have, not even to say it is hidden or missing.
 A person's label or number only tells the people apart: never write it, and never call a person by their order;
 describe each person by their own appearance instead."""
 
@@ -73,7 +76,8 @@ This is an adult dataset: word the act and the bodies in plain, explicit terms, 
 every prompt. Never soften them into euphemisms, implications or vague wording. Whenever the positions and camera let
 the camera see a person's genitals, they get their own short description in that person's description, as concrete as
 their skin and build: size, shape and state (relaxed or aroused). Naming them only in the action is not enough.
-Genitals the camera cannot see are not described."""
+Genitals the camera cannot see are not described. Tags name only the act the scene's actions name and body parts this
+cast has: no tag for an act the image does not show."""
 
 
 def position_name(scene):
@@ -153,6 +157,19 @@ def name_people(text, brief, scene):
             parts[index] = re.sub(r"\b(?:(?:the|a|an|his|her|their|its)\s+)?" + re.escape(label) + r"\b",
                                   lambda _match: anchor, parts[index], flags=re.IGNORECASE)
     return unlabel("".join(parts), brief)
+
+
+def plain_names(prompt, brief, scene):
+    """The prompt without square brackets a model put around a person's look anchor ("[the man with tan skin] lies"):
+    on a tag-based target brackets change how strongly a phrase counts, and the anchor is the app's own name for them.
+    An anchor that starts a sentence starts with a capital."""
+    found = anchors(scene, brief) if (scene or {}).get("subjects") else {}
+    for anchor in sorted(set(found.values()), key=len, reverse=True):
+        def plain(match):
+            start = not match.string[:match.start()].rstrip() or match.string[:match.start()].rstrip()[-1] in ".!?"
+            return match[1][:1].upper() + match[1][1:] if start else match[1]
+        prompt = re.sub(r"\[\s*(" + re.escape(anchor) + r")\s*\]", plain, prompt, flags=re.IGNORECASE)
+    return prompt
 
 
 def _requirements(brief, scene):
@@ -266,16 +283,23 @@ def _plain_tag(field):
     return re.sub(r":\d+(?:\.\d+)?\)?$", "", field.strip()).lstrip("(").strip().replace("_", " ")
 
 
+MAX_TAG_WORDS = 8  # a field with more words is a phrase, not an Anima tag
+# A field wholly in square brackets is a model's placeholder for a person ("[man with fair skin]"), never an Anima tag.
+_BRACKETED = re.compile(r"\[[^\[\]]*\]")
+
+
 def _tag_line(text):
-    """Whether text is a comma-separated tag line rather than prose."""
+    """Whether text is a comma-separated tag line rather than prose. A few fields that are not tags (a phrase a model
+    left among them) do not make it prose: a live tag line with one such phrase kept the model's "2men, solo"."""
     fields = [field.strip() for field in text.split(",") if field.strip()]
-    return (len(fields) >= 2 and "\n" not in text.strip() and all(1 <= len(field.split()) <= 8 for field in fields)
+    tags = sum(1 <= len(field.split()) <= MAX_TAG_WORDS for field in fields)
+    return (len(fields) >= 2 and "\n" not in text.strip() and tags >= 0.9 * len(fields)
             and not re.search(r"[a-z]{2,}[.!?](?:\s+[A-Z]|\s*$)", text))
 
 
 # Anima's people-count tags (danbooru): 1boy, 2girls, 1other, solo, and the loose forms models invent ("2people").
 # "solo focus" is a tag of its own; any other solo phrase a model invents ("solo man") is a count tag.
-_COUNT_TAG = re.compile(r"\d+\+?\s*(?:boy|girl|other|people|person|persons|man|men|woman|women)s?|"
+_COUNT_TAG = re.compile(r"\d+\+?\s*(?:boy|girl|other|people|person|persons|man|men|woman|women|male|female)s?|"
                         r"solo(?!\s+focus$)(?:[\s-].*)?|multiple (?:boys|girls|others|people)", re.IGNORECASE)
 # Quality tags that belong in a negative prompt, never in the positive one.
 _LOW_QUALITY_TAG = re.compile(r"(?:worst|low|bad) quality|lowres", re.IGNORECASE)
@@ -287,6 +311,19 @@ _QUALITY_TAG = re.compile(r"score \d+(?: up)?|masterpiece|(?:best|good|normal|hi
 _SAFETY_TAG = re.compile(r"(?:rating\s*:?\s*)?(safe|sensitive|nsfw|explicit|questionable|general)", re.IGNORECASE)
 # Anima's framing tags, widest first: a scene's widest frame decides the one the image gets (FRAME_TAGS).
 SHOT_TAGS = ("full body", "cowboy shot", "upper body", "portrait", "close-up")
+
+
+def scene_gender(scene, label):
+    """The gender a scene gives a person the cast leaves open (a couple of unnamed genders): "male" or "female" when that
+    person's own position calls them only he or only she (positions name everyone else by label), else None."""
+    text = str(((scene or {}).get("position") or {}).get(label) or "")
+    he = re.search(r"\b(?:he|his|him|himself)\b", text, re.IGNORECASE)
+    she = re.search(r"\b(?:she|her|hers|herself)\b", text, re.IGNORECASE)
+    return "male" if he and not she else "female" if she and not he else None
+
+
+# Body parts whose sight makes an image explicit (Anima's rating); the scene names them in these anatomical words.
+_EXPLICIT_PARTS = re.compile(r"\b(?:penis(?:es)?|testicles|anus|vagina|vulva|clitoris|genitals)\b", re.IGNORECASE)
 
 
 def count_tags(characters):
@@ -329,10 +366,21 @@ def anima_tag_line(prompt, brief, scene=None):
     quality, safety, tags = [], [], []
     shot = scene_shot(scene)
     several = sum(int(person.get("count") or 1) for person in brief["characters"]) > 1
+    # The app's own names for people in this scene ("the man with pale skin") are prose, never a tag.
+    named = {re.sub(r"^the\s+", "", anchor).casefold() for anchor in (anchors(scene, brief) if (scene or {}).get("subjects") else {}).values()}
     for field in (field.strip() for field in head.split(",")):
+        if field.count("[") != field.count("]"):  # a bracket opened over several tags ("[pale skin, ..., visible]")
+            field = field.replace("[", "").replace("]", "").strip()
+        name, colon, after = field.partition(":")  # a person's tags led by their name ("the man with fair skin: fair skin")
+        if colon and re.sub(r"^(?:the|a|an)\s+", "", name.strip(), flags=re.IGNORECASE).casefold() in named:
+            field = after.strip()
         plain = _plain_tag(field).strip("[]").strip()
         if not field or _COUNT_TAG.fullmatch(plain) or _LOW_QUALITY_TAG.fullmatch(plain):
             continue
+        if re.sub(r"^(?:the|a|an)\s+", "", plain, flags=re.IGNORECASE).casefold() in named:
+            continue
+        if len(field.split()) > MAX_TAG_WORDS or _BRACKETED.fullmatch(field):
+            continue  # a phrase or a placeholder for a person, not a tag
         if (shot and plain.casefold() in SHOT_TAGS) or (several and plain.casefold() == "solo focus"):
             continue
         if plain.casefold().startswith("score") and not _QUALITY_TAG.fullmatch(plain):
@@ -345,7 +393,20 @@ def anima_tag_line(prompt, brief, scene=None):
         group = quality if _QUALITY_TAG.fullmatch(plain) else tags
         if field.casefold() not in (tag.casefold() for tag in quality + tags):
             group.append(field)
-    people = count_tags(brief["characters"]) if brief["characters"] else []
+    # A tag beside its opposite ("aroused", "unaroused") describes one person each; a tag line cannot say whose.
+    kept = {tag.casefold() for tag in tags}
+    tags = [tag for tag in tags if "un" + tag.casefold() not in kept
+            and not (tag.casefold().startswith("un") and tag.casefold()[2:] in kept)]
+    people = count_tags([{**person, "gender": person.get("gender") or scene_gender(scene, person["label"])}
+                         for person in brief["characters"]]) if brief["characters"] else []
+    nsfw = (brief.get("input") or {}).get("nsfw")
+    if nsfw is False:
+        safety = ["safe"]  # the NSFW switch is off: the content is safe whatever rating the model guessed
+    elif nsfw and scene and _EXPLICIT_PARTS.search(" ".join(_strings({"actions": scene.get("actions"),
+                                                                     "position": scene.get("position")}))):
+        safety = ["explicit"]  # the scene shows genitals or a sex act: a live run still guessed "sensitive"
+    # Every sentence of the prose starts with a capital: a live prose started some in lowercase ("her left hand is").
+    rest = re.sub(r"(^|[.!?]\s+)([a-z])", lambda match: match[1] + match[2].upper(), rest)
     return ", ".join([*quality, *safety[:1], *people, *([shot] if shot else []), *tags]) + separator + rest
 
 
@@ -592,6 +653,7 @@ def write_prompts(config, request, brief, scenes, *, checkpoint=lambda: None, pr
         if results and results[-1]["slot"] == number:
             continue
         # A label or copied wording left after the retry is not worth failing the image; a lost number is a wrong fact.
+        prompt = plain_names(prompt, brief, scene)
         if canonical_target(brief["settings"]["target"]) == "Anima":
             prompt = anima_tag_line(prompt, brief, scene)
         prompt = place_triggers(prompt, brief)
