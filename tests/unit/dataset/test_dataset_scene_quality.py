@@ -448,6 +448,20 @@ class CaptureLine(Harness):
             (self.assertIn if expected else self.assertNotIn)("capture: Black-and-white film", final.user_message)
 
 
+class NoColor(Harness):
+    """A style or capture without colour tells the scene writer to write looks as tones, and nothing else does."""
+
+    def test_only_a_colourless_choice_adds_the_rule(self):
+        for style, capture, expected in (("Realistic", "Black-and-white film", True), ("Manga / Shojo", "Auto", True),
+                                         ("Sketch", "Auto", True), ("Realistic", "Analog film", False),
+                                         ("Anime", "Auto", False), ("Auto", "Auto", False)):
+            self.calls.clear()
+            brief = {**self.brief, "settings": {**self.brief["settings"], "style": style, "capture": capture},
+                     "input": {**self.brief["input"], "amount": 1}}
+            scenes.write_scenes({"backend": "mock"}, self.request, brief, progress=lambda _: None)
+            (self.assertIn if expected else self.assertNotIn)("NO COLOUR", self.composer()[0].system_message, (style, capture))
+
+
 class AspectRatio(Harness):
     """The Aspect ratio setting reaches both writers as one rule, only when a ratio is chosen."""
 

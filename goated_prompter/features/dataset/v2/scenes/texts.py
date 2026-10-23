@@ -197,6 +197,9 @@ Every image is {ratio}, a {shape} frame. Choose the camera, how the people are a
 shown so the scene fills that frame: spread the people and the action over {along}, keep what the action needs inside
 the short side, and do not leave the frame mostly empty. A pose that does not fit the frame (a standing figure in a
 wide frame, people side by side in a tall one) changes: lie, sit, lean, stack or move them closer."""
+NO_COLOR_RULE = """NO COLOUR
+Every image has no colour. Write skin, hair, marks and every other detail as light or dark tone, texture and shape,
+never as a colour or as something only colour can show: a mark on the skin is a darker patch, hair is light or dark."""
 LABELS_RULE = ("In every image, the actions name each of {labels} by that label, also whoever waits, holds or watches; "
                "never \"one man\", \"another\", \"the others\" or \"the men\", even when the entry says so.")
 GUIDED_RULE = "- An image's input fixes its action: keep it, and build the rest of the scene around it."
