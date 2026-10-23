@@ -30,7 +30,8 @@ adapts named objects and supports to the scene.
 
 Code checks the shape of each answer (every section filled, exactly the character labels, no phrase from the avoid
 list), that no image reuses another one's place together with its camera, actions or extras (repeated_parts) and that
-the actions name every person (unnamed_people), so no entry is copied with its placeholder people. Repeated looks are
+the actions name every person (unnamed_people), so no entry is copied with its placeholder people, and that the scene
+agrees with itself about who is in whose mouth or anus (opening_conflicts). Repeated looks are
 not asked again: an image asked again tends to copy an accepted one, and the people only need to differ by look. The last round keeps a repeat rather than lose the image; images still missing are
 asked again, up to ROUNDS times per batch.
 Later batches see what earlier images used as lists (already_used), not as scenes to imitate.

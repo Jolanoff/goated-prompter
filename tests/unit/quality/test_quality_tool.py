@@ -122,13 +122,20 @@ class Checks(unittest.TestCase):
         self.assertEqual([checks._template_leak(scene, labels) for scene in (slot, copied, fine, named)],
                          [True, True, False, False])
 
-    def test_two_givers_in_one_opening_are_counted_but_two_openings_are_not(self):
+    def test_a_scene_that_contradicts_itself_about_an_opening_is_counted(self):
         labels = ["man 1", "man 2", "man 3"]
-        twice = {"actions": "man 1's penis is in man 3's mouth while man 2's tongue is inside man 3's mouth"}
-        twice_of = {"actions": "man 1's penis is in the mouth of man 3 and man 2's penis is in the mouth of man 3"}
-        apart = {"actions": "man 1's penis is in man 3's mouth and man 2's penis is inside man 3's anus"}
-        self.assertEqual([checks._opening_used_twice(scene, labels) for scene in (twice, twice_of, apart)],
-                         [True, True, False])
+        swapped = {"actions": "man 1's penis is in man 3's mouth and man 2's penis is inside man 3's anus", "position": {
+            "man 1": "sitting, his penis is inside man 3's anus", "man 2": "standing, his penis is in man 3's mouth",
+            "man 3": "on man 1's lap"}}
+        gagged = {"actions": "man 1's penis is in man 3's mouth", "position": {
+            "man 1": "standing, his penis is in man 3's mouth", "man 2": "watching", "man 3": "kneeling, wearing a ball gag"}}
+        ring = {**gagged, "position": {**gagged["position"], "man 3": "kneeling, a ring gag holds his mouth open"}}
+        # Two people in one mouth is an act the request may ask for: never counted on its own.
+        shared = {"actions": "man 1's penis and man 2's penis are both in man 3's mouth", "position": {
+            "man 1": "standing, his penis in man 3's mouth", "man 2": "standing, his penis in man 3's mouth",
+            "man 3": "kneeling between them"}}
+        self.assertEqual([checks._opening_conflict(scene, labels) for scene in (swapped, gagged, ring, shared)],
+                         [True, True, False, False])
 
     def test_people_the_act_joins_must_be_named_in_a_position(self):
         labels = ["man 1", "man 2"]

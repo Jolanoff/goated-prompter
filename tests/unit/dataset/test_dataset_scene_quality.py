@@ -316,6 +316,37 @@ class EntryCopy(unittest.TestCase):
             self.assertEqual(self.clean(kept), kept)
 
 
+class OpeningConflicts(Harness):
+    labels = ["man 1", "man 2"]
+    gagged = {"actions": "man 1's penis is in man 2's mouth", "position": {
+        "man 1": "standing, his penis is in man 2's mouth", "man 2": "kneeling, he is wearing a ball gag"}}
+
+    def test_a_contradiction_is_a_reason_to_ask_again_but_two_in_one_mouth_is_not(self):
+        reasons = scenes.checks.opening_conflicts(self.gagged, self.labels)
+        self.assertEqual(reasons, ["man 2 wears a gag that fills the mouth while man 1's body part is in it: keep one of them"])
+        ring = {**self.gagged, "position": {**self.gagged["position"], "man 2": "kneeling, a ring gag holds his mouth open"}}
+        self.assertEqual(scenes.checks.opening_conflicts(ring, self.labels), [])
+        three = ["man 1", "man 2", "man 3"]
+        shared = {"actions": "man 1's penis and man 2's penis are both in man 3's mouth", "position": {
+            "man 1": "his penis in man 3's mouth", "man 2": "his penis in man 3's mouth", "man 3": "kneeling"}}
+        self.assertEqual(scenes.checks.opening_conflicts(shared, three), [], "the request decides how many")
+        swapped = {"actions": "man 1's penis is in man 3's mouth", "position": {
+            "man 1": "his penis is inside man 3's anus", "man 2": "watching", "man 3": "on man 1's lap"}}
+        self.assertEqual(scenes.checks.opening_conflicts(swapped, three),
+                         ["the actions put man 1's body part in man 3's mouth but the positions put it in their anus: make "
+                          "the actions and every position agree"])
+
+    def test_only_the_image_that_contradicts_itself_is_asked_again(self):
+        self.brief["input"]["amount"] = 2
+        self.replies = [{**self.scene("cellar"), **self.gagged}, self.scene("attic"), self.scene("cellar")]
+        written = scenes.write_scenes({"backend": "mock"}, self.request, self.brief, progress=lambda _: None)
+        self.assertEqual(len(self.composer()), 2)
+        retry = composer_user(self.composer()[1].user_message)
+        self.assertEqual([row["image"] for row in retry["images"]], [1], "the other image is kept as written")
+        self.assertIn("man 2 wears a gag that fills the mouth", self.composer()[1].system_message)
+        self.assertEqual(written["scenes"][1]["space"], "attic")
+
+
 class FinalLabels(Harness):
     def write(self, final):
         self.final = list(final)

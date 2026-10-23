@@ -116,6 +116,59 @@ def without_entry_copy(scene, labels):
     return {**scene, "actions": cleaned}
 
 
+# Openings and the body parts that go into them. How many things one opening holds is the request's choice (two penises
+# in one mouth is an act of its own); what code checks is that the scene does not contradict itself.
+OPENINGS = ("mouth", "anus", "vagina")
+FILLING_PARTS = "(?:penis|tongue|fingers?|fist)"
+# A gag that fills the mouth (a ring gag holds it open and leaves room).
+GAG = re.compile(r"\b(?:ball|bit|bar|panel|tape)[- ]gag\w*|\bgagged\b", re.IGNORECASE)
+
+
+def _named(label):
+    return r"(?<![\w-])" + re.escape(label) + r"(?![\w-])"
+
+
+def _clauses(texts, labels):
+    """The texts as short clauses, with "the mouth of man 2" read as "man 2's mouth"."""
+    clauses = []
+    for text in texts:
+        for label in labels:
+            text = re.sub(r"\bthe (" + "|".join(OPENINGS) + r") of " + _named(label), label + r"'s \1", text,
+                          flags=re.IGNORECASE)
+        clauses += re.split(r"[,;.]|\bwhile\b|\band\b", text, flags=re.IGNORECASE)
+    return clauses
+
+
+def _openings_used(texts, person, other, labels):
+    """Which of the person's openings the texts put the other person's penis, tongue, fingers or fist in."""
+    return {opening for clause in _clauses(texts, labels) for opening in OPENINGS
+            if re.search(_named(person) + r"['’]s " + opening, clause, re.IGNORECASE)
+            and re.search(_named(other) + r"['’]s " + FILLING_PARTS, clause, re.IGNORECASE)}
+
+
+def opening_conflicts(scene, labels):
+    """Why a scene contradicts itself about who is in whose mouth or anus, as reasons to ask that image again ([] when
+    it does not): the actions and the positions put someone's body part in different openings (a live scene's act had
+    man 1 in the mouth while the positions had him in the anus), or a gag that fills the mouth shares it with a body
+    part. How many things one opening holds is never judged: the request decides that."""
+    position = scene.get("position") if isinstance(scene.get("position"), dict) else {}
+    actions = [str(scene.get("actions") or "")]
+    # In a position, "his" is that position's own person.
+    positions = [re.sub(r"\bhis\b", f"{label}'s", str(text), flags=re.IGNORECASE) for label, text in position.items()]
+    reasons = []
+    for person in labels:
+        for other in (label for label in labels if label != person):
+            said, placed = (_openings_used(texts, person, other, labels) for texts in (actions, positions))
+            if said and placed and said != placed:
+                reasons.append(f"the actions put {other}'s body part in {person}'s {' and '.join(sorted(said))} but the "
+                               f"positions put it in their {' and '.join(sorted(placed))}: make the actions and every "
+                               "position agree")
+            if GAG.search(str(position.get(person) or "")) and "mouth" in said | placed:
+                reasons.append(f"{person} wears a gag that fills the mouth while {other}'s body part is in it: keep one "
+                               "of them")
+    return reasons
+
+
 def scene_errors(scene, labels, avoid, extra=(), known=frozenset(), subject_fields=SUBJECT_FIELDS):
     """Why one composed scene is unusable as an answer; [] when its shape is right. extra: further text fields the
     answer must have (the Actions & Poses "entry"); known: labels of known characters (expression only), whose cast

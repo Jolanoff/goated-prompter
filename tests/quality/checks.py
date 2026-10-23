@@ -27,7 +27,8 @@ CHECKS = (
     ("template_leaks", "share of scenes with a pack label or an unfilled [slot] left in their text", "guard", False),
     ("repeated_acts", "share of image pairs built on the same Actions & Poses entry (without entries: near-identical "
      "actions)", "aim", False),
-    ("opening_used_twice", "share of scenes where two people's parts go into the same mouth or anus", "aim", False),
+    ("opening_conflicts", "share of scenes that contradict themselves about who is in whose mouth or anus (the "
+     "actions and positions disagree, or a gag that fills the mouth shares it)", "aim", False),
     ("subject_parts_missing", "share of the body parts the request names that no scene's actions or positions mention",
      "aim", False),
     ("pose_act_gap", "share of scenes where two people the act joins are named in neither one's position", "aim", False),
@@ -162,7 +163,6 @@ def _genitals_conflict(scene):
 
 
 # Body parts the checks below read in a scene's own words (plain anatomical names).
-OPENINGS = ("mouth", "anus", "vagina")
 BODY_PARTS = ("penis", "testicles", "anus", "mouth", "throat", "buttocks", "vagina", "breasts")
 LOWER_PARTS = ("penis", "testicles", "anus", "buttocks", "vagina")
 LOWER_SHOWN = re.compile(r"\b(?:entire|whole|full|hips?|groin|waist|lower|legs?|thighs?|pelvis|genitals|penis|testicles|"
@@ -198,21 +198,10 @@ def _template_leak(scene, labels):
                for name, wording in ENTRY_HEAD.findall(str(scene.get("actions") or "")))
 
 
-def _opening_used_twice(scene, labels):
-    """Whether the actions put two different people's parts into the same person's mouth, anus or vagina."""
-    if len(labels) < 2:
-        return False
-    who = "(" + "|".join(re.escape(label) for label in sorted(labels, key=len, reverse=True)) + ")"
-    opening = "(" + "|".join(OPENINGS) + ")"
-    into = r"(?:is |are )?(?:in|inside|into|onto|against) "
-    found = {}
-    for giver, receiver, part in (re.findall(who + r"['’]s [\w ]{1,30}?" + into + who + r"['’]s " + opening + r"\b",
-                                              str(scene.get("actions") or ""), re.IGNORECASE)):
-        found.setdefault((receiver.casefold(), part.casefold()), set()).add(giver.casefold())
-    for giver, part, receiver in (re.findall(who + r"['’]s [\w ]{1,30}?" + into + r"the " + opening + r" of " + who,
-                                              str(scene.get("actions") or ""), re.IGNORECASE)):
-        found.setdefault((receiver.casefold(), part.casefold()), set()).add(giver.casefold())
-    return any(len(givers) > 1 for givers in found.values())
+def _opening_conflict(scene, labels):
+    """Whether the scene contradicts itself about who is in whose mouth or anus (read the way the scene writer reads it)."""
+    from goated_prompter.features.dataset.v2.scenes.checks import opening_conflicts
+    return bool(opening_conflicts(scene, labels))
 
 
 def _pose_act_gap(scene, labels):
@@ -350,7 +339,7 @@ def _case_checks(row, normalize=None):
         if scenes and brief.get("path") == "nsfw_character" else None,
         "repeated_acts": _share(pairs, _same_act) if labels else None,
         "template_leaks": _scene_share(scenes, lambda scene: _template_leak(scene, labels)),
-        "opening_used_twice": _scene_share(scenes, lambda scene: _opening_used_twice(scene, sorted(labels))),
+        "opening_conflicts": _scene_share(scenes, lambda scene: _opening_conflict(scene, sorted(labels))),
         "subject_parts_missing": _parts_missing(case.get("subject", ""), scenes) if scenes else None,
         "pose_act_gap": _scene_share(scenes, lambda scene: _pose_act_gap(scene, sorted(labels))),
         "parts_out_of_frame": _scene_share(scenes, lambda scene: _out_of_frame(scene, sorted(labels))),
