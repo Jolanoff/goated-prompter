@@ -21,7 +21,7 @@ For each image listed under IMAGES, in order, write one complete and coherent sc
   never form a closed loop through every person. The camera must suit this image's own space and positions.
 - Every image is a new scene: unless fixed keeps them, give each one a different place, arrangement, camera and signs.
   When vocabulary is selected, all variations must stay within its selected category themes.
-  Unless fixed keeps it, never reuse a place, arrangement or camera listed in already_used, do not repeat the props
+  Unless fixed keeps it, never reuse a place, arrangement, camera or look listed in already_used, do not repeat the props
   and signs of its extras, and do not follow its order.
 - {show}
 - Give the people new looks (skin, build, hair, detail) in every image unless fixed keeps the same people; then keep
@@ -44,7 +44,10 @@ For each scene:
    the cast. Never leave a placeholder person in the scene.
 4. Objects, furniture and surfaces named in an entry are examples too. Replace them with ones that belong in this
    scene's space or come from the selected Objects & Props, keeping the pose physically the same and the support at the
-   height the pose needs. Never place furniture that does not belong in the space.
+   height the pose needs. Never place furniture that does not belong in the space. A replacement does the same job in
+   the act: a toy that goes into someone is replaced only by one that goes into someone, never by one worn or used on
+   the outside of a body; when no selected object does that job, keep the entry's own and use the selected one
+   elsewhere in the image or not at all.
 5. If an entry needs a body part that nobody in this cast has, it does not fit: never adapt it to another body
    part, choose another entry. If it needs an object or surface this space does not have, replace it with one that
    does the same job.
@@ -161,7 +164,9 @@ NSFW_RULE = ("- This dataset is adult content: nudity and sex are allowed wherev
              "actions then name the act plainly: which body part or toy of whom goes into or onto which body part of "
              "whom, together with the position's usual name, and every position agrees with that act. A verb such as "
              "\"uses\", \"takes\" or \"has\" never stands for the act, even when the entry says so: \"one person's "
-             "penis in the other person's mouth\", not \"takes his mouth\". Actions and positions name body parts in "
+             "penis in the other person's mouth\", not \"takes his mouth\". A position verb (rides, mounts, sits on) never "
+             "replaces it either: \"man 2's penis in man 1's anus, man 1 riding him\", not \"man 1 rides man 2's "
+             "penis\". Actions and positions name body parts in "
              "plain anatomical words (penis, testicles, anus, buttocks), whatever words an entry uses. When the "
              "request asks for a role, status, "
              "display or mood, show that. Never add nudity, acts or kinks the request does not call for.\n"
@@ -169,9 +174,13 @@ NSFW_RULE = ("- This dataset is adult content: nudity and sex are allowed wherev
              "in plain anatomical words. They are part of the look: new with every new look, kept only where the look "
              "is kept. Each "
              "position also says, for that image, where that person's genitals are, what they touch and their state, "
-             "agreeing with the actions: genitals the act uses are inside someone, in someone's mouth or hand, or "
-             "pressed against a body, and aroused; \"hanging free\" is only for genitals nothing touches. So they "
-             "are always part of their owner's body and never in two places. A mouth on someone names the tongue or "
+             "agreeing with the actions: genitals the act uses are where the actions put them (inside someone, in "
+             "someone's mouth or hand, or against a body the actions name) and aroused; genitals the actions do not "
+             "name touch nothing, not a toy or another body; \"hanging free\" is only for genitals nothing touches. "
+             "So they "
+             "are always part of their owner's body and never in two places. A person "
+             "being entered meets the other person at the hips: their buttocks or hips rest against the other's "
+             "hips, thighs or lap, never against a chest or face. A mouth on someone names the tongue or "
              "lips it uses, never the genitals. Everyone who takes part is framed at least head to hips, so their "
              "genitals never appear without their body.")
 
@@ -192,6 +201,14 @@ face is visible or hidden. Every body part the action uses is inside each person
 needs head to knees or full body. Each image in IMAGES names the frame its known characters ({known}) get ("frame"):
 show each of them at that frame, wider only when the action needs it, always with the face visible, and arrange the
 bodies and the viewpoint so this is possible."""
+ASPECT_RULE = """IMAGE SHAPE
+Every image is {ratio}, a {shape} frame. Choose the camera, how the people are arranged and how much of each body is
+shown so the scene fills that frame: spread the people and the action over {along}, keep what the action needs inside
+the short side, and do not leave the frame mostly empty. A pose that does not fit the frame (a standing figure in a
+wide frame, people side by side in a tall one) changes: lie, sit, lean, stack or move them closer."""
+NO_COLOR_RULE = """NO COLOUR
+Every image has no colour. Write skin, hair, marks and every other detail as light or dark tone, texture and shape,
+never as a colour or as something only colour can show: a mark on the skin is a darker patch, hair is light or dark."""
 LABELS_RULE = ("In every image, the actions name each of {labels} by that label, also whoever waits, holds or watches; "
                "never \"one man\", \"another\", \"the others\" or \"the men\", even when the entry says so.")
 GUIDED_RULE = "- An image's input fixes its action: keep it, and build the rest of the scene around it."
@@ -203,7 +220,8 @@ decides how the requested activity happens, never what the activity is. It does 
 act than the request names or needs a body part nobody in this cast has; then build the scene on another entry that
 fits and is used by fewer than {cap} images (already_used.entries counts them). Copy the entry you used word for word into the scene's "entry" field.
 When the entry starts with a name followed by a colon, that name is the position: the actions field states the act in
-plain words and names that position, so a later step can name it too."""
+plain words and names that position, so a later step can name it too. The actions say who does what to whom, with
+the whole act; where everyone is belongs in the positions and is never repeated in the actions."""
 
 
 ENTRY_FIT_SYSTEM = """You choose which Actions & Poses entries fit an image dataset request. The user message is
@@ -216,5 +234,8 @@ An entry fits when both are true:
   fewer people act on them at once, does not fit.
 - This cast can perform it: it needs no body part that nobody in the cast has and no more people than the cast has.
 Entries name people as placeholders and their objects are only examples: judge the act and the pose, not the words.
+Only the act decides. Words of the request about mood, style or intensity (playful, rough, kinky) and things the
+run's other packs supply (toys, props, places, clothing) never decide whether an entry fits, even when the request
+names them: each image gets them on its own.
 A pack's author's note (notes), when given, says what that pack's entries are for.
 Return one JSON object: {"fit": [the number of every entry that fits]}; an empty list when none fits."""

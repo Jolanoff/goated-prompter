@@ -30,7 +30,8 @@ adapts named objects and supports to the scene.
 
 Code checks the shape of each answer (every section filled, exactly the character labels, no phrase from the avoid
 list), that no image reuses another one's place together with its camera, actions or extras (repeated_parts) and that
-the actions name every person (unnamed_people), so no entry is copied with its placeholder people. Repeated looks are
+the actions name every person (unnamed_people), so no entry is copied with its placeholder people, and that the scene
+agrees with itself about who is in whose mouth or anus (opening_conflicts). Repeated looks are
 not asked again: an image asked again tends to copy an accepted one, and the people only need to differ by look. The last round keeps a repeat rather than lose the image; images still missing are
 asked again, up to ROUNDS times per batch.
 Later batches see what earlier images used as lists (already_used), not as scenes to imitate.
@@ -91,7 +92,9 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
             groups = _only(groups, ACTIONS_CATEGORY, action_entries)
         plan = {"entries": {_entry_key(entry): entry for entry in action_entries} or None,
                 "cap": entry_cap(action_entries, total), "used": {}, "dealt": deal_entries(action_entries, total, rng),
-                "hands": deal_hands(groups, total, rng, words=requested_words(brief))}
+                "hands": deal_hands(groups, total, rng, words=requested_words(brief)),
+                "props": [entry for group in groups if group["category"] != ACTIONS_CATEGORY
+                          for pack in group["packs"] for entry in pack["entries"]]}
         if brief["_known"]:  # dealt last, so runs without known characters deal exactly as before
             plan["frames"] = deal_frames(total, rng)
         for start in range(0, total, BATCH):

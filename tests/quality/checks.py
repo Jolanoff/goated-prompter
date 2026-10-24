@@ -23,7 +23,25 @@ CHECKS = (
     ("repeated_extras", "share of image pairs with the same props and signs", "aim", False),
     ("prompt_similarity", "how alike the prompts are (a set's images; a Builder case's seeds), 0 to 1", "aim", False),
     ("mouth_mixed", "share of prompts with a sentence that puts a mouth on a buttock or anus and genitals together (read as genitals where the tongue is)", "aim", False),
-    ("genitals_conflict", "share of scenes where someone's genitals hang free while the act puts them in or on another person (drawn twice or floating)", "aim", False),
+    ("genitals_conflict", "share of scenes that give someone's genitals two places: hanging free, pressed or tucked "
+     "somewhere while the act puts them in another person, or two such places at once (drawn twice or floating)",
+     "aim", False),
+    ("contact_misplaced", "share of scenes where a person being entered rests their buttocks or hips against the other "
+     "person's chest, face or another part away from the hips (both cannot happen at once)", "aim", False),
+    ("tags_misfit", "Anima: share of tag lines that tag an act the scene does not show (\"sex\" for touching) or a tag "
+     "beside its opposite (\"aroused, unaroused\")", "aim", False),
+    ("template_leaks", "share of scenes with a pack label or an unfilled [slot] left in their text", "guard", False),
+    ("repeated_acts", "share of image pairs built on the same Actions & Poses entry (without entries: near-identical "
+     "actions)", "aim", False),
+    ("opening_conflicts", "share of scenes that contradict themselves about who is in whose mouth or anus (the "
+     "actions and positions disagree, or the mouth is covered while something is in it)", "aim", False),
+    ("subject_parts_missing", "share of the body parts the request names that no scene's actions or positions mention",
+     "aim", False),
+    ("pose_act_gap", "share of scenes where two people the act joins are named in neither one's position", "aim", False),
+    ("parts_out_of_frame", "share of scenes where the act uses a lower-body part its owner's visible parts leave out",
+     "aim", False),
+    ("shape_misfit", "with an aspect ratio chosen: share of scenes whose arrangement does not suit a tall or wide frame "
+     "(a text hint; the picture decides)", "aim", False),
     ("words", "average prompt length in words", "info", True),
     ("seconds", "average time per run in seconds (more retries cost time)", "info", False),
     ("redone", "average images asked again per run (each one costs writing time)", "info", False),
@@ -100,12 +118,21 @@ COUNT_TAG = re.compile(r"(\d+)\+?(boy|girl|other)s?")
 
 
 def _expected_counts(characters):
-    """{"boy": n, "girl": n, "other": n} from the cast: men are boys, women are girls, anyone else other."""
+    """{"boy": n, "girl": n, "other": n, "open": n} from the cast: men are boys, women are girls, anyone else other; a
+    person the cast gives no gender is open (the scene decides, so any count tag fits them)."""
     counts = {}
     for person in characters:
-        kind = {"male": "boy", "female": "girl"}.get(person.get("gender"), "other")
+        kind = {"male": "boy", "female": "girl"}.get(person.get("gender"), "other" if person.get("gender") else "open")
         counts[kind] = counts.get(kind, 0) + int(person.get("count") or 1)
     return counts
+
+
+def _counts_fit(found, expected):
+    """Whether a tag line's count tags fit the cast: everyone counted once, people of a given gender as that gender."""
+    fixed = {kind: number for kind, number in expected.items() if kind != "open"}
+    return (sum(found.values()) == sum(expected.values())
+            and all(found.get(kind, 0) >= number for kind, number in fixed.items())
+            and set(found) <= set(fixed) | ({"boy", "girl", "other"} if expected.get("open") else set()))
 
 
 def _anima_checks(target, brief, prompts):
@@ -119,7 +146,7 @@ def _anima_checks(target, brief, prompts):
         for tag in tags:
             if match := COUNT_TAG.fullmatch(tag.replace(" ", "")):
                 found[match[2]] = found.get(match[2], 0) + int(match[1])
-        good += found == expected and not (len(brief.get("characters", [])) > 1 and "solo" in tags)
+        good += _counts_fit(found, expected) and not (len(brief.get("characters", [])) > 1 and "solo" in tags)
         bad += bool(NEGATIVE_TAG.search(head) or re.search(r"(?<!score)_(?!up\b)", head))
     return {"count_tags_ok": round(good / len(prompts), 3), "bad_tags": round(bad / len(prompts), 3)}
 
@@ -138,16 +165,195 @@ def _mouth_mixed(prompt):
                for part in re.split(r"(?<=[.!?])\s+|\n+", prompt))
 
 
+# A position that puts a person's genitals somewhere other than where the act puts them.
+GENITALS_PLACED = re.compile(r"\bhanging free\b|\b(?:his|her|their) (?:penis|genitals) (?:is|are) "
+                             r"(pressed|tucked|resting|hanging)\b", re.IGNORECASE)
+ENTERS = r"(?:penis|shaft|genitals)\b[^,;.]{0,20}?\b(?:in|inside|into|enter\w*|penetrat\w*)\b"
+
+
 def _genitals_conflict(scene):
-    """Whether a person's own position says their genitals hang free while another person's position or the actions
-    put that person's genitals in or on someone ("man 1's penis in man 2's mouth")."""
+    """Whether a person's genitals get two places: their own position says they hang free, or are tucked or resting
+    somewhere, while the actions or a position put them in someone ("man 1's penis in man 2's mouth"); or their
+    position gives them two such places ("pressed against man 2's, tucked under him"). Pressed against a body while
+    inside it is one place (the testicles rest there)."""
     position = scene.get("position") if isinstance(scene.get("position"), dict) else {}
-    others = lambda label: " ".join([str(scene.get("actions") or "")] + [str(text) for who, text in position.items()
-                                                                         if who != label])
-    return any(re.search(r"\bhanging free\b", str(text), re.IGNORECASE)
-               and re.search(re.escape(label) + r"(?:'s|’s) (?:penis|shaft|genitals)\b", others(label),
-                             re.IGNORECASE)
-               for label, text in position.items())
+    every = " ".join([str(scene.get("actions") or "")] + [str(text) for text in position.values()])
+    for label, text in position.items():
+        placed = {{"hanging": "free"}.get(word, word) for word in
+                  ((match[1] or "free").casefold() for match in GENITALS_PLACED.finditer(str(text)))}
+        used = (re.search(_named(label) + r"(?:'s|’s) " + ENTERS, every, re.IGNORECASE)
+                or re.search(r"\b(?:his|her|their) " + ENTERS, str(text), re.IGNORECASE))
+        if len(placed) > 1 or (used and placed - {"pressed"}):
+            return True
+    return False
+
+
+# Where a person being entered meets the other person's body; any other part is too far from the hips.
+MEETS = {"hips", "hip", "groin", "pelvis", "thighs", "thigh", "lap", "crotch", "waist", "belly", "stomach", "abdomen",
+         "genitals", "penis", "testicles"}
+
+
+def _contact_misplaced(scene, labels):
+    """Whether a person whose anus or vagina the act enters rests their buttocks or hips against the entering person's
+    chest, face or another part away from the hips ("his buttocks pressed against man 2's chest")."""
+    position = scene.get("position") if isinstance(scene.get("position"), dict) else {}
+    every = " ".join([str(scene.get("actions") or "")] + [str(text) for text in position.values()])
+    rests = r"\b(?:buttocks|hips)\b[^,;.]{0,30}?\bagainst "
+    for giver, taker in itertools.permutations(labels, 2):
+        if not re.search(_named(giver) + r"(?:'s|’s) " + ENTERS + r"[^,;.]{0,20}?" + _named(taker)
+                         + r"(?:'s|’s) (?:anus|vagina)\b", every, re.IGNORECASE):
+            continue
+        parts = re.findall(r"\b(?:his|her|their|" + re.escape(taker) + r"(?:'s|’s)) " + rests + _named(giver)
+                           + r"(?:'s|’s) (\w+)", str(position.get(taker) or ""), re.IGNORECASE)
+        parts += re.findall(_named(taker) + r"(?:'s|’s) " + rests + r"(?:his|her|their) (\w+)",
+                            str(position.get(giver) or ""), re.IGNORECASE)
+        if any(part.casefold() not in MEETS for part in parts):
+            return True
+    return False
+
+
+# Anima act tags that need something entering an anus or vagina in the scene.
+ACT_TAGS = {"sex", "anal", "vaginal", "penetration"}
+ENTERED = re.compile(r"\b(?:penis|toy|dildo|strap-on)\b[^,;.]{0,30}?\b(?:in|inside|into|enter\w*|penetrat\w*)\b"
+                     r"[^,;.]{0,30}?\b(?:anus|vagina)\b", re.IGNORECASE)
+
+
+def _tags_misfit(prompt, scene):
+    """Whether an Anima tag line tags an act its scene does not show, or a tag beside its opposite (one person each;
+    a tag line cannot say whose)."""
+    head = re.split(r"\r?\n[ \t]*\r?\n", prompt, maxsplit=1)[0]
+    tags = {tag.strip().casefold() for tag in head.split(",") if tag.strip()}
+    shown = " ".join(_strings({"actions": scene.get("actions"), "position": scene.get("position")})) if scene else ""
+    return (any("un" + tag in tags for tag in tags)
+            or bool(scene and tags & ACT_TAGS and not ENTERED.search(shown)))
+
+
+# Body parts the checks below read in a scene's own words (plain anatomical names).
+BODY_PARTS = ("penis", "testicles", "anus", "mouth", "throat", "buttocks", "vagina", "breasts")
+LOWER_PARTS = ("penis", "testicles", "anus", "buttocks", "vagina")
+LOWER_SHOWN = re.compile(r"\b(?:entire|whole|full|hips?|groin|waist|lower|legs?|thighs?|pelvis|genitals|penis|testicles|"
+                         r"anus|buttocks|rear|vagina)\b", re.IGNORECASE)
+SLOT = re.compile(r"\[[^\]\n]{2,}\]")
+ENTRY_HEAD = re.compile(r"(?:^|;\s*)([^:;\n]{3,80}):\s*([^,;\n]*)")
+HORIZONTAL = re.compile(r"\b(?:left|right|centre|center|beside|side by side)\b", re.IGNORECASE)
+VERTICAL = re.compile(r"\b(?:above|below|top|bottom|stacked|underneath|on top)\b", re.IGNORECASE)
+LOWERED = re.compile(r"\b(?:kneel\w*|sit\w*|seated|lying|lies|lie|bent|crouch\w*|squat\w*|recline\w*|suspended)\b",
+                     re.IGNORECASE)
+
+
+def _strings(value):
+    if isinstance(value, str):
+        yield value
+    elif isinstance(value, dict):
+        for item in value.values():
+            yield from _strings(item)
+
+
+def _named(label):
+    return r"(?<![\w-])" + re.escape(label) + r"(?![\w-])"
+
+
+def _template_leak(scene, labels):
+    """Whether the scene still holds an unfilled [slot], or an act copied from a pack entry with its placeholder people
+    ("two tops: one person bound, ..."): a name and a colon followed by wording that names nobody of the cast."""
+    # The "entry" field holds the pack's own text, slots and all, on purpose.
+    if any(SLOT.search(text) for text in _strings({key: value for key, value in scene.items() if key != "entry"})):
+        return True
+    named = lambda text: any(re.search(_named(label), text, re.IGNORECASE) for label in labels)
+    return any(not named(name) and not named(wording)
+               for name, wording in ENTRY_HEAD.findall(str(scene.get("actions") or "")))
+
+
+def _opening_conflict(scene, labels):
+    """Whether the scene contradicts itself about who is in whose mouth or anus (read the way the scene writer reads it)."""
+    from goated_prompter.features.dataset.v2.scenes.checks import opening_conflicts
+    return bool(opening_conflicts(scene, labels))
+
+
+def _pose_act_gap(scene, labels):
+    """Whether two people the actions join in one clause are named in neither one's position. Two people named together
+    ("man 3 and man 4 are waiting", "man 2 and man 3 are holding man 1 up", "stroking man 3's and man 4's penises")
+    share a role and do nothing to each other, so that pair is not joined; each is still checked against whoever they
+    act on or who acts on them."""
+    position = scene.get("position") if isinstance(scene.get("position"), dict) else {}
+    again = "(?=\\s+(?:" + "|".join(re.escape(label) for label in labels) + r")['’]s)"  # "... and man 2's penis ..."
+    anyone = "(" + "|".join(re.escape(label) for label in labels) + ")"
+    for clause in re.split(r"[;,]|\bwhile\b|\bas\b|\bthen\b|\band\b" + again, str(scene.get("actions") or ""),
+                           flags=re.IGNORECASE):
+        named = [label for label in labels if re.search(_named(label), clause, re.IGNORECASE)]
+        shared = [{match[1].casefold(), match[2].casefold()} for match in re.finditer(
+            r"(?<![\w-])" + anyone + r"(?:['’]s)?\s+and\s+" + anyone + r"(?![\w-])", clause, re.IGNORECASE)]
+        for first, second in itertools.combinations(named, 2):
+            if {first.casefold(), second.casefold()} in shared:
+                continue
+            if not (re.search(_named(second), str(position.get(first) or ""), re.IGNORECASE)
+                    or re.search(_named(first), str(position.get(second) or ""), re.IGNORECASE)):
+                return True
+    return False
+
+
+def _out_of_frame(scene, labels):
+    """Whether the actions use a lower-body part of a person whose position lists what is visible and leaves it out."""
+    position = scene.get("position") if isinstance(scene.get("position"), dict) else {}
+    actions = str(scene.get("actions") or "")
+    for label in labels:
+        shown = [part for part in str(position.get(label) or "").split(";") if "visible" in part.casefold()]
+        uses = re.search(_named(label) + r"['’]s (?:" + "|".join(LOWER_PARTS) + r")\b|(?:in|inside|into|on|onto|against) "
+                         r"(?:the )?(?:" + "|".join(LOWER_PARTS) + r") of " + _named(label)
+                         + "|" + _named(label) + r"['’]s [\w ]{1,30}?(?:in|inside|into|onto|against) [\w ]{1,30}?"
+                         r"(?:" + "|".join(LOWER_PARTS) + r")\b", actions, re.IGNORECASE)
+        if shown and uses and not LOWER_SHOWN.search(shown[-1]):
+            return True
+    return False
+
+
+def _shape_misfit(scene, labels, ratio):
+    """Whether the people are arranged against the frame's shape: three or more side by side in a tall frame, or
+    everyone standing with the whole body shown in a wide one. A hint from the text; the picture decides."""
+    from goated_prompter.features.dataset.v2.aspect import aspect_shape
+    shape = (aspect_shape(ratio) or ("",))[0]
+    position = scene.get("position") if isinstance(scene.get("position"), dict) else {}
+    texts = [str(position.get(label) or "") for label in labels]
+    if shape == "tall":
+        return (len(texts) >= 3 and all(HORIZONTAL.search(text) for text in texts)
+                and not any(VERTICAL.search(text) for text in texts))
+    if shape == "wide":
+        return (len(texts) >= 2 and all(re.search(r"\bstanding\b", text, re.IGNORECASE) and not LOWERED.search(text)
+                                        for text in texts)
+                and any(re.search(r"\b(?:entire|whole|full) body\b", text, re.IGNORECASE) for text in texts))
+    return False
+
+
+def _parts_missing(subject, scenes):
+    """The share of the body parts the request names that no scene mentions; None when it names none."""
+    named = [part for part in BODY_PARTS if re.search(r"\b" + part + r"(?:s|es)?\b", subject or "", re.IGNORECASE)]
+    if not named:
+        return None
+    shown = " ".join(str(scene.get("actions") or "") + " " + " ".join(map(str, (scene.get("position") or {}).values()))
+                     for scene in scenes if isinstance(scene.get("position"), dict) or scene.get("actions"))
+    return round(sum(not re.search(r"\b" + part + r"(?:s|es)?\b", shown, re.IGNORECASE) for part in named) / len(named), 3)
+
+
+def _without(text, labels):
+    """The text without the character labels, which every act names."""
+    for label in sorted(labels, key=len, reverse=True):
+        text = re.sub(_named(label), " ", str(text or ""), flags=re.IGNORECASE)
+    return text
+
+
+def _same_act(first, second):
+    """Whether two images have the same act: the same entry when both name one (the act the writer was given), else
+    actions that repeat each other almost word for word. Word overlap alone is too coarse: short acts share most of
+    their few words ("penis", "mouth", "inside") even when the positions differ."""
+    if first.get("entry") and second.get("entry"):
+        return " ".join(first["entry"].split()).casefold() == " ".join(second["entry"].split()).casefold()
+    labels = set(first.get("subjects") or {}) | set(second.get("subjects") or {})
+    return _overlap(_without(first.get("actions"), labels), _without(second.get("actions"), labels)) >= .9
+
+
+def _scene_share(scenes, test):
+    """The share of scenes the test accepts; None without scenes or people."""
+    return round(sum(bool(test(scene)) for scene in scenes) / len(scenes), 3) if scenes else None
 
 
 def _looks(scene):
@@ -176,7 +382,9 @@ def _case_checks(row, normalize=None):
     if not row.get("ok"):
         return {"written": 0.0, **{name: None for name, *_ in CHECKS if name != "written"}}
     brief, scenes = output.get("brief") or {}, output.get("scenes") or []
-    prompts = [item.get("prompt", "") for item in output.get("prompts") or [] if item.get("prompt", "").strip()]
+    written = [item for item in output.get("prompts") or [] if item.get("prompt", "").strip()]
+    prompts = [item["prompt"] for item in written]
+    by_slot = {scene.get("slot"): scene for scene in scenes}
     requested = (brief.get("input") or {}).get("amount") or case.get("amount") or max(1, len(prompts))
     labels = {person["label"] for person in brief.get("characters", [])}
     avoid = [re.sub(r"^\s*(?:no|not|without|avoid|never)\s+", "", phrase, flags=re.IGNORECASE)
@@ -205,6 +413,18 @@ def _case_checks(row, normalize=None):
         if prompts and brief.get("path") == "nsfw_character" else None,
         "genitals_conflict": round(sum(_genitals_conflict(scene) for scene in scenes) / len(scenes), 3)
         if scenes and brief.get("path") == "nsfw_character" else None,
+        "contact_misplaced": _scene_share(scenes, lambda scene: _contact_misplaced(scene, sorted(labels)))
+        if brief.get("path") == "nsfw_character" else None,
+        "tags_misfit": round(sum(_tags_misfit(item["prompt"], by_slot.get(item.get("slot"))) for item in written)
+                             / len(written), 3) if target == "Anima" and written else None,
+        "repeated_acts": _share(pairs, _same_act) if labels else None,
+        "template_leaks": _scene_share(scenes, lambda scene: _template_leak(scene, labels)),
+        "opening_conflicts": _scene_share(scenes, lambda scene: _opening_conflict(scene, sorted(labels))),
+        "subject_parts_missing": _parts_missing(case.get("subject", ""), scenes) if scenes else None,
+        "pose_act_gap": _scene_share(scenes, lambda scene: _pose_act_gap(scene, sorted(labels))),
+        "parts_out_of_frame": _scene_share(scenes, lambda scene: _out_of_frame(scene, sorted(labels))),
+        "shape_misfit": _scene_share(scenes, lambda scene: _shape_misfit(scene, sorted(labels), case.get("aspect")))
+        if case.get("aspect") not in (None, "", "Auto") else None,
         "words": round(sum(len(prompt.split()) for prompt in prompts) / len(prompts)) if prompts else None,
         "request_words_echoed": _echoed(case.get("subject", ""), prompts),
         **_framing(prompts),

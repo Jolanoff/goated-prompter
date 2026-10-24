@@ -109,7 +109,7 @@ class LayerIndependence(unittest.TestCase):
         from goated_prompter.prompting.base import SHOW_DONT_TELL
         self.assertIn(SHOW_DONT_TELL, message())
         self.assertIn(SHOW_DONT_TELL, _system({"path": "sfw_character", "characters": [], "input": {},
-                                               "settings": {"creativity": "Balanced"}}, []))
+                                               "settings": {"style": "Auto", "creativity": "Balanced"}}, []))
         for level in ("Strict", "Balanced"):
             self.assertIn("only when the request asks for them", CREATIVITY_ADAPTERS[level])
             self.assertNotIn("written on a prop", CREATIVITY_ADAPTERS[level])

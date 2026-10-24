@@ -5,6 +5,8 @@ DATASET_TYPES = (
     "Location / environment", "Brand / logo", "Typography / text", "Concept", "Custom",
 )
 DATASET_SOURCES = ("random", "guided")
+# The shape every image of a dataset is made in (ComfyUI sets it; Auto leaves the scenes free to choose).
+ASPECT_RATIO_NAMES = ("Auto", "1:1", "4:5", "3:4", "2:3", "9:16", "5:4", "4:3", "3:2", "16:9")
 # Like ComfyUI's control: a new seed each run, the same seed, or the last seed plus one.
 SEED_MODES = ("randomize", "fixed", "increment")
 # Dataset triggers: what each one stands for, and whether its exact text is placed by code ("off"), its meaning is

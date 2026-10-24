@@ -25,6 +25,9 @@ STYLE_NAMES = STYLE_FAMILIES + tuple(f"{family}{SUB_STYLE_SEPARATOR}{sub}" for f
 CAPTURE_NAMES = ("Auto", "Pro camera", "Phone snapshot", "Analog film", "Instant film", "Disposable camera", "Black-and-white film", "Medium format", "Studio portrait",
                  "Fashion editorial", "Documentary", "Street photography", "Flash snapshot", "Mirror selfie",
                  "Webcam", "Security camera", "Action camera", "Drone")
+# Choices that make an image without colour: style families (with every sub-style) and captures.
+NO_COLOR_STYLES = ("Manga", "Sketch")
+NO_COLOR_CAPTURES = ("Black-and-white film",)
 # Styles a target model cannot render: Anima draws anime and illustration only, never a photograph.
 UNSUPPORTED_STYLES = {"Anima": ("Realistic", "Cinematic")}
 # Internal: no Style section at all (a Dataset style trigger carries the style). Never offered in the UI.
@@ -36,3 +39,8 @@ MODE_STYLES = {"Photography": "Realistic", "Product": "Product"}
 def style_family(name):
     """The family of a style value ("Anime" for "Anime / Chibi"); anything else comes back unchanged."""
     return name.split(SUB_STYLE_SEPARATOR, 1)[0] if isinstance(name, str) else name
+
+
+def without_color(style, capture="Auto"):
+    """Whether this style and capture make an image without colour."""
+    return style_family(style) in NO_COLOR_STYLES or capture in NO_COLOR_CAPTURES

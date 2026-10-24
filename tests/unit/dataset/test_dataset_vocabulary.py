@@ -24,7 +24,7 @@ class SceneVocabulary(unittest.TestCase):
         romance = next(pack for pack in self.catalog["packs"] if pack["id"] == "Actions & Poses/Romance")["entries"]
         self.dance = next(entry for entry in romance if entry.startswith("Slow dance:"))
         self.hands = next(entry for entry in romance if "inner hands joined" in entry)
-        self.forehead = next(entry for entry in romance if "kiss the other person's forehead" in entry)
+        self.forehead = next(entry for entry in romance if "kiss B's forehead" in entry)
         self.calls, self.entries, self.fit, self.copy_dealt = [], [], None, False
         self.backend = MockBackend()
         enter_context(self, patch.object(self.backend, "generate", side_effect=self.generate))
@@ -161,6 +161,29 @@ class SceneVocabulary(unittest.TestCase):
     def test_a_request_asking_for_the_kind_in_general_gets_its_named_entry_and_one_other(self):
         hands = self.lights("A knight carrying light sources, among them a lantern")
         self.assertTrue(all(len(hand) == 2 and "lantern" in hand[0] and "lantern" not in hand[1] for hand in hands), hands)
+
+    def test_a_word_of_a_packs_name_that_is_not_its_kind_never_asks_for_the_whole_pack(self):
+        # "having sex in a locker room" read as asking for Sex Spaces in general: every image also got a random other
+        # place, and a live run put only one of six images in the locker room.
+        import random
+        spaces = ["a locker room bench", "a gym locker room", "a motel room", "a storage room", "a leather bar",
+                  "a sling room", "a laundry room", "a hotel bedroom", "a car", "a balcony", "a sauna", "a garage"]
+        groups = [{"category": "Spaces", "packs": [{"name": "Sex Spaces", "entries": spaces}]}]
+        hands = scenes.deal_hands(groups, 6, random.Random(3), words=frozenset({"men", "having", "sex", "locker", "room"}))
+        self.assertTrue(all(hand["Spaces"] and all("locker" in entry for entry in hand["Spaces"])
+                            for hand in hands.values()), hands)
+        general = scenes.deal_hands(groups, 6, random.Random(3), words=frozenset({"sex", "spaces", "locker"}))
+        self.assertTrue(all(len(hand["Spaces"]) == 2 for hand in general.values()), "the kind asked for in general")
+
+    def test_an_entry_about_less_of_the_request_gives_way_to_one_about_more(self):
+        # "room" is in 12 of 51 live Spaces entries, so every other room counted as the requested locker room.
+        rooms = ["a locker room bench", "a gym locker room", "a storage room", "a sling room", "a motel room",
+                 *(f"outdoor place {number}" for number in range(15))]
+        self.assertEqual(scenes.requested_entries(rooms, frozenset({"locker", "room"})),
+                         ["a locker room bench", "a gym locker room"])
+        lights = ["a lantern", "an oil lamp", "a desk lamp", "a torch", "a candle", "a spotlight", "a glow stick", "a fire"]
+        self.assertEqual(scenes.requested_entries(lights, frozenset({"lantern", "oil", "lamp"})),
+                         ["a lantern", "an oil lamp"], "two things the request names both stay")
 
     def test_a_request_word_that_most_entries_share_never_counts_and_other_runs_deal_as_before(self):
         entries = [f"the one who serves with toy {n}" for n in range(8)]
@@ -304,8 +327,11 @@ class SceneVocabulary(unittest.TestCase):
         vocabulary = composer_user(call.user_message)["vocabulary"]
         self.assertIn("Actions & Poses\nCore instruction:\nActions & Poses provides vocabulary", vocabulary)
         self.assertIn(self.forehead, vocabulary)
+        # A live writer swapped an entry's "a toy in and out of A's anus" for the cock sheath the Sex Toys pack dealt,
+        # and the act became a penis in the anus.
         for rule in ("If it does, that pose is\n   decided", "If it defines only an\n   action, choose a pose",
-                     "correct gender", "Objects, furniture and surfaces named in an entry", "keeping the pose physically the same"):
+                     "correct gender", "Objects, furniture and surfaces named in an entry", "keeping the pose physically the same",
+                     "A replacement does the same job in\n   the act"):
             self.assertIn(rule, call.system_message)
 
     def test_every_image_is_dealt_its_own_entry_by_the_seed(self):
@@ -338,6 +364,8 @@ class SceneVocabulary(unittest.TestCase):
         self.assertIn("in a Slow  Dance\nposition name: slow dance\n", prompts.scene_text(scene))
         self.assertEqual(prompts.position_name({**scene, "entry": "two people holding hands"}), "")
         self.assertIn("use that name word for word", prompts.SCENE_RULES)
+        # Live Anima tag lines named "doggystyle" for scenes lying on the back or flat, built on unnamed entries.
+        self.assertIn("When the idea gives no position name, name no position", prompts.SCENE_RULES)
 
 
     def test_scene_ideas_never_get_vocabulary(self):

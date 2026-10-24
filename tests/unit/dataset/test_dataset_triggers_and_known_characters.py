@@ -415,6 +415,19 @@ class AnimaTagLine(unittest.TestCase):
         self.assertEqual(prompts.count_tags([{"gender": "male"}]), ["1boy", "solo"])
         self.assertEqual(prompts.count_tags([{"gender": "male", "count": 2}, {"gender": ""}]), ["2boys", "1other"])
 
+    def test_a_phrase_or_placeholder_among_the_tags_still_gets_the_casts_count_tags(self):
+        # A live tag line with one long phrase was read as prose and kept the model's "2men, solo".
+        line = prompts.anima_tag_line("masterpiece, 2boys, solo, [knight in silver armor], the knight holding the queen's hand "
+                                      "in front of the old stone throne, throne room, kneeling, candles, banners, "
+                                      "night\n\nProse.", self.cast)
+        self.assertEqual(line, "masterpiece, 1boy, 1girl, throne room, kneeling, candles, banners, night\n\nProse.")
+
+    def test_a_tag_beside_its_opposite_goes_with_it(self):
+        # Each describes one person; a tag line cannot say whose.
+        line = prompts.anima_tag_line("masterpiece, tired, kneeling, untired, armored, unarmored, throne room\n\nProse.",
+                                      self.cast)
+        self.assertEqual(line, "masterpiece, 1boy, 1girl, kneeling, throne room\n\nProse.")
+
     def test_underscores_become_spaces_except_score_tags_and_low_quality_tags_go(self):
         line = prompts.anima_tag_line("score_8_up, low_quality, worst quality, lowres, knight_is_kneeling, \\(armor\\)\n\nA_b.",
                                       self.cast)
@@ -443,6 +456,60 @@ class AnimaTagLine(unittest.TestCase):
         line = prompts._anima_with_triggers(prompt, triggers)
         self.assertEqual(line, "masterpiece, 2boys, uchiha madara, naruto \\(series\\), cu chulainn \\(fate\\), "
                                "fate \\(series\\), naked\n\nProse.")
+
+    def test_the_apps_own_names_for_people_are_never_tags(self):
+        # Live tag lines kept "the man with pale skin" and "man with olive skin", the prompt's own names for people.
+        brief = {"characters": [{"label": "man 1", "gender": "male"}, {"label": "man 2", "gender": "male"}],
+                 "settings": {"creativity": "Balanced"}, "fixed": {}}
+        scene = {"subjects": {"man 1": {"skin": "pale", "hair": "black"}, "man 2": {"skin": "olive", "hair": "red"}}}
+        line = prompts.anima_tag_line("masterpiece, the man with pale skin, man with olive skin, 4males, kneeling"
+                                      "\n\nprose.", brief, scene)
+        self.assertEqual(line, "masterpiece, 2boys, kneeling\n\nProse.")
+        # A live tag line led each person's tags with their name: "the man with pale skin: pale skin, ...".
+        line = prompts.anima_tag_line("masterpiece, the man with pale skin: pale skin, slender, man with olive skin: "
+                                      "olive skin\n\nhe kneels. she waits? yes.", brief, scene)
+        self.assertEqual(line, "masterpiece, 2boys, pale skin, slender, olive skin\n\nHe kneels. She waits? Yes.")
+
+    def test_the_nsfw_switch_off_makes_the_safety_tag_safe(self):
+        # A live rainy-city couple with NSFW off was tagged "sensitive".
+        brief = {**self.cast, "input": {"nsfw": False}}
+        self.assertEqual(prompts.anima_tag_line("masterpiece, sensitive, walking\n\nProse.", brief),
+                         "masterpiece, safe, 1boy, 1girl, walking\n\nProse.")
+        self.assertEqual(prompts.anima_tag_line("masterpiece, explicit, walking\n\nProse.",
+                                                {**self.cast, "input": {"nsfw": True}}),
+                         "masterpiece, explicit, 1boy, 1girl, walking\n\nProse.", "with NSFW on the model's rating stays")
+
+    def test_brackets_around_the_apps_names_and_over_several_tags_go(self):
+        # A live prose wrapped every person in brackets ("[the man with tan skin] lies"), which weighs them on Anima, and
+        # a tag line bracketed one person's tags as a group.
+        brief = {"characters": [{"label": "man 1", "gender": "male"}, {"label": "man 2", "gender": "male"}],
+                 "settings": {"creativity": "Balanced"}, "fixed": {}}
+        scene = {"subjects": {"man 1": {"skin": "tan", "hair": "black"}, "man 2": {"skin": "pale", "hair": "red"}}}
+        self.assertEqual(prompts.plain_names("[the man with tan skin] lies down. Then [the man with pale skin] kneels "
+                                             "beside [the man with tan skin].", brief, scene),
+                         "The man with tan skin lies down. Then the man with pale skin kneels beside the man with tan skin.")
+        self.assertEqual(prompts.anima_tag_line("masterpiece, [pale skin, slender, walking], [tan skin, beard]\n\nProse.",
+                                                self.cast),
+                         "masterpiece, 1boy, 1girl, pale skin, slender, walking, tan skin, beard\n\nProse.")
+
+    def test_a_person_of_open_gender_is_counted_as_the_scene_writes_them(self):
+        # A rainy-city couple of unnamed genders was tagged "2others" while every prose wrote a woman and a man.
+        couple = {"characters": [{"label": "person 1"}, {"label": "person 2"}]}
+        scene = {"position": {"person 1": "left, her hand in person 2's hand", "person 2": "right, his hand in person 1's"}}
+        self.assertEqual(prompts.anima_tag_line("masterpiece, 2others, walking\n\nProse.", couple, scene),
+                         "masterpiece, 1boy, 1girl, walking\n\nProse.")
+        self.assertEqual(prompts.anima_tag_line("masterpiece, walking\n\nProse.", couple), "masterpiece, 2others, walking"
+                         "\n\nProse.", "without a scene nothing says who they are")
+
+    def test_a_scene_that_shows_genitals_is_rated_explicit_with_nsfw_on(self):
+        # Live tag lines rated sex scenes "sensitive".
+        brief = {**self.cast, "input": {"nsfw": True}}
+        scene = {"actions": "the knight's penis in the queen's mouth", "position": {}}
+        self.assertEqual(prompts.anima_tag_line("masterpiece, sensitive, kneeling\n\nProse.", brief, scene),
+                         "masterpiece, explicit, 1boy, 1girl, kneeling\n\nProse.")
+        scene = {"actions": "the knight kisses the queen", "position": {}}
+        self.assertEqual(prompts.anima_tag_line("masterpiece, sensitive, kneeling\n\nProse.", brief, scene),
+                         "masterpiece, sensitive, 1boy, 1girl, kneeling\n\nProse.", "nothing explicit shown: it stays")
 
     def test_tag_blocks_split_by_blank_lines_become_one_line(self):
         line = prompts.anima_tag_line("masterpiece, 1boy\n\nkneeling, collar,\n\nA knight kneels. He waits.", self.cast)

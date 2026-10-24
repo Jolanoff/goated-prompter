@@ -104,17 +104,27 @@ def deal_entries(entries, total, rng):
     return dealt
 
 
+# How many of something there are never names a thing: a request about "two men" was read as asking for a prop whose
+# name also says "two" (like "two matching candles"), and that one prop was then suggested for every image.
+COUNT_WORDS = frozenset("one two three four five six seven eight nine ten both pair couple several few many".split())
+
+
 def requested_words(brief):
-    """The words of the request and of what it fixes or requires."""
-    return frozenset(_words(" ".join((brief["input"]["request"], brief.get("fixed", ""), *brief.get("must", ())))))
+    """The words of the request and of what it fixes or requires, without counts (words and digits)."""
+    words = _words(" ".join((brief["input"]["request"], brief.get("fixed", ""), *brief.get("must", ()))))
+    return frozenset(word for word in words if word not in COUNT_WORDS and not word.isdigit())
 
 
 def requested_entries(entries, words):
     """The entries about something the request itself names: they share a word with it that is rare in this category
-    (in at most a quarter of its entries), so a word every entry repeats never counts."""
+    (in at most a quarter of its entries), so a word every entry repeats never counts. An entry whose shared words are
+    only part of another entry's is about less of the request: "a locker room" names the locker room entries, not every
+    entry that is some other room, while "a lantern and an oil lamp" keeps both."""
     found = {word: sum(word in _words(entry) for entry in entries) for word in words}
     rare = {word for word, count in found.items() if 0 < count <= max(1, len(entries) // 4)}
-    return [entry for entry in entries if _words(entry) & rare]
+    shared = {entry: frozenset(_words(entry) & rare) for entry in entries}
+    return [entry for entry in entries
+            if shared[entry] and not any(shared[entry] < other for other in shared.values())]
 
 
 def named_entries(entries, words):
@@ -133,15 +143,19 @@ def deal_hands(groups, total, rng, size=HAND, words=frozenset()):
     words: the request's words (requested_words). In a category whose entries are about something the request names:
     - the request names only that thing (not the category or one of its packs): every image gets only the entry the
       request names (named_entries), so asking for one thing gives that one thing;
-    - the request also names the category or a pack of it ("sex toys" for a pack called Sex Toys), so it asks for the
-      kind in general: every image gets one entry about what it names and one other, and the vocabulary adds variety."""
+    - the request also names the category or a pack of it by its kind, the last word of its name ("toys" for a pack
+      called Sex Toys), so it asks for the kind in general: every image gets one entry about what it names and one
+      other, and the vocabulary adds variety. Another word of the name is not the kind: "having sex in a locker room"
+      never asks for Sex Spaces in general, so every image stays in the locker room."""
     hands = {number: {} for number in range(1, total + 1)}
     for group in groups:
         if group["category"] == ACTIONS_CATEGORY:
             continue
         entries = list(dict.fromkeys(entry for pack in group["packs"] for entry in pack["entries"]))
         if related := requested_entries(entries, words):
-            general = words & _words(" ".join([group["category"], *(pack.get("name", "") for pack in group["packs"])]))
+            kinds = (re.findall(r"[a-z0-9]+", name.casefold())[-1:] for name in
+                     [group["category"], *(pack.get("name", "") for pack in group["packs"])])
+            general = words & {word for kind in kinds for word in kind}
             if general:
                 others = [entry for entry in entries if entry not in related]
             else:
