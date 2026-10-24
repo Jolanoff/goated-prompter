@@ -40,8 +40,12 @@ Agents and terminals use the same commands as `python -m tests.quality [audit|re
 2. **Live comparison**: runs every case and seed through the app's real pipeline, once with the old code and once
    with the new, using your model, Prompt Library and vocabulary packs as the app does. The old code runs from a
    copy in `quality-artifacts/worktrees/` that shares your `data/` folder.
-3. **Automatic checks**: written prompts, format, cast kept, ruled-out words, leftover labels ("man 1", "the first
-   man") must never get worse; repeated looks, places and props and prompt similarity should improve.
+3. **Automatic checks**: guard checks (every requested image written once, slots, format, cast kept, ruled-out
+   words, leftover labels such as "man 1", known characters' looks, adult wording in safe sets) must never get
+   worse, and any change counts. Aim checks (repeated looks, places, props and acts, prompt similarity) should
+   improve; what the request keeps the same (the brief's kept) repeats on purpose and is not counted. Hint checks
+   read word patterns and only point at scenes to read; info checks (time, retries, first-pass acceptance, length)
+   are reported. Old and new run the same cases and seeds, so the noise comes from the paired differences.
 4. **Blind review**: each case and seed becomes a pair, A and B in random order (`key.json` remembers which is
    new). Judge in the report page, by an agent (`review_packet.md`, answers in `review.json` like
    `review_template.json`) or by a model. Only `human` and `independent` reviews with a reviewer name count; a
@@ -53,4 +57,6 @@ Agents and terminals use the same commands as `python -m tests.quality [audit|re
 ## Limits
 
 It scores prompts, not images. A few cases and seeds only show clear differences; small ones come out as no real
-difference, which is the honest answer. The audit's word lists find likely collisions, not every possible one.
+difference, which is the honest answer. The audit's word lists find likely collisions, not every possible one. The
+automatic checks count structure and wording; whether a scene follows the request's meaning, keeps everyone's role,
+and is physically possible needs the review.

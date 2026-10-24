@@ -26,7 +26,13 @@ def verdict(audit_result, check_rows, review):
         if audit_result["errors"]:
             worse.append(f"{len(audit_result['errors'])} setting combination(s) no longer build")
     for row in check_rows or []:
-        if row["change"] == "n/a" or row["kind"] == "info":
+        if row["change"] == "n/a":
+            continue
+        if row["kind"] in ("info", "hint"):  # reported, never the verdict: time and retries, or a word-pattern pointer
+            if row["change"] in ("better", "worse"):
+                notes.append(f"{row['check']} ({row['kind']}) went {'down' if row['candidate'] < row['baseline'] else 'up'}"
+                             f" ({row['baseline']} -> {row['candidate']})"
+                             + (": read the scenes it points at" if row["kind"] == "hint" else ""))
             continue
         if row["change"] in ("better", "worse"):
             (better if row["change"] == "better" else worse).append(

@@ -80,6 +80,63 @@ class Checks(unittest.TestCase):
         self.assertEqual(values["cast_ok"], 1.0)
         self.assertEqual(values["actions_named"], 0.0, "\"they talk\" names nobody")
 
+    def test_every_requested_image_counts_once_and_wrong_slots_are_counted(self):
+        # written once counted the prompts that came back, so an extra one hid a missing one.
+        row = dataset_row([{**scene("fair", "a hall"), "slot": n} for n in (1, 1, 4)], ["One.", "Two.", "Three."])
+        row["case"]["amount"] = 3
+        row["output"]["prompts"] = [{"slot": 1, "prompt": "One."}, {"slot": 1, "prompt": "Again."},
+                                    {"slot": 4, "prompt": "Extra."}]
+        values = checks.case_checks(row)
+        self.assertEqual(values["written"], round(1 / 3, 3), "slots 2 and 3 have no prompt")
+        self.assertEqual(values["slot_problems"], 6, "two doubles, two unrequested slots, two images without a scene")
+        row["case"].pop("amount")
+        row["output"]["brief"]["input"].pop("amount")
+        self.assertIsNone(checks.case_checks(row)["written"], "never derived from what came back")
+
+    def test_the_format_check_wants_the_final_form(self):
+        normalize = lambda prompt, target, mode=None: prompt.strip().removeprefix("Prompt: ")
+        self.assertTrue(checks._format_ok("A knight kneels.", "Generic", normalize))
+        self.assertFalse(checks._format_ok("Prompt: A knight kneels.", "Generic", normalize), "it had to unwrap it")
+        self.assertTrue(checks._format_ok('{"a": 1}', "Generic", lambda prompt, target, mode=None: '{"a":1}'))
+
+    def test_ruled_out_words_count_only_when_described(self):
+        prompts = ["A man in a hat, no cars on the street.", "A red car waits.", "A carpet."]
+        self.assertEqual(checks._avoid_hits(prompts, ["car"]), 1, "negated and longer words are not hits")
+
+    def test_known_characters_keep_their_looks_and_safe_sets_stay_safe(self):
+        cast = [{"label": "knight", "known": True}, {"label": "squire"}]
+        mine = {"subjects": {"knight": {"expression": "calm"}, "squire": {"skin": "fair", "hair": "red"}},
+                "space": "a hall", "actions": "the knight talks to the squire"}
+        given = {**mine, "subjects": {**mine["subjects"], "knight": {"expression": "calm", "hair": "long white hair"}}}
+        row = dataset_row([mine, given], ["A knight talks.", "A knight talks."], characters=cast)
+        values = checks.case_checks(row)
+        self.assertEqual(values["known_changed"], 0.5)
+        self.assertEqual(values["repeated_looks"], 1.0, "the squire repeats; the knight is left out")
+        row["output"]["brief"]["input"]["nsfw"] = False
+        row["output"]["prompts"][1]["prompt"] = "A nude knight talks."
+        self.assertEqual(checks.case_checks(row)["sfw_leaks"], 0.5)
+
+    def test_a_kept_part_repeats_on_purpose(self):
+        # The request kept one place and one action, so the same place and act in every image are asked for.
+        first = {**scene("fair", "a library, a long oak table, shelves behind"), "entry": "A reads",
+                 "position": {"man 1": "sitting at the table", "man 2": "standing by the shelf"}}
+        second = {**scene("olive", "a library, a reading lamp, a window behind"), "entry": "A reads",
+                  "position": {"man 1": "standing at the window", "man 2": "sitting on the steps"}}
+        row = dataset_row([first, second], ["One.", "Two."])
+        self.assertEqual((checks.case_checks(row)["repeated_acts"]), 1.0, "the same entry")
+        row["output"]["brief"]["kept"] = ["place", "action"]
+        values = checks.case_checks(row)
+        self.assertEqual((values["repeated_acts"], values["repeated_places"]), (0.0, 0.0),
+                         "a different pose and spot of the kept place and act")
+        row["output"]["scenes"][1] = {**first, "subjects": second["subjects"]}
+        self.assertEqual(checks.case_checks(row)["repeated_acts"], 1.0, "the same pose again is still a repeat")
+
+    def test_first_pass_counts_the_images_never_asked_again(self):
+        row = dataset_row([scene("fair", "a hall"), scene("olive", "a pier")], ["One.", "Two."])
+        row["log"] = ["Image 2 is asked again: it repeats image 1.", "Image 2 is asked again: still a repeat."]
+        values = checks.case_checks(row)
+        self.assertEqual((values["redone"], values["first_pass"]), (2, 0.5))
+
     def test_anima_count_tags_and_bad_tags(self):
         cast = [{"label": "knight", "gender": "male"}, {"label": "queen", "gender": "female"}]
         good = "score_9, score_8_up, 1boy, 1girl, knight, throne room\n\nA knight kneels."
@@ -204,6 +261,11 @@ class Checks(unittest.TestCase):
         shown = {**base, "position": {"man 1": "standing; his torso and hips are visible", "man 2": "bent over; his back and buttocks are visible"}}
         unlisted = {**base, "position": {"man 1": "standing behind", "man 2": "bent over"}}
         self.assertEqual([checks._out_of_frame(scene, labels) for scene in (hidden, shown, unlisted)], [True, False, False])
+        # The camera is read too: its clauses about a person, the whole body or the knees, and a lower-body focus.
+        framed = {**unlisted, "camera": "side view, man 1's head and torso are in frame, man 2's hips are in frame"}
+        knees = {**unlisted, "camera": "side view, man 1's knees reach the bottom edge, man 2's hips are in frame"}
+        focus = {**framed, "camera": framed["camera"] + ", the contact at man 2's buttocks is the focus"}
+        self.assertEqual([checks._out_of_frame(scene, labels) for scene in (framed, knees, focus)], [True, False, False])
 
     def test_the_shape_hint_needs_a_ratio_and_reads_the_arrangement(self):
         labels = ["man 1", "man 2", "man 3"]
@@ -211,14 +273,19 @@ class Checks(unittest.TestCase):
         stacked = {"position": {"man 1": "left, standing", "man 2": "centre, above man 1", "man 3": "right, standing"}}
         self.assertEqual([checks._shape_misfit(row, labels, ratio) for ratio in ("3:4", "16:9", "Auto")], [True, False, False])
         self.assertFalse(checks._shape_misfit(stacked, labels, "3:4"))
+        # Standing people in a wide frame are often right, so the hint no longer counts them.
         standing = {"position": {"man 1": "standing, entire body visible", "man 2": "standing"}}
-        self.assertTrue(checks._shape_misfit(standing, labels[:2], "16:9"))
-        self.assertFalse(checks._shape_misfit(standing, labels[:2], "3:4"))
+        self.assertEqual([checks._shape_misfit(standing, labels[:2], ratio) for ratio in ("16:9", "3:4")], [False, False])
 
     def test_body_parts_the_request_names_but_no_scene_shows_are_counted(self):
         scenes = [{"actions": "man 1's penis is in man 2's mouth", "position": {"man 1": "standing", "man 2": "kneeling"}}]
         self.assertEqual(checks._parts_missing("oral sex on the penis and on the anus", scenes), 0.5)
         self.assertIsNone(checks._parts_missing("two men talk", scenes))
+        # A part the request names belongs in every image: shown in one of two, it is missing from the other.
+        hands = [{"actions": "man 1 holds man 2's hand", "position": {}}, {"actions": "man 1 waves", "position": {}}]
+        self.assertEqual(checks._parts_missing("two men holding hands", hands), None, "hands are not a listed part")
+        two = [scenes[0], {"actions": "man 1 kneels", "position": {"man 1": "kneeling"}}]
+        self.assertEqual(checks._parts_missing("a scene about the penis", two), 0.5)
 
     def test_the_same_act_is_the_same_entry_or_the_same_words(self):
         same = "man 1's penis is inside man 2's anus while man 1 grips man 2's hair"
@@ -287,14 +354,36 @@ class Verdict(unittest.TestCase):
         tiny = checks.compare({"totals": {"repeated_looks": .30}}, {"totals": {"repeated_looks": .28}})
         self.assertEqual(report.verdict(self.audit_ok, tiny, None)[0], "No real difference")
 
-    def test_a_difference_within_the_seed_noise_is_chance(self):
-        old = {"totals": {"label_leaks": .3}, "noise": {"label_leaks": .1}}
-        rows = {row["check"]: row for row in checks.compare(old, {"totals": {"label_leaks": .45}, "noise": {}})}
-        self.assertEqual((rows["label_leaks"]["change"], rows["label_leaks"]["noise"]), ("same", .2))
+    def test_a_difference_within_the_seed_noise_is_chance_but_a_guard_change_never_is(self):
+        old = {"totals": {"repeated_looks": .3, "label_leaks": .3}, "noise": {"repeated_looks": .1, "label_leaks": .1}}
+        new = {"totals": {"repeated_looks": .45, "label_leaks": .45}, "noise": {}}
+        rows = {row["check"]: row for row in checks.compare(old, new)}
+        self.assertEqual((rows["repeated_looks"]["change"], rows["repeated_looks"]["noise"]), ("same", .2))
         notes = report.verdict(self.audit_ok, list(rows.values()), None)[3]
-        self.assertTrue(any("label_leaks may have got worse" in note for note in notes), notes)
-        rows = {row["check"]: row for row in checks.compare(old, {"totals": {"label_leaks": .6}, "noise": {}})}
-        self.assertEqual(rows["label_leaks"]["change"], "worse")
+        self.assertTrue(any("repeated_looks may have got worse" in note for note in notes), notes)
+        self.assertEqual(rows["label_leaks"]["change"], "worse", "a leftover label is a fact, not a sample")
+        rows = {row["check"]: row for row in checks.compare(old, {**new, "totals": {"repeated_looks": .6}})}
+        self.assertEqual(rows["repeated_looks"]["change"], "worse")
+
+    def test_the_noise_comes_from_paired_runs_and_info_changes_show(self):
+        # Both sides run the same cases and seeds: the spread of the per-run differences is the noise.
+        old = {"cases": {"a / seed 1": {"repeated_looks": 0.0, "seconds": 100}, "b / seed 1": {"repeated_looks": 0.0,
+                                                                                               "seconds": 100}},
+               "totals": {"repeated_looks": 0.0, "seconds": 100}, "noise": {}}
+        new = {"cases": {"a / seed 1": {"repeated_looks": 0.5, "seconds": 50}, "b / seed 1": {"repeated_looks": 0.0,
+                                                                                             "seconds": 50}},
+               "totals": {"repeated_looks": 0.25, "seconds": 50}, "noise": {}}
+        rows = {row["check"]: row for row in checks.compare(old, new)}
+        self.assertEqual((rows["repeated_looks"]["noise"], rows["repeated_looks"]["change"]), (0.5, "same"),
+                         "one run of two moved: within the paired noise")
+        self.assertEqual(rows["seconds"]["change"], "better", "half the time is a real change, shown")
+        notes = report.verdict(self.audit_ok, list(rows.values()), None)
+        self.assertEqual(notes[0], "No real difference", "info never decides the verdict")
+        self.assertTrue(any("seconds (info) went down (100 -> 50)" in note for note in notes[3]), notes[3])
+
+    def test_a_case_and_seed_run_twice_keep_both_runs(self):
+        rows = [dataset_row([scene("fair", "a kitchen")], ["Two men talk."]) | {"seed": 1} for _ in range(2)]
+        self.assertEqual(list(checks.side_checks({"cases": rows})["cases"]), ["d / seed 1", "d / seed 1 (run 2)"])
 
     def test_seed_noise_and_per_request_averages(self):
         row = lambda seed, looks: dataset_row([scene(looks, "a kitchen"), scene("fair", f"a pier {seed}")],
