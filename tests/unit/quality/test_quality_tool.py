@@ -137,6 +137,52 @@ class Checks(unittest.TestCase):
         values = checks.case_checks(row)
         self.assertEqual((values["redone"], values["first_pass"]), (2, 0.5))
 
+    def test_model_calls_are_recorded_from_the_backends_events_and_counted(self):
+        calls = []
+        for event in ({"type": "request", "stage": "dataset_v2:scenes", "messages": ["kept out"]},
+                      {"type": "response_delta", "text": "{"},
+                      {"type": "response_complete", "finish_reason": "stop", "tokens": {"prompt": 900, "completion": 100}},
+                      {"type": "request", "stage": "dataset_v2:builder"}, {"type": "error", "message": "loop"},
+                      {"type": "request", "stage": "dataset_v2:builder"},
+                      {"type": "response_complete", "finish_reason": "stop", "tokens": {"prompt": 400, "completion": 100}}):
+            worker._record_call(calls, event)
+        self.assertEqual(calls, [{"stage": "dataset_v2:scenes", "outcome": "ok", "tokens": {"prompt": 900, "completion": 100}},
+                                 {"stage": "dataset_v2:builder", "outcome": "error"},
+                                 {"stage": "dataset_v2:builder", "outcome": "ok", "tokens": {"prompt": 400, "completion": 100}}])
+        row = dataset_row([scene("fair", "a hall"), scene("olive", "a pier")], ["One.", "Two."])
+        row.update(calls=calls, log=['Image 2 is asked again: the entry "A reads" is already used by 2 images'])
+        values = checks.case_checks(row)
+        self.assertEqual((values["calls_per_image"], values["tokens_per_image"], values["failed_calls"],
+                          values["entry_rejections"]), (1.5, 750, 1, 1))
+        self.assertEqual(checks.stage_calls({"cases": [row]}),
+                         {"dataset_v2:builder": {"calls": 2, "failed": 1, "tokens": 500},
+                          "dataset_v2:scenes": {"calls": 1, "failed": 0, "tokens": 1000}})
+        self.assertIsNone(checks.case_checks(dataset_row([scene("fair", "a hall")], ["One."]))["calls_per_image"],
+                          "a run recorded before calls were kept")
+
+    def test_the_scene_reviewer_sees_each_image_alone_and_its_answers_are_hints(self):
+        first = {**scene("fair", "a library"), "slot": 1, "entry": "A reads", "position": {"man 1": "sitting"}}
+        second = {**scene("olive", "a library"), "slot": 2}
+        old, new = (dataset_row([first, second], ["One.", "Two."]) for _ in range(2))
+        new["output"]["brief"]["kept"] = ["place"]
+        new["output"]["brief"]["input"]["guided_inputs"] = ["he reads by the window"]
+        sides = {"baseline": {"cases": [old]}, "candidate": {"cases": [new]}}
+        packet = judge.build_scene_packet(sides, seed=3)
+        self.assertEqual(len(packet["items"]), 4, "every written image of both sides")
+        text = next(item["text"] for item in packet["items"] if item["side"] == "candidate" and item["slot"] == 1)
+        self.assertIn("PARTS THE REQUEST KEEPS: place", text)
+        self.assertIn("GUIDED INPUT FOR THIS IMAGE: he reads by the window", text)
+        self.assertIn("entry: A reads", text)
+        self.assertNotIn("candidate", text, "the text never says which side it is")
+        answers = {str(number): {**{name: "yes" for name in judge.SCENE_QUESTIONS}, "spatial": "no", "guided": "n/a",
+                                 "roles": "maybe"} for number in range(len(packet["items"]))}
+        judge.attach_scene_review(sides, packet, answers)
+        values = checks.case_checks(new)
+        self.assertEqual((values["review_spatial"], values["review_fidelity"], values["review_guided"],
+                          values["review_roles"]), (1.0, 0.0, None, None), "n/a and unknown answers do not count")
+        self.assertEqual(next(kind for name, _, kind, _ in checks.CHECKS if name == "review_spatial"), "hint")
+        self.assertIsNone(checks.case_checks(dataset_row([first], ["One."]))["review_spatial"], "no review: no number")
+
     def test_anima_count_tags_and_bad_tags(self):
         cast = [{"label": "knight", "gender": "male"}, {"label": "queen", "gender": "female"}]
         good = "score_9, score_8_up, 1boy, 1girl, knight, throne room\n\nA knight kneels."

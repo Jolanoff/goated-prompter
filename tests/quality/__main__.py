@@ -21,8 +21,9 @@ import sys
 import webbrowser
 
 from . import audit as audit_module
-from .checks import compare, per_request, side_checks
-from .judge import build_packet, packet_markdown, review_template, save, unblind
+from .checks import compare, per_request, side_checks, stage_calls
+from .judge import (attach_scene_review, build_packet, build_scene_packet, packet_markdown, review_template, save,
+                    unblind)
 from .report import render, verdict
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -159,6 +160,14 @@ def full_run(settings, settings_path, audit_only=False, open_page=True):
         for side, root in roots.items():
             say(f"2. Live run, {side} ({len(settings['cases'])} case(s) x {len(settings['seeds'])} seed(s))...")
             sides[side] = worker("live", root, run_dir / f"live-{side}.json", settings=run_dir / "settings.json", side=side)
+        if (settings.get("judge") or {}).get("scenes"):
+            # Opt-in: one model call per image of both sides; its answers are hints, never the verdict.
+            say("2b. Scene review...")
+            scene_packet = build_scene_packet(sides, seed=run_dir.name)
+            save(run_dir / "scene_packet.json", scene_packet)
+            answers = worker("scenes", candidate, run_dir / "scene_review.json", settings=run_dir / "settings.json",
+                             packet=run_dir / "scene_packet.json")
+            attach_scene_review(sides, scene_packet, answers)
         say("3. Checks...")
         try:
             from goated_prompter.workflow_output import normalize_workflow_output as normalize
@@ -168,6 +177,7 @@ def full_run(settings, settings_path, audit_only=False, open_page=True):
         save(run_dir / "checks.json", {"baseline": old, "candidate": new})
         run["checks"] = compare(old, new)
         run["case_checks"] = per_request(old, new)
+        run["stages"] = {side: stage_calls(rows) for side, rows in sides.items()}
         packet, key = build_packet(sides["baseline"], sides["candidate"], seed=run_dir.name)
         run["packet"], run["key"] = packet, key
         save(run_dir / "key.json", key)

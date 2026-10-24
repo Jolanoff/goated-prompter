@@ -98,6 +98,17 @@ def _case_table(case_checks):
     return "<h3>Per request</h3>" + _table(rows, (("case", "Request"), ("values", "Old -> new")))
 
 
+def _stage_table(stages):
+    """Model calls, failed calls and tokens per stage, old -> new, over all runs."""
+    rows = []
+    for stage in sorted(set(stages.get("baseline") or {}) | set(stages.get("candidate") or {})):
+        old, new = (stages.get(side, {}).get(stage, {}) for side in ("baseline", "candidate"))
+        rows.append({"stage": stage, **{key: f"{old.get(key, 0)} -> {new.get(key, 0)}"
+                                        for key in ("calls", "failed", "tokens")}})
+    return "<h3>Model calls by stage</h3>" + _table(rows, (("stage", "Stage"), ("calls", "Calls"),
+                                                         ("failed", "Failed"), ("tokens", "Tokens")))
+
+
 def _changes_html(changes):
     if not changes:
         return "<p class='muted'>No guide text changed.</p>"
@@ -171,11 +182,14 @@ def render(run):
         parts.append("<h2>3. Automatic checks (old -> new)</h2>" + _table(check_rows, (
             ("check", "Check"), ("about", "What it measures"), ("kind", "Kind"), ("baseline", "Old"),
             ("candidate", "New"), ("noise", "Seed noise"), ("change", "Change"))))
-        parts.append("<p class='muted'>guard: must never get worse · aim: should improve · seed noise: how much the "
-                     "number moves between seeds of the same request; a smaller difference is chance · per-case "
-                     "numbers are below and in checks.json</p>")
+        parts.append("<p class='muted'>guard: must never get worse · aim: should improve · hint: a word-pattern "
+                     "pointer, never the verdict · info: reported · noise: how much the number moves between the "
+                     "paired runs of old and new; a smaller difference is chance · per-case numbers are below and "
+                     "in checks.json</p>")
         if run.get("case_checks"):
             parts.append(_case_table(run["case_checks"]))
+        if any((run.get("stages") or {}).values()):
+            parts.append(_stage_table(run["stages"]))
     if review:
         rows = [{"dimension": name, **tally, "leaning": leaning(tally)} for name, tally in review["dimensions"].items()]
         parts.append(f"<h2>4. Blind review by {html.escape(review['reviewer'] or 'unnamed')} ({html.escape(review['kind'])})</h2>"
@@ -191,4 +205,10 @@ def render(run):
     if check_rows:
         md += ["", "| Check | Old | New | Change |", "| --- | --- | --- | --- |"] + [
             f"| {row['check']} | {row['baseline']} | {row['candidate']} | {row['change']} |" for row in check_rows]
+    if any((stages := run.get("stages") or {}).values()):
+        md += ["", "| Stage | Calls | Failed | Tokens |", "| --- | --- | --- | --- |"]
+        for stage in sorted(set(stages.get("baseline") or {}) | set(stages.get("candidate") or {})):
+            old, new = (stages.get(side, {}).get(stage, {}) for side in ("baseline", "candidate"))
+            md.append(f"| {stage} | " + " | ".join(f"{old.get(key, 0)} -> {new.get(key, 0)}"
+                                                   for key in ("calls", "failed", "tokens")) + " |")
     return "".join(parts), "\n".join(md) + "\n"

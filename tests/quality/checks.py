@@ -12,6 +12,8 @@ import json
 import re
 import statistics
 
+from .judge import SCENE_QUESTIONS
+
 ORDINALS = ("first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth")
 # (name, what it measures, "guard": must not get worse / "aim": should improve / "hint": a word-pattern pointer /
 # "info": reported only, True when higher is better)
@@ -62,9 +64,16 @@ CHECKS = (
     ("seconds", "average time per run in seconds (more retries cost time)", "info", False),
     ("redone", "average images asked again per run (each one costs writing time)", "info", False),
     ("first_pass", "share of the requested images whose scene was accepted without being asked again", "info", True),
+    ("calls_per_image", "model calls per requested image, every stage and retry counted", "info", False),
+    ("tokens_per_image", "tokens read and written per requested image, as the model server counts them", "info", False),
+    ("failed_calls", "model calls per run that ended without an accepted answer (an error or a stopped loop)",
+     "info", False),
+    ("entry_rejections", "scenes per run asked again because their Actions & Poses entry was not usable", "info", False),
     ("request_words_echoed", "share of the request's own words repeated in the prompts (told, not shown; a hint)", "info", False),
     ("shot_named", "share of prompts that name a shot size instead of showing the framing (a hint)", "info", False),
     ("extent_shown", "share of prompts that say how far bodies reach in the frame and what is around them (a hint)", "info", True),
+    *((f"review_{name}", f"scene reviewer (not calibrated): share of reviewed images answered no to: {question}",
+       "hint", False) for name, question in SCENE_QUESTIONS.items()),
 )
 
 # Framing hints: a named shot size ("medium shot") versus framing shown through what is visible (feet on the floor,
@@ -73,6 +82,8 @@ SHOT_NAME = re.compile(r"\b(?:(?:extreme |medium |full[- ]body |wide |long |cowb
                        r"full[- ]body|cowboy|establishing|two|three)[- ]shot|mid[- ]shot)\b", re.IGNORECASE)
 # A log line of an image the scene writer asks for again (scenes/writer.py rejected_note).
 REDONE = re.compile(r"\bImage (\d+) is asked again\b")
+# The writer's reasons for an unusable entry (scenes/writer.py): not copied from the pack, or used up.
+ENTRY_REJECTED = re.compile(r"\bImage \d+ is asked again: (?:its \"entry\"|the entry \")")
 # A sentence with a mouth at someone's rear and genitals in it: the image puts the genitals at the rear.
 MOUTH_ON_REAR = re.compile(r"\b(?:mouth|lips?|tongue)\b[^.,;]{0,40}?\b(?:anus|buttocks?|rear)\b",
                            re.IGNORECASE)
@@ -454,8 +465,41 @@ def case_checks(row, normalize=None):
     redone = sum(bool(REDONE.search(line)) for line in lines)
     again = {match[1] for line in lines for match in REDONE.finditer(line)}
     requested = _requested(row) if row["kind"] != "builder" else None
+    calls = row.get("calls")  # recorded from the backend's activity events; older runs have none
+    images = requested or 1
+    tokens = [sum(value or 0 for value in call["tokens"].values()) for call in calls or () if call.get("tokens")]
     return {**_case_checks(row, normalize), "seconds": seconds, "redone": redone if row["kind"] != "builder" else None,
-            "first_pass": round(1 - min(len(again), requested) / requested, 3) if requested and row.get("ok") else None}
+            "first_pass": round(1 - min(len(again), requested) / requested, 3) if requested and row.get("ok") else None,
+            "calls_per_image": round(len(calls) / images, 2) if calls else None,
+            "tokens_per_image": round(sum(tokens) / images) if tokens else None,
+            "failed_calls": sum(call.get("outcome") != "ok" for call in calls) if calls else None,
+            "entry_rejections": sum(bool(ENTRY_REJECTED.search(line)) for line in lines)
+            if row["kind"] != "builder" else None,
+            **_reviewed(row.get("scene_review"))}
+
+
+def _reviewed(review):
+    """{review_<question>: share of the reviewed images answered no} for the questions the reviewer answered yes or no
+    (n/a does not count); None for every question without such an answer."""
+    result = {}
+    for name in SCENE_QUESTIONS:
+        found = [answers[name] for answers in (review or {}).values() if answers.get(name) in ("yes", "no")]
+        result[f"review_{name}"] = round(found.count("no") / len(found), 3) if found else None
+    return result
+
+
+def stage_calls(side):
+    """{stage: {"calls", "failed", "tokens"}} over every run of one side, from the recorded model calls; a stage that
+    fails or calls the model more often shows where the time goes."""
+    stages = {}
+    for row in side["cases"]:
+        for call in row.get("calls") or ():
+            stage = re.sub(r":(?:format_retry|retry)$", "", call.get("stage") or "final")
+            entry = stages.setdefault(stage, {"calls": 0, "failed": 0, "tokens": 0})
+            entry["calls"] += 1
+            entry["failed"] += call.get("outcome") != "ok"
+            entry["tokens"] += sum(value or 0 for value in (call.get("tokens") or {}).values())
+    return dict(sorted(stages.items()))
 
 
 def _case_checks(row, normalize=None):

@@ -343,6 +343,32 @@ class OpenAITimeoutTests(unittest.TestCase):
         self.assertEqual(next(event["text"] for event in events if event["type"] == "reasoning_delta"), "visible analysis")
         self.assertEqual(events[-1], {"type": "response_complete", "finish_reason": "stop"})
 
+    def test_the_completion_event_carries_the_servers_token_counts(self):
+        # llama.cpp sends "timings" with its last chunk, OpenAI-style servers "usage"; the result text never changes.
+        for last in ({"timings": {"prompt_n": 120, "predicted_n": 7}}, {"usage": {"prompt_tokens": 120, "completion_tokens": 7}}):
+            class StreamingResponse:
+                headers = {"Content-Type": "text/event-stream"}
+                __enter__ = lambda self: self
+                __exit__ = lambda self, *_args: False
+
+                def __iter__(self, last=last):
+                    chunk = {"choices": [{"delta": {"content": "done"}, "finish_reason": "stop"}], **last}
+                    return iter([f"data: {json.dumps(chunk)}\n\n".encode(), b"data: [DONE]\n\n"])
+
+            events = []
+            backend = openai.OpenAICompatibleBackend({"base_url": "http://127.0.0.1:8189/v1", "model": "test",
+                                                      "_activity_callback": events.append})
+            instruction = SimpleNamespace(image=None, image_2=None, image_3=None, image_4=None, unlimited_tokens=False,
+                                          max_tokens=None, diagnostic_context={}, diagnostic_stage="tokens-test",
+                                          system_message="s", user_message="u",
+                                          to_messages=lambda: [{"role": "user", "content": "u"}])
+            with patch.object(openai, "urlopen", return_value=StreamingResponse()), \
+                 patch.object(openai, "log_request"), patch.object(openai, "log_response"), \
+                 patch.object(openai, "_log_multimodal_messages"):
+                self.assertEqual(backend.generate(instruction), "done")
+            self.assertEqual(events[-1], {"type": "response_complete", "finish_reason": "stop",
+                                          "tokens": {"prompt": 120, "completion": 7}})
+
     def test_structured_llama_cpp_requests_skip_hidden_thinking_but_free_text_keeps_the_setting(self):
         backend = openai.OpenAICompatibleBackend({"base_url": "http://127.0.0.1:8189/v1", "model": "test", "_is_llama_cpp": True})
         response = MagicMock()

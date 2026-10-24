@@ -119,5 +119,70 @@ def leaning(tally):
     return "same"
 
 
+# Layer B, one image at a time: a yes or no per question about meaning, which word patterns cannot check. The reviewer
+# is not calibrated against human labels, so its answers are hints (checks.py), never the verdict.
+SCENE_QUESTIONS = {
+    "fidelity": "The image shows what the request asks for: the same people, as many as asked, doing the requested "
+                "activity, with no other activity in its place.",
+    "roles": "Everyone keeps the role the request gives them, the same in the actions, the positions and the prompt.",
+    "kept": "Every part the request mentions (its place, objects, clothing, camera, light or mood) is in the image as "
+            "the request says it.",
+    "spatial": "The positions agree on facing, reach, support and contact: every touch and act is possible from where "
+               "everyone is.",
+    "camera": "The camera's viewpoint and framing show the people and the action the image needs, with nothing it "
+              "needs hidden.",
+    "vocabulary": "What the image takes from the selected vocabulary fits the cast and the act and is not forced in.",
+    "guided": "The image follows its own guided input.",
+}
+SCENE_RUBRIC = ("You check one image of an image-training dataset: the request it was made for, and the scene and the "
+                "prompt written for it. Judge only what is written. For each question answer \"yes\", \"no\", or "
+                "\"n/a\" when it does not apply.\n" + "\n".join(f"- {name}: {question}"
+                                                               for name, question in SCENE_QUESTIONS.items()))
+
+
+def _scene_text(row, scene, prompt):
+    """One image for the scene reviewer: the request, what it keeps, the image's guided input, its scene and prompt."""
+    output = row.get("output") or {}
+    brief = output.get("brief") or {}
+    guided = (brief.get("input") or {}).get("guided_inputs") or []
+    slot = scene.get("slot")
+    lines = [f"REQUEST: {row['case'].get('subject', '')}", f"SETTINGS: {_settings_line(row['case'])}",
+             f"PARTS THE REQUEST KEEPS: {', '.join(brief.get('kept') or ()) or 'none'}"]
+    if isinstance(slot, int) and 0 < slot <= len(guided):
+        lines.append(f"GUIDED INPUT FOR THIS IMAGE: {guided[slot - 1]}")
+    lines.append("SCENE:\n" + "\n".join(f"{key}: {json.dumps(scene[key], ensure_ascii=False) if isinstance(scene[key], dict) else scene[key]}"
+                                        for key in ("entry", "actions", "position", "space", "camera", "extras")
+                                        if scene.get(key)))
+    lines.append(f"PROMPT:\n{prompt}")
+    return "\n".join(lines)
+
+
+def build_scene_packet(sides, seed=0):
+    """{"questions", "rubric", "items": [{"side", "row", "slot", "text"}]}: every written image of both sides, one item
+    each, shuffled together so the order never tells the sides apart."""
+    items = []
+    for side, rows in sides.items():
+        for index, row in enumerate(rows["cases"]):
+            if row.get("kind") != "dataset" or not row.get("ok"):
+                continue
+            prompts = {item.get("slot"): item.get("prompt", "") for item in (row["output"].get("prompts") or [])}
+            for scene in row["output"].get("scenes") or []:
+                if prompts.get(scene.get("slot"), "").strip():
+                    items.append({"side": side, "row": index, "slot": scene.get("slot"),
+                                  "text": _scene_text(row, scene, prompts[scene.get("slot")])})
+    random.Random(seed).shuffle(items)
+    return {"questions": SCENE_QUESTIONS, "rubric": SCENE_RUBRIC, "items": items}
+
+
+def attach_scene_review(sides, packet, answers):
+    """Each row gets "scene_review": {slot: {question: "yes"/"no"/"n/a"}} from the reviewer's answers by item."""
+    for number, item in enumerate(packet["items"]):
+        found = (answers or {}).get(str(number))
+        if isinstance(found, dict):
+            row = sides[item["side"]]["cases"][item["row"]]
+            row.setdefault("scene_review", {})[str(item["slot"])] = {
+                name: found.get(name) for name in packet["questions"] if found.get(name) in ("yes", "no", "n/a")}
+
+
 def save(path, value):
     path.write_text(json.dumps(value, ensure_ascii=False, indent=1), encoding="utf-8")

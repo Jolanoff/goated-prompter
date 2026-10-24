@@ -411,9 +411,21 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
             self.emit_activity("error", message=message)
             raise BackendRunawayError(message)
         if streaming:
-            self.emit_activity("response_complete", finish_reason=response_payload.get("choices", [{}])[0].get("finish_reason"))
+            self.emit_activity("response_complete", finish_reason=response_payload.get("choices", [{}])[0].get("finish_reason"),
+                               **({"tokens": tokens} if (tokens := self._token_counts(response_payload)) else {}))
         log_response(instruction, result)
         return result
+
+    @staticmethod
+    def _token_counts(payload):
+        """{"prompt": n, "completion": n} from a response or stream chunk's "usage" (OpenAI) or "timings" (llama.cpp),
+        or {} when it gives neither; only for the activity event, never for the result."""
+        usage, timings = payload.get("usage"), payload.get("timings")
+        if isinstance(usage, dict) and isinstance(usage.get("completion_tokens"), int):
+            return {"prompt": usage.get("prompt_tokens"), "completion": usage["completion_tokens"]}
+        if isinstance(timings, dict) and isinstance(timings.get("predicted_n"), int):
+            return {"prompt": timings.get("prompt_n"), "completion": timings["predicted_n"]}
+        return {}
 
     def _stream_response(self, response, unlimited, hard_max_tokens=None,
                           stream_character_limit=RUNAWAY_STREAM_CHARACTER_LIMIT, protected_terms=(), tag_loops=False):
@@ -438,6 +450,7 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
         hard_character_limit = hard_max_tokens * 12 if hard_max_tokens else None
         next_repetition_check = 1200
         finish_reason = None
+        tokens = {}
         # Real model output (not keep-alive comments) restarts the request deadline, so a slow but healthy stream
         # is not cut off while a stalled one that only sends heartbeats still is.
         progress = getattr(response, "touch_deadline", None)
@@ -455,6 +468,7 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
             if chunk.get("error"):
                 detail = chunk["error"].get("message") if isinstance(chunk["error"], dict) else chunk["error"]
                 raise BackendGenerationError(f"OpenAI-compatible backend stream failed: {detail}")
+            tokens = self._token_counts(chunk) or tokens
             choices = chunk.get("choices") or []
             if not choices:
                 continue
@@ -535,5 +549,5 @@ class OpenAICompatibleBackend(GoatedPrompterBackend):
         if finish_reason not in {None, "stop"}:
             raise BackendGenerationError(f"The prompt engine ended with unsupported finish reason {finish_reason!r}; the output was not accepted.",
                                          finish_reason=finish_reason)
-        self.emit_activity("response_complete", finish_reason=finish_reason)
+        self.emit_activity("response_complete", finish_reason=finish_reason, **({"tokens": tokens} if tokens else {}))
         return result

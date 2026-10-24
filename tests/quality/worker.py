@@ -196,6 +196,17 @@ def _dataset_case(case, seed, config, profile, log):
             "prompts": prompts}
 
 
+def _record_call(calls, event):
+    """One entry per model call from the backend's activity events: {"stage", "outcome", "tokens"?}."""
+    kind = event.get("type")
+    if kind == "request":
+        calls.append({"stage": str(event.get("stage") or "final"), "outcome": "open"})
+    elif calls and calls[-1]["outcome"] == "open" and kind in ("response_complete", "error"):
+        calls[-1]["outcome"] = "ok" if kind == "response_complete" else "error"
+        if event.get("tokens"):
+            calls[-1]["tokens"] = event["tokens"]
+
+
 def live(args):
     settings = json.loads(Path(args.settings).read_text(encoding="utf-8"))
     main_root = Path(args.main_root)
@@ -219,8 +230,12 @@ def live(args):
                 def log(message, row=row, started=started):
                     print(f"    {message}", flush=True)
                     row["log"].append(f"{time.perf_counter() - started:6.1f}s {message}")
+                row["calls"] = []
+                # The app listens to every model call (local_app.py) and so streams; the run does the same and keeps
+                # each call's stage, outcome and the server's token counts, never the text.
+                record = lambda event, calls=row["calls"]: _record_call(calls, event)
                 try:
-                    row["output"] = runners[case["kind"]](case, seed, config, profile, log)
+                    row["output"] = runners[case["kind"]](case, seed, {**config, "_activity_callback": record}, profile, log)
                     row["ok"] = True
                 except Exception as error:  # one failing case is a result, not the end of the run
                     row.update(ok=False, error=f"{type(error).__name__}: {error}", trace=traceback.format_exc(limit=4))
@@ -262,9 +277,39 @@ def judge(args):
     return review
 
 
+def scenes(args):
+    """{item number: {question: "yes"/"no"/"n/a"}}: the scene reviewer's answers for every image of the packet."""
+    settings = json.loads(Path(args.settings).read_text(encoding="utf-8"))
+    packet = json.loads(Path(args.packet).read_text(encoding="utf-8"))
+    judge_settings = settings.get("judge") or {}
+    config, profile = _engine({**settings, "model_config": judge_settings.get("config") or settings["model_config"]},
+                              Path(args.main_root))
+    from goated_prompter.backends.factory import create_backend
+    from goated_prompter.contracts import PromptInstruction
+    from goated_prompter.director_profiles import resolve_director_config
+    effective, _ = resolve_director_config(config, _request(profile, config, idea="x"))
+    questions = packet["questions"]
+    schema = {"type": "object", "additionalProperties": False, "required": list(questions),
+              "properties": {name: {"type": "string", "enum": ["yes", "no", "n/a"]} for name in questions}}
+    system = packet["rubric"] + '\n\nReturn one JSON object with one key per question, each "yes", "no" or "n/a".'
+    answers = {}
+    with create_backend(effective).generation_session() as session:
+        for number, item in enumerate(packet["items"]):
+            print(f"[scene review] {number + 1} of {len(packet['items'])}", flush=True)
+            try:
+                raw = session.generate(PromptInstruction(system_message=system, user_message=item["text"],
+                                                         diagnostic_stage="quality:scene_review", json_output=True,
+                                                         json_schema=schema, temperature=0.0, max_tokens=200,
+                                                         hard_max_tokens=200))
+                answers[str(number)] = json.loads(str(raw).strip().strip("`").removeprefix("json"))
+            except Exception as error:
+                print(f"    scene review failed: {error}", flush=True)
+    return answers
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("action", choices=("audit", "live", "judge"))
+    parser.add_argument("action", choices=("audit", "live", "judge", "scenes"))
     parser.add_argument("--code-root", required=True, type=Path)
     parser.add_argument("--main-root", type=Path)
     parser.add_argument("--out", required=True, type=Path)
@@ -273,7 +318,7 @@ def main():
     parser.add_argument("--side", default="")
     args = parser.parse_args()
     sys.path.insert(0, str(args.code_root.resolve()))
-    result = {"audit": audit, "live": live, "judge": judge}[args.action](args)
+    result = {"audit": audit, "live": live, "judge": judge, "scenes": scenes}[args.action](args)
     args.out.write_text(json.dumps(result, ensure_ascii=False, indent=1), encoding="utf-8")
 
 
