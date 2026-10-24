@@ -263,6 +263,19 @@ class SceneVocabulary(unittest.TestCase):
         fitting = json.loads(next(call for call in self.calls if call.diagnostic_stage == "dataset_v2:entries").user_message)
         self.assertEqual(len(fitting["entries"]), 3, "a pair may use every entry")
 
+    def test_a_kept_action_lets_only_entries_that_show_it_fit(self):
+        # A request naming one position got scenes built on other positions its activity also covers.
+        self.write({**self.brief("A couple dancing close", self.PAIR, amount=2), "kept": ["action"]},
+                   ["Actions & Poses/Romance"])
+        fit = next(call for call in self.calls if call.diagnostic_stage == "dataset_v2:entries")
+        self.assertTrue(json.loads(fit.user_message)["action_kept"])
+        self.assertIn("When action_kept is true, the request's action stays the same in every image", fit.system_message)
+        self.calls.clear()
+        self.write({**self.brief("A couple dancing close", self.PAIR, amount=2), "kept": ["place"]},
+                   ["Actions & Poses/Romance"])
+        fit = next(call for call in self.calls if call.diagnostic_stage == "dataset_v2:entries")
+        self.assertNotIn("action_kept", json.loads(fit.user_message), "an action the request leaves open")
+
     def test_packs_without_slots_or_counts_are_written_exactly_as_before(self):
         packs = ["Actions & Poses/Romance", "Lighting/Dramatic", "Objects/Furniture"]
         self.write(self.brief("A couple", self.PAIR, amount=3), packs)

@@ -174,7 +174,7 @@ class TriggerCast(unittest.TestCase):
     def test_an_exact_character_trigger_makes_its_person_known_and_a_meaning_one_does_not(self):
         brief = brief_for()
         self.assertEqual([(person["known"], person["triggers"]) for person in brief["characters"]], [(True, [1]), (True, [2])])
-        self.assertEqual(brief["version"], 13)
+        self.assertEqual(brief["version"], 14)
         self.assertEqual(understanding.validate_brief(brief), brief)
         meaning = brief_for(triggers=[trigger("red-haired elf girl", "character", expand="on")], cast=mara(1))
         self.assertEqual([person["known"] for person in meaning["characters"]], [False])
@@ -211,7 +211,7 @@ class KnownCharacters(unittest.TestCase):
         self.assertEqual([person["known"] for person in named["characters"]], [True, False])
 
     def test_older_briefs_stay_valid_and_keep_their_single_trigger(self):
-        brief = brief_for()
+        brief = {key: value for key, value in brief_for().items() if key != "kept"}
         brief["version"] = 11
         for person in brief["characters"]:
             del person["known"], person["triggers"]

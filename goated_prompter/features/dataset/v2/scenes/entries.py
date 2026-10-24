@@ -18,6 +18,7 @@ def fitting_instruction(brief, entries, notes=None):
     cast = [{key: person[key] for key in ("label", "gender", "count") if key in person} for person in brief["characters"]]
     data = {"request": brief["input"]["request"], "summary": brief["summary"], "fixed": brief["fixed"],
             "must": brief["must"], "avoid": brief["avoid"], "cast": cast,
+            **({"action_kept": True} if "action" in brief.get("kept", ()) else {}),
             "entries": {str(number): entry for number, entry in enumerate(entries, 1)}, **({"notes": notes} if notes else {})}
     schema = {"type": "object", "additionalProperties": False, "required": ["fit"],
               "properties": {"fit": {"type": "array", "items": {"type": "integer"}}}}

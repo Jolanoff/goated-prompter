@@ -93,7 +93,8 @@ def compose_message(brief, images, earlier=(), vocabulary="", entries_used=None)
     """The scene writer's user message: the request, the approved requirements, the selected vocabulary (only when
     some was selected) and the images to write. entries_used: {entry: images so far} when entries are tracked."""
     requirements = {"rules": brief["input"]["rules"],
-                    "understanding": {key: brief[key] for key in ("summary", "characters", "fixed", "randomized", "must", "avoid")}}
+                    "understanding": {**{key: brief[key] for key in ("summary", "characters", "fixed", "randomized", "must", "avoid")},
+                                      **({"kept": brief["kept"]} if brief.get("kept") else {})}}
     style, capture = run_style(brief)
     if style != OFF_STYLE:  # with a style trigger the trigger carries the style, so no Style is named
         requirements["style"] = style

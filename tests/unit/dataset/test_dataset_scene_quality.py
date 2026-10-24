@@ -66,6 +66,8 @@ class SceneVariety(Harness):
         # A live party set gave three of six images the same four looks, which already_used listed.
         self.assertIn("Unless fixed keeps it, never reuse a place, arrangement, camera or look listed in already_used",
                       " ".join(system.split()))
+        self.assertIn("Everything the request mentions stays the same in every image; everything it does not mention "
+                      "is chosen anew for each image.", " ".join(system.split()))
         self.assertIn("Give the people new looks (skin, build, hair, detail) in every image unless fixed keeps the same people", system)
 
     def test_each_person_has_an_expression_field_for_expression_vocabulary(self):
@@ -328,6 +330,13 @@ class SceneVariety(Harness):
         other = self.scene("kitchen", "wide shot", "man 2 rides man 1")
         self.assertEqual(scenes.checks.repeated_parts(same, first, ["man 1", "man 2"]), ["camera", "actions", "extras"])
         self.assertEqual(scenes.checks.repeated_parts(other, first, ["man 1", "man 2"]), [], "another place is no repeat")
+        # A part the request mentions stays in every image, so it is never a copy; the parts it leaves open still are.
+        labels = ["man 1", "man 2"]
+        self.assertEqual(scenes.checks.repeated_parts(same, first, labels, kept=["place", "action"]), ["camera", "extras"])
+        self.assertEqual(scenes.checks.repeated_parts(same, first, labels, kept=["camera", "objects"]), ["actions"])
+        message = scenes.request.compose_message({**self.brief, "kept": ["place", "action"]}, [{"image": 1}])
+        self.assertIn('"kept": [', message)
+        self.assertNotIn('"kept"', scenes.request.compose_message({**self.brief, "kept": []}, [{"image": 1}]))
         self.assertEqual(scenes.checks.repeat_reason({**first, "slot": 4}, ["camera", "extras"]),
                          "it repeats image 4's place together with its camera and extras; write a different scene")
         self.assertIn("an earlier image", scenes.checks.repeat_reason(first, ["camera"]))

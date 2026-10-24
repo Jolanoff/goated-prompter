@@ -22,6 +22,8 @@ keys, the path, the characters) is sent back to the model.
 
 Brief (validated by validate_brief before it can be confirmed):
   version, path, summary, fixed (what stays the same), randomized (what may and should vary)
+  kept        the parts of the image the request mentions (KEPT_PARTS): they stay the same in every image and no later
+              step reads them as a repeat; every part not listed varies
   people      how many people are in each image (the length of characters), counted by code
   characters  [{label, gender: male|female|custom|"", custom, pronoun: he|she|it|"", known: bool, triggers: [n]}],
               one per person; "" means unspecified, characters is empty on non_character. triggers: the numbers of
@@ -34,9 +36,9 @@ Brief (validated by validate_brief before it can be confirmed):
   input       request, triggers (v2/triggers.py; before version 13 one trigger and trigger_at_start), rules,
               amount, nsfw, source_mode, guided_inputs, seed, seed_mode — copied by code
   settings    style, target, director, length, creativity — copied by code
-  Version 13 briefs have exactly these fields. Saved runs keep their version 9 to 12 briefs (10 also has an
+  Version 14 briefs have exactly these fields. Saved runs keep their version 9 to 13 briefs (10 also has an
   "intent" interpretation, kept as stored and no longer read; before 12 characters have no "known", before 13 no
-  "triggers").
+  "triggers", before 14 no "kept").
 """
 
 import json
@@ -49,15 +51,19 @@ from ....director_profiles import resolve_director_config
 from .safety import ADULTS_ONLY, NO_ANIMALS, adult_content_request, adults_only_error, minor_reference
 from .triggers import all_text, brief_triggers, data_triggers, personal_numbers
 
-VERSION = 13
-VERSIONS = (9, 10, 11, 12, 13)  # 9 to 12: saved runs (10 with a structured intent no longer read, before 12 no
-                                # "known", before 13 one trigger string)
+VERSION = 14
+VERSIONS = (9, 10, 11, 12, 13, 14)  # 9 to 13: saved runs (10 with a structured intent no longer read, before 12 no
+                                    # "known", before 13 one trigger string, before 14 no kept)
 PATHS = ("sfw_character", "nsfw_character", "non_character")
 GENDERS = ("male", "female", "custom", "")
 PRONOUNS = ("he", "she", "it", "")
 MAX_CHARACTERS, MAX_COUNT, MAX_TEXT, MAX_ITEMS = 20, 20, 1200, 20
 BRIEF_FIELDS = ("path", "summary", "characters", "fixed", "randomized", "must", "avoid")
-MODEL_FIELDS = BRIEF_FIELDS
+# The parts of an image a request can mention: what it mentions stays the same in every image (the brief's kept), the
+# rest varies, and no later step reads a kept part as a repeat. The answer quotes the user's words for each part
+# (optional: {} when missing) and code keeps only the parts whose words are really there (kept_parts).
+KEPT_PARTS = ("place", "action", "objects", "clothing", "camera", "light", "mood")
+MODEL_FIELDS = (*BRIEF_FIELDS, "kept")
 IRREGULAR_PLURALS = {"men": "man", "women": "woman", "people": "person", "children": "child", "feet": "foot",
                      "teeth": "tooth", "mice": "mouse", "geese": "goose"}
 LEGACY_CHARACTER_FIELDS = ("label", "gender", "custom", "pronoun")  # briefs before version 12
@@ -101,6 +107,16 @@ fixed: the requested facts that stay the same in every image: subjects, roles, a
 randomized: dimensions allowed to vary, including unspecified ones, without changing fixed or breaking
   the rules. Name dimensions, not invented scenes or values. A variable dimension does not make its
   fixed attributes variable. "" when nothing needs naming.
+kept: for each part of the image below, the words of the request or rules that mention it, copied exactly as the
+  user wrote them, even when they say it in general words; "" when nothing mentions that part. A mentioned part
+  stays the same in every image, and every part not mentioned is chosen anew for each image. The parts:
+  place: where the images happen, or what someone is on or in.
+  action: what anyone does, including a pose or a position.
+  objects: things used, held, worn as gear or placed in the image.
+  clothing: what anyone wears.
+  camera: the viewpoint, the framing or the kind of shot.
+  light: the lighting.
+  mood: the atmosphere or the feeling.
 must: what the user requires, as short phrases keeping the user's meaning. Only what the request or
   rules actually say. Usually few; [] when none.
 avoid: what the user rules out, as short phrases. [] when none.
@@ -144,7 +160,9 @@ def _schema():
     return {"type": "object", "additionalProperties": False, "required": list(MODEL_FIELDS), "properties": {
         "path": {"type": "string", "enum": ["character", "non_character"]}, "summary": text,
         "characters": {"type": "array", "maxItems": MAX_CHARACTERS, "items": character},
-        "fixed": text, "randomized": text, "must": phrases, "avoid": phrases}}
+        "fixed": text, "randomized": text, "must": phrases, "avoid": phrases,
+        "kept": {"type": "object", "additionalProperties": False, "required": list(KEPT_PARTS),
+                 "properties": {part: text for part in KEPT_PARTS}}}}
 
 
 def instruction(data, family="qwen", errors=()):
@@ -199,6 +217,9 @@ def recover(value):
     if not isinstance(value, dict):
         return value
     value = dict(value)
+    # kept is optional: {part: the user's words that mention it}; only the known parts with text count.
+    said = value.get("kept") if isinstance(value.get("kept"), dict) else {}
+    value["kept"] = {part: text for part in KEPT_PARTS if (text := _optional_text(said.get(part)))}
     for key in ("summary", "fixed", "randomized"):
         if key in value and (text := _optional_text(value[key])) is not None:
             value[key] = text
@@ -212,7 +233,7 @@ def model_errors(value, nsfw, data=None):
     """Contract breaks of the brief fields the model must correct itself; the retry lists them (a stray "intent" key
     from an older prompt is ignored). Optional texts (recover) are never errors:
     fixed and randomized may be empty, and an empty summary falls back to the request."""
-    if set(value) - {"intent"} != set(BRIEF_FIELDS):
+    if set(value) - {"intent", "kept"} != set(BRIEF_FIELDS):
         return [f"Use exactly the keys {', '.join(MODEL_FIELDS)}."]
     errors = []
     if value["path"] not in ("character", "non_character"):
@@ -335,6 +356,16 @@ def _beyond_triggers(items, data):
     return [item.strip() for item in items if " ".join(item.casefold().split()) not in said]
 
 
+def kept_parts(quotes, data):
+    """The parts of the image the user mentions, in KEPT_PARTS order: a part counts only when the words the model
+    quoted for it are really in what the user wrote (request, rules, guided inputs), so a part nobody mentioned is
+    never kept. Case and spacing do not matter; quotes joined with ";" count when one of them is there."""
+    said = " ".join(_user_text(data).casefold().split())
+    found = lambda quote: any(piece and piece in said
+                              for piece in (" ".join(part.casefold().split()) for part in str(quote).split(";")))
+    return [part for part in KEPT_PARTS if isinstance(quotes, dict) and quotes.get(part) and found(quotes[part])]
+
+
 def apply_rules(value, data):
     nsfw = data.get("nsfw") is True
     path = ("non_character" if value["path"] == "non_character" else "nsfw_character" if nsfw else "sfw_character")
@@ -343,6 +374,7 @@ def apply_rules(value, data):
     brief = {"version": VERSION, "path": path, "summary": summary,
             "people": len(characters), "characters": characters,
             "fixed": value["fixed"].strip(), "randomized": value["randomized"].strip(),
+            "kept": kept_parts(value.get("kept"), data),
             "must": _beyond_triggers(value["must"], data), "avoid": _beyond_triggers(value["avoid"], data),
             "input": copied_input(data), "settings": copied_settings(data)}
     validate_content(brief, data)
@@ -356,10 +388,14 @@ def validate_brief(brief):
         raise ValueError("Unknown brief version or path.")
     if brief["version"] == 10:
         expected = (*expected, "intent")  # a saved run's interpretation, kept as stored
+    if brief["version"] >= 14:
+        expected = (*expected, "kept")
     if set(brief) != set(expected):
         raise ValueError(f"The brief needs exactly: {', '.join(expected)}.")
     if not isinstance(brief["summary"], str) or not brief["summary"].strip():
         raise ValueError("summary must be nonempty text.")
+    if "kept" in brief and (not isinstance(brief["kept"], list) or any(part not in KEPT_PARTS for part in brief["kept"])):
+        raise ValueError(f"kept must list parts of the image: {', '.join(KEPT_PARTS)}.")
     for key in ("fixed", "randomized"):  # optional: "" when the request fixes or varies nothing in particular
         if not isinstance(brief[key], str):
             raise ValueError(f"{key} must be text.")

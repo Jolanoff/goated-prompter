@@ -407,20 +407,25 @@ def _arrangement(scene):
     return " ".join(map(str, position.values())) if isinstance(position, dict) else str(position or "")
 
 
-def repeated_parts(scene, other, labels=()):
+def repeated_parts(scene, other, labels=(), kept=()):
     """What a new scene reuses of another image, as a list: [] unless it reuses that image's place together with its
     camera, actions or extras (an image asked again tends to copy an accepted one's place and signs). The camera
     counts only when its viewpoint and the people's arrangement (position) both match: a fixed place seen from the
     usual side view is not a copy while the people are arranged differently. The character labels never count (every
-    place, camera and position names them), and the same place alone is fine (fixed may keep it)."""
+    place, camera and position names them), and the same place alone is fine (fixed may keep it). kept: the parts the
+    request mentions (the brief's kept), which every image keeps, so they are never a copy: the action, the camera,
+    and the extras when it mentions what they hold (objects, clothing, light or mood)."""
     ignore = frozenset(word for label in labels for word in re.findall(r"[a-z0-9]+", label.casefold()))
     if _overlap(_without(scene["space"], labels), _without(other["space"], labels)) < .7:
         return []
+    kept = set(kept)
     return [name for name, repeated in (
-        ("camera", _overlap(_viewpoint(scene["camera"], labels), _viewpoint(other["camera"], labels)) >= .6
+        ("camera", "camera" not in kept
+         and _overlap(_viewpoint(scene["camera"], labels), _viewpoint(other["camera"], labels)) >= .6
          and _overlap(_without(_arrangement(scene), labels), _without(_arrangement(other), labels)) >= .6),
-        ("actions", _overlap(scene["actions"], other["actions"], ignore) >= .6),
-        ("extras", _overlap(scene.get("extras"), other.get("extras"), ignore) >= .7)) if repeated]
+        ("actions", "action" not in kept and _overlap(scene["actions"], other["actions"], ignore) >= .6),
+        ("extras", not kept & {"objects", "clothing", "light", "mood"}
+         and _overlap(scene.get("extras"), other.get("extras"), ignore) >= .7)) if repeated]
 
 
 def repeat_reason(other, parts):

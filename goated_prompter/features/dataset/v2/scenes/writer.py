@@ -74,7 +74,7 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
                 if framing := framing_problems(scene, brief["_known"], (plan.get("frames") or {}).get(number)):
                     problems = framing
                 elif repeat := next(((item, parts) for item in [*earlier, *scenes.values()]
-                                   if (parts := repeated_parts(scene, item, labels))), None):
+                                   if (parts := repeated_parts(scene, item, labels, brief.get("kept", ())))), None):
                     problems = [repeat_reason(*repeat)]
                 elif missing := unnamed_people(scene, labels):
                     problems = [f"its actions do not name {', '.join(missing)}: name every person by their character "

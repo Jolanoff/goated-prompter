@@ -9,6 +9,9 @@ For each image listed under IMAGES, in order, write one complete and coherent sc
   activity. What fixed says stays the same in every image; vary what randomized allows; must and avoid always apply.
 - The requested activity is the action of every image. Vary how it happens (position, place, pace), never what
   happens: never replace it with a lesser, earlier or different activity, and vocabulary never changes it.
+  Everything the request mentions stays the same in every image; everything it does not mention is chosen anew for
+  each image. understanding.kept lists the parts of the image it mentions: keep each of them as the request says it
+  in every image, never as a reason to change it, and vary every other part.
   When the request names the activity only in general terms, how it happens also means which specific act and
   who takes which role: vary both across the images. A general phrase in fixed does not fix the act or the roles.
 - Give everyone a clear role, pose and place that fit the action and each other. All positions together must be one
@@ -233,6 +236,10 @@ An entry fits when both are true:
   entry keeps those roles and that number: an entry that gives the receiving person's role to someone else, or has
   fewer people act on them at once, does not fit.
 - This cast can perform it: it needs no body part that nobody in the cast has and no more people than the cast has.
+When action_kept is true, the request's action stays the same in every image, as the request words it: an entry fits
+only when it shows that action itself. When the request names one specific act or position, the entry shows that act
+in that position, never another act or position the activity also covers; general words still cover every act they
+name.
 Entries name people as placeholders and their objects are only examples: judge the act and the pose, not the words.
 Only the act decides. Words of the request about mood, style or intensity (playful, rough, kinky) and things the
 run's other packs supply (toys, props, places, clothing) never decide whether an entry fits, even when the request

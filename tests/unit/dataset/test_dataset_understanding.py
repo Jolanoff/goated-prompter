@@ -1,4 +1,4 @@
-"""Dataset Understanding (brief version 13): who, how many, what happens, what stays and what varies. Scripted model
+"""Dataset Understanding (brief version 14): who, how many, what happens, what stays and what varies. Scripted model
 answers only; nothing here is live-model evidence."""
 
 import json
@@ -51,7 +51,7 @@ class Understanding(unittest.TestCase):
 
     def test_understanding_never_chooses_vocabulary(self):
         result, calls = self.understand([TWO_MEN], subject="2 adult men in an explicit scene", nsfw=True)
-        self.assertEqual(result["version"], 13)
+        self.assertEqual(result["version"], 14)
         self.assertNotIn("intent", result)
         self.assertEqual(set(calls[0].json_schema["properties"]), set(understanding.MODEL_FIELDS))
         for word in ("pack", "vocabulary"):
@@ -94,8 +94,25 @@ class Understanding(unittest.TestCase):
 
     def test_a_saved_version_10_brief_with_intent_stays_readable(self):
         result, _ = self.understand([MAGICAL_SECOND])
-        saved = {**result, "version": 10, "intent": {"elements": [], "relations": []}}
+        saved = {**{key: value for key, value in result.items() if key != "kept"},
+                 "version": 10, "intent": {"elements": [], "relations": []}}
         self.assertEqual(understanding.validate_brief(saved), saved)
+
+    def test_the_parts_the_request_mentions_are_kept_and_the_rest_vary(self):
+        # A request that named one place and one pose had every scene asked again as a repeat of the first.
+        # A part counts only when the words quoted for it are the user's own; the model also listed parts nobody named.
+        answer = {**json.loads(MAGICAL_SECOND), "kept": {"action": "Reading", "place": "in one  armchair",
+                                                         "light": "warm lamplight", "weather": "rain", "mood": ""}}
+        result, _ = self.understand([json.dumps(answer)], subject="a reader reading in one armchair in a library")
+        self.assertEqual(result["kept"], ["place", "action"], "the user's words only, case and spacing aside")
+        self.assertIn("every part not mentioned is chosen anew for each image", " ".join(understanding.SYSTEM.split()))
+        self.assertTrue(all(f"\n  {part}: " in understanding.SYSTEM for part in understanding.KEPT_PARTS),
+                        "every part is defined for the model")
+        result, _ = self.understand([MAGICAL_SECOND])
+        self.assertEqual(result["kept"], [], "an answer without kept mentions none")
+        self.assertEqual(understanding.validate_brief(result), result)
+        with self.assertRaises(ValueError):
+            understanding.validate_brief({**result, "kept": ["weather"]})
 
 
 class LibraryReferences(unittest.TestCase):
