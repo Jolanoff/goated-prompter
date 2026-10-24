@@ -502,9 +502,9 @@ class AnimaTagLine(unittest.TestCase):
                          "\n\nProse.", "without a scene nothing says who they are")
 
     def test_a_scene_that_shows_genitals_is_rated_explicit_with_nsfw_on(self):
-        # Live tag lines rated sex scenes "sensitive".
+        # Live tag lines gave scenes that show genitals a milder rating.
         brief = {**self.cast, "input": {"nsfw": True}}
-        scene = {"actions": "the knight's penis in the queen's mouth", "position": {}}
+        scene = {"actions": "the knight stands, his genitals are visible", "position": {}}
         self.assertEqual(prompts.anima_tag_line("masterpiece, sensitive, kneeling\n\nProse.", brief, scene),
                          "masterpiece, explicit, 1boy, 1girl, kneeling\n\nProse.")
         scene = {"actions": "the knight kisses the queen", "position": {}}

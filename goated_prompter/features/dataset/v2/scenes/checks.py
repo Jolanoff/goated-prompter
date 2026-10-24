@@ -82,9 +82,8 @@ def _edit_parts(text, edit):
 
 
 def _awake_part(part):
-    """A part without a resting state on its genitals ("his genitals visible and unaroused" -> "his genitals visible",
-    "soft and pressed against" -> "pressed against"); a part that said nothing but the state ("man 2's genitals are
-    unaroused") goes rather than dangle."""
+    """A part without the resting-state word on its genitals (the word goes, with an "and" beside it); a part that said
+    nothing but the state goes rather than leave half a sentence."""
     if not re.search(r"\b" + _PENIS + r"\b", part, re.IGNORECASE):
         return part
     part = re.sub(r"\s*\b(?:unaroused|flaccid|limp|soft)\b(?:\s+and\b)?|\s*(?:and\s+)?\b(?:unaroused|flaccid|limp|soft)\b",
@@ -98,8 +97,8 @@ def _own(label):
 
 
 def _enters(scene, label, labels):
-    """Whether the actions or the person's own position put this person's penis in or into another person's body
-    ("in man 1's anus"), not into a toy that is in them."""
+    """Whether the actions or the person's own position put this person's genitals into another person's body (another
+    label follows), not into an object that is in them."""
     position = scene.get("position") if isinstance(scene.get("position"), dict) else {}
     someone = "(?:" + "|".join(re.escape(other) for other in labels if other != label) + r")['’]s\b"
     into = (r"(?:penis|shaft)\b[^,;.]{0,20}?\b(?:in|inside|into|enter\w*|penetrat\w*)\s+(?:(?:deep|the)\s+)?"
@@ -110,15 +109,15 @@ def _enters(scene, label, labels):
 
 
 def _into(giver, taker):
-    """A pattern for giver's penis in or into taker's body; giver is a label or a pattern ("his")."""
+    """A pattern for giver's genitals in or into taker's body; giver is a label or a pattern ("his")."""
     return (giver + r"(?:penis|shaft)\b[^,;.]{0,20}?\b(?:in|inside|into|enter\w*|penetrat\w*)\s+(?:(?:deep|the)\s+)?"
             + r"(?<![\w-])" + re.escape(taker) + r"['’]s\b")
 
 
 def _reversed_part(scene, label, labels):
-    """edit dropping a part of this person's own position that puts their penis into the person whose penis the actions
-    put into them: a live receiver's position said "his penis is inside man 2's anus" while the actions said "man 2's
-    penis in man 1's anus". When the actions also put this person's penis into that person (two acts), it stays."""
+    """edit dropping a part of this person's own position that reverses the actions: it puts their genitals into the
+    person whose genitals the actions put into them (a live scene swapped the roles this way). When the actions give
+    both directions (two acts), it stays."""
     actions = str(scene.get("actions") or "")
     named = lambda who: r"(?<![\w-])" + re.escape(who) + r"['’]s "
     givers = [other for other in labels if other != label
@@ -130,11 +129,11 @@ def _reversed_part(scene, label, labels):
 
 
 def _named_by_act(scene, label, alone):
-    """Whether the actions or another person's position name this person's genitals; for a cast of one, the actions'
-    "his penis" is theirs."""
+    """Whether the actions or another person's position name this person's genitals; for a cast of one, a "his" or
+    "her" in the actions is theirs."""
     position = scene.get("position") if isinstance(scene.get("position"), dict) else {}
     others = " ".join([str(scene.get("actions") or "")] + [str(text) for who, text in position.items() if who != label])
-    # "man 3's and man 4's penises" names both.
+    # Two labels joined by "and" before one body part name both people's.
     return bool(re.search(r"(?<![\w-])" + re.escape(label) + r"['’]s(?: and [\w ]{1,20}?['’]s)? " + _PENIS, others,
                           re.IGNORECASE)
                 or (alone and re.search(r"\b(?:his|her|their) " + _PENIS + r"\b", str(scene.get("actions") or ""),
@@ -142,13 +141,12 @@ def _named_by_act(scene, label, alone):
 
 
 def _stray_part(scene, label, labels):
-    """edit for one person's position parts that give their genitals a place the act does not: genitals whose penis is
-    already in someone get no second place ("his penis is in man 1's anus; his genitals are near man 1's chest"), and
-    genitals the actions do not name touch nothing and nobody ("his penis is joined to a toy", "pressed against the
-    toy", "inside a toy that is in man 1's anus"). What the camera sees of them ("his genitals visible"), "hanging
-    free", what they wear ("in a harness"), their own body the pose rests them on ("pressed against his chest") and
-    what someone does to them ("being stroked") are no place and stay. A part that only goes on describing dropped
-    genitals ("his genitals are his thick, | long penis and testicles") goes with it."""
+    """edit for one person's position parts that give their genitals a place the act does not: genitals the act already
+    puts into someone get no second place (near or against another body part), and genitals the actions do not name
+    touch nothing and nobody (pressed against, joined to or inside an object, or placed at another person). What the
+    camera sees of them ("visible"), "hanging free", what they wear, the person's own body the pose rests them on and
+    what someone does to them ("being ...") are no place and stay. A part that only goes on describing dropped genitals
+    (a list cut at a comma) goes with it."""
     own = _own(label)
     kept = re.compile(r"\bvisible\b|\bbeing\b|\b(?:against|on) (?:his|her|their) |" + _FREE.pattern, re.IGNORECASE)
     if _enters(scene, label, labels):
@@ -174,12 +172,11 @@ def _stray_part(scene, label, labels):
 
 
 def placed_genitals(scene, labels):
-    """The accepted scene without "hanging free" or a resting state for genitals the scene uses: a live writer put a
-    penis in someone's mouth and also left "his genitals are hanging free" (the image showed it twice or floating), and
-    described penises inside someone as "unaroused", in the look and in the position. Nor a penetration the actions
-    reverse (_reversed_part) or a place the act does not give them (_stray_part): live writers joined a penis to the toy
-    its owner moved and pressed genitals against a toy in someone else. Only those words go; the act that places them
-    stays."""
+    """The accepted scene without "hanging free" or a resting state for genitals the scene uses: a live writer gave
+    genitals the act uses both a place in the act and "hanging free" (the image showed them twice or floating), and
+    called them at rest, in the look and in the position. Nor a contact the actions reverse (_reversed_part) or a place
+    the act does not give them (_stray_part): live writers attached genitals to an object their owner held. Only those
+    words go; the act that places them stays."""
     position = scene.get("position")
     if not isinstance(position, dict):
         return scene

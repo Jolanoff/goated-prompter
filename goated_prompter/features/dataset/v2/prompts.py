@@ -45,8 +45,7 @@ cannot reach. What the scene
 leaves open follows the Creativity setting. The actions line is the whole action of the image: write
 exactly that, with no other act. When the idea gives a position name, use that name word for word together with
 the action, as plain words and never in quotes (quotes mark text drawn in the image): the target model knows it, so
-name it instead of only describing the pose. When the idea gives no position name, name no position, in a tag or in
-prose (no doggystyle, missionary or cowgirl): describe the pose instead.
+name it instead of only describing the pose.
 Do not add subjects or actions. Keep the camera's viewpoint (side and height); its distance gives way only when it
 would show a person of the scene as nothing more than a body part: then show enough of that person to join the part to
 them. Each person's frame is decided: show at least that much of them, and
@@ -393,7 +392,7 @@ def anima_tag_line(prompt, brief, scene=None):
         group = quality if _QUALITY_TAG.fullmatch(plain) else tags
         if field.casefold() not in (tag.casefold() for tag in quality + tags):
             group.append(field)
-    # A tag beside its opposite ("aroused", "unaroused") describes one person each; a tag line cannot say whose.
+    # A tag beside its opposite ("tired", "untired") describes one person each; a tag line cannot say whose.
     kept = {tag.casefold() for tag in tags}
     tags = [tag for tag in tags if "un" + tag.casefold() not in kept
             and not (tag.casefold().startswith("un") and tag.casefold()[2:] in kept)]
@@ -404,7 +403,7 @@ def anima_tag_line(prompt, brief, scene=None):
         safety = ["safe"]  # the NSFW switch is off: the content is safe whatever rating the model guessed
     elif nsfw and scene and _EXPLICIT_PARTS.search(" ".join(_strings({"actions": scene.get("actions"),
                                                                      "position": scene.get("position")}))):
-        safety = ["explicit"]  # the scene shows genitals or a sex act: a live run still guessed "sensitive"
+        safety = ["explicit"]  # the scene shows genitals: a live run still guessed a milder rating
     # Every sentence of the prose starts with a capital: a live prose started some in lowercase ("her left hand is").
     rest = re.sub(r"(^|[.!?]\s+)([a-z])", lambda match: match[1] + match[2].upper(), rest)
     return ", ".join([*quality, *safety[:1], *people, *([shot] if shot else []), *tags]) + separator + rest

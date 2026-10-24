@@ -119,8 +119,8 @@ def requested_words(brief):
 def requested_entries(entries, words):
     """The entries about something the request itself names: they share a word with it that is rare in this category
     (in at most a quarter of its entries), so a word every entry repeats never counts. An entry whose shared words are
-    only part of another entry's is about less of the request: "a locker room" names the locker room entries, not every
-    entry that is some other room, while "a lantern and an oil lamp" keeps both."""
+    only part of another entry's is about less of the request: "a reading room" names the reading room entries, not
+    every entry that is some other room, while "a lantern and an oil lamp" keeps both."""
     found = {word: sum(word in _words(entry) for entry in entries) for word in words}
     rare = {word for word, count in found.items() if 0 < count <= max(1, len(entries) // 4)}
     shared = {entry: frozenset(_words(entry) & rare) for entry in entries}
@@ -130,7 +130,8 @@ def requested_entries(entries, words):
 
 def named_entries(entries, words):
     """Of the entries about the request, the ones whose name (the text before ": ", else the whole entry) the request
-    says in full: "dildo" over "double dildo" when only "dildo" was asked for. All of them when none is named in full."""
+    says in full: "lantern" over "double lantern" when only "lantern" was asked for. All of them when none is named in
+    full."""
     named = [entry for entry in entries if _words(entry.split(": ", 1)[0]) <= words]
     return named or entries
 
@@ -144,10 +145,10 @@ def deal_hands(groups, total, rng, size=HAND, words=frozenset()):
     words: the request's words (requested_words). In a category whose entries are about something the request names:
     - the request names only that thing (not the category or one of its packs): every image gets only the entry the
       request names (named_entries), so asking for one thing gives that one thing;
-    - the request also names the category or a pack of it by its kind, the last word of its name ("toys" for a pack
-      called Sex Toys), so it asks for the kind in general: every image gets one entry about what it names and one
-      other, and the vocabulary adds variety. Another word of the name is not the kind: "having sex in a locker room"
-      never asks for Sex Spaces in general, so every image stays in the locker room."""
+    - the request also names the category or a pack of it by its kind, the last word of its name ("tools" for a pack
+      called Garden Tools), so it asks for the kind in general: every image gets one entry about what it names and one
+      other, and the vocabulary adds variety. Another word of the name is not the kind: "reading in a quiet library"
+      never asks for a pack called Reading Spaces in general, so every image stays in the library."""
     hands = {number: {} for number in range(1, total + 1)}
     for group in groups:
         if group["category"] == ACTIONS_CATEGORY:

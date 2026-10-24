@@ -103,6 +103,18 @@ the code alone.
   Without a run, say the change is unverified; never call it better or fixed.
 - No hard-coded fixes (special cases for a request, word or output) and no
   explicit or sexual wording in code, guides, tests or examples (`AGENTS.md`).
+
+## 4b. Wording
+
+- Never write explicit code. Keep code and its text user friendly: rule text
+  sent to a model, docstrings, comments, test data, check descriptions and
+  commit text describe behavior in neutral terms.
+- Write rules as general behavior, never with example values from one request
+  or a live output. Use neutral scenes in tests (a reader, a chair, a room).
+- A pattern that must match the model's own words may contain them; keep the
+  rest of the code around it neutral.
+- Before every commit, scan the diff for explicit or request-specific wording
+  and replace it.
 - The agent that made a change may review its blind pairs only as
   `exploratory`. An `independent` review comes from the owner or from a
   separate agent that has not seen the change.

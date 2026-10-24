@@ -23,13 +23,12 @@ CHECKS = (
     ("repeated_extras", "share of image pairs with the same props and signs", "aim", False),
     ("prompt_similarity", "how alike the prompts are (a set's images; a Builder case's seeds), 0 to 1", "aim", False),
     ("mouth_mixed", "share of prompts with a sentence that puts a mouth on a buttock or anus and genitals together (read as genitals where the tongue is)", "aim", False),
-    ("genitals_conflict", "share of scenes that give someone's genitals two places: hanging free, pressed or tucked "
-     "somewhere while the act puts them in another person, or two such places at once (drawn twice or floating)",
-     "aim", False),
-    ("contact_misplaced", "share of scenes where a person being entered rests their buttocks or hips against the other "
-     "person's chest, face or another part away from the hips (both cannot happen at once)", "aim", False),
-    ("tags_misfit", "Anima: share of tag lines that tag an act the scene does not show (\"sex\" for touching) or a tag "
-     "beside its opposite (\"aroused, unaroused\")", "aim", False),
+    ("genitals_conflict", "share of scenes that give someone's genitals two places at once: a place of their own while "
+     "the act puts them elsewhere, or two such places (drawn twice or floating)", "aim", False),
+    ("contact_misplaced", "share of scenes where two people the act joins at the hips are placed touching at a part of "
+     "the body away from the hips instead (both cannot happen at once)", "aim", False),
+    ("tags_misfit", "Anima: share of tag lines that tag an act the scene does not show, or a tag beside its opposite "
+     "(\"tired, untired\")", "aim", False),
     ("template_leaks", "share of scenes with a pack label or an unfilled [slot] left in their text", "guard", False),
     ("repeated_acts", "share of image pairs built on the same Actions & Poses entry (without entries: near-identical "
      "actions)", "aim", False),
@@ -173,9 +172,8 @@ ENTERS = r"(?:penis|shaft|genitals)\b[^,;.]{0,20}?\b(?:in|inside|into|enter\w*|p
 
 def _genitals_conflict(scene):
     """Whether a person's genitals get two places: their own position says they hang free, or are tucked or resting
-    somewhere, while the actions or a position put them in someone ("man 1's penis in man 2's mouth"); or their
-    position gives them two such places ("pressed against man 2's, tucked under him"). Pressed against a body while
-    inside it is one place (the testicles rest there)."""
+    somewhere, while the actions or a position put them into another person; or their position gives them two such
+    places at once. Pressed against a body while inside it is one place."""
     position = scene.get("position") if isinstance(scene.get("position"), dict) else {}
     every = " ".join([str(scene.get("actions") or "")] + [str(text) for text in position.values()])
     for label, text in position.items():
@@ -194,8 +192,8 @@ MEETS = {"hips", "hip", "groin", "pelvis", "thighs", "thigh", "lap", "crotch", "
 
 
 def _contact_misplaced(scene, labels):
-    """Whether a person whose anus or vagina the act enters rests their buttocks or hips against the entering person's
-    chest, face or another part away from the hips ("his buttocks pressed against man 2's chest")."""
+    """Whether a person the act enters rests their buttocks or hips against the other person's chest, face or another
+    part away from the hips (MEETS)."""
     position = scene.get("position") if isinstance(scene.get("position"), dict) else {}
     every = " ".join([str(scene.get("actions") or "")] + [str(text) for text in position.values()])
     rests = r"\b(?:buttocks|hips)\b[^,;.]{0,30}?\bagainst "
@@ -272,11 +270,11 @@ def _opening_conflict(scene, labels):
 
 def _pose_act_gap(scene, labels):
     """Whether two people the actions join in one clause are named in neither one's position. Two people named together
-    ("man 3 and man 4 are waiting", "man 2 and man 3 are holding man 1 up", "stroking man 3's and man 4's penises")
+    ("man 3 and man 4 are waiting", "man 2 and man 3 are holding man 1 up", "touching man 3's and man 4's hands")
     share a role and do nothing to each other, so that pair is not joined; each is still checked against whoever they
     act on or who acts on them."""
     position = scene.get("position") if isinstance(scene.get("position"), dict) else {}
-    again = "(?=\\s+(?:" + "|".join(re.escape(label) for label in labels) + r")['’]s)"  # "... and man 2's penis ..."
+    again = "(?=\\s+(?:" + "|".join(re.escape(label) for label in labels) + r")['’]s)"  # "... and man 2's hand ..."
     anyone = "(" + "|".join(re.escape(label) for label in labels) + ")"
     for clause in re.split(r"[;,]|\bwhile\b|\bas\b|\bthen\b|\band\b" + again, str(scene.get("actions") or ""),
                            flags=re.IGNORECASE):
