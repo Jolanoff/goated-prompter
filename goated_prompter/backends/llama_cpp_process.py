@@ -367,12 +367,13 @@ class LlamaCppProcessManager:
             "Goated Prompter could not find a free loopback port for its owned llama.cpp server."
         )
 
-    def release(self, owned):
+    def release(self, owned, retain=False):
+        """Drop one holder; ``retain`` keeps an idle server loaded for the operation that follows it."""
         with self._lock:
             if self._owned is not owned:
                 return
             owned.references = max(0, owned.references - 1)
-            if owned.references == 0 and (owned.pending_unload or not owned.keep_model_loaded):
+            if owned.references == 0 and (owned.pending_unload or not (owned.keep_model_loaded or retain)):
                 if owned.pending_unload:
                     _log("Active Goated Prompter operation finished; completing pending unload")
                 self._terminate(owned)

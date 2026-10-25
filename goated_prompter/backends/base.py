@@ -68,8 +68,12 @@ class GoatedPrompterBackend(ABC):
             self.validate_vision_input(image)
 
     @contextmanager
-    def generation_session(self):
-        """Yield a backend usable for a related sequence of generation calls."""
+    def generation_session(self, retain=False):
+        """Yield a backend usable for a related sequence of generation calls.
+
+        ``retain`` asks a local engine to stay loaded after a successful session
+        because another operation follows straight away.
+        """
         yield self
 
     @abstractmethod

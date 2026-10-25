@@ -1,16 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { api } from "../../api.js";
-import { canConfirmDatasetReview, datasetRequestSignature } from "./datasetState.js";
 
 export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm, setError }) {
   const [confirmation, setConfirmation] = useState(null);
   const [understanding, setUnderstanding] = useState(null);
-  // Rebuild (issue 106): the run started by Confirm; the tab's Scenes and Dataset pages show it.
+  // Rebuild (issue 106): the run started once Understanding succeeds; the tab's Scenes and Dataset pages show it.
   const [run, setRun] = useState(null);
   const pending = useRef(null);
   const opener = useRef(null);
-  const latestDraft = useRef(draft);
-  latestDraft.current = draft;
 
   async function analyze(item) {
     pending.current = item;
@@ -30,12 +27,16 @@ export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm
     }
   }
 
+  const continueToRun = useEffectEvent((understood) => { void startRun(understood); });
+
   useEffect(() => {
     if (!confirmation?.jobId || job?.id !== confirmation.jobId || confirmation.status !== "analyzing") return;
     if (job.status === "succeeded") {
-      const reviewed = { ...confirmation, ...job.result, status: "ready" };
-      setConfirmation(reviewed);
-      setUnderstanding(reviewed);
+      // No review step: the understood request goes straight on to scene writing.
+      const understood = { ...confirmation, ...job.result, status: "confirming" };
+      setConfirmation(understood);
+      setUnderstanding(understood);
+      continueToRun(understood);
     } else if (["failed", "cancelled", "interrupted"].includes(job.status)) {
       setConfirmation((current) => current && { ...current, status: "failed",
         error: job.error || "Request analysis stopped. No ideas, scenes or prompts were generated." });
@@ -67,10 +68,10 @@ export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm
 
   function requestConfirmation(operation, options = {}, input = draft) {
     if (pending.current) return;
-    // The review lock disables the launcher before showModal can remember it.
+    // The overlay lock disables the launcher before showModal can remember it.
     opener.current = document.activeElement;
     setError("");
-    void analyze({ input, operation, options, baseSignature: datasetRequestSignature(draft) });
+    void analyze({ input, operation, options });
   }
 
   function cancelConfirmation() {
@@ -83,27 +84,25 @@ export function useDatasetConfirmation({ draft, job, busy, onGenerate, onConfirm
     }
   }
 
-  async function confirmRequest() {
-    if (!canConfirmDatasetReview(confirmation, busy)) return;
-    if (datasetRequestSignature(latestDraft.current) !== confirmation.baseSignature) {
-      setConfirmation((current) => current && { ...current, confirmation_token: "",
-        error: "Dataset settings changed during review. Cancel and review the updated request." });
-      return;
-    }
-    const item = confirmation;
-    setConfirmation({ ...item, status: "confirming", error: "" });
+  async function startRun(understood) {
+    const item = pending.current;
     try {
-      const accepted = await onConfirm(item);
+      const accepted = await onConfirm(understood);
       if (!accepted) throw new Error("Scene writing could not start. Wait for active work and try again.");
+      if (pending.current !== item) {
+        // Cancelled while the run was starting.
+        await api(`/jobs/${accepted.id}/cancel`, {});
+        return;
+      }
       pending.current = null;
-      setUnderstanding({ ...item, status: "confirmed" });
+      setUnderstanding({ ...understood, status: "confirmed" });
       setConfirmation(null);
-      setRun({ jobId: accepted.id, brief: item.brief, vocabulary: [...(item.input.vocabulary_packs || [])], status: "running", result: null, error: "" });
+      setRun({ jobId: accepted.id, brief: understood.brief, vocabulary: [...(understood.input.vocabulary_packs || [])], status: "running", result: null, error: "" });
     } catch (err) {
-      setConfirmation({ ...item, status: "ready", error: err.message });
+      if (pending.current === item) setConfirmation((current) => current && { ...current, status: "failed", error: err.message });
     }
   }
 
   return { confirmation, understanding: confirmation || understanding, run,
-    requestConfirmation, cancelConfirmation, confirmRequest };
+    requestConfirmation, cancelConfirmation };
 }

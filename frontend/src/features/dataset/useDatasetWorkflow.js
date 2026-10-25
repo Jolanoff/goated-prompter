@@ -27,7 +27,7 @@ export function useDatasetWorkflow({ preferences, job, busy, active, noEngine, d
     setError(`${job.kind === "dataset_understanding" ? "Request analysis" : "Dataset generation"} failed. ${job.error || "The prompt engine did not return a usable result."}`);
   }, [datasetJob, job?.id, job?.revision, job?.status, job?.kind, job?.error]);
 
-  // Each batch is reviewed first; Confirm then writes scenes, and prompts unless scenes only was chosen.
+  // Each batch is understood first, then writes scenes, and prompts unless scenes only was chosen.
   function generateDataset() {
     if (!canWrite) return;
     confirmationFlow.requestConfirmation("dataset", {}, { ...draft, seed: nextDatasetSeed(draft) });

@@ -10,7 +10,11 @@ from .v2.understanding import understand
 
 def run_dataset_understanding(state, job, request, config, workflow):
     # Rebuild (issue 106): the tab's Understand button runs only the new Understanding.
-    brief = understand(config, request, workflow["input"], checkpoint=job.checkpoint, progress=job.set_progress)
+    # The scene run starts as soon as Understanding succeeds, so the loaded model is kept for it
+    # instead of being stopped and loaded again; the run's own session then applies the saved setting.
+    effective, _ = resolve_director_config(config, request)
+    with create_backend(effective).generation_session(retain=True):
+        brief = understand(config, request, workflow["input"], checkpoint=job.checkpoint, progress=job.set_progress)
     job.commit(lambda: {"ok": True, "kind": "dataset_understanding",
                         **state.dataset_intents.register(workflow["input"], brief)}, finish=True)
 

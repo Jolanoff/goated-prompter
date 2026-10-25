@@ -1,20 +1,25 @@
 /* Vocabulary tab: installed packs per Core category. */
-.vocabulary-view { max-width: 1120px; margin-inline: auto; padding-bottom: 32px; }
+.vocabulary-view { padding-bottom: 32px; }
 .vocabulary-view[hidden] { display: none; }
-.vocabulary-guidance { display: flex; gap: 12px; align-items: start; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 20px; }
-.vocabulary-guidance p { margin: 0; font-size: 13px; line-height: 1.6; color: var(--muted); overflow-wrap: anywhere; }
+.vocabulary-guidance { display: flex; gap: 12px; align-items: start; border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; margin-bottom: 20px; background: color-mix(in srgb, var(--surface) 60%, transparent); box-shadow: var(--edge); }
+.vocabulary-guidance > svg { margin-top: 2px; color: var(--accent); }
+.vocabulary-guidance > div { display: grid; gap: 10px; min-width: 0; }
+.vocabulary-guidance p { margin: 0; max-width: 90ch; font-size: 13px; line-height: 1.6; color: var(--muted); overflow-wrap: anywhere; }
+.vocabulary-guidance pre { width: fit-content; max-width: 100%; margin: 0; overflow-x: auto; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--control); color: var(--ink); font-family: var(--font-code); font-size: 12px; line-height: 1.6; }
+.vocabulary-guidance p code { padding: 1px 6px; border-radius: 6px; background: var(--raised); color: var(--ink); }
 .vocabulary-guidance code, .vocabulary-problems code { font-size: 12px; }
 .vocabulary-feedback, .vocabulary-empty { color: var(--muted); font-size: 13px; }
-.vocabulary-problems { border: 1px solid var(--warning); background: var(--warning-bg); border-radius: 10px; padding: 12px 14px; margin-bottom: 20px; font-size: 13px; }
+.vocabulary-problems { border: 1px solid var(--warning); background: var(--warning-bg); border-radius: 14px; padding: 12px 14px; margin-bottom: 20px; font-size: 13px; }
 .vocabulary-problems > span { color: var(--muted); margin-left: 8px; }
 .vocabulary-problems ul { margin: 8px 0 0; padding-left: 18px; overflow-wrap: anywhere; }
 .vocabulary-category { margin-bottom: 28px; }
 .vocabulary-category h3 { font-family: var(--font-display); font-size: 18px; margin: 0 0 4px; }
 .vocabulary-category h3 small { font-family: inherit; font-size: 12px; font-weight: 400; color: var(--muted); margin-left: 6px; }
 .vocabulary-packs { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
-.vocabulary-pack { border: 1px solid var(--line); border-radius: 10px; padding: 14px; min-width: 0; background: var(--surface); }
+.vocabulary-pack { border: 1px solid var(--line); border-radius: 16px; padding: 16px; min-width: 0; background: var(--surface); box-shadow: var(--edge), var(--lift); animation: rise-in 360ms cubic-bezier(.2, .7, .3, 1); transition: border-color .2s; }
+.vocabulary-pack:hover { border-color: color-mix(in srgb, var(--glow) 28%, var(--line)); }
 .vocabulary-pack-heading { display: flex; align-items: center; gap: 10px; }
-.vocabulary-pack-icon { color: var(--accent); display: flex; }
+.vocabulary-pack-icon { display: grid; place-items: center; width: 32px; height: 32px; flex-shrink: 0; border-radius: 10px; background: var(--selected); color: var(--accent); }
 .vocabulary-pack-title { min-width: 0; flex: 1; }
 .vocabulary-pack-title h4 { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
 .vocabulary-pack-title span { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
@@ -25,11 +30,13 @@
 .vocabulary-entries ul { margin: 8px 0 0; padding-left: 16px; max-height: 260px; overflow-y: auto; line-height: 1.5; overflow-wrap: anywhere; }
 
 /* Dataset tab: the selected packs and the Vocabulary Library modal. */
-.pack-picker { min-width: 0; }
-.pack-picker-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.pack-picker-heading h4 { font-size: 12px; font-weight: 600; margin: 0; }
-.pack-picker-help { font-size: 12px; color: var(--muted); margin: 6px 0 0; line-height: 1.5; overflow-wrap: anywhere; }
+.pack-picker { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 16px; min-width: 0; }
+.pack-picker-heading { display: contents; }
+.pack-picker-heading h4 { grid-column: 1; font-size: 13px; font-weight: 600; margin: 0; }
+.pack-picker-heading > .button { grid-column: 2; grid-row: 1 / span 2; }
+.pack-picker > p { grid-column: 1; }
+.pack-picker-help { font-size: 12px; color: var(--muted); margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
 .pack-picker-problem { font-size: 12px; color: var(--warning); margin: 8px 0 0; padding: 8px 10px; border-radius: 8px; background: var(--warning-bg); }
-.pack-picker-record { margin-bottom: 16px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; font-size: 12px; }
-.pack-picker-record h3 { font-size: 12px; font-weight: 600; margin: 0 0 6px; }
+.pack-picker-record { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-bottom: 16px; padding: 12px 18px; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--surface) 60%, transparent); box-shadow: var(--edge); font-size: 13px; }
+.pack-picker-record h3 { font-size: 12px; font-weight: 600; color: var(--muted); margin: 0; }
 .pack-picker-record p { margin: 0; overflow-wrap: anywhere; }

@@ -43,8 +43,9 @@ class LocalLlamaCppBackend(GoatedPrompterBackend):
         )
 
     @contextmanager
-    def generation_session(self):
+    def generation_session(self, retain=False):
         owned, acquisition = self.process_manager.acquire(self.config, include_state=True)
+        succeeded = False
         try:
             # Keep request-level sampling/token settings current while routing
             # through the authoritative manager's actual runtime port.
@@ -58,8 +59,10 @@ class LocalLlamaCppBackend(GoatedPrompterBackend):
                 "reused": bool(acquisition["reused"]),
                 "restarted": bool(acquisition["restarted"]),
             })
+            succeeded = True
         finally:
-            self.process_manager.release(owned)
+            # A failed or cancelled session never keeps the model for a follow-up that will not start.
+            self.process_manager.release(owned, retain=retain and succeeded)
 
     def generate(self, instruction):
         self.validate_instruction(instruction)

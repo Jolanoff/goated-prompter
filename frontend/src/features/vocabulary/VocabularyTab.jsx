@@ -61,10 +61,12 @@ export default function VocabularyTab({ visible }) {
       </div>
     </div>
     <div className="vocabulary-guidance"><Package size={18} aria-hidden="true" />
-      <p>Import a pack: choose a JSON file such as
-        {" "}<code>{'{"name": "Rooftops", "category": "Spaces", "description": "City rooftops at night", "entries": ["rooftop bar", "water tower"]}'}</code>.
-        The description is optional: a short note on what the pack is for and how its entries are written, which the
-        scene writer reads with the pack. It is saved in <code>data/vocabulary/</code>, in the folder of its category; importing the same file again replaces it.</p>
+      <div>
+        <p>Import a pack: choose a JSON file such as</p>
+        <pre><code>{'{\n  "name": "Rooftops",\n  "category": "Spaces",\n  "description": "City rooftops at night",\n  "entries": ["rooftop bar", "water tower"]\n}'}</code></pre>
+        <p>The description is optional: a short note on what the pack is for and how its entries are written, which the
+          scene writer reads with the pack. It is saved in <code>data/vocabulary/</code>, in the folder of its category; importing the same file again replaces it.</p>
+      </div>
     </div>
     {!!imported.length && <ul className="vocabulary-feedback" role="status">{imported.map((row) => <li key={row.file}>
       {row.ok ? `Imported ${row.pack.name} into ${row.pack.category}.` : row.error}</li>)}</ul>}

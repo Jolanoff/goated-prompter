@@ -1,4 +1,4 @@
-import { Pencil, Plus, RotateCw, Save, Trash2 } from "lucide-react";
+import { Library, Pencil, Plus, RotateCw, Save, Trash2 } from "lucide-react";
 import { ui } from "../../ui.js";
 import { usePromptLibrary } from "./usePromptLibrary.js";
 
@@ -88,6 +88,7 @@ export default function PromptLibraryTab({ visible, targets, initialTarget, onNo
             </li>
           ))}
         </ul> : editor === null && <div className="library-empty">
+          <div className={ui.emptyIcon}><Library size={24} aria-hidden="true" /></div>
           <h3>No prompts for {target} yet</h3>
           <p>Add a finished prompt to give the final writer an example of your writing style.</p>
           <button className={ui.button} onClick={() => edit()}><Plus size={15} />Add your first prompt</button>

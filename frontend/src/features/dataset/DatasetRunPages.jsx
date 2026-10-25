@@ -29,7 +29,7 @@ export function writtenPrompts(result) {
 }
 
 function Line({ label, children }) {
-  return <p className="dataset-scene-source"><strong>{label}:</strong> {children}</p>;
+  return <p className="dataset-scene-source"><strong>{label}</strong><span>{children}</span></p>;
 }
 
 function SceneDetails({ scene }) {

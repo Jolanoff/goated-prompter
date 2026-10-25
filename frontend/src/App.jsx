@@ -207,7 +207,7 @@ function App() {
         }
         if (next.result.history_error) setError(next.result.history_error);
         setNotice(next.kind === "refine" ? "Prompt refined."
-          : next.kind === "dataset_understanding" ? "Review your Dataset request before generating."
+          : next.kind === "dataset_understanding" ? ""
           : "Your prompt is ready. Make it yours.");
       } else if (next.status === "cancelled") {
         setNotice("Generation ended.");

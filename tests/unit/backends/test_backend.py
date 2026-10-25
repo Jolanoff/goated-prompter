@@ -75,6 +75,21 @@ class ProcessManagerTests(unittest.TestCase):
         self.manager.release(owned)
         self.assertEqual(self.manager.owned_process_count, 0)
 
+    def test_retained_release_keeps_the_server_for_the_next_operation(self):
+        config = replace(self.config, keep_model_loaded=False)
+        owned = self.manager.acquire(config)
+        self.manager.release(owned, retain=True)
+        self.process.terminate.assert_not_called()
+        self.assertIs(self.manager.acquire(config), owned, "the next operation reuses the loaded model")
+        self.manager.release(owned)
+        self.assertEqual(self.manager.owned_process_count, 0, "the next release applies the saved setting")
+
+    def test_pending_unload_overrides_a_retained_release(self):
+        owned = self.manager.acquire(replace(self.config, keep_model_loaded=False))
+        self.assertEqual(self.manager.request_unload(), "pending")
+        self.manager.release(owned, retain=True)
+        self.assertEqual(self.manager.owned_process_count, 0)
+
     def test_pending_unload_overrides_latest_retention(self):
         owned = self.manager.acquire(self.config)
         self.assertEqual(self.manager.request_unload(), "pending")
@@ -636,7 +651,30 @@ class FinalBudgetTests(unittest.TestCase):
             scene = evidence.build_resolved_scene(resolved, evidence_by_source={"Image 4": observed})
             instruction = core.assemble_instruction(request, resolved_scene=scene)
             self.assertEqual(self.outgoing(client, instruction)["max_tokens"], -1)
-        manager.release.assert_called_once_with(owned)
+        manager.release.assert_called_once_with(owned, retain=False)
+
+    def test_local_session_retains_the_model_only_after_success(self):
+        local = importlib.import_module(f"{PACKAGE}.backends.local_llama_cpp")
+        config = llama.LlamaCppLaunchConfig(
+            executable=Path("llama-server"), model_path=Path("model.gguf"),
+            mmproj_path=None, host="127.0.0.1", port=8189,
+            context_size=8192, image_min_tokens=1024, gpu_layers="auto",
+            reasoning="off", keep_model_loaded=False, max_tokens=768,
+            timeout=180, startup_timeout=180, temperature=0.3,
+            alias="test", requested_model="Display label",
+        )
+        manager = Mock()
+        owned = SimpleNamespace(config=config, process=SimpleNamespace(pid=42))
+        manager.acquire.return_value = owned, {"reused": False, "restarted": False}
+        with patch.object(llama.LlamaCppLaunchConfig, "from_mapping", return_value=config):
+            backend = local.LocalLlamaCppBackend({}, process_manager=manager)
+        with backend.generation_session(retain=True):
+            pass
+        manager.release.assert_called_once_with(owned, retain=True)
+        manager.release.reset_mock()
+        with self.assertRaises(RuntimeError), backend.generation_session(retain=True):
+            raise RuntimeError("stopped")
+        manager.release.assert_called_once_with(owned, retain=False)
 
     def test_finish_reason_length_never_returns_partial_success(self):
         for tokens in (None, 3072):

@@ -7,7 +7,7 @@ import { useWorkflowSettings } from "../../shared/workflow/useWorkflowSettings.j
 import WorkflowSettingsStatus from "../../shared/workflow/WorkflowSettingsStatus.jsx";
 import { datasetGenerationLog } from "./datasetExport.js";
 import { useDatasetWorkflow } from "./useDatasetWorkflow.js";
-import DatasetConfirmationModal from "./DatasetConfirmationModal.jsx";
+import DatasetUnderstandingOverlay from "./DatasetUnderstandingOverlay.jsx";
 import DatasetVocabulary from "./DatasetVocabulary.jsx";
 import DatasetTriggers from "./DatasetTriggers.jsx";
 import { useCatalog } from "../vocabulary/useCatalog.js";
@@ -54,7 +54,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
   const vocabulary = useCatalog(visible);
   const selectedPacks = cleanSelection(vocabulary.catalog, draft?.vocabulary_packs);
   const { error, workflowActive, disabled, guidedLines, canPlanScenes, canWrite, generateDataset, generateScenes,
-    confirmation, understanding, run, cancelConfirmation, confirmRequest } = useDatasetWorkflow({ preferences, job, busy, active, noEngine,
+    confirmation, understanding, run, cancelConfirmation } = useDatasetWorkflow({ preferences, job, busy, active, noEngine,
       director, onGenerate });
   // A run shows the vocabulary it was confirmed with, never the library's current choice.
   const runPacks = run && (run.result?.vocabulary?.selection ? recordedNames(run.result.vocabulary.selection)
@@ -79,7 +79,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
   const runActive = active && job?.kind === "dataset_v2_scenes";
   const generationUnit = `prompt${draft?.amount === 1 ? "" : "s"}`;
 
-  // Rebuild (issue 106): after Confirm, show Scenes while scenes are written, then Dataset once prompts arrive.
+  // Rebuild (issue 106): once the run starts, show Scenes while scenes are written, then Dataset once prompts arrive.
   const shownRun = useRef("");
   const advancedRun = useRef("");
   useEffect(() => {
@@ -202,7 +202,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                    </label>
                  </div>
                  <small className={ui.directorDescription}>Shows the seed of the last batch. Each new batch keeps it (Fixed), adds one (Increment) or picks a new one (Randomize). Regenerating one image stays random.</small>
-                    <HelpDetails>Generate starts a fresh batch: confirm the request once, then scenes and prompts are written in order. Generate scenes only stops after the scenes. Changed settings need a new review.</HelpDetails>
+                    <HelpDetails>Generate starts a fresh batch: your request is read first, then scenes and prompts are written in order. Generate scenes only stops after the scenes.</HelpDetails>
                </div>
              </details>
           </fieldset>
@@ -220,22 +220,19 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
               </select>
               <small className="text-xs leading-relaxed text-muted">Styles the final prompts together with the target model; the scenes themselves stay as written.</small>
             </label>
-            <div className="mt-4 grid grid-cols-2 gap-4 tiny:grid-cols-1">
+            <div className="dataset-option-grid">
               <TargetSelect label="Target model" ariaLabel="Dataset target model" icon={<Cpu size={14} aria-hidden="true" />} value={draft.target} targets={targets} disabled={disabled} onChange={(target) => update({ target })} />
               <label className={ui.field}><span><AlignLeft size={14} aria-hidden="true" />Prompt length</span>
                 <select className={ui.select} aria-label="Dataset prompt length" value={draft.length} onChange={(event) => update({ length: event.target.value })}>
                   {lengths.map((item) => <option key={item}>{item}</option>)}
                 </select>
               </label>
-            </div>
-            <label className={`${ui.field} mt-4`}><span><Frame size={14} aria-hidden="true" />Aspect ratio</span>
+              <label className={ui.field}><span><Frame size={14} aria-hidden="true" />Aspect ratio</span>
               <select className={ui.select} aria-label="Dataset aspect ratio" value={draft.aspect || "Auto"} onChange={(event) => update({ aspect: event.target.value })}>
                 {aspectRatios.map((item) => <option key={item}>{item}</option>)}
               </select>
               <small className="text-xs leading-relaxed text-muted">The shape you generate in. The poses and framing are written to fit it; Auto lets each scene choose.</small>
-            </label>
-
-            <div className="mt-4 grid grid-cols-2 gap-4 tiny:grid-cols-1">
+              </label>
               <label className={ui.field}><span><Sparkles size={14} aria-hidden="true" />Creativity</span>
                 <select className={ui.select} aria-label="Dataset descriptive creativity" value={draft.creativity || "Balanced"} onChange={(event) => update({ creativity: event.target.value })}>
                   {["Strict", "Balanced", "Creative", "Dice"].map((item) => <option key={item}>{item}</option>)}
@@ -263,7 +260,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
 
             <fieldset className="mt-5 border-t border-line pt-4">
               <legend className="pr-2 text-xs font-semibold">Scene source</legend>
-              <div className="mt-2 grid grid-cols-3 gap-2 tiny:grid-cols-1">
+              <div className="mt-2 grid grid-cols-2 gap-2 tiny:grid-cols-1">
                 {sceneSources.map(([value, label, accessibleLabel]) =>
                    <label key={value} className={`${ui.choiceCard} block`}>
                      <span className="flex items-center gap-2 text-xs font-semibold"><input type="radio" name="dataset-source" value={value} aria-label={`${label}: ${accessibleLabel}`}
@@ -305,7 +302,7 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
       {page === "scenes" && !run && <section className={`${ui.panel} dataset-scenes-panel`} aria-label="Scenes">
         <div className={`${ui.emptyState} dataset-empty`}>
           <Layers3 size={34} aria-hidden="true" /><h3>{workflowActive ? "Preparing scenes…" : "No scenes yet"}</h3>
-          <p>{workflowActive ? "Scenes will appear here once the request is confirmed." : "Set up your idea on Configure, then choose Generate."}</p>
+          <p>{workflowActive ? "Scenes will appear here once the request has been read." : "Set up your idea on Configure, then choose Generate."}</p>
           <button className={ui.button} onClick={() => goToStep("configure")}>Back to Configure</button>
         </div>
       </section>}
@@ -322,8 +319,6 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
       </section>}
       </div>
     </>}
-    {confirmation && <DatasetConfirmationModal review={confirmation} busy={busy} catalog={vocabulary.catalog}
-      directorLabel={director ? presetDisplayLabel(director) : ""}
-      onConfirm={confirmRequest} onCancel={cancelConfirmation} onExport={exportGenerationLog} />}
+    {confirmation && <DatasetUnderstandingOverlay understanding={confirmation} onCancel={cancelConfirmation} />}
   </div>;
 }
