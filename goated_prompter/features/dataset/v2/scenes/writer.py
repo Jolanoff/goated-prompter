@@ -5,8 +5,8 @@ import re
 
 from .....backends.recovery import GenerationRecovery, RunawayRecoveryError
 
-from .checks import (_summary, framing_problems, opening_conflicts, placed_genitals, repeat_reason, repeated_parts,
-                     retire_fields, scene_errors, unnamed_people, without_copied_props, without_entry_copy)
+from .checks import (_summary, framing_problems, repeat_reason, repeated_parts, retire_fields, scene_errors,
+                     unnamed_people, without_copied_props, without_entry_copy)
 from .entries import _entry_key
 from .request import _labels, compose_instruction, subject_fields
 from .settings import ROUNDS, SECTIONS
@@ -79,8 +79,6 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
                 elif missing := unnamed_people(scene, labels):
                     problems = [f"its actions do not name {', '.join(missing)}: name every person by their character "
                                 "label and never leave a placeholder person from an entry"]
-                elif conflicts := opening_conflicts(scene, labels):
-                    problems = conflicts
                 elif entries and entry is None:
                     problems = ['its "entry" must be copied word for word from the Actions & Poses vocabulary']
                 elif entries and used.get(entry, 0) >= cap:
@@ -90,7 +88,7 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
                 reasons[number] = problems
                 progress(rejected_note(number, problems[0], scene))
                 continue
-            scene = without_entry_copy(placed_genitals(scene, labels), labels)
+            scene = without_entry_copy(scene, labels)
             suggested = [entry for hand in ((plan.get("hands") or {}).get(number) or {}).values() for entry in hand]
             scene = without_copied_props(scene, plan.get("props") or (), suggested,
                                          [item["extras"] for item in earlier] + [item["extras"] for item in scenes.values()])

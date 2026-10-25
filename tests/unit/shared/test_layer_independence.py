@@ -41,11 +41,20 @@ class LayerIndependence(unittest.TestCase):
         self.assertNotIn("mood", SECTIONS)
         self.assertNotIn("clothing", SUBJECT_FIELDS)
         self.assertIn("camera: what the image shows,", COMPOSE_SYSTEM)
-        self.assertIn("never a bare his, her or their", COMPOSE_SYSTEM)
+        self.assertIn("his, her or their is always that position's own person", " ".join(COMPOSE_SYSTEM.split()))
         self.assertIn("where that person is in the frame", COMPOSE_SYSTEM)
         self.assertIn("nobody is reduced to a hand, an arm or one body part", " ".join(COMPOSE_SYSTEM.split()))
         self.assertIn("change the arrangement or the viewpoint instead of cropping a person out", " ".join(COMPOSE_SYSTEM.split()))
-        self.assertIn("The scene leaves clothing, light and mood to you", " ".join(SCENE_RULES.split()))
+        # The scene decides the visible clothing and light once (in extras); the final prompt writes them as given.
+        self.assertIn("The scene's extras give the clothing and the light: write them as given", " ".join(SCENE_RULES.split()))
+        # A live scene dressed the people of the act in shorts and the final prompt kept them, so that garment goes;
+        # live final prompts also dressed people the scene left bare.
+        self.assertIn("no garment covers it even when the extras give one", " ".join(SCENE_RULES.split()))
+        self.assertIn("a person they call bare stays bare with no garment added", " ".join(SCENE_RULES.split()))
+        # A live final prompt gave a person an age that neither the scene nor the request gave.
+        self.assertIn("Never give anyone an age the idea does not give", " ".join(SCENE_RULES.split()))
+        # A live scene put the mouth of the person whose body part the act used on the other's mouth (a kiss).
+        self.assertIn("a mouth touches someone only where the actions put it", " ".join(COMPOSE_SYSTEM.split()))
         self.assertEqual(retire_fields({"lighting": "x", "mood": "y", "subjects": {"a": {"clothing": "z", "hair": "h"}}}),
                          {"subjects": {"a": {"hair": "h"}}}, "A scene with retired fields still works.")
 

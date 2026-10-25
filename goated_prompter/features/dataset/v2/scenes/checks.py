@@ -32,7 +32,7 @@ def avoid_patterns(brief):
     return patterns
 
 
-# Fields scenes no longer have (the final prompt chooses clothing, light and mood). A writer that still sends them out
+# Fields scenes no longer have (visible clothing and light go in extras). A writer that still sends them out
 # of habit, or a scene saved before, keeps working: they are dropped, never a reason to ask again.
 RETIRED_SECTIONS = ("lighting", "mood")
 
@@ -50,153 +50,6 @@ def retire_fields(scene):
                                       if isinstance(person, dict) else person)
                               for label, person in result["subjects"].items()}
     return result
-
-
-_PENIS = r"(?:penis|shaft|genitals)"
-_FREE = re.compile(r"\bhanging free\b", re.IGNORECASE)
-_AT_REST = re.compile(r"\b(?:unaroused|flaccid|limp|soft)\b,?\s*", re.IGNORECASE)
-
-
-def _genitals_used(scene, label):
-    """Whether the scene puts this person's genitals in or on someone: the actions or another person's position name
-    this person's genitals, or the person's own position puts their genitals in, inside or against something (written
-    with or without "is")."""
-    position = scene.get("position") if isinstance(scene.get("position"), dict) else {}
-    others = " ".join([str(scene.get("actions") or "")] + [str(text) for who, text in position.items() if who != label])
-    own = str(position.get(label) or "")
-    return bool(re.search(r"(?<![\w-])" + re.escape(label) + r"['’]s " + _PENIS + r"\b", others, re.IGNORECASE)
-                or re.search(r"\b(?:his|her|their) " + _PENIS + r" (?:(?:is|are) )?(?:\w+ )?(?:in|inside|into|deep|"
-                             r"pressed|between|being)\b", own, re.IGNORECASE))
-
-
-def _at_work(text):
-    """A genitals description without its resting state ("thick, unaroused penis" -> "thick penis")."""
-    return re.sub(r",\s*(?=" + _PENIS + r"\b)", " ", _AT_REST.sub("", text)).strip(", ")
-
-
-def _edit_parts(text, edit):
-    """The text with each of its comma or semicolon parts replaced by edit(part); a part edit returns empty for goes."""
-    pieces = re.split(r"\s*([,;])\s+", str(text))
-    kept = [(sep, new) for sep, part in zip([""] + pieces[1::2], pieces[0::2]) if (new := edit(part))]
-    return "".join((f"{sep} " if index else "") + part for index, (sep, part) in enumerate(kept))
-
-
-def _awake_part(part):
-    """A part without the resting-state word on its genitals (the word goes, with an "and" beside it); a part that said
-    nothing but the state goes rather than leave half a sentence."""
-    if not re.search(r"\b" + _PENIS + r"\b", part, re.IGNORECASE):
-        return part
-    part = re.sub(r"\s*\b(?:unaroused|flaccid|limp|soft)\b(?:\s+and\b)?|\s*(?:and\s+)?\b(?:unaroused|flaccid|limp|soft)\b",
-                  "", part, flags=re.IGNORECASE)
-    return "" if re.search(r"\b(?:is|are)\s*$", part, re.IGNORECASE) else part
-
-
-def _own(label):
-    """How a position names its own person's body part: "his", "her", "their" or the label's possessive."""
-    return r"(?:\b(?:his|her|their)|(?<![\w-])" + re.escape(label) + r"['’]s) "
-
-
-def _enters(scene, label, labels):
-    """Whether the actions or the person's own position put this person's genitals into another person's body (another
-    label follows), not into an object that is in them."""
-    position = scene.get("position") if isinstance(scene.get("position"), dict) else {}
-    someone = "(?:" + "|".join(re.escape(other) for other in labels if other != label) + r")['’]s\b"
-    into = (r"(?:penis|shaft)\b[^,;.]{0,20}?\b(?:in|inside|into|enter\w*|penetrat\w*)\s+(?:(?:deep|the)\s+)?"
-            + someone)
-    return len(labels) > 1 and bool(
-        re.search(r"(?<![\w-])" + re.escape(label) + r"['’]s " + into, str(scene.get("actions") or ""), re.IGNORECASE)
-        or re.search(_own(label) + into, str(position.get(label) or ""), re.IGNORECASE))
-
-
-def _into(giver, taker):
-    """A pattern for giver's genitals in or into taker's body; giver is a label or a pattern ("his")."""
-    return (giver + r"(?:penis|shaft)\b[^,;.]{0,20}?\b(?:in|inside|into|enter\w*|penetrat\w*)\s+(?:(?:deep|the)\s+)?"
-            + r"(?<![\w-])" + re.escape(taker) + r"['’]s\b")
-
-
-def _reversed_part(scene, label, labels):
-    """edit dropping a part of this person's own position that reverses the actions: it puts their genitals into the
-    person whose genitals the actions put into them (a live scene swapped the roles this way). When the actions give
-    both directions (two acts), it stays."""
-    actions = str(scene.get("actions") or "")
-    named = lambda who: r"(?<![\w-])" + re.escape(who) + r"['’]s "
-    givers = [other for other in labels if other != label
-              and re.search(_into(named(other), label), actions, re.IGNORECASE)
-              and not re.search(_into(named(label), other), actions, re.IGNORECASE)]
-    if not givers:
-        return lambda part: part
-    return lambda part: "" if any(re.search(_into(_own(label), giver), part, re.IGNORECASE) for giver in givers) else part
-
-
-def _named_by_act(scene, label, alone):
-    """Whether the actions or another person's position name this person's genitals; for a cast of one, a "his" or
-    "her" in the actions is theirs."""
-    position = scene.get("position") if isinstance(scene.get("position"), dict) else {}
-    others = " ".join([str(scene.get("actions") or "")] + [str(text) for who, text in position.items() if who != label])
-    # Two labels joined by "and" before one body part name both people's.
-    return bool(re.search(r"(?<![\w-])" + re.escape(label) + r"['’]s(?: and [\w ]{1,20}?['’]s)? " + _PENIS, others,
-                          re.IGNORECASE)
-                or (alone and re.search(r"\b(?:his|her|their) " + _PENIS + r"\b", str(scene.get("actions") or ""),
-                                        re.IGNORECASE)))
-
-
-def _stray_part(scene, label, labels):
-    """edit for one person's position parts that give their genitals a place the act does not: genitals the act already
-    puts into someone get no second place (near or against another body part), and genitals the actions do not name
-    touch nothing and nobody (pressed against, joined to or inside an object, or placed at another person). What the
-    camera sees of them ("visible"), "hanging free", what they wear, the person's own body the pose rests them on and
-    what someone does to them ("being ...") are no place and stay. A part that only goes on describing dropped genitals
-    (a list cut at a comma) goes with it."""
-    own = _own(label)
-    kept = re.compile(r"\bvisible\b|\bbeing\b|\b(?:against|on) (?:his|her|their) |" + _FREE.pattern, re.IGNORECASE)
-    if _enters(scene, label, labels):
-        stray = lambda part: (re.search(own + r"(?:genitals|testicles)\b", part, re.IGNORECASE)
-                              and not re.search(r"\b(?:penis|shaft)\b", part, re.IGNORECASE))
-    elif _named_by_act(scene, label, len(labels) == 1):
-        return lambda part: part
-    else:
-        others = "|".join(re.escape(other) for other in labels if other != label)
-        stray = lambda part: re.search(own + _PENIS + r"\b[^,;]*(?:\b(?:against|pressed|joined|attached|rubbing|"
-                                       r"touching|resting)\b" + (rf"|(?<![\w-])(?:{others})['’]s\b" if others else "")
-                                       + ")", part, re.IGNORECASE)
-    dropped = [False]
-
-    def edit(part):
-        going = bool(stray(part)) and not kept.search(part)
-        # A part with no verb of its own that names genitals right after a dropped one only goes on describing them.
-        going = going or (dropped[0] and not re.search(r"\b(?:is|are)\b", part, re.IGNORECASE)
-                          and re.search(r"\b(?:penis|testicles)\b", part, re.IGNORECASE))
-        dropped[0] = bool(going)
-        return "" if going else part
-    return edit
-
-
-def placed_genitals(scene, labels):
-    """The accepted scene without "hanging free" or a resting state for genitals the scene uses: a live writer gave
-    genitals the act uses both a place in the act and "hanging free" (the image showed them twice or floating), and
-    called them at rest, in the look and in the position. Nor a contact the actions reverse (_reversed_part) or a place
-    the act does not give them (_stray_part): live writers attached genitals to an object their owner held. Only those
-    words go; the act that places them stays."""
-    position = scene.get("position")
-    if not isinstance(position, dict):
-        return scene
-    position = {who: _edit_parts(text, _reversed_part(scene, who, list(labels)))
-                if who in labels and isinstance(text, str) else text for who, text in position.items()}
-    scene = {**scene, "position": position}
-    position = {who: _edit_parts(text, _stray_part(scene, who, list(labels)))
-                if who in labels and isinstance(text, str) else text for who, text in position.items()}
-    scene = {**scene, "position": position}
-    used = [label for label in labels if _genitals_used(scene, label)]
-    if not used:
-        return scene
-    clean = lambda text: _edit_parts(text, lambda part: "" if _FREE.search(part) else part)
-    subjects = scene.get("subjects") if isinstance(scene.get("subjects"), dict) else {}
-    return {**scene,
-            "position": {who: _edit_parts(clean(text), _awake_part) if who in used else text
-                         for who, text in position.items()},
-            "subjects": {who: ({**person, "genitals": _at_work(clean(person["genitals"])) or person["genitals"]}
-                               if who in used and isinstance(person, dict) and isinstance(person.get("genitals"), str)
-                               else person) for who, person in subjects.items()}}
 
 
 def _bare(entry):
@@ -241,58 +94,6 @@ def without_entry_copy(scene, labels):
     return {**scene, "actions": cleaned}
 
 
-# Openings and the body parts that go into them. How many things one opening holds is the request's choice; what code
-# checks is that the scene does not contradict itself.
-OPENINGS = ("mouth", "anus", "vagina")
-FILLING_PARTS = "(?:penis|tongue|fingers?|fist)"
-# Something that covers or fills the mouth so nothing else fits (a ring that holds the mouth open leaves room).
-MOUTH_COVER = re.compile(r"\b(?:ball|bit|bar|panel|tape)[- ]gag\w*|\bgagged\b", re.IGNORECASE)
-
-
-def _named(label):
-    return r"(?<![\w-])" + re.escape(label) + r"(?![\w-])"
-
-
-def _clauses(texts, labels):
-    """The texts as short clauses, with "the mouth of man 2" read as "man 2's mouth"."""
-    clauses = []
-    for text in texts:
-        for label in labels:
-            text = re.sub(r"\bthe (" + "|".join(OPENINGS) + r") of " + _named(label), label + r"'s \1", text,
-                          flags=re.IGNORECASE)
-        clauses += re.split(r"[,;.]|\bwhile\b|\band\b", text, flags=re.IGNORECASE)
-    return clauses
-
-
-def _openings_used(texts, person, other, labels):
-    """Which of the person's openings the texts put the other person's penis, tongue, fingers or fist in."""
-    return {opening for clause in _clauses(texts, labels) for opening in OPENINGS
-            if re.search(_named(person) + r"['’]s " + opening, clause, re.IGNORECASE)
-            and re.search(_named(other) + r"['’]s " + FILLING_PARTS, clause, re.IGNORECASE)}
-
-
-def opening_conflicts(scene, labels):
-    """Why a scene contradicts itself about who is in whose mouth or anus, as reasons to ask that image again ([] when
-    it does not): the actions and the positions put someone's body part in different places (a live scene's actions
-    and positions swapped who was where), or the mouth is covered while a body part is in it. How many things one
-    opening holds is never judged: the request decides that."""
-    position = scene.get("position") if isinstance(scene.get("position"), dict) else {}
-    actions = [str(scene.get("actions") or "")]
-    # In a position, "his" is that position's own person.
-    positions = [re.sub(r"\bhis\b", f"{label}'s", str(text), flags=re.IGNORECASE) for label, text in position.items()]
-    reasons = []
-    for person in labels:
-        for other in (label for label in labels if label != person):
-            said, placed = (_openings_used(texts, person, other, labels) for texts in (actions, positions))
-            if said and placed and said != placed:
-                reasons.append(f"the actions put {other}'s body part in {person}'s {' and '.join(sorted(said))} but the "
-                               f"positions put it in their {' and '.join(sorted(placed))}: make the actions and every "
-                               "position agree")
-            if MOUTH_COVER.search(str(position.get(person) or "")) and "mouth" in said | placed:
-                reasons.append(f"{person}'s mouth is covered while {other}'s body part is in it: keep one of them")
-    return reasons
-
-
 def scene_errors(scene, labels, avoid, extra=(), known=frozenset(), subject_fields=SUBJECT_FIELDS):
     """Why one composed scene is unusable as an answer; [] when its shape is right. extra: further text fields the
     answer must have (the Actions & Poses "entry"); known: labels of known characters (expression only), whose cast
@@ -305,9 +106,10 @@ def scene_errors(scene, labels, avoid, extra=(), known=frozenset(), subject_fiel
 
 def _shape_errors(scene, labels, avoid, extra, known, subject_fields, framed):
     scene = retire_fields(scene)
-    plain = [key for key in SECTIONS if key not in ("subjects", "position")]
+    # Extras may be empty ("" when there is nothing to add): the final prompt still dresses and lights the image.
+    plain = [key for key in SECTIONS if key not in ("subjects", "position", "extras")]
     if (not isinstance(scene, dict) or set(scene) != set(FIELDS) | set(extra) | ({"frame"} if framed else set())
-            or not all(isinstance(scene[key], str) for key in extra)
+            or not all(isinstance(scene[key], str) for key in (*extra, "extras"))
             or not _filled({key: scene[key] for key in plain}, plain)
             or not (_filled(scene["position"], labels) if labels else scene["position"] in ({}, None))
             or (framed and not _framed(scene["frame"], labels))

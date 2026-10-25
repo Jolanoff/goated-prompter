@@ -73,16 +73,22 @@ visible body part joined to its owner in the frame, and changes the arrangement 
 person out; background figures may be partly visible. The final prompt shows that framing through what is visible
 (where each person is, which parts show, what lies in front and behind), not by a shot name. Every act needs the
 bodies to reach each other (two acts at once only when a position reaches both partners, never a closed loop through
-everyone), and positions and actions agree on who does what to whom. Clothing, lighting and
-mood are left to the final prompt; a selected Clothing, Lighting or Mood & Tone entry goes in extras. Saved scenes
+everyone), and positions and actions agree on who does what to whom. Every fact is written once: the actions own the
+act, each position places one person around it without repeating it, the camera owns what is visible, and extras
+hold only visible details, the clothing and the light source among them (a selected Clothing, Lighting or Mood & Tone
+entry as visible things). An Actions & Poses entry is used as written and adapted only where it conflicts: the actions
+copy its act line (who does what to whom, with the position's name, in everyday words) with only its people replaced,
+and the final prompt keeps those words. Saved scenes
 with the old clothing, lighting and mood fields still load (`retire_fields` drops them). Repeated looks are not asked again (an image asked again tends to copy an accepted
 one); later batches see earlier looks field by field. Missing images
 are retried, then reported; the last round keeps an image rather than lose it.
 
-Prompts (`v2/prompts.py`): the existing Builder writes each final prompt from the scene with the run's Director
-preset and target model together, as in the Prompt Builder; the scene writer never sees a Director. The scene rules
-ask Builder to keep every subject, action, object, place and camera, add none, choose clothing, light and mood to
-suit the scene, and describe people rather than labels; known characters are named, never described. The Builder does not parse the scene as user rules
+Prompts (`v2/prompts.py`): the existing Builder writes each final prompt from the decided scene (`decided_scene`):
+it keeps the target adapter, length, style, templates and output format and leaves out its free-form layers
+(analysis, priority, frame default, mode, creativity, preservation, Director). The run's Director shapes the scenes
+instead, so its emphasis is decided once. The scene rules
+ask Builder to keep every subject, action, object, place and camera, add none, write the scene's clothing and light
+and choose only what it leaves open, and describe people rather than labels; known characters are named, never described. The Builder does not parse the scene as user rules
 (`compile_rules=False`): the approved requirements already carry them. The Builder is told what exact-text triggers
 carry (never describe it) and which meanings to write; an exact style trigger turns the Style and Capture settings off. Code places
 every exact text itself (`place_triggers`): pinned ones first in list order, the rest by type in the Anima tag line,

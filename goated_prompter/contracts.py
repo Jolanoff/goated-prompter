@@ -73,6 +73,10 @@ class GoatedPrompterRequest:
     library_references: tuple = None
     # Exact-only style triggers already encode the medium/rendering. Internal; never from the API.
     describe_style: bool = True
+    # The idea is a scene another step already decided (a Dataset scene): the prompt writes it in the target's format
+    # without the free-form layers (analysis, priority, frame default, mode, creativity, preservation, Director), which
+    # would redesign it. Internal; never from the API.
+    decided_scene: bool = False
 
     def __post_init__(self):
         object.__setattr__(self, "target_model", canonical_target(self.target_model))

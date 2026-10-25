@@ -3,6 +3,8 @@
 import json
 
 from .....contracts import PromptInstruction
+from .....options.targets import canonical_target
+from .....presets import get_director_preset
 from .....options.styles import OFF_STYLE, without_color
 from .....prompting.base import SHOW_DONT_TELL
 from .....prompting.creativity import creativity_adapter, creativity_temperature
@@ -59,6 +61,19 @@ def slot_inputs(brief):
     return {row["index"]: row["input"] for row in guided_assignments(brief)}
 
 
+def director_emphasis(brief):
+    """The run's Director as what each scene emphasizes, or "" when it says nothing for this target. The final prompt
+    writes the decided scene without a Director, so its emphasis is decided once, here."""
+    if not brief["settings"].get("director"):
+        return ""
+    preset = get_director_preset(brief["settings"]["director"])
+    if not preset.instructions or (preset.supported_targets
+                                   and canonical_target(brief["settings"]["target"]) not in preset.supported_targets):
+        return ""
+    return (f"DIRECTOR EMPHASIS — {preset.label}\nWritten for a final prompt; here it decides what each scene shows "
+            f"and emphasizes, never what happens, how the act is worded or where everyone is:\n{preset.instructions}")
+
+
 def _system(brief, errors, vocabulary="", entry_cap=None):
     content = NSFW_RULE if brief["path"] == "nsfw_character" else SFW_RULE
     if not brief["characters"]:
@@ -70,6 +85,8 @@ def _system(brief, errors, vocabulary="", entry_cap=None):
         system += "\n\n" + VOCABULARY_RULES
     if entry_cap:
         system += "\n\n" + ENTRY_RULE.format(cap=entry_cap)
+    if emphasis := director_emphasis(brief):
+        system += "\n\n" + emphasis
     system += "\n\n" + creativity_adapter(brief["settings"]["creativity"] or "Balanced")
     if known := known_labels(brief):
         system += "\n\n" + FRAME_RULE.format(known=", ".join(sorted(known)))

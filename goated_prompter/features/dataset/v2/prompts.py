@@ -3,9 +3,10 @@
 The scene is fixed: the Builder writes it in the target model's format, style and length and may not move anyone,
 change the action, add subjects, objects or a conflicting camera. Builder's own target formatting and clean-up apply
 unchanged; one set of library templates is picked for the whole run, so every prompt has the same structure. An
-entry's position name reaches the Builder only when the scene's actions say it (position_name). The Director chosen for the run (request.director_preset) and the target
-model shape the final prompt together, as in the Prompt Builder; the scene rules keep the Director from redesigning
-what happens. The scene writer itself never sees a Director.
+entry's position name reaches the Builder only when the scene's actions say it (position_name). The Builder is asked
+for a decided scene (decided_scene): it leaves out its free-form layers (analysis, priority, frame default, mode,
+creativity, preservation, Director), which would design the scene again. The run's Director shapes the scenes instead
+(scenes.request.director_emphasis), so its emphasis is decided once.
 
 The user's triggers (v2/triggers.py) are applied by code, never left to the model. Exact-text triggers are placed by
 place_triggers in the user's exact spelling, pinned ones first, the rest where their kind belongs in the target's
@@ -29,6 +30,7 @@ from ....output_repetition import anima_tag_key
 from ....prompt_library import pick_references
 from ....workflow_output import ideogram_json
 from .aspect import brief_aspect, shape_rule
+from .safety import adult_text, explicit_text
 from .triggers import brief_triggers, owner, placed, run_style, trigger_text
 
 SHAPE_RULE = ("IMAGE SHAPE: the image is {ratio}, a {shape} frame. Describe the framing for it: the people and the action "
@@ -42,8 +44,8 @@ The idea is one scene of an IMAGE, already decided. Write it as one prompt for t
 target model. Keep every person, their appearance, every placement, orientation, support, contact, where each one
 looks and the action exactly as given; do not move anyone, change the action or add a touch or gaze the positions
 cannot reach. What the scene
-leaves open follows the Creativity setting. The actions line is the whole action of the image: write
-exactly that, with no other act. When the idea gives a position name, use that name word for word together with
+leaves open is chosen to suit it. The actions line is the whole action of the image: write
+exactly that, in its own words, with no other act. When the idea gives a position name, use that name word for word together with
 the action, as plain words and never in quotes (quotes mark text drawn in the image): the target model knows it, so
 name it instead of only describing the pose.
 Do not add subjects or actions. Keep the camera's viewpoint (side and height); its distance gives way only when it
@@ -55,15 +57,17 @@ person is relative to the others, which parts of each body are visible and where
 are when it matters, how much space each takes, and what lies in the foreground, middle ground and background. A
 shot name or a phrase such as "fully visible" never stands in for that description. Every person of the scene gets a
 real presence in the prompt, not only the body parts of the action, and every body part shown is joined to its
-owner, who is described in the frame. The scene leaves clothing, light and mood to you: choose
-them to suit the scene and the request (and any Clothing, Lighting or Mood entry in its extras). Dress each person
-after reading the action: a body part the action uses is bare, so no garment covers it (no underwear, shorts or
-trousers over hips the action uses, no top over a chest it uses); clothing goes only on the rest of the body. Describe a body part only when the scene's positions and camera let the camera see it; a
+owner, who is described in the frame. The scene's extras give the clothing and the light: write them as given, a
+person they call bare stays bare with no garment added, and choose only what they leave open, as visible things that suit the scene and the request. A body
+part the action uses is bare, so no garment covers it even when the extras give one (no underwear, shorts or
+trousers over hips the action uses, no top over a chest it uses). Describe a body part only when the scene's positions and camera let the camera see it; a
 body part turned away, hidden behind or under another body, or inside someone is never described as visible.
 Never mention anything the image does not show: no hidden or covered body part, nothing outside the frame and no
-object the scene does not have, not even to say it is hidden or missing.
+object the scene does not have, not even to say it is hidden or missing. A still image shows no sound, smell,
+breathing, motion over time, feeling named as a word, intention or backstory: write what the camera sees instead (a
+face, a pose, a garment, the light). Keep the scene's everyday words for bodies and the act, never clinical terms.
 A person's label or number only tells the people apart: never write it, and never call a person by their order;
-describe each person by their own appearance instead."""
+describe each person by their own appearance instead. Never give anyone an age the idea does not give."""
 
 KNOWN_RULE = """
 KNOWN CHARACTERS: {names} {verb} {noun} the target model already knows. Refer to them by name (with
@@ -71,11 +75,13 @@ the character and series tag on tag-based targets) and never describe or change 
 write only their expression, clothing, pose and action."""
 
 ADULT_RULE = """
-This is an adult dataset: word the act and the bodies in plain, explicit terms, exactly as direct as the scene, in
-every prompt. Never soften them into euphemisms, implications or vague wording. Whenever the positions and camera let
-the camera see a person's genitals, they get their own short description in that person's description, as concrete as
-their skin and build: size, shape and state (relaxed or aroused). Naming them only in the action is not enough.
-Genitals the camera cannot see are not described. Tags name only the act the scene's actions name and body parts this
+This is an adult dataset: word the act and the bodies exactly as the scene does, in its everyday words, in every
+prompt. Never soften them into euphemisms, implications or vague wording, and never turn them into clinical terms.
+Everyone who takes part in the act is bare unless the scene's extras dress them: never add a garment. Whenever the positions and camera let
+the camera see a person's genitals, they get their own short description in that person's description: only their
+size and state (relaxed or aroused), never a colour; a known character's get only their state and where
+they are. Naming them only in the action is not enough. Every intimate body part gets only what the scene gives it:
+never a colour, wetness or other detail the scene does not say. Genitals the camera cannot see are not described. Tags name only the act the scene's actions name and body parts this
 cast has: no tag for an act the image does not show."""
 
 
@@ -321,10 +327,6 @@ def scene_gender(scene, label):
     return "male" if he and not she else "female" if she and not he else None
 
 
-# Body parts whose sight makes an image explicit (Anima's rating); the scene names them in these anatomical words.
-_EXPLICIT_PARTS = re.compile(r"\b(?:penis(?:es)?|testicles|anus|vagina|vulva|clitoris|genitals)\b", re.IGNORECASE)
-
-
 def count_tags(characters):
     """The cast as Anima count tags: men are boys, women are girls, anyone else other; solo for one person."""
     counts = {}
@@ -370,6 +372,8 @@ def anima_tag_line(prompt, brief, scene=None):
     for field in (field.strip() for field in head.split(",")):
         if field.count("[") != field.count("]"):  # a bracket opened over several tags ("[pale skin, ..., visible]")
             field = field.replace("[", "").replace("]", "").strip()
+        if field.startswith("{") and field.endswith("}"):  # braces are no Anima syntax; a live line wrapped every tag
+            field = field[1:-1].strip()
         name, colon, after = field.partition(":")  # a person's tags led by their name ("the man with fair skin: fair skin")
         if colon and re.sub(r"^(?:the|a|an)\s+", "", name.strip(), flags=re.IGNORECASE).casefold() in named:
             field = after.strip()
@@ -401,9 +405,14 @@ def anima_tag_line(prompt, brief, scene=None):
     nsfw = (brief.get("input") or {}).get("nsfw")
     if nsfw is False:
         safety = ["safe"]  # the NSFW switch is off: the content is safe whatever rating the model guessed
-    elif nsfw and scene and _EXPLICIT_PARTS.search(" ".join(_strings({"actions": scene.get("actions"),
-                                                                     "position": scene.get("position")}))):
-        safety = ["explicit"]  # the scene shows genitals: a live run still guessed a milder rating
+    elif nsfw and scene:
+        shown = " ".join([*_strings({"actions": scene.get("actions"), "position": scene.get("position")}), *tags, rest])
+        if explicit_text(shown):
+            # The scene or the prompt shows genitals or a sexual act: live runs still guessed a milder rating, also
+            # for a solo image whose genitals only the prompt describes.
+            safety = ["explicit"]
+        elif safety[:1] in ([], ["safe"]) and adult_text(shown):
+            safety = ["nsfw"]  # a live nude image whose prompt named no genitals was still tagged "safe"
     # Every sentence of the prose starts with a capital: a live prose started some in lowercase ("her left hand is").
     rest = re.sub(r"(^|[.!?]\s+)([a-z])", lambda match: match[1] + match[2].upper(), rest)
     return ", ".join([*quality, *safety[:1], *people, *([shot] if shot else []), *tags]) + separator + rest
@@ -630,7 +639,7 @@ def write_prompts(config, request, brief, scenes, *, checkpoint=lambda: None, pr
                                       target_model=brief["settings"]["target"], prompt_length=brief["settings"]["length"],
                                       creativity=brief["settings"]["creativity"], style=style, capture=capture, describe_style=describe_style,
                                       director_preset=request.director_preset, custom_instructions=rules,
-                                      compile_rules=False, library_references=templates)
+                                      compile_rules=False, library_references=templates, decided_scene=True)
             try:
                 prompt = service.generate_text_only(builder_request, seed=brief["input"].get("seed"), recovery=recovery).prompt
             except RunawayRecoveryError as error:

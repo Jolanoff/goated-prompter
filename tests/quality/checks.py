@@ -12,6 +12,8 @@ import json
 import re
 import statistics
 
+from goated_prompter.features.dataset.v2.safety import sexual_text
+
 from .judge import SCENE_QUESTIONS
 
 ORDINALS = ("first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth")
@@ -234,7 +236,7 @@ def _genitals_conflict(scene):
     return False
 
 
-# Where a person being entered meets the other person's body; any other part is too far from the hips.
+# Where a person entered by someone's genitals meets that person's body; any other part is too far from the hips.
 MEETS = {"hips", "hip", "groin", "pelvis", "thighs", "thigh", "lap", "crotch", "waist", "belly", "stomach", "abdomen",
          "genitals", "penis", "testicles"}
 
@@ -259,6 +261,7 @@ def _contact_misplaced(scene, labels):
 
 
 # Anima act tags that name an entering act, so the scene must show one; a broad tag that covers any act never counts.
+# A scene in everyday words shows its act without an anatomical word, so the app's own act detection also counts.
 ACT_TAGS = {"anal", "vaginal", "penetration"}
 ENTERED = re.compile(r"\b(?:penis|toy|dildo|strap-on)\b[^,;.]{0,30}?\b(?:in|inside|into|enter\w*|penetrat\w*)\b"
                      r"[^,;.]{0,30}?\b(?:anus|vagina)\b", re.IGNORECASE)
@@ -271,7 +274,7 @@ def _tags_misfit(prompt, scene):
     tags = {tag.strip().casefold() for tag in head.split(",") if tag.strip()}
     shown = " ".join(_strings({"actions": scene.get("actions"), "position": scene.get("position")})) if scene else ""
     return (any("un" + tag in tags for tag in tags)
-            or bool(scene and tags & ACT_TAGS and not ENTERED.search(shown)))
+            or bool(scene and tags & ACT_TAGS and not (ENTERED.search(shown) or sexual_text(shown))))
 
 
 # Body parts the checks below read in a scene's own words (plain anatomical names).
@@ -309,9 +312,56 @@ def _template_leak(scene, labels):
                for name, wording in ENTRY_HEAD.findall(str(scene.get("actions") or "")))
 
 
+# Openings and the body parts that go into them. How many things one opening holds is the request's choice; what code
+# checks is that the scene does not contradict itself.
+OPENINGS = ("mouth", "anus", "vagina")
+FILLING_PARTS = "(?:penis|tongue|fingers?|fist)"
+# Something that covers or fills the mouth so nothing else fits (a ring that holds the mouth open leaves room).
+MOUTH_COVER = re.compile(r"\b(?:ball|bit|bar|panel|tape)[- ]gag\w*|\bgagged\b", re.IGNORECASE)
+
+
+def _clauses(texts, labels):
+    """The texts as short clauses, with "the mouth of man 2" read as "man 2's mouth"."""
+    clauses = []
+    for text in texts:
+        for label in labels:
+            text = re.sub(r"\bthe (" + "|".join(OPENINGS) + r") of " + _named(label), label + r"'s \1", text,
+                          flags=re.IGNORECASE)
+        clauses += re.split(r"[,;.]|\bwhile\b|\band\b", text, flags=re.IGNORECASE)
+    return clauses
+
+
+def _openings_used(texts, person, other, labels):
+    """Which of the person's openings the texts put the other person's penis, tongue, fingers or fist in."""
+    return {opening for clause in _clauses(texts, labels) for opening in OPENINGS
+            if re.search(_named(person) + r"['’]s " + opening, clause, re.IGNORECASE)
+            and re.search(_named(other) + r"['’]s " + FILLING_PARTS, clause, re.IGNORECASE)}
+
+
+def opening_conflicts(scene, labels):
+    """Why a scene contradicts itself about who is in whose genitals, as reasons to ask that image again ([] when
+    it does not): the actions and the positions put someone's body part in different places (a live scene's actions
+    and positions swapped who was where), or the mouth is covered while a body part is in it. How many things one
+    opening holds is never judged: the request decides that."""
+    position = scene.get("position") if isinstance(scene.get("position"), dict) else {}
+    actions = [str(scene.get("actions") or "")]
+    # In a position, "his" is that position's own person.
+    positions = [re.sub(r"\bhis\b", f"{label}'s", str(text), flags=re.IGNORECASE) for label, text in position.items()]
+    reasons = []
+    for person in labels:
+        for other in (label for label in labels if label != person):
+            said, placed = (_openings_used(texts, person, other, labels) for texts in (actions, positions))
+            if said and placed and said != placed:
+                reasons.append(f"the actions put {other}'s body part in {person}'s {' and '.join(sorted(said))} but the "
+                               f"positions put it in their {' and '.join(sorted(placed))}: make the actions and every "
+                               "position agree")
+            if MOUTH_COVER.search(str(position.get(person) or "")) and "mouth" in said | placed:
+                reasons.append(f"{person}'s mouth is covered while {other}'s body part is in it: keep one of them")
+    return reasons
+
+
 def _opening_conflict(scene, labels):
-    """Whether the scene contradicts itself about who is in whose mouth or anus (read the way the scene writer reads it)."""
-    from goated_prompter.features.dataset.v2.scenes.checks import opening_conflicts
+    """Whether the scene contradicts itself about who is in whose opening (actions and positions disagree)."""
     return bool(opening_conflicts(scene, labels))
 
 

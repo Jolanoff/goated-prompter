@@ -248,11 +248,13 @@ class Checks(unittest.TestCase):
     def test_anima_tags_for_an_act_the_scene_does_not_show_or_beside_their_opposite_are_counted(self):
         entered = {"actions": "man 2's penis in man 1's anus", "position": {}}
         touched = {"actions": "man 2's hand on man 1's back", "position": {}}
+        everyday = {"actions": "man 2 having sex with man 1 in missionary", "position": {}}
         self.assertEqual([checks._tags_misfit(prompt, scene) for prompt, scene in (
             ("masterpiece, 2boys, penetration, kneeling\n\nProse.", entered),
             ("masterpiece, 2boys, penetration, kneeling\n\nProse.", touched),
             ("masterpiece, 2boys, tired, untired\n\nProse.", entered),
-            ("masterpiece, 2boys, kneeling\n\nProse.", touched))], [False, True, True, False])
+            ("masterpiece, 2boys, kneeling\n\nProse.", touched),
+            ("masterpiece, 2boys, penetration, lying\n\nProse.", everyday))], [False, True, True, False, False])
 
     def test_template_text_left_in_a_scene_is_counted(self):
         labels = ["man 1", "man 2"]

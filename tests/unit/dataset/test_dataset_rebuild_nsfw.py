@@ -190,9 +190,15 @@ class AdultDatasetTests(unittest.TestCase):
                 # The request and "fixed" are already in the scene; repeated, the model pastes them in as content.
                 self.assertNotIn("Alex is the only participant and keeps the same identity.", final.system_message)
                 self.assertNotIn('"request":', final.system_message)
-                adult = "This is an adult dataset: word the act and the bodies in plain, explicit terms"
+                adult = "This is an adult dataset: word the act and the bodies exactly as the scene does, in its everyday words"
                 (self.assertIn if nsfw else self.assertNotIn)(adult, final.system_message + final.user_message)
                 visible = "they get their own short description in that person's description"
                 (self.assertIn if nsfw else self.assertNotIn)(visible, " ".join(final.system_message.split()))
-                self.assertIn("a body part the action uses is bare, so no garment covers it",
+                self.assertIn("A body part the action uses is bare, so no garment covers it",
                               " ".join(final.system_message.split()), "clothing never covers what the action uses")
+                # Live final prompts dressed people the adult scene left bare.
+                bare = "Everyone who takes part in the act is bare unless the scene's extras dress them"
+                (self.assertIn if nsfw else self.assertNotIn)(bare, " ".join(final.system_message.split()))
+                # A live final prompt gave a body part a colour and a state its scene never said.
+                (self.assertIn if nsfw else self.assertNotIn)("Every intimate body part gets only what the scene gives it",
+                                                              " ".join(final.system_message.split()))

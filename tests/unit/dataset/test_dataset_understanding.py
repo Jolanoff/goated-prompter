@@ -106,6 +106,11 @@ class Understanding(unittest.TestCase):
         result, _ = self.understand([json.dumps(answer)], subject="a reader reading in one armchair in a library")
         self.assertEqual(result["kept"], ["place", "action"], "the user's words only, case and spacing aside")
         self.assertIn("every part not mentioned is chosen anew for each image", " ".join(understanding.SYSTEM.split()))
+        # Live briefs listed in randomized the parts kept quotes, and repeated the request in fixed and must, so the
+        # scene writer got the same request three times and two answers about what varies.
+        for rule in ("only what the user explicitly asks to vary", "never list a part that kept quotes",
+                     "never repeat summary", '"" when summary already says them all'):
+            self.assertIn(rule, " ".join(understanding.SYSTEM.split()))
         self.assertTrue(all(f"\n  {part}: " in understanding.SYSTEM for part in understanding.KEPT_PARTS),
                         "every part is defined for the model")
         result, _ = self.understand([MAGICAL_SECOND])

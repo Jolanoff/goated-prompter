@@ -20,6 +20,7 @@ from .evidence import (
 from ...image_utils import EncodedImage
 from ...prompting.base import (
     CORE_SYSTEM_PROMPT,
+    DECIDED_SCENE_PROMPT,
     LINKED_PRIORITY_CONTRACT,
     PRIORITY_CONTRACT,
     TEXT_ONLY_PRIORITY_CONTRACT,
@@ -169,9 +170,12 @@ def assemble_instruction(
     if preset.supported_targets and request.target_model not in preset.supported_targets:
         # A target-specific Director that does not apply contributes nothing.
         active_director_instructions = ""
+    decided = request.decided_scene  # the scene already decided what the free-form layers would decide again
+    if decided:
+        active_director_instructions = ""
     qwen_images = _qwen21_source_tokens(request, resolved_reference_map, text_only) if request.target_model == "Qwen Image 2.1" else ()
     # Reference priorities only apply when reference images or evidence are present.
-    sections = [
+    sections = [DECIDED_SCENE_PROMPT] if decided else [
         CORE_SYSTEM_PROMPT,
         TEXT_ONLY_PRIORITY_CONTRACT if text_only or not has_visual_context
         else LINKED_PRIORITY_CONTRACT if request.linked_references else PRIORITY_CONTRACT,
@@ -196,27 +200,29 @@ def assemble_instruction(
     if has_visual_context:
         sections.append(f"VISUAL GROUNDING\n{get_vision_mode_adapter(request.mode)}")
     sections.extend([
-        f"MODE ADAPTER\n{get_mode_adapter(request.mode)}"
-        + ("\n\nSCENARIO TO RECAST (from the user's prompt library)\n" + scenario
-           + "\nKeep its place, situation, activity, props, camera and mood. Cast the subjects from the user's request "
-           "into its roles, main role first; adapt gender, age and relationship wording; drop roles the request does not "
-           "fill; never reuse its character names." if scenario else ""),
+        *([] if decided else [
+            f"MODE ADAPTER\n{get_mode_adapter(request.mode)}"
+            + ("\n\nSCENARIO TO RECAST (from the user's prompt library)\n" + scenario
+               + "\nKeep its place, situation, activity, props, camera and mood. Cast the subjects from the user's "
+               "request into its roles, main role first; adapt gender, age and relationship wording; drop roles the "
+               "request does not fill; never reuse its character names." if scenario else "")]),
         "TARGET MODEL ADAPTER\n" + (QWEN21_EDIT_ADAPTER if qwen_images
                                       else get_model_adapter(request.target_model, templates=uses_library,
                                                              describe_style=request.describe_style))
         + ("\n\n" + target_example if target_example else ""),
         "USER SETTINGS",
-        creativity_adapter(request.creativity),
+        *([] if decided else [creativity_adapter(request.creativity)]),
         # With a library, structure and length are measured against the user's own prompts.
         style_profile_text(profile, request.prompt_length, get_target_capabilities(request.target_model).max_words,
                            describe_structure=not references)
         if uses_library and (profile := library_profile(request.target_model))
         else resolve_target_length(request.target_model, request.prompt_length),
     ])
-    sections.append(_preservation_section(
-        replace(request, linked_references=False) if text_only else request,
-        resolved_reference_map, has_visual_context,
-    ))
+    if not decided:
+        sections.append(_preservation_section(
+            replace(request, linked_references=False) if text_only else request,
+            resolved_reference_map, has_visual_context,
+        ))
 
     # Library templates show how to write; the Director still decides the look, the default one included.
     if active_director_instructions:

@@ -90,10 +90,12 @@ class SceneVocabulary(unittest.TestCase):
         self.assertIn("glowing aura", vocabulary)
         for unselected in ("Subjects\n", "Clothing\n", "Actions & Poses\n", "foggy graveyard", "athletic woman"):
             self.assertNotIn(unselected, vocabulary)
-        self.assertIn("Treat vocabulary entries as creative possibilities, not mandatory instructions.", call.system_message)
-        self.assertIn("Do not create missing subjects merely to satisfy vocabulary entries.", call.system_message)
-        self.assertIn("A selected category shapes that part of the images it fits", call.system_message)
-        self.assertIn("It is optional for each image", call.system_message)
+        system = " ".join(call.system_message.split())
+        self.assertIn("Entries of every other category are possibilities", system)
+        self.assertIn("Never add a subject or object only to use an entry.", system)
+        self.assertIn("choose from any pack of a category", system, "one entry per category, from any pack")
+        self.assertIn("Each selected category shapes its part of the scene", system)
+        self.assertIn("none at all when the category does not fit the image", system, "optional for each image")
 
     def test_example_c_packs_of_an_adult_run_are_optional_material_beside_the_request(self):
         cast = [{"label": "model", "gender": "female", "custom": "", "pronoun": "she", "count": 1}]
@@ -136,9 +138,13 @@ class SceneVocabulary(unittest.TestCase):
             pack = {"Lighting": "Lighting/Dramatic", "Objects & Props": "Objects/Furniture"}[category]
             self.assertEqual(set(dealt), set(next(p for p in load_catalog()["packs"] if p["id"] == pack)["entries"]),
                              "every entry is dealt")
-        self.assertIn('none at all when the category does not fit the image', self.composer()[0].system_message)
+        system = " ".join(self.composer()[0].system_message.split())
+        self.assertIn('none at all when the category does not fit the image', system)
+        # Live scenes fixed restraints to furniture the place lacked and wrote a mark on a body part against a wall.
+        self.assertIn("A used entry agrees with the positions, the space and the camera", system)
+        # A live run with three suggestions per category used two or three of them in one image.
         self.assertTrue(all(len(hand[category]) == 1 for hand in hands for category in hand), "one suggestion per category")
-        self.assertIn("Use at most one entry per category in an image", self.composer()[0].system_message)
+        self.assertIn("use at most one per category", system)
 
     def lights(self, request):
         catalog = load_catalog(user_root=False)
@@ -174,6 +180,20 @@ class SceneVocabulary(unittest.TestCase):
                             for hand in hands.values()), hands)
         general = scenes.deal_hands(groups, 6, random.Random(3), words=frozenset({"reading", "spaces", "library"}))
         self.assertTrue(all(len(hand["Spaces"]) == 2 for hand in general.values()), "the kind asked for in general")
+
+    def test_a_request_word_naming_another_categorys_pack_never_pins_one_entry(self):
+        # A live request about "public" places, with an Actions & Poses pack called Public Risk, got the one prop entry
+        # that also said "public" in all ten images.
+        import random
+        props = ["a public notice taped to his back", "a paper map", "a wooden chair", "a red scarf", "a lamp",
+                 "a blue cup", "a book", "a clock"]
+        groups = [{"category": "Actions & Poses", "packs": [{"name": "Public Walks", "entries": ["A walks past B"]}]},
+                  {"category": "Objects & Props", "packs": [{"name": "Things", "entries": props}]}]
+        hands = scenes.deal_hands(groups, 6, random.Random(3), words=frozenset({"two", "people", "public", "places"}))
+        self.assertGreater(len({hand["Objects & Props"][0] for hand in hands.values()}), 1, hands)
+        named = scenes.deal_hands(groups, 6, random.Random(3), words=frozenset({"public", "notice"}))
+        self.assertEqual({hand["Objects & Props"][0] for hand in named.values()}, {"a public notice taped to his back"},
+                         "a word of its own that the request names still asks for that entry")
 
     def test_an_entry_about_less_of_the_request_gives_way_to_one_about_more(self):
         # "room" was in a quarter of a live Spaces pack, so every other room counted as the requested one.
@@ -340,12 +360,18 @@ class SceneVocabulary(unittest.TestCase):
         vocabulary = composer_user(call.user_message)["vocabulary"]
         self.assertIn("Actions & Poses\nCore instruction:\nActions & Poses provides vocabulary", vocabulary)
         self.assertIn(self.forehead, vocabulary)
-        # A live writer swapped the object an entry's act uses for a worn object another pack dealt, and the act
-        # changed with it.
-        for rule in ("If it does, that pose is\n   decided", "If it defines only an\n   action, choose a pose",
-                     "correct gender", "Objects, furniture and surfaces named in an entry", "keeping the pose physically the same",
-                     "A replacement does the same job in\n   the act"):
-            self.assertIn(rule, call.system_message)
+        # Live scenes that rewrote an entry's arrangement reversed or doubled the act, so an entry is used as written:
+        # its people become the scene's, and only what conflicts with the request, the cast or the kept place changes.
+        system = " ".join(call.system_message.split())
+        for rule in ("The entry is the image's act and arrangement and is used as written",
+                     "its people (letters or placeholders) become this scene's people, chosen from the request, with "
+                     "their own pronouns and bodies",
+                     "Adapt only the part that conflicts with the request, the cast or the kept place",
+                     # The final prompt keeps the act's words, so the scene copies them.
+                     "the actions copy its words with only its people replaced",
+                     "Entries of every other category are possibilities"):
+            self.assertIn(rule, system)
+        self.assertNotIn("Objects, furniture and surfaces named in an entry are examples", system)
 
     def test_every_image_is_dealt_its_own_entry_by_the_seed(self):
         pair = [{"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 1},
@@ -368,6 +394,9 @@ class SceneVocabulary(unittest.TestCase):
                  "mood": "warm", "camera": "side view", "extras": "rug",
                  "frame": {label: {"shows": "full body", "face": "visible"} for label in labels}}
         self.assertEqual(scenes.scene_errors(scene, labels, []), [])
+        # The scene rules allow empty extras, so an image with nothing to add is never asked again for it.
+        self.assertEqual(scenes.scene_errors({**scene, "extras": ""}, labels, []), [])
+        self.assertNotEqual(scenes.scene_errors({**scene, "camera": " "}, labels, []), [])
 
     def test_the_builder_gets_the_position_name_of_the_entry(self):
         scene = {"slot": 1, "subjects": {}, "position": {}, "actions": "they dance", "space": "hall", "lighting": "lamps",
@@ -380,7 +409,7 @@ class SceneVocabulary(unittest.TestCase):
         # Image models know a position by its name, so the final prompt keeps the name the scene's actions give; the
         # scene writer names the position its pose really is.
         self.assertNotIn("name no position", prompts.SCENE_RULES)
-        self.assertIn("together with the position's usual name", scenes.NSFW_RULE)
+        self.assertIn("with the act's own verb and the position's name", scenes.NSFW_RULE)
 
 
     def test_scene_ideas_never_get_vocabulary(self):

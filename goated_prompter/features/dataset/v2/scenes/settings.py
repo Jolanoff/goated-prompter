@@ -7,7 +7,7 @@ BATCH = 10  # one answer holds up to ten images: a model spreads a set out best 
 ROUNDS = 3
 
 
-# Only what decides the picture's people and arrangement: clothing, light and mood are chosen by the final writer.
+# Only what decides the picture: the visible clothing and light source go in extras, never as fields of their own.
 # The signs (extras) are written right after the people and their pose, before the place and camera: written last, a
 # model fills them with leftover atmosphere.
 SECTIONS = ("subjects", "actions", "position", "extras", "space", "camera")

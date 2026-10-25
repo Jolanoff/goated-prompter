@@ -5,7 +5,8 @@ vocabulary packs for the run, a SELECTED VOCABULARY section: only the categories
 its Core instruction and the entries of those packs (vocabulary/catalog.py), shuffled for every batch with a random
 generator seeded by the run's seed, so each seed leads the writer to different entries first. Vocabulary is used only
 when the scenes are invented (source "random"); with the user's own scene ideas (source "guided") no vocabulary is
-sent. With no pack selected the prompt has no vocabulary section. No Director takes part in composing.
+sent. With no pack selected the prompt has no vocabulary section. The run's Director decides what each scene
+emphasizes (request.director_emphasis); the final prompt writes the decided scene without it.
 
 Actions & Poses: when that category has a selected pack, one call first keeps only the entries that fit the request
 and the cast (fitting_entries; every entry when that call fails). Only those reach the writer: every image is dealt a
@@ -23,15 +24,16 @@ more retries). Packs without them are used exactly as before.
 
 A scene has subjects (per character: skin, build, hair, detail, expression; a known character, which the
 image model draws from its name or trigger, has only expression), position (per character, with their place in the
-frame and every body part named with its owner), actions, space, camera and extras. Clothing, light and mood are left
-to the final prompt, which chooses them for the scene. Actions & Poses entries may define a pose with their action or leave it open, and
-name people as "one person" / "the other person": the writer maps them to the character labels (and their gender) and
-adapts named objects and supports to the scene.
+frame and every body part named with its owner), actions, space, camera and extras. Every fact is written once: the
+actions own the act, each position places one person around it (pose, facing, weight, hands) without repeating it,
+the camera owns what is visible, and extras hold only visible details, the clothing and the light source among them.
+An Actions & Poses entry is the image's act and arrangement, used as written: the writer maps its people to the
+character labels (and their gender) and adapts only what conflicts with the request, the cast or the kept place.
 
 Code checks the shape of each answer (every section filled, exactly the character labels, no phrase from the avoid
 list), that no image reuses another one's place together with its camera, actions or extras (repeated_parts) and that
-the actions name every person (unnamed_people), so no entry is copied with its placeholder people, and that the scene
-agrees with itself about who is in whose mouth or anus (opening_conflicts). Repeated looks are
+the actions name every person (unnamed_people), so no entry is copied with its placeholder people. The scene says each
+fact once (the act in the actions only), so code no longer reads or edits body parts in it. Repeated looks are
 not asked again: an image asked again tends to copy an accepted one, and the people only need to differ by look. The last round keeps a repeat rather than lose the image; images still missing are
 asked again, up to ROUNDS times per batch.
 Later batches see what earlier images used as lists (already_used), not as scenes to imitate.

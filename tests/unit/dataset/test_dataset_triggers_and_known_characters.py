@@ -428,6 +428,11 @@ class AnimaTagLine(unittest.TestCase):
                                       self.cast)
         self.assertEqual(line, "masterpiece, 1boy, 1girl, kneeling, throne room\n\nProse.")
 
+    def test_tags_wrapped_in_braces_lose_them(self):
+        # A live tag line wrapped every tag in braces, which are no Anima syntax.
+        line = prompts.anima_tag_line("masterpiece, {kneeling}, {throne room}, {candles}\n\nProse.", self.cast)
+        self.assertEqual(line, "masterpiece, 1boy, 1girl, kneeling, throne room, candles\n\nProse.")
+
     def test_underscores_become_spaces_except_score_tags_and_low_quality_tags_go(self):
         line = prompts.anima_tag_line("score_8_up, low_quality, worst quality, lowres, knight_is_kneeling, \\(armor\\)\n\nA_b.",
                                       self.cast)
@@ -478,6 +483,15 @@ class AnimaTagLine(unittest.TestCase):
         self.assertEqual(prompts.anima_tag_line("masterpiece, explicit, walking\n\nProse.",
                                                 {**self.cast, "input": {"nsfw": True}}),
                          "masterpiece, explicit, 1boy, 1girl, walking\n\nProse.", "with NSFW on the model's rating stays")
+        # A scene in everyday words names its act without an anatomical word, and is still rated explicit.
+        scene = {"actions": "the man having sex with the woman in missionary", "position": {}}
+        self.assertEqual(prompts.anima_tag_line("masterpiece, nsfw, lying\n\nProse.",
+                                                {**self.cast, "input": {"nsfw": True}}, scene),
+                         "masterpiece, explicit, 1boy, 1girl, lying\n\nProse.")
+        self.assertEqual(prompts.anima_tag_line("masterpiece, nsfw, lying\n\nProse.",
+                                                {**self.cast, "input": {"nsfw": True}},
+                                                {"actions": "the man lying beside the woman", "position": {}}),
+                         "masterpiece, nsfw, 1boy, 1girl, lying\n\nProse.", "no act, no explicit rating")
 
     def test_brackets_around_the_apps_names_and_over_several_tags_go(self):
         # A live prose wrapped every person in brackets ("[the man with tan skin] lies"), which weighs them on Anima, and
@@ -510,6 +524,21 @@ class AnimaTagLine(unittest.TestCase):
         scene = {"actions": "the knight kisses the queen", "position": {}}
         self.assertEqual(prompts.anima_tag_line("masterpiece, sensitive, kneeling\n\nProse.", brief, scene),
                          "masterpiece, sensitive, 1boy, 1girl, kneeling\n\nProse.", "nothing explicit shown: it stays")
+        # A live solo display image, whose scene named no act, was tagged "safe" while its prompt described his genitals.
+        scene = {"actions": "the knight kneels by the bed", "position": {}}
+        self.assertEqual(prompts.anima_tag_line("masterpiece, safe, kneeling\n\nThe knight kneels, his genitals visible.",
+                                                brief, scene),
+                         "masterpiece, explicit, 1boy, 1girl, kneeling\n\nThe knight kneels, his genitals visible.")
+        self.assertEqual(prompts.anima_tag_line("masterpiece, safe, kneeling\n\nThe knight kneels by the bed.", brief, scene),
+                         "masterpiece, safe, 1boy, 1girl, kneeling\n\nThe knight kneels by the bed.",
+                         "a prompt that shows nothing explicit keeps its rating")
+        # A live nude image whose prompt named no genitals was still tagged "safe".
+        self.assertEqual(prompts.anima_tag_line("masterpiece, safe, naked, kneeling\n\nThe knight kneels.", brief, scene),
+                         "masterpiece, nsfw, 1boy, 1girl, naked, kneeling\n\nThe knight kneels.")
+        self.assertEqual(prompts.anima_tag_line("masterpiece, sensitive, naked, kneeling\n\nThe knight kneels.", brief,
+                                                scene),
+                         "masterpiece, sensitive, 1boy, 1girl, naked, kneeling\n\nThe knight kneels.",
+                         "a rating the model gave above safe stays")
 
     def test_tag_blocks_split_by_blank_lines_become_one_line(self):
         line = prompts.anima_tag_line("masterpiece, 1boy\n\nkneeling, collar,\n\nA knight kneels. He waits.", self.cast)

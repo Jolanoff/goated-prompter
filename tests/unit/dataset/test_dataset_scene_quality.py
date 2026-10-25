@@ -60,21 +60,37 @@ class SceneVariety(Harness):
 
     def test_the_writer_is_told_to_vary_every_image_and_keep_one_possible_arrangement(self):
         self.write()
-        system = self.composer()[0].system_message
-        self.assertIn("one\n  physically possible arrangement", system)
-        self.assertIn("if one person is behind another, that person faces away from them", system)
+        system = " ".join(self.composer()[0].system_message.split())
+        self.assertIn("one physically possible arrangement", system)
+        self.assertIn("a person with someone behind them has their back to that person and looks back only by turning "
+                      "their head", system)
+        self.assertNotIn("closed loop", system, "a loop is possible when every position reaches both partners")
+        # One owner per fact: the act is written once, the positions place the people around it, the camera says what
+        # is visible. Live scenes that repeated the act in the positions contradicted it.
+        self.assertIn("Every fact of a scene is written once, in its own field", system)
+        self.assertIn("A position never repeats the act", system)
         # A live party set gave three of six images the same four looks, which already_used listed.
-        self.assertIn("Unless fixed keeps it, never reuse a place, arrangement, camera or look listed in already_used",
-                      " ".join(system.split()))
-        self.assertIn("Everything the request mentions stays the same in every image; everything it does not mention "
-                      "is chosen anew for each image.", " ".join(system.split()))
-        self.assertIn("Give the people new looks (skin, build, hair, detail) in every image unless fixed keeps the same people", system)
+        self.assertIn("never reuse a place, arrangement, camera or look listed in already_used", system)
+        self.assertIn("Everything the request does not mention is chosen anew for each image.", system)
+        self.assertIn("Give the people new looks (skin, build, hair, detail) in every image unless fixed keeps the same "
+                      "people", system)
+        # Live extras left the clothing out and repeated the act, a hand or the place; a kept place gave every image
+        # the same spot once the scene was no longer asked for another part of it.
+        # Once the scene owned the clothing, live scenes dressed a body part the act uses.
+        self.assertIn("first what each person wears (garment, colour, material; nothing over a body part the act uses) "
+                      "or that they are bare", system)
+        self.assertIn("Never what another field already says (the act, a pose, a hand, the place or what is in it)", system)
+        self.assertIn("(another part of the place when the request keeps it)", system)
 
     def test_each_person_has_an_expression_field_for_expression_vocabulary(self):
         self.write()
         person = self.composer()[0].json_schema["properties"]["scenes"]["items"]["properties"]["subjects"]["properties"]["man 1"]
         self.assertIn("expression", person["required"])
-        self.assertIn("expression (their face in this moment)", self.composer()[0].system_message)
+        self.assertIn("expression (what their eyes, brows and mouth do in this moment",
+                      " ".join(self.composer()[0].system_message.split()))
+        # Live expressions said "heavy breathing" or named a feeling, and the final prompt copied what no image shows.
+        self.assertIn("never a feeling, a breath or a sound named as a word",
+                      " ".join(self.composer()[0].system_message.split()))
 
     def test_an_adult_dataset_describes_each_persons_genitals_and_where_they_are(self):
         # Live runs named genitals only inside the action: most were never described, and some were drawn without
@@ -84,93 +100,26 @@ class SceneVariety(Harness):
         adult = self.brief["path"] == "nsfw_character"
         (self.assertIn if adult else self.assertNotIn)("genitals", person["required"])
         system = " ".join(self.composer()[0].system_message.split())
-        (self.assertIn if adult else self.assertNotIn)("Each position also says, for that image, where that person's "
-                                                       "genitals are", system)
-        # A live run's genitals hung free while the act had them in someone's mouth, and "uses his hole" or "takes his
-        # mouth" stood for acts that then never showed; the bound person stayed soft in every image.
-        # A live writer named only the position for the act, and the prose then reversed who did what to whom.
-        for rule in ('"hanging free" is only for genitals nothing touches', "(size and shape only)",
-                     'A verb such as "uses", "takes" or "has" never stands for the act',
-                     "A position verb (rides, mounts, sits on) never replaces it either"):
+        # Where genitals are is the act's: live scenes that also placed them in the positions gave them two places.
+        (self.assertIn if adult else self.assertNotIn)("Where they are is the act's, so a position never places them",
+                                                       system)
+        self.assertNotIn("where that person's genitals are", system)
+        # Verbs that hid the act ("takes his mouth") stood for acts that then never showed; the bound person stayed soft
+        # in every image. The act is said the way people say it, with its verb and the position's name, which image
+        # models know; rewritten into body mechanics it lost the name. Live genitals got a colour that did not match the
+        # person's skin, so they get only size and state.
+        for rule in ("only their size and state (aroused when the act uses them), never a colour",
+                     'A vague verb such as "uses", "takes" or "has" never stands for the act',
+                     "The actions say the act the way people say it, in everyday words",
+                     "never rewritten into how the bodies fit together",
+                     # Live scenes dressed everyone but the person the act centred on.
+                     "Everyone who takes part in a sexual act is bare, so their extras say bare: a garment is "
+                     "given only when the request, the entry or a selected Clothing entry names it",
+                     "unless the request gives the roles the other way"):  # roles come from the request, adult sets only
             (self.assertIn if adult else self.assertNotIn)(rule, system)
         sfw = {**self.brief, "path": "character"}
         self.assertNotIn("genitals", scenes.subject_fields(sfw, "man 1"), "never outside an adult dataset")
         self.assertEqual(scenes.subject_fields({**self.brief, "path": "nsfw_character"}, "man 1")[-1], "genitals")
-
-    def test_genitals_the_scene_uses_never_also_hang_free_or_rest(self):
-        # A live writer put a penis in someone's mouth and also left "his genitals are hanging free", and called a
-        # penis inside someone "unaroused": the image drew it twice, floating, or soft.
-        scene = {**self.scene("bedroom"), "actions": "man 2 has man 1's penis in his mouth",
-                 "position": {"man 1": "standing, his penis is deep in man 2's mouth, his genitals are hanging free and hard",
-                              "man 2": "kneeling, his mouth around man 1's penis, his genitals are hanging free"}}
-        scene["subjects"]["man 1"]["genitals"] = "thick, unaroused penis, hanging free"
-        placed = scenes.checks.placed_genitals(scene, ["man 1", "man 2"])
-        self.assertEqual(placed["position"]["man 1"], "standing, his penis is deep in man 2's mouth")
-        self.assertEqual(placed["position"]["man 2"], scene["position"]["man 2"], "nothing touches his genitals")
-        self.assertEqual(placed["subjects"]["man 1"]["genitals"], "thick penis")
-        self.assertEqual(placed["subjects"]["man 2"], scene["subjects"]["man 2"])
-        plain = self.scene("bedroom")
-        self.assertEqual(scenes.checks.placed_genitals(plain, ["man 1", "man 2"]), plain)
-
-    def test_a_penis_inside_someone_is_not_called_unaroused_in_its_position(self):
-        # A live run wrote "his penis inside 22 yo male's anus, his genitals visible and unaroused" (no "is").
-        scene = {**self.scene("bedroom"), "actions": "man 1 and man 2 take turns",
-                 "position": {"man 1": "standing, his penis inside man 2's anus, his genitals visible and unaroused",
-                              "man 2": "bent over a table, his genitals hanging free and unaroused"}}
-        scene["subjects"]["man 1"]["genitals"] = "thick, long, unaroused penis and testicles"
-        placed = scenes.checks.placed_genitals(scene, ["man 1", "man 2"])
-        self.assertEqual(placed["position"]["man 1"], "standing, his penis inside man 2's anus, his genitals visible")
-        self.assertEqual(placed["subjects"]["man 1"]["genitals"], "thick, long penis and testicles")
-        self.assertEqual(placed["position"]["man 2"], scene["position"]["man 2"], "nothing touches his genitals")
-
-    def test_a_resting_state_goes_without_leaving_half_a_sentence(self):
-        # A live cleanup left half a sentence when the writer had called genitals the act uses at rest.
-        scene = {**self.scene("bedroom"), "actions": "man 2's penis is in man 1's body",
-                 "position": {"man 1": "lying down, his genitals are hanging free",
-                              "man 2": "kneeling, man 2's penis is in man 1's body, man 2's genitals are unaroused"}}
-        self.assertEqual(scenes.checks.placed_genitals(scene, ["man 1", "man 2"])["position"]["man 2"],
-                         "kneeling, man 2's penis is in man 1's body")
-        scene["position"]["man 2"] = "kneeling, his penis is soft and pressed against man 1's back"
-        self.assertEqual(scenes.checks.placed_genitals(scene, ["man 1", "man 2"])["position"]["man 2"],
-                         "kneeling, his penis is pressed against man 1's back")
-
-    def test_genitals_get_no_place_the_act_does_not_give_them(self):
-        # Live positions attached genitals to an object their owner held, pressed a person's genitals against an object
-        # the actions never put there, and gave genitals the act already placed a second place.
-        scene = {**self.scene("bedroom"), "actions": "man 2 is moving a brush along man 1's back",
-                 "position": {"man 1": "lying down; his genitals are pressed against man 2's knee",
-                              "man 2": "kneeling, his hands grip man 1's waist, his penis is joined to the brush that is "
-                                       "touching man 1's back"}}
-        placed = scenes.checks.placed_genitals(scene, ["man 1", "man 2"])
-        self.assertEqual(placed["position"], {"man 1": "lying down", "man 2": "kneeling, his hands grip man 1's waist"})
-        scene["actions"] = "man 2's penis is in man 1's body"
-        scene["position"] = {"man 1": "lying down, his hands on the mat",
-                             "man 2": "standing; his penis is in man 1's body; his genitals are near man 1's chest"}
-        self.assertEqual(scenes.checks.placed_genitals(scene, ["man 1", "man 2"])["position"]["man 2"],
-                         "standing; his penis is in man 1's body")
-        scene["actions"] = "man 1's hands are holding man 2's and man 3's genitals"
-        scene["position"] = {"man 1": "kneeling, his legs folded, his genitals are pressed against his thighs",
-                             "man 2": "standing, his genitals are being held by man 1's hand"}
-        self.assertEqual(scenes.checks.placed_genitals(scene, ["man 1", "man 2"])["position"], scene["position"],
-                         "the act names both people's genitals, and his own thighs are no other body")
-        # A live position reversed the actions: it put the other way round who was in whom.
-        scene["actions"] = "man 2's penis in man 1's body, man 1 sitting on man 2's lap"
-        scene["position"] = {"man 1": "sitting on man 2's lap, his penis is inside man 2's body, his hands on man 2",
-                             "man 2": "sitting on a chair, his penis is in man 1's body"}
-        self.assertEqual(scenes.checks.placed_genitals(scene, ["man 1", "man 2"])["position"],
-                         {"man 1": "sitting on man 2's lap, his hands on man 2",
-                          "man 2": "sitting on a chair, his penis is in man 1's body"})
-        scene["actions"] = "man 2's penis in man 1's body while man 1's penis is in man 2's hand"
-        scene["position"]["man 1"] = "bent over man 2, his penis is in man 2's hand"
-        self.assertEqual(scenes.checks.placed_genitals(scene, ["man 1", "man 2"])["position"]["man 1"],
-                         scene["position"]["man 1"], "the actions give both directions: nothing is reversed")
-        solo = {**self.scene("bedroom"), "actions": "the man is sitting on a chair with a cushion",
-                "position": {"man": "sitting on a chair, his genitals are pressed against the cushion, his hands grip the arms"}}
-        self.assertEqual(scenes.checks.placed_genitals(solo, ["man"])["position"]["man"],
-                         "sitting on a chair, his hands grip the arms")
-        solo["actions"] = "the man is holding his genitals, a cushion pressed against them"
-        self.assertEqual(scenes.checks.placed_genitals(solo, ["man"])["position"], solo["position"],
-                         "the actions name his genitals: their contact stays")
 
     def test_a_prop_copied_from_an_earlier_image_is_dropped(self):
         # A live writer put the prop suggested for one image into all twelve images.
@@ -231,9 +180,12 @@ class SceneVariety(Harness):
         self.assertNotIn("frame of", prompts.scene_text(old), "a scene saved before frames still reads")
 
     def test_only_what_the_camera_can_see_is_described(self):
-        # A body part turned away, hidden by another body or inside someone is never written as visible.
+        # A body part turned away or hidden by another body is never written as visible: the camera, written after the
+        # positions, says what the image shows.
         self.write()
-        self.assertIn("which of their\n  body parts the camera can see", self.composer()[0].system_message)
+        system = " ".join(self.composer()[0].system_message.split())
+        self.assertIn("inside the frame and visible (a part another body or a surface covers, or one turned away from "
+                      "the viewpoint, is not)", system)
         self.assertIn("Describe a body part only when the scene's positions and camera let the camera see it",
                       " ".join(prompts.SCENE_RULES.split()))
 
@@ -241,11 +193,11 @@ class SceneVariety(Harness):
         self.write()
         system = " ".join(self.composer()[0].system_message.split())
         self.assertIn("a person takes part in two acts at once only when their position reaches both partners", system)
-        self.assertIn("The positions and the actions agree on who does what to whom", system)
+        self.assertIn("the positions and the actions agree on who does what to whom", system)
 
     def test_the_requested_activity_is_every_images_action(self):
         self.write()
-        system = self.composer()[0].system_message
+        system = " ".join(self.composer()[0].system_message.split())
         self.assertIn("never replace it with a lesser, earlier or different activity, and vocabulary never changes it", system)
         self.assertIn("kissing, touching, undressing or foreplay alone never stand in for it", system)
 
@@ -401,37 +353,6 @@ class EntryCopy(unittest.TestCase):
             self.assertEqual(self.clean(kept), kept)
 
 
-class OpeningConflicts(Harness):
-    labels = ["man 1", "man 2"]
-    gagged = {"actions": "man 1's penis is in man 2's mouth", "position": {
-        "man 1": "standing, his penis is in man 2's mouth", "man 2": "kneeling, he is wearing a ball gag"}}
-
-    def test_a_contradiction_is_a_reason_to_ask_again_but_two_in_one_mouth_is_not(self):
-        reasons = scenes.checks.opening_conflicts(self.gagged, self.labels)
-        self.assertEqual(reasons, ["man 2's mouth is covered while man 1's body part is in it: keep one of them"])
-        ring = {**self.gagged, "position": {**self.gagged["position"], "man 2": "kneeling, a ring gag holds his mouth open"}}
-        self.assertEqual(scenes.checks.opening_conflicts(ring, self.labels), [])
-        three = ["man 1", "man 2", "man 3"]
-        shared = {"actions": "man 1's penis and man 2's penis are both in man 3's mouth", "position": {
-            "man 1": "his penis in man 3's mouth", "man 2": "his penis in man 3's mouth", "man 3": "kneeling"}}
-        self.assertEqual(scenes.checks.opening_conflicts(shared, three), [], "the request decides how many")
-        swapped = {"actions": "man 1's penis is in man 3's mouth", "position": {
-            "man 1": "his penis is inside man 3's anus", "man 2": "watching", "man 3": "on man 1's lap"}}
-        self.assertEqual(scenes.checks.opening_conflicts(swapped, three),
-                         ["the actions put man 1's body part in man 3's mouth but the positions put it in their anus: make "
-                          "the actions and every position agree"])
-
-    def test_only_the_image_that_contradicts_itself_is_asked_again(self):
-        self.brief["input"]["amount"] = 2
-        self.replies = [{**self.scene("cellar"), **self.gagged}, self.scene("attic"), self.scene("cellar")]
-        written = scenes.write_scenes({"backend": "mock"}, self.request, self.brief, progress=lambda _: None)
-        self.assertEqual(len(self.composer()), 2)
-        retry = composer_user(self.composer()[1].user_message)
-        self.assertEqual([row["image"] for row in retry["images"]], [1], "the other image is kept as written")
-        self.assertIn("man 2's mouth is covered", self.composer()[1].system_message)
-        self.assertEqual(written["scenes"][1]["space"], "attic")
-
-
 class FinalLabels(Harness):
     def write(self, final):
         self.final = list(final)
@@ -465,17 +386,25 @@ class FinalLabels(Harness):
         self.assertEqual(written[0]["prompt"], "man_2 leans back.")
         self.assertFalse(written[0].get("error"))
 
-    def test_the_runs_director_shapes_the_final_prompt_but_never_the_scene(self):
+    def test_the_runs_director_shapes_the_scene_and_the_final_prompt_writes_it_as_decided(self):
+        # A live final writer given the Director's emphasis added states and acts the decided scene did not have, so
+        # the Director decides each scene's emphasis once and the final prompt writes the scene as decided.
         from dataclasses import replace
         self.request = replace(self.request, director_preset="nsfw_director")
+        self.brief["settings"] = {**self.brief["settings"], "director": "nsfw_director"}
         self.write(["The taller man kneels behind his partner."])
         final = [call for call in self.calls if call.diagnostic_stage == "final"][0]
-        self.assertIn("DIRECTOR BEHAVIOR — Explicit Adult", final.system_message + final.user_message)
+        self.assertNotIn("DIRECTOR BEHAVIOR", final.system_message)
+        for layer in ("PRIORITY AND CONFLICT RESOLUTION", "FRAME COMPLETENESS DEFAULT", "MODE ADAPTER",
+                      "PRESERVATION CONSTRAINTS", "Creativity —"):
+            self.assertNotIn(layer, final.system_message, "a decided scene is not designed again")
+        self.assertIn("The idea is one image whose scene is already decided", final.system_message)
+        self.assertIn("TARGET MODEL ADAPTER", final.system_message)
         self.calls.clear()
         self.brief["input"]["amount"] = 1
         scenes.write_scenes({"backend": "mock"}, self.request, self.brief, progress=lambda _: None)
         composer = self.composer()[0]
-        self.assertNotIn("Director", composer.system_message + composer.user_message)
+        self.assertIn("DIRECTOR EMPHASIS — Explicit Adult", composer.system_message)
 
     def test_names_and_plain_words_are_not_labels(self):
         brief = {"characters": [{"label": "man 1"}, {"label": "Alex"}, {"label": "woman"}]}
@@ -553,7 +482,12 @@ class AspectRatio(Harness):
     def test_a_chosen_ratio_is_told_to_both_writers_with_its_shape(self):
         writer, final = self.run_with("3:4")
         self.assertIn("Every image is 3:4, a tall frame", writer)
+        # The frame never overrides a pose the request or the entry decides (people side by side in a tall frame).
+        self.assertIn("change a pose only when neither the request nor the image's entry decides it", " ".join(writer.split()))
         self.assertIn("spread the people and the action over its height", writer)
+        # A live tall image showed a level body from the side across the short side and the image model broke the bodies.
+        self.assertIn("The arrangement's longest line runs along the frame's long side", writer)
+        self.assertIn("never from the side at full length", writer)
         self.assertIn("IMAGE SHAPE: the image is 3:4, a tall frame", final)
         self.calls.clear()
         writer, final = self.run_with("16:9")

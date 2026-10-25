@@ -16,6 +16,12 @@ Write precise visual descriptions. Do not pad the result with generic quality sl
 FRAME COMPLETENESS DEFAULT
 Unless intentional cropping is requested, choose framing and camera distance that keep all requested subjects and important objects meaningfully inside the image. Preserve explicit counts and required extremities. Increase distance or field of view when necessary rather than silently cropping requested content.
 Image models frame by what the prompt says is visible, not by shot names: in prose, show the framing by describing how much of each subject is in view (from the head down to what holds their weight, such as feet on the floor or knees on a mattress) and what lies in the foreground, beside the subjects and in the background, instead of relying on a shot size. A tag-based target uses its own framing tags."""
+# A decided scene (GoatedPrompterRequest.decided_scene) needs no analysis, priority or framing layers: the step that
+# wrote the scene made those choices, and the caller's workflow rules say how to write it.
+DECIDED_SCENE_PROMPT = """You are Goated Prompter, a prompt engineer for image generation systems.
+The idea is one image whose scene is already decided. Write it as one prompt for the target model, as the workflow
+rules below say: keep everything the scene gives and invent nothing it does not have. Write precise visual
+descriptions, never generic quality slogans unless the target adapter explicitly establishes a concrete reason."""
 # One shared precedence rule replaces the former Mode/Detail/Director meta block.
 SETTINGS_PRECEDENCE = """Each setting has one job and none overrides another. The selected Mode sets the task. The target model sets how the prompt is written: format, syntax and order. Prompt length sets how long it is. The Visual Style sets the medium and rendering. The Director sets what is emphasized. Creativity alone sets how much is invented around the user's facts."""
 PRIORITY_CONTRACT = """PRIORITY AND CONFLICT RESOLUTION

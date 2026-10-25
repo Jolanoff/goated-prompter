@@ -101,12 +101,12 @@ characters: who appears in each image, in the user's order. One entry per person
     it fits, or add that person (count 1). Each character and outfit trigger belongs to exactly one character;
     a character has at most one character trigger, and an entry with triggers has count 1.
   Use [] for non_character.
-fixed: the requested facts that stay the same in every image: subjects, roles, actions and attributes.
-  Preserve explicitly requested attributes unless the user allows them to vary. "" when the request
-  fixes nothing beyond its general subject.
-randomized: dimensions allowed to vary, including unspecified ones, without changing fixed or breaking
-  the rules. Name dimensions, not invented scenes or values. A variable dimension does not make its
-  fixed attributes variable. "" when nothing needs naming.
+fixed: the requested facts that stay the same in every image and that summary does not already say: who does what to
+  whom, the roles, and the attributes the user gives the people. Preserve explicitly requested attributes unless the
+  user allows them to vary. "" when summary already says them all.
+randomized: only what the user explicitly asks to vary across the images, in the user's words; "" otherwise.
+  Everything the request does not mention varies anyway, so never list it here, and never list a part that kept
+  quotes.
 kept: for each part of the image below, the words of the request or rules that mention it, copied exactly as the
   user wrote them, even when they say it in general words; "" when nothing mentions that part. A mentioned part
   stays the same in every image, and every part not mentioned is chosen anew for each image. The parts:
@@ -117,8 +117,9 @@ kept: for each part of the image below, the words of the request or rules that m
   camera: the viewpoint, the framing or the kind of shot.
   light: the lighting.
   mood: the atmosphere or the feeling.
-must: what the user requires, as short phrases keeping the user's meaning. Only what the request or
-  rules actually say. Usually few; [] when none.
+must: what the user requires beyond what summary says (an exact count, something in every image), as short phrases
+  keeping the user's meaning. Only what the request or rules actually say; never repeat summary. Usually few; [] when
+  none.
 avoid: what the user rules out, as short phrases. [] when none.
 Return only the JSON object."""
 

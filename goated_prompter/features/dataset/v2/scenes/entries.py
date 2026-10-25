@@ -148,13 +148,19 @@ def deal_hands(groups, total, rng, size=HAND, words=frozenset()):
     - the request also names the category or a pack of it by its kind, the last word of its name ("tools" for a pack
       called Garden Tools), so it asks for the kind in general: every image gets one entry about what it names and one
       other, and the vocabulary adds variety. Another word of the name is not the kind: "reading in a quiet library"
-      never asks for a pack called Reading Spaces in general, so every image stays in the library."""
+      never asks for a pack called Reading Spaces in general, so every image stays in the library.
+    A request word that names a selected pack of another category is that pack's theme, never one entry of this
+    category: a live request about "public" places with a pack called Public Risk got the one prop entry that also
+    said "public" in every image."""
     hands = {number: {} for number in range(1, total + 1)}
+    themes = {group["category"]: {word for pack in group["packs"] for word in _words(pack.get("name", ""))}
+              for group in groups}
     for group in groups:
         if group["category"] == ACTIONS_CATEGORY:
             continue
         entries = list(dict.fromkeys(entry for pack in group["packs"] for entry in pack["entries"]))
-        if related := requested_entries(entries, words):
+        others = set().union(*(theme for category, theme in themes.items() if category != group["category"]))
+        if related := requested_entries(entries, words - others):
             kinds = (re.findall(r"[a-z0-9]+", name.casefold())[-1:] for name in
                      [group["category"], *(pack.get("name", "") for pack in group["packs"])])
             general = words & {word for kind in kinds for word in kind}

@@ -18,10 +18,14 @@ _COLLARED = r"collared(?! (?:shirts?|blouses?|dress(?:es)?|jackets?|coats?|tops?
 _LEASH = (r"(?<!dog on a )(?<!dog's )(?<!puppy on a )(?<!dog on )leash(?:ed)?"
           r"(?! (?:on|for|to) (?:a |the |his |her |their )?(?:dog|puppy|pet)s?\b)")
 
+# Genitals in everyday words; with their anatomical names, what makes an image explicit (explicit_text).
+_GENITALS = r"cocks?|dicks?|pussy|pussies|genitals?"
+_EXPLICIT_PARTS = re.compile(r"\b(?:penis(?:es)?|testicles|anus|vagina|vulva|clitoris|" + _GENITALS + r")\b")
+
 # Broad safety detection includes anatomy and styling even when no sexual action is requested.
 _SEXUAL = re.compile(r"\b(?:sex|sexual\w*|intercourse|nsfw|porn\w*|explicit|erotic\w*|nude|nudity|naked|fuck\w*|blowjob\w*|"
-                     r"handjob\w*|oral(?! (?:presentations?|exams?|examinations?|hygiene|history|health|surgery|traditions?|reports?|arguments?))|anal|penetrat\w*|masturbat\w*|cum(?! laude)|cums|cumming|cumshot\w*|orgasm\w*|cocks?|"
-                     r"dicks?|pussy|pussies|boobs?|tits|nipples?|genitals?|horny|aroused|"
+                     r"handjob\w*|oral(?! (?:presentations?|exams?|examinations?|hygiene|history|health|surgery|traditions?|reports?|arguments?))|anal|penetrat\w*|masturbat\w*|cum(?! laude)|cums|cumming|cumshot\w*|orgasm\w*|"
+                     + _GENITALS + r"|boobs?|tits|nipples?|horny|aroused|"
                      # Kink and genre words; ambiguous ones need their sexual form ("collared", not "collar") and
                      # everyday uses are left out (a collared shirt, a dog on a leash, kinky hair).
                      r"slaves?|sex slaves?|" + _COLLARED + r"|" + _LEASH + r"|pet play|bdsm|dominatrix|dom(?:/| and )sub|"
@@ -74,6 +78,25 @@ def sexual_request(data, *, include_director=True):
     patterns = (_SEXUAL_ACTION, _ACT_EVIDENCE["feet"])
     return (any(_asked(_user_text(data), pattern) for pattern in patterns)
             or include_director and any(_asked(_director_text(data), pattern) for pattern in patterns))
+
+
+def sexual_text(text):
+    """Whether a text names a sexual act in the words the request detection knows (a scene written in everyday
+    words, which has no anatomical name for the act)."""
+    return bool(_SEXUAL_ACTION.search(str(text or "").casefold()))
+
+
+def explicit_text(text):
+    """Whether a text shows genitals or names a sexual act, in anatomical or everyday words: an image it describes is
+    explicit."""
+    return bool(_EXPLICIT_PARTS.search(str(text or "").casefold())) or sexual_text(text)
+
+
+def adult_text(text):
+    """Whether a text shows adult content of any kind (nudity, anatomy, suggestive styling) in the words the request
+    detection knows: an image it describes is never safe."""
+    text = str(text or "").casefold()
+    return bool(_SEXUAL.search(text) or _SUGGESTIVE.search(text))
 
 
 def adult_content_request(data, *, include_director=True):
