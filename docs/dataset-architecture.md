@@ -55,8 +55,10 @@ category's.
 Places (`v2/scenes/places.py`): when the place is free, or kept by the user's words, every image is dealt one place
 the scene must use (`place_plan`, no model call). A named place is authoritative: the request's place words without
 its setting ("in his room in space": "in his room", setting "in space") are matched among the groups of the request's
-world, or of every world when a setting carries it; a place in no catalog uses its setting's group; with neither,
-nothing is dealt and the writer follows the words. The setting goes to every image with its place. No place named: the
+world, or of every world when a setting carries it; a place in no catalog uses its setting's group, then Understanding's ideas,
+which for a named place are only that place or its kinds (words that were never a place, a time of day kept as one,
+still find places; a place missing from the catalog still finds none); with nothing, nothing is dealt and the writer
+follows the words. The setting goes to every image with its place. No place named: the
 user's selected Spaces packs when there are any; else the groups Understanding's ideas name (6 to 8 places, obvious and
 less expected, over the kinds of place the request fits), each idea matched among the groups of the request's world
 (an idea is a loose suggestion, so a word match on it needs less agreement in meaning, `IDEA_AGREE`, than the user's
@@ -84,7 +86,11 @@ trigger.
 
 Understanding (brief version 16) records the subject type, participant count, stated attributes, the central
 activity, and what stays fixed and what varies, plus `places`: the user's words for what surrounds the place
-(`setting`), the request's `world` and, when it names no place, a few `ideas` of where it can happen. It never reads
+(`setting`), the `world` of the surroundings and always 6 to 8 `ideas` of where it can happen (for a named place, only
+that place or its kinds). Each kept part has its own words: a time of day is light, the weather is mood, and every
+act stays under action. The model fills the parts in `KEPT_ORDER` (who and what happens first), and code
+drops words quoted for clothing or expression that are only the subject's or the action's, and any other part that
+repeats them exactly (`_own_words`). It never reads
 vocabulary. It links every character and outfit trigger (by
 number) to exactly one person, the character's `triggers` (code checks it; a character trigger is one person, count 1),
 and the review shows the link. Each character carries `known`: its looks come from its name or an

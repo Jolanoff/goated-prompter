@@ -103,8 +103,17 @@ class Understanding(unittest.TestCase):
         named = {**json.loads(MAGICAL_SECOND), "kept": {"place": "in his room in space"},
                  "places": {"setting": "in space", "world": "sci-fi", "ideas": ["a hangar"]}}
         result, _ = self.understand([json.dumps(named)], subject="a reader asleep in his room in space")
-        self.assertEqual(result["places"], {"setting": "in space", "world": "sci-fi", "ideas": []},
-                         "a request that names its place gets no ideas")
+        self.assertEqual(result["places"], {"setting": "in space", "world": "sci-fi", "ideas": ["a hangar"]},
+                         "ideas are kept for a named place too: they are its fallback")
+        # Live briefs kept a time of day and an act as the place and filed acts as clothing or expression, so no place
+        # was dealt; and called a story character's ordinary surroundings another world.
+        prompt = " ".join(understanding.SYSTEM.split())
+        for rule in ("place: where the images happen, or what someone is on or in; never a time of day, the weather or "
+                     "an act", "light: the lighting and the time of day", "clothing: what anyone wears: garments and "
+                     "accessories only", "every act and what it leaves on the body stays here",
+                     "the world of the surroundings the images happen in", "always 6 to 8 different places",
+                     "When kept names a place, every idea is that place or a kind of it, never another place"):
+            self.assertIn(rule, prompt)
         # A live brief gave the whole place as its setting: that is no setting.
         same = {**named, "kept": {"place": "in his room"}, "places": {**named["places"], "setting": "in his room"}}
         result, _ = self.understand([json.dumps(same)], subject="a reader asleep in his room")
@@ -122,6 +131,22 @@ class Understanding(unittest.TestCase):
                       " ".join(understanding.SYSTEM.split()))
         with self.assertRaises(ValueError):
             understanding.validate_brief({**result, "places": {**result["places"], "world": "the moon"}})
+
+    def test_words_of_who_appears_and_what_happens_are_never_kept_as_another_part(self):
+        # Live briefs kept the act as clothing in most requests (clothing was filled right after the subject), and one
+        # copied the act into every part.
+        answer = {**json.loads(MAGICAL_SECOND), "kept": {
+            "subject": "a reader", "action": "reading a book quietly", "clothing": "reading a book",
+            "expression": "quietly", "objects": "a book", "mood": "reading a book quietly"}}
+        result, _ = self.understand([json.dumps(answer)], subject="a reader reading a book quietly")
+        self.assertEqual(result["kept_words"], {"subject": "a reader", "action": "reading a book quietly",
+                                                "objects": "a book"}, "a piece of the act may still be an object")
+        dressed = {**json.loads(MAGICAL_SECOND), "kept": {"subject": "a reader", "clothing": "in a red coat",
+                                                         "action": "reading"}}
+        result, _ = self.understand([json.dumps(dressed)], subject="a reader in a red coat reading")
+        self.assertEqual(result["kept_words"]["clothing"], "in a red coat")
+        schema = understanding._schema()["properties"]["kept"]["properties"]
+        self.assertLess(list(schema).index("action"), list(schema).index("clothing"), "the act is filled first")
 
     def test_the_parts_the_request_mentions_are_kept_and_the_rest_vary(self):
         # A request that named one place and one pose had every scene asked again as a repeat of the first.

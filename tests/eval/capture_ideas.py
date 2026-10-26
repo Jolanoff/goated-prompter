@@ -39,7 +39,8 @@ def main():
                                creativity=data["creativity"], style=data["style"], prompt_length=data["length"],
                                director_preset="general_director")
             brief = understand(config, request, data, progress=lambda _: None)
-            captured[case["request"]] = {**brief["places"], "kept_place": brief["kept_words"].get("place", "")}
+            captured[case["request"]] = {**brief["places"], "kept_place": brief["kept_words"].get("place", ""),
+                                         "kept": brief["kept_words"]}
             print(f"{case['request'][:40]:40} {captured[case['request']]}", flush=True)
     finally:
         get_process_manager().cleanup_all()

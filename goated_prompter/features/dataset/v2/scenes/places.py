@@ -7,8 +7,11 @@ vocabulary selection orders, deals and pairs them (vocabulary/selection.py). Thi
 searched, in which groups:
   named   the request's place words without the setting ("his room in space": "his room", setting "in space") among
           the groups of the request's world, or of every world when a setting carries the world (the room in space is a
-          room). The user's words are authoritative: when no group answers them, the setting's group is used, and with
-          neither nothing is dealt and the writer follows the request's words. The setting goes to every image.
+          room), widened by the ideas, which for a named place are only that place or its kinds. The user's words are
+          authoritative: when no group answers them, the setting's group is used, then the
+          ideas, which for a named place are only that place or its kinds (so words that were never a place, a time of
+          day kept as one, still find places, and a place missing from the catalog still finds none); with nothing,
+          nothing is dealt and the writer follows the request's words. The setting goes to every image.
   free    the request names no place: the user's selected Spaces packs when there are any; else the groups that
           Understanding's ideas name among the groups of the request's world (and, for an adult request, the
           adult_default groups first). An idea no group answers adds nothing; with no idea answered nothing is dealt.
@@ -60,19 +63,28 @@ def place_plan(brief, groups, embeddings=None):
     if words:
         setting = facts["setting"]
         found = match(in_world(groups, None if setting else facts["world"]), _without(words, setting), embeddings)
-        if found:
-            return found, setting
-        return (match(in_world(groups, facts["world"]), setting, embeddings) if setting else []), ""
+        if found:  # the ideas of a named place are that place or its kinds: they widen it, never leave it
+            return _merged(found + _from_ideas(brief, groups, facts, embeddings, adult_first=False)), setting
+        found = match(in_world(groups, facts["world"]), setting, embeddings) if setting else []
+        # The words name no catalog place (or were never a place: a time of day kept as one): the ideas, which for a
+        # named place are that place or its kinds, so a place missing from the catalog still deals nothing.
+        return found or _from_ideas(brief, groups, facts, embeddings, adult_first=False), ""
     selected = [group for group in groups if group["selected"]]
     if selected:
         return selected, ""  # the user's own places come first
+    return _from_ideas(brief, groups, facts, embeddings, adult_first=brief.get("path") == "nsfw_character"), ""
+
+
+def _from_ideas(brief, groups, facts, embeddings, adult_first):
+    """The groups Understanding's ideas name among the groups of the request's world, in the most varied order; the
+    adult_default groups lead when adult_first."""
     pool = in_world(groups, facts["world"])
     if embeddings is not None:
         embeddings.prepare(facts["ideas"])  # every idea embedded in one call
-    first = [group for group in pool if group["adult"]] if brief.get("path") == "nsfw_character" else []
+    first = [group for group in pool if group["adult"]] if adult_first else []
     found = _merged(first + [group for idea in facts["ideas"] for group in match(pool, idea, embeddings, IDEA_AGREE)])
     scores = [2.0 if group in first else 1.0 for group in found]  # the adult default leads; then the most varied order
-    return diverse_order(found, scores, group_vectors(found, embeddings)), ""
+    return diverse_order(found, scores, group_vectors(found, embeddings))
 
 
 def place_problems(scene, place, words=None):

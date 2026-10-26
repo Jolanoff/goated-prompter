@@ -22,15 +22,16 @@ keys, the path, the characters) is sent back to the model.
 
 Brief (validated by validate_brief before it can be confirmed):
   version, path, summary, fixed (what stays the same), randomized (what may and should vary)
-  kept        the parts of the image that do not vary freely (KEPT_PARTS): no later step reads them as a repeat
+  kept        the parts of the image that do not vary freely (KEPT_PARTS): no later step reads them as a repeat. Words
+              quoted for two parts stay with who appears or what happens (_own_words).
   consistency {part: locked|themed|free} for every part (v2/consistency.py): the draft's own choices, then the
               request (a mentioned part it asks to differ is free, to be identical locked, else at least themed), then
               the dataset type's defaults
   kept_words  {part: the user's words} for every part the request mentions, checked against what the user wrote
   places      {setting, world, ideas} for the places dealt to the images (v2/scenes/places.py): setting is the user's
               words for what surrounds the place ("in space"), checked like kept_words, "" when none; world is the
-              request's world (options.dataset.WORLDS); ideas are a few kinds of place the request can happen in when it
-              names no place ([] when it does)
+              world of the surroundings (options.dataset.WORLDS); ideas are places the request can happen in (kinds of
+              the named place when it names one, used when its words name no catalog place)
   people      how many people are in each image (the length of characters), counted by code
   characters  [{label, gender: male|female|custom|"", custom, pronoun: he|she|it|"", known: bool, triggers: [n]}],
               one per person; "" means unspecified, characters is empty on non_character. triggers: the numbers of
@@ -74,6 +75,9 @@ BRIEF_FIELDS = ("path", "summary", "characters", "fixed", "randomized", "must", 
 # for each part (optional: {} when missing) and code keeps only the parts whose words are really there (kept_parts);
 # locked and varied name the mentioned parts the request asks to be identical or to differ (consistency.resolve).
 KEPT_PARTS = CONSISTENCY_PARTS
+# The order the model fills the kept parts in: who and what happens first, so the words of the act are already taken
+# when it reaches clothing (filled right after the subject, clothing took the act in most live briefs).
+KEPT_ORDER = ("subject", "action", "place", "objects", "clothing", "expression", "camera", "light", "mood")
 LEVEL_FIELDS = ("locked", "varied")
 PLACE_FIELDS = ("setting", "world", "ideas")
 MODEL_FIELDS = (*BRIEF_FIELDS, "kept", *LEVEL_FIELDS, "places")
@@ -125,14 +129,15 @@ kept: for each part of the image below, the words of the request or rules that m
   for two parts); "" when nothing mentions that part. Every image follows
   the words of a mentioned part, and every part not mentioned is chosen anew for each image. The parts:
   subject: who appears and how they look (a name, a person's features, a body attribute).
-  expression: what a face shows.
-  place: where the images happen, or what someone is on or in.
-  action: what anyone does, including a pose or a position.
+  action: what anyone does, including a pose or a position; every act and what it leaves on the body stays here,
+    never under clothing, expression, objects or place.
+  place: where the images happen, or what someone is on or in; never a time of day, the weather or an act.
   objects: things used, held, worn as gear or placed in the image.
-  clothing: what anyone wears.
+  clothing: what anyone wears: garments and accessories only.
+  expression: what a face shows.
   camera: the viewpoint, the framing, the kind of shot, or which body parts the image must show.
-  light: the lighting.
-  mood: the atmosphere or the feeling, and visible effects (rain, glow, smoke).
+  light: the lighting and the time of day.
+  mood: the atmosphere or the feeling, the weather, and visible effects (rain, glow, smoke).
 locked: only the parts in kept the request says must look identical in every image, in its own words for that part
   ("the same", "identical", "exactly": the same pose, the same background, one exact outfit), as a list of part names;
   [] when none. A part the request only names or requires in every image is not locked (a body part to show, a named or
@@ -142,12 +147,14 @@ varied: the parts in kept the request asks to differ between the images (differe
 places: where the images can happen:
   setting: the words of the request or rules that put the place inside a larger surrounding (in space, at the zoo),
     copied exactly as the user wrote them; "" when none. Never the place itself.
-  world: "everyday", "historical", "fantasy" or "sci-fi": the world the request belongs to; "everyday" when it names
-    none.
-  ideas: when kept has no place, 6 to 8 different places where the request can plausibly happen in its world, a few
-    plain words each: the obvious ones and less expected ones that still fit, spread over the kinds of place where it
-    fits (at home, work and study, public places, travel, outdoors and nature, events and gatherings, performances and
-    shows), at most two of one kind; [] when kept names the place.
+  world: "everyday", "historical", "fantasy" or "sci-fi": the world of the surroundings the images happen in;
+    "everyday" unless the request puts them in a historical, fantasy or sci-fi setting (a character from a story of
+    another world in an ordinary place is still "everyday").
+  ideas: always 6 to 8 different places where the request can plausibly happen in its world, a few plain words each.
+    When kept names a place, every idea is that place or a kind of it, never another place. Otherwise the obvious
+    ones and less expected ones that still fit, spread over the kinds of place where it fits (at home, work and study,
+    public places, travel, outdoors and nature, events and gatherings, performances and shows), at most two of one
+    kind.
 must: what the user requires beyond what summary says (an exact count, something in every image), as short phrases
   keeping the user's meaning. Only what the request or rules actually say; never repeat summary. Usually few; [] when
   none.
@@ -193,8 +200,8 @@ def _schema():
         "path": {"type": "string", "enum": ["character", "non_character"]}, "summary": text,
         "characters": {"type": "array", "maxItems": MAX_CHARACTERS, "items": character},
         "fixed": text, "randomized": text, "must": phrases, "avoid": phrases,
-        "kept": {"type": "object", "additionalProperties": False, "required": list(KEPT_PARTS),
-                 "properties": {part: text for part in KEPT_PARTS}},
+        "kept": {"type": "object", "additionalProperties": False, "required": list(KEPT_ORDER),
+                 "properties": {part: text for part in KEPT_ORDER}},
         **{field: {"type": "array", "maxItems": len(KEPT_PARTS), "items": {"type": "string", "enum": list(KEPT_PARTS)}}
            for field in LEVEL_FIELDS},
         "places": {"type": "object", "additionalProperties": False, "required": list(PLACE_FIELDS), "properties": {
@@ -248,6 +255,23 @@ def _phrases(value):
     return [text for text in (_optional_text(item) for item in value) if text]
 
 
+def _own_words(kept):
+    """The kept parts without words that belong to who appears or what happens: clothing and expression whose words
+    are all the subject's or the action's, and any other part that repeats the subject's or the action's words exactly
+    (a part may still quote a piece of them: "phone" of "on the phone", "on a bed" of "sitting on a bed")."""
+    words = lambda part: {word for word in re.findall(r"[a-z0-9]+", str(kept.get(part, "")).casefold())
+                          if word not in _FILLER_WORDS}
+    flat = lambda part: " ".join(str(kept.get(part, "")).casefold().split())
+    who = words("subject") | words("action")
+    return {part: text for part, text in kept.items()
+            if part in ("subject", "action") or not words(part)
+            or not (words(part) <= who if part in ("clothing", "expression")
+                    else flat(part) in (flat("subject"), flat("action")))}
+
+
+_FILLER_WORDS = frozenset("a an the and of in on at to with his her their its".split())
+
+
 def recover(value):
     """The model's answer with its optional texts normalized (a copy); what cannot be recovered is left unchanged
     for model_errors to report."""
@@ -256,7 +280,7 @@ def recover(value):
     value = dict(value)
     # kept is optional: {part: the user's words that mention it}; only the known parts with text count.
     said = value.get("kept") if isinstance(value.get("kept"), dict) else {}
-    value["kept"] = {part: text for part in KEPT_PARTS if (text := _optional_text(said.get(part)))}
+    value["kept"] = _own_words({part: text for part in KEPT_PARTS if (text := _optional_text(said.get(part)))})
     for field in LEVEL_FIELDS:  # optional too: the parts named, known ones only
         named = value.get(field) if isinstance(value.get(field), list) else []
         value[field] = [part for part in KEPT_PARTS if part in named]
@@ -413,13 +437,13 @@ def kept_parts(quotes, data):
 
 def place_facts(places, place, data):
     """The brief's places: the setting only when its words are really in what the user wrote and it is more than the
-    place itself (a setting that holds all of the place words is no setting), and ideas only when the request names no
-    place (place: the user's words for it, "" when none)."""
+    place itself (a setting that holds all of the place words is no setting; place: the user's words for it, "" when
+    none), and the ideas as given."""
     flat = lambda text: " ".join(str(text).casefold().split())
     setting = places["setting"] if places["setting"] and kept_parts({"place": places["setting"]}, data) else ""
     if setting and place and flat(place) in flat(setting):
         setting = ""
-    return {"setting": setting, "world": places["world"], "ideas": [] if place else list(places["ideas"])}
+    return {"setting": setting, "world": places["world"], "ideas": list(places["ideas"])}
 
 
 def apply_rules(value, data):

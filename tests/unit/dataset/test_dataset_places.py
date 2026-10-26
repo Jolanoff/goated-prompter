@@ -57,6 +57,20 @@ class NamedPlace(unittest.TestCase):
         self.assertEqual(places.place_plan(brief("themed"), GROUPS), ([], ""),
                          "an older brief keeps its place without words: nothing is dealt")
 
+    def test_the_ideas_of_a_named_place_widen_it(self):
+        # A live named place found one group with one entry and dealt it to every image; its ideas named its kinds.
+        found, _ = places.place_plan(brief("themed", "in his room", ideas=["a sunny bedroom", "a cosy sofa corner"]),
+                                     GROUPS)
+        self.assertEqual(names(found), ["bedroom", "living room"])
+
+    def test_place_words_that_name_no_place_fall_back_to_the_ideas(self):
+        # Live briefs kept a time of day as the place: no place was dealt at all.
+        found, _ = places.place_plan(brief("themed", "at dawn", ideas=["a city park", "a narrow street"],
+                                           path="nsfw_character"), GROUPS)
+        self.assertEqual(names(found), ["park", "city street"], "the ideas, without the adult default before them")
+        self.assertEqual(places.place_plan(brief("themed", "aboard a submarine", ideas=["a submarine bunk"]), GROUPS),
+                         ([], ""), "a named place missing from the catalog still deals nothing")
+
     def test_a_place_found_by_meaning_must_fit_the_world(self):
         vectors = {"a resting chamber": [1, 0], retrieval.group_text(GROUPS[0]): [1, 0],
                    retrieval.group_text(GROUPS[6]): [0, 1]}
