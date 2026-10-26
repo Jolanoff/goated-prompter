@@ -20,8 +20,8 @@ entries, grouped under the category's Core instruction and shuffled by the run's
 }
 ```
 
-- `name`, `category` and `entries`, plus an optional `description` (1–300 characters) and an optional `people`,
-  nothing else. The description
+- `name`, `category` and `entries` (or `groups`, below), plus an optional `description` (1–300 characters), an optional `people` and,
+  for a built-in pack, an optional `always`, nothing else. The description
   says what the pack is for and how its entries are written ("adult men with heavy muscle; entries already describe
   men"); the scene writer reads it with the pack's entries, and it never overrides the request or the run's settings.
 - `category` must be the folder's registered category (`vocabulary/Spaces/Fantasy.json` → `"Spaces"`). The
@@ -61,6 +61,21 @@ Names ignore case, spaces, hyphens and "&" written as "and", so the pack's file 
 or whose words match none of its entries, is never used. Slots work in every category, not only objects. The
 Vocabulary Library shows a pack's linked packs so they can be selected together. Entries without brackets are
 unchanged.
+
+### Optional: groups, and always-on built-in packs
+
+Instead of `entries`, a pack may hold `groups`: `{"group": "kitchen", "words": ["kitchen", "cooking", "baking"],
+"entries": [...]}`, with up to 100 words. A search counts the group's words the request says, and the groups that
+it says most often win. So every entry of a group must fit every one of its words ("laundry" never sits with a
+garage), and a word must not mean something else in a request ("film" grain, depth of "field", hair in "waves").
+Each entry belongs to one group. `"worlds"` lists the worlds a group's entries fit (`everyday`, `historical`,
+`fantasy`, `sci-fi`; every world when it gives none): a request in another world never gets them unless it names
+them. `"adult_default": true` marks a group for adult requests that name no place. Words find a group exactly; a
+small embedding model also finds it by meaning, so a group's name and words should say plainly what its entries are.
+
+A built-in pack with `"always": true` is used in every run, selected or not, after the user's selected packs of its
+category (`Spaces/Everyday-Places` deals a place to every image). Always-on packs stay safe for work and keep entries
+distinct: two entries never share most of their words. Do not add an always-on pack unless asked.
 
 ## Categories
 

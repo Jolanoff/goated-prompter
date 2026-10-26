@@ -15,13 +15,14 @@ from goated_prompter.features.dataset.v2 import prompts, scenes, understanding
 from goated_prompter.local_jobs import Job
 
 PLACE = re.compile(r"location(\d+)")
-from tests.support.dataset_scenes import composer_user
+from tests.support.dataset_scenes import composer_user, without_places
 
 
 class SlotIdentityTests(unittest.TestCase):
     """The composer writes "location<N>" as image N's space, so every later stage can be traced to its image."""
 
     def setUp(self):
+        without_places(self)
         self.config = {"backend": "mock"}
         self.request = GoatedPrompterRequest(idea="Adult reading", planning_mode="Direct", director_preset="general_director")
         self.failing = {"omitted": set(), "description": set()}  # omitted: the answer stops before this image

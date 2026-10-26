@@ -27,6 +27,10 @@ Brief (validated by validate_brief before it can be confirmed):
               request (a mentioned part it asks to differ is free, to be identical locked, else at least themed), then
               the dataset type's defaults
   kept_words  {part: the user's words} for every part the request mentions, checked against what the user wrote
+  places      {setting, world, ideas} for the places dealt to the images (v2/scenes/places.py): setting is the user's
+              words for what surrounds the place ("in space"), checked like kept_words, "" when none; world is the
+              request's world (options.dataset.WORLDS); ideas are a few kinds of place the request can happen in when it
+              names no place ([] when it does)
   people      how many people are in each image (the length of characters), counted by code
   characters  [{label, gender: male|female|custom|"", custom, pronoun: he|she|it|"", known: bool, triggers: [n]}],
               one per person; "" means unspecified, characters is empty on non_character. triggers: the numbers of
@@ -39,9 +43,10 @@ Brief (validated by validate_brief before it can be confirmed):
   input       request, triggers (v2/triggers.py; before version 13 one trigger and trigger_at_start), rules,
               amount, nsfw, source_mode, guided_inputs, seed, seed_mode — copied by code
   settings    style, target, director, length, creativity — copied by code
-  Version 15 briefs have exactly these fields. Saved runs keep their version 9 to 14 briefs (10 also has an
+  Version 16 briefs have exactly these fields. Saved runs keep their version 9 to 15 briefs (10 also has an
   "intent" interpretation, kept as stored and no longer read; before 12 characters have no "known", before 13 no
-  "triggers", before 14 no "kept", before 15 no "consistency" or "kept_words": kept parts read as themed).
+  "triggers", before 14 no "kept", before 15 no "consistency" or "kept_words": kept parts read as themed; before 16
+  no "places").
 """
 
 import json
@@ -51,26 +56,27 @@ from ....backends.factory import create_backend
 from ....backends.recovery import GenerationRecovery
 from ....contracts import PromptInstruction, effective_model_family
 from ....director_profiles import resolve_director_config
-from ....options.dataset import CONSISTENCY_LEVELS, CONSISTENCY_PARTS
+from ....options.dataset import CONSISTENCY_LEVELS, CONSISTENCY_PARTS, WORLDS
 from .consistency import asks_same, resolve
 from .safety import ADULTS_ONLY, NO_ANIMALS, adult_content_request, adults_only_error, minor_reference
 from .triggers import all_text, brief_triggers, data_triggers, personal_numbers
 
-VERSION = 15
-VERSIONS = (9, 10, 11, 12, 13, 14, 15)  # 9 to 14: saved runs (10 with a structured intent no longer read, before 12
-                                        # no "known", before 13 one trigger string, before 14 no kept, before 15 no
-                                        # consistency)
+VERSION = 16
+VERSIONS = (9, 10, 11, 12, 13, 14, 15, 16)  # 9 to 15: saved runs (10 with a structured intent no longer read, before
+                                            # 12 no "known", before 13 one trigger string, before 14 no kept, before 15
+                                            # no consistency, before 16 no places)
 PATHS = ("sfw_character", "nsfw_character", "non_character")
 GENDERS = ("male", "female", "custom", "")
 PRONOUNS = ("he", "she", "it", "")
-MAX_CHARACTERS, MAX_COUNT, MAX_TEXT, MAX_ITEMS = 20, 20, 1200, 20
+MAX_CHARACTERS, MAX_COUNT, MAX_TEXT, MAX_ITEMS, MAX_IDEAS = 20, 20, 1200, 20, 8
 BRIEF_FIELDS = ("path", "summary", "characters", "fixed", "randomized", "must", "avoid")
 # The parts of an image a request can mention (options.dataset.CONSISTENCY_PARTS). The answer quotes the user's words
 # for each part (optional: {} when missing) and code keeps only the parts whose words are really there (kept_parts);
 # locked and varied name the mentioned parts the request asks to be identical or to differ (consistency.resolve).
 KEPT_PARTS = CONSISTENCY_PARTS
 LEVEL_FIELDS = ("locked", "varied")
-MODEL_FIELDS = (*BRIEF_FIELDS, "kept", *LEVEL_FIELDS)
+PLACE_FIELDS = ("setting", "world", "ideas")
+MODEL_FIELDS = (*BRIEF_FIELDS, "kept", *LEVEL_FIELDS, "places")
 IRREGULAR_PLURALS = {"men": "man", "women": "woman", "people": "person", "children": "child", "feet": "foot",
                      "teeth": "tooth", "mice": "mouse", "geese": "goose"}
 LEGACY_CHARACTER_FIELDS = ("label", "gender", "custom", "pronoun")  # briefs before version 12
@@ -133,6 +139,15 @@ locked: only the parts in kept the request says must look identical in every ima
   known character, an object someone uses): every image follows its words anyway.
 varied: the parts in kept the request asks to differ between the images (different rooms, various outfits), as a
   list of part names; [] when none.
+places: where the images can happen:
+  setting: the words of the request or rules that put the place inside a larger surrounding (in space, at the zoo),
+    copied exactly as the user wrote them; "" when none. Never the place itself.
+  world: "everyday", "historical", "fantasy" or "sci-fi": the world the request belongs to; "everyday" when it names
+    none.
+  ideas: when kept has no place, 6 to 8 different places where the request can plausibly happen in its world, a few
+    plain words each: the obvious ones and less expected ones that still fit, spread over the kinds of place where it
+    fits (at home, work and study, public places, travel, outdoors and nature, events and gatherings, performances and
+    shows), at most two of one kind; [] when kept names the place.
 must: what the user requires beyond what summary says (an exact count, something in every image), as short phrases
   keeping the user's meaning. Only what the request or rules actually say; never repeat summary. Usually few; [] when
   none.
@@ -181,7 +196,10 @@ def _schema():
         "kept": {"type": "object", "additionalProperties": False, "required": list(KEPT_PARTS),
                  "properties": {part: text for part in KEPT_PARTS}},
         **{field: {"type": "array", "maxItems": len(KEPT_PARTS), "items": {"type": "string", "enum": list(KEPT_PARTS)}}
-           for field in LEVEL_FIELDS}}}
+           for field in LEVEL_FIELDS},
+        "places": {"type": "object", "additionalProperties": False, "required": list(PLACE_FIELDS), "properties": {
+            "setting": text, "world": {"type": "string", "enum": list(WORLDS)},
+            "ideas": {"type": "array", "maxItems": MAX_IDEAS, "items": text}}}}}
 
 
 def instruction(data, family="qwen", errors=()):
@@ -242,6 +260,11 @@ def recover(value):
     for field in LEVEL_FIELDS:  # optional too: the parts named, known ones only
         named = value.get(field) if isinstance(value.get(field), list) else []
         value[field] = [part for part in KEPT_PARTS if part in named]
+    # places is optional too: a missing or broken one means no setting, the everyday world and no ideas.
+    places = value.get("places") if isinstance(value.get("places"), dict) else {}
+    value["places"] = {"setting": _optional_text(places.get("setting")) or "",
+                       "world": places.get("world") if places.get("world") in WORLDS else WORLDS[0],
+                       "ideas": (_phrases(places.get("ideas")) or [])[:MAX_IDEAS]}
     for key in ("summary", "fixed", "randomized"):
         if key in value and (text := _optional_text(value[key])) is not None:
             value[key] = text
@@ -255,7 +278,7 @@ def model_errors(value, nsfw, data=None):
     """Contract breaks of the brief fields the model must correct itself; the retry lists them (a stray "intent" key
     from an older prompt is ignored). Optional texts (recover) are never errors:
     fixed and randomized may be empty, and an empty summary falls back to the request."""
-    if set(value) - {"intent", "kept", *LEVEL_FIELDS} != set(BRIEF_FIELDS):
+    if set(value) - {"intent", "kept", *LEVEL_FIELDS, "places"} != set(BRIEF_FIELDS):
         return [f"Use exactly the keys {', '.join(MODEL_FIELDS)}."]
     errors = []
     if value["path"] not in ("character", "non_character"):
@@ -388,6 +411,17 @@ def kept_parts(quotes, data):
     return [part for part in KEPT_PARTS if isinstance(quotes, dict) and quotes.get(part) and found(quotes[part])]
 
 
+def place_facts(places, place, data):
+    """The brief's places: the setting only when its words are really in what the user wrote and it is more than the
+    place itself (a setting that holds all of the place words is no setting), and ideas only when the request names no
+    place (place: the user's words for it, "" when none)."""
+    flat = lambda text: " ".join(str(text).casefold().split())
+    setting = places["setting"] if places["setting"] and kept_parts({"place": places["setting"]}, data) else ""
+    if setting and place and flat(place) in flat(setting):
+        setting = ""
+    return {"setting": setting, "world": places["world"], "ideas": [] if place else list(places["ideas"])}
+
+
 def apply_rules(value, data):
     nsfw = data.get("nsfw") is True
     path = ("non_character" if value["path"] == "non_character" else "nsfw_character" if nsfw else "sfw_character")
@@ -402,6 +436,8 @@ def apply_rules(value, data):
             "fixed": value["fixed"].strip(), "randomized": value["randomized"].strip(),
             "kept": [part for part in KEPT_PARTS if consistency[part] != "free"],
             "consistency": consistency, "kept_words": {part: value["kept"][part] for part in mentioned},
+            "places": place_facts(value.get("places") or recover({})["places"],
+                                  value["kept"]["place"] if "place" in mentioned else "", data),
             "must": _beyond_triggers(value["must"], data), "avoid": _beyond_triggers(value["avoid"], data),
             "input": copied_input(data), "settings": copied_settings(data)}
     validate_content(brief, data)
@@ -419,6 +455,8 @@ def validate_brief(brief):
         expected = (*expected, "kept")
     if brief["version"] >= 15:
         expected = (*expected, "consistency", "kept_words")
+    if brief["version"] >= 16:
+        expected = (*expected, "places")
     if set(brief) != set(expected):
         raise ValueError(f"The brief needs exactly: {', '.join(expected)}.")
     if not isinstance(brief["summary"], str) or not brief["summary"].strip():
@@ -432,6 +470,12 @@ def validate_brief(brief):
             part not in KEPT_PARTS or not isinstance(text, str) or not text.strip()
             for part, text in brief["kept_words"].items())):
         raise ValueError("kept_words must give the user's words for parts of the image.")
+    places = brief.get("places")
+    if "places" in brief and (not isinstance(places, dict) or set(places) != set(PLACE_FIELDS)
+                              or not isinstance(places["setting"], str) or places["world"] not in WORLDS
+                              or not isinstance(places["ideas"], list) or len(places["ideas"]) > MAX_IDEAS
+                              or any(not isinstance(idea, str) or not idea.strip() for idea in places["ideas"])):
+        raise ValueError(f"places must give a setting, a world ({', '.join(WORLDS)}) and at most {MAX_IDEAS} ideas.")
     for key in ("fixed", "randomized"):  # optional: "" when the request fixes or varies nothing in particular
         if not isinstance(brief[key], str):
             raise ValueError(f"{key} must be text.")

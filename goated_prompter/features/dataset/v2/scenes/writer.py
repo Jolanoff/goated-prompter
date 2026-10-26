@@ -8,6 +8,7 @@ from .....backends.recovery import GenerationRecovery, RunawayRecoveryError
 from .checks import (_summary, framed_to_camera, framing_problems, retire_fields, scene_errors, unnamed_people,
                      without_copied_props, without_entry_copy)
 from .entries import _entry_key
+from .places import place_problems
 from .request import _labels, compose_instruction, subject_fields
 from .settings import ROUNDS, SECTIONS
 
@@ -49,6 +50,8 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
         images = [{"image": number, **({"input": inputs[number]} if inputs[number] else {}),
                    **({"entry": plan["dealt"][number]} if plan.get("dealt") else {}),
                    **({"frame": plan["frames"][number]} if plan.get("frames") else {}),
+                   **({"place": plan["places"][number]} if plan.get("places") else {}),
+                   **({"setting": plan["setting"]} if plan.get("places") and plan.get("setting") else {}),
                    **({"suggested": plan["hands"][number]} if (plan.get("hands") or {}).get(number) else {})}
                   for number in todo]
         errors = sorted({f"image {number}: {reason}" for number in todo for reason in reasons[number]})
@@ -82,6 +85,9 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
                                 "label and never leave a placeholder person from an entry"]
                 elif entries and entry is None:
                     problems = ['its "entry" must be copied word for word from the Actions & Poses vocabulary']
+                elif plan.get("places") and (elsewhere := place_problems(scene, plan["places"][number],
+                                                                         plan.get("place_words"))):
+                    problems = elsewhere  # the dealt place is binding, never a suggestion
             if problems:
                 reasons[number] = problems
                 progress(rejected_note(number, problems[0], scene))

@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from tests.helpers import enter_context
 from tests.quality import audit, checks, judge, report, worker
+from tests.support.dataset_scenes import without_places
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -490,6 +491,9 @@ class ModelChoice(unittest.TestCase):
 
 class LivePipeline(unittest.TestCase):
     """The worker drives the app's real Dataset pipeline (scripted model answers, so this checks wiring only)."""
+
+    def setUp(self):
+        without_places(self)
 
     def generate(self, instruction):
         stage = instruction.diagnostic_stage

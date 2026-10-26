@@ -10,7 +10,7 @@ from goated_prompter.backends.mock import MockBackend
 from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.dataset.v2 import prompts, scenes, understanding
 from goated_prompter.features.dataset.v2.draft import default_dataset_draft
-from tests.support.dataset_scenes import composer_user
+from tests.support.dataset_scenes import composer_user, without_places
 
 MEN = [{"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 2}]
 LOOK = {"skin": "tan", "build": "athletic", "hair": "short dark hair", "eyes": "brown", "expression": "a soft smile",
@@ -19,6 +19,7 @@ LOOK = {"skin": "tan", "build": "athletic", "hair": "short dark hair", "eyes": "
 
 class Harness(unittest.TestCase):
     def setUp(self):
+        without_places(self)
         self.calls, self.replies = [], []
         self.backend = MockBackend()
         enter_context(self, patch.object(self.backend, "generate", side_effect=self.generate))

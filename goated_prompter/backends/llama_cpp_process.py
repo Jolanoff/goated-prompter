@@ -1,7 +1,9 @@
-"""Owned llama.cpp server lifecycle management for Goated Prompter."""
+"""Owned llama.cpp server lifecycle management for Goated Prompter: the generation server, and the separate small
+embedding server (LlamaCppEmbedder) that vocabulary retrieval uses."""
 
 import atexit
 from dataclasses import dataclass, field, replace
+import json
 import os
 from pathlib import Path
 import shlex
@@ -13,7 +15,7 @@ import threading
 import time
 from types import ModuleType
 from urllib.error import HTTPError, URLError
-from urllib.request import ProxyHandler, build_opener
+from urllib.request import ProxyHandler, Request, build_opener
 
 from .base import BackendConfigurationError, BackendGenerationError
 from ..director_profiles import resolve_models_directory
@@ -490,6 +492,146 @@ class LlamaCppProcessManager:
         if process.poll() is None:
             raise BackendGenerationError(f"Could not stop owned llama.cpp server PID {pid}; retry unloading it.")
         _log(f"Owned llama-server stopped PID={pid}")
+
+
+@dataclass(frozen=True)
+class LlamaCppEmbeddingConfig:
+    """A small embedding model run by its own llama-server on the CPU, apart from the generation model, so embedding
+    never unloads or interrupts generation."""
+    executable: Path
+    model_path: Path
+    host: str
+    threads: int
+    startup_timeout: float
+    timeout: float
+
+    @classmethod
+    def from_mapping(cls, settings):
+        """The embedding server of the local_llama_cpp settings; None when no embedding_model_path is configured."""
+        settings = settings if isinstance(settings, dict) else {}
+        if not str(settings.get("embedding_model_path") or "").strip():
+            return None
+        host = str(settings.get("host") or "127.0.0.1").strip().lower()
+        if host not in _LOOPBACK_HOSTS:
+            raise BackendConfigurationError("local_llama_cpp host must be localhost/loopback in v0.2.")
+        return cls(
+            executable=_resolve_server_executable(settings.get("llama_server"), settings.get("runtime_root")),
+            model_path=_resolve_model_file(settings.get("embedding_model_path"), resolve_models_directory(settings),
+                                           "embedding_model_path"),
+            host=host,
+            threads=max(1, min(4, os.cpu_count() or 1)),
+            startup_timeout=_bounded_float(settings.get("startup_timeout", 180), "startup_timeout", 1, 3600),
+            timeout=_bounded_float(settings.get("timeout", 180), "timeout", 1, 3600),
+        )
+
+    def command(self, port):
+        return [
+            str(self.executable),
+            "--model", str(self.model_path),
+            "--embedding",
+            "--n-gpu-layers", "0",
+            "--threads", str(self.threads),
+            "--ctx-size", "512", "--batch-size", "512", "--ubatch-size", "512",
+            "--host", self.host,
+            "--port", str(port),
+            "--parallel", "1",
+        ]
+
+
+class LlamaCppEmbedder:
+    """Embeds texts with an owned embedding llama-server, started on the first embed and stopped by close()."""
+
+    BATCH = 64
+
+    def __init__(self, config):
+        self.config = config
+        self._process, self._port = None, None
+        self._lock = threading.Lock()
+        atexit.register(self.close)
+
+    @property
+    def model_id(self):
+        """What the vectors depend on: the model file's name and size."""
+        return f"{self.config.model_path.name}:{self.config.model_path.stat().st_size}"
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.close()
+
+    def _start(self):
+        host = "127.0.0.1" if self.config.host == "localhost" else self.config.host
+        family = socket.AF_INET6 if ":" in host else socket.AF_INET
+        with socket.socket(family, socket.SOCK_STREAM) as probe:  # a free loopback port
+            probe.bind((host, 0))
+            port = probe.getsockname()[1]
+        command = self.config.command(port)
+        _log(f"Starting embedding llama-server: {_command_text(command)}")
+        kwargs = {"cwd": str(self.config.executable.parent), "stdin": subprocess.DEVNULL,
+                  "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL, "shell": False}
+        if os.name == "nt":
+            kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        else:
+            kwargs["start_new_session"] = True
+        try:
+            process = subprocess.Popen(command, **kwargs)
+        except OSError as exc:
+            raise BackendGenerationError(f"Could not start the embedding llama.cpp server: {exc}") from exc
+        self._process, self._port = process, port
+        deadline = time.monotonic() + self.config.startup_timeout
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                self.close()
+                raise BackendGenerationError(f"The embedding llama.cpp server exited during startup with code "
+                                             f"{process.returncode}.")
+            try:
+                with _DIRECT_OPENER.open(f"{self._url}/health", timeout=1.0) as response:
+                    if response.status == 200:
+                        return
+            except (HTTPError, URLError, TimeoutError, OSError):
+                pass
+            time.sleep(0.1)
+        self.close()
+        raise BackendGenerationError("The embedding llama.cpp server did not become ready in time.")
+
+    @property
+    def _url(self):
+        host = "127.0.0.1" if self.config.host == "localhost" else self.config.host
+        return f"http://{f'[{host}]' if ':' in host else host}:{self._port}"
+
+    def embed(self, texts):
+        """One vector per text, in order."""
+        texts = [str(text) for text in texts]
+        if not texts:
+            return []
+        with self._lock:
+            if self._process is None or self._process.poll() is not None:
+                self._start()
+            vectors = []
+            for start in range(0, len(texts), self.BATCH):
+                request = Request(f"{self._url}/v1/embeddings", method="POST",
+                                  data=json.dumps({"input": texts[start:start + self.BATCH]}).encode("utf-8"),
+                                  headers={"Content-Type": "application/json"})
+                try:
+                    with _DIRECT_OPENER.open(request, timeout=self.config.timeout) as response:
+                        rows = json.loads(response.read().decode("utf-8"))["data"]
+                except (HTTPError, URLError, TimeoutError, OSError, ValueError, KeyError) as exc:
+                    raise BackendGenerationError(f"The embedding llama.cpp server failed: {exc}") from exc
+                vectors += [row["embedding"] for row in sorted(rows, key=lambda row: row["index"])]
+            return vectors
+
+    def close(self):
+        process, self._process = self._process, None
+        if process is None or process.poll() is not None:
+            return
+        _log(f"Stopping embedding llama-server PID {process.pid}")
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
 
 
 _RUNTIME_REGISTRY_KEY = "_goated_prompter_llama_runtime_registry"

@@ -56,7 +56,7 @@ def validate_settings(payload):
 
 
 def validate_local_paths(values):
-    for key in ("model_path", "mmproj_path", "llama_server", "models_dir", "discovery_root", "runtime_root",
+    for key in ("model_path", "mmproj_path", "embedding_model_path", "llama_server", "models_dir", "discovery_root", "runtime_root",
                 "director_model_path", "director_mmproj_path", "director_llama_server"):
         value = str(values.get(key) or "").strip()
         if value and (value.startswith(("\\\\", "//")) or "://" in value):

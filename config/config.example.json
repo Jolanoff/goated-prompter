@@ -15,6 +15,7 @@
     "models_dir": "",
     "model_path": "LLM/Qwen3.5-9B/Qwen3.5-9B-Q4_K_M.gguf",
     "mmproj_path": "LLM/Qwen3.5-9B/mmproj-Qwen3.5-9B-BF16.gguf",
+    "embedding_model_path": "",
     "llama_server": "llama-server",
     "host": "127.0.0.1",
     "port": 8189,

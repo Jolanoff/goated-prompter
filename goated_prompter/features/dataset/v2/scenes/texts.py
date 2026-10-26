@@ -20,7 +20,8 @@ EXTRAS = """only visible details: first what each person wears (garment, colour,
   the light source and where it falls, then the props, marks and signs that make the request's abstract words visible
   (saying whose each one is); a selected Clothing, Lighting or Mood & Tone entry is shown as visible things. Never
   what another field already says (the act, a pose, a hand, the place or what is in it) and no mood or feeling words."""
-SPACE = """the place the request keeps, or one specific place a viewer would recognise: what each person stands, sits or
+SPACE = """the image's dealt place when IMAGES gives one (PLACES), else the place the request keeps, or one specific place a
+  viewer would recognise: what each person stands, sits or
   lies on, what is directly behind them, and one or two features of this spot the other images do not show (another
   part of the place when the place is themed; the same spot and background in every image when it is locked)."""
 CAMERA = """what the image shows, never as a shot name alone: the viewpoint (side, height, distance), then for each person
@@ -182,6 +183,16 @@ in this cast has, build the scene on another entry that fits and is used by fewe
 entry in "entry". Copy the entry you used word for word into the scene's "entry" field.
 When the entry starts with a name followed by a colon, that name is the position's name: the actions say it with the
 act."""
+
+
+# Only when places are dealt (scenes/places.py): the place is the code's, never the writer's choice.
+PLACE_RULE = """PLACES
+Every image in IMAGES names its place ("place"): the scene happens there and nowhere else. space is that place: what
+each person stands, sits or lies on in it, what is directly behind them and one or two of its features. An image that
+also names a setting ("setting") has its place inside that setting: what is seen through its windows and doors, and
+what it stands in, belongs to the setting. What the
+request puts in the place still stands in it (a thing it names, a surface someone is on); furniture an Actions & Poses
+entry needs becomes furniture this place has that holds the pose the same way."""
 
 
 ENTRY_FIT_SYSTEM = """You choose which Actions & Poses entries fit an image dataset request. The user message is

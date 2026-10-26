@@ -1,0 +1,88 @@
+"""Places: every image is dealt one place, and its scene is built there (the writer never chooses one itself).
+
+Responsibilities: Understanding says what the request asks (brief version 16 "places": the place words it keeps, the
+setting around them, its world and, when it names no place, ideas of where it can happen); vocabulary retrieval finds
+the Spaces groups each of those names (vocabulary/retrieval.py match, which finds nothing rather than a weak match);
+vocabulary selection orders, deals and pairs them (vocabulary/selection.py). This module only says which texts are
+searched, in which groups:
+  named   the request's place words without the setting ("his room in space": "his room", setting "in space") among
+          the groups of the request's world, or of every world when a setting carries the world (the room in space is a
+          room). The user's words are authoritative: when no group answers them, the setting's group is used, and with
+          neither nothing is dealt and the writer follows the request's words. The setting goes to every image.
+  free    the request names no place: the user's selected Spaces packs when there are any; else the groups that
+          Understanding's ideas name among the groups of the request's world (and, for an adult request, the
+          adult_default groups first). An idea no group answers adds nothing; with no idea answered nothing is dealt.
+          Retrieval never adds a place on its own: what a request allows is Understanding's judgement.
+The groups go in a varied order (selection.diverse_order) and the set is dealt across them (selection.deal_spread); a
+locked place is one for every image. The places are then paired with the dealt Actions & Poses entries
+(selection.pair with retrieval.fit_scores). No model call: code finds, deals and pairs.
+"""
+
+from ....vocabulary.retrieval import content_words, entry_name, group_vectors, in_world, match
+from ....vocabulary.selection import diverse_order
+from ..consistency import kept_words, levels
+
+SPACES = "Spaces"
+IDEA_AGREE = .6  # an idea is a loose suggestion: a word match on it needs less agreement than the user's words
+
+
+def _facts(brief):
+    """The brief's places ({setting, world, ideas}); a brief before version 16 has no setting, no world and no ideas."""
+    return {"setting": "", "world": None, "ideas": [], **(brief.get("places") or {})}
+
+
+def _without(words, setting):
+    """The place words without the setting's words ("in his room in space" without "in space" is "in his room")."""
+    if not setting:
+        return words
+    start = " ".join(words.casefold().split()).find(" ".join(setting.casefold().split()))
+    flat = " ".join(words.split())
+    return (flat[:start] + flat[start + len(" ".join(setting.split())):]).strip(" ,;") if start >= 0 else words
+
+
+def _merged(groups):
+    """The groups once each, in order; a group found twice keeps every entry either finding kept."""
+    merged = {}
+    for group in groups:
+        if group["name"] in merged:
+            merged[group["name"]] = {**merged[group["name"]], "entries": list(dict.fromkeys(
+                merged[group["name"]]["entries"] + group["entries"]))}
+        else:
+            merged[group["name"]] = group
+    return list(merged.values())
+
+
+def place_plan(brief, groups, embeddings=None):
+    """(groups to deal from in order, setting): the places this run deals, by the rules above; ([], "") for none."""
+    level, words, facts = levels(brief)["place"], kept_words(brief).get("place"), _facts(brief)
+    if level != "free" and not words:
+        return [], ""  # a kept place without its words (a brief from before version 15): the writer keeps it
+    if words:
+        setting = facts["setting"]
+        found = match(in_world(groups, None if setting else facts["world"]), _without(words, setting), embeddings)
+        if found:
+            return found, setting
+        return (match(in_world(groups, facts["world"]), setting, embeddings) if setting else []), ""
+    selected = [group for group in groups if group["selected"]]
+    if selected:
+        return selected, ""  # the user's own places come first
+    pool = in_world(groups, facts["world"])
+    if embeddings is not None:
+        embeddings.prepare(facts["ideas"])  # every idea embedded in one call
+    first = [group for group in pool if group["adult"]] if brief.get("path") == "nsfw_character" else []
+    found = _merged(first + [group for idea in facts["ideas"] for group in match(pool, idea, embeddings, IDEA_AGREE)])
+    scores = [2.0 if group in first else 1.0 for group in found]  # the adult default leads; then the most varied order
+    return diverse_order(found, scores, group_vectors(found, embeddings)), ""
+
+
+def place_problems(scene, place, words=None):
+    """Why a scene is not built in its dealt place, as reasons to ask again ([] when it is): its space says at least
+    one of the words that tell the place apart (its name or one of its features: retrieval.telling_words), a plural
+    ending aside. A space that names the place differently but keeps one of its features is that place."""
+    own = (words or {}).get(place) or frozenset(content_words(place))
+    if own & set(content_words(scene.get("space"))):
+        return []
+    # Asked again, a scene keeps its act and only moves (a live redo wrote another image's act instead).
+    act = " ".join(str(scene.get("actions") or "").split())[:160]
+    return [f'its space is not its dealt place: build it in "{entry_name(place)}"'
+            + (f' and keep its act ("{act}")' if act else "")]

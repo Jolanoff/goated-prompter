@@ -1,6 +1,15 @@
 """Reading the Dataset scene writer's user message back in scripted tests (v2/scenes/request.py compose_message)."""
 
 import json
+from unittest.mock import patch
+
+from tests.helpers import enter_context
+
+
+def without_places(test):
+    """For scripted tests that are not about places: no place is dealt (v2/scenes/places.py), so the writer chooses
+    the place as before. tests/unit/dataset/test_dataset_places.py tests the deal."""
+    enter_context(test, patch("goated_prompter.features.dataset.v2.scenes.place_plan", return_value=([], "")))
 
 
 def composer_user(message):

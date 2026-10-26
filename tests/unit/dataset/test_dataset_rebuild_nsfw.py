@@ -10,11 +10,12 @@ from goated_prompter.backends.mock import MockBackend
 from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.dataset.v2.draft import default_dataset_draft
 from goated_prompter.features.dataset.v2 import prompts, scenes, understanding
-from tests.support.dataset_scenes import composer_user
+from tests.support.dataset_scenes import composer_user, without_places
 
 
 class AdultDatasetTests(unittest.TestCase):
     def setUp(self):
+        without_places(self)
         self.backend = MockBackend()
         self.calls = []
         self.understood = None

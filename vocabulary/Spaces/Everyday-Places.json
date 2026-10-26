@@ -1,0 +1,1230 @@
+{
+  "name": "Everyday Places",
+  "category": "Spaces",
+  "always": true,
+  "description": "Places every run deals from without being selected: one per image, so each image is set somewhere else. Each group holds places that fit every one of its words.",
+  "groups": [
+    {
+      "group": "bedroom",
+      "words": [
+        "bedroom",
+        "his room",
+        "her room",
+        "my room",
+        "their room",
+        "your room",
+        "own room",
+        "kid's room",
+        "teen's room",
+        "bed",
+        "in bed",
+        "lying in bed",
+        "sleeping",
+        "asleep",
+        "waking up",
+        "napping",
+        "reading",
+        "attic",
+        "loft",
+        "master bedroom"
+      ],
+      "entries": [
+        "small bedroom with a single bed under the window and posters on the wall",
+        "attic bedroom with a slanted wooden ceiling and a round window",
+        "master bedroom with a wide upholstered headboard and heavy curtains",
+        "minimalist bedroom with white walls and a low platform bed"
+      ],
+      "worlds": [
+        "everyday"
+      ],
+      "adult_default": true
+    },
+    {
+      "group": "living room",
+      "words": [
+        "living room",
+        "lounge",
+        "sitting room",
+        "family room",
+        "sofa",
+        "couch",
+        "watching tv",
+        "television",
+        "apartment",
+        "studio apartment",
+        "at home",
+        "relaxing",
+        "reading",
+        "playing video games"
+      ],
+      "entries": [
+        "living room with a worn sofa facing a television and a rug on the floor",
+        "studio apartment with the bed, kitchen and sofa in one room"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "hallway and stairs",
+      "words": [
+        "hallway",
+        "hall",
+        "corridor",
+        "stairs",
+        "staircase",
+        "stairway",
+        "stairwell",
+        "steps",
+        "banister",
+        "fire stairs"
+      ],
+      "entries": [
+        "hallway with framed photos along the wall and a runner rug",
+        "staircase in a house with a wooden banister and carpeted steps",
+        "office building stairwell with concrete steps and a metal handrail"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "kitchen",
+      "words": [
+        "kitchen",
+        "cooking",
+        "making food",
+        "making dinner",
+        "making breakfast",
+        "making lunch",
+        "baking",
+        "washing dishes",
+        "doing the dishes",
+        "chopping",
+        "stove",
+        "oven",
+        "fridge"
+      ],
+      "entries": [
+        "open-plan kitchen with a marble island and pendant lights above it",
+        "narrow galley kitchen with tiled walls and a window over the sink"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "restaurant kitchen",
+      "words": [
+        "restaurant kitchen",
+        "commercial kitchen",
+        "chef",
+        "line cook",
+        "cooking",
+        "plating"
+      ],
+      "entries": [
+        "restaurant kitchen with steel counters and pans hanging over the stoves"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "bathroom",
+      "words": [
+        "bathroom",
+        "bath",
+        "bathtub",
+        "taking a bath",
+        "bathing",
+        "shower",
+        "showering",
+        "washing up",
+        "brushing teeth",
+        "toilet",
+        "sink",
+        "getting ready"
+      ],
+      "entries": [
+        "home bathroom with a bathtub and white tiles",
+        "walk-in shower room with glass walls and dark slate tiles",
+        "hotel bathroom with a double sink and a large mirror"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "public restroom",
+      "words": [
+        "public restroom",
+        "public toilet",
+        "restroom",
+        "toilet",
+        "bathroom stall",
+        "stall",
+        "urinal"
+      ],
+      "entries": [
+        "public restroom with a row of stalls and sinks under a long mirror"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "locker room",
+      "words": [
+        "locker room",
+        "changing room",
+        "lockers",
+        "gym shower",
+        "communal shower",
+        "after practice",
+        "after the game",
+        "team"
+      ],
+      "entries": [
+        "gym locker room with metal lockers and a wooden bench",
+        "communal shower room with tiled walls and a row of shower heads"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "gym",
+      "words": [
+        "gym",
+        "fitness",
+        "fitness center",
+        "working out",
+        "workout",
+        "exercising",
+        "exercise",
+        "lifting weights",
+        "weights",
+        "training",
+        "treadmill",
+        "weight room"
+      ],
+      "entries": [
+        "gym with weight racks, benches and mirrors along one wall"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "swimming pool",
+      "words": [
+        "pool",
+        "swimming pool",
+        "swimming",
+        "poolside",
+        "diving",
+        "swimsuit",
+        "lounging by the pool"
+      ],
+      "entries": [
+        "indoor swimming pool with lane ropes and tiled edges",
+        "backyard swimming pool with loungers and a tiled edge"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "spa",
+      "words": [
+        "spa",
+        "sauna",
+        "steam room",
+        "massage",
+        "hot tub",
+        "jacuzzi",
+        "spa day",
+        "wellness"
+      ],
+      "entries": [
+        "sauna with wooden benches and a stove of hot stones",
+        "spa treatment room with a massage table and dim candles",
+        "outdoor hot tub on a wooden deck with steam rising"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "closet and dressing room",
+      "words": [
+        "closet",
+        "walk-in closet",
+        "wardrobe",
+        "fitting room",
+        "dressing room",
+        "trying on clothes",
+        "trying on",
+        "getting dressed",
+        "changing clothes",
+        "backstage",
+        "costume",
+        "mirror"
+      ],
+      "entries": [
+        "walk-in closet with racks of clothes and a full-length mirror",
+        "clothing store fitting room with a curtain and a tall mirror",
+        "theater dressing room with a mirror framed in bulbs and costumes on a rack"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "laundry",
+      "words": [
+        "laundry",
+        "laundry room",
+        "laundromat",
+        "launderette",
+        "washing clothes",
+        "washing machine",
+        "folding clothes",
+        "utility room"
+      ],
+      "entries": [
+        "laundry room with a stacked washer and dryer and a folding table",
+        "laundromat with rows of washing machines and plastic chairs"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "basement",
+      "words": [
+        "basement",
+        "cellar",
+        "underground room"
+      ],
+      "entries": [
+        "basement with exposed pipes, a concrete floor and a single hanging bulb"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "workshop and garage",
+      "words": [
+        "garage",
+        "workshop",
+        "workbench",
+        "woodworking",
+        "carpentry",
+        "fixing",
+        "repairing",
+        "tools",
+        "mechanic",
+        "car repair",
+        "sawing"
+      ],
+      "entries": [
+        "home garage with a workbench, hanging tools and an oil-stained floor",
+        "woodworking workshop with sawdust on the floor and clamps on the wall",
+        "car repair garage with a raised car on a lift and tool chests"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "warehouse and factory",
+      "words": [
+        "warehouse",
+        "factory",
+        "assembly line",
+        "stockroom",
+        "forklift",
+        "industrial",
+        "shipping",
+        "plant floor"
+      ],
+      "entries": [
+        "warehouse with tall metal shelving and pallets of boxes",
+        "factory floor with conveyor belts and yellow safety lines"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "office",
+      "words": [
+        "office",
+        "workplace",
+        "at work",
+        "coworker",
+        "colleague",
+        "boss",
+        "meeting",
+        "conference room",
+        "boardroom",
+        "business",
+        "typing",
+        "office job"
+      ],
+      "entries": [
+        "open-plan office with rows of desks and computer monitors",
+        "glass-walled meeting room with a long table and a screen on the wall",
+        "private office with a large wooden desk and a leather chair"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "home office",
+      "words": [
+        "home office",
+        "study",
+        "studying",
+        "homework",
+        "working from home",
+        "desk",
+        "laptop"
+      ],
+      "entries": [
+        "home office with a desk under shelves of books and a desk lamp"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "dorm room",
+      "words": [
+        "dorm",
+        "dorm room",
+        "dormitory",
+        "college room",
+        "student",
+        "roommate"
+      ],
+      "entries": [
+        "college dorm room with two narrow beds and desks against the walls"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "hotel room",
+      "words": [
+        "hotel",
+        "hotel room",
+        "motel",
+        "motel room",
+        "room service",
+        "vacation",
+        "trip",
+        "travel",
+        "business trip",
+        "suite",
+        "honeymoon"
+      ],
+      "entries": [
+        "hotel room with a king bed, a window over the city and a desk",
+        "roadside motel room with a patterned bedspread and a wall air conditioner"
+      ],
+      "worlds": [
+        "everyday"
+      ],
+      "adult_default": true
+    },
+    {
+      "group": "lobby and elevator",
+      "words": [
+        "lobby",
+        "hotel lobby",
+        "reception",
+        "front desk",
+        "elevator"
+      ],
+      "entries": [
+        "hotel lobby with marble floors and a reception desk",
+        "elevator with brushed steel walls and a mirror"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "cabin and tent",
+      "words": [
+        "cabin",
+        "log cabin",
+        "lodge",
+        "tent",
+        "camping",
+        "campsite",
+        "camp",
+        "fireplace"
+      ],
+      "entries": [
+        "cabin interior with log walls, a stone fireplace and a quilt-covered bed",
+        "camping tent interior with sleeping bags and a lantern hanging from the roof"
+      ],
+      "worlds": [
+        "everyday",
+        "historical",
+        "fantasy"
+      ]
+    },
+    {
+      "group": "art and photo studio",
+      "words": [
+        "photo studio",
+        "photoshoot",
+        "photo shoot",
+        "posing for photos",
+        "photographer",
+        "painter",
+        "artist",
+        "art studio",
+        "easel"
+      ],
+      "entries": [
+        "photo studio with a paper backdrop and softbox lights on stands",
+        "painter's studio with canvases leaning on the walls and a paint-splattered floor"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "music room",
+      "words": [
+        "music",
+        "piano",
+        "playing piano",
+        "guitar",
+        "playing guitar",
+        "singing",
+        "singer",
+        "band",
+        "rehearsal",
+        "recording",
+        "microphone",
+        "musician",
+        "practice room"
+      ],
+      "entries": [
+        "music practice room with a piano and foam panels on the walls",
+        "recording studio booth with a microphone and a glass window to the mixing desk"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "lab and server room",
+      "words": [
+        "lab",
+        "laboratory",
+        "scientist",
+        "experiment",
+        "chemistry",
+        "server room",
+        "data center",
+        "research"
+      ],
+      "entries": [
+        "science lab with benches, sinks and glassware on the shelves",
+        "server room with blinking racks of machines and cold blue light"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "farm",
+      "words": [
+        "barn",
+        "farm",
+        "farmer",
+        "farmland",
+        "countryside",
+        "hay",
+        "horse",
+        "stable",
+        "tractor",
+        "harvest",
+        "ranch"
+      ],
+      "entries": [
+        "barn with hay bales, wooden stalls and light through the plank walls",
+        "farm field with rows of crops and a tractor in the distance"
+      ],
+      "worlds": [
+        "everyday",
+        "historical",
+        "fantasy"
+      ]
+    },
+    {
+      "group": "school",
+      "words": [
+        "school",
+        "classroom",
+        "class",
+        "lesson",
+        "teacher",
+        "student",
+        "lecture",
+        "university",
+        "college",
+        "campus",
+        "studying"
+      ],
+      "entries": [
+        "school classroom with rows of desks and a whiteboard",
+        "university lecture hall with tiered seats and a projector screen",
+        "college campus lawn with brick buildings and students on the grass"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "library",
+      "words": [
+        "library",
+        "reading room",
+        "librarian",
+        "bookshelves",
+        "studying",
+        "reading"
+      ],
+      "entries": [
+        "public library reading room with long tables and tall bookshelves"
+      ],
+      "worlds": [
+        "everyday",
+        "historical",
+        "fantasy"
+      ]
+    },
+    {
+      "group": "hospital",
+      "words": [
+        "hospital",
+        "clinic",
+        "doctor",
+        "nurse",
+        "patient",
+        "checkup",
+        "exam room",
+        "ward",
+        "medical"
+      ],
+      "entries": [
+        "hospital room with a single bed, a monitor and a curtain on a rail",
+        "doctor's examination room with a padded table and a sink"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "museum",
+      "words": [
+        "museum",
+        "gallery",
+        "art gallery",
+        "exhibition"
+      ],
+      "entries": [
+        "museum gallery with paintings on white walls and a bench in the middle"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "cinema",
+      "words": [
+        "cinema",
+        "movie theater",
+        "movies",
+        "watching a movie"
+      ],
+      "entries": [
+        "movie theater with rows of red seats facing a lit screen"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "church",
+      "words": [
+        "church",
+        "chapel",
+        "cathedral",
+        "praying",
+        "prayer",
+        "wedding",
+        "priest",
+        "nun"
+      ],
+      "entries": [
+        "church interior with wooden pews and stained glass windows"
+      ],
+      "worlds": [
+        "everyday",
+        "historical",
+        "fantasy"
+      ]
+    },
+    {
+      "group": "shopping",
+      "words": [
+        "shopping",
+        "shop",
+        "store",
+        "supermarket",
+        "grocery",
+        "groceries",
+        "mall",
+        "shopping mall",
+        "shopping cart",
+        "buying"
+      ],
+      "entries": [
+        "supermarket aisle with packed shelves and a shopping cart",
+        "shopping mall corridor with shop windows and a glass roof"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "cafe and diner",
+      "words": [
+        "cafe",
+        "coffee shop",
+        "coffee",
+        "coffeehouse",
+        "diner",
+        "restaurant",
+        "eating",
+        "breakfast",
+        "lunch",
+        "having a meal",
+        "waitress",
+        "waiter",
+        "date",
+        "reading"
+      ],
+      "entries": [
+        "coffee shop with a counter, wooden tables and large windows",
+        "diner with red booths and a long counter with stools"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "bar and club",
+      "words": [
+        "bar",
+        "pub",
+        "drinks",
+        "drinking",
+        "cocktail",
+        "bartender",
+        "club",
+        "nightclub",
+        "dancing",
+        "party",
+        "night out",
+        "dj"
+      ],
+      "entries": [
+        "dim cocktail bar with backlit bottles and leather stools",
+        "nightclub dance floor with colored lights and a DJ booth"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "bowling and arcade",
+      "words": [
+        "bowling",
+        "bowling alley",
+        "arcade",
+        "playing games",
+        "game night"
+      ],
+      "entries": [
+        "bowling alley with glossy lanes and colorful balls on a rack",
+        "arcade with rows of glowing game cabinets"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "car and bus",
+      "words": [
+        "car",
+        "driving",
+        "driver",
+        "back seat",
+        "front seat",
+        "road trip",
+        "bus",
+        "commute",
+        "commuting",
+        "passenger"
+      ],
+      "entries": [
+        "car interior with leather seats and the dashboard lit at night",
+        "city bus interior with handrails and rows of seats"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "train",
+      "words": [
+        "train",
+        "subway",
+        "metro",
+        "underground",
+        "station",
+        "train station",
+        "commute",
+        "commuting",
+        "passenger"
+      ],
+      "entries": [
+        "subway car with plastic seats and grab poles",
+        "train sleeper compartment with fold-down bunks and a small window",
+        "train station platform with a canopy and a departure board"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "airplane",
+      "words": [
+        "airplane",
+        "plane",
+        "flight",
+        "flying",
+        "aircraft",
+        "flight attendant",
+        "pilot",
+        "travel"
+      ],
+      "entries": [
+        "airplane cabin with rows of seats and overhead bins"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "boat",
+      "words": [
+        "boat",
+        "sailboat",
+        "yacht",
+        "sailing",
+        "on the water",
+        "sea"
+      ],
+      "entries": [
+        "sailboat cabin with wooden paneling and a narrow bunk"
+      ],
+      "worlds": [
+        "everyday",
+        "historical"
+      ]
+    },
+    {
+      "group": "city street",
+      "words": [
+        "street",
+        "city",
+        "city street",
+        "downtown",
+        "alley",
+        "alleyway",
+        "sidewalk",
+        "urban",
+        "walking in the city",
+        "outside",
+        "outdoors",
+        "outdoor",
+        "in public",
+        "public"
+      ],
+      "entries": [
+        "narrow city alley with brick walls, fire escapes and dumpsters",
+        "busy city street with shop fronts and traffic lights"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "parking and gas station",
+      "words": [
+        "parking garage",
+        "car park",
+        "parking lot",
+        "parking",
+        "gas station",
+        "petrol station"
+      ],
+      "entries": [
+        "parking garage with concrete pillars and painted bay lines",
+        "gas station at night with bright canopy lights and fuel pumps"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "rooftop and balcony",
+      "words": [
+        "rooftop",
+        "roof",
+        "balcony",
+        "terrace",
+        "skyline",
+        "city view",
+        "outside",
+        "outdoors",
+        "outdoor",
+        "in public",
+        "public"
+      ],
+      "entries": [
+        "rooftop of an apartment building with water tanks and a city skyline",
+        "balcony with a metal railing, potted plants and a view over rooftops"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "park",
+      "words": [
+        "park",
+        "city park",
+        "playground",
+        "swings",
+        "bench",
+        "picnic",
+        "walking the dog",
+        "jogging",
+        "outside",
+        "outdoors",
+        "outdoor",
+        "in public",
+        "public"
+      ],
+      "entries": [
+        "city park with a gravel path, benches and old trees",
+        "playground with swings, a slide and rubber matting"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "backyard",
+      "words": [
+        "backyard",
+        "back yard",
+        "yard",
+        "garden",
+        "lawn",
+        "barbecue",
+        "grilling",
+        "gardening",
+        "mowing"
+      ],
+      "entries": [
+        "backyard with a wooden fence, a lawn and a barbecue grill"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "sports ground",
+      "words": [
+        "basketball",
+        "football",
+        "soccer",
+        "stadium",
+        "arena",
+        "sports field",
+        "court",
+        "match",
+        "athlete"
+      ],
+      "entries": [
+        "outdoor basketball court with a chain-link fence",
+        "sports stadium with stands of seats around a green field"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "skate park",
+      "words": [
+        "skate park",
+        "skatepark",
+        "skateboard",
+        "skateboarding",
+        "skating",
+        "bmx"
+      ],
+      "entries": [
+        "skate park with concrete ramps and graffiti"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "beach",
+      "words": [
+        "beach",
+        "seaside",
+        "shore",
+        "coast",
+        "ocean",
+        "sea",
+        "surfing",
+        "sunbathing",
+        "swimsuit",
+        "sand"
+      ],
+      "entries": [
+        "sandy beach with waves rolling in and dunes behind"
+      ],
+      "worlds": [
+        "everyday",
+        "historical",
+        "fantasy"
+      ]
+    },
+    {
+      "group": "forest",
+      "words": [
+        "forest",
+        "woods",
+        "woodland",
+        "trees",
+        "hiking",
+        "nature"
+      ],
+      "entries": [
+        "forest path between tall pine trees with ferns on the ground"
+      ],
+      "worlds": [
+        "everyday",
+        "historical",
+        "fantasy"
+      ]
+    },
+    {
+      "group": "snow",
+      "words": [
+        "snow",
+        "snowy",
+        "winter",
+        "snowfall",
+        "skiing"
+      ],
+      "entries": [
+        "snowy forest clearing with snow-laden branches"
+      ],
+      "worlds": [
+        "everyday",
+        "historical",
+        "fantasy"
+      ]
+    },
+    {
+      "group": "mountain and meadow",
+      "words": [
+        "mountain",
+        "mountains",
+        "hiking",
+        "hike",
+        "trail",
+        "hills",
+        "meadow",
+        "wildflowers",
+        "waterfall",
+        "nature",
+        "grass field"
+      ],
+      "entries": [
+        "mountain trail with rocks and a view over a valley",
+        "meadow with tall grass and wildflowers under an open sky",
+        "waterfall pool with mossy rocks and spray in the air"
+      ],
+      "worlds": [
+        "everyday",
+        "historical",
+        "fantasy"
+      ]
+    },
+    {
+      "group": "lake",
+      "words": [
+        "lake",
+        "lakeside",
+        "dock",
+        "pier",
+        "fishing",
+        "canoe",
+        "rowing"
+      ],
+      "entries": [
+        "lakeside wooden dock with still water and reeds"
+      ],
+      "worlds": [
+        "everyday",
+        "historical",
+        "fantasy"
+      ]
+    },
+    {
+      "group": "river",
+      "words": [
+        "river",
+        "riverbank",
+        "bridge",
+        "stream",
+        "creek",
+        "fishing"
+      ],
+      "entries": [
+        "riverbank with smooth stones and overhanging trees",
+        "bridge over a river with iron railings and lamp posts"
+      ],
+      "worlds": [
+        "everyday",
+        "historical",
+        "fantasy"
+      ]
+    },
+    {
+      "group": "desert",
+      "words": [
+        "desert",
+        "dunes",
+        "sand dunes",
+        "cactus"
+      ],
+      "entries": [
+        "desert with sand dunes and a clear sky"
+      ],
+      "worlds": [
+        "everyday",
+        "historical",
+        "fantasy"
+      ]
+    },
+    {
+      "group": "stage",
+      "words": [
+        "stage",
+        "on stage",
+        "theater",
+        "theater stage",
+        "performance",
+        "performing",
+        "performer",
+        "comedy",
+        "comedian",
+        "stand-up",
+        "audience",
+        "concert",
+        "spotlight",
+        "talent show"
+      ],
+      "entries": [
+        "theater stage with red velvet curtains and footlights",
+        "comedy club stage with a brick wall and a single microphone stand",
+        "outdoor concert stage with lighting rigs and speaker stacks"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "party",
+      "words": [
+        "party",
+        "birthday",
+        "birthday party",
+        "celebration",
+        "celebrating",
+        "balloons",
+        "confetti",
+        "banquet",
+        "reception",
+        "guests",
+        "garden party"
+      ],
+      "entries": [
+        "birthday party living room with balloons and streamers",
+        "backyard garden party with string lights and a long table",
+        "banquet hall with round tables and a dance floor"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "circus",
+      "words": [
+        "circus",
+        "big top",
+        "circus tent",
+        "clown",
+        "juggling",
+        "juggler",
+        "acrobat",
+        "acrobatics",
+        "ringmaster",
+        "trapeze",
+        "tightrope"
+      ],
+      "entries": [
+        "circus big top with a sawdust ring and striped canvas walls",
+        "circus backstage with costume trunks and a trapeze rig"
+      ],
+      "worlds": [
+        "everyday",
+        "historical"
+      ]
+    }
+  ]
+}

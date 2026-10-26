@@ -24,7 +24,52 @@ exactly `{"name", "category", "entries": [texts]}`; its id is `<folder>/<file>`.
 `{"filename", "content"}` checks one and saves it in its category's folder, replacing an earlier import of that file).
 Each file is read on its own: one that cannot be read is reported with its reason and the others still load.
 `GET /api/vocabulary/catalog` returns categories, packs and problems. Adding a category is one entry in each Core file
-plus its folder. Packs carry no compatibility data.
+plus its folder. Packs carry no compatibility data. Instead of `entries` a pack may hold `groups`:
+`[{"group", "words": [up to MAX_WORDS], "entries", "worlds"?, "adult_default"?}]` (worlds from
+`options.dataset.WORLDS`, every world when none), each entry in one group only; the pack's
+entries are all its groups' entries. A built-in pack may be `"always": true`: it is loaded for every run, selected or
+not (`always_on`). `vocabulary/Spaces/Everyday-Places.json` is the one always-on pack: 108 everyday places in 57
+groups, each group's places fitting every one of its words.
+
+Vocabulary engine (`features/vocabulary/`), shared by every category, Spaces first; each part has one job.
+Understanding (the brief) says what a request asks for and allows; retrieval finds the entries a text names; selection
+chooses the set; a category's owner only says which texts are searched and how its entries go with another
+category's.
+- `embeddings.py`: a small embedding model (`local_llama_cpp.embedding_model_path`, bge-small-en-v1.5) run by its own
+  llama-server on the CPU (`backends/llama_cpp_process.py LlamaCppEmbedder`), apart from the generation model, started
+  only when a search needs it and stopped when the scenes are written. Entry and group texts are embedded once and
+  cached by their text in `data/cache/vocabulary-embeddings.json` (per model); a run's queries are embedded together.
+  Without it, or when it fails, words still work.
+- `retrieval.py`: `groups_of` indexes a category's selected packs, then its always-on packs (a plain pack's entries
+  are each a group named by the entry). `match` returns the groups a text names, or none: exact words decide when they
+  explain every content word of the text ("water" inside "water aquarium" does not count); a match that leaves words
+  unexplained stays only when meaning and words in common rank it at most `MATCH_AGREE` below the best group ("sports
+  hall" is not the corridor's "hall"); without exact words, the one group that stands out from all the others
+  (`relevance` at least `MATCH_Z` and `MATCH_LEAD` above the next). A weak match is never forced. `fit_scores` says how
+  well entries go with another category's entry; `telling_words` gives each entry the words that tell it apart.
+- `selection.py`: `diverse_order` puts groups in an order where each next one is unlike those before it, `deal_spread`
+  deals a set across them (no entry repeats before all have been dealt, a group whose entries are used up is passed
+  over), and `pair` moves dealt entries between images so each goes with the other category's entry on its image
+  through the category's own fit (the same entries, only swapped).
+
+Places (`v2/scenes/places.py`): when the place is free, or kept by the user's words, every image is dealt one place
+the scene must use (`place_plan`, no model call). A named place is authoritative: the request's place words without
+its setting ("in his room in space": "in his room", setting "in space") are matched among the groups of the request's
+world, or of every world when a setting carries it; a place in no catalog uses its setting's group; with neither,
+nothing is dealt and the writer follows the words. The setting goes to every image with its place. No place named: the
+user's selected Spaces packs when there are any; else the groups Understanding's ideas name (6 to 8 places, obvious and
+less expected, over the kinds of place the request fits), each idea matched among the groups of the request's world
+(an idea is a loose suggestion, so a word match on it needs less agreement in meaning, `IDEA_AGREE`, than the user's
+own place words, `MATCH_AGREE`),
+with the `adult_default` groups first for an adult request. Retrieval adds no place on its own: what a request allows
+is Understanding's judgement; an idea no group answers adds nothing. The groups go in `diverse_order`, the set is
+dealt across them (a locked place is one for every image), and the dealt places are paired with the dealt Actions &
+Poses entries (`pair` with `fit_scores`). Each image in IMAGES carries its `place` (and `setting`), the writer gets
+`PLACE_RULE`, Spaces suggestions are dropped, and a scene whose space has none of its place's telling words is asked
+again to build it there and keep its act (`place_problems`). With nothing found, or guided scenes, nothing is dealt
+and the writer chooses as before. `python -m tests.eval.places` measures this on labelled cases
+(`tests/eval/cases/places.json`, and `places_heldout.json`, never used to tune a setting), with Understanding's ideas
+captured once by `python -m tests.eval.capture_ideas`.
 
 Selection: the Dataset tab's Vocabulary Library selects packs by hand (search, category filter, preview,
 Apply/Cancel); the selected ids are the draft's `vocabulary_packs`, saved with the other Dataset settings. They are
@@ -37,11 +82,13 @@ its type (character, style, outfit, object, other), whether code places its exac
 meaning (`on`) or both, and whether it goes first. Only the user knows what a token stands for, so nothing guesses it. A draft or brief from before the list reads its one trigger as an exact "other"
 trigger.
 
-Understanding (brief version 13) records the subject type, participant count, stated attributes, the central
-activity, and what stays fixed and what varies. It never reads vocabulary. It links every character and outfit trigger (by
+Understanding (brief version 16) records the subject type, participant count, stated attributes, the central
+activity, and what stays fixed and what varies, plus `places`: the user's words for what surrounds the place
+(`setting`), the request's `world` and, when it names no place, a few `ideas` of where it can happen. It never reads
+vocabulary. It links every character and outfit trigger (by
 number) to exactly one person, the character's `triggers` (code checks it; a character trigger is one person, count 1),
 and the review shows the link. Each character carries `known`: its looks come from its name or an
-exact-text character trigger, so no step invents them. Version 9 to 14 briefs in saved runs stay readable.
+exact-text character trigger, so no step invents them. Version 9 to 15 briefs in saved runs stay readable.
 
 Consistency (`v2/consistency.py`, options in `options/dataset.py`): what a dataset trains decides what stays the same.
 Each part of the image (subject, clothing, action, expression, place, objects, camera, light, mood) is locked
@@ -78,7 +125,7 @@ vocabulary spreads over the set. In a category with entries about something the 
 with it that is rare in that category, `requested_entries`): when the request names only that thing, every image gets
 only the entry it names (`named_entries`); when it also names the category or one of its packs (it asks for the kind in
 general), every image gets one of those entries and one other; suggestions are optional: the writer uses the ones that fit the image, or none,
-and never adds a subject or object only to use one. No pack is used automatically: character looks come from the request
+and never adds a subject or object only to use one. Only `always` packs are used without a selection (Places, below): character looks come from the request
 and approved requirements, with vocabulary guidance only from manually selected Subjects packs. A known character has
 only an expression in its scene; its look comes from its name, never from the writer or vocabulary. With known
 characters each scene also has a frame per person; each image is dealt the frame its known characters get

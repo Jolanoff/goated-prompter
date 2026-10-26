@@ -17,6 +17,11 @@ share an entry (ENTRY_CAP: two, or more when fewer entries fit than images are r
 entry used more often is kept, never asked again. When no entry fits, the writer gets no Actions & Poses vocabulary
 and builds a logical pose for the request.
 
+Places (places.py): unless the request keeps the place without words for it, every image is dealt one place from the
+selected Spaces packs or, after them, the always-on built-in places; the scene is built there (PLACE_RULE) and a scene
+built elsewhere is asked again. The groups whose words the request says most often are chosen (its place words when
+it keeps the place, else the whole request); a fitting call reads the group names when none matches.
+
 Optional pack features: entries that need more people than the cast (a pack's "people") are removed before anything
 else (fit_cast), and so are entries with a slot ("holding [Kitchen-and-Dining]") that names a pack or category the run
 did not select (only_fillable). A slot that is kept stays as written: the writer sees the pack it names among the
@@ -47,12 +52,16 @@ separate planning step), "stage": None or "scene", "reasons", "tries"}. on_slot(
 as each scene is finished.
 """
 
+from contextlib import closing, nullcontext
 import random
 
 from .....backends.factory import create_backend
 from .....contracts import effective_model_family
 from .....director_profiles import resolve_director_config
 from ....vocabulary.catalog import catalog_for, selected_vocabulary, record as selection_record, validate_selection, vocabulary_prompt
+from ....vocabulary.embeddings import embeddings_for
+from ....vocabulary.retrieval import fit_scores, groups_of, telling_words
+from ....vocabulary.selection import deal_spread, pair
 from ..understanding import validate_brief
 
 from ..consistency import levels, locked_categories
@@ -60,6 +69,7 @@ from .checks import _summary, avoid_patterns, retire_fields, scene_errors
 from .entries import _entry_key, deal_frames, _only, _shuffled, cast_size, deal_entries, deal_hands, entry_cap, fit_cast, fitting_entries, requested_entries, requested_words, required_frame
 from .request import _system, compose_instruction, compose_message, deals_frames, known_labels, slot_inputs, subject_fields, trigger_notes, varied_labels
 from .settings import ACTIONS_CATEGORY, BATCH, EARLIER, KNOWN_SUBJECT_FIELDS, ROUNDS, SECTIONS, SUBJECT_FIELDS, VOCABULARY_SAMPLE
+from .places import SPACES, place_plan
 from .slots import only_fillable
 from .texts import COMPOSE_SYSTEM, ENTRY_FIT_SYSTEM, ENTRY_RULE, GUIDED_RULE, NO_PEOPLE_RULE, NSFW_RULE, SFW_RULE, VOCABULARY_RULES
 from .writer import _compose
@@ -90,12 +100,19 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
     brief = {**brief, "_family": effective_model_family(request, profile, effective), "_avoid": avoid_patterns(brief),
              "_known": frozenset(known_labels(brief))}
     scenes, failed = {}, {}
-    with create_backend(effective).generation_session() as session:
+    # Vocabulary search by meaning: a small separate embedding model, started only when a search needs it.
+    embeddings = None if guided else embeddings_for(effective, progress)
+    with closing(embeddings) if embeddings else nullcontext(), create_backend(effective).generation_session() as session:
         if action_entries:
             progress("Choosing the Actions & Poses entries that fit the request...")
             notes = {pack["name"]: pack["description"] for pack in actions["packs"] if pack.get("description")}
             action_entries = fitting_entries(session, brief, action_entries, checkpoint, progress, notes)
             groups = _only(groups, ACTIONS_CATEGORY, action_entries)
+        # The place of every image comes from the place catalogs, not the writer (scene ideas bring their own).
+        spaces = [] if guided else groups_of(catalog, SPACES, selection)
+        places, setting = place_plan(brief, spaces, embeddings) if spaces else ([], "")
+        if places:  # Spaces is dealt as places, never offered as suggestions or a list to pick from
+            groups = [group for group in groups if group["category"] != SPACES]
         dealt, locked = deal_entries(action_entries, total, rng), locked_categories(brief)
         if dealt and levels(brief)["action"] == "locked":  # one pose for the whole set: the first dealt entry
             dealt = {number: dealt[1] for number in dealt}
@@ -108,6 +125,11 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
                           for pack in group["packs"] for entry in pack["entries"]]}
         if deals_frames(brief):  # dealt last, so runs without dealt frames deal exactly as before
             plan["frames"] = deal_frames(total, rng, required_frame(brief))
+        if places:  # after everything else, so every other deal is seeded as before
+            plan["places"] = deal_spread(places, total, rng, locked=levels(brief)["place"] == "locked")
+            if dealt and levels(brief)["place"] != "locked":  # each dealt pose gets the dealt place that suits it best
+                plan["places"] = pair(plan["places"], dealt, lambda pose, entries: fit_scores(pose, entries, embeddings))
+            plan["setting"], plan["place_words"] = setting, telling_words(spaces)
         for start in range(0, total, BATCH):
             numbers = list(range(start + 1, min(total, start + BATCH) + 1))
             earlier = [_summary(scenes[number]) for number in sorted(scenes)][-EARLIER:]

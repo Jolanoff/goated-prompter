@@ -15,7 +15,7 @@ from goated_prompter.features.dataset.v2.safety import adults_only_error, minor_
 from goated_prompter.workflow_output import ideogram_json
 from tests.helpers import enter_context
 from tests.support.backends import ScriptedBackend
-from tests.support.dataset_scenes import composer_user
+from tests.support.dataset_scenes import composer_user, without_places
 
 NARUTO = "uzumaki naruto, naruto \\(series\\)"
 HINATA = "hyuuga hinata, naruto \\(series\\)"
@@ -174,7 +174,7 @@ class TriggerCast(unittest.TestCase):
     def test_an_exact_character_trigger_makes_its_person_known_and_a_meaning_one_does_not(self):
         brief = brief_for()
         self.assertEqual([(person["known"], person["triggers"]) for person in brief["characters"]], [(True, [1]), (True, [2])])
-        self.assertEqual(brief["version"], 15)
+        self.assertEqual(brief["version"], 16)
         self.assertEqual(understanding.validate_brief(brief), brief)
         meaning = brief_for(triggers=[trigger("red-haired elf girl", "character", expand="on")], cast=mara(1))
         self.assertEqual([person["known"] for person in meaning["characters"]], [False])
@@ -211,7 +211,7 @@ class KnownCharacters(unittest.TestCase):
         self.assertEqual([person["known"] for person in named["characters"]], [True, False])
 
     def test_older_briefs_stay_valid_and_keep_their_single_trigger(self):
-        brief = {key: value for key, value in brief_for().items() if key not in ("kept", "consistency", "kept_words")}
+        brief = {key: value for key, value in brief_for().items() if key not in ("kept", "consistency", "kept_words", "places")}
         brief["version"] = 11
         for person in brief["characters"]:
             del person["known"], person["triggers"]
@@ -235,6 +235,7 @@ class KnownCharacters(unittest.TestCase):
 
 class KnownCharacterScenes(unittest.TestCase):
     def setUp(self):
+        without_places(self)
         self.calls = []
         self.backend = MockBackend()
         enter_context(self, patch.object(self.backend, "generate", side_effect=self.generate))

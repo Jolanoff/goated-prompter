@@ -51,7 +51,7 @@ class Understanding(unittest.TestCase):
 
     def test_understanding_never_chooses_vocabulary(self):
         result, calls = self.understand([TWO_MEN], subject="2 adult men in an explicit scene", nsfw=True)
-        self.assertEqual(result["version"], 15)
+        self.assertEqual(result["version"], 16)
         self.assertNotIn("intent", result)
         self.assertEqual(set(calls[0].json_schema["properties"]), set(understanding.MODEL_FIELDS))
         for word in ("pack", "vocabulary"):
@@ -94,9 +94,34 @@ class Understanding(unittest.TestCase):
 
     def test_a_saved_version_10_brief_with_intent_stays_readable(self):
         result, _ = self.understand([MAGICAL_SECOND])
-        saved = {**{key: value for key, value in result.items() if key not in ("kept", "consistency", "kept_words")},
+        saved = {**{key: value for key, value in result.items() if key not in ("kept", "consistency", "kept_words", "places")},
                  "version": 10, "intent": {"elements": [], "relations": []}}
         self.assertEqual(understanding.validate_brief(saved), saved)
+
+    def test_the_places_give_the_setting_the_world_and_ideas_for_a_request_without_a_place(self):
+        # A request with a room in a larger surrounding lost the surrounding when one place had to win.
+        named = {**json.loads(MAGICAL_SECOND), "kept": {"place": "in his room in space"},
+                 "places": {"setting": "in space", "world": "sci-fi", "ideas": ["a hangar"]}}
+        result, _ = self.understand([json.dumps(named)], subject="a reader asleep in his room in space")
+        self.assertEqual(result["places"], {"setting": "in space", "world": "sci-fi", "ideas": []},
+                         "a request that names its place gets no ideas")
+        # A live brief gave the whole place as its setting: that is no setting.
+        same = {**named, "kept": {"place": "in his room"}, "places": {**named["places"], "setting": "in his room"}}
+        result, _ = self.understand([json.dumps(same)], subject="a reader asleep in his room")
+        self.assertEqual(result["places"]["setting"], "")
+        loose = {**json.loads(MAGICAL_SECOND), "places": {"setting": "on the moon", "world": "everyday",
+                                                          "ideas": ["a city street", " ", "a kitchen"]}}
+        result, _ = self.understand([json.dumps(loose)], subject="a reader telling jokes")
+        self.assertEqual(result["places"], {"setting": "", "world": "everyday", "ideas": ["a city street", "a kitchen"]},
+                         "a setting the user never wrote is dropped")
+        result, _ = self.understand([MAGICAL_SECOND], subject="a reader telling jokes")
+        self.assertEqual(result["places"], {"setting": "", "world": "everyday", "ideas": []}, "places is optional")
+        self.assertIn("6 to 8 different places", " ".join(understanding.SYSTEM.split()))
+        # A live request without a place got six homely ideas and lost every public, event and performance place.
+        self.assertIn("the obvious ones and less expected ones that still fit",
+                      " ".join(understanding.SYSTEM.split()))
+        with self.assertRaises(ValueError):
+            understanding.validate_brief({**result, "places": {**result["places"], "world": "the moon"}})
 
     def test_the_parts_the_request_mentions_are_kept_and_the_rest_vary(self):
         # A request that named one place and one pose had every scene asked again as a repeat of the first.

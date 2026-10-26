@@ -1,7 +1,9 @@
 """The vocabulary library: Core's three files, the registered category folders and their packs (catalog.py)."""
 
+import itertools
 import json
 from pathlib import Path
+import re
 import shutil
 import tempfile
 import unittest
@@ -50,12 +52,12 @@ class Bundled(unittest.TestCase):
 
     def test_every_starter_pack_has_a_description_and_20_to_40_entries_in_its_folder(self):
         loaded = load_catalog()
-        self.assertEqual(len(loaded["packs"]), 63)
+        self.assertEqual(len([pack for pack in loaded["packs"] if not pack.get("always")]), 63)
         folders = {row["folder"]: row["id"] for row in loaded["categories"]}
         self.assertEqual({pack["source"] for pack in loaded["packs"]}, {"built-in"})
         for path in sorted(catalog.ROOT.glob("*/*.json")):
-            if path.parent.name == "core":
-                continue
+            if path.parent.name == "core" or json.loads(path.read_text(encoding="utf-8")).get("always"):
+                continue  # always-on catalogs have their own shape (test_always_on_catalogs_are_distinct_and_safe)
             with self.subTest(pack=str(path.relative_to(catalog.ROOT))):
                 data = json.loads(path.read_text(encoding="utf-8"))
                 # Actions & Poses packs give their cast size (vocabulary/SKILL.md): on the pack, and on an entry that differs.
@@ -74,6 +76,30 @@ class Bundled(unittest.TestCase):
         names = {pack["id"]: pack["name"] for pack in loaded["packs"]}
         self.assertEqual(names["Spaces/Sci-Fi"], "Sci-Fi")
         self.assertEqual(names["Actions & Poses/Solo-Activities"], "Solo Activities")
+
+    def test_always_on_catalogs_are_distinct_and_safe(self):
+        # A built-in catalog every run deals from: groups of places with the words a request uses for them, each place
+        # in one group, no two places alike (a catalog that grows must not fill with near copies), and nothing adult
+        # (vocabulary/SKILL.md).
+        from goated_prompter.features.dataset.v2.safety import adult_text
+        from goated_prompter.features.vocabulary.retrieval import entry_name as head
+        from goated_prompter.options.dataset import WORLDS
+        words = lambda text: set(re.findall(r"[a-z0-9]+", text.casefold())) - {"a", "an", "the", "and", "with", "of", "on", "in"}
+        always = catalog.always_on(load_catalog(user_root=False), "Spaces")
+        self.assertEqual([pack["id"] for pack in always], ["Spaces/Everyday-Places"])
+        entries, groups = always[0]["entries"], always[0]["groups"]
+        self.assertEqual(len(entries), 108)
+        self.assertEqual(sorted(place for group in groups for place in group["entries"]), sorted(entries))
+        self.assertTrue(any(group.get("adult_default") for group in groups))
+        self.assertFalse([group["name"] for group in groups if not group.get("worlds")], "every group names its worlds")
+        self.assertTrue(set(WORLDS) >= {world for group in groups for world in group["worlds"]})
+        self.assertFalse([word for group in groups for word in group["words"] if adult_text(word)])
+        names = [head(entry).casefold() for entry in entries]
+        self.assertEqual(len(set(names)), len(names), "every place has its own name")
+        for first, second in itertools.combinations(entries, 2):
+            one, two = words(first), words(second)
+            self.assertLess(len(one & two) / len(one | two), .6, f"near copies: {first} / {second}")
+        self.assertFalse([entry for entry in entries if adult_text(entry)])
 
 
 class Library(unittest.TestCase):
@@ -244,11 +270,36 @@ class Library(unittest.TestCase):
         self.assertEqual(loaded["problems"], [{"file": "core/prompt_instructions.json", "problem": 'no entry for the category "Lighting"'}])
         self.assertIn("Lighting", [row["id"] for row in loaded["categories"]])
 
-    def test_a_run_without_packs_reads_no_pack_folder(self):
-        with patch.object(catalog, "load_catalog", side_effect=AssertionError("no pack folder may be read")):
+    def test_a_run_without_packs_reads_only_the_built_in_packs(self):
+        # The built-in packs hold the always-on catalogs every run deals from; the user's own folder is not read.
+        with patch.object(catalog, "load_catalog", wraps=catalog.load_catalog) as loaded:
             empty = catalog_for({"packs": []}, self.root)
-        self.assertEqual(empty["packs"], [])
+        self.assertEqual(loaded.call_args.args, (self.root, False))
         self.assertEqual(len(empty["categories"]), 10)
+        self.assertTrue(all(pack["source"] == "built-in" for pack in empty["packs"]))
+
+    def test_a_pack_may_hold_groups_with_their_words_and_be_always_on(self):
+        data = {"name": "Places", "category": "Spaces", "always": True,
+                "groups": [{"group": "bedroom", "words": ["His Room", "my room", "his room"], "adult_default": True,
+                            "worlds": ["everyday", "fantasy", "everyday"], "entries": ["bedroom with a window", "attic bedroom"]},
+                           {"group": "garden", "words": ["gardening"], "entries": ["a garden"]}]}
+        name, category, entries, description, people, groups, always = catalog._checked(data)
+        self.assertEqual(entries, ["bedroom with a window", "attic bedroom", "a garden"], "the pack's entries are its groups'")
+        self.assertEqual(groups, [{"name": "bedroom", "words": ["his room", "my room"], "adult_default": True,
+                                   "worlds": ["everyday", "fantasy"], "entries": ["bedroom with a window", "attic bedroom"]},
+                                  {"name": "garden", "words": ["gardening"], "entries": ["a garden"]}])
+        self.assertTrue(always)
+        saved = import_pack("places.json", json.dumps({**data, "always": False}), self.root)
+        self.assertEqual((saved["entries"], saved["groups"]), (entries, groups), "an import keeps its groups")
+        group = lambda **change: {"group": "g", "words": ["w"], "entries": ["a"], **change}
+        for broken in ({"always": "yes"}, {"entries": ["a"], "groups": [group()]}, {"groups": []},
+                       {"groups": [group(words=[])]}, {"groups": [group(words=["x"] * 101)]},
+                       {"groups": [group(), group(group="h", entries=["A"])]}, {"groups": [group(), group()]},
+                       {"groups": [group(adult_default="yes")]}, {"groups": [group(more=1)]},
+                       {"groups": [group(worlds=[])]}, {"groups": [group(worlds=["the moon"])]}):
+            with self.subTest(broken=broken), self.assertRaises(ValueError):
+                catalog._checked({"name": "Places", "category": "Spaces", **({"entries": ["a"]} if "groups" not in broken
+                                                                             else {}), **broken})
 
 
 class Selection(unittest.TestCase):
