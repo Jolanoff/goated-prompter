@@ -12,6 +12,7 @@ import json
 import re
 import statistics
 
+from goated_prompter.features.dataset.v2.consistency import kept_words, levels
 from goated_prompter.features.dataset.v2.safety import sexual_text
 
 from .judge import SCENE_QUESTIONS
@@ -27,6 +28,7 @@ CHECKS = (
     ("format_ok", "share of prompts already in the target's final form (its format check accepts them unchanged)",
      "guard", True),
     ("known_changed", "share of scenes that give a known character a look of their own", "guard", False),
+    ("locked_drift", "share of scenes that leave out the user's words for a part the dataset locks", "guard", False),
     ("sfw_leaks", "safe sets: share of prompts the app's own adult-content filter flags", "guard", False),
     ("cast_ok", "share of scenes that keep every person of the cast", "guard", True),
     ("actions_named", "share of scenes whose actions name every person (no copied placeholder people)", "guard", True),
@@ -110,6 +112,20 @@ def _words(text):
 def _overlap(a, b):
     a, b = _words(a), _words(b)
     return len(a & b) / max(1, min(len(a), len(b))) if a and b else 0.0
+
+
+def _locked_dropped(scene, held, labels=()):
+    """Whether a scene leaves out a locked part: fewer than half of the user's words for it ({part: words}) are in the
+    scene, a plural ending aside. Half, because the scene says the part in its own words (another verb for the
+    act the user named, no "same" for "the same wall"); a live check that wanted every word failed every correct image."""
+    base = lambda word: word[:-1] if word.endswith("s") and not word.endswith("ss") and len(word) > 3 else word
+    names = {word for label in labels for word in _words(label)}
+    said = {base(word) for word in _words(" ".join(_strings(scene)))}
+    for words in held.values():
+        wanted = {base(word) for word in _words(words) - names}
+        if wanted and len(wanted & said) * 2 < len(wanted):
+            return True
+    return False
 
 
 def _jaccard(a, b):
@@ -460,7 +476,7 @@ def _scene_share(scenes, test):
 def _looks(scene, known=frozenset()):
     """The people's looks (skin, hair, build and their distinguishing detail), without the known characters, whose
     looks come from their name and stay the same on purpose."""
-    return tuple(sorted((label, *(str(person.get(field, "")) for field in ("skin", "hair", "build", "detail")))
+    return tuple(sorted((label, *(str(person.get(field, "")) for field in ("skin", "hair", "build", "eyes", "detail")))
                         for label, person in (scene.get("subjects") or {}).items()
                         if label not in known and isinstance(person, dict)))
 
@@ -575,6 +591,10 @@ def _case_checks(row, normalize=None):
     labels = {person["label"] for person in brief.get("characters", [])}
     known = frozenset(person["label"] for person in brief.get("characters", []) if person.get("known") is True)
     kept = set(brief.get("kept") or ())
+    # A locked part repeats on purpose, so its repeats are not counted; a themed one counts only near copies.
+    level = levels(brief) if brief else {}
+    locked = {part for part, value in level.items() if value == "locked"}
+    held = {part: words for part, words in kept_words(brief).items() if part in locked} if brief else {}
     avoid = [re.sub(r"^\s*(?:no|not|without|avoid|never)\s+", "", phrase, flags=re.IGNORECASE)
              for phrase in brief.get("avoid", [])]
     patterns = _label_patterns(brief.get("characters", []))
@@ -587,9 +607,11 @@ def _case_checks(row, normalize=None):
         "slot_problems": _slot_problems(scenes, output.get("prompts") or [], requested) if requested else None,
         "format_ok": round(sum(bool(_format_ok(prompt, target, normalize)) for prompt in prompts) / len(prompts), 3)
         if prompts and normalize else None,
+        "locked_drift": _scene_share(scenes, lambda scene: _locked_dropped(scene, held, sorted(labels)))
+        if held else None,
         "known_changed": _scene_share(scenes, lambda scene: any(
             str(((scene.get("subjects") or {}).get(label) or {}).get(field) or "").strip()
-            for label in known for field in ("skin", "hair", "build", "detail"))) if known else None,
+            for label in known for field in ("skin", "hair", "build", "eyes", "detail"))) if known else None,
         "sfw_leaks": round(sum(_adult_text(prompt) for prompt in prompts) / len(prompts), 3)
         if prompts and brief and not adult else None,
         "cast_ok": round(sum(set(scene.get("subjects") or {}) == labels for scene in scenes) / len(scenes), 3)
@@ -601,12 +623,13 @@ def _case_checks(row, normalize=None):
         "label_leaks": round(sum(any(pattern.search(prompt) for pattern in patterns) for prompt in prompts)
                              / len(prompts), 3) if prompts and patterns else None,
         "repeated_looks": _share(pairs, lambda a, b: bool(_looks(a, known)) and _looks(a, known) == _looks(b, known))
-        if labels - known else None,
+        if labels - known and "subject" not in locked else None,
         # A part the request keeps repeats on purpose: only a near copy of it counts.
         "repeated_places": _share(pairs, lambda a, b: _overlap(a.get("space"), b.get("space"))
-                                  >= (.9 if "place" in kept else .7)),
+                                  >= (.9 if "place" in kept else .7)) if "place" not in locked else None,
         "repeated_extras": _share(pairs, lambda a, b: _overlap(a.get("extras"), b.get("extras"))
-                                  >= (.9 if kept & {"objects", "clothing", "light", "mood"} else .7)),
+                                  >= (.9 if kept & {"objects", "clothing", "light", "mood"} else .7))
+        if not locked & {"objects", "clothing", "light", "mood"} else None,
         "prompt_similarity": round(sum(_jaccard(a, b) for a, b in itertools.combinations(prompts, 2))
                                    / max(1, len(prompts) * (len(prompts) - 1) // 2), 3) if len(prompts) > 1 else None,
         "mouth_mixed": round(sum(_mouth_mixed(prompt) for prompt in prompts) / len(prompts), 3)
@@ -617,7 +640,8 @@ def _case_checks(row, normalize=None):
         if brief.get("path") == "nsfw_character" else None,
         "tags_misfit": round(sum(_tags_misfit(item["prompt"], by_slot.get(item.get("slot"))) for item in written)
                              / len(written), 3) if target == "Anima" and written else None,
-        "repeated_acts": _share(pairs, _same_arrangement if "action" in kept else _same_act) if labels else None,
+        "repeated_acts": _share(pairs, _same_arrangement if "action" in kept else _same_act)
+        if labels and "action" not in locked else None,
         "template_leaks": _scene_share(scenes, lambda scene: _template_leak(scene, labels)),
         "opening_conflicts": _scene_share(scenes, lambda scene: _opening_conflict(scene, sorted(labels))),
         "subject_parts_missing": _parts_missing(case.get("subject", ""), scenes) if scenes else None,

@@ -176,7 +176,8 @@ def _dataset_case(case, seed, config, profile, log):
               "capture": case.get("capture", "Auto"), "aspect": case.get("aspect", "Auto"),
               "director_preset": case.get("director", "general_director"),
               "constraints": case.get("rules", ""), "triggers": case.get("triggers", []),
-              "trigger_type": case.get("type", "Character"), "vocabulary_packs": case.get("vocabulary_packs", []),
+              "trigger_type": case.get("type", "Character"), "consistency": case.get("consistency", {}),
+              "vocabulary_packs": case.get("vocabulary_packs", []),
               "source_mode": "guided" if case.get("inputs") else "random", "inputs": case.get("inputs", ""),
               "seed": seed, "seed_mode": "fixed"}
     data = validate_dataset_draft({**default_dataset_draft(), **fields}, generation=True)

@@ -15,7 +15,7 @@ from goated_prompter.features.dataset.v2.tickets import intent_signature
 from goated_prompter.features.vocabulary.catalog import load_catalog
 from tests.support.dataset_scenes import composer_user
 
-SCENE = {"skin": "fair", "build": "slim", "hair": "long silver hair", "detail": "a freckled nose", "expression": "a soft smile", "clothing": "a robe"}
+SCENE = {"skin": "fair", "build": "slim", "hair": "long silver hair", "eyes": "grey", "expression": "a soft smile", "clothing": "a robe"}
 
 
 class SceneVocabulary(unittest.TestCase):
@@ -52,7 +52,7 @@ class SceneVocabulary(unittest.TestCase):
         wants_entry = "entry" in instruction.json_schema["properties"]["scenes"]["items"]["required"]
         return json.dumps({"scenes": [{
             "subjects": {label: {**SCENE, **{field: f"{field}{row['image']}{label}".replace(" ", "")
-                                             for field in ("skin", "build", "hair", "detail")}} for label in labels},
+                                             for field in ("skin", "build", "hair", "eyes")}} for label in labels},
             "position": {label: "standing" for label in labels},
             "actions": f"{' and '.join(labels)}: {user['request']}", "space": f"clearing {row['image']}", "lighting": "moonlight",
             "mood": "calm", "camera": "wide shot", "extras": f"extras{row['image']}",
@@ -369,6 +369,9 @@ class SceneVocabulary(unittest.TestCase):
                      "Adapt only the part that conflicts with the request, the cast or the kept place",
                      # The final prompt keeps the act's words, so the scene copies them.
                      "the actions copy its words with only its people replaced",
+                     # A live writer copied the whole earlier image whenever an entry came round again.
+                     "Images dealt the same entry share only its act and pose: each still gets its own place, camera, "
+                     "light and props",
                      "Entries of every other category are possibilities"):
             self.assertIn(rule, system)
         self.assertNotIn("Objects, furniture and surfaces named in an entry are examples", system)
@@ -425,18 +428,38 @@ class SceneVocabulary(unittest.TestCase):
         self.assertNotIn("looks", json.dumps(composer_user(call.user_message)["images"]))
         self.assertEqual(result["vocabulary"], {"selection": {"packs": []}})
 
-    def test_an_entry_is_used_by_at_most_two_images_and_an_overused_one_is_asked_again(self):
+    def test_a_locked_part_gets_one_pose_and_no_suggestions_for_its_category(self):
+        # A pose dataset dealt each image a different entry of the act, so the pose drifted from image to image.
         pair = [{"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 1},
                 {"label": "woman", "gender": "female", "custom": "", "pronoun": "she", "count": 1}]
-        self.entries = [self.dance] * 3 + [self.hands]
+        brief = self.brief("A couple", pair, amount=4)
+        brief["consistency"] = {**brief["consistency"], "action": "locked", "light": "locked"}
+        self.write(brief, ["Actions & Poses/Romance", "Lighting/Dramatic"])
+        images = composer_user(self.composer()[0].user_message)["images"]
+        self.assertEqual(len({image["entry"] for image in images}), 1, "one pose for the whole set")
+        self.assertTrue(all("Lighting" not in image.get("suggested", {}) for image in images), "the light is locked")
+        self.assertIn("used by fewer than 4 images", self.composer()[0].system_message, "nobody is told to move off it")
+        self.calls.clear()
+        brief["consistency"] = {**brief["consistency"], "action": "themed", "light": "free"}
+        self.write(brief, ["Actions & Poses/Romance", "Lighting/Dramatic"])
+        images = composer_user(self.composer()[0].user_message)["images"]
+        self.assertGreater(len({image["entry"] for image in images}), 1)
+        self.assertTrue(all("Lighting" in image["suggested"] for image in images))
+
+    def test_an_entry_used_by_more_images_than_the_cap_is_kept_and_later_batches_see_the_count(self):
+        # Reusing an entry is repetition, which the vocabulary's deal handles: the scene is kept, never asked again.
+        pair = [{"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 1},
+                {"label": "woman", "gender": "female", "custom": "", "pronoun": "she", "count": 1}]
+        self.entries = [self.dance] * 3
         result = self.write(self.brief("A couple", pair, amount=3), ["Actions & Poses/Romance"])
         self.assertTrue(result["complete"])
-        self.assertEqual([scene["entry"] for scene in result["scenes"]],
-                         [self.dance, self.dance, self.hands])
-        retry = self.composer()[1]
-        self.assertIn(f'the entry "{self.dance}" is already used by 2 images', retry.system_message)
-        self.assertEqual(composer_user(retry.user_message)["already_used"]["entries"], {self.dance: 2})
+        self.assertEqual([scene["entry"] for scene in result["scenes"]], [self.dance] * 3)
+        self.assertEqual(len(self.composer()), 1, "nobody is asked again for a reused entry")
         self.assertIn("used by fewer than 2 images", self.composer()[0].system_message)
+        self.entries = [self.dance] * 12
+        self.calls.clear()
+        self.write(self.brief("A couple", pair, amount=12), ["Actions & Poses/Romance"])
+        self.assertEqual(composer_user(self.composer()[1].user_message)["already_used"]["entries"], {self.dance: 10})
 
     def test_an_entry_that_is_not_in_the_vocabulary_is_asked_again(self):
         pair = [{"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 1},

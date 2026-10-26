@@ -5,8 +5,8 @@ import re
 
 from .....backends.recovery import GenerationRecovery, RunawayRecoveryError
 
-from .checks import (_summary, framing_problems, repeat_reason, repeated_parts, retire_fields, scene_errors,
-                     unnamed_people, without_copied_props, without_entry_copy)
+from .checks import (_summary, framed_to_camera, framing_problems, retire_fields, scene_errors, unnamed_people,
+                     without_copied_props, without_entry_copy)
 from .entries import _entry_key
 from .request import _labels, compose_instruction, subject_fields
 from .settings import ROUNDS, SECTIONS
@@ -70,25 +70,23 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
             problems = ([error] if error else ["an answer was missing"] if scene is None
                         else scene_errors(scene, labels, avoid, extra, brief["_known"], people_fields))
             entry = entries.get(_entry_key(scene["entry"])) if entries and not problems else None
-            if not problems and round_ < ROUNDS:  # the last round accepts a repeat rather than lose the image
-                if framing := framing_problems(scene, brief["_known"], (plan.get("frames") or {}).get(number)):
+            # Only a scene that would ruin the image is asked again; repeating an earlier image, its place, camera,
+            # entry or frame never is (a live run asked seven images again for the place and camera the request keeps;
+            # asking copies again cost a third more time, still came back as copies and lost part of the act). Variety
+            # is the prompt's and the vocabulary's job. The last round keeps what it gets rather than lose the image.
+            if not problems and round_ < ROUNDS:
+                if framing := framing_problems(scene, brief["_known"]):
                     problems = framing
-                elif repeat := next(((item, parts) for item in [*earlier, *scenes.values()]
-                                   if (parts := repeated_parts(scene, item, labels, brief.get("kept", ())))), None):
-                    problems = [repeat_reason(*repeat)]
                 elif missing := unnamed_people(scene, labels):
                     problems = [f"its actions do not name {', '.join(missing)}: name every person by their character "
                                 "label and never leave a placeholder person from an entry"]
                 elif entries and entry is None:
                     problems = ['its "entry" must be copied word for word from the Actions & Poses vocabulary']
-                elif entries and used.get(entry, 0) >= cap:
-                    problems = [f'the entry "{entry}" is already used by {used[entry]} images; build this scene on '
-                                "another entry that fits"]
             if problems:
                 reasons[number] = problems
                 progress(rejected_note(number, problems[0], scene))
                 continue
-            scene = without_entry_copy(scene, labels)
+            scene = framed_to_camera(without_entry_copy(scene, labels))
             suggested = [entry for hand in ((plan.get("hands") or {}).get(number) or {}).values() for entry in hand]
             scene = without_copied_props(scene, plan.get("props") or (), suggested,
                                          [item["extras"] for item in earlier] + [item["extras"] for item in scenes.values()])

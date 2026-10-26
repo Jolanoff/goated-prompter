@@ -7,7 +7,7 @@ import re
 from .....backends.base import GoatedPrompterError
 from .....contracts import PromptInstruction
 
-from .checks import _words
+from .checks import _words, named_frame
 from .settings import ACTIONS_CATEGORY, AT_LEAST_HIPS, ENTRY_CAP, FIT_CHUNK, HAND
 from .texts import ENTRY_FIT_SYSTEM
 
@@ -190,16 +190,26 @@ def deal_hands(groups, total, rng, size=HAND, words=frozenset()):
     return {number: hand for number, hand in hands.items() if hand}
 
 
-def deal_frames(total, rng):
+def deal_frames(total, rng, needed=None):
     """{slot: frame}: the frame each image's known characters get, from a seeded deck of the frames that keep them at
-    least head to hips (full body, head to knees, head to hips), so a set spreads over all three."""
+    least head to hips (full body, head to knees, head to hips), so a set spreads over all three. needed: the narrowest
+    frame the request asks for (required_frame); no tighter frame is dealt, since the writer follows the deal over the
+    request (a live request for the feet was dealt hips-up frames and lost them)."""
+    frames = AT_LEAST_HIPS[:AT_LEAST_HIPS.index(needed) + 1] if needed in AT_LEAST_HIPS else AT_LEAST_HIPS
     deck, dealt = [], {}
     for number in range(1, total + 1):
         if not deck:
-            deck = list(AT_LEAST_HIPS)
+            deck = list(frames)
             rng.shuffle(deck)
         dealt[number] = deck.pop()
     return dealt
+
+
+def required_frame(brief):
+    """The narrowest frame that holds the body parts the request asks to show, in its own words, its must or its
+    camera words (checks.named_frame); None when it names none."""
+    found = named_frame([brief["input"]["request"], *brief.get("must", ()), (brief.get("kept_words") or {}).get("camera")])
+    return found[0] if found else None
 
 
 def cast_size(brief):

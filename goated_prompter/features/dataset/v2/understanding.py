@@ -22,8 +22,11 @@ keys, the path, the characters) is sent back to the model.
 
 Brief (validated by validate_brief before it can be confirmed):
   version, path, summary, fixed (what stays the same), randomized (what may and should vary)
-  kept        the parts of the image the request mentions (KEPT_PARTS): they stay the same in every image and no later
-              step reads them as a repeat; every part not listed varies
+  kept        the parts of the image that do not vary freely (KEPT_PARTS): no later step reads them as a repeat
+  consistency {part: locked|themed|free} for every part (v2/consistency.py): the draft's own choices, then the
+              request (a mentioned part it asks to differ is free, to be identical locked, else at least themed), then
+              the dataset type's defaults
+  kept_words  {part: the user's words} for every part the request mentions, checked against what the user wrote
   people      how many people are in each image (the length of characters), counted by code
   characters  [{label, gender: male|female|custom|"", custom, pronoun: he|she|it|"", known: bool, triggers: [n]}],
               one per person; "" means unspecified, characters is empty on non_character. triggers: the numbers of
@@ -36,9 +39,9 @@ Brief (validated by validate_brief before it can be confirmed):
   input       request, triggers (v2/triggers.py; before version 13 one trigger and trigger_at_start), rules,
               amount, nsfw, source_mode, guided_inputs, seed, seed_mode — copied by code
   settings    style, target, director, length, creativity — copied by code
-  Version 14 briefs have exactly these fields. Saved runs keep their version 9 to 13 briefs (10 also has an
+  Version 15 briefs have exactly these fields. Saved runs keep their version 9 to 14 briefs (10 also has an
   "intent" interpretation, kept as stored and no longer read; before 12 characters have no "known", before 13 no
-  "triggers", before 14 no "kept").
+  "triggers", before 14 no "kept", before 15 no "consistency" or "kept_words": kept parts read as themed).
 """
 
 import json
@@ -48,22 +51,26 @@ from ....backends.factory import create_backend
 from ....backends.recovery import GenerationRecovery
 from ....contracts import PromptInstruction, effective_model_family
 from ....director_profiles import resolve_director_config
+from ....options.dataset import CONSISTENCY_LEVELS, CONSISTENCY_PARTS
+from .consistency import asks_same, resolve
 from .safety import ADULTS_ONLY, NO_ANIMALS, adult_content_request, adults_only_error, minor_reference
 from .triggers import all_text, brief_triggers, data_triggers, personal_numbers
 
-VERSION = 14
-VERSIONS = (9, 10, 11, 12, 13, 14)  # 9 to 13: saved runs (10 with a structured intent no longer read, before 12 no
-                                    # "known", before 13 one trigger string, before 14 no kept)
+VERSION = 15
+VERSIONS = (9, 10, 11, 12, 13, 14, 15)  # 9 to 14: saved runs (10 with a structured intent no longer read, before 12
+                                        # no "known", before 13 one trigger string, before 14 no kept, before 15 no
+                                        # consistency)
 PATHS = ("sfw_character", "nsfw_character", "non_character")
 GENDERS = ("male", "female", "custom", "")
 PRONOUNS = ("he", "she", "it", "")
 MAX_CHARACTERS, MAX_COUNT, MAX_TEXT, MAX_ITEMS = 20, 20, 1200, 20
 BRIEF_FIELDS = ("path", "summary", "characters", "fixed", "randomized", "must", "avoid")
-# The parts of an image a request can mention: what it mentions stays the same in every image (the brief's kept), the
-# rest varies, and no later step reads a kept part as a repeat. The answer quotes the user's words for each part
-# (optional: {} when missing) and code keeps only the parts whose words are really there (kept_parts).
-KEPT_PARTS = ("place", "action", "objects", "clothing", "camera", "light", "mood")
-MODEL_FIELDS = (*BRIEF_FIELDS, "kept")
+# The parts of an image a request can mention (options.dataset.CONSISTENCY_PARTS). The answer quotes the user's words
+# for each part (optional: {} when missing) and code keeps only the parts whose words are really there (kept_parts);
+# locked and varied name the mentioned parts the request asks to be identical or to differ (consistency.resolve).
+KEPT_PARTS = CONSISTENCY_PARTS
+LEVEL_FIELDS = ("locked", "varied")
+MODEL_FIELDS = (*BRIEF_FIELDS, "kept", *LEVEL_FIELDS)
 IRREGULAR_PLURALS = {"men": "man", "women": "woman", "people": "person", "children": "child", "feet": "foot",
                      "teeth": "tooth", "mice": "mouse", "geese": "goose"}
 LEGACY_CHARACTER_FIELDS = ("label", "gender", "custom", "pronoun")  # briefs before version 12
@@ -108,15 +115,24 @@ randomized: only what the user explicitly asks to vary across the images, in the
   Everything the request does not mention varies anyway, so never list it here, and never list a part that kept
   quotes.
 kept: for each part of the image below, the words of the request or rules that mention it, copied exactly as the
-  user wrote them, even when they say it in general words; "" when nothing mentions that part. A mentioned part
-  stays the same in every image, and every part not mentioned is chosen anew for each image. The parts:
+  user wrote them, even when they say it in general words, and only the words about that part (never the same words
+  for two parts); "" when nothing mentions that part. Every image follows
+  the words of a mentioned part, and every part not mentioned is chosen anew for each image. The parts:
+  subject: who appears and how they look (a name, a person's features, a body attribute).
+  expression: what a face shows.
   place: where the images happen, or what someone is on or in.
   action: what anyone does, including a pose or a position.
   objects: things used, held, worn as gear or placed in the image.
   clothing: what anyone wears.
-  camera: the viewpoint, the framing or the kind of shot.
+  camera: the viewpoint, the framing, the kind of shot, or which body parts the image must show.
   light: the lighting.
-  mood: the atmosphere or the feeling.
+  mood: the atmosphere or the feeling, and visible effects (rain, glow, smoke).
+locked: only the parts in kept the request says must look identical in every image, in its own words for that part
+  ("the same", "identical", "exactly": the same pose, the same background, one exact outfit), as a list of part names;
+  [] when none. A part the request only names or requires in every image is not locked (a body part to show, a named or
+  known character, an object someone uses): every image follows its words anyway.
+varied: the parts in kept the request asks to differ between the images (different rooms, various outfits), as a
+  list of part names; [] when none.
 must: what the user requires beyond what summary says (an exact count, something in every image), as short phrases
   keeping the user's meaning. Only what the request or rules actually say; never repeat summary. Usually few; [] when
   none.
@@ -163,7 +179,9 @@ def _schema():
         "characters": {"type": "array", "maxItems": MAX_CHARACTERS, "items": character},
         "fixed": text, "randomized": text, "must": phrases, "avoid": phrases,
         "kept": {"type": "object", "additionalProperties": False, "required": list(KEPT_PARTS),
-                 "properties": {part: text for part in KEPT_PARTS}}}}
+                 "properties": {part: text for part in KEPT_PARTS}},
+        **{field: {"type": "array", "maxItems": len(KEPT_PARTS), "items": {"type": "string", "enum": list(KEPT_PARTS)}}
+           for field in LEVEL_FIELDS}}}
 
 
 def instruction(data, family="qwen", errors=()):
@@ -221,6 +239,9 @@ def recover(value):
     # kept is optional: {part: the user's words that mention it}; only the known parts with text count.
     said = value.get("kept") if isinstance(value.get("kept"), dict) else {}
     value["kept"] = {part: text for part in KEPT_PARTS if (text := _optional_text(said.get(part)))}
+    for field in LEVEL_FIELDS:  # optional too: the parts named, known ones only
+        named = value.get(field) if isinstance(value.get(field), list) else []
+        value[field] = [part for part in KEPT_PARTS if part in named]
     for key in ("summary", "fixed", "randomized"):
         if key in value and (text := _optional_text(value[key])) is not None:
             value[key] = text
@@ -234,7 +255,7 @@ def model_errors(value, nsfw, data=None):
     """Contract breaks of the brief fields the model must correct itself; the retry lists them (a stray "intent" key
     from an older prompt is ignored). Optional texts (recover) are never errors:
     fixed and randomized may be empty, and an empty summary falls back to the request."""
-    if set(value) - {"intent", "kept"} != set(BRIEF_FIELDS):
+    if set(value) - {"intent", "kept", *LEVEL_FIELDS} != set(BRIEF_FIELDS):
         return [f"Use exactly the keys {', '.join(MODEL_FIELDS)}."]
     errors = []
     if value["path"] not in ("character", "non_character"):
@@ -372,10 +393,15 @@ def apply_rules(value, data):
     path = ("non_character" if value["path"] == "non_character" else "nsfw_character" if nsfw else "sfw_character")
     characters = expand_characters(value["characters"], data_triggers(data))
     summary = value["summary"].strip() or " ".join(str(data.get("subject") or "").split())
+    mentioned = kept_parts(value.get("kept"), data)
+    # The model's locked parts count only when the user's own words for them ask for sameness (asks_same).
+    locked = [part for part in value.get("locked") or () if asks_same(value["kept"].get(part))]
+    consistency = resolve(data.get("trigger_type"), data.get("consistency"), mentioned, locked, value.get("varied") or ())
     brief = {"version": VERSION, "path": path, "summary": summary,
             "people": len(characters), "characters": characters,
             "fixed": value["fixed"].strip(), "randomized": value["randomized"].strip(),
-            "kept": kept_parts(value.get("kept"), data),
+            "kept": [part for part in KEPT_PARTS if consistency[part] != "free"],
+            "consistency": consistency, "kept_words": {part: value["kept"][part] for part in mentioned},
             "must": _beyond_triggers(value["must"], data), "avoid": _beyond_triggers(value["avoid"], data),
             "input": copied_input(data), "settings": copied_settings(data)}
     validate_content(brief, data)
@@ -391,12 +417,21 @@ def validate_brief(brief):
         expected = (*expected, "intent")  # a saved run's interpretation, kept as stored
     if brief["version"] >= 14:
         expected = (*expected, "kept")
+    if brief["version"] >= 15:
+        expected = (*expected, "consistency", "kept_words")
     if set(brief) != set(expected):
         raise ValueError(f"The brief needs exactly: {', '.join(expected)}.")
     if not isinstance(brief["summary"], str) or not brief["summary"].strip():
         raise ValueError("summary must be nonempty text.")
     if "kept" in brief and (not isinstance(brief["kept"], list) or any(part not in KEPT_PARTS for part in brief["kept"])):
         raise ValueError(f"kept must list parts of the image: {', '.join(KEPT_PARTS)}.")
+    if "consistency" in brief and (not isinstance(brief["consistency"], dict) or set(brief["consistency"]) != set(KEPT_PARTS)
+                                   or any(level not in CONSISTENCY_LEVELS for level in brief["consistency"].values())):
+        raise ValueError(f"consistency must give every part ({', '.join(KEPT_PARTS)}) a level: {', '.join(CONSISTENCY_LEVELS)}.")
+    if "kept_words" in brief and (not isinstance(brief["kept_words"], dict) or any(
+            part not in KEPT_PARTS or not isinstance(text, str) or not text.strip()
+            for part, text in brief["kept_words"].items())):
+        raise ValueError("kept_words must give the user's words for parts of the image.")
     for key in ("fixed", "randomized"):  # optional: "" when the request fixes or varies nothing in particular
         if not isinstance(brief[key], str):
             raise ValueError(f"{key} must be text.")

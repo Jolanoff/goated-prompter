@@ -5,7 +5,7 @@ export function datasetCopyText(draft) {
 
 const settingFields = ["subject", "trigger_type", "custom_type", "constraints", "amount", "triggers", "trigger",
   "trigger_at_start", "director_preset",
-  "target", "length", "creativity", "style", "source_mode", "inputs", "seed", "seed_mode"];
+  "target", "length", "creativity", "style", "source_mode", "inputs", "seed", "seed_mode", "consistency"];
 const jobFields = ["id", "kind", "status", "completion_state", "revision", "created_at", "finished_at", "result",
   "error", "progress", "progress_at", "status_reason", "events", "llm_trace", "partial_responses",
   "llm_stages", "workflow_revision", "input_signature"];

@@ -1,9 +1,38 @@
-// Dataset types, seed modes, Directors Dataset does not offer and identity-policy labels.
-// Keep triggerTypes, seedModes, maxSeed, excludedDirectors, triggerKinds, triggerExpansions and maxTriggers in sync with goated_prompter/options/dataset.py
+// Dataset types, consistency, seed modes, Directors Dataset does not offer and identity-policy labels.
+// Keep triggerTypes, consistencyParts, consistencyLevels, typeConsistency, seedModes, maxSeed, excludedDirectors,
+// triggerKinds, triggerExpansions and maxTriggers in sync with goated_prompter/options/dataset.py
 // (checked by tests/unit/shared/test_option_parity.py).
 
-export const triggerTypes = ["Character", "Multiple characters", "Animal", "Object / product", "Visual style",
-  "Location / environment", "Brand / logo", "Typography / text", "Concept", "Custom"];
+export const triggerTypes = ["Character", "Multiple characters", "Animal", "Act variety", "Pose / action",
+  "Outfit / clothing", "Expression", "Object / product", "Brand / logo", "Typography / text", "Location / environment",
+  "Lighting", "Camera / composition", "Visual style", "Concept", "Custom"];
+
+// The parts of an image a dataset can hold the same, and how much each one stays the same.
+export const consistencyParts = [["subject", "Subject"], ["clothing", "Clothing"], ["action", "Action / pose"],
+  ["expression", "Expression"], ["place", "Place"], ["objects", "Objects"], ["camera", "Camera"], ["light", "Light"],
+  ["mood", "Mood / effects"]];
+
+export const consistencyLevels = [["locked", "Locked"], ["themed", "Themed"], ["free", "Free"]];
+
+// Each dataset type's default levels; a part not listed is free.
+export const typeConsistency = {
+  "Character": { "subject": "themed" },
+  "Multiple characters": { "subject": "themed" },
+  "Animal": { "subject": "themed" },
+  "Act variety": { "action": "themed" },
+  "Pose / action": { "action": "locked" },
+  "Outfit / clothing": { "clothing": "locked" },
+  "Expression": { "expression": "locked" },
+  "Object / product": { "objects": "locked" },
+  "Brand / logo": { "objects": "locked" },
+  "Typography / text": { "objects": "locked" },
+  "Location / environment": { "place": "themed" },
+  "Lighting": { "light": "locked" },
+  "Camera / composition": { "camera": "locked" },
+  "Visual style": {},
+  "Concept": {},
+  "Custom": {}
+};
 
 export const seedModes = [["randomize", "Randomize"], ["fixed", "Fixed"], ["increment", "Increment"]];
 

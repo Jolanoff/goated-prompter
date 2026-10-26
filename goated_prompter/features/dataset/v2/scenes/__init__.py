@@ -12,9 +12,10 @@ Actions & Poses: when that category has a selected pack, one call first keeps on
 and the cast (fitting_entries; every entry when that call fails). Only those reach the writer: every image is dealt a
 different one from a seeded shuffle (deal_entries) and every scene names the entry it is built on ("entry", copied
 word for word); the writer keeps the dealt entry unless it cannot fit the cast. Code checks that the entry is one of
-the fitting entries and that no entry is used by more images than ENTRY_CAP allows (two, or more when fewer entries
-fit than images are requested), and asks again otherwise (the last round keeps the image). When no entry fits, the
-writer gets no Actions & Poses vocabulary and builds a logical pose for the request.
+the fitting entries and asks again otherwise (the last round keeps the image). The writer is told how many images may
+share an entry (ENTRY_CAP: two, or more when fewer entries fit than images are requested) and how many already do; an
+entry used more often is kept, never asked again. When no entry fits, the writer gets no Actions & Poses vocabulary
+and builds a logical pose for the request.
 
 Optional pack features: entries that need more people than the cast (a pack's "people") are removed before anything
 else (fit_cast), and so are entries with a slot ("holding [Kitchen-and-Dining]") that names a pack or category the run
@@ -31,11 +32,13 @@ An Actions & Poses entry is the image's act and arrangement, used as written: th
 character labels (and their gender) and adapts only what conflicts with the request, the cast or the kept place.
 
 Code checks the shape of each answer (every section filled, exactly the character labels, no phrase from the avoid
-list), that no image reuses another one's place together with its camera, actions or extras (repeated_parts) and that
-the actions name every person (unnamed_people), so no entry is copied with its placeholder people. The scene says each
-fact once (the act in the actions only), so code no longer reads or edits body parts in it. Repeated looks are
-not asked again: an image asked again tends to copy an accepted one, and the people only need to differ by look. The last round keeps a repeat rather than lose the image; images still missing are
-asked again, up to ROUNDS times per batch.
+list), that the actions name every person (unnamed_people), so no entry is copied with its placeholder people, and
+that a known character is framed at least head to hips with the face visible (framing_problems). Only a scene that
+would ruin the image is asked again: a repeated place, camera, look, entry or dealt frame never is (a live run asked
+seven of ten images again for the place and camera the request kept), since variety is the prompt's and the
+vocabulary's job. The scene says each fact once (the act in the actions only), so code no longer reads or edits body
+parts in it. The last round keeps what it gets rather than lose the image; images still missing are asked again, up to
+ROUNDS times per batch.
 Later batches see what earlier images used as lists (already_used), not as scenes to imitate.
 
 Slot identity: image N is slot N from start to finish; a failed slot never shifts its siblings. result["slots"] has
@@ -52,9 +55,10 @@ from .....director_profiles import resolve_director_config
 from ....vocabulary.catalog import catalog_for, selected_vocabulary, record as selection_record, validate_selection, vocabulary_prompt
 from ..understanding import validate_brief
 
+from ..consistency import levels, locked_categories
 from .checks import _summary, avoid_patterns, retire_fields, scene_errors
-from .entries import _entry_key, deal_frames, _only, _shuffled, cast_size, deal_entries, deal_hands, entry_cap, fit_cast, fitting_entries, requested_entries, requested_words
-from .request import _system, compose_instruction, compose_message, known_labels, slot_inputs, subject_fields, trigger_notes, varied_labels
+from .entries import _entry_key, deal_frames, _only, _shuffled, cast_size, deal_entries, deal_hands, entry_cap, fit_cast, fitting_entries, requested_entries, requested_words, required_frame
+from .request import _system, compose_instruction, compose_message, deals_frames, known_labels, slot_inputs, subject_fields, trigger_notes, varied_labels
 from .settings import ACTIONS_CATEGORY, BATCH, EARLIER, KNOWN_SUBJECT_FIELDS, ROUNDS, SECTIONS, SUBJECT_FIELDS, VOCABULARY_SAMPLE
 from .slots import only_fillable
 from .texts import COMPOSE_SYSTEM, ENTRY_FIT_SYSTEM, ENTRY_RULE, GUIDED_RULE, NO_PEOPLE_RULE, NSFW_RULE, SFW_RULE, VOCABULARY_RULES
@@ -92,13 +96,18 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
             notes = {pack["name"]: pack["description"] for pack in actions["packs"] if pack.get("description")}
             action_entries = fitting_entries(session, brief, action_entries, checkpoint, progress, notes)
             groups = _only(groups, ACTIONS_CATEGORY, action_entries)
+        dealt, locked = deal_entries(action_entries, total, rng), locked_categories(brief)
+        if dealt and levels(brief)["action"] == "locked":  # one pose for the whole set: the first dealt entry
+            dealt = {number: dealt[1] for number in dealt}
         plan = {"entries": {_entry_key(entry): entry for entry in action_entries} or None,
-                "cap": entry_cap(action_entries, total), "used": {}, "dealt": deal_entries(action_entries, total, rng),
-                "hands": deal_hands(groups, total, rng, words=requested_words(brief)),
+                "cap": total if levels(brief)["action"] == "locked" else entry_cap(action_entries, total), "used": {},
+                "dealt": dealt,
+                "hands": deal_hands([group for group in groups if group["category"] not in locked], total, rng,
+                                    words=requested_words(brief)),
                 "props": [entry for group in groups if group["category"] != ACTIONS_CATEGORY
                           for pack in group["packs"] for entry in pack["entries"]]}
-        if brief["_known"]:  # dealt last, so runs without known characters deal exactly as before
-            plan["frames"] = deal_frames(total, rng)
+        if deals_frames(brief):  # dealt last, so runs without dealt frames deal exactly as before
+            plan["frames"] = deal_frames(total, rng, required_frame(brief))
         for start in range(0, total, BATCH):
             numbers = list(range(start + 1, min(total, start + BATCH) + 1))
             earlier = [_summary(scenes[number]) for number in sorted(scenes)][-EARLIER:]

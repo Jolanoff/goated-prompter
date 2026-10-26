@@ -10,10 +10,11 @@ import { useDatasetWorkflow } from "./useDatasetWorkflow.js";
 import DatasetUnderstandingOverlay from "./DatasetUnderstandingOverlay.jsx";
 import DatasetVocabulary from "./DatasetVocabulary.jsx";
 import DatasetTriggers from "./DatasetTriggers.jsx";
+import DatasetConsistency from "./DatasetConsistency.jsx";
 import { useCatalog } from "../vocabulary/useCatalog.js";
 import { cleanSelection, recordedNames, selectedNames } from "../vocabulary/catalog.js";
 import { RunPrompts, RunScenes } from "./DatasetRunPages.jsx";
-import { excludedDirectors, maxSeed, seedModes } from "./options.js";
+import { excludedDirectors, maxSeed, seedModes, triggerTypes } from "./options.js";
 import { aspectRatios, captures, styleChoices, styleFamily, styles, subStyleChoices } from "../../shared/workflow/options.js";
 
 const datasetPages = [["configure", "Configure"], ["scenes", "Scenes"], ["dataset", "Dataset"]];
@@ -167,6 +168,12 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                 <small className="mt-1 block leading-relaxed text-muted">On: adult characters and NSFW packs. Off: safe-for-work images.</small></span>
             </label>
             <div className="dataset-subject-fields">
+              <label className={ui.field}><span>Dataset type</span>
+                <select className={ui.select} aria-label="Dataset type" value={draft.trigger_type}
+                  onChange={(event) => update({ trigger_type: event.target.value })}>
+                  {triggerTypes.map((item) => <option key={item}>{item}</option>)}
+                </select>
+              </label>
               <label className={ui.field}><span>Amount</span>
                 <select className={ui.select} aria-label="Number of prompts" value={draft.amount}
                   onChange={(event) => update({ amount: Number(event.target.value) })}>
@@ -175,7 +182,13 @@ export default function DatasetTab({ visible, job, busy, active, noEngine, engin
                 </select>
               </label>
             </div>
+            {draft.trigger_type === "Custom" && <label className={ui.field}><span>Custom dataset kind</span>
+              <input className={ui.input} aria-label="Custom dataset kind" maxLength={120} value={draft.custom_type}
+                onChange={(event) => update({ custom_type: event.target.value })} placeholder="What the set trains" />
+            </label>}
              <DatasetTriggers triggers={draft.triggers} onChange={(triggers) => update({ triggers })} />
+             <DatasetConsistency type={draft.trigger_type} value={draft.consistency}
+               onChange={(consistency) => update({ consistency })} />
              <details className="dataset-details dataset-advanced">
                <summary><SlidersHorizontal size={14} aria-hidden="true" /><span>Advanced options</span>
                  {draft.constraints.trim() && <span className="dataset-rules-indicator">Rules added</span>}<ChevronDown size={14} aria-hidden="true" /></summary>

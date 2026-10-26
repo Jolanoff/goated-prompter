@@ -48,7 +48,7 @@ class AdultDatasetTests(unittest.TestCase):
             "characters": cast, "fixed": "The named adults retain their identities, roles and assigned support.",
             "randomized": "Lighting and camera", "must": ["Use a red ribbon"], "avoid": ["No blindfold", "No collar"]}
         self.scene = {"subjects": {label: {"skin": "warm brown", "build": "adult", "hair": "short dark hair",
-            "detail": f"{label}'s recognizable face", "expression": "a soft smile", "genitals": "average size, relaxed",
+            "eyes": f"{label}'s dark brown eyes", "expression": "a soft smile", "genitals": "average size, relaxed",
             "clothing": "no clothing"} for label in labels},
             "position": {label: f"{label} sits on the bench, feet on the floor, holding a red ribbon in the right hand."
                          for label in labels}, "actions": f"{' and '.join(labels)} display their red ribbons without changing places.",
@@ -104,7 +104,7 @@ class AdultDatasetTests(unittest.TestCase):
                 final = self.calls[-1]
                 for label in labels:
                     self.assertIn(prompts.name_people(self.scene["position"][label], brief, scene), final.user_message)
-                    self.assertIn(prompts.name_people(f"{label}'s recognizable face", brief, scene), final.user_message)
+                    self.assertIn(prompts.name_people(f"{label}'s dark brown eyes", brief, scene), final.user_message)
                 self.assertNotIn("performer 1", final.user_message)
                 self.assertIn(prompts.name_people(self.scene["actions"], brief, scene), final.user_message)
                 self.assertTrue(written[0]["trigger_ok"])
@@ -132,8 +132,9 @@ class AdultDatasetTests(unittest.TestCase):
         self.scene.update(position={"Mara": "Mara stands on the floor facing Rowan, whose hips are at the bench edge.",
                                     "Rowan": "Rowan lies on the bench facing Mara, feet supported on the bench."},
                           actions="Mara rests her prosthetic hand on Rowan's tattooed back.")
-        self.scene["subjects"]["Mara"]["detail"] = "Mara's prosthetic arm and recognizable face"
-        self.scene["subjects"]["Rowan"]["detail"] = "Rowan's tattooed back and recognizable face"
+        # A body feature the request states is part of the build.
+        self.scene["subjects"]["Mara"]["build"] = "Mara's prosthetic arm and slim build"
+        self.scene["subjects"]["Rowan"]["build"] = "Rowan's tattooed back and broad build"
         brief = self.understand(data)
         result = self.write(brief)
         user = self.users("scenes")[0]

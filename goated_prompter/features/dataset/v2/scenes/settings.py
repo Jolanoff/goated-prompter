@@ -1,7 +1,8 @@
 """Limits and field lists of the scene writer."""
 
 
-BATCH = 10  # one answer holds up to ten images: a model spreads a set out best within one answer
+BATCH = 10  # one answer holds up to ten images: a model spreads a set out best within one answer; in batches of
+# five, a live second batch copied the first one image for image from its already_used list
 
 
 ROUNDS = 3
@@ -15,13 +16,14 @@ SECTIONS = ("subjects", "actions", "position", "extras", "space", "camera")
 # shows ("shows", widest first) and whether their face is visible ("face"), data the writer fills for every person so a
 # known character never drops out of the image while the action stays (checks.framing_problems). Each image is dealt
 # the frame its known characters get (entries.deal_frames), so the set spreads over full body, head to knees and head
-# to hips instead of the tight crops a writer picks on its own.
+# to hips instead of the tight crops a writer picks on its own, unless the request keeps the camera
+# (request.deals_frames).
 SHOWS = ("full body", "head to knees", "head to hips", "head and shoulders")
 FACES = ("visible", "hidden")
 AT_LEAST_HIPS = SHOWS[:3]
 
 
-SUBJECT_FIELDS = ("skin", "build", "hair", "detail", "expression")
+SUBJECT_FIELDS = ("skin", "build", "hair", "eyes", "expression")
 
 
 # Adult datasets also describe each person's genitals, so the final prompt has them as data for every person whose

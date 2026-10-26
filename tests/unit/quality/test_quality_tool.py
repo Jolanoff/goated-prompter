@@ -131,6 +131,23 @@ class Checks(unittest.TestCase):
         row["output"]["scenes"][1] = {**first, "subjects": second["subjects"]}
         self.assertEqual(checks.case_checks(row)["repeated_acts"], 1.0, "the same pose again is still a repeat")
 
+    def test_a_locked_part_is_never_a_repeat_and_dropping_it_is_drift(self):
+        # A pose or location dataset repeats its locked part by design; an image without it is lost to the set.
+        first, second = scene("fair", "a library, a long oak table"), scene("olive", "a library, a long oak table")
+        row = dataset_row([first, second], ["One.", "Two."])
+        brief = row["output"]["brief"]
+        brief["consistency"] = {part: "free" for part in ("subject", "clothing", "action", "expression", "place",
+                                                          "objects", "camera", "light", "mood")}
+        self.assertEqual(checks.case_checks(row)["locked_drift"], None, "nothing locked, nothing to drift")
+        brief["consistency"].update(place="locked", action="locked")
+        brief["kept_words"] = {"place": "the same long oak table"}
+        values = checks.case_checks(row)
+        self.assertEqual((values["repeated_places"], values["repeated_acts"]), (None, None))
+        self.assertEqual(values["locked_drift"], 0.0)
+        row["output"]["scenes"][1] = scene("olive", "a kitchen")
+        self.assertEqual(checks.case_checks(row)["locked_drift"], 0.5)
+        self.assertIn("locked_drift", {name for name, *_ in checks.CHECKS})
+
     def test_first_pass_counts_the_images_never_asked_again(self):
         row = dataset_row([scene("fair", "a hall"), scene("olive", "a pier")], ["One.", "Two."])
         row["log"] = ["Image 2 is asked again: it repeats image 1.", "Image 2 is asked again: still a repeat."]
@@ -482,7 +499,7 @@ class LivePipeline(unittest.TestCase):
                                    {"label": "dancer", "gender": "", "custom": "", "pronoun": "", "count": 2}]})
         if stage == "dataset_v2:scenes":
             images = json.loads(instruction.user_message.rsplit("IMAGES:\n", 1)[1])["images"]
-            person = {"skin": "fair", "build": "slim", "hair": "dark", "detail": "a scar", "expression": "calm"}
+            person = {"skin": "fair", "build": "slim", "hair": "dark", "eyes": "brown", "expression": "calm"}
             return json.dumps({"scenes": [{"subjects": {"dancer 1": person, "dancer 2": person},
                                            "position": {"dancer 1": "left", "dancer 2": "right"},
                                            "actions": "dancer 1 lifts dancer 2", "space": f"studio {row['image']}",

@@ -30,6 +30,11 @@ class OptionParityTests(unittest.TestCase):
 
     def test_dataset_types_match_backend(self):
         self.assertEqual(tuple(exported("features/dataset/options.js", "triggerTypes")), dataset.DATASET_TYPES)
+        self.assertEqual(tuple(value for value, _label in exported("features/dataset/options.js", "consistencyParts")),
+                         dataset.CONSISTENCY_PARTS)
+        self.assertEqual(tuple(value for value, _label in exported("features/dataset/options.js", "consistencyLevels")),
+                         dataset.CONSISTENCY_LEVELS)
+        self.assertEqual(exported("features/dataset/options.js", "typeConsistency"), dataset.TYPE_CONSISTENCY)
 
     def test_dataset_seed_options_match_backend(self):
         self.assertEqual(tuple(value for value, _label in exported("features/dataset/options.js", "seedModes")),

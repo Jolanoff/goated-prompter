@@ -41,7 +41,24 @@ Understanding (brief version 13) records the subject type, participant count, st
 activity, and what stays fixed and what varies. It never reads vocabulary. It links every character and outfit trigger (by
 number) to exactly one person, the character's `triggers` (code checks it; a character trigger is one person, count 1),
 and the review shows the link. Each character carries `known`: its looks come from its name or an
-exact-text character trigger, so no step invents them. Version 9 to 12 briefs in saved runs stay readable.
+exact-text character trigger, so no step invents them. Version 9 to 14 briefs in saved runs stay readable.
+
+Consistency (`v2/consistency.py`, options in `options/dataset.py`): what a dataset trains decides what stays the same.
+Each part of the image (subject, clothing, action, expression, place, objects, camera, light, mood) is locked
+(identical in every image), themed (every image follows the user's words for it, the rest of the part varies) or free
+(new in every image). The draft's Dataset type gives defaults (`TYPE_CONSISTENCY`: a Pose / action set locks the
+action, an Object / product set the objects, a Location set themes the place; Character themes the subject, which
+keeps everyone the request names, triggers or knows and varies the rest). Understanding (brief version 15) quotes the
+user's words per part and names the parts the request asks to be identical (`locked`) or to differ (`varied`); code
+keeps only quoted words that are really in the request, and a lock only when those words ask for sameness
+(`consistency.asks_same`: a named character, an object or "feet visible" stays themed). The brief stores the resolved `consistency` and the words
+(`kept_words`): a part set by hand on the tab's Consistency row wins, then the request, then the type. Older briefs
+read their kept parts as themed. Downstream: a locked action deals one Actions & Poses entry to every image; a locked
+part's vocabulary category gets no per-image suggestion; frames are dealt to known characters only when the camera is
+free; locked parts are copied from the first image (`same_as_image_1`) and never listed in `already_used`; a locked
+subject holds only the people its words name, or everyone when they name nobody (`request.locked_people`), and the
+others still vary. The quality tool counts repeats only for parts that are
+not locked and reports `locked_drift`.
 
 Scenes (`v2/scenes/`): the scene writer (`dataset_v2:scenes`, one call per batch of up to ten images) receives the
 USER REQUEST, the EXISTING APPROVED REQUIREMENTS (rules, Understanding, style, and the capture when the style is Realistic) and, only when packs are selected, a
@@ -63,7 +80,10 @@ only the entry it names (`named_entries`); when it also names the category or on
 general), every image gets one of those entries and one other; suggestions are optional: the writer uses the ones that fit the image, or none,
 and never adds a subject or object only to use one. No pack is used automatically: character looks come from the request
 and approved requirements, with vocabulary guidance only from manually selected Subjects packs. A known character has
-only an expression in its scene; its look comes from its name, never from the writer or vocabulary.
+only an expression in its scene; its look comes from its name, never from the writer or vocabulary. With known
+characters each scene also has a frame per person; each image is dealt the frame its known characters get
+(`deal_frames`), unless the request keeps the camera (the framing, the shot or which body parts must show), which then
+decides how much of everyone the image shows.
 A scene holds only the people and their arrangement: subjects, actions, position, space, camera and extras. Each
 position line places its person in the frame relative to the others and names the owner of every body part by
 label, and says which body parts the camera can see; the final prompt describes a body part only when it is visible
@@ -79,9 +99,12 @@ hold only visible details, the clothing and the light source among them (a selec
 entry as visible things). An Actions & Poses entry is used as written and adapted only where it conflicts: the actions
 copy its act line (who does what to whom, with the position's name, in everyday words) with only its people replaced,
 and the final prompt keeps those words. Saved scenes
-with the old clothing, lighting and mood fields still load (`retire_fields` drops them). Repeated looks are not asked again (an image asked again tends to copy an accepted
-one); later batches see earlier looks field by field. Missing images
-are retried, then reported; the last round keeps an image rather than lose it.
+with the old clothing, lighting and mood fields still load (`retire_fields` drops them). Only a scene that would ruin
+the image is asked again (wrong shape, an avoided phrase, an entry not in the vocabulary, a person the actions never
+name, a known character without a visible face or cropped above the hips); repeating an earlier image, a kept part,
+an entry or a dealt frame never is: variety comes from the prompt and the vocabulary's deal. Later batches
+see earlier images field by field. Missing images are retried, then reported; the last round keeps an image rather
+than lose it.
 
 Prompts (`v2/prompts.py`): the existing Builder writes each final prompt from the decided scene (`decided_scene`):
 it keeps the target adapter, length, style, templates and output format and leaves out its free-form layers
@@ -108,8 +131,8 @@ the scene's signs instead of named; quoted words stay. On Anima, code writes the
 the cast, puts quality tags first and keeps one safety tag before the counts, writes tags with spaces (score tags
 keep their underscores) and drops low-quality tags, score tags Anima does not know and invented solo tags
 (`anima_tag_line`). Each scene shows the request through its own signs, specific enough to name without being told; the scene
-writer writes them (extras) right after the pose, before the place and camera, and an image that reuses an
-earlier image's place with its camera, arrangement or signs is asked again (`_repeats`). One set of library templates is picked for the whole run, so every
+writer writes them (extras) right after the pose, before the place and camera, and is asked to keep them, the place
+and the camera new in every image. One set of library templates is picked for the whole run, so every
 prompt has the same structure, and an entry's position name reaches the Builder only when the scene's actions say it
 (an entry the writer had to swap or adapt would otherwise name a different act). Understanding drops a must or avoid
 phrase that only repeats a trigger's text. Capture is Auto in the brief unless the style is Realistic. The Aspect ratio setting (Auto by default; `aspect.py`) reaches the scene writer and the Builder as one rule each, only when a ratio is chosen: poses, arrangement and framing are written for a tall, wide or square frame. Any style

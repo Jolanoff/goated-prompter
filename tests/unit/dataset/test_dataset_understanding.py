@@ -51,7 +51,7 @@ class Understanding(unittest.TestCase):
 
     def test_understanding_never_chooses_vocabulary(self):
         result, calls = self.understand([TWO_MEN], subject="2 adult men in an explicit scene", nsfw=True)
-        self.assertEqual(result["version"], 14)
+        self.assertEqual(result["version"], 15)
         self.assertNotIn("intent", result)
         self.assertEqual(set(calls[0].json_schema["properties"]), set(understanding.MODEL_FIELDS))
         for word in ("pack", "vocabulary"):
@@ -94,7 +94,7 @@ class Understanding(unittest.TestCase):
 
     def test_a_saved_version_10_brief_with_intent_stays_readable(self):
         result, _ = self.understand([MAGICAL_SECOND])
-        saved = {**{key: value for key, value in result.items() if key != "kept"},
+        saved = {**{key: value for key, value in result.items() if key not in ("kept", "consistency", "kept_words")},
                  "version": 10, "intent": {"elements": [], "relations": []}}
         self.assertEqual(understanding.validate_brief(saved), saved)
 
@@ -104,7 +104,12 @@ class Understanding(unittest.TestCase):
         answer = {**json.loads(MAGICAL_SECOND), "kept": {"action": "Reading", "place": "in one  armchair",
                                                          "light": "warm lamplight", "weather": "rain", "mood": ""}}
         result, _ = self.understand([json.dumps(answer)], subject="a reader reading in one armchair in a library")
-        self.assertEqual(result["kept"], ["place", "action"], "the user's words only, case and spacing aside")
+        self.assertEqual(result["kept_words"], {"action": "Reading", "place": "in one armchair"},
+                         "the user's words only, case and spacing aside")
+        # A Character dataset keeps its people's looks by default; a mentioned part is at least themed.
+        self.assertEqual(result["kept"], ["subject", "action", "place"])
+        self.assertEqual({part: level for part, level in result["consistency"].items() if level != "free"},
+                         {"subject": "themed", "action": "themed", "place": "themed"})
         self.assertIn("every part not mentioned is chosen anew for each image", " ".join(understanding.SYSTEM.split()))
         # Live briefs listed in randomized the parts kept quotes, and repeated the request in fixed and must, so the
         # scene writer got the same request three times and two answers about what varies.
@@ -113,8 +118,38 @@ class Understanding(unittest.TestCase):
             self.assertIn(rule, " ".join(understanding.SYSTEM.split()))
         self.assertTrue(all(f"\n  {part}: " in understanding.SYSTEM for part in understanding.KEPT_PARTS),
                         "every part is defined for the model")
+        # A live request asked for the feet; read as a requirement but not as framing, it got hips-up frames dealt.
+        self.assertIn("camera: the viewpoint, the framing, the kind of shot, or which body parts the image must show",
+                      understanding.SYSTEM)
         result, _ = self.understand([MAGICAL_SECOND])
-        self.assertEqual(result["kept"], [], "an answer without kept mentions none")
+        self.assertEqual((result["kept"], result["kept_words"]), (["subject"], {}), "only the type's default")
+
+    def test_the_request_and_the_draft_set_each_parts_level(self):
+        # A pose dataset drifted because every image was told to vary how the act happens; a background the request
+        # asked to keep was moved to another spot in every image.
+        answer = {**json.loads(MAGICAL_SECOND), "kept": {"action": "Reading", "place": "in the same armchair",
+                                                         "light": "warm lamplight"},
+                  "locked": ["place", "camera", "action"], "varied": ["light"]}
+        subject = "a reader reading in the same armchair in a library, warm lamplight in various colours"
+        result, _ = self.understand([json.dumps(answer)], subject=subject)
+        levels = result["consistency"]
+        # A live model also locked parts the request only named; a lock needs the user's own words to ask for it.
+        self.assertEqual((levels["place"], levels["camera"], levels["light"], levels["action"]),
+                         ("locked", "free", "free", "themed"), "locked and varied count only for mentioned parts")
+        result, _ = self.understand([json.dumps(answer)], subject=subject, trigger_type="Pose / action",
+                                    consistency={"light": "locked", "mood": "themed"})
+        levels = result["consistency"]
+        self.assertEqual((levels["action"], levels["light"], levels["mood"], levels["subject"]),
+                         ("locked", "locked", "themed", "free"), "the type's default, then the draft's own choice")
+        self.assertIn("locked: only the parts in kept the request says must look identical in every image",
+                      " ".join(understanding.SYSTEM.split()))
+        self.assertIn("varied: the parts in kept the request asks to differ between the images", understanding.SYSTEM)
+        with self.assertRaisesRegex(ValueError, "consistency must give every part"):
+            understanding.validate_brief({**result, "consistency": {"place": "locked"}})
+        from goated_prompter.features.dataset.v2 import consistency
+        old = {key: value for key, value in result.items() if key not in ("consistency", "kept_words")}
+        self.assertEqual(consistency.levels({**old, "kept": ["place"]})["place"], "themed", "a version 14 brief")
+        self.assertEqual(consistency.levels({**old, "kept": ["place"]})["action"], "free")
         self.assertEqual(understanding.validate_brief(result), result)
         with self.assertRaises(ValueError):
             understanding.validate_brief({**result, "kept": ["weather"]})

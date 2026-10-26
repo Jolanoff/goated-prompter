@@ -37,7 +37,7 @@ def avoid_patterns(brief):
 RETIRED_SECTIONS = ("lighting", "mood")
 
 
-RETIRED_SUBJECT_FIELDS = ("clothing",)
+RETIRED_SUBJECT_FIELDS = ("clothing", "detail")
 
 
 def retire_fields(scene):
@@ -135,19 +135,61 @@ def _framed(frame, labels):
                     and item["face"] in FACES for item in frame.values()))
 
 
-def framing_problems(scene, known=frozenset(), dealt=None):
+# The narrowest frame that holds a body part, widest first. A known character's frame decides the final prompt's
+# framing, so it must hold every part its own camera shows: a live set framed a character head to knees in every
+# image while each camera showed the feet, and the image model followed the frame.
+FRAME_PARTS = (("full body", re.compile(r"\b(?:feet|foot|toes|ankles?|soles|heels)\b", re.IGNORECASE)),
+               ("head to knees", re.compile(r"\b(?:knees?|thighs?|legs?)\b", re.IGNORECASE)))
+_NOT_SHOWN = re.compile(r"\b(?:not|no|without|hidden|cropped|cut off|outside|out of (?:the )?frame)\b", re.IGNORECASE)
+
+
+def _camera_about(camera, label, labels):
+    """The pieces of a camera text about one person: from each mention of their label to the next person's."""
+    marks = sorted((match.start(), name) for name in labels
+                   for match in re.finditer(r"(?<![\w-])" + re.escape(name) + r"(?![\w-])", camera, re.IGNORECASE))
+    return [camera[start:marks[index + 1][0] if index + 1 < len(marks) else len(camera)]
+            for index, (start, name) in enumerate(marks) if name == label]
+
+
+def named_frame(texts):
+    """(frame, part): the narrowest frame that holds every body part the texts say is shown, or None. A clause that
+    says a part is not shown (hidden, out of frame) does not count."""
+    for frame, pattern in FRAME_PARTS:
+        for text in texts:
+            for clause in re.split(r"[;.]", str(text or "")):
+                if (found := pattern.search(clause)) and not _NOT_SHOWN.search(clause):
+                    return frame, found[0]
+    return None
+
+
+def shown_frame(camera, label, labels):
+    """(frame, part): the narrowest frame that holds the body parts the camera says it shows of this person, or None."""
+    return named_frame(_camera_about(str(camera or ""), label, labels))
+
+
+def framed_to_camera(scene):
+    """The accepted scene with every frame at least as wide as the body parts its own camera shows of that person
+    (shown_frame): the camera owns what is visible, so the frame follows it. A scene whose frames already agree comes
+    back unchanged."""
+    frames, labels = scene.get("frame"), list(scene.get("frame") or {})
+    if not isinstance(frames, dict):
+        return scene
+    widened = {label: ({**item, "shows": needed[0]} if (needed := shown_frame(scene.get("camera"), label, labels))
+                       and SHOWS.index(item["shows"]) > SHOWS.index(needed[0]) else item)
+               for label, item in frames.items()}
+    return {**scene, "frame": widened} if widened != frames else scene
+
+
+def framing_problems(scene, known=frozenset()):
     """Why a scene's frames drop someone the image needs, as reasons to ask again ([] when they are right): a known
     character is shown at least head to hips with the face visible (they are what the dataset is about). Everyone else's
     frame is the writer's choice (an adult scene is told to show whoever takes part at least head to hips; checking it
-    in code cost a round of rewrites that came back as repeats). dealt: the frame the image's known characters get
-    (entries.deal_frames): that one or wider."""
+    in code cost a round of rewrites that came back as repeats). The frame dealt to each image (entries.deal_frames)
+    only spreads the set: a scene framed otherwise is never asked again for it. A frame narrower than its own camera
+    is widened, never asked again (framed_to_camera)."""
     problems = []
-    allowed = SHOWS[:SHOWS.index(dealt) + 1] if dealt in SHOWS else AT_LEAST_HIPS
     for label, item in (scene.get("frame") or {}).items():
-        if label in known and dealt in SHOWS and item["shows"] not in allowed:
-            problems.append(f"this image shows {label} {dealt}: frame them that wide (or wider) with the face visible, "
-                            "and change the arrangement or viewpoint so the action still shows")
-        elif label in known and (item["shows"] not in AT_LEAST_HIPS or item["face"] != "visible"):
+        if label in known and (item["shows"] not in AT_LEAST_HIPS or item["face"] != "visible"):
             problems.append(f"{label} is a known character: show them at least head to hips with the face visible, "
                             "and change the arrangement or viewpoint so the action still shows")
     return problems
@@ -175,60 +217,3 @@ def _words(text, ignore=frozenset()):
     """The words of a text without filler, the ignored words and the possessive "'s" ("man 1's" is the label alone)."""
     return {word for word in re.findall(r"[a-z0-9]+", re.sub(r"['’]s\b", "", str(text).casefold()))
             if word not in _FILLER and word not in ignore}
-
-
-def _overlap(first, second, ignore=frozenset()):
-    """How much of the shorter text the other one repeats (0 to 1), ignoring filler words and the character labels."""
-    first, second = _words(first, ignore), _words(second, ignore)
-    return len(first & second) / min(len(first), len(second)) if first and second else 0.0
-
-
-def _without(text, labels=()):
-    """The text without the character labels themselves ("man 1, man 2 and man 3 on a bed" -> ", and on a bed"); other
-    numbers stay ("2 chairs")."""
-    for label in sorted(labels, key=len, reverse=True):
-        text = re.sub(r"(?<![\w-])" + re.escape(label) + r"(?![\w-])", " ", str(text or ""), flags=re.IGNORECASE)
-    return str(text or "")
-
-
-def _viewpoint(camera, labels=()):
-    """The camera's opening, up to where it first names a person: the viewpoint ("side view, low angle"), without
-    what each person shows, which reads alike in every image."""
-    camera = str(camera or "")[:80]
-    found = [match.start() for label in labels
-             if (match := re.search(r"(?<![\w-])" + re.escape(label) + r"(?![\w-])", camera, re.IGNORECASE))]
-    return camera[:min(found)] if found and min(found) else camera
-
-
-def _arrangement(scene):
-    """Where each person is, as one text: the scene's position field."""
-    position = scene.get("position")
-    return " ".join(map(str, position.values())) if isinstance(position, dict) else str(position or "")
-
-
-def repeated_parts(scene, other, labels=(), kept=()):
-    """What a new scene reuses of another image, as a list: [] unless it reuses that image's place together with its
-    camera, actions or extras (an image asked again tends to copy an accepted one's place and signs). The camera
-    counts only when its viewpoint and the people's arrangement (position) both match: a fixed place seen from the
-    usual side view is not a copy while the people are arranged differently. The character labels never count (every
-    place, camera and position names them), and the same place alone is fine (fixed may keep it). kept: the parts the
-    request mentions (the brief's kept), which every image keeps, so they are never a copy: the action, the camera,
-    and the extras when it mentions what they hold (objects, clothing, light or mood)."""
-    ignore = frozenset(word for label in labels for word in re.findall(r"[a-z0-9]+", label.casefold()))
-    if _overlap(_without(scene["space"], labels), _without(other["space"], labels)) < .7:
-        return []
-    kept = set(kept)
-    return [name for name, repeated in (
-        ("camera", "camera" not in kept
-         and _overlap(_viewpoint(scene["camera"], labels), _viewpoint(other["camera"], labels)) >= .6
-         and _overlap(_without(_arrangement(scene), labels), _without(_arrangement(other), labels)) >= .6),
-        ("actions", "action" not in kept and _overlap(scene["actions"], other["actions"], ignore) >= .6),
-        ("extras", not kept & {"objects", "clothing", "light", "mood"}
-         and _overlap(scene.get("extras"), other.get("extras"), ignore) >= .7)) if repeated]
-
-
-def repeat_reason(other, parts):
-    """Why a scene is asked again: which image it repeats ("an earlier image" when it is from an earlier batch) and
-    what it reuses."""
-    name = f"image {other['slot']}" if "slot" in other else "an earlier image"
-    return f"it repeats {name}'s place together with its {' and '.join(parts)}; write a different scene"

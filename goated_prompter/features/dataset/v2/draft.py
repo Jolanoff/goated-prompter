@@ -6,7 +6,8 @@ switch); they are dropped when the draft is read, and nothing on disk is rewritt
 """
 
 from ....options.creativity import CREATIVITY_NAMES
-from ....options.dataset import ASPECT_RATIO_NAMES, DATASET_SOURCES, DATASET_TYPES, MAX_SEED, SEED_MODES
+from ....options.dataset import (ASPECT_RATIO_NAMES, CONSISTENCY_LEVELS, CONSISTENCY_PARTS, DATASET_SOURCES, DATASET_TYPES,
+                                 MAX_SEED, SEED_MODES)
 from ....options.lengths import PROMPT_LENGTH_NAMES
 from ....options.styles import CAPTURE_NAMES, STYLE_NAMES
 from ....prompting.directors import fold_replaced_director
@@ -27,6 +28,7 @@ def default_dataset_draft():
         "creativity": "Balanced", "style": "Auto", "capture": "Auto", "aspect": "Auto",
         "seed": 0, "seed_mode": "randomize",
         "vocabulary_packs": [],
+        "consistency": {},  # {part: level} the user set by hand; a part not listed is Auto (the type and the request)
     }
 
 
@@ -82,6 +84,11 @@ def validate_dataset_draft(value, *, generation=False, planning=False):
             or any(not isinstance(item, str) or not item or len(item) > 300 for item in packs)):
         raise ValueError("Vocabulary packs must be a list of pack ids.")
     result["vocabulary_packs"] = list(dict.fromkeys(packs))
+    choices = result["consistency"]
+    if (not isinstance(choices, dict) or any(part not in CONSISTENCY_PARTS for part in choices)
+            or any(level not in CONSISTENCY_LEVELS for level in choices.values())):
+        raise ValueError(f"Consistency sets parts ({', '.join(CONSISTENCY_PARTS)}) to {', '.join(CONSISTENCY_LEVELS)}.")
+    result["consistency"] = {part: choices[part] for part in CONSISTENCY_PARTS if part in choices}
     if result["trigger_type"] == "Custom" and generation and not result["custom_type"].strip():
         raise ValueError("Describe the custom subject kind before generating.")
     if result["source_mode"] == "guided" and generation and not any(line.strip() for line in result["inputs"].splitlines()):
