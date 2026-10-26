@@ -2,28 +2,91 @@
   "name": "Buildings & Structures",
   "category": "Objects & Props",
   "description": "Buildings and structures seen as objects within a scene. Entries supply visible architecture rather than replacing the scene's overall environment.",
-  "entries": [
-    "stone aqueduct on repeated arches",
-    "covered pedestrian footbridge",
-    "brick chimney with an iron cap",
-    "wooden watchtower with an exterior ladder",
-    "lighthouse",
-    "red telephone box",
-    "wooden pier",
-    "stone bridge",
-    "water tower",
-    "bus shelter",
-    "greenhouse",
-    "windmill",
-    "market stall",
-    "fountain",
-    "street lamp",
-    "garden shed",
-    "clock tower",
-    "staircase",
-    "balcony railing",
-    "neon-lit storefront",
-    "scaffolding",
-    "garden gazebo"
+  "groups": [
+    {
+      "group": "bridges and waterfront",
+      "words": [
+        "waterfront",
+        "harbor",
+        "coast",
+        "river",
+        "sea",
+        "crossing water"
+      ],
+      "entries": [
+        "stone aqueduct on repeated arches",
+        "covered pedestrian footbridge",
+        "lighthouse",
+        "wooden pier",
+        "stone bridge"
+      ]
+    },
+    {
+      "group": "towers and landmarks",
+      "words": [
+        "tower",
+        "towers",
+        "landmark",
+        "skyline",
+        "tall structure"
+      ],
+      "entries": [
+        "brick chimney with an iron cap",
+        "wooden watchtower with an exterior ladder",
+        "water tower",
+        "windmill",
+        "clock tower"
+      ]
+    },
+    {
+      "group": "street fixtures",
+      "words": [
+        "street",
+        "city",
+        "town",
+        "downtown",
+        "urban",
+        "plaza",
+        "square",
+        "sidewalk"
+      ],
+      "entries": [
+        "red telephone box",
+        "bus shelter",
+        "market stall",
+        "fountain",
+        "street lamp",
+        "neon-lit storefront"
+      ]
+    },
+    {
+      "group": "garden structures",
+      "words": [
+        "garden",
+        "backyard",
+        "yard",
+        "park",
+        "outdoor building"
+      ],
+      "entries": [
+        "greenhouse",
+        "garden shed",
+        "garden gazebo"
+      ]
+    },
+    {
+      "group": "stairs and heights",
+      "words": [
+        "architecture",
+        "building",
+        "height",
+        "climbing"
+      ],
+      "entries": [
+        "staircase",
+        "balcony railing",
+        "scaffolding"
+      ]
+    }
   ]
 }

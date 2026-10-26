@@ -4,7 +4,7 @@ model uses it."""
 
 import json
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 from tests.helpers import enter_context
 
 from goated_prompter.backends.mock import MockBackend
@@ -27,7 +27,7 @@ class SceneVocabulary(unittest.TestCase):
         self.dance = next(entry for entry in romance if entry.startswith("Slow dance:"))
         self.hands = next(entry for entry in romance if "inner hands joined" in entry)
         self.forehead = next(entry for entry in romance if "kiss B's forehead" in entry)
-        self.calls, self.entries, self.fit, self.copy_dealt = [], [], None, False
+        self.calls, self.entries, self.copy_dealt = [], [], False
         self.backend = MockBackend()
         enter_context(self, patch.object(self.backend, "generate", side_effect=self.generate))
         enter_context(self, patch.object(scenes, "create_backend", return_value=self.backend))
@@ -42,11 +42,6 @@ class SceneVocabulary(unittest.TestCase):
 
     def generate(self, instruction):
         self.calls.append(instruction)
-        if instruction.diagnostic_stage == "dataset_v2:entries":
-            entries = json.loads(instruction.user_message)["entries"]
-            if self.fit is None:
-                return json.dumps({"fit": [int(number) for number in entries]})
-            return json.dumps({"fit": [int(number) for number, entry in entries.items() if entry in self.fit]})
         if instruction.diagnostic_stage != "dataset_v2:scenes":
             return "A finished prompt."
         user = composer_user(instruction.user_message)
@@ -241,12 +236,11 @@ class SceneVocabulary(unittest.TestCase):
         self.copy_dealt = True
         result = self.write(self.brief("A couple", self.PAIR, amount=4), ["Actions & Poses/Test-Poses", "Objects/Test-Props"],
                             catalog=catalog)
-        fitting = json.loads(next(call for call in self.calls if call.diagnostic_stage == "dataset_v2:entries").user_message)
         kept = ["two people by the table, one holding [Test Props]", "two people seated, one pouring from [Test-Props: teapot]",
                 "two people dancing"]
-        self.assertEqual(sorted(fitting["entries"].values()), sorted(kept), "a slot names a pack by its name or file name")
         user = composer_user(self.composer()[0].user_message)
-        self.assertEqual(set(image["entry"] for image in user["images"]) - set(kept), set(), "kept slots stay as written")
+        self.assertEqual(set(image["entry"] for image in user["images"]), set(kept),
+                         "a slot names a pack by its name or file name, and kept slots stay as written")
         for unused in ("standing", "kneeling"):
             self.assertNotIn(unused, user["vocabulary"], "a slot nothing selected can fill: never used")
         self.assertIn("teapot", user["vocabulary"], "the pack a slot names is offered beside it")
@@ -265,38 +259,52 @@ class SceneVocabulary(unittest.TestCase):
                   for entry in image["suggested"]["Lighting"]}
         self.assertEqual(lights, {"candlelight falling on [Test Props]", "light from [Actions & Poses]"})
 
-    def test_entries_that_need_more_people_than_the_cast_are_never_offered(self):
+    def test_entries_are_made_for_the_casts_number_of_people(self):
         poses = ["two people dancing close", "the person stretching by the window", "the person reading"]
         props = ["wine glass", "two-seat swing", "teapot"]
         people = {"two people dancing close": 2, "two-seat swing": 2, "the person reading": 1}
         catalog = self.slot_packs(poses, props, people)
         self.write(self.brief("A man at home", self.SOLO, amount=4), ["Actions & Poses/Test-Poses", "Objects/Test-Props"],
                    catalog=catalog)
-        fitting = json.loads(next(call for call in self.calls if call.diagnostic_stage == "dataset_v2:entries").user_message)
-        self.assertEqual(sorted(fitting["entries"].values()), ["the person reading", "the person stretching by the window"])
         user = composer_user(self.composer()[0].user_message)
+        self.assertEqual({image["entry"] for image in user["images"]},
+                         {"the person reading", "the person stretching by the window"}, "an entry without a count fits")
         self.assertNotIn("two people dancing close", user["vocabulary"])
         self.assertNotIn("two-seat swing", user["vocabulary"])
         suggested = {entry for image in user["images"] for entry in image["suggested"]["Objects & Props"]}
-        self.assertEqual(suggested, {"wine glass", "teapot"}, "an entry without a count always stays")
+        self.assertEqual(suggested, {"wine glass", "teapot"}, "an object without a count always stays")
         catalog = self.slot_packs(poses, props, people)
         self.write(self.brief("A couple at home", self.PAIR, amount=4), ["Actions & Poses/Test-Poses", "Objects/Test-Props"],
                    catalog=catalog)
-        fitting = json.loads(next(call for call in self.calls if call.diagnostic_stage == "dataset_v2:entries").user_message)
-        self.assertEqual(len(fitting["entries"]), 3, "a pair may use every entry")
+        user = composer_user(self.composer()[0].user_message)
+        self.assertEqual({image["entry"] for image in user["images"]},
+                         {"two people dancing close", "the person stretching by the window"},
+                         "a pair gets the entries made for two, never one made for one person alone")
+        self.assertIn("two-seat swing", user["vocabulary"], "an object for fewer people than the cast still fits")
 
     def test_a_kept_action_lets_only_entries_that_show_it_fit(self):
         # A request naming one position got scenes built on other positions its activity also covers.
-        self.write({**self.brief("A couple dancing close", self.PAIR, amount=2), "kept": ["action"]},
-                   ["Actions & Poses/Romance"])
-        fit = next(call for call in self.calls if call.diagnostic_stage == "dataset_v2:entries")
-        self.assertTrue(json.loads(fit.user_message)["action_kept"])
-        self.assertIn("When action_kept is true, the request's action stays the same in every image", fit.system_message)
+        catalog = self.slot_packs(["two people dancing close", "two people dancing apart", "two people reading a map",
+                                   "two people cooking side by side"])
+        brief = self.brief("A couple dancing", self.PAIR, amount=4)
+        brief["kept_words"] = {"action": "dancing"}
+        self.write(brief, ["Actions & Poses/Test-Poses"], catalog=catalog)
+        user = composer_user(self.composer()[0].user_message)
+        self.assertEqual({image["entry"] for image in user["images"]}, {"two people dancing close", "two people dancing apart"})
+        self.assertNotIn("cooking", user["vocabulary"], "an entry that does not show the action is never offered")
+        self.assertFalse([call for call in self.calls if call.diagnostic_stage == "dataset_v2:entries"], "no model call")
         self.calls.clear()
-        self.write({**self.brief("A couple dancing close", self.PAIR, amount=2), "kept": ["place"]},
-                   ["Actions & Poses/Romance"])
-        fit = next(call for call in self.calls if call.diagnostic_stage == "dataset_v2:entries")
-        self.assertNotIn("action_kept", json.loads(fit.user_message), "an action the request leaves open")
+        self.write(self.brief("A couple", self.PAIR, amount=4), ["Actions & Poses/Test-Poses"],
+                   catalog=self.slot_packs(["two people dancing close", "two people dancing apart",
+                                            "two people reading a map", "two people cooking side by side"]))
+        self.assertEqual(len({image["entry"] for image in composer_user(self.composer()[0].user_message)["images"]}), 4,
+                         "an action the request leaves open: every entry, a different one for each image")
+
+    def test_a_request_that_rules_an_act_out_never_gets_it(self):
+        catalog = self.slot_packs(["two people dancing close", "two people kneeling by a fire", "two people reading a map"])
+        brief = {**self.brief("A couple", self.PAIR, amount=3), "avoid": ["no kneeling"]}
+        self.write(brief, ["Actions & Poses/Test-Poses"], catalog=catalog)
+        self.assertNotIn("kneeling", composer_user(self.composer()[0].user_message)["vocabulary"])
 
     def test_packs_without_slots_or_counts_are_written_exactly_as_before(self):
         packs = ["Actions & Poses/Romance", "Lighting/Dramatic", "Objects/Furniture"]
@@ -308,7 +316,7 @@ class SceneVocabulary(unittest.TestCase):
             self.write(self.brief("A couple", self.PAIR, amount=3), packs)
         self.assertEqual(now, [(call.system_message, call.user_message) for call in self.calls])
 
-    def test_pack_descriptions_reach_the_scene_writer_and_the_fitting_call(self):
+    def test_pack_descriptions_reach_the_scene_writer(self):
         catalog = load_catalog(user_root=False)
         for pack in catalog["packs"]:
             if pack["id"] in ("Actions & Poses/Solo-Activities", "Lighting/Dramatic"):
@@ -317,9 +325,8 @@ class SceneVocabulary(unittest.TestCase):
         self.write(brief, ["Actions & Poses/Solo-Activities", "Lighting/Dramatic"], catalog=catalog)
         vocabulary = composer_user(self.composer()[0].user_message)["vocabulary"]
         self.assertIn('Pack "Dramatic" (its author\'s note: note for Dramatic):', vocabulary)
+        self.assertIn('Pack "Solo Activities" (its author\'s note: note for Solo Activities):', vocabulary)
         self.assertIn("its author's note", self.composer()[0].system_message)
-        fit = next(call for call in self.calls if call.diagnostic_stage == "dataset_v2:entries")
-        self.assertEqual(json.loads(fit.user_message)["notes"], {"Solo Activities": "note for Solo Activities"})
 
     def test_the_sample_keeps_every_pack_and_its_description(self):
         groups = [{"category": "Objects & Props", "instruction": "",
@@ -386,11 +393,14 @@ class SceneVocabulary(unittest.TestCase):
         dealt = [image["entry"] for image in composer_user(self.composer()[0].user_message)["images"]]
         self.assertEqual(len(set(dealt)), 3, "no entry is dealt twice while the pack has more")
         import random
-        entries = [f"entry {number}" for number in range(10)]
-        self.assertEqual(scenes.deal_entries(entries, 10, random.Random(4)), scenes.deal_entries(entries, 10, random.Random(4)))
-        self.assertNotEqual(scenes.deal_entries(entries, 10, random.Random(4)), scenes.deal_entries(entries, 10, random.Random(5)))
-        self.assertEqual(sorted(scenes.deal_entries(entries, 10, random.Random(4)).values()), sorted(entries))
-        self.assertEqual(scenes.deal_entries([], 3, random.Random(4)), {})
+        from goated_prompter.features.dataset.v2.scenes import actions
+        groups = [{"name": f"kind {kind}", "entries": [f"entry {kind}{number}" for number in range(5)]} for kind in "ab"]
+        deal = lambda seed: actions.deal_actions(groups, 10, random.Random(seed))
+        self.assertEqual(deal(4), deal(4))
+        self.assertNotEqual(deal(4), deal(5))
+        self.assertEqual(sorted(deal(4).values()), sorted(entry for group in groups for entry in group["entries"]))
+        self.assertEqual(len({entry[:7] for entry in list(deal(4).values())[:2]}), 2, "the first two images: both kinds")
+        self.assertEqual(set(actions.deal_actions(groups, 4, random.Random(4), locked=True).values()).__len__(), 1)
 
     def test_a_scene_may_keep_neutral_wording_from_an_entry(self):
         labels = ["man", "woman"]
@@ -474,39 +484,33 @@ class SceneVocabulary(unittest.TestCase):
     def test_only_entries_that_fit_the_request_are_offered_dealt_and_counted(self):
         pair = [{"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 1},
                 {"label": "woman", "gender": "female", "custom": "", "pronoun": "she", "count": 1}]
-        self.fit = [self.dance, self.hands]
-        self.entries = [self.dance, self.hands] * 2 + [self.dance]
-        result = self.write(self.brief("A couple dancing", pair, amount=5), ["Actions & Poses/Romance"])
-        fitting = [call for call in self.calls if call.diagnostic_stage == "dataset_v2:entries"]
-        self.assertEqual(len(fitting), 1)
-        self.assertIn("the entry keeps those roles and that number", " ".join(fitting[0].system_message.split()))
-        self.assertIn("A couple dancing", fitting[0].user_message)
-        self.assertIn('"cast"', fitting[0].user_message)
+        brief = self.brief("A couple with hands joined", pair, amount=5)
+        brief["kept_words"] = {"action": "hands joined"}
+        romance = next(pack for pack in self.catalog["packs"] if pack["id"] == "Actions & Poses/Romance")["entries"]
+        seated = next(entry for entry in romance if "hands joined between their knees" in entry)
+        self.entries = [self.hands, seated] * 2 + [self.hands]
+        result = self.write(brief, ["Actions & Poses/Romance"])
         first = self.composer()[0]
         vocabulary = composer_user(first.user_message)["vocabulary"]
-        self.assertIn(self.dance, vocabulary)
-        self.assertNotIn(self.forehead, vocabulary, "an entry that does not fit is never offered")
-        self.assertEqual({image["entry"] for image in composer_user(first.user_message)["images"]}, set(self.fit))
-        self.assertIn("used by fewer than 3 images", first.system_message, "five images share two fitting entries")
+        self.assertIn(self.hands, vocabulary)
+        self.assertNotIn(self.forehead, vocabulary, "an entry that does not show the action is never offered")
+        self.assertEqual({image["entry"] for image in composer_user(first.user_message)["images"]},
+                         {self.hands, seated, self.dance}, "the slow dance joins one hand of each too")
+        self.assertIn("used by fewer than 2 images", first.system_message, "five images share three fitting entries")
         self.assertTrue(result["complete"])
 
     def test_when_no_entry_fits_the_writer_gets_no_actions_vocabulary(self):
         pair = [{"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 1},
                 {"label": "woman", "gender": "female", "custom": "", "pronoun": "she", "count": 1}]
-        self.fit = []
-        result = self.write(self.brief("A couple", pair, amount=2), ["Actions & Poses/Romance", "Lighting/Dramatic"])
+        brief = self.brief("A couple juggling", pair, amount=2)
+        brief["kept_words"] = {"action": "juggling"}
+        result = self.write(brief, ["Actions & Poses/Romance", "Lighting/Dramatic"])
         call = self.composer()[0]
         vocabulary = composer_user(call.user_message)["vocabulary"]
-        self.assertNotIn("Actions & Poses", vocabulary)
+        self.assertNotIn("Actions & Poses", vocabulary, "the request's act is never replaced by an unrelated entry")
         self.assertIn("Lighting", vocabulary)
         self.assertNotIn("ACTIONS & POSES ENTRY", call.system_message)
         self.assertTrue(result["complete"])
-
-    def test_a_failed_fitting_call_keeps_every_entry(self):
-        self.assertEqual(scenes.fitting_entries(Mock(generate=Mock(return_value="not json")),
-                                                {"_family": "qwen", "input": {"request": "x", "seed": 1}, "summary": "",
-                                                 "fixed": "", "must": [], "avoid": [], "characters": []},
-                                                ["a", "b"], progress=lambda _: None), ["a", "b"])
 
     def test_fewer_entries_than_images_raise_the_cap(self):
         self.assertEqual(scenes.entry_cap(["a", "b", "c"], 10), 4)

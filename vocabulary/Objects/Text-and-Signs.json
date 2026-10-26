@@ -2,28 +2,66 @@
   "name": "Text & Signs",
   "category": "Objects & Props",
   "description": "Surfaces and objects carrying visible writing. Entries specify where text appears; requested wording and scene context determine its content.",
-  "entries": [
-    "a departure board with rows of destinations",
-    "a folded menu with section headings",
-    "a numbered ticket",
-    "a directional placard with an arrow and place name",
-    "a sign with one word painted on it",
-    "a name tag",
-    "a handwritten note",
-    "a word written on skin in marker",
-    "arrows drawn on a surface pointing to one spot",
-    "a neon sign",
-    "a chalkboard with writing",
-    "a printed label",
-    "a tattooed word",
-    "a banner with a slogan",
-    "graffiti on a wall",
-    "an engraved plaque",
-    "a sticky note",
-    "a book with a visible title",
-    "a word printed on fabric",
-    "a street sign",
-    "a license plate",
-    "a price tag"
+  "groups": [
+    {
+      "group": "signs and boards",
+      "words": [
+        "sign",
+        "signs",
+        "signage",
+        "wall",
+        "street",
+        "display"
+      ],
+      "entries": [
+        "a departure board with rows of destinations",
+        "a directional placard with an arrow and place name",
+        "a sign with one word painted on it",
+        "arrows drawn on a surface pointing to one spot",
+        "a neon sign",
+        "a chalkboard with writing",
+        "a banner with a slogan",
+        "graffiti on a wall",
+        "an engraved plaque",
+        "a street sign"
+      ]
+    },
+    {
+      "group": "paper and labels",
+      "words": [
+        "paper",
+        "note",
+        "label",
+        "document",
+        "printed",
+        "writing"
+      ],
+      "entries": [
+        "a folded menu with section headings",
+        "a numbered ticket",
+        "a name tag",
+        "a handwritten note",
+        "a printed label",
+        "a sticky note",
+        "a book with a visible title",
+        "a license plate",
+        "a price tag"
+      ]
+    },
+    {
+      "group": "words on skin and fabric",
+      "words": [
+        "words on the body",
+        "body writing",
+        "writing on skin",
+        "printed words",
+        "slogan"
+      ],
+      "entries": [
+        "a word written on skin in marker",
+        "a tattooed word",
+        "a word printed on fabric"
+      ]
+    }
   ]
 }

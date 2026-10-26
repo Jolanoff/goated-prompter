@@ -2,26 +2,65 @@
   "name": "Nature",
   "category": "Spaces",
   "description": "Natural landscapes and terrain across different biomes. Entries describe ground, water and routes without adding wildlife or changing the requested subjects.",
-  "entries": [
-    "basalt shore with hexagonal rock columns",
-    "temperate rainforest with mossy trunks and a fern-covered floor",
-    "savanna grassland broken by flat-topped trees",
-    "salt flat with shallow reflective pools",
-    "volcanic caldera with dark scree slopes",
-    "autumn birch grove beside a narrow stream",
-    "sandstone arch above a broad gravel basin",
-    "glacial valley with moraine ridges and meltwater channels",
-    "coastal dunes with sheltered hollows between grass-covered ridges",
-    "peat bog crossed by firm raised banks",
-    "mountain lake",
-    "sunflower field",
-    "tropical waterfall",
-    "rocky tide pools separated by broad dry ledges",
-    "forest clearing with fallen trunks beside an open central patch",
-    "riverbank with a shallow gravel shore and a raised grassy terrace",
-    "desert wash winding between sandstone walls",
-    "alpine meadow with scattered boulders below a ridge",
-    "mangrove inlet with exposed roots beside a firm strip of shore",
-    "limestone cave entrance opening onto a broad level shelf"
+  "groups": [
+    {
+      "group": "shores and water",
+      "words": [
+        "water",
+        "shore",
+        "coast",
+        "lake",
+        "river",
+        "waterside"
+      ],
+      "entries": [
+        "basalt shore with hexagonal rock columns",
+        "salt flat with shallow reflective pools",
+        "mountain lake",
+        "tropical waterfall",
+        "rocky tide pools separated by broad dry ledges",
+        "riverbank with a shallow gravel shore and a raised grassy terrace",
+        "mangrove inlet with exposed roots beside a firm strip of shore"
+      ]
+    },
+    {
+      "group": "forests and fields",
+      "words": [
+        "forest",
+        "woods",
+        "field",
+        "meadow",
+        "grassland",
+        "countryside"
+      ],
+      "entries": [
+        "temperate rainforest with mossy trunks and a fern-covered floor",
+        "savanna grassland broken by flat-topped trees",
+        "autumn birch grove beside a narrow stream",
+        "peat bog crossed by firm raised banks",
+        "sunflower field",
+        "forest clearing with fallen trunks beside an open central patch",
+        "alpine meadow with scattered boulders below a ridge"
+      ]
+    },
+    {
+      "group": "rocks, sand and ice",
+      "words": [
+        "rocks",
+        "desert",
+        "canyon",
+        "sand",
+        "mountains",
+        "wilderness"
+      ],
+      "entries": [
+        "volcanic caldera with dark scree slopes",
+        "sandstone arch above a broad gravel basin",
+        "glacial valley with moraine ridges and meltwater channels",
+        "coastal dunes with sheltered hollows between grass-covered ridges",
+        "desert wash winding between sandstone walls",
+        "limestone cave entrance opening onto a broad level shelf"
+      ]
+    }
   ]
 }

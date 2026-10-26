@@ -3,30 +3,221 @@
   "category": "Actions & Poses",
   "description": "Individual adult poses, practical activities and fantasy gestures for one person, A. Each entry gives support, reach or hand use; fantasy actions suit requests that allow them.",
   "people": 1,
-  "entries": [
-    "A seated at a desk, writing with one hand while the other keeps the page flat.",
-    "A kneeling beside a planting bed, lowering a seedling into a hole with both hands around its root ball.",
-    "A standing at an easel, holding a brush in one hand and a palette in the other.",
-    "A seated with a guitar across their lap, one hand on the neck and the other over the strings.",
-    "A standing beside a bicycle, leaning it slightly toward their hip while fastening a bag to its rack.",
-    "A reaching across a counter to wipe it with a cloth, supporting their weight with the other hand on the near edge.",
-    "A standing with feet apart and hands supporting their lower back, gently arching their upper back without bending their knees backward.",
-    "A standing with torso facing away and head turned over one shoulder, keeping their hips aligned with their planted feet.",
-    "A standing with one hand resting on their hip, weight over one leg and the other knee relaxed.",
-    "A standing at a cooking surface, stirring a pan with one hand while holding its handle steady with the other.",
-    "A seated with their back supported, holding an open book above their lap and looking down at its pages.",
-    "A walking along a path with one foot planted and the other stepping forward, holding a folded map at their side.",
-    "A standing with feet braced apart, extending one open hand toward a suspended fireball while keeping the other hand near their chest.",
-    "A kneeling beside a drawn symbol, one hand hovering over its center and the other resting on their raised knee.",
-    "A standing with both palms raised beneath several small levitating objects, leaving a visible gap between hands and objects.",
-    "Lunge: A stepping one foot forward with the front knee bent above the ankle, rear leg extended behind and torso upright.",
-    "Cross-legged seat: A sitting upright with shins crossed in front, hands resting on their knees and weight supported by the ground.",
-    "A crouching on both feet beside a small object, one hand reaching toward it and the other resting on a knee for balance.",
-    "A kneeling on one knee to fasten a bag, the opposite foot planted in front and the bag resting on the ground within reach.",
-    "A reaching up to a shelf with one arm, feet flat on the ground and the other hand resting against the shelf's side for balance.",
-    "A seated on a low support, leaning forward to tie one shoe with both hands while the other foot remains on the ground.",
-    "A bending forward from the hips to inspect a surface, one palm braced beside the area being examined and the other holding a small tool.",
-    "A stepping sideways over a low obstacle, one foot planted beyond it and the other lifted clear, with arms extended for balance.",
-    "A standing beside a work surface, holding a small part at chest height in one hand and turning it with a tool in the other."
+  "groups": [
+    {
+      "group": "writing",
+      "words": [
+        "writing",
+        "journaling",
+        "letter",
+        "desk work",
+        "homework"
+      ],
+      "entries": [
+        "A seated at a desk, writing with one hand while the other keeps the page flat."
+      ]
+    },
+    {
+      "group": "reading",
+      "words": [
+        "reading",
+        "book",
+        "novel",
+        "reading a book"
+      ],
+      "entries": [
+        "A seated with their back supported, holding an open book above their lap and looking down at its pages."
+      ]
+    },
+    {
+      "group": "painting",
+      "words": [
+        "painting",
+        "painter",
+        "artist",
+        "art",
+        "easel"
+      ],
+      "entries": [
+        "A standing at an easel, holding a brush in one hand and a palette in the other."
+      ]
+    },
+    {
+      "group": "music",
+      "words": [
+        "music",
+        "musician",
+        "guitar",
+        "playing guitar",
+        "playing music",
+        "song"
+      ],
+      "entries": [
+        "A seated with a guitar across their lap, one hand on the neck and the other over the strings."
+      ]
+    },
+    {
+      "group": "cooking",
+      "words": [
+        "cooking",
+        "cook",
+        "chef",
+        "stirring",
+        "kitchen",
+        "making dinner",
+        "frying"
+      ],
+      "entries": [
+        "A standing at a cooking surface, stirring a pan with one hand while holding its handle steady with the other."
+      ]
+    },
+    {
+      "group": "gardening",
+      "words": [
+        "gardening",
+        "planting",
+        "garden",
+        "gardener",
+        "plants",
+        "seedling"
+      ],
+      "entries": [
+        "A kneeling beside a planting bed, lowering a seedling into a hole with both hands around its root ball."
+      ]
+    },
+    {
+      "group": "cleaning and tidying",
+      "words": [
+        "cleaning",
+        "chores",
+        "housework",
+        "tidying",
+        "household"
+      ],
+      "entries": [
+        "A reaching across a counter to wipe it with a cloth, supporting their weight with the other hand on the near edge.",
+        "A reaching up to a shelf with one arm, feet flat on the ground and the other hand resting against the shelf's side for balance."
+      ]
+    },
+    {
+      "group": "exercise and stretching",
+      "words": [
+        "exercise",
+        "workout",
+        "stretching",
+        "stretch",
+        "yoga",
+        "fitness"
+      ],
+      "entries": [
+        "A standing with feet apart and hands supporting their lower back, gently arching their upper back without bending their knees backward.",
+        "Lunge: A stepping one foot forward with the front knee bent above the ankle, rear leg extended behind and torso upright.",
+        "Cross-legged seat: A sitting upright with shins crossed in front, hands resting on their knees and weight supported by the ground."
+      ]
+    },
+    {
+      "group": "posing",
+      "words": [
+        "posing",
+        "pose",
+        "portrait",
+        "modeling",
+        "model",
+        "fashion",
+        "photo shoot"
+      ],
+      "entries": [
+        "A standing with torso facing away and head turned over one shoulder, keeping their hips aligned with their planted feet.",
+        "A standing with one hand resting on their hip, weight over one leg and the other knee relaxed."
+      ]
+    },
+    {
+      "group": "magic",
+      "words": [
+        "magic",
+        "spell",
+        "casting a spell",
+        "spellcasting",
+        "wizard",
+        "witch",
+        "sorcerer",
+        "mage",
+        "ritual",
+        "sorcery"
+      ],
+      "entries": [
+        "A standing with feet braced apart, extending one open hand toward a suspended fireball while keeping the other hand near their chest.",
+        "A kneeling beside a drawn symbol, one hand hovering over its center and the other resting on their raised knee.",
+        "A standing with both palms raised beneath several small levitating objects, leaving a visible gap between hands and objects."
+      ]
+    },
+    {
+      "group": "cycling",
+      "words": [
+        "cycling",
+        "bicycle",
+        "bike",
+        "biking"
+      ],
+      "entries": [
+        "A standing beside a bicycle, leaning it slightly toward their hip while fastening a bag to its rack."
+      ]
+    },
+    {
+      "group": "walking",
+      "words": [
+        "walking",
+        "walk",
+        "stroll",
+        "wandering"
+      ],
+      "entries": [
+        "A walking along a path with one foot planted and the other stepping forward, holding a folded map at their side."
+      ]
+    },
+    {
+      "group": "getting ready",
+      "words": [
+        "getting ready",
+        "packing",
+        "preparing to leave",
+        "gear"
+      ],
+      "entries": [
+        "A kneeling on one knee to fasten a bag, the opposite foot planted in front and the bag resting on the ground within reach.",
+        "A seated on a low support, leaning forward to tie one shoe with both hands while the other foot remains on the ground."
+      ]
+    },
+    {
+      "group": "repairs and crafts",
+      "words": [
+        "repairing",
+        "fixing",
+        "repair",
+        "tinkering",
+        "inspecting",
+        "workshop",
+        "mechanic",
+        "tools",
+        "crafting"
+      ],
+      "entries": [
+        "A bending forward from the hips to inspect a surface, one palm braced beside the area being examined and the other holding a small tool.",
+        "A standing beside a work surface, holding a small part at chest height in one hand and turning it with a tool in the other."
+      ]
+    },
+    {
+      "group": "searching",
+      "words": [
+        "exploring",
+        "searching",
+        "moving around",
+        "curious"
+      ],
+      "entries": [
+        "A crouching on both feet beside a small object, one hand reaching toward it and the other resting on a knee for balance.",
+        "A stepping sideways over a low obstacle, one foot planted beyond it and the other lifted clear, with arms extended for balance."
+      ]
+    }
   ]
 }

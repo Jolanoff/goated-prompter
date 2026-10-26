@@ -2,26 +2,83 @@
   "name": "Historical",
   "category": "Spaces",
   "description": "Architecture and public spaces from different historical periods. Entries are alternatives from distinct eras, not a claim that all belong to one period.",
-  "entries": [
-    "ancient Egyptian columned court with painted capitals",
-    "Ottoman caravanserai with stables around an enclosed yard",
-    "Japanese castle garden with stepping stones and a covered veranda",
-    "Renaissance print shop with a press beside drying racks",
-    "Mughal garden terrace divided by shallow water channels",
-    "traditional Chinese courtyard residence with covered side passages",
-    "Viking longhouse with timber posts around a central hearth",
-    "Mesoamerican temple plaza with broad stepped platforms",
-    "Andean stone terrace overlooking a mountain settlement",
-    "Art Deco hotel lobby with geometric columns and a mezzanine",
-    "Roman bathhouse",
-    "Victorian ballroom",
-    "medieval marketplace",
-    "ancient amphitheater with stepped seating around an open central floor",
-    "timber-framed workshop with a broad workbench and open shutters",
-    "courtyard inn with an open gallery above a cobbled yard",
-    "stone monastery cloister surrounding a planted square",
-    "historic harbor quay with mooring posts beside warehouses",
-    "ornate railway waiting hall with rows of benches and a central aisle",
-    "walled kitchen garden with narrow paths between planting beds"
+  "groups": [
+    {
+      "group": "historical courts and gardens",
+      "words": [
+        "courtyard",
+        "garden",
+        "terrace",
+        "historical garden",
+        "cloister"
+      ],
+      "worlds": [
+        "historical"
+      ],
+      "entries": [
+        "ancient Egyptian columned court with painted capitals",
+        "Ottoman caravanserai with stables around an enclosed yard",
+        "Japanese castle garden with stepping stones and a covered veranda",
+        "Mughal garden terrace divided by shallow water channels",
+        "traditional Chinese courtyard residence with covered side passages",
+        "Andean stone terrace overlooking a mountain settlement",
+        "courtyard inn with an open gallery above a cobbled yard",
+        "stone monastery cloister surrounding a planted square",
+        "walled kitchen garden with narrow paths between planting beds"
+      ]
+    },
+    {
+      "group": "historical halls",
+      "words": [
+        "hall",
+        "historical interior",
+        "period interior",
+        "grand hall"
+      ],
+      "worlds": [
+        "historical"
+      ],
+      "entries": [
+        "Viking longhouse with timber posts around a central hearth",
+        "Art Deco hotel lobby with geometric columns and a mezzanine",
+        "Roman bathhouse",
+        "Victorian ballroom",
+        "ornate railway waiting hall with rows of benches and a central aisle"
+      ]
+    },
+    {
+      "group": "historical workshops and markets",
+      "words": [
+        "workshop",
+        "market",
+        "trade",
+        "old town"
+      ],
+      "worlds": [
+        "historical"
+      ],
+      "entries": [
+        "Renaissance print shop with a press beside drying racks",
+        "medieval marketplace",
+        "timber-framed workshop with a broad workbench and open shutters",
+        "historic harbor quay with mooring posts beside warehouses"
+      ]
+    },
+    {
+      "group": "historical plazas and theaters",
+      "words": [
+        "plaza",
+        "amphitheater",
+        "ancient",
+        "ceremony"
+      ],
+      "worlds": [
+        "historical"
+      ],
+      "entries": [
+        "Mesoamerican temple plaza with broad stepped platforms",
+        "ancient amphitheater with stepped seating around an open central floor"
+      ]
+    }
   ]
 }

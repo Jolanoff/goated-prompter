@@ -19,7 +19,8 @@ that needs more people than a run's cast is never offered to it). All are option
 count. Instead of "entries" a pack may hold "groups": [{"group": "kitchen", "words": ["cooking", "kitchen"],
 "entries": [...]}, ...]: entries under a name and the words a request uses for them, which a search counts
 (features/vocabulary/retrieval.py); "worlds" lists the worlds its entries fit (options.dataset.WORLDS; every world when
-it gives none), and "adult_default": true marks a group preferred for adult requests that name no place. Every entry
+it gives none), "people" how many people its entries need (over the pack's; one pack can hold solo, couple and group
+entries), and "adult_default": true marks a group preferred for adult requests that name no place. Every entry
 is in one group only, and the pack's entries are all its groups' entries. An entry may also name another pack or category in square brackets, a slot ("holding [Kitchen-and-Dining]",
 "[Furniture: armchair]"): a run uses it only when that pack or category is selected, and the scene writer takes a
 fitting entry from it (dataset/v2/scenes/slots.py). Each pack lists the packs its slots name ("links"), so the
@@ -59,7 +60,7 @@ OPTIONAL_PACK_KEYS = {"description", "people", "always"}
 ENTRY_KEYS = {"text"}
 OPTIONAL_ENTRY_KEYS = {"people"}
 GROUP_KEYS = {"group", "words", "entries"}
-OPTIONAL_GROUP_KEYS = {"adult_default", "worlds"}
+OPTIONAL_GROUP_KEYS = {"adult_default", "worlds", "people"}
 MAX_WORDS = 100
 
 
@@ -180,17 +181,17 @@ def _entries(values, where, every):
 
 
 def _groups(values, every):
-    """(entries, people, groups) of a pack's groups: each {"name", "words", "entries"} (plus "worlds" and
-    "adult_default"), names
-    unique, every entry in one group only."""
+    """(entries, people, groups) of a pack's groups: each {"name", "words", "entries"} (plus "worlds", "people" and
+    "adult_default"), names unique, every entry in one group only; a group's people count is its entries' unless one
+    gives its own, the pack's when it gives none."""
     if not isinstance(values, list) or not values:
         raise ValueError("groups must be a list of 1 or more groups")
     entries, people, groups, names, seen = [], {}, [], set(), set()
     for number, group in enumerate(values, 1):
         where = f"groups[{number}]"
         if not isinstance(group, dict) or not GROUP_KEYS <= set(group) or set(group) - GROUP_KEYS - OPTIONAL_GROUP_KEYS:
-            raise ValueError(f'{where} needs exactly "group", "words" and "entries", and optionally "worlds" and '
-                             '"adult_default"')
+            raise ValueError(f'{where} needs exactly "group", "words" and "entries", and optionally "worlds", '
+                             '"people" and "adult_default"')
         if "adult_default" in group and type(group["adult_default"]) is not bool:
             raise ValueError(f"{where}.adult_default must be true or false")
         if "worlds" in group and (not isinstance(group["worlds"], list) or not group["worlds"]
@@ -200,7 +201,8 @@ def _groups(values, every):
         if name.casefold() in names:
             raise ValueError(f'{where}: the group "{name}" is listed twice')
         names.add(name.casefold())
-        own, needs = _entries(group["entries"], f"{where}.entries", every)
+        count = _people(group["people"], f"{where}.people") if "people" in group else None
+        own, needs = _entries(group["entries"], f"{where}.entries", every if count is None else count)
         taken = next((entry for entry in own if entry.casefold() in seen), None)
         if taken:
             raise ValueError(f'{where}: "{taken}" is already in another group; every entry belongs to one group')
@@ -209,6 +211,7 @@ def _groups(values, every):
         people.update(needs)
         groups.append({"name": name, "words": _words_of(group["words"], f"{where}.words"), "entries": own,
                        **({"worlds": list(dict.fromkeys(group["worlds"]))} if "worlds" in group else {}),
+                       **({"people": count} if count is not None else {}),
                        **({"adult_default": True} if group.get("adult_default") else {})})
     if len(entries) > MAX_ENTRIES:
         raise ValueError(f"a pack holds at most {MAX_ENTRIES} entries")
@@ -315,10 +318,11 @@ def import_pack(filename, text, root=None, user_root=None):
     path = user_root / match["folder"] / f"{stem}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     every = data.get("people")  # saved as written: the pack's count, and an entry's own count when it differs
-    own = lambda entry: {"text": entry, "people": people[entry]} if people.get(entry, every) != every else entry
+    own = lambda entry, base=every: {"text": entry, "people": people[entry]} if people.get(entry, base) != base else entry
     content = ({"groups": [{"group": group["name"], "words": group["words"],
-                            "entries": [own(entry) for entry in group["entries"]],
+                            "entries": [own(entry, group.get("people", every)) for entry in group["entries"]],
                             **({"worlds": group["worlds"]} if "worlds" in group else {}),
+                            **({"people": group["people"]} if "people" in group else {}),
                             **({"adult_default": True} if group.get("adult_default") else {})} for group in groups]}
                if groups else {"entries": [own(entry) for entry in entries]})
     atomic_json(path, {"name": name, "category": category, **({"description": description} if description else {}),

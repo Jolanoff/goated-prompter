@@ -2,26 +2,74 @@
   "name": "Furniture",
   "category": "Objects & Props",
   "description": "Seating, storage and working surfaces. Entries are individual furnishings, not complete rooms or fixed poses.",
-  "entries": [
-    "wall-mounted coat rack",
-    "round pedestal dining table",
-    "reclining chaise longue",
-    "narrow console table",
-    "bunk bed with a fixed ladder",
-    "drawer cabinet with metal label holders",
-    "padded window seat",
-    "wooden rocking chair",
-    "upholstered footstool",
-    "glass-fronted display cabinet",
-    "velvet armchair",
-    "four-poster bed",
-    "wooden table",
-    "long backless bench",
-    "freestanding shelving unit",
-    "adjustable drafting desk",
-    "folding stool",
-    "low storage chest",
-    "room divider with hinged panels",
-    "wheeled work cart"
+  "groups": [
+    {
+      "group": "tables and desks",
+      "words": [
+        "table",
+        "desk",
+        "work surface",
+        "workspace"
+      ],
+      "entries": [
+        "round pedestal dining table",
+        "narrow console table",
+        "wooden table",
+        "adjustable drafting desk",
+        "wheeled work cart"
+      ]
+    },
+    {
+      "group": "seating",
+      "words": [
+        "chair",
+        "seat",
+        "sitting",
+        "seating",
+        "lounging"
+      ],
+      "entries": [
+        "reclining chaise longue",
+        "padded window seat",
+        "wooden rocking chair",
+        "upholstered footstool",
+        "velvet armchair",
+        "long backless bench",
+        "folding stool"
+      ]
+    },
+    {
+      "group": "beds",
+      "words": [
+        "bed",
+        "bedroom",
+        "sleeping",
+        "resting",
+        "lying down"
+      ],
+      "entries": [
+        "bunk bed with a fixed ladder",
+        "four-poster bed"
+      ]
+    },
+    {
+      "group": "storage and display",
+      "words": [
+        "storage",
+        "shelf",
+        "shelves",
+        "cabinet",
+        "organizing",
+        "display"
+      ],
+      "entries": [
+        "wall-mounted coat rack",
+        "drawer cabinet with metal label holders",
+        "glass-fronted display cabinet",
+        "freestanding shelving unit",
+        "low storage chest",
+        "room divider with hinged panels"
+      ]
+    }
   ]
 }

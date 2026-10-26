@@ -44,7 +44,10 @@ entry to a cast that is too small (a solo request never gets an entry that needs
 }
 ```
 
-- `people` on the pack (1–20) applies to every entry; `{"text": ..., "people": n}` gives one entry its own count.
+- `people` on the pack (1–20) applies to every entry; `"people"` on a group applies to its entries instead; and
+  `{"text": ..., "people": n}` gives one entry its own count.
+- A run offers Actions & Poses entries made for exactly the cast's number of people (a pair gets entries for two, a
+  group entries for a group), and an entry for fewer people only when the selected packs have none for the cast.
 - An entry with no count is offered to every cast.
 
 ### Optional: slots that link two packs
@@ -124,9 +127,13 @@ B and C lifting A between them, A's arms around their shoulders
    never rewrite an act into how the bodies fit together. The final prompt keeps them. Say an act done with a mouth
    from the person whose mouth it is ("A kissing B's hand"): said from the other person, image models draw two faces
    meeting.
-5. **One cast size per pack**: set `"people"` on the pack (a Threesome pack, a Couple pack), not on each entry. A pack
-   that already mixes cast sizes keeps its file, so saved selections still find it: `"people"` on the pack for the
-   most common size and `{"text": ..., "people": n}` only on the other entries.
+5. **One cast size per pack or group**: set `"people"` on the pack (a Threesome pack, a Couple pack), or on a group
+   when one pack holds several sizes (solo drills and partner sparring), not on each entry. A pack that already mixes
+   cast sizes keeps its file, so saved selections still find it: `"people"` on the pack for the most common size and
+   `{"text": ..., "people": n}` only on the other entries.
+   Group a pack's entries by the act they show (`"group"`, `"words"`, `"entries"`): a request's action words find the
+   group, and every word must fit every entry of it ("dancing" for the dances, never "bicycle" for a group where only
+   one entry has a bicycle). A plain list still works: a request's action words then find the entries that say them.
 6. **A name only when it is the position's real name** ("in a tango"): image models know a position by its name, so
    the name replaces describing the pose, and the line adds only what the name leaves open. Write a name only when
    people call that position that way; a label that only describes the entry ("watch", "toy ride") would read as a

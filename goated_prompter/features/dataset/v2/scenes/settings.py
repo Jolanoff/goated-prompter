@@ -35,8 +35,6 @@ KNOWN_SUBJECT_FIELDS = ("expression",)  # a known character's look comes from it
 VOCABULARY_SAMPLE = 40  # entries per category in one batch's prompt: enough choice without drowning the request
 
 
-FIT_CHUNK = 80  # Actions & Poses entries judged in one fitting call
-
 
 FIELDS = SECTIONS
 

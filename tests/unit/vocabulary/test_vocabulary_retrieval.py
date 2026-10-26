@@ -17,6 +17,38 @@ def group(name, words=(), entries=None, worlds=None, adult=False, selected=False
             "worlds": worlds, "adult": adult, "selected": selected}
 
 
+def poses(*rows):
+    """One group of entries with their people counts: (entry, people or None)."""
+    return [{"name": "poses", "words": [], "entries": [entry for entry, _ in rows], "worlds": None, "adult": False,
+             "selected": True, "people": {entry: count for entry, count in rows if count}}]
+
+
+class Constraints(unittest.TestCase):
+    def test_entries_are_made_for_the_casts_number_of_people(self):
+        rows = poses(("A reading", 1), ("A and B dancing", 2), ("A group seated around a meal", 3), ("A waving", None))
+        entries = lambda size: [entry for group in retrieval.for_cast(rows, size) for entry in group["entries"]]
+        self.assertEqual(entries(1), ["A reading", "A waving"], "an entry without a count fits every cast")
+        self.assertEqual(entries(2), ["A and B dancing", "A waving"], "a pair never gets a pose for one person alone")
+        self.assertEqual(entries(5), ["A group seated around a meal", "A waving"], "an entry for a group serves a larger one")
+        self.assertEqual(entries(2), entries(2))
+        only_solo = poses(("A reading", 1), ("A stretching", 1))
+        self.assertEqual(retrieval.for_cast(only_solo, 2), only_solo, "no entry for the cast: the most people below it")
+
+    def test_an_entry_saying_what_the_request_rules_out_is_never_kept(self):
+        rows = poses(("A kneeling by a fire", 1), ("A kneels to tie a shoe", 1), ("A standing at a window", 1))
+        kept = retrieval.without_said(rows, ["no kneeling", ""])
+        self.assertEqual(kept[0]["entries"], ["A standing at a window"], "any form of the word")
+        self.assertEqual(retrieval.without_said(rows, []), rows)
+
+    def test_entries_that_say_an_action_are_found_in_a_pack_of_plain_entries(self):
+        rows = poses(("A and B dancing close", 2), ("A and B dancing apart", 2), ("A and B reading", 2))
+        found = retrieval.match(rows, "a slow dance", entry_words=True)
+        self.assertEqual(found[0]["entries"], ["A and B dancing close", "A and B dancing apart"],
+                         "dance: dancing, though most of the pack says it")
+        self.assertEqual(retrieval.match(rows, "a slow dance"), [], "without entry words a plain pack has no group words")
+        self.assertEqual(retrieval.match(rows, "juggling", entry_words=True), [], "an act no entry shows finds none")
+
+
 class Embedder:
     """Scripted vectors by text (unknown texts point nowhere in particular); counts the texts it embeds."""
 

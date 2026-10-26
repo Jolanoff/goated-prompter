@@ -1,53 +1,23 @@
-"""The vocabulary the writer is offered: fitting Actions & Poses entries and dealing entries and suggestions."""
+"""The vocabulary the writer is offered: the selected vocabulary's entries, the groups a category's owner searches,
+and dealing suggestions and frames."""
 
-import json
 import math
 import re
 
-from .....backends.base import GoatedPrompterError
-from .....contracts import PromptInstruction
+from ....vocabulary.retrieval import groups_of, said_entries
 
 from .checks import _words, named_frame
-from .settings import ACTIONS_CATEGORY, AT_LEAST_HIPS, ENTRY_CAP, FIT_CHUNK, HAND
-from .texts import ENTRY_FIT_SYSTEM
+from .settings import ACTIONS_CATEGORY, AT_LEAST_HIPS, ENTRY_CAP, HAND
 
 
-def fitting_instruction(brief, entries, notes=None):
-    """One fitting call: which of these Actions & Poses entries (numbered from 1) fit the request and the cast.
-    notes: {pack name: its author's note} of the selected packs that have one."""
-    cast = [{key: person[key] for key in ("label", "gender", "count") if key in person} for person in brief["characters"]]
-    data = {"request": brief["input"]["request"], "summary": brief["summary"], "fixed": brief["fixed"],
-            "must": brief["must"], "avoid": brief["avoid"], "cast": cast,
-            **({"action_kept": True} if "action" in brief.get("kept", ()) else {}),
-            "entries": {str(number): entry for number, entry in enumerate(entries, 1)}, **({"notes": notes} if notes else {})}
-    schema = {"type": "object", "additionalProperties": False, "required": ["fit"],
-              "properties": {"fit": {"type": "array", "items": {"type": "integer"}}}}
-    return PromptInstruction(system_message=ENTRY_FIT_SYSTEM, user_message=json.dumps(data, ensure_ascii=False, indent=1),
-                             model_family=brief["_family"], diagnostic_stage="dataset_v2:entries",
-                             max_tokens=8 * len(entries) + 64, hard_max_tokens=8 * len(entries) + 64,
-                             temperature=0.0, top_p=1.0, json_output=True, json_schema=schema,
-                             seed=brief["input"].get("seed"))
-
-
-def fitting_entries(session, brief, entries, checkpoint=lambda: None, progress=print, notes=None):
-    """The Actions & Poses entries that fit the request and the cast, in their order. The vocabulary only offers
-    what the request asks for, so an unrelated entry never fills an image. When a fitting call fails, every entry
-    stays (the writer still checks each dealt entry against the request)."""
-    fit = []
-    for start in range(0, len(entries), FIT_CHUNK):
-        chunk = entries[start:start + FIT_CHUNK]
-        checkpoint()
-        try:
-            raw = session.generate(fitting_instruction(brief, chunk, notes))
-            numbers = json.loads(re.sub(r"^\s*```(?:json)?\s*|\s*```\s*$", "", str(raw or "")))["fit"]
-            if not isinstance(numbers, list) or not all(type(number) is int for number in numbers):
-                raise ValueError("fit must be a list of numbers")
-        except (GoatedPrompterError, ValueError, KeyError, TypeError):
-            progress("Could not sort the Actions & Poses entries by the request; all of them stay available.")
-            return list(entries)
-        checkpoint()
-        fit.extend(chunk[number - 1] for number in sorted(set(numbers)) if 1 <= number <= len(chunk))
-    return fit
+def offered_groups(catalog, category, selection, groups):
+    """One category's groups for the vocabulary engine (retrieval.groups_of) with only the entries the run offers: the
+    selected vocabulary's (groups) after its cast and slot checks (fit_cast, slots.only_fillable)."""
+    keep = {entry for group in groups if group["category"] == category for pack in group["packs"]
+            for entry in pack["entries"]}
+    rows = [{**row, "entries": [entry for entry in row["entries"] if entry in keep]}
+            for row in groups_of(catalog, category, selection)]
+    return [row for row in rows if row["entries"]]
 
 
 def _only(groups, category, keep):
@@ -91,20 +61,6 @@ def _shuffled(groups, rng, limit=None):
     return result
 
 
-def deal_entries(entries, total, rng):
-    """{slot: entry}: a different Actions & Poses entry for every image, from a seeded shuffle, without repeats until
-    every entry has been dealt ({} without entries). The writer keeps it unless it cannot fit the cast."""
-    if not entries:
-        return {}
-    deck, dealt = [], {}
-    for number in range(1, total + 1):
-        if not deck:
-            deck = list(entries)
-            rng.shuffle(deck)
-        dealt[number] = deck.pop()
-    return dealt
-
-
 # How many of something there are never names a thing: a request about "two men" was read as asking for a prop whose
 # name also says "two" (like "two matching candles"), and that one prop was then suggested for every image.
 COUNT_WORDS = frozenset("one two three four five six seven eight nine ten both pair couple several few many".split())
@@ -117,15 +73,11 @@ def requested_words(brief):
 
 
 def requested_entries(entries, words):
-    """The entries about something the request itself names: they share a word with it that is rare in this category
-    (in at most a quarter of its entries), so a word every entry repeats never counts. An entry whose shared words are
-    only part of another entry's is about less of the request: "a reading room" names the reading room entries, not
-    every entry that is some other room, while "a lantern and an oil lamp" keeps both."""
-    found = {word: sum(word in _words(entry) for entry in entries) for word in words}
-    rare = {word for word, count in found.items() if 0 < count <= max(1, len(entries) // 4)}
-    shared = {entry: frozenset(_words(entry) & rare) for entry in entries}
-    return [entry for entry in entries
-            if shared[entry] and not any(shared[entry] < other for other in shared.values())]
+    """The entries about something the request itself names: those that say its distinctive words, in any form
+    (retrieval.said_entries: a word every entry repeats never counts, and "a reading room" names the reading room
+    entries, not every entry that is some other room, while "a lantern and an oil lamp" keeps both)."""
+    found = said_entries([{"name": "", "words": [], "entries": list(dict.fromkeys(entries))}], " ".join(sorted(words)))
+    return [entry for group in found for entry in group["entries"]]
 
 
 def named_entries(entries, words):
@@ -136,7 +88,7 @@ def named_entries(entries, words):
     return named or entries
 
 
-def deal_hands(groups, total, rng, size=HAND, words=frozenset()):
+def deal_hands(groups, total, rng, size=HAND, words=frozenset(), owned=frozenset()):
     """{slot: {category: [entries]}}: suggested entries (size, one by default) of every selected category except Actions & Poses (dealt
     on its own) for every image, from a seeded shuffle, without repeats until every entry has been dealt, so the whole
     vocabulary spreads over the set instead of the same few favourites. Suggestions are optional: the writer uses the
@@ -151,7 +103,9 @@ def deal_hands(groups, total, rng, size=HAND, words=frozenset()):
       never asks for a pack called Reading Spaces in general, so every image stays in the library.
     A request word that names a selected pack of another category is that pack's theme, never one entry of this
     category: a live request about "public" places with a pack called Public Risk got the one prop entry that also
-    said "public" in every image."""
+    said "public" in every image.
+    owned: categories whose owner deals them when the request names none of their entries (Objects & Props:
+    props.py), so they are dealt here only for what the request names."""
     hands = {number: {} for number in range(1, total + 1)}
     themes = {group["category"]: {word for pack in group["packs"] for word in _words(pack.get("name", ""))}
               for group in groups}
@@ -160,7 +114,9 @@ def deal_hands(groups, total, rng, size=HAND, words=frozenset()):
             continue
         entries = list(dict.fromkeys(entry for pack in group["packs"] for entry in pack["entries"]))
         others = set().union(*(theme for category, theme in themes.items() if category != group["category"]))
-        if related := requested_entries(entries, words - others):
+        # A pack's whole name said in the request ("light sources") names its kind, never one of its entries.
+        named = set().union(*(name for pack in group["packs"] if (name := _words(pack.get("name", ""))) <= words))
+        if related := requested_entries(entries, words - others - named):
             kinds = (re.findall(r"[a-z0-9]+", name.casefold())[-1:] for name in
                      [group["category"], *(pack.get("name", "") for pack in group["packs"])])
             general = words & {word for kind in kinds for word in kind}
@@ -176,6 +132,8 @@ def deal_hands(groups, total, rng, size=HAND, words=frozenset()):
                             deck.extend(pool)
                             rng.shuffle(deck)
                         hands[number].setdefault(group["category"], []).append(deck.pop())
+            continue
+        if group["category"] in owned:
             continue
         deck = []
         for number in range(1, total + 1):

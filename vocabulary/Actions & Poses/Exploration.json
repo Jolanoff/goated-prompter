@@ -3,26 +3,118 @@
   "category": "Actions & Poses",
   "description": "Adult exploration, observation and fieldwork for one person, A. Entries give supports and occupied hands; choose activities that suit the requested terrain and equipment.",
   "people": 1,
-  "entries": [
-    "A standing with feet apart, holding binoculars to their eyes with both hands.",
-    "A kneeling beside a rock outcrop, holding a sample bag open with one hand and lowering a stone into it with the other.",
-    "A seated on a boulder, comparing a compass in one hand with a map resting across their knees.",
-    "A crouching beside a footprint, pointing toward its edge without touching it.",
-    "A stepping across shallow water, one boot on a dry stone and the other lifted toward the next.",
-    "A standing beside a tripod, adjusting its instrument with both feet on level ground.",
-    "A resting one hand on a rock face while leaning forward to examine a narrow crack.",
-    "A kneeling to press a marker into soft soil with one hand, the other braced on their thigh.",
-    "A standing beneath a low branch, holding it above their head with one hand while stepping through.",
-    "A seated beside an open field kit, labeling a small container on the ground.",
-    "A testing the next patch of ground with a walking pole while keeping their weight on the rear foot.",
-    "A leaning over a railing, holding a camera with both hands and keeping their hips behind the rail.",
-    "A lying prone on a broad ledge, looking over its edge with elbows supporting their upper body.",
-    "A kneeling beside a stream, dipping a sample vial into the water with one hand.",
-    "A seated with a sketchbook on their knees, drawing a landmark visible ahead.",
-    "A standing at a trail junction, pointing along one route while holding a folded map in the other hand.",
-    "A crouching beneath a low opening with one hand touching the ground for balance.",
-    "A standing beside a measuring stake, aligning a handheld reader with its marked face.",
-    "A kneeling on firm ground, unrolling a groundsheet away from their knees.",
-    "A standing beside a packed bag, tightening one shoulder strap while the other hand steadies the bag."
+  "groups": [
+    {
+      "group": "observing",
+      "words": [
+        "watching",
+        "observing",
+        "looking out",
+        "scouting",
+        "lookout",
+        "view",
+        "sightseeing"
+      ],
+      "entries": [
+        "A standing with feet apart, holding binoculars to their eyes with both hands.",
+        "A leaning over a railing, holding a camera with both hands and keeping their hips behind the rail.",
+        "A lying prone on a broad ledge, looking over its edge with elbows supporting their upper body."
+      ]
+    },
+    {
+      "group": "navigating",
+      "words": [
+        "navigating",
+        "navigation",
+        "map",
+        "directions",
+        "finding the way",
+        "orienteering",
+        "reading a map"
+      ],
+      "entries": [
+        "A seated on a boulder, comparing a compass in one hand with a map resting across their knees.",
+        "A standing at a trail junction, pointing along one route while holding a folded map in the other hand."
+      ]
+    },
+    {
+      "group": "hiking",
+      "words": [
+        "hiking",
+        "hiker",
+        "trekking",
+        "hike",
+        "trail",
+        "backpacking",
+        "adventure"
+      ],
+      "entries": [
+        "A stepping across shallow water, one boot on a dry stone and the other lifted toward the next.",
+        "A standing beneath a low branch, holding it above their head with one hand while stepping through.",
+        "A testing the next patch of ground with a walking pole while keeping their weight on the rear foot.",
+        "A standing beside a packed bag, tightening one shoulder strap while the other hand steadies the bag."
+      ]
+    },
+    {
+      "group": "fieldwork and research",
+      "words": [
+        "fieldwork",
+        "research",
+        "researcher",
+        "scientist",
+        "field research",
+        "expedition",
+        "examining",
+        "investigating",
+        "collecting data"
+      ],
+      "entries": [
+        "A kneeling beside a rock outcrop, holding a sample bag open with one hand and lowering a stone into it with the other.",
+        "A crouching beside a footprint, pointing toward its edge without touching it.",
+        "A standing beside a tripod, adjusting its instrument with both feet on level ground.",
+        "A resting one hand on a rock face while leaning forward to examine a narrow crack.",
+        "A kneeling to press a marker into soft soil with one hand, the other braced on their thigh.",
+        "A seated beside an open field kit, labeling a small container on the ground.",
+        "A kneeling beside a stream, dipping a sample vial into the water with one hand.",
+        "A standing beside a measuring stake, aligning a handheld reader with its marked face."
+      ]
+    },
+    {
+      "group": "sketching outdoors",
+      "words": [
+        "sketching",
+        "drawing",
+        "sketchbook",
+        "drawing outdoors"
+      ],
+      "entries": [
+        "A seated with a sketchbook on their knees, drawing a landmark visible ahead."
+      ]
+    },
+    {
+      "group": "caving",
+      "words": [
+        "caving",
+        "cave",
+        "crawling",
+        "tunnel"
+      ],
+      "entries": [
+        "A crouching beneath a low opening with one hand touching the ground for balance."
+      ]
+    },
+    {
+      "group": "camping",
+      "words": [
+        "camping",
+        "camp",
+        "tent",
+        "groundsheet",
+        "setting up camp"
+      ],
+      "entries": [
+        "A kneeling on firm ground, unrolling a groundsheet away from their knees."
+      ]
+    }
   ]
 }

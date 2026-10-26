@@ -2,26 +2,82 @@
   "name": "Workspaces",
   "category": "Spaces",
   "description": "Practical places for craft, research and production. Entries describe layouts and equipment without assigning a job or changing the requested activity.",
-  "entries": [
-    "ceramics studio with a wheel beside drying shelves",
-    "woodworking shop with a central bench and a clear timber rack aisle",
-    "textile studio with cutting tables beside sewing stations",
-    "photography studio with an open backdrop area and equipment racks",
-    "laboratory with clean benches separated by wide service aisles",
-    "bicycle repair shop with hanging frames and a floor-mounted stand",
-    "recording booth facing a control room through a window",
-    "commercial bakery with preparation benches beside stacked ovens",
-    "jewelry workshop with small recessed benches and task lamps",
-    "glass studio with heat-resistant floors around a furnace bay",
-    "conservation workshop with padded tables and archival drawers",
-    "botanical propagation room with trays along waist-high benches",
-    "architectural model studio with flat work surfaces and material bins",
-    "boat repair shed with a cradle above an open floor",
-    "electronics bench with parts drawers and grounded work mats",
-    "rehearsal room with acoustic panels and a clear central floor",
-    "printmaking studio with a press beside drying lines",
-    "commercial kitchen with separate preparation and washing counters",
-    "watchmaking room with shallow component trays and magnifying lamps",
-    "field research tent with folding desks and sealed equipment cases"
+  "groups": [
+    {
+      "group": "studios",
+      "words": [
+        "studio",
+        "art studio",
+        "creative studio",
+        "making art"
+      ],
+      "worlds": [
+        "everyday"
+      ],
+      "entries": [
+        "ceramics studio with a wheel beside drying shelves",
+        "textile studio with cutting tables beside sewing stations",
+        "photography studio with an open backdrop area and equipment racks",
+        "recording booth facing a control room through a window",
+        "jewelry workshop with small recessed benches and task lamps",
+        "glass studio with heat-resistant floors around a furnace bay",
+        "architectural model studio with flat work surfaces and material bins",
+        "rehearsal room with acoustic panels and a clear central floor",
+        "printmaking studio with a press beside drying lines"
+      ]
+    },
+    {
+      "group": "workshops",
+      "words": [
+        "workshop",
+        "repair shop",
+        "craft workshop",
+        "workbench"
+      ],
+      "worlds": [
+        "everyday"
+      ],
+      "entries": [
+        "woodworking shop with a central bench and a clear timber rack aisle",
+        "bicycle repair shop with hanging frames and a floor-mounted stand",
+        "conservation workshop with padded tables and archival drawers",
+        "boat repair shed with a cradle above an open floor",
+        "electronics bench with parts drawers and grounded work mats",
+        "watchmaking room with shallow component trays and magnifying lamps"
+      ]
+    },
+    {
+      "group": "labs",
+      "words": [
+        "lab",
+        "laboratory",
+        "research",
+        "science"
+      ],
+      "worlds": [
+        "everyday"
+      ],
+      "entries": [
+        "laboratory with clean benches separated by wide service aisles",
+        "botanical propagation room with trays along waist-high benches",
+        "field research tent with folding desks and sealed equipment cases"
+      ]
+    },
+    {
+      "group": "professional kitchens",
+      "words": [
+        "professional kitchen",
+        "bakery",
+        "restaurant kitchen",
+        "chef"
+      ],
+      "worlds": [
+        "everyday"
+      ],
+      "entries": [
+        "commercial bakery with preparation benches beside stacked ovens",
+        "commercial kitchen with separate preparation and washing counters"
+      ]
+    }
   ]
 }

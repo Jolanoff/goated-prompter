@@ -3,26 +3,126 @@
   "category": "Actions & Poses",
   "description": "Gentle affection and shared moments between two adults, A and B. Entries give contact and support without fixing gender, appearance or setting.",
   "people": 2,
-  "entries": [
-    "A and B seated face-to-face on separate chairs, leaning toward each other with their hands joined between their knees.",
-    "A smoothing B's collar while both stand facing each other at a comfortable distance.",
-    "A and B seated together, A offering a flower while B reaches to accept its stem.",
-    "A placing a scarf around B's shoulders while standing beside B.",
-    "A and B standing close, A gently brushing a loose strand of hair away from B's face.",
-    "A and B seated on a broad step, leaning shoulder to shoulder with their feet on the step below.",
-    "A resting a hand against B's cheek while both turn their faces toward each other.",
-    "A and B standing on opposite sides of a doorway, each resting a hand on the frame and leaning toward the opening.",
-    "A and B leaning against a railing side by side, their hands resting together on its top edge.",
-    "A holding an open locket between them while B leans closer to look at its contents.",
-    "Slow dance: A and B facing each other at close range, one hand of each joined at shoulder height and their free hands resting at the other's upper back or shoulder, both supporting their own weight.",
-    "A leaning forward to kiss B's forehead while B tilts their head slightly down, both standing with their feet planted.",
-    "A and B walking side by side with their inner hands joined loosely between them, leaving space for both to step forward.",
-    "A and B seated side by side with shoulders touching, A resting their head against B's shoulder while both remain supported by the seat.",
-    "A and B facing each other in an embrace, their arms around each other's upper backs and their heads turned slightly aside.",
-    "A standing in front of B and fastening a necklace at the back of B's neck, B holding their hair clear with one hand.",
-    "A and B seated across a small table, A resting an open hand on the surface while B lays a hand gently over it.",
-    "A and B reclining side by side with their heads on separate cushions, turned toward each other and holding hands in the space between them.",
-    "A seated while B kneels beside A to offer a small wrapped gift, both looking toward the gift between them.",
-    "A and B standing side by side beneath a shared umbrella, A holding its handle between them while B rests a hand on A's forearm."
+  "groups": [
+    {
+      "group": "dancing",
+      "words": [
+        "dancing",
+        "dance",
+        "slow dance",
+        "ballroom",
+        "waltz",
+        "dancing together"
+      ],
+      "entries": [
+        "Slow dance: A and B facing each other at close range, one hand of each joined at shoulder height and their free hands resting at the other's upper back or shoulder, both supporting their own weight."
+      ]
+    },
+    {
+      "group": "kissing",
+      "words": [
+        "kissing",
+        "kiss",
+        "forehead kiss"
+      ],
+      "entries": [
+        "A leaning forward to kiss B's forehead while B tilts their head slightly down, both standing with their feet planted."
+      ]
+    },
+    {
+      "group": "embracing",
+      "words": [
+        "hugging",
+        "hug",
+        "embrace",
+        "embracing",
+        "holding each other"
+      ],
+      "entries": [
+        "A and B facing each other in an embrace, their arms around each other's upper backs and their heads turned slightly aside."
+      ]
+    },
+    {
+      "group": "cuddling",
+      "words": [
+        "cuddling",
+        "cuddle",
+        "snuggling",
+        "sitting close",
+        "resting together",
+        "relaxing together",
+        "leaning on each other"
+      ],
+      "entries": [
+        "A and B seated on a broad step, leaning shoulder to shoulder with their feet on the step below.",
+        "A and B seated side by side with shoulders touching, A resting their head against B's shoulder while both remain supported by the seat.",
+        "A and B reclining side by side with their heads on separate cushions, turned toward each other and holding hands in the space between them."
+      ]
+    },
+    {
+      "group": "tender gestures",
+      "words": [
+        "tender",
+        "tenderness",
+        "caring",
+        "affection",
+        "affectionate",
+        "gentle",
+        "touching"
+      ],
+      "entries": [
+        "A smoothing B's collar while both stand facing each other at a comfortable distance.",
+        "A placing a scarf around B's shoulders while standing beside B.",
+        "A and B standing close, A gently brushing a loose strand of hair away from B's face.",
+        "A resting a hand against B's cheek while both turn their faces toward each other.",
+        "A standing in front of B and fastening a necklace at the back of B's neck, B holding their hair clear with one hand."
+      ]
+    },
+    {
+      "group": "gifts",
+      "words": [
+        "gift",
+        "giving a gift",
+        "present",
+        "surprise",
+        "keepsake",
+        "offering"
+      ],
+      "entries": [
+        "A and B seated together, A offering a flower while B reaches to accept its stem.",
+        "A holding an open locket between them while B leans closer to look at its contents.",
+        "A seated while B kneels beside A to offer a small wrapped gift, both looking toward the gift between them."
+      ]
+    },
+    {
+      "group": "dates",
+      "words": [
+        "date",
+        "romance",
+        "romantic",
+        "couple",
+        "flirting",
+        "romantic date"
+      ],
+      "entries": [
+        "A and B seated face-to-face on separate chairs, leaning toward each other with their hands joined between their knees.",
+        "A and B standing on opposite sides of a doorway, each resting a hand on the frame and leaning toward the opening.",
+        "A and B leaning against a railing side by side, their hands resting together on its top edge.",
+        "A and B seated across a small table, A resting an open hand on the surface while B lays a hand gently over it."
+      ]
+    },
+    {
+      "group": "walking together",
+      "words": [
+        "walking",
+        "walking together",
+        "strolling",
+        "stroll"
+      ],
+      "entries": [
+        "A and B walking side by side with their inner hands joined loosely between them, leaving space for both to step forward.",
+        "A and B standing side by side beneath a shared umbrella, A holding its handle between them while B rests a hand on A's forearm."
+      ]
+    }
   ]
 }

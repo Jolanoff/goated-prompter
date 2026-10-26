@@ -3,26 +3,151 @@
   "category": "Actions & Poses",
   "description": "Shared tasks and gatherings for three or more adults. A and B are the people with a named role, the others are the rest of the requested cast; a group never adds people.",
   "people": 3,
-  "entries": [
-    "A group cleaning a room, each working in a separate area with tools kept outside the others' paths.",
-    "A writing on a board while the others face it from staggered positions.",
-    "A group walking in single file along a narrow trail, leaving space between each person's steps.",
-    "A group spreading a large cloth over a table, each holding a separate section along its edge.",
-    "A group seated around a meal, passing dishes through the spaces between place settings.",
-    "A group building a model, each assembling a separate part around an uncluttered central surface.",
-    "A aligning an empty space in a stack of crates while the others approach from separate sides with their loads.",
-    "A showing a tool while the others watch from a loose semicircle outside its working area.",
-    "A group seated in a circle facing inward, A holding up an object for discussion while the others turn toward it with space between their seats.",
-    "A group standing shoulder to shoulder in a line, each facing forward on their own feet while A at the end gestures toward a shared destination.",
-    "A group resting on a broad platform, A seated upright at one edge, B reclining with their back supported, and the others sitting with separate space for their legs.",
-    "A group gathered around a worktable, A steadying a workpiece, B aligning a tool and the others sorting parts along separate edges.",
-    "A group passing one supply item along a line, A receiving it at one end, B handing it over and the others waiting within reach along the line with hands free.",
-    "A group carrying a rigid frame horizontally, A and B at the ends and the others spaced along its sides, each gripping a separate section and sharing the load.",
-    "A group examining a map laid flat, A pointing from one side, B holding a corner and the others leaning in from the remaining sides without overlapping hands.",
-    "A group assembling a shelter, A bracing an upright pole, B tensioning a line and the others securing separate supports around its perimeter.",
-    "A group sorting supplies into containers, A checking a list, B placing an item and the others arranging separate piles around the shared surface.",
-    "A facing the others and marking the rhythm of a rehearsal while they stand in a shallow arc with room to move their arms.",
-    "A group planting a garden bed, A kneeling to dig, B holding a seedling and the others spacing containers along the outside edge, keeping the bed clear of feet.",
-    "A group loading a cart, A holding its handles steady, B placing a box in its center and the others waiting beside separate boxes outside the loading path."
+  "groups": [
+    {
+      "group": "meetings and lessons",
+      "words": [
+        "meeting",
+        "class",
+        "lesson",
+        "teaching",
+        "discussion",
+        "workshop",
+        "briefing",
+        "presentation",
+        "studying",
+        "study group"
+      ],
+      "entries": [
+        "A writing on a board while the others face it from staggered positions.",
+        "A showing a tool while the others watch from a loose semicircle outside its working area.",
+        "A group seated in a circle facing inward, A holding up an object for discussion while the others turn toward it with space between their seats."
+      ]
+    },
+    {
+      "group": "meals and gatherings",
+      "words": [
+        "dinner",
+        "meal",
+        "gathering",
+        "feast",
+        "family dinner",
+        "dinner party",
+        "party"
+      ],
+      "entries": [
+        "A group spreading a large cloth over a table, each holding a separate section along its edge.",
+        "A group seated around a meal, passing dishes through the spaces between place settings."
+      ]
+    },
+    {
+      "group": "building and crafting",
+      "words": [
+        "building",
+        "crafting",
+        "model",
+        "construction",
+        "making",
+        "assembling",
+        "project"
+      ],
+      "entries": [
+        "A group building a model, each assembling a separate part around an uncluttered central surface.",
+        "A group gathered around a worktable, A steadying a workpiece, B aligning a tool and the others sorting parts along separate edges."
+      ]
+    },
+    {
+      "group": "moving supplies",
+      "words": [
+        "teamwork",
+        "moving",
+        "warehouse",
+        "supplies",
+        "logistics",
+        "working together"
+      ],
+      "entries": [
+        "A aligning an empty space in a stack of crates while the others approach from separate sides with their loads.",
+        "A group passing one supply item along a line, A receiving it at one end, B handing it over and the others waiting within reach along the line with hands free.",
+        "A group carrying a rigid frame horizontally, A and B at the ends and the others spaced along its sides, each gripping a separate section and sharing the load.",
+        "A group sorting supplies into containers, A checking a list, B placing an item and the others arranging separate piles around the shared surface.",
+        "A group loading a cart, A holding its handles steady, B placing a box in its center and the others waiting beside separate boxes outside the loading path."
+      ]
+    },
+    {
+      "group": "outdoor expedition",
+      "words": [
+        "expedition",
+        "adventure",
+        "exploring",
+        "journey",
+        "outdoor group",
+        "travel",
+        "hiking",
+        "trekking",
+        "hiking group"
+      ],
+      "entries": [
+        "A group walking in single file along a narrow trail, leaving space between each person's steps.",
+        "A group standing shoulder to shoulder in a line, each facing forward on their own feet while A at the end gestures toward a shared destination.",
+        "A group examining a map laid flat, A pointing from one side, B holding a corner and the others leaning in from the remaining sides without overlapping hands.",
+        "A group assembling a shelter, A bracing an upright pole, B tensioning a line and the others securing separate supports around its perimeter."
+      ]
+    },
+    {
+      "group": "cleaning",
+      "words": [
+        "cleaning",
+        "chores",
+        "tidying",
+        "housework",
+        "volunteers"
+      ],
+      "entries": [
+        "A group cleaning a room, each working in a separate area with tools kept outside the others' paths."
+      ]
+    },
+    {
+      "group": "gardening",
+      "words": [
+        "gardening",
+        "planting",
+        "garden",
+        "community garden"
+      ],
+      "entries": [
+        "A group planting a garden bed, A kneeling to dig, B holding a seedling and the others spacing containers along the outside edge, keeping the bed clear of feet."
+      ]
+    },
+    {
+      "group": "rehearsal",
+      "words": [
+        "rehearsal",
+        "rehearsing",
+        "choir",
+        "band practice",
+        "dance class",
+        "practice",
+        "singing together",
+        "conducting"
+      ],
+      "entries": [
+        "A facing the others and marking the rhythm of a rehearsal while they stand in a shallow arc with room to move their arms."
+      ]
+    },
+    {
+      "group": "resting together",
+      "words": [
+        "resting",
+        "relaxing",
+        "lounging",
+        "break",
+        "hanging out",
+        "taking a break"
+      ],
+      "entries": [
+        "A group resting on a broad platform, A seated upright at one edge, B reclining with their back supported, and the others sitting with separate space for their legs."
+      ]
+    }
   ]
 }

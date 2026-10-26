@@ -158,12 +158,21 @@ USER REQUEST, the EXISTING APPROVED REQUIREMENTS (rules, Understanding, style, a
 SELECTED VOCABULARY section: just the categories that have a selected pack, each with its Core instruction and the
 entries of those packs (merged per category and shuffled for every batch by a generator seeded with the run's seed),
 plus the shared vocabulary usage rules. A pack with a description (its author's note on what it is for and how its
-entries are written) is listed under that note so it stays with its own entries; the Actions & Poses fitting call
-sees the notes too. A note guides the choice of entries and never overrides the request or the settings. Each category sends a seeded sample of at most `VOCABULARY_SAMPLE` (40)
+entries are written) is listed under that note so it stays with its own entries. A note guides the choice of entries and never overrides the request or the settings. Each category sends a seeded sample of at most `VOCABULARY_SAMPLE` (40)
 entries per batch, so a large pack never drowns the request. The request and the approved requirements always win. With an Actions & Poses
-pack selected, one call first keeps only the entries that fit the request and the cast (`fitting_entries`, every entry
-when that call fails); only those are offered and dealt, and with none the writer gets no Actions & Poses vocabulary.
-Every scene names the entry it is built on (`entry`); code checks the entry is one of the fitting ones and that no
+pack selected, the shared vocabulary engine keeps only the entries that fit the request and the cast, with no model
+call (`v2/scenes/actions.py` `action_plan`): the entries made for the cast's number of people (`retrieval.for_cast`: a
+pair gets entries for two, a group entries for a group, an entry for fewer people only when the packs have none for
+the cast), without those that say what the request rules out (`retrieval.without_said`), and, when the request keeps
+an action, only those that show it (`retrieval.match` with `entry_words`: a group's trigger words, then the entries
+that say the action's own words in any form, then meaning). Only those are offered and dealt, spread over the packs'
+groups (`deal_actions`), and with none the writer gets no Actions & Poses vocabulary and builds the act from the
+request. An entry is a whole interaction with its people as letters, kept as written. Objects & Props
+(`v2/scenes/props.py`): an object the request names is suggested to every image as in every other category
+(`deal_hands`, below); otherwise every image is suggested one object from the groups that clearly suit its own dealt
+pose and place (`suiting`, `SUIT_Z`: a group judged by its name and words, which say what its objects are for), none
+when nothing does, so no action and object pair is ever listed and every image's pose, place, object and people make
+one scene. Every scene names the entry it is built on (`entry`); code checks the entry is one of the fitting ones and that no
 entry is used by more than two images (`ENTRY_CAP`, raised to the images-per-entry when fewer entries fit than images
 are requested), and asks again otherwise. Every other selected category deals each image `HAND` (1) suggested
 entries from a seeded deck, without repeats until the whole category has been dealt (`deal_hands`), so the
@@ -249,8 +258,8 @@ happens, never what it is: an entry showing a different act does not fit.
 | Source-bound, expiring, single-use approval tickets | `v2/tickets.py` |
 | Guided input assignment | `v2/assignments.py` |
 | Vocabulary categories, pack discovery and the vocabulary prompt section | `features/vocabulary/catalog.py` |
-| Optional pack features (people count, slots) | `features/vocabulary/catalog.py`, `v2/scenes/entries.py` `fit_cast`, `v2/scenes/slots.py` |
-| Scene composition | `v2/scenes/` (`texts.py` instructions, `request.py` what the writer is asked, `entries.py` vocabulary dealing and fitting, `checks.py` scene checks, `writer.py` batch and retries, `settings.py` limits; `write_scenes` in `__init__.py`) |
+| Optional pack features (people count, slots) | `features/vocabulary/catalog.py`, `v2/scenes/entries.py` `fit_cast`, `features/vocabulary/retrieval.py` `for_cast`, `v2/scenes/slots.py` |
+| Scene composition | `v2/scenes/` (`texts.py` instructions, `request.py` what the writer is asked, `entries.py` vocabulary offered and suggestions dealt, `actions.py` Actions & Poses, `props.py` Objects & Props, `places.py`, `looks.py`, `checks.py` scene checks, `writer.py` batch and retries, `settings.py` limits; `write_scenes` in `__init__.py`) |
 | Final prompts through the Builder | `v2/prompts.py` |
 
 ## Seeds

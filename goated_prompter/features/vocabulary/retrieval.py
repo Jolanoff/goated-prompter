@@ -1,12 +1,17 @@
-"""Vocabulary retrieval: which entries of a category a text names. Shared by every category; Spaces uses it first
-(dataset/v2/scenes/places.py). Retrieval finds entries; it does not decide what a request allows (Understanding does)
-or choose a set (selection.py does).
+"""Vocabulary retrieval: which entries of a category a text names. Shared by every category: Spaces
+(dataset/v2/scenes/places.py), Actions & Poses (actions.py), Objects & Props (props.py) and the looks (looks.py).
+Retrieval finds entries; it does not decide what a request allows (Understanding does) or choose a set (selection.py
+does).
 
 Index (groups_of): the groups of the run's selected packs of the category, then of its always-on packs. A grouped
 pack gives its groups (catalog.py); a plain pack's entries are each a group named by the entry. An entry in two packs
 is listed once, where it comes first.
+Constraints: in_world (the request's world), for_cast (the entries made for the cast's number of people) and
+without_said (no entry that says what the request rules out).
 Exact words (exact_hits): a group's words said whole in the text, in order, a plural ending and a possessive "'s"
 aside. A word said inside a longer word that another group says does not count ("water" inside "water aquarium").
+Entry words (said_entries): the entries that say the text's own distinctive words in any form, for packs of plain
+entries that have no group words ("one riding the other" finds the entries that say riding).
 Scoring (relevance): each group's closeness in meaning to the text (embeddings.py), compared with the other groups,
 plus its share of the text's content words.
 match: the groups a text names, or none. Exact words decide when they explain every content word of the text; a
@@ -37,7 +42,7 @@ FUNCTION_WORDS = frozenset("""a an the and or but nor of in on at to for from by
 above below behind beside between near across along around through about against among off up down out his her
 their its my your our him them it he she they we you i me is are was were be been being has have had do does did this
 that these those there here one two some any each every all both other another while who whom which what where when
-how as so than then just very too also only not no""".split())
+how as so than then just very too also only not no together""".split())
 
 
 def base_word(word):
@@ -76,8 +81,9 @@ def _spans(said, phrase):
 
 
 def groups_of(catalog, category, selection):
-    """[{"name", "words", "entries", "worlds", "adult", "selected"}]: the selected packs' groups, then the always-on
-    ones'. A group's words include its name; worlds is None when the group fits every world."""
+    """[{"name", "words", "entries", "worlds", "people", "adult", "selected"}]: the selected packs' groups, then the
+    always-on ones'. A group's words include its name; worlds is None when the group fits every world; people is
+    {entry: how many people it needs} for the entries that say so."""
     chosen = set(selection.get("packs") or ())
     packs = [pack for pack in catalog["packs"] if pack["category"] == category and pack["id"] in chosen]
     packs += [pack for pack in always_on(catalog, category) if pack["id"] not in chosen]
@@ -92,6 +98,8 @@ def groups_of(catalog, category, selection):
                 rows.append({"name": group["name"],
                              "words": list(dict.fromkeys([group["name"].casefold(), *group["words"]])),
                              "entries": own, "worlds": tuple(group["worlds"]) if group.get("worlds") else None,
+                             "people": {entry: count for entry, count in (pack.get("people") or {}).items()
+                                        if entry in own},
                              "adult": bool(group.get("adult_default")), "selected": pack["id"] in chosen})
     return rows
 
@@ -99,6 +107,50 @@ def groups_of(catalog, category, selection):
 def in_world(groups, world):
     """The groups that fit a world (every group when world is None; a group without worlds fits every world)."""
     return [group for group in groups if not world or group["worlds"] is None or world in group["worlds"]]
+
+
+def for_cast(groups, size):
+    """The groups with only the entries that fit a cast of size people: those made for exactly that many, else for the
+    most people below it (an entry for three is a group, so it serves a larger one too); an entry that gives no count
+    fits every cast. A group left with no entry is left out."""
+    counts = {count for group in groups for count in (group.get("people") or {}).values()}
+    best = max((count for count in counts if count <= size), default=None)
+    kept = [{**group, "entries": [entry for entry in group["entries"]
+                                  if (group.get("people") or {}).get(entry, best) == best]} for group in groups]
+    return [group for group in kept if group["entries"]]
+
+
+def without_said(groups, phrases):
+    """The groups without the entries that say what a phrase rules out: every content word of one of the phrases, in
+    any form (word_stem), so "no kneeling" keeps no entry that says kneeling. A group left with no entry is left out."""
+    ruled = [stems for phrase in phrases if (stems := {word_stem(word) for word in content_words(phrase)})]
+    if not ruled:
+        return groups
+    says = lambda entry: {word_stem(word) for word in content_words(entry)}
+    kept = [{**group, "entries": [entry for entry in group["entries"]
+                                  if not any(stems <= says(entry) for stems in ruled)]} for group in groups]
+    return [group for group in kept if group["entries"]]
+
+
+ENTRY_WORD_SHARE = .25  # a text's word in more of the entries than this says too little to choose them
+
+
+def said_entries(groups, text, share=ENTRY_WORD_SHARE):
+    """The groups with only the entries that say the text's distinctive words: its content words, in any form
+    (word_stem), that some but at most share of the entries say (1: any word an entry says, for a pack whose entries
+    all show one act, where its word keeps them all); an entry whose words of the text are only
+    part of another entry's is about less of it ("a reading room" names the reading room entries, not every other
+    room, while "a lantern and an oil lamp" keeps both). [] when no entry says one."""
+    entries = [entry for group in groups for entry in group["entries"]]
+    says = {entry: {word_stem(word) for word in content_words(entry)} for entry in entries}
+    asked = {word_stem(word) for word in content_words(text)}
+    rare = {word for word in asked
+            if 0 < sum(word in words for words in says.values()) <= max(1, share * len(entries))}
+    shared = {entry: frozenset(says[entry] & rare) for entry in entries}
+    kept = [{**group, "entries": [entry for entry in group["entries"]
+                                  if shared[entry] and not any(shared[entry] < other for other in shared.values())]}
+            for group in groups]
+    return [group for group in kept if group["entries"]]
 
 
 def group_text(group):
@@ -285,9 +337,10 @@ def _standout(groups, text, embeddings):
     return [groups[index]] if top >= MATCH_Z and top - runner_up >= MATCH_LEAD else []
 
 
-def match(groups, text, embeddings=None):
+def match(groups, text, embeddings=None, entry_words=False):
     """The groups the text names (see the module docstring), the user's selected packs' groups first, each with only
-    the entries the text points to (narrowed); [] when no group clearly answers it."""
+    the entries the text points to (narrowed); [] when no group clearly answers it. With entry_words, the entries that
+    say the text's words (said_entries, any share) come before meaning, for packs of plain entries."""
     if not groups or not str(text or "").strip():
         return []
     hits = exact_search([group for group in groups if group["selected"]], text) or exact_search(groups, text)
@@ -300,7 +353,7 @@ def match(groups, text, embeddings=None):
         if meaning is not None:
             scores = dict(zip(map(id, groups), zscores(meaning)))
             hits = [group for group in hits if scores[id(group)] >= MATCH_AGREE]
-    found = hits or _standout(groups, text, embeddings)
+    found = hits or (entry_words and said_entries(groups, text, share=1)) or _standout(groups, text, embeddings)
     return narrowed(found, text, embeddings) if found else []
 
 

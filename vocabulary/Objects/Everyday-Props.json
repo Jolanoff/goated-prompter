@@ -2,26 +2,86 @@
   "name": "Everyday Props",
   "category": "Objects & Props",
   "description": "Portable everyday belongings. Entries name objects, not mandatory hand-held items; placement depends on the scene's available hands and space.",
-  "entries": [
-    "wallet with a snap closure",
-    "folded pair of reading glasses",
-    "reusable shopping bag",
-    "small zippered coin purse",
-    "wristwatch with a woven strap",
-    "compact travel mirror",
-    "lidded lunch container",
-    "soft-sided suitcase",
-    "comb with wide teeth",
-    "portable radio with a telescoping antenna",
-    "coffee mug",
-    "smartphone",
-    "umbrella",
-    "folded paper map",
-    "canvas shoulder bag",
-    "reusable water bottle",
-    "key ring",
-    "pocket notebook",
-    "rolled blanket",
-    "small wrapped parcel"
+  "groups": [
+    {
+      "group": "bags and luggage",
+      "words": [
+        "bag",
+        "bags",
+        "luggage",
+        "carrying",
+        "travel",
+        "packing"
+      ],
+      "entries": [
+        "reusable shopping bag",
+        "soft-sided suitcase",
+        "canvas shoulder bag",
+        "small wrapped parcel"
+      ]
+    },
+    {
+      "group": "personal items",
+      "words": [
+        "accessories",
+        "belongings",
+        "personal items",
+        "everyday"
+      ],
+      "entries": [
+        "wallet with a snap closure",
+        "folded pair of reading glasses",
+        "small zippered coin purse",
+        "wristwatch with a woven strap",
+        "compact travel mirror",
+        "comb with wide teeth",
+        "key ring"
+      ]
+    },
+    {
+      "group": "devices",
+      "words": [
+        "device",
+        "gadget",
+        "listening",
+        "calling"
+      ],
+      "entries": [
+        "portable radio with a telescoping antenna",
+        "smartphone"
+      ]
+    },
+    {
+      "group": "drinks and lunch",
+      "words": [
+        "drink",
+        "food",
+        "lunch",
+        "break",
+        "refreshment",
+        "coffee break"
+      ],
+      "entries": [
+        "lidded lunch container",
+        "coffee mug",
+        "reusable water bottle"
+      ]
+    },
+    {
+      "group": "outing gear",
+      "words": [
+        "outing",
+        "outdoors",
+        "trip",
+        "travel",
+        "day out"
+      ],
+      "entries": [
+        "umbrella",
+        "folded paper map",
+        "pocket notebook",
+        "rolled blanket"
+      ]
+    }
   ]
 }

@@ -2,28 +2,114 @@
   "name": "Vehicles",
   "category": "Objects & Props",
   "description": "Vehicles as scene objects, transport or background details. Entries do not require the subjects to ride or operate them.",
-  "entries": [
-    "electric cargo tricycle",
-    "tracked snow vehicle",
-    "hot-air balloon with a wicker basket",
-    "inflatable kayak",
-    "vintage convertible",
-    "motorcycle",
-    "bicycle",
-    "city bus",
-    "delivery van",
-    "pickup truck",
-    "sports car",
-    "taxi",
-    "scooter",
-    "horse-drawn carriage",
-    "sailboat",
-    "rowing boat",
-    "small private plane",
-    "helicopter",
-    "train carriage",
-    "skateboard",
-    "shopping cart",
-    "wheelbarrow"
+  "groups": [
+    {
+      "group": "cars and trucks",
+      "words": [
+        "car",
+        "driving",
+        "road",
+        "street",
+        "traffic",
+        "vehicle"
+      ],
+      "entries": [
+        "vintage convertible",
+        "city bus",
+        "delivery van",
+        "pickup truck",
+        "sports car",
+        "taxi"
+      ]
+    },
+    {
+      "group": "bikes and boards",
+      "words": [
+        "riding",
+        "ride",
+        "commuting",
+        "street"
+      ],
+      "entries": [
+        "electric cargo tricycle",
+        "motorcycle",
+        "bicycle",
+        "scooter",
+        "skateboard"
+      ]
+    },
+    {
+      "group": "boats",
+      "words": [
+        "boat",
+        "boating",
+        "water",
+        "lake",
+        "river",
+        "sea",
+        "harbor"
+      ],
+      "entries": [
+        "inflatable kayak",
+        "sailboat",
+        "rowing boat"
+      ]
+    },
+    {
+      "group": "aircraft",
+      "words": [
+        "flying",
+        "flight",
+        "aircraft",
+        "sky",
+        "airport",
+        "pilot"
+      ],
+      "entries": [
+        "hot-air balloon with a wicker basket",
+        "small private plane",
+        "helicopter"
+      ]
+    },
+    {
+      "group": "trains and carriages",
+      "words": [
+        "carriage",
+        "travel",
+        "journey",
+        "historical travel",
+        "passengers"
+      ],
+      "entries": [
+        "horse-drawn carriage",
+        "train carriage"
+      ]
+    },
+    {
+      "group": "carts and barrows",
+      "words": [
+        "cart",
+        "pushing",
+        "hauling",
+        "carrying loads"
+      ],
+      "entries": [
+        "shopping cart",
+        "wheelbarrow"
+      ]
+    },
+    {
+      "group": "snow vehicles",
+      "words": [
+        "snow",
+        "winter",
+        "arctic",
+        "ice",
+        "cold"
+      ],
+      "entries": [
+        "tracked snow vehicle"
+      ]
+    }
   ]
 }

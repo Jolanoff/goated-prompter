@@ -3,50 +3,136 @@
   "category": "Actions & Poses",
   "description": "Training, defensive stances and combat interactions. A is the person the move centres on, B their partner; entries give grounded supports, facing and reach.",
   "people": 1,
-  "entries": [
-    "A stepping backward with knees bent, open hands raised and their weight centered over the rear foot.",
-    "A holding a wooden practice sword in both hands above one shoulder, feet staggered and elbows bent.",
-    "A kneeling beside a target to retrieve an arrow, bow resting on the ground within reach.",
+  "groups": [
     {
-      "text": "A and B circling each other with guarded hands and room between their feet.",
-      "people": 2
+      "group": "sword drills",
+      "words": [
+        "sword",
+        "swordplay",
+        "sword training",
+        "blade",
+        "drawing a sword",
+        "katana"
+      ],
+      "entries": [
+        "A holding a wooden practice sword in both hands above one shoulder, feet staggered and elbows bent.",
+        "A drawing a sheathed blade with one hand while the other steadies the sheath at their hip."
+      ]
     },
     {
-      "text": "A and B pressing padded training shields together, each leaning forward from a planted rear foot.",
-      "people": 2
-    },
-    "A bracing a long staff diagonally across their body with both hands spaced apart.",
-    "A drawing a sheathed blade with one hand while the other steadies the sheath at their hip.",
-    "A seated on a bench, wrapping one hand with a strip held by the other hand.",
-    {
-      "text": "Sword duel: A and B facing each other with staggered feet, each holding a sword forward, their blades meeting between them while their bodies remain apart.",
-      "people": 2
-    },
-    {
-      "text": "Slip: B throwing a straight punch while A bends their knees and shifts their head outside its path, both keeping their feet grounded.",
-      "people": 2
-    },
-    "Archery draw: A standing side-on with feet apart, bow arm extended toward the target and the other hand drawing the string to the cheek, arrow aligned with the bow.",
-    {
-      "text": "Shield block: B advancing with a raised practice weapon while A braces behind a shield, front knee bent and rear foot planted.",
-      "people": 2
+      "group": "staff drills",
+      "words": [
+        "staff",
+        "quarterstaff",
+        "staff training",
+        "bo staff"
+      ],
+      "entries": [
+        "A bracing a long staff diagonally across their body with both hands spaced apart."
+      ]
     },
     {
-      "text": "Parry: A and B facing each other at arm's length, B extending a practice blade while A redirects it to the side with their own blade.",
-      "people": 2
+      "group": "archery",
+      "words": [
+        "archery",
+        "archer",
+        "bow",
+        "arrow",
+        "arrows",
+        "shooting arrows",
+        "bowman"
+      ],
+      "entries": [
+        "A kneeling beside a target to retrieve an arrow, bow resting on the ground within reach.",
+        "Archery draw: A standing side-on with feet apart, bow arm extended toward the target and the other hand drawing the string to the cheek, arrow aligned with the bow."
+      ]
     },
-    "Boxing guard: A standing with one foot forward, knees slightly bent, fists near the cheeks and elbows close to the ribs.",
-    "Front kick: A balancing on one slightly bent leg, extending the other foot forward with their torso upright and hands raised for balance.",
-    "Side kick: A balancing on one leg with their torso leaning away, the other leg extended sideways and the heel directed toward the target.",
-    "Kneeling guard: A resting one knee on the ground with the other foot planted ahead, holding a shield in front without resting it on the raised knee.",
     {
-      "text": "Back-to-back defense: A and B standing back-to-back with feet apart, facing opposite directions and each guarding the space in front of them.",
-      "people": 2
+      "group": "boxing",
+      "words": [
+        "boxing",
+        "boxer",
+        "punch",
+        "punching",
+        "fists",
+        "fighting stance",
+        "hand wraps"
+      ],
+      "entries": [
+        "A seated on a bench, wrapping one hand with a strip held by the other hand.",
+        "Boxing guard: A standing with one foot forward, knees slightly bent, fists near the cheeks and elbows close to the ribs."
+      ]
     },
     {
-      "text": "Wrist release: A and B facing each other, B gripping A's wrist while A turns their wrist toward the opening between B's thumb and fingers.",
-      "people": 2
+      "group": "kicks",
+      "words": [
+        "kick",
+        "kicking",
+        "martial arts",
+        "karate",
+        "taekwondo",
+        "kickboxing"
+      ],
+      "entries": [
+        "Front kick: A balancing on one slightly bent leg, extending the other foot forward with their torso upright and hands raised for balance.",
+        "Side kick: A balancing on one leg with their torso leaning away, the other leg extended sideways and the heel directed toward the target."
+      ]
     },
-    "A crouching behind low cover with both feet planted, keeping their head below its upper edge while looking around one side."
+    {
+      "group": "defensive stances",
+      "words": [
+        "defense",
+        "defending",
+        "defensive",
+        "guard",
+        "guarding",
+        "on guard",
+        "defensive stance"
+      ],
+      "entries": [
+        "A stepping backward with knees bent, open hands raised and their weight centered over the rear foot.",
+        "Kneeling guard: A resting one knee on the ground with the other foot planted ahead, holding a shield in front without resting it on the raised knee.",
+        "A crouching behind low cover with both feet planted, keeping their head below its upper edge while looking around one side."
+      ]
+    },
+    {
+      "group": "sparring with a partner",
+      "words": [
+        "sparring",
+        "spar",
+        "fight",
+        "fighting",
+        "duel",
+        "dueling",
+        "training partner",
+        "combat",
+        "combat training",
+        "battle",
+        "clash"
+      ],
+      "people": 2,
+      "entries": [
+        "A and B circling each other with guarded hands and room between their feet.",
+        "A and B pressing padded training shields together, each leaning forward from a planted rear foot.",
+        "Sword duel: A and B facing each other with staggered feet, each holding a sword forward, their blades meeting between them while their bodies remain apart.",
+        "Slip: B throwing a straight punch while A bends their knees and shifts their head outside its path, both keeping their feet grounded.",
+        "Shield block: B advancing with a raised practice weapon while A braces behind a shield, front knee bent and rear foot planted.",
+        "Parry: A and B facing each other at arm's length, B extending a practice blade while A redirects it to the side with their own blade."
+      ]
+    },
+    {
+      "group": "partner self-defense",
+      "words": [
+        "self-defense",
+        "self defense",
+        "defending together",
+        "protecting each other"
+      ],
+      "people": 2,
+      "entries": [
+        "Back-to-back defense: A and B standing back-to-back with feet apart, facing opposite directions and each guarding the space in front of them.",
+        "Wrist release: A and B facing each other, B gripping A's wrist while A turns their wrist toward the opening between B's thumb and fingers."
+      ]
+    }
   ]
 }

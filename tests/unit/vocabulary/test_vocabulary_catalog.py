@@ -62,8 +62,16 @@ class Bundled(unittest.TestCase):
                 data = json.loads(path.read_text(encoding="utf-8"))
                 # Actions & Poses packs give their cast size (vocabulary/SKILL.md): on the pack, and on an entry that differs.
                 acts = path.parent.name == "Actions & Poses"
-                self.assertEqual(set(data) - ({"people"} if acts else set()), {"name", "category", "description", "entries"})
+                content = "groups" if "groups" in data else "entries"
+                self.assertEqual(set(data) - ({"people"} if acts else set()), {"name", "category", "description", content})
                 self.assertEqual(data["category"], folders[path.parent.name])
+                if content == "groups":  # grouped packs: trigger words, people for poses and worlds for places
+                    places = path.parent.name == "Spaces"
+                    self.assertFalse([group["group"] for group in data["groups"]
+                                      if not {"group", "words", "entries"} <= set(group)
+                                      or set(group) - {"group", "words", "entries", *(["people"] if acts else []),
+                                                       *(["worlds"] if places else [])}])
+                    data["entries"] = [entry for group in data["groups"] for entry in group["entries"]]
                 data["entries"] = [entry["text"] if acts and isinstance(entry, dict) and set(entry) == {"text", "people"}
                                    else entry for entry in data["entries"]]
                 self.assertTrue(all(isinstance(entry, str) and entry for entry in data["entries"]))
@@ -315,6 +323,19 @@ class Library(unittest.TestCase):
         self.assertTrue(always)
         saved = import_pack("places.json", json.dumps({**data, "always": False}), self.root)
         self.assertEqual((saved["entries"], saved["groups"]), (entries, groups), "an import keeps its groups")
+
+    def test_a_group_may_give_how_many_people_its_entries_need(self):
+        data = {"name": "Poses", "category": "Actions & Poses", "people": 1,
+                "groups": [{"group": "stretching", "words": ["stretching"], "entries": ["A stretching"]},
+                           {"group": "sparring", "words": ["sparring"], "people": 2,
+                            "entries": ["A and B sparring", {"text": "A, B and C sparring", "people": 3}]}]}
+        people = catalog._checked(data)[4]
+        self.assertEqual(people, {"A stretching": 1, "A and B sparring": 2, "A, B and C sparring": 3},
+                         "an entry's own count, else its group's, else the pack's")
+        saved = import_pack("poses.json", json.dumps(data), self.root)
+        self.assertEqual((saved["people"], [group.get("people") for group in saved["groups"]]), (people, [None, 2]))
+        with self.assertRaises(ValueError):
+            catalog._checked({**data, "groups": [{"group": "g", "words": ["w"], "people": 0, "entries": ["a"]}]})
         group = lambda **change: {"group": "g", "words": ["w"], "entries": ["a"], **change}
         for broken in ({"always": "yes"}, {"entries": ["a"], "groups": [group()]}, {"groups": []},
                        {"groups": [group(words=[])]}, {"groups": [group(words=["x"] * 101)]},
@@ -340,7 +361,8 @@ class Selection(unittest.TestCase):
         for absent in ("Subjects", "Actions & Poses", "Lighting"):
             self.assertNotIn(f"\n{absent}\nCore instruction:", text)
         self.assertIn('Pack "Fantasy" (its author\'s note:', text)
-        self.assertIn("enchanted forest\nancient dragon temple\nfloating castle", text)
+        for place in ("enchanted forest", "ancient dragon temple", "floating castle"):
+            self.assertIn(f"\n{place}\n", text)
         self.assertNotIn("foggy graveyard", text, "an unselected pack of a selected category is not sent")
 
     def test_two_packs_of_one_category_share_one_block(self):

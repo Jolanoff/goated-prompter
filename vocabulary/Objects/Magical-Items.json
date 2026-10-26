@@ -2,26 +2,77 @@
   "name": "Magical Items",
   "category": "Objects & Props",
   "description": "Fantasy artifacts with visible unusual properties. Entries name objects without prescribing a spell, wielder or new activity.",
-  "entries": [
-    "lantern containing a flame suspended without a wick",
-    "deck of cards with moving illustrations",
-    "silver bell surrounded by visible concentric ripples",
-    "stone tablet inscribed with slowly shifting grooves",
-    "quill floating above an unfinished page",
-    "chest with a miniature star field inside its lid",
-    "woven bracelet with hovering beads",
-    "ceramic mask with changing painted markings",
-    "folding fan trailing a ribbon of mist",
-    "branch bearing glass leaves and metal fruit",
-    "enchanted staff",
-    "glowing crystal",
-    "ancient spellbook",
-    "compass with a floating needle",
-    "sealed vial containing luminous liquid",
-    "mirror with a shifting reflective surface",
-    "ring inset with an inscribed stone",
-    "folded cloth covered in changing symbols",
-    "key with interlocking movable teeth",
-    "hourglass with sand suspended between its bulbs"
+  "groups": [
+    {
+      "group": "magical lights and crystals",
+      "words": [
+        "glowing",
+        "magic light",
+        "crystal",
+        "light",
+        "enchanted light"
+      ],
+      "entries": [
+        "lantern containing a flame suspended without a wick",
+        "glowing crystal",
+        "sealed vial containing luminous liquid"
+      ]
+    },
+    {
+      "group": "spellbooks and writing",
+      "words": [
+        "spellbook",
+        "spell",
+        "runes",
+        "magical writing",
+        "symbols",
+        "arcane text"
+      ],
+      "entries": [
+        "stone tablet inscribed with slowly shifting grooves",
+        "quill floating above an unfinished page",
+        "ancient spellbook",
+        "folded cloth covered in changing symbols"
+      ]
+    },
+    {
+      "group": "wands and staffs",
+      "words": [
+        "staff",
+        "wand",
+        "magic staff",
+        "wizard",
+        "sorcerer",
+        "spellcasting"
+      ],
+      "entries": [
+        "branch bearing glass leaves and metal fruit",
+        "enchanted staff"
+      ]
+    },
+    {
+      "group": "enchanted trinkets",
+      "words": [
+        "artifact",
+        "relic",
+        "trinket",
+        "treasure",
+        "enchanted object",
+        "magical item"
+      ],
+      "entries": [
+        "deck of cards with moving illustrations",
+        "silver bell surrounded by visible concentric ripples",
+        "chest with a miniature star field inside its lid",
+        "woven bracelet with hovering beads",
+        "ceramic mask with changing painted markings",
+        "folding fan trailing a ribbon of mist",
+        "compass with a floating needle",
+        "mirror with a shifting reflective surface",
+        "ring inset with an inscribed stone",
+        "key with interlocking movable teeth",
+        "hourglass with sand suspended between its bulbs"
+      ]
+    }
   ]
 }

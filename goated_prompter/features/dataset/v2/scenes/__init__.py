@@ -8,10 +8,11 @@ when the scenes are invented (source "random"); with the user's own scene ideas 
 sent. With no pack selected the prompt has no vocabulary section. The run's Director decides what each scene
 emphasizes (request.director_emphasis); the final prompt writes the decided scene without it.
 
-Actions & Poses: when that category has a selected pack, one call first keeps only the entries that fit the request
-and the cast (fitting_entries; every entry when that call fails). Only those reach the writer: every image is dealt a
-different one from a seeded shuffle (deal_entries) and every scene names the entry it is built on ("entry", copied
-word for word); the writer keeps the dealt entry unless it cannot fit the cast. Code checks that the entry is one of
+Actions & Poses (actions.py): when that category has a selected pack, the shared vocabulary engine keeps only the
+entries made for the cast that show the action the request keeps, or every entry made for the cast when it keeps none
+(action_plan, no model call). Only those reach the writer: every image is dealt one, spread over the packs' groups
+(deal_actions), and every scene names the entry it is built on ("entry", copied word for word); the writer keeps the
+dealt entry unless it cannot fit the cast. Code checks that the entry is one of
 the fitting entries and asks again otherwise (the last round keeps the image). The writer is told how many images may
 share an entry (ENTRY_CAP: two, or more when fewer entries fit than images are requested) and how many already do; an
 entry used more often is kept, never asked again. When no entry fits, the writer gets no Actions & Poses vocabulary
@@ -19,8 +20,10 @@ and builds a logical pose for the request.
 
 Places (places.py): unless the request keeps the place without words for it, every image is dealt one place from the
 selected Spaces packs or, after them, the always-on built-in places; the scene is built there (PLACE_RULE) and a scene
-built elsewhere is asked again. The groups whose words the request says most often are chosen (its place words when
-it keeps the place, else the whole request); a fitting call reads the group names when none matches.
+built elsewhere is asked again. Each image's place is paired with its dealt pose.
+
+Objects & Props (props.py): every image is suggested one object from the selected Objects & Props packs, the ones the
+request names first, else one from the groups that suit its own dealt pose and place (none when nothing does). Every image's pose, place, object and people (looks.py) are dealt together, so they make one scene.
 
 Optional pack features: entries that need more people than the cast (a pack's "people") are removed before anything
 else (fit_cast), and so are entries with a slot ("holding [Kitchen-and-Dining]") that names a pack or category the run
@@ -66,13 +69,15 @@ from ..understanding import validate_brief
 
 from ..consistency import levels, locked_categories
 from .checks import _summary, avoid_patterns, retire_fields, scene_errors
-from .entries import _entry_key, deal_frames, _only, _shuffled, cast_size, deal_entries, deal_hands, entry_cap, fit_cast, fitting_entries, requested_entries, requested_words, required_frame
+from .actions import action_plan, deal_actions
+from .entries import _entry_key, deal_frames, _only, _shuffled, cast_size, deal_hands, entry_cap, fit_cast, offered_groups, requested_entries, requested_words, required_frame
 from .request import _system, compose_instruction, compose_message, deals_frames, known_labels, slot_inputs, subject_fields, trigger_notes, varied_labels
 from .settings import ACTIONS_CATEGORY, BATCH, EARLIER, KNOWN_SUBJECT_FIELDS, ROUNDS, SECTIONS, SUBJECT_FIELDS, VOCABULARY_SAMPLE
 from .looks import SUBJECTS, deal_looks, look_groups, look_words, requested_details
 from .places import SPACES, place_plan
+from .props import OBJECTS, deal_props
 from .slots import only_fillable
-from .texts import COMPOSE_SYSTEM, ENTRY_FIT_SYSTEM, ENTRY_RULE, GUIDED_RULE, NO_PEOPLE_RULE, NSFW_RULE, SFW_RULE, VOCABULARY_RULES
+from .texts import COMPOSE_SYSTEM, ENTRY_RULE, GUIDED_RULE, NO_PEOPLE_RULE, NSFW_RULE, SFW_RULE, VOCABULARY_RULES
 from .writer import _compose
 
 
@@ -95,8 +100,6 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
     groups = only_fillable(fit_cast(selected_vocabulary(catalog, selection), cast_size(brief)))
     seed = brief["input"].get("seed")
     rng = random.Random(seed) if isinstance(seed, int) else random.Random()
-    actions = next((group for group in groups if group["category"] == ACTIONS_CATEGORY), None)
-    action_entries = list(dict.fromkeys(entry for pack in actions["packs"] for entry in pack["entries"])) if actions else []
     effective, profile = resolve_director_config(config, request)
     brief = {**brief, "_family": effective_model_family(request, profile, effective), "_avoid": avoid_patterns(brief),
              "_known": frozenset(known_labels(brief))}
@@ -104,24 +107,23 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
     # Vocabulary search by meaning: a small separate embedding model, started only when a search needs it.
     embeddings = None if guided else embeddings_for(effective, progress)
     with closing(embeddings) if embeddings else nullcontext(), create_backend(effective).generation_session() as session:
-        if action_entries:
-            progress("Choosing the Actions & Poses entries that fit the request...")
-            notes = {pack["name"]: pack["description"] for pack in actions["packs"] if pack.get("description")}
-            action_entries = fitting_entries(session, brief, action_entries, checkpoint, progress, notes)
-            groups = _only(groups, ACTIONS_CATEGORY, action_entries)
+        # The act and arrangement of every image, from the selected Actions & Poses packs (no model call).
+        poses = action_plan(brief, offered_groups(catalog, ACTIONS_CATEGORY, selection, groups), embeddings)
+        action_entries = [entry for group in poses for entry in group["entries"]]
+        groups = _only(groups, ACTIONS_CATEGORY, action_entries)
         # The place of every image comes from the place catalogs, not the writer (scene ideas bring their own).
         spaces = [] if guided else groups_of(catalog, SPACES, selection)
         places, setting = place_plan(brief, spaces, embeddings) if spaces else ([], "")
         if places:  # Spaces is dealt as places, never offered as suggestions or a list to pick from
             groups = [group for group in groups if group["category"] != SPACES]
-        dealt, locked = deal_entries(action_entries, total, rng), locked_categories(brief)
-        if dealt and levels(brief)["action"] == "locked":  # one pose for the whole set: the first dealt entry
-            dealt = {number: dealt[1] for number in dealt}
+        locked = locked_categories(brief)
+        dealt = deal_actions(poses, total, rng, levels(brief)["action"] == "locked") if poses else {}
+        objects = [] if OBJECTS in locked else offered_groups(catalog, OBJECTS, selection, groups)
         plan = {"entries": {_entry_key(entry): entry for entry in action_entries} or None,
                 "cap": total if levels(brief)["action"] == "locked" else entry_cap(action_entries, total), "used": {},
                 "dealt": dealt,
                 "hands": deal_hands([group for group in groups if group["category"] not in locked], total, rng,
-                                    words=requested_words(brief)),
+                                    words=requested_words(brief), owned={OBJECTS} if objects else frozenset()),
                 "props": [entry for group in groups if group["category"] != ACTIONS_CATEGORY
                           for pack in group["packs"] for entry in pack["entries"]]}
         if deals_frames(brief):  # dealt last, so runs without dealt frames deal exactly as before
@@ -131,6 +133,13 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
             if dealt and levels(brief)["place"] != "locked":  # each dealt pose gets the dealt place that suits it best
                 plan["places"] = pair(plan["places"], dealt, lambda pose, entries: fit_scores(pose, entries, embeddings))
             plan["setting"], plan["place_words"] = setting, telling_words(spaces)
+        if objects and not any(OBJECTS in hand for hand in plan["hands"].values()):  # the request names none
+            scene_of = {number: " ".join(filter(None, (dealt.get(number), (plan.get("places") or {}).get(number))))
+                        for number in range(1, total + 1)}
+            partners = {number: text for number, text in scene_of.items() if text}
+            props = deal_props(objects, total, rng, partners, embeddings)
+            for number, prop in props.items():
+                plan["hands"].setdefault(number, {})[OBJECTS] = [prop]
         # The looks of the people who vary, from the built-in looks; the user's own Subjects packs stay suggestions.
         own_subjects = any(group["category"] == SUBJECTS for group in groups)
         looks = [] if guided or own_subjects else look_groups(catalog)

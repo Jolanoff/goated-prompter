@@ -2,28 +2,82 @@
   "name": "Tools & Devices",
   "category": "Objects & Props",
   "description": "Hand tools, measuring equipment and devices. Entries are objects that may be used or placed nearby when compatible with the requested activity.",
-  "entries": [
-    "adjustable wrench",
-    "digital multimeter with two probes",
-    "bench vise with a screw handle",
-    "handheld navigation compass",
-    "hammer",
-    "paintbrush",
-    "camera",
-    "headphones",
-    "spirit level",
-    "laptop",
-    "flashlight",
-    "rope",
-    "measuring tape",
-    "scissors",
-    "magnifying glass",
-    "telescope",
-    "sewing machine",
-    "typewriter",
-    "microphone",
-    "garden hose",
-    "toolbox",
-    "alarm clock"
+  "groups": [
+    {
+      "group": "hand tools",
+      "words": [
+        "tools",
+        "repair",
+        "fixing",
+        "building",
+        "diy",
+        "workshop",
+        "mechanic",
+        "carpentry"
+      ],
+      "entries": [
+        "adjustable wrench",
+        "bench vise with a screw handle",
+        "hammer",
+        "spirit level",
+        "rope",
+        "measuring tape",
+        "garden hose",
+        "toolbox"
+      ]
+    },
+    {
+      "group": "devices and recording",
+      "words": [
+        "electronics",
+        "device",
+        "technology",
+        "recording",
+        "office",
+        "work"
+      ],
+      "entries": [
+        "digital multimeter with two probes",
+        "camera",
+        "headphones",
+        "laptop",
+        "typewriter",
+        "microphone",
+        "alarm clock"
+      ]
+    },
+    {
+      "group": "art and sewing",
+      "words": [
+        "crafting",
+        "art",
+        "making",
+        "handmade",
+        "creative work"
+      ],
+      "entries": [
+        "paintbrush",
+        "scissors",
+        "sewing machine"
+      ]
+    },
+    {
+      "group": "seeing and finding the way",
+      "words": [
+        "seeing",
+        "looking",
+        "exploring",
+        "searching",
+        "investigating",
+        "observing",
+        "finding the way"
+      ],
+      "entries": [
+        "handheld navigation compass",
+        "flashlight",
+        "magnifying glass",
+        "telescope"
+      ]
+    }
   ]
 }

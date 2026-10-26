@@ -2,26 +2,70 @@
   "name": "Sci-Fi Equipment",
   "category": "Objects & Props",
   "description": "Futuristic tools and field equipment with visible physical features. Objects need not occupy a hand and do not prescribe a new task.",
-  "entries": [
-    "folding holographic projector with a circular emitter",
-    "handheld scanner with a segmented display",
-    "sealed sample canister with a transparent inspection strip",
-    "portable power cell with recessed contacts",
-    "magnetic tether reel with a locking clip",
-    "compact fabricator with a transparent build chamber",
-    "wrist-mounted communicator with a hinged screen",
-    "environmental sensor mast with folding legs",
-    "robotic gripper attachment in a fitted carrying case",
-    "navigation beacon with a rotating indicator ring",
-    "modular breathing unit with paired filter cylinders",
-    "insulated cryogenic flask with a pressure gauge",
-    "gravity anchor with a broad circular base",
-    "data crystal held inside a protective frame",
-    "flexible tablet rolled around a rigid handle",
-    "portable airlock patch with an inflatable sealing rim",
-    "plasma cutting tool with a ceramic nozzle",
-    "drone charging dock with a recessed landing pad",
-    "field microscope with an enclosed sample slot",
-    "translation device with a small speaker grille and waveform screen"
+  "groups": [
+    {
+      "group": "scanners and screens",
+      "words": [
+        "scanner",
+        "screen",
+        "device",
+        "data",
+        "technology",
+        "analyzing",
+        "research",
+        "science"
+      ],
+      "entries": [
+        "folding holographic projector with a circular emitter",
+        "handheld scanner with a segmented display",
+        "wrist-mounted communicator with a hinged screen",
+        "data crystal held inside a protective frame",
+        "flexible tablet rolled around a rigid handle",
+        "field microscope with an enclosed sample slot",
+        "translation device with a small speaker grille and waveform screen"
+      ]
+    },
+    {
+      "group": "field and survival gear",
+      "words": [
+        "space",
+        "survival",
+        "expedition",
+        "astronaut",
+        "gear",
+        "field equipment",
+        "planet",
+        "spacewalk"
+      ],
+      "entries": [
+        "sealed sample canister with a transparent inspection strip",
+        "portable power cell with recessed contacts",
+        "magnetic tether reel with a locking clip",
+        "environmental sensor mast with folding legs",
+        "navigation beacon with a rotating indicator ring",
+        "modular breathing unit with paired filter cylinders",
+        "insulated cryogenic flask with a pressure gauge",
+        "gravity anchor with a broad circular base",
+        "portable airlock patch with an inflatable sealing rim"
+      ]
+    },
+    {
+      "group": "tools and machines",
+      "words": [
+        "engineer",
+        "mechanic",
+        "repair",
+        "workshop",
+        "machine",
+        "fabricating",
+        "robotics"
+      ],
+      "entries": [
+        "compact fabricator with a transparent build chamber",
+        "robotic gripper attachment in a fitted carrying case",
+        "plasma cutting tool with a ceramic nozzle",
+        "drone charging dock with a recessed landing pad"
+      ]
+    }
   ]
 }

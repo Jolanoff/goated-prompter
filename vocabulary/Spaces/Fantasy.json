@@ -2,26 +2,102 @@
   "name": "Fantasy",
   "category": "Spaces",
   "description": "Imagined magical worlds, settlements and ruins. Entries supply fantasy architecture and terrain with space for the requested activity.",
-  "entries": [
-    "sky harbor with mooring towers linked by stone bridges",
-    "sunken palace hall beneath a transparent dome",
-    "market built along the roots of a colossal tree",
-    "mountaintop sanctuary surrounding a suspended bell",
-    "desert citadel carved into a sandstone mesa",
-    "ice palace gallery with translucent pillars",
-    "library built inside the shell of an enormous fossil",
-    "garden of oversized flowers around a tiled pavilion",
-    "subterranean canal city with terraced landing stages",
-    "abandoned golem workshop with broad assembly platforms",
-    "enchanted forest",
-    "ancient dragon temple",
-    "floating castle",
-    "dwarven forge hall with a central hearth and work alcoves along its walls",
-    "treehouse settlement linked by broad suspended walkways",
-    "underground crystal cavern with flat ledges around a deep pool",
-    "wizard's archive with reading bays between tall shelves",
-    "ruined mountain gate opening onto a narrow stone causeway",
-    "giant mushroom grove with clear paths between the stems",
-    "castle courtyard with a well and covered perimeter walk"
+  "groups": [
+    {
+      "group": "fantasy halls and palaces",
+      "words": [
+        "palace",
+        "castle",
+        "temple",
+        "citadel",
+        "sanctuary",
+        "fantasy hall"
+      ],
+      "worlds": [
+        "fantasy"
+      ],
+      "entries": [
+        "sunken palace hall beneath a transparent dome",
+        "mountaintop sanctuary surrounding a suspended bell",
+        "desert citadel carved into a sandstone mesa",
+        "ice palace gallery with translucent pillars",
+        "ancient dragon temple",
+        "floating castle",
+        "castle courtyard with a well and covered perimeter walk"
+      ]
+    },
+    {
+      "group": "fantasy workshops and libraries",
+      "words": [
+        "magic workshop",
+        "library",
+        "archive",
+        "forge",
+        "magical study"
+      ],
+      "worlds": [
+        "fantasy"
+      ],
+      "entries": [
+        "library built inside the shell of an enormous fossil",
+        "abandoned golem workshop with broad assembly platforms",
+        "dwarven forge hall with a central hearth and work alcoves along its walls",
+        "wizard's archive with reading bays between tall shelves"
+      ]
+    },
+    {
+      "group": "fantasy forests and gardens",
+      "words": [
+        "enchanted forest",
+        "fantasy forest",
+        "magical garden",
+        "grove",
+        "fairy"
+      ],
+      "worlds": [
+        "fantasy"
+      ],
+      "entries": [
+        "garden of oversized flowers around a tiled pavilion",
+        "enchanted forest",
+        "treehouse settlement linked by broad suspended walkways",
+        "giant mushroom grove with clear paths between the stems"
+      ]
+    },
+    {
+      "group": "fantasy cities and harbors",
+      "words": [
+        "fantasy city",
+        "fantasy town",
+        "fantasy market",
+        "harbor",
+        "settlement"
+      ],
+      "worlds": [
+        "fantasy"
+      ],
+      "entries": [
+        "sky harbor with mooring towers linked by stone bridges",
+        "market built along the roots of a colossal tree",
+        "subterranean canal city with terraced landing stages"
+      ]
+    },
+    {
+      "group": "fantasy caves and ruins",
+      "words": [
+        "cave",
+        "cavern",
+        "ruins",
+        "underground",
+        "dungeon"
+      ],
+      "worlds": [
+        "fantasy"
+      ],
+      "entries": [
+        "underground crystal cavern with flat ledges around a deep pool",
+        "ruined mountain gate opening onto a narrow stone causeway"
+      ]
+    }
   ]
 }

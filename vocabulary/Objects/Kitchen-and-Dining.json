@@ -2,28 +2,79 @@
   "name": "Kitchen & Dining",
   "category": "Objects & Props",
   "description": "Food preparation and dining objects. Entries name utensils, containers and tableware rather than requiring cooking or a meal.",
-  "entries": [
-    "colander with side handles",
-    "mortar and pestle",
-    "rolling pin",
-    "ceramic baking dish",
-    "wooden spoon",
-    "cast-iron pan",
-    "teapot",
-    "wine glass",
-    "cutting board",
-    "mixing bowl",
-    "whisk",
-    "chopsticks",
-    "dinner plate with food",
-    "coffee machine",
-    "fruit bowl",
-    "bread knife",
-    "kettle",
-    "measuring cups",
-    "serving tray",
-    "candlestick",
-    "pet bowl",
-    "picnic basket"
+  "groups": [
+    {
+      "group": "cookware and baking",
+      "words": [
+        "cooking",
+        "baking",
+        "kitchen",
+        "chef",
+        "recipe",
+        "cookware",
+        "utensils"
+      ],
+      "entries": [
+        "colander with side handles",
+        "mortar and pestle",
+        "rolling pin",
+        "ceramic baking dish",
+        "wooden spoon",
+        "cast-iron pan",
+        "cutting board",
+        "mixing bowl",
+        "whisk",
+        "bread knife",
+        "kettle",
+        "measuring cups"
+      ]
+    },
+    {
+      "group": "tableware and dining",
+      "words": [
+        "dining",
+        "dinner",
+        "meal",
+        "eating",
+        "table setting",
+        "restaurant",
+        "serving"
+      ],
+      "entries": [
+        "teapot",
+        "wine glass",
+        "chopsticks",
+        "dinner plate with food",
+        "coffee machine",
+        "fruit bowl",
+        "serving tray",
+        "candlestick"
+      ]
+    },
+    {
+      "group": "picnic",
+      "words": [
+        "picnic",
+        "basket",
+        "outdoor meal",
+        "park lunch"
+      ],
+      "entries": [
+        "picnic basket"
+      ]
+    },
+    {
+      "group": "pet supplies",
+      "words": [
+        "pet",
+        "dog",
+        "cat",
+        "feeding",
+        "pet food"
+      ],
+      "entries": [
+        "pet bowl"
+      ]
+    }
   ]
 }

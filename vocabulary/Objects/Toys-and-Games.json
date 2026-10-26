@@ -2,28 +2,76 @@
   "name": "Toys & Games",
   "category": "Objects & Props",
   "description": "Game pieces, puzzles and recreational objects. Entries can furnish adult activities or surroundings without adding a new participant.",
-  "entries": [
-    "tabletop pinball machine",
-    "wooden ring-toss set",
-    "set of domino tiles",
-    "mechanical puzzle box",
-    "teddy bear",
-    "chess board",
-    "deck of cards",
-    "dice",
-    "yo-yo",
-    "kite",
-    "rubber duck",
-    "building blocks",
-    "toy train",
-    "board game",
-    "jigsaw puzzle",
-    "video game controller",
-    "paper airplane",
-    "spinning top",
-    "balloon",
-    "kaleidoscope",
-    "marbles",
-    "rocking horse"
+  "groups": [
+    {
+      "group": "board and card games",
+      "words": [
+        "game",
+        "games",
+        "tabletop game",
+        "game night",
+        "playing"
+      ],
+      "entries": [
+        "set of domino tiles",
+        "mechanical puzzle box",
+        "chess board",
+        "deck of cards",
+        "dice",
+        "board game",
+        "jigsaw puzzle"
+      ]
+    },
+    {
+      "group": "outdoor toys",
+      "words": [
+        "toys",
+        "outdoor play",
+        "playing outside",
+        "childhood games",
+        "park"
+      ],
+      "entries": [
+        "wooden ring-toss set",
+        "yo-yo",
+        "kite",
+        "paper airplane",
+        "spinning top",
+        "balloon",
+        "marbles"
+      ]
+    },
+    {
+      "group": "plush and play toys",
+      "words": [
+        "toy",
+        "toys",
+        "playroom",
+        "nostalgia",
+        "playing"
+      ],
+      "entries": [
+        "teddy bear",
+        "rubber duck",
+        "building blocks",
+        "toy train",
+        "kaleidoscope",
+        "rocking horse"
+      ]
+    },
+    {
+      "group": "arcade and video games",
+      "words": [
+        "video games",
+        "gaming",
+        "gamer",
+        "arcade",
+        "playing video games"
+      ],
+      "entries": [
+        "tabletop pinball machine",
+        "video game controller"
+      ]
+    }
   ]
 }

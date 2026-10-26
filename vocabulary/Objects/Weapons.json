@@ -2,26 +2,84 @@
   "name": "Weapons",
   "category": "Objects & Props",
   "description": "Historical and fictional weapons and defensive equipment. Entries identify equipment without requiring its use or adding a conflict.",
-  "entries": [
-    "wooden practice sword",
-    "buckler with a raised metal rim",
-    "halberd with a hooked blade",
-    "flintlock pistol with an engraved stock",
-    "curved saber with a knuckle guard",
-    "trident with three evenly spaced prongs",
-    "two-handed poleaxe",
-    "compact science-fiction stun device",
-    "folding energy shield with a visible emitter",
-    "ceremonial mace with an inlaid handle",
-    "longsword",
-    "crossbow",
-    "plasma rifle",
-    "round shield with a central grip",
-    "long spear",
-    "recurved bow with a taut string",
-    "quarterstaff",
-    "sling with a leather pouch",
-    "single-headed war hammer",
-    "short dagger in a sheath"
+  "groups": [
+    {
+      "group": "swords and blades",
+      "words": [
+        "sword",
+        "blade",
+        "swordsman",
+        "swordplay",
+        "knight",
+        "melee"
+      ],
+      "entries": [
+        "wooden practice sword",
+        "curved saber with a knuckle guard",
+        "longsword",
+        "short dagger in a sheath"
+      ]
+    },
+    {
+      "group": "polearms and staffs",
+      "words": [
+        "polearm",
+        "pole weapon",
+        "guard",
+        "soldier",
+        "reach"
+      ],
+      "entries": [
+        "halberd with a hooked blade",
+        "trident with three evenly spaced prongs",
+        "two-handed poleaxe",
+        "long spear",
+        "quarterstaff"
+      ]
+    },
+    {
+      "group": "shields",
+      "words": [
+        "shield",
+        "defense",
+        "defending",
+        "blocking"
+      ],
+      "entries": [
+        "buckler with a raised metal rim",
+        "folding energy shield with a visible emitter",
+        "round shield with a central grip"
+      ]
+    },
+    {
+      "group": "bows and ranged weapons",
+      "words": [
+        "ranged weapon",
+        "shooting",
+        "aiming",
+        "projectile"
+      ],
+      "entries": [
+        "flintlock pistol with an engraved stock",
+        "compact science-fiction stun device",
+        "crossbow",
+        "plasma rifle",
+        "recurved bow with a taut string",
+        "sling with a leather pouch"
+      ]
+    },
+    {
+      "group": "blunt weapons",
+      "words": [
+        "blunt weapon",
+        "club",
+        "bludgeon",
+        "heavy weapon"
+      ],
+      "entries": [
+        "ceremonial mace with an inlaid handle",
+        "single-headed war hammer"
+      ]
+    }
   ]
 }

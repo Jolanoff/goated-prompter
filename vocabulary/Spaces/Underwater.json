@@ -2,26 +2,39 @@
   "name": "Underwater",
   "category": "Spaces",
   "description": "Submerged natural and built environments. Entries describe surroundings; they do not give human subjects the ability to breathe or move underwater unaided.",
-  "entries": [
-    "coral reef shelf with sandy channels between branching formations",
-    "kelp forest with broad lanes between anchored stems",
-    "shallow seagrass meadow above rippled sand",
-    "submerged limestone arch over a gravel floor",
-    "sunken cargo ship with open deck passages",
-    "flooded stone courtyard with silt-covered paving",
-    "underwater lava tube with a broad entrance chamber",
-    "continental slope with ledges descending into blue water",
-    "hydrothermal vent field with mineral chimneys on dark rock",
-    "freshwater spring basin with clear water above pale sand",
-    "submerged forest with bare trunks rising from a lakebed",
-    "polar seabed beneath a thick ice ceiling",
-    "shallow lagoon with coral rubble around a sandy clearing",
-    "underwater canyon with terraced rock walls",
-    "sunken aircraft resting on a flat sandy bottom",
-    "abandoned submerged observatory with a cracked outer dome",
-    "artificial reef formed from concrete modules",
-    "flooded quarry with stepped stone benches",
-    "underwater tunnel beneath a harbor breakwater",
-    "mangrove root chamber beneath a sheltered tidal pool"
+  "groups": [
+    {
+      "group": "underwater",
+      "words": [
+        "underwater",
+        "under the sea",
+        "seabed",
+        "ocean floor",
+        "submerged",
+        "diving"
+      ],
+      "entries": [
+        "coral reef shelf with sandy channels between branching formations",
+        "kelp forest with broad lanes between anchored stems",
+        "shallow seagrass meadow above rippled sand",
+        "submerged limestone arch over a gravel floor",
+        "sunken cargo ship with open deck passages",
+        "flooded stone courtyard with silt-covered paving",
+        "underwater lava tube with a broad entrance chamber",
+        "continental slope with ledges descending into blue water",
+        "hydrothermal vent field with mineral chimneys on dark rock",
+        "freshwater spring basin with clear water above pale sand",
+        "submerged forest with bare trunks rising from a lakebed",
+        "polar seabed beneath a thick ice ceiling",
+        "shallow lagoon with coral rubble around a sandy clearing",
+        "underwater canyon with terraced rock walls",
+        "sunken aircraft resting on a flat sandy bottom",
+        "abandoned submerged observatory with a cracked outer dome",
+        "artificial reef formed from concrete modules",
+        "flooded quarry with stepped stone benches",
+        "underwater tunnel beneath a harbor breakwater",
+        "mangrove root chamber beneath a sheltered tidal pool"
+      ]
+    }
   ]
 }

@@ -2,26 +2,70 @@
   "name": "Sci-Fi",
   "category": "Spaces",
   "description": "Science-fiction habitats, infrastructure and settlements. Entries describe futuristic environments and usable layouts, not ordinary contemporary locations.",
-  "entries": [
-    "lunar transit terminal with airlocks along a central platform",
-    "fusion reactor control gallery behind reinforced glass",
-    "generation ship orchard beneath a vaulted artificial sky",
-    "gravity-ring exercise deck following a curved outer wall",
-    "alien ruin with interlocking geometric chambers",
-    "orbital elevator arrival hall with panoramic viewing bays",
-    "microgravity cargo hub with handrails along every surface",
-    "desert terraforming station beside immense condenser towers",
-    "modular colony clinic with transparent diagnostic partitions",
-    "deep-space listening array with a shielded operations shelter",
-    "spaceship bridge",
-    "neon megacity street",
-    "orbital station",
-    "planetary habitat greenhouse with planted rows beside a service aisle",
-    "spaceport maintenance bay with a central platform and recessed equipment racks",
-    "undersea research habitat with observation windows and a clear central walkway",
-    "asteroid excavation chamber with terraced work platforms",
-    "rotating habitat promenade following the curve of its inner wall",
-    "remote survey outpost with modular shelters around a sealed courtyard",
-    "automated archive vault with access galleries between storage towers"
+  "groups": [
+    {
+      "group": "ships and stations",
+      "words": [
+        "spaceship",
+        "space station",
+        "starship",
+        "orbital",
+        "in space"
+      ],
+      "worlds": [
+        "sci-fi"
+      ],
+      "entries": [
+        "lunar transit terminal with airlocks along a central platform",
+        "generation ship orchard beneath a vaulted artificial sky",
+        "gravity-ring exercise deck following a curved outer wall",
+        "orbital elevator arrival hall with panoramic viewing bays",
+        "microgravity cargo hub with handrails along every surface",
+        "spaceship bridge",
+        "orbital station",
+        "spaceport maintenance bay with a central platform and recessed equipment racks",
+        "rotating habitat promenade following the curve of its inner wall"
+      ]
+    },
+    {
+      "group": "colonies and outposts",
+      "words": [
+        "colony",
+        "outpost",
+        "alien planet",
+        "habitat",
+        "base"
+      ],
+      "worlds": [
+        "sci-fi"
+      ],
+      "entries": [
+        "alien ruin with interlocking geometric chambers",
+        "desert terraforming station beside immense condenser towers",
+        "modular colony clinic with transparent diagnostic partitions",
+        "deep-space listening array with a shielded operations shelter",
+        "planetary habitat greenhouse with planted rows beside a service aisle",
+        "undersea research habitat with observation windows and a clear central walkway",
+        "asteroid excavation chamber with terraced work platforms",
+        "remote survey outpost with modular shelters around a sealed courtyard"
+      ]
+    },
+    {
+      "group": "high-tech cities and labs",
+      "words": [
+        "futuristic",
+        "cyberpunk",
+        "high-tech",
+        "future city"
+      ],
+      "worlds": [
+        "sci-fi"
+      ],
+      "entries": [
+        "fusion reactor control gallery behind reinforced glass",
+        "neon megacity street",
+        "automated archive vault with access galleries between storage towers"
+      ]
+    }
   ]
 }
