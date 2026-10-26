@@ -15,7 +15,7 @@ from goated_prompter.features.dataset.v2.safety import adults_only_error, minor_
 from goated_prompter.workflow_output import ideogram_json
 from tests.helpers import enter_context
 from tests.support.backends import ScriptedBackend
-from tests.support.dataset_scenes import composer_user, without_places
+from tests.support.dataset_scenes import composer_user, without_looks, without_places
 
 NARUTO = "uzumaki naruto, naruto \\(series\\)"
 HINATA = "hyuuga hinata, naruto \\(series\\)"
@@ -174,7 +174,7 @@ class TriggerCast(unittest.TestCase):
     def test_an_exact_character_trigger_makes_its_person_known_and_a_meaning_one_does_not(self):
         brief = brief_for()
         self.assertEqual([(person["known"], person["triggers"]) for person in brief["characters"]], [(True, [1]), (True, [2])])
-        self.assertEqual(brief["version"], 16)
+        self.assertEqual(brief["version"], 17)
         self.assertEqual(understanding.validate_brief(brief), brief)
         meaning = brief_for(triggers=[trigger("red-haired elf girl", "character", expand="on")], cast=mara(1))
         self.assertEqual([person["known"] for person in meaning["characters"]], [False])
@@ -214,7 +214,7 @@ class KnownCharacters(unittest.TestCase):
         brief = {key: value for key, value in brief_for().items() if key not in ("kept", "consistency", "kept_words", "places")}
         brief["version"] = 11
         for person in brief["characters"]:
-            del person["known"], person["triggers"]
+            del person["known"], person["triggers"], person["appearance"]
         brief["input"] = {key: value for key, value in brief["input"].items() if key != "triggers"}
         brief["input"].update(trigger="ohwx", trigger_at_start=True)
         self.assertEqual(understanding.validate_brief(brief), brief)
@@ -236,6 +236,7 @@ class KnownCharacters(unittest.TestCase):
 class KnownCharacterScenes(unittest.TestCase):
     def setUp(self):
         without_places(self)
+        without_looks(self)
         self.calls = []
         self.backend = MockBackend()
         enter_context(self, patch.object(self.backend, "generate", side_effect=self.generate))

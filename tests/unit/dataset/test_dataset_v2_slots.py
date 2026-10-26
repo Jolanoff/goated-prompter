@@ -15,7 +15,7 @@ from goated_prompter.features.dataset.v2 import prompts, scenes, understanding
 from goated_prompter.local_jobs import Job
 
 PLACE = re.compile(r"location(\d+)")
-from tests.support.dataset_scenes import composer_user, without_places
+from tests.support.dataset_scenes import composer_user, without_looks, without_places
 
 
 class SlotIdentityTests(unittest.TestCase):
@@ -23,6 +23,7 @@ class SlotIdentityTests(unittest.TestCase):
 
     def setUp(self):
         without_places(self)
+        without_looks(self)
         self.config = {"backend": "mock"}
         self.request = GoatedPrompterRequest(idea="Adult reading", planning_mode="Direct", director_preset="general_director")
         self.failing = {"omitted": set(), "description": set()}  # omitted: the answer stops before this image

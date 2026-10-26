@@ -108,6 +108,23 @@ class Bundled(unittest.TestCase):
         self.assertEqual(near, [], "near copies")
         self.assertFalse([entry for entry in entries if adult_text(entry)])
 
+    def test_the_built_in_looks_are_hair_eyes_and_skin_in_one_female_and_one_male_group(self):
+        # Looks the run deals to people whose looks vary: build and marks come from the request, never from a look, and
+        # no two looks share their eyes and skin.
+        from goated_prompter.features.dataset.v2.safety import adult_text
+        from goated_prompter.features.vocabulary.retrieval import entry_name as head
+        always = catalog.always_on(load_catalog(user_root=False), "Subjects")
+        self.assertEqual([pack["id"] for pack in always], ["Subjects/Female", "Subjects/Male"])
+        self.assertEqual([[group["name"] for group in pack["groups"]] for pack in always], [["female"], ["male"]])
+        entries = [entry for pack in always for entry in pack["entries"]]
+        self.assertFalse([entry for entry in entries if not re.fullmatch(r"\S.* with \S.* eyes and \S.* skin", entry)],
+                         "hair, then eyes and skin")
+        self.assertEqual(len({head(entry).casefold() for entry in entries}), len(entries), "every look has its own name")
+        pairs = [entry.split(" with ", 1)[1] for entry in entries]
+        self.assertEqual(len(set(pairs)), len(pairs), "every look has its own eyes and skin")
+        words = [word for pack in always for group in pack["groups"] for word in group["words"]]
+        self.assertFalse([text for text in [*words, *entries] if adult_text(text)])
+
 
 class Library(unittest.TestCase):
     """A synthetic library copied from the bundled Core."""

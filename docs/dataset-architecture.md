@@ -26,10 +26,11 @@ Each file is read on its own: one that cannot be read is reported with its reaso
 `GET /api/vocabulary/catalog` returns categories, packs and problems. Adding a category is one entry in each Core file
 plus its folder. Packs carry no compatibility data. Instead of `entries` a pack may hold `groups`:
 `[{"group", "words": [up to MAX_WORDS], "entries", "worlds"?, "adult_default"?}]` (worlds from
-`options.dataset.WORLDS`, every world when none), each entry in one group only; the pack's
-entries are all its groups' entries. A built-in pack may be `"always": true`: it is loaded for every run, selected or
-not (`always_on`). `vocabulary/Spaces/Everyday-Places.json` is the one always-on pack: 108 everyday places in 57
-groups, each group's places fitting every one of its words.
+`options.dataset.WORLDS`, every world when none), each entry in one group only; the pack's entries are all its groups' entries. A built-in pack may be `"always": true`: it is
+loaded for every run, selected or not (`always_on`). The always-on packs are the places of `vocabulary/Spaces/`
+(Everyday-Places, Fantasy-Places, Outer-Space, Backdrops, Fun-and-Creative-Places: groups of 20 to 50, each group's
+places fitting every one of its words) and the looks of `vocabulary/Subjects/` (Female and Male, one group each,
+named `female` and `male`).
 
 Vocabulary engine (`features/vocabulary/`), shared by every category, Spaces first; each part has one job.
 Understanding (the brief) says what a request asks for and allows; retrieval finds the entries a text names; selection
@@ -47,11 +48,18 @@ category's.
   corridor's "hall", "a cozy bedroom" is a bedroom); without exact words, the one group that stands out from all the others
   (`relevance` at least `MATCH_Z` and `MATCH_LEAD` above the next). Found groups keep only the entries the text points to: their name, or details the
   group's words do not explain, by meaning (`narrowed`, `NARROW_Z`: "a rainy street", "a white background"). A weak
-  match is never forced. `fit_scores` says how
+  match is never forced. Entries made of parts (`entry_parts`: "copper red hair with blue eyes and fair skin" is hair,
+  eyes and skin, each named by its last word) are searched part by part (`requested_parts`): what a text asks of a part
+  fixes that part ("ginger": the hair, "green eyes": the eyes) and every other part stays free, word for word within
+  one part ("dark skin" is "dark umber skin", not "dark brown eyes"), in any form of a word (`word_stem`: freckles,
+  freckled), a word that starts with one a part says read as it ("redhead": red). What no part holds, contradicts a
+  detail before it in the same part, or needs a part no entry has beside the fixed ones (a beard beside hair) is
+  returned in the text's own words ("tall", "sleeve tattoos"). `fit_scores` says how
   well entries go with another category's entry; `telling_words` gives each entry the words that tell it apart.
 - `selection.py`: `diverse_order` puts groups in an order where each next one is unlike those before it, `deal_spread`
   deals a set across them (no entry repeats before all have been dealt, a group whose entries are used up is passed
-  over), and `pair` moves dealt entries between images so each goes with the other category's entry on its image
+  over), `deal_composed` deals entries made of parts with the fixed parts dealt into them and every other part varying
+  with the dealt entry, and `pair` moves dealt entries between images so each goes with the other category's entry on its image
   through the category's own fit (the same entries, only swapped).
 
 Places (`v2/scenes/places.py`): when the place is free, or kept by the user's words, every image is dealt one place
@@ -76,6 +84,30 @@ and the writer chooses as before. `python -m tests.eval.places` measures this on
 (`tests/eval/cases/places.json`, and `places_heldout.json`, never used to tune a setting), with Understanding's ideas
 captured once by `python -m tests.eval.capture_ideas`.
 
+Requested details (`v2/scenes/looks.py`): every character's `appearance` (Understanding: the request's own words about
+how that person looks: an age, hair, eyes, skin, a beard, tattoos, a piercing) holds in every image, whatever the
+vocabulary, known characters and guided scenes included. What no dealt look holds goes with every image as that
+person's `details` (`requested_details`, `DETAILS_RULE`), and code adds a detail a scene leaves out (none of its words on
+that person or in its extras) to the extras in the request's own words (`with_details`, after the copied-props check;
+a writer asked again three times still left a beard out). A person gets nothing the request and their look do not
+give (no scars, wounds or tattoos of the writer's own).
+
+Looks (`v2/scenes/looks.py`): every human whose looks vary (`varied_labels`: not known, triggered, named or held by a
+locked subject; not a custom character) is dealt a look in every image from the built-in looks (`look_groups`: the
+always-on Subjects groups, `female` in `Subjects/Female` and `male` in `Subjects/Male`), with no model call
+(`deal_looks`). A look is a hair style and colour, eyes and skin tone: a base that keeps the set's people apart. A
+person's gender finds their group by the group's words (`exact_search`); a person of unspecified gender gets looks of
+either. Their label and appearance fix only the parts of a look they name (`requested_parts`: "redhead", "brunette",
+"freckles", "blue-eyed") and every other part varies (`deal_composed`): a ginger man with green eyes gets ginger hair
+and green eyes in every image with different hairstyles, eye shapes and skin, where whole looks gave him one look
+throughout. No look is dealt again before all have been, and the people of one image get different looks. Looks are
+not searched by meaning: their words are too much alike for it ("a tall woman" ranks a blonde look first). Each image
+in IMAGES carries its `looks` (`{label: look}`) and the writer gets `LOOK_RULE`: it keeps the look's colours and
+hairstyle and describes the person as before; build follows the request or is chosen anew for every image, and a
+character with no look (an animal) still varies. A scene whose person's skin, hair and eyes have none of the look's
+telling words or the request's own words is asked again (`look_problems`, `look_words`). With the user's own Subjects
+packs selected, or guided scenes, no look is dealt and the writer chooses as before.
+
 Selection: the Dataset tab's Vocabulary Library selects packs by hand (search, category filter, preview,
 Apply/Cancel); the selected ids are the draft's `vocabulary_packs`, saved with the other Dataset settings. They are
 not part of the review signature, so changing them needs no new Understanding. Confirm checks them against the
@@ -87,8 +119,13 @@ its type (character, style, outfit, object, other), whether code places its exac
 meaning (`on`) or both, and whether it goes first. Only the user knows what a token stands for, so nothing guesses it. A draft or brief from before the list reads its one trigger as an exact "other"
 trigger.
 
-Understanding (brief version 16) records the subject type, participant count, stated attributes, the central
-activity, and what stays fixed and what varies, plus `places`: the user's words for what surrounds the place
+Understanding (brief version 17) records everyone who appears (`characters`: each person, animal, creature, robot or
+named character, even when the request is mostly about what they do or where they are; none for an object, product,
+place or style on its own), and code derives the path from that list and the NSFW switch, so the model never judges
+whether "characters are the point" (it listed no one for a man reading in a cafe, a chef or a cat; `python -m
+tests.eval.understanding_cast` runs requests of every kind of cast). It also records the participant count, stated
+attributes, the central activity, what stays fixed and what varies, each character's `appearance` (the request's own words about how that
+person looks, kept only where the user wrote them), plus `places`: the user's words for what surrounds the place
 (`setting`), the `world` of the surroundings and always 6 to 8 `ideas` of where it can happen (for a named place, only
 that place or its kinds). Each kept part has its own words: a time of day is light, the weather is mood, and every
 act stays under action. The model fills the parts in `KEPT_ORDER` (who and what happens first), and code
@@ -134,8 +171,8 @@ vocabulary spreads over the set. In a category with entries about something the 
 with it that is rare in that category, `requested_entries`): when the request names only that thing, every image gets
 only the entry it names (`named_entries`); when it also names the category or one of its packs (it asks for the kind in
 general), every image gets one of those entries and one other; suggestions are optional: the writer uses the ones that fit the image, or none,
-and never adds a subject or object only to use one. Only `always` packs are used without a selection (Places, below): character looks come from the request
-and approved requirements, with vocabulary guidance only from manually selected Subjects packs. A known character has
+and never adds a subject or object only to use one. Only `always` packs are used without a selection (Places and Looks, above): character looks come from the request,
+the approved requirements and the dealt looks, with vocabulary guidance only from manually selected Subjects packs. A known character has
 only an expression in its scene; its look comes from its name, never from the writer or vocabulary. With known
 characters each scene also has a frame per person; each image is dealt the frame its known characters get
 (`deal_frames`), unless the request keeps the camera (the framing, the shot or which body parts must show), which then

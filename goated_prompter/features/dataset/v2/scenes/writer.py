@@ -8,6 +8,7 @@ from .....backends.recovery import GenerationRecovery, RunawayRecoveryError
 from .checks import (_summary, framed_to_camera, framing_problems, retire_fields, scene_errors, unnamed_people,
                      without_copied_props, without_entry_copy)
 from .entries import _entry_key
+from .looks import look_problems, with_details
 from .places import place_problems
 from .request import _labels, compose_instruction, subject_fields
 from .settings import ROUNDS, SECTIONS
@@ -52,6 +53,8 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
                    **({"frame": plan["frames"][number]} if plan.get("frames") else {}),
                    **({"place": plan["places"][number]} if plan.get("places") else {}),
                    **({"setting": plan["setting"]} if plan.get("places") and plan.get("setting") else {}),
+                   **({"looks": plan["looks"][number]} if (plan.get("looks") or {}).get(number) else {}),
+                   **({"details": plan["details"]} if plan.get("details") else {}),
                    **({"suggested": plan["hands"][number]} if (plan.get("hands") or {}).get(number) else {})}
                   for number in todo]
         errors = sorted({f"image {number}: {reason}" for number in todo for reason in reasons[number]})
@@ -88,6 +91,10 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
                 elif plan.get("places") and (elsewhere := place_problems(scene, plan["places"][number],
                                                                          plan.get("place_words"))):
                     problems = elsewhere  # the dealt place is binding, never a suggestion
+                elif (plan.get("looks") or {}).get(number) and (unlike := [
+                        problem for label, look in plan["looks"][number].items()
+                        for problem in look_problems(scene, label, look, plan.get("look_words"))]):
+                    problems = unlike  # the dealt look is binding too
             if problems:
                 reasons[number] = problems
                 progress(rejected_note(number, problems[0], scene))
@@ -96,6 +103,7 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
             suggested = [entry for hand in ((plan.get("hands") or {}).get(number) or {}).values() for entry in hand]
             scene = without_copied_props(scene, plan.get("props") or (), suggested,
                                          [item["extras"] for item in earlier] + [item["extras"] for item in scenes.values()])
+            scene = with_details(scene, plan.get("details"))  # after the copied props: they are in every image
             finished = {"slot": number, **{key: scene[key] for key in SECTIONS}}
             if brief["_known"]:
                 finished["frame"] = scene["frame"]

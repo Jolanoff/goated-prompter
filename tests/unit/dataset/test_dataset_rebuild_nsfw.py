@@ -10,12 +10,13 @@ from goated_prompter.backends.mock import MockBackend
 from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.dataset.v2.draft import default_dataset_draft
 from goated_prompter.features.dataset.v2 import prompts, scenes, understanding
-from tests.support.dataset_scenes import composer_user, without_places
+from tests.support.dataset_scenes import composer_user, without_looks, without_places
 
 
 class AdultDatasetTests(unittest.TestCase):
     def setUp(self):
         without_places(self)
+        without_looks(self)
         self.backend = MockBackend()
         self.calls = []
         self.understood = None
@@ -119,7 +120,7 @@ class AdultDatasetTests(unittest.TestCase):
         self.assertEqual(brief["path"], "nsfw_character")
         self.assertEqual(brief["people"], 1)
         self.assertEqual(len(self.users("understanding")), 2)
-        self.assertIn('path must be "character"', self.calls[1].system_message)
+        self.assertIn("the request is about people: list them in characters", self.calls[1].system_message)
 
     def test_stated_bodies_roles_and_interaction_reach_the_composer_and_builder(self):
         data = self.scenario([

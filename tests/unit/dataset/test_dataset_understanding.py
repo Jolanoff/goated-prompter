@@ -49,9 +49,38 @@ class Understanding(unittest.TestCase):
         self.assertIn("explicit scene", result["summary"])
         self.assertEqual(result["input"]["request"], "2 adult men in an explicit scene", "the request itself is kept word for word")
 
+    def test_each_character_keeps_the_requests_own_words_about_how_it_looks(self):
+        # Live sets lost a requested beard, tattoos and age: they had no owner past the subject's words.
+        answer = json.loads(TWO_MEN)
+        answer["characters"] = [{"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 2,
+                                 "appearance": "short beard, a scar on the cheek and sleeve tattoos"},
+                                {"label": "woman", "gender": "female", "custom": "", "pronoun": "she", "count": 1}]
+        result, _ = self.understand([json.dumps(answer)], subject="two men with sleeve tattoos and a short beard, a woman")
+        self.assertEqual([(person["label"], person["appearance"]) for person in result["characters"]],
+                         [("man 1", "short beard, sleeve tattoos"), ("man 2", "short beard, sleeve tattoos"),
+                          ("woman", "")], "only words the user wrote, for every person of the entry")
+        self.assertIn("appearance", understanding.instruction({"subject": "x"}).json_schema["properties"]["characters"]
+                      ["items"]["properties"])
+
+    def test_the_path_follows_who_appears_and_the_model_never_judges_it(self):
+        # A model that first judged whether "characters are the point" listed no one for a man reading in a cafe, a
+        # chef, a cat or a robot; a cast and a path could also disagree.
+        man = {"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 1}
+        answer = {**json.loads(MAGICAL_FIRST), "path": "non_character", "characters": [man]}
+        result, calls = self.understand([json.dumps(answer)], subject="a man reading a book in a cafe")
+        self.assertEqual((result["path"], [person["label"] for person in result["characters"]], len(calls)),
+                         ("sfw_character", ["man"], 1), "the cast decides, a stray path is ignored")
+        self.assertNotIn("path", calls[0].json_schema["properties"])
+        self.assertIn("even when the request is mostly about what they do, what they hold or where they are",
+                      " ".join(calls[0].system_message.split()))
+        result, _ = self.understand([json.dumps({**answer, "characters": []})], subject="a perfume bottle on a table")
+        self.assertEqual(result["path"], "non_character", "no one appears")
+        result, _ = self.understand([json.dumps({**answer, "characters": [man]})], subject="a man in a cafe", nsfw=True)
+        self.assertEqual(result["path"], "nsfw_character")
+
     def test_understanding_never_chooses_vocabulary(self):
         result, calls = self.understand([TWO_MEN], subject="2 adult men in an explicit scene", nsfw=True)
-        self.assertEqual(result["version"], 16)
+        self.assertEqual(result["version"], 17)
         self.assertNotIn("intent", result)
         self.assertEqual(set(calls[0].json_schema["properties"]), set(understanding.MODEL_FIELDS))
         for word in ("pack", "vocabulary"):
@@ -85,10 +114,10 @@ class Understanding(unittest.TestCase):
     def test_nsfw_adult_request_without_people_is_still_sent_back(self):
         errors = understanding.model_errors(understanding.recover(json.loads(MAGICAL_FIRST)), True,
                                             {"subject": "two people in an explicit scene", "source_mode": "random"})
-        self.assertTrue(any("path must be" in error for error in errors), errors)
+        self.assertTrue(any("list them in characters" in error for error in errors), errors)
 
     def test_unrecoverable_answers_still_fail_after_one_retry(self):
-        broken = json.dumps({**json.loads(MAGICAL_FIRST), "path": "landscape"})
+        broken = json.dumps({**json.loads(MAGICAL_FIRST), "characters": "nobody"})
         with self.assertRaisesRegex(ValueError, "invalid answer twice"):
             self.understand([broken, broken])
 

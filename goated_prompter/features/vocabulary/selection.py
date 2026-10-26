@@ -2,14 +2,15 @@
 every category; the category's owner says which groups and how its entries go with another category's (pair).
 
 diverse_order puts the groups in an order where each next one is unlike those before it, deal_spread deals the set
-across them without repeating an entry before all have been dealt, and pair moves the dealt entries between the images
-so each one goes with the other category's entry dealt to the same image.
+across them without repeating an entry before all have been dealt, deal_composed deals entries made of parts with
+the parts a request fixes (retrieval.requested_parts) put in and every other part left free, and pair moves the dealt
+entries between the images so each one goes with the other category's entry dealt to the same image.
 """
 
 import math
 
 from .embeddings import dot
-from .retrieval import zscores
+from .retrieval import entry_parts, zscores
 
 
 def diverse_order(groups, scores, vectors=None, balance=.5):
@@ -47,6 +48,21 @@ def deal_spread(groups, total, rng, locked=False):
             rng.shuffle(decks[index])
         dealt[number], turn = decks[index].pop(), index + 1
     return {number: dealt[1] for number in dealt} if locked else dealt
+
+
+def deal_composed(groups, fixed, total, rng):
+    """{slot: entry} like deal_spread, for entries made of parts (retrieval.entry_parts): each dealt entry has every
+    facet in fixed, and its part of that facet is replaced by one of fixed's parts for it, dealt on its own, so what is
+    fixed holds in every image while every other part varies with the dealt entry ({} without such an entry)."""
+    shaped = [{**group, "entries": [entry for entry in group["entries"]
+                                    if set(fixed) <= {facet for facet, _ in entry_parts(entry)}]} for group in groups]
+    dealt = deal_spread(shaped, total, rng)
+    for facet, parts in fixed.items():
+        chosen = deal_spread([{"name": facet, "entries": list(parts)}], total, rng)
+        for number, entry in dealt.items():
+            own = next(part for name, part in entry_parts(entry) if name == facet)
+            dealt[number] = entry.replace(own, chosen[number], 1)
+    return dealt
 
 
 def pair(dealt, partners, fit):

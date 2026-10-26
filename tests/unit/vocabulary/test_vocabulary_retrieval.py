@@ -52,6 +52,48 @@ class ExactWords(unittest.TestCase):
         self.assertEqual(retrieval.narrowed(lobby, "in the lobby"), lobby, "only a whole name narrows")
         self.assertEqual(retrieval.entry_name("attic bedroom with a round window"), "attic bedroom")
 
+    def test_an_entry_is_made_of_parts_named_by_what_they_describe(self):
+        self.assertEqual(retrieval.entry_parts("long salt-and-pepper hair with grey-green eyes and fair skin"),
+                         [("hair", "long salt-and-pepper hair"), ("ey", "grey-green eyes"), ("skin", "fair skin")])
+        self.assertEqual([facet for facet, _ in retrieval.entry_parts("bald head and a short beard with grey eyes")],
+                         ["head", "beard", "ey"])
+
+    def test_a_request_fixes_only_the_parts_it_names(self):
+        looks = [group("female", ["woman"], ["copper red hair with blue eyes and freckled fair skin",
+                                             "long wavy black hair with grey eyes and dark umber skin",
+                                             "sleek brown hair with dark brown eyes and pale skin",
+                                             "short red hair with wide pale blue eyes and tan skin"])]
+        asked = lambda text: retrieval.requested_parts(looks, text)
+        self.assertEqual(asked("a woman with red hair and blue eyes"),
+                         ({"hair": ["copper red hair", "short red hair"], "ey": ["blue eyes", "wide pale blue eyes"]}, []),
+                         "a live ginger man with green eyes kept one whole look, hairstyle and skin, in every image")
+        self.assertEqual(asked("a freckled redhead")[0], {"skin": ["freckled fair skin"],
+                                                          "hair": ["copper red hair", "short red hair"]},
+                         "word forms and a word that starts with a part's word")
+        self.assertEqual(asked("a blue-eyed woman with dark skin")[0],
+                         {"ey": ["blue eyes", "wide pale blue eyes"], "skin": ["dark umber skin"]},
+                         "dark brown eyes are not dark skin")
+        self.assertEqual(asked("a pale woman")[0], {"skin": ["pale skin"]}, "pale sits nearest skin's own word")
+        self.assertEqual(asked("a woman with long hair")[0], {"hair": ["long wavy black hair"]})
+        self.assertEqual(asked("a tall woman in a brown dress"), ({}, ["tall", "brown dress"]),
+                         "what no part says is returned in the text's own words")
+        self.assertEqual(asked("a 22 year old woman with red hair and black hair and a nose ring"),
+                         ({"hair": ["copper red hair", "short red hair"]}, ["22 year old", "nose ring", "black hair"]),
+                         "a detail that contradicts one before it in the same part")
+        self.assertEqual(retrieval.requested_parts([], "a woman with red hair"), ({}, ["woman", "red hair"]),
+                         "without entries every detail is the text's own")
+        self.assertEqual((retrieval.word_stem("freckles"), retrieval.word_stem("freckled"), retrieval.word_stem("red"),
+                          retrieval.word_stem("blond"), retrieval.word_stem("blonde")),
+                         ("freckl", "freckl", "red", "blond", "blond"))
+
+    def test_a_part_no_entry_has_beside_the_fixed_ones_stays_the_texts_own(self):
+        looks = [group("male", ["man"], ["ginger hair with green eyes and fair skin", "black hair with brown eyes and tan skin",
+                                         "bald head and a short boxed beard with grey eyes and pale skin"])]
+        self.assertEqual(retrieval.requested_parts(looks, "a ginger man with a short beard"),
+                         ({"hair": ["ginger hair"]}, ["short beard"]), "no look has hair and a beard")
+        self.assertEqual(retrieval.requested_parts(looks, "a bald man with a short beard")[0],
+                         {"head": ["bald head"], "beard": ["a short boxed beard"]})
+
     def test_groups_come_from_the_selected_packs_first_and_list_an_entry_once(self):
         catalog = {"packs": [{"id": "data/Spaces/Mine", "category": "Spaces", "entries": ["my bedroom", "a rooftop"]},
                              {"id": "Spaces/Everyday-Places", "category": "Spaces", "always": True,
@@ -202,6 +244,18 @@ class SpreadDeal(unittest.TestCase):
         self.assertEqual({dealt[1], dealt[4]}, {"bed 1", "bed 2"}, "a different entry each time a group comes back")
         self.assertEqual(len(set(selection.deal_spread(pool, 5, random.Random(1), locked=True).values())), 1)
         self.assertEqual(selection.deal_spread([], 5, random.Random(1)), {})
+
+    def test_composed_entries_keep_the_fixed_parts_and_vary_the_rest(self):
+        pool = [group("male", entries=["black hair with brown eyes and tan skin", "blond hair with grey eyes and pale skin",
+                                       "brown hair with blue eyes and olive skin",
+                                       "bald head and a beard with hazel eyes and dark skin"])]
+        fixed = {"hair": ["ginger hair", "short ginger hair"], "ey": ["green eyes"]}
+        dealt = selection.deal_composed(pool, fixed, 3, random.Random(2))
+        self.assertTrue(all(look.startswith(("ginger hair with green eyes", "short ginger hair with green eyes"))
+                            for look in dealt.values()), dealt)
+        self.assertEqual({look.rsplit(" and ", 1)[1] for look in dealt.values()}, {"tan skin", "pale skin", "olive skin"},
+                         "every part the request leaves free varies, from entries that have the fixed parts")
+        self.assertEqual(len(set(selection.deal_composed(pool, {}, 4, random.Random(2)).values())), 4)
 
 
 if __name__ == "__main__":

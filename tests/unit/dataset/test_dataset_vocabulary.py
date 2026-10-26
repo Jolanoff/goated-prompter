@@ -13,7 +13,7 @@ from goated_prompter.features.dataset.v2 import prompts, scenes, understanding
 from goated_prompter.features.dataset.v2.draft import default_dataset_draft, validate_dataset_draft
 from goated_prompter.features.dataset.v2.tickets import intent_signature
 from goated_prompter.features.vocabulary.catalog import load_catalog
-from tests.support.dataset_scenes import composer_user, without_places
+from tests.support.dataset_scenes import composer_user, without_looks, without_places
 
 SCENE = {"skin": "fair", "build": "slim", "hair": "long silver hair", "eyes": "grey", "expression": "a soft smile", "clothing": "a robe"}
 
@@ -21,6 +21,7 @@ SCENE = {"skin": "fair", "build": "slim", "hair": "long silver hair", "eyes": "g
 class SceneVocabulary(unittest.TestCase):
     def setUp(self):
         without_places(self)
+        without_looks(self)
         self.catalog = load_catalog(user_root=False)
         romance = next(pack for pack in self.catalog["packs"] if pack["id"] == "Actions & Poses/Romance")["entries"]
         self.dance = next(entry for entry in romance if entry.startswith("Slow dance:"))

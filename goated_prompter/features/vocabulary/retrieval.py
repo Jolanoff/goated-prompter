@@ -15,6 +15,9 @@ hall" is not the corridor's "hall", "a cozy bedroom" is a bedroom); without exac
 out from all the others (MATCH_Z, MATCH_LEAD). The found groups keep only the entries the text points to (narrowed:
 their name, or the details the group's words do not explain). A text no group clearly answers finds nothing: a weak
 match is never forced.
+requested_parts: what a text asks of each part of entries made of parts ("ginger" of the hair, "green eyes" of the
+eyes), word for word in any form, for entries too alike in meaning to tell apart by it, and the details no part holds
+(dataset/v2/scenes/looks.py).
 """
 
 import math
@@ -45,6 +48,15 @@ def base_word(word):
 def word_sequence(text):
     """Every word of a text in order, plural endings and a possessive "'s" aside."""
     return tuple(base_word(word) for word in re.findall(r"[a-z0-9]+", re.sub(r"['’]s\b", "", str(text or "").casefold())))
+
+
+def word_stem(word):
+    """A word without its regular ending, so the forms of a word read alike ("freckles", "freckled": "freckl";
+    "tanned", "tan": "tan"; "eyed", "eyes": "ey"); a stem shorter than two letters keeps the word ("red")."""
+    word = base_word(word)
+    stem = re.sub(r"(ing|ed|e|y)$", "", word)
+    stem = stem[:-1] if len(stem) > 3 and stem[-1] == stem[-2] and stem[-1] not in "aeiouls" else stem
+    return stem if len(stem) >= 2 else word
 
 
 def content_words(text):
@@ -115,6 +127,80 @@ def exact_search(groups, text):
 
 
 NARROW_Z = 1.5  # an entry this many deviations closer in meaning than the group's other entries is the one meant
+
+
+def entry_parts(entry):
+    """An entry's parts in order, as (facet, text): its phrases between " with ", " and " and commas ("long wavy black
+    hair with green eyes and fair skin": hair, eyes, skin), each named by its last word's stem (word_stem), the thing
+    it describes. Entries made of parts can be recombined part by part (selection.deal_composed)."""
+    parts = [" ".join(part.split()) for part in re.split(r"\s+(?:with|and)\s+|\s*[,;:]\s*", str(entry))]
+    return [(word_stem(words[-1]), part) for part in parts if (words := content_words(part))]
+
+
+def requested_parts(groups, text):
+    """({facet: the parts that say what the text asks of that facet}, the text's details no part can hold, in its own
+    words). A detail is a run of the text's content words the groups' own words do not explain ("ginger", "green eyes"
+    of "a ginger man with green eyes"): it fixes the facet whose parts say it, in order within one part, in any form of
+    each word (word_stem: "freckles" says "freckled", "blue-eyed" says "blue eyes"), and every other facet stays free.
+    It belongs to the facet its words name ("green eyes": eyes), else to the one whose parts say it nearest their own
+    last word ("pale skin" over "pale blue eyes"). A word no part says that starts with one a part says reads as that
+    word ("redhead": red); a run no part says whole is read word by word when its last word is one parts say
+    ("freckled redhead"). A detail no part says ("sleeve tattoos", "22 year old"), one that contradicts a detail
+    before it in the same facet, or one whose facet no entry has together with the facets already fixed (a beard
+    beside hair) is returned in the text's own words: the text still asks for it."""
+    explained = {word_stem(word) for group in groups for phrase in [group["name"], *group["words"]]
+                 for word in content_words(phrase)}
+    entries = [entry for group in groups for entry in group["entries"]]
+    shapes = [{facet for facet, _ in entry_parts(entry)} for entry in entries]
+    parts = {part: (facet, tuple(map(word_stem, word_sequence(part))))
+             for entry in entries for facet, part in entry_parts(entry)}
+    known = sorted({word for _, words in parts.values() for word in words}, key=len, reverse=True)
+
+    def saying(detail):  # the parts with the detail's words in order, other words between them allowed
+        return [part for part, (_, words) in parts.items()
+                if all(word in rest for rest in [iter(words)] for word in detail)]
+
+    def read(word):
+        stem = word_stem(word)
+        if stem in known:
+            return stem
+        return next((part for part in known if len(part) >= 3 and len(word) - len(part) >= 3 and word.startswith(part)),
+                    stem)
+
+    clean = re.sub(r"['’]s\b", "", str(text or "").casefold())
+    runs, run = [], []
+    for match in (*re.finditer(r"[a-z0-9]+", clean), None):
+        word = base_word(match.group()) if match else ""
+        if run and (not match or re.search(r"[^\s'’-]", clean[run[-1][2]:match.start()])):  # a comma ends a run
+            runs, run = runs + [run], []
+        if word and word not in FUNCTION_WORDS and word_stem(word) not in explained:
+            run.append((read(word), match.start(), match.end()))
+        elif run:
+            runs, run = runs + [run], []
+    details, rest = [], []
+    for run in runs:
+        words = tuple(word for word, _, _ in run)
+        if saying(words):
+            details.append((words, clean[run[0][1]:run[-1][2]]))
+        elif words[-1] in known:
+            details += [((word,), clean[start:end]) for word, start, end in run if word in known]
+            rest += [clean[start:end] for word, start, end in run if word not in known]
+        else:
+            rest.append(clean[run[0][1]:run[-1][2]])
+    fixed = {}
+    for words, phrase in details:
+        found = saying(words)
+        facets = {parts[part][0] for part in found}
+        named = facets & set(words)
+        distance = lambda facet: min(len(parts[part][1]) - 1 - max(parts[part][1].index(word) for word in words)
+                                     for part in found if parts[part][0] == facet)
+        facet = min(named or facets, key=lambda facet: (distance(facet), -sum(parts[part][0] == facet for part in found)))
+        kept = [part for part in found if parts[part][0] == facet and part in fixed.get(facet, [part])]
+        if kept and any(set(fixed) | {facet} <= shape for shape in shapes):
+            fixed[facet] = kept
+        else:
+            rest.append(phrase)
+    return fixed, rest
 
 
 def narrowed(groups, text, embeddings=None):

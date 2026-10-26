@@ -1,0 +1,25 @@
+{
+ "about": "Requests of every kind of cast for tests/eval/understanding_cast.py: cast says whether anyone appears (a person, an animal, a creature or a known character), people how many when it is clear.",
+ "cases": [
+  {"request": "a man reading a book in a cafe", "cast": true, "people": 1},
+  {"request": "a woman jogging in the park", "cast": true, "people": 1},
+  {"request": "an old fisherman mending nets at the harbor", "cast": true, "people": 1},
+  {"request": "a chef plating a dessert in a busy kitchen", "cast": true, "people": 1},
+  {"request": "a man holding a perfume bottle", "cast": true, "people": 1},
+  {"request": "a knight in armor guarding a castle gate", "cast": true, "people": 1},
+  {"request": "two friends having coffee on a terrace", "cast": true, "people": 2},
+  {"request": "a man and a woman dancing in the rain", "cast": true, "people": 2},
+  {"request": "three students studying together in a library", "cast": true, "people": 3},
+  {"request": "a cat sleeping on a windowsill", "cast": true, "people": 1},
+  {"request": "a dog playing fetch on the beach", "cast": true, "people": 1},
+  {"request": "a robot walking through a neon city", "cast": true, "people": 1},
+  {"request": "Hatsune Miku singing on a stage", "cast": true, "people": 1},
+  {"request": "Naruto eating ramen at a noodle stand", "cast": true, "people": 1},
+  {"request": "a cozy cafe interior at night", "cast": false},
+  {"request": "a red sports car on a mountain road", "cast": false},
+  {"request": "a perfume bottle on a marble table", "cast": false},
+  {"request": "a stack of old books on a wooden desk", "cast": false},
+  {"request": "a misty forest at dawn", "cast": false},
+  {"request": "a minimalist logo of a mountain", "cast": false}
+ ]
+}

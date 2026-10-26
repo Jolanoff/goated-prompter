@@ -75,7 +75,8 @@ them. `"adult_default": true` marks a group for adult requests that name no plac
 small embedding model also finds it by meaning, so a group's name and words should say plainly what its entries are.
 
 A built-in pack with `"always": true` is used in every run, selected or not, after the user's selected packs of its
-category (`Spaces/Everyday-Places` deals a place to every image). Always-on packs stay safe for work and keep entries
+category (the `Spaces` places deal a place to every image, `Subjects/Female` and `Subjects/Male` a look to every
+person whose looks vary). Always-on packs stay safe for work and keep entries
 distinct: two entries never share most of their words. Do not add an always-on pack unless asked.
 
 ## Categories
@@ -147,7 +148,11 @@ supported? Older entries written with "one person" and "the other person" keep w
 - With an `Actions & Poses` pack selected, every scene names the entry it uses and no entry is used by more than two
   images, so a pack needs enough distinct entries for the batch sizes it is used with.
 - `Subjects/Humans` holds people's looks (skin, build, hair, one detail). It is used only when selected, and never
-  for a known character, whose look comes from its name.
+  for a known character, whose look comes from its name. While a Subjects pack is selected, `Subjects/Female` and
+  `Subjects/Male` deal no look. Each holds one group, `female` or `male`, found by a person's gender; a look in
+  them is only hair (or a shaved head), then eyes and skin tone: build and marks come from the request. Write a look
+  as its parts joined by "with" and "and", each ending in what it describes ("shaggy ginger hair with wide green eyes
+  and fair skin"): a request fixes the parts it names and every other part varies.
 - Keep adult content out of `vocabulary/`; it belongs in the user's own imported packs.
 - Every person is an adult.
 

@@ -12,6 +12,12 @@ def without_places(test):
     enter_context(test, patch("goated_prompter.features.dataset.v2.scenes.place_plan", return_value=([], "")))
 
 
+def without_looks(test):
+    """For scripted tests that are not about looks: no look is dealt (v2/scenes/looks.py), so the writer chooses
+    looks as before. tests/unit/dataset/test_dataset_looks.py tests the deal."""
+    enter_context(test, patch("goated_prompter.features.dataset.v2.scenes.deal_looks", return_value={}))
+
+
 def composer_user(message):
     """{"request", "rules", "understanding", "style", "vocabulary" (the SELECTED VOCABULARY text or ""), "images",
     "earlier"} from one scene-writer user message."""

@@ -69,6 +69,7 @@ from .checks import _summary, avoid_patterns, retire_fields, scene_errors
 from .entries import _entry_key, deal_frames, _only, _shuffled, cast_size, deal_entries, deal_hands, entry_cap, fit_cast, fitting_entries, requested_entries, requested_words, required_frame
 from .request import _system, compose_instruction, compose_message, deals_frames, known_labels, slot_inputs, subject_fields, trigger_notes, varied_labels
 from .settings import ACTIONS_CATEGORY, BATCH, EARLIER, KNOWN_SUBJECT_FIELDS, ROUNDS, SECTIONS, SUBJECT_FIELDS, VOCABULARY_SAMPLE
+from .looks import SUBJECTS, deal_looks, look_groups, look_words, requested_details
 from .places import SPACES, place_plan
 from .slots import only_fillable
 from .texts import COMPOSE_SYSTEM, ENTRY_FIT_SYSTEM, ENTRY_RULE, GUIDED_RULE, NO_PEOPLE_RULE, NSFW_RULE, SFW_RULE, VOCABULARY_RULES
@@ -130,6 +131,13 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
             if dealt and levels(brief)["place"] != "locked":  # each dealt pose gets the dealt place that suits it best
                 plan["places"] = pair(plan["places"], dealt, lambda pose, entries: fit_scores(pose, entries, embeddings))
             plan["setting"], plan["place_words"] = setting, telling_words(spaces)
+        # The looks of the people who vary, from the built-in looks; the user's own Subjects packs stay suggestions.
+        own_subjects = any(group["category"] == SUBJECTS for group in groups)
+        looks = [] if guided or own_subjects else look_groups(catalog)
+        if looks and (dealt_looks := deal_looks(brief, looks, total, rng)):
+            plan["looks"], plan["look_words"] = dealt_looks, look_words(looks, brief, dealt_looks)
+        # What the request says each person looks like holds in every image, looks or not.
+        plan["details"] = requested_details(brief, looks)
         for start in range(0, total, BATCH):
             numbers = list(range(start + 1, min(total, start + BATCH) + 1))
             earlier = [_summary(scenes[number]) for number in sorted(scenes)][-EARLIER:]

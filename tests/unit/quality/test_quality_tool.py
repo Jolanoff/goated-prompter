@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from tests.helpers import enter_context
 from tests.quality import audit, checks, judge, report, worker
-from tests.support.dataset_scenes import without_places
+from tests.support.dataset_scenes import without_looks, without_places
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -494,6 +494,7 @@ class LivePipeline(unittest.TestCase):
 
     def setUp(self):
         without_places(self)
+        without_looks(self)
 
     def generate(self, instruction):
         stage = instruction.diagnostic_stage

@@ -185,6 +185,27 @@ When the entry starts with a name followed by a colon, that name is the position
 act."""
 
 
+# Only when looks are dealt (scenes/looks.py): a base that keeps the set's people apart, not the whole person.
+# A live set given "build comes from the request" kept one build for every image of a request that named none; one
+# told "no marks the look and the request do not give" dropped the request's own tattoos from most images and kept
+# its dog, which had no look, the same in every image.
+LOOK_RULE = """LOOKS
+An image in IMAGES may give people a look ("looks": a look for a character label), so the people of the set differ:
+their skin, hair and eyes start from it, keeping its skin tone, hair colour, hairstyle and eye colour, each in its
+field, described as you otherwise would (how the hair falls, its texture). A person gets nothing that neither the
+request nor the look gives, such as a scar, a wound or a tattoo. A look never gives a build: unless the request gives
+one, choose each person's build anew for every image, as different from image to image as their looks. A character
+with no look (an animal, a creature) still changes from image to image as the rules above say."""
+
+
+# Whenever the request says how someone looks (scenes/looks.py requested_details), with or without looks: requested
+# details no field holds (a beard, tattoos, an age) were lost in most live images.
+DETAILS_RULE = """DETAILS
+An image in IMAGES may give people their details ("details": the request's own words about how a character label
+looks that no look holds, such as tattoos, a beard or an age): every one is on that person in every image, in the
+field it belongs to (build, skin, hair, eyes or extras)."""
+
+
 # Only when places are dealt (scenes/places.py): the place is the code's, never the writer's choice.
 PLACE_RULE = """PLACES
 Every image in IMAGES names its place ("place"): the scene happens there and nowhere else. space is that place: what
