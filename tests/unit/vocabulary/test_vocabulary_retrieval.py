@@ -158,6 +158,21 @@ class Scoring(unittest.TestCase):
         self.assertEqual([row["name"] for row in selection.diverse_order(pool, [1, 3, 2])], ["b", "c", "a"])
 
 
+class Related(unittest.TestCase):
+    def test_only_groups_close_to_an_anchor_are_related(self):
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder, True)
+        names = ["restroom", "bathroom", "bedroom", "kitchen", "beach", "office", "park", "garage"]
+        pool = [group(name, entries=[f"{name} place"]) for name in names]
+        direction = {"restroom": [1, 0, 0], "bathroom": [.95, .3, 0], "bedroom": [0, 1, 0], "kitchen": [0, .9, .4],
+                     "beach": [0, 0, 1], "office": [0, .6, .8], "park": [0, .2, 1], "garage": [0, .7, .7]}
+        vectors = {text: direction[row["name"]] for row in pool for text in (retrieval.group_text(row), *row["entries"])}
+        embeddings = vectors_module.Embeddings(Embedder(vectors), folder / "cache.json", progress=lambda _: None)
+        found = retrieval.related(pool, pool[:1], pool, embeddings)
+        self.assertEqual([row["name"] for row in found], ["restroom", "bathroom"])
+        self.assertEqual(retrieval.related(pool, pool[:1], pool, None), pool[:1], "without embeddings: the anchors only")
+
+
 class SpreadDeal(unittest.TestCase):
     def test_each_image_comes_from_the_next_group(self):
         pool = [group("bedroom", entries=["bed 1", "bed 2"]), group("kitchen", entries=["kitchen 1"]),

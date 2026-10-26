@@ -7,8 +7,9 @@ vocabulary selection orders, deals and pairs them (vocabulary/selection.py). Thi
 searched, in which groups:
   named   the request's place words without the setting ("his room in space": "his room", setting "in space") among
           the groups of the request's world, or of every world when a setting carries the world (the room in space is a
-          room), widened by the ideas, which for a named place are only that place or its kinds. The user's words are
-          authoritative: when no group answers them, the setting's group is used, then the
+          room), widened by the ideas' groups that are close in meaning to the one the words name (retrieval.related:
+          an idea that leaves the named place, a bedroom for a bathroom fixture, adds nothing; without embeddings
+          nothing is added). The user's words are authoritative: when no group answers them, the setting's group is used, then the
           ideas, which for a named place are only that place or its kinds (so words that were never a place, a time of
           day kept as one, still find places, and a place missing from the catalog still finds none); with nothing,
           nothing is dealt and the writer follows the request's words. The setting goes to every image.
@@ -21,7 +22,7 @@ locked place is one for every image. The places are then paired with the dealt A
 (selection.pair with retrieval.fit_scores). No model call: code finds, deals and pairs.
 """
 
-from ....vocabulary.retrieval import content_words, entry_name, group_vectors, in_world, match
+from ....vocabulary.retrieval import content_words, entry_name, group_vectors, in_world, match, related
 from ....vocabulary.selection import diverse_order
 from ..consistency import kept_words, levels
 
@@ -63,8 +64,9 @@ def place_plan(brief, groups, embeddings=None):
     if words:
         setting = facts["setting"]
         found = match(in_world(groups, None if setting else facts["world"]), _without(words, setting), embeddings)
-        if found:  # the ideas of a named place are that place or its kinds: they widen it, never leave it
-            return _merged(found + _from_ideas(brief, groups, facts, embeddings, adult_first=False)), setting
+        if found:  # the ideas widen a named place only with groups close to the one it names (its kinds)
+            ideas = _from_ideas(brief, groups, facts, embeddings, adult_first=False)
+            return _merged(found + related(ideas, found, groups, embeddings)), setting
         found = match(in_world(groups, facts["world"]), setting, embeddings) if setting else []
         # The words name no catalog place (or were never a place: a time of day kept as one): the ideas, which for a
         # named place are that place or its kinds, so a place missing from the catalog still deals nothing.

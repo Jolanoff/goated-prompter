@@ -57,11 +57,14 @@ class NamedPlace(unittest.TestCase):
         self.assertEqual(places.place_plan(brief("themed"), GROUPS), ([], ""),
                          "an older brief keeps its place without words: nothing is dealt")
 
-    def test_the_ideas_of_a_named_place_widen_it(self):
-        # A live named place found one group with one entry and dealt it to every image; its ideas named its kinds.
-        found, _ = places.place_plan(brief("themed", "in his room", ideas=["a sunny bedroom", "a cosy sofa corner"]),
-                                     GROUPS)
-        self.assertEqual(names(found), ["bedroom", "living room"])
+    def test_the_ideas_of_a_named_place_widen_it_only_with_close_groups(self):
+        # A live named place found one group with one entry and dealt it to every image; widened by its ideas, it
+        # then drifted to bedrooms for a bathroom fixture.
+        ideas = brief("themed", "in his room", ideas=["a sunny bedroom", "a cosy sofa corner", "a city park"])
+        with patch.object(places, "related", lambda candidates, anchors, *_: [
+                group for group in candidates if group["name"] in ("bedroom", "living room")]):
+            self.assertEqual(names(places.place_plan(ideas, GROUPS)[0]), ["bedroom", "living room"])
+        self.assertEqual(names(places.place_plan(ideas, GROUPS)[0]), ["bedroom"], "without embeddings nothing is added")
 
     def test_place_words_that_name_no_place_fall_back_to_the_ideas(self):
         # Live briefs kept a time of day as the place: no place was dealt at all.

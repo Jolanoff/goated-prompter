@@ -213,6 +213,26 @@ def group_vectors(groups, embeddings):
     return [[value / (math.sqrt(sum(part * part for part in vector)) or 1.0) for value in vector] for vector in total]
 
 
+RELATED_Z = 1.5  # a group this many deviations closer to an anchor than the other groups are is related to it
+
+
+def related(candidates, anchors, groups, embeddings=None):
+    """The candidates that are one of the anchors or related to one: closer in meaning to it than the other groups
+    are by RELATED_Z (each group's mean vector, compared over all the groups). Without embeddings only the anchors
+    themselves, so nothing is added on a guess."""
+    names = {group["name"] for group in anchors}
+    vectors = group_vectors(groups, embeddings)
+    if vectors is None:
+        return [group for group in candidates if group["name"] in names]
+    by_name = dict(zip((group["name"] for group in groups), vectors))
+    close = set(names)
+    for anchor in names & set(by_name):
+        others = [name for name in by_name if name != anchor]
+        scores = zscores(dot(by_name[anchor], by_name[name]) for name in others)
+        close |= {name for name, score in zip(others, scores) if score >= RELATED_Z}
+    return [group for group in candidates if group["name"] in close]
+
+
 def fit_scores(text, entries, embeddings=None):
     """How well each entry goes with the text (an entry of another category): closeness in meaning with embeddings,
     else the content words they share."""

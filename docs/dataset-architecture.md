@@ -58,7 +58,9 @@ its setting ("in his room in space": "in his room", setting "in space") are matc
 world, or of every world when a setting carries it; a place in no catalog uses its setting's group, then Understanding's ideas,
 which for a named place are only that place or its kinds (words that were never a place, a time of day kept as one,
 still find places; a place missing from the catalog still finds none); with nothing, nothing is dealt and the writer
-follows the words. The setting goes to every image with its place. No place named: the
+follows the words. A matched place is widened by its ideas' groups that are close in meaning to the one it names
+(`related`: closer than the other groups by `RELATED_Z`; nothing without embeddings). The setting goes to every image
+with its place. No place named: the
 user's selected Spaces packs when there are any; else the groups Understanding's ideas name (6 to 8 places, obvious and
 less expected, over the kinds of place the request fits), each idea matched among the groups of the request's world
 (an idea is a loose suggestion, so a word match on it needs less agreement in meaning, `IDEA_AGREE`, than the user's
