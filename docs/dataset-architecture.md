@@ -43,9 +43,11 @@ category's.
 - `retrieval.py`: `groups_of` indexes a category's selected packs, then its always-on packs (a plain pack's entries
   are each a group named by the entry). `match` returns the groups a text names, or none: exact words decide when they
   explain every content word of the text ("water" inside "water aquarium" does not count); a match that leaves words
-  unexplained stays only when meaning and words in common rank it at most `MATCH_AGREE` below the best group ("sports
-  hall" is not the corridor's "hall"); without exact words, the one group that stands out from all the others
-  (`relevance` at least `MATCH_Z` and `MATCH_LEAD` above the next). A weak match is never forced. `fit_scores` says how
+  unexplained stays only when meaning also rates its group at least `MATCH_AGREE` ("sports hall" is not the
+  corridor's "hall", "a cozy bedroom" is a bedroom); without exact words, the one group that stands out from all the others
+  (`relevance` at least `MATCH_Z` and `MATCH_LEAD` above the next). Found groups keep only the entries the text points to: their name, or details the
+  group's words do not explain, by meaning (`narrowed`, `NARROW_Z`: "a rainy street", "a white background"). A weak
+  match is never forced. `fit_scores` says how
   well entries go with another category's entry; `telling_words` gives each entry the words that tell it apart.
 - `selection.py`: `diverse_order` puts groups in an order where each next one is unlike those before it, `deal_spread`
   deals a set across them (no entry repeats before all have been dealt, a group whose entries are used up is passed
@@ -58,13 +60,12 @@ its setting ("in his room in space": "in his room", setting "in space") are matc
 world, or of every world when a setting carries it; a place in no catalog uses its setting's group, then Understanding's ideas,
 which for a named place are only that place or its kinds (words that were never a place, a time of day kept as one,
 still find places; a place missing from the catalog still finds none); with nothing, nothing is dealt and the writer
-follows the words. A matched place is widened by its ideas' groups that are close in meaning to the one it names
+follows the words. Place words that point to some of a group's places (a white background) stay that specific; a place named
+broadly is widened by its ideas' groups that are close in meaning to the one it names
 (`related`: closer than the other groups by `RELATED_Z`; nothing without embeddings). The setting goes to every image
 with its place. No place named: the
 user's selected Spaces packs when there are any; else the groups Understanding's ideas name (6 to 8 places, obvious and
-less expected, over the kinds of place the request fits), each idea matched among the groups of the request's world
-(an idea is a loose suggestion, so a word match on it needs less agreement in meaning, `IDEA_AGREE`, than the user's
-own place words, `MATCH_AGREE`),
+less expected, over the kinds of place the request fits), each idea matched among the groups of the request's world,
 with the `adult_default` groups first for an adult request. Retrieval adds no place on its own: what a request allows
 is Understanding's judgement; an idea no group answers adds nothing. The groups go in `diverse_order`, the set is
 dealt across them (a locked place is one for every image), and the dealt places are paired with the dealt Actions &

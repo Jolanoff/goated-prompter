@@ -67,7 +67,8 @@ unchanged.
 Instead of `entries`, a pack may hold `groups`: `{"group": "kitchen", "words": ["kitchen", "cooking", "baking"],
 "entries": [...]}`, with up to 100 words. A search counts the group's words the request says, and the groups that
 it says most often win. So every entry of a group must fit every one of its words ("laundry" never sits with a
-garage), and a word must not mean something else in a request ("film" grain, depth of "field", hair in "waves").
+garage; a word that names only some of a group's entries, like "attic" among bedrooms, belongs to none: meaning
+finds the group and the entries it points to), and a word must not mean something else in a request ("film" grain, depth of "field", hair in "waves").
 Each entry belongs to one group. `"worlds"` lists the worlds a group's entries fit (`everyday`, `historical`,
 `fantasy`, `sci-fi`; every world when it gives none): a request in another world never gets them unless it names
 them. `"adult_default": true` marks a group for adult requests that name no place. Words find a group exactly; a

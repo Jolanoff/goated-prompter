@@ -10,9 +10,11 @@ aside. A word said inside a longer word that another group says does not count (
 Scoring (relevance): each group's closeness in meaning to the text (embeddings.py), compared with the other groups,
 plus its share of the text's content words.
 match: the groups a text names, or none. Exact words decide when they explain every content word of the text; a
-match that leaves words unexplained stays only when the scoring agrees it is among the closest ("sports hall" is not
-the corridor's "hall"); without exact words, the one group that stands out from all the others (MATCH_Z, MATCH_LEAD).
-A text no group clearly answers finds nothing: a weak match is never forced.
+word match that leaves words unexplained stays only when meaning also rates its group highly (MATCH_AGREE: "sports
+hall" is not the corridor's "hall", "a cozy bedroom" is a bedroom); without exact words, the one group that stands
+out from all the others (MATCH_Z, MATCH_LEAD). The found groups keep only the entries the text points to (narrowed:
+their name, or the details the group's words do not explain). A text no group clearly answers finds nothing: a weak
+match is never forced.
 """
 
 import math
@@ -23,7 +25,7 @@ from .embeddings import dot
 
 MATCH_Z = 2.0     # a group found by meaning stands this far above the average group ...
 MATCH_LEAD = .6   # ... and this far above the next one
-MATCH_AGREE = .2  # a word match that leaves words unexplained is at most this far below the best group in meaning
+MATCH_AGREE = 1.5  # a word match that leaves words unexplained is kept when meaning rates its group at least this high
 WORD_WEIGHT = 1.5  # a group that has all of a text's content words gains this many deviations of meaning
 COMMON_SHARE = .1  # a word in more than this share of the entries says too little to tell them apart
 
@@ -112,13 +114,29 @@ def exact_search(groups, text):
     return [group for number, group in enumerate(groups) if top and hits.get(number) == top]
 
 
-def narrowed(groups, text):
-    """The groups with only the entries whose own name the text says, when it says any; else unchanged."""
+NARROW_Z = 1.5  # an entry this many deviations closer in meaning than the group's other entries is the one meant
+
+
+def narrowed(groups, text, embeddings=None):
+    """The groups with only the entries the text points to: those whose own name it says; else, when it has words the
+    groups' own words do not explain ("rainy" of "a rainy street", "white" of "a white background"), those that
+    stand out in meaning among all the groups' entries (NARROW_Z). Unchanged when it points to none: "his room" is
+    every bedroom."""
     said = word_sequence(text)
     named = [{**group, "entries": [entry for entry in group["entries"] if _spans(said, word_sequence(entry_name(entry)))]}
              for group in groups]
     named = [group for group in named if group["entries"]]
-    return named or groups
+    if named:
+        return named
+    explained = {word for group in groups for phrase in [group["name"], *group["words"]] for word in content_words(phrase)}
+    entries = [entry for group in groups for entry in group["entries"]]
+    query = embeddings.query(text) if embeddings is not None and set(content_words(text)) - explained else None
+    vectors = embeddings.documents(entries) if query is not None else None
+    if vectors is None:
+        return groups
+    close = {entry for entry, score in zip(entries, zscores(dot(query, vector) for vector in vectors)) if score >= NARROW_Z}
+    picked = [{**group, "entries": [entry for entry in group["entries"] if entry in close]} for group in groups]
+    return [group for group in picked if group["entries"]] or groups
 
 
 def zscores(values):
@@ -181,23 +199,23 @@ def _standout(groups, text, embeddings):
     return [groups[index]] if top >= MATCH_Z and top - runner_up >= MATCH_LEAD else []
 
 
-def match(groups, text, embeddings=None, agree=MATCH_AGREE):
+def match(groups, text, embeddings=None):
     """The groups the text names (see the module docstring), the user's selected packs' groups first, each with only
-    the entries whose own name the text says when it says any; [] when no group clearly answers it. agree: how far
-    below the best group in meaning a word match that leaves words unexplained may be (a caller looser about a
-    suggestion than about the user's own words passes more)."""
+    the entries the text points to (narrowed); [] when no group clearly answers it."""
     if not groups or not str(text or "").strip():
         return []
     hits = exact_search([group for group in groups if group["selected"]], text) or exact_search(groups, text)
     explained = {word for group in hits for phrase in group["words"] for word in content_words(phrase)}
     if hits and not set(content_words(text)) <= explained:
-        # Judged by meaning alone: the hit already is the words' evidence, and the unexplained words counted again
-        # pulled other groups ahead ("dimly lit office" lost its office to a group whose text says "dim").
+        # Judged by meaning alone: the hit already is the words' evidence. A wrong word match ("sports hall" said the
+        # corridor's "hall") is rated low by meaning, a right one with a detail ("a cozy bedroom") high, even when a
+        # group the detail fits is rated higher. Without embeddings the words are all the evidence there is.
         meaning = meaning_scores(groups, text, embeddings)
-        scores = dict(zip(map(id, groups), zscores(meaning) if meaning is not None else word_scores(groups, text)))
-        hits = [group for group in hits if scores[id(group)] >= max(scores.values()) - agree]
+        if meaning is not None:
+            scores = dict(zip(map(id, groups), zscores(meaning)))
+            hits = [group for group in hits if scores[id(group)] >= MATCH_AGREE]
     found = hits or _standout(groups, text, embeddings)
-    return narrowed(found, text) if found else []
+    return narrowed(found, text, embeddings) if found else []
 
 
 def group_vectors(groups, embeddings):

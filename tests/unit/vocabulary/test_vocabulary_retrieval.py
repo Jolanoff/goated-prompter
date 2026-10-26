@@ -158,6 +158,22 @@ class Scoring(unittest.TestCase):
         self.assertEqual([row["name"] for row in selection.diverse_order(pool, [1, 3, 2])], ["b", "c", "a"])
 
 
+class Narrowing(unittest.TestCase):
+    def test_a_detail_the_group_words_do_not_explain_picks_its_entries(self):
+        # A white background got every coloured backdrop, a rainy street every street.
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, folder, True)
+        streets = group("street", ["city street"], [f"street {name} with shops" for name in
+                                                    ("rainy", "sunny", "busy", "quiet", "old", "wide", "narrow")])
+        vectors = {entry: [1, 0] if "rainy" in entry else [0, 1] for entry in streets["entries"]}
+        vectors["a rainy street"] = [1, 0]
+        embeddings = vectors_module.Embeddings(Embedder(vectors), folder / "cache.json", progress=lambda _: None)
+        self.assertEqual(retrieval.narrowed([streets], "a rainy street", embeddings)[0]["entries"], ["street rainy with shops"])
+        self.assertEqual(retrieval.narrowed([streets], "a city street", embeddings), [streets],
+                         "words the group's own words explain point to every entry")
+        self.assertEqual(retrieval.narrowed([streets], "a rainy street"), [streets], "without embeddings: by name only")
+
+
 class Related(unittest.TestCase):
     def test_only_groups_close_to_an_anchor_are_related(self):
         folder = Path(tempfile.mkdtemp())

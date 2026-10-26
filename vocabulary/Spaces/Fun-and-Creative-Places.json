@@ -1,0 +1,182 @@
+{
+  "name": "Fun and Creative Places",
+  "category": "Spaces",
+  "always": true,
+  "description": "Amusement parks, playrooms, colorful spaces and craft studios.",
+  "groups": [
+    {
+      "group": "amusement park",
+      "words": [
+        "amusement park",
+        "theme park",
+        "fairground",
+        "funfair",
+        "carnival"
+      ],
+      "entries": [
+        "roller coaster track with loops against the sky",
+        "ferris wheel at night with colored lights",
+        "carousel with painted horses and mirrors",
+        "carnival midway with game booths and prizes",
+        "water park with twisting slides and pools",
+        "haunted house ride entrance with spooky decor",
+        "bumper car arena with sparks overhead",
+        "cotton candy stand with pastel clouds of sugar",
+        "fairground at dusk with string lights and stalls",
+        "log flume ride splashing down",
+        "teacup ride with spinning cups",
+        "pier amusement park over the sea",
+        "drop tower ride with a view",
+        "theme park castle with fireworks",
+        "county fair with livestock tents and a big wheel",
+        "fun house with tilted floors and mirrors",
+        "lazy river with inflatable rings",
+        "seaside boardwalk with games and candy shops",
+        "miniature train ride through a park",
+        "swing ride spinning high",
+        "ring toss booth with bottles and stuffed prizes",
+        "water slide tower with tubes",
+        "theme park street with themed shop fronts",
+        "balloon stand by the park entrance"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "playroom",
+      "words": [
+        "playroom",
+        "play room",
+        "toy room",
+        "toys",
+        "soft play",
+        "indoor playground",
+        "playhouse",
+        "playful"
+      ],
+      "entries": [
+        "ball pit with colorful balls and a slide",
+        "bouncy castle in a garden",
+        "trampoline park with foam pits",
+        "toy room with shelves of toys and a rug",
+        "pillow fort with blankets and fairy lights",
+        "indoor soft play area with tunnels and padded floors",
+        "treehouse playroom with rope ladders",
+        "brick building table with bins of bricks",
+        "dollhouse corner with tiny furniture",
+        "cardboard box castle in a living room",
+        "nursery corner with plush animals and a rocking horse",
+        "train set room with tracks across the floor",
+        "craft playroom with crayons and paper rolls",
+        "giant board game floor with oversized pieces",
+        "ball pond at a play center",
+        "teepee playroom with cushions",
+        "inflatable obstacle course with slides",
+        "bubble room with floating bubbles",
+        "toy store play area with a train table",
+        "foam block room with big soft shapes",
+        "sandbox with buckets and spades",
+        "dress-up corner with costumes and a mirror",
+        "blanket fort in a bedroom with flashlights",
+        "superhero playroom with posters and a climbing wall"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "colorful spaces",
+      "words": [
+        "colorful",
+        "colourful",
+        "rainbow",
+        "vibrant",
+        "bright colors",
+        "bright colours",
+        "multicolored",
+        "multicoloured",
+        "neon",
+        "pastel",
+        "kaleidoscope"
+      ],
+      "entries": [
+        "rainbow staircase with painted steps",
+        "neon tunnel with rings of colored light",
+        "pastel street with candy-colored houses",
+        "color-blocked room with bold painted walls",
+        "tulip field with rows of red and yellow flowers",
+        "umbrella street with colorful umbrellas overhead",
+        "infinity mirror room with endless lights",
+        "stained glass hall with colored light on the floor",
+        "color festival square with clouds of powder",
+        "paper lantern street with glowing colors",
+        "rainbow crosswalk in a city street",
+        "kaleidoscope room with mirrored patterns",
+        "spice and fabric market with piles of color",
+        "painted beach huts in a bright row",
+        "balloon room filled with floating balloons",
+        "glow-in-the-dark room with neon paint",
+        "prism light room with rainbows on white walls",
+        "confetti-covered floor with streamers overhead",
+        "graffiti tunnel with layers of bright paint",
+        "pastel donut shop with pink walls",
+        "neon sign alley with buzzing colored signs",
+        "flower wall with hundreds of blooms",
+        "rainbow bookshelf library with books sorted by color",
+        "bright playground with primary-colored equipment",
+        "bead curtain room with colored strands",
+        "candy shop with jars of bright sweets",
+        "psychedelic room with swirling patterns",
+        "coral-painted street with turquoise doors"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    },
+    {
+      "group": "craft studio",
+      "words": [
+        "craft",
+        "crafts",
+        "crafting",
+        "makerspace",
+        "maker space",
+        "handmade",
+        "diy",
+        "hobby",
+        "creative space"
+      ],
+      "entries": [
+        "pottery studio with spinning wheels and drying shelves",
+        "sewing room with a machine and fabric piles",
+        "knitting nook with baskets of yarn",
+        "weaving studio with large looms",
+        "glassblowing studio with a glowing furnace",
+        "jewelry bench with tiny tools and beads",
+        "candle making workshop with melting wax pots",
+        "leather craft table with tools and hides",
+        "bookbinding studio with presses and paper stacks",
+        "calligraphy desk with ink pots and nibs",
+        "scrapbooking table with photos and stickers",
+        "makerspace with 3d printers and a laser cutter",
+        "model building desk with miniatures and paints",
+        "florist workshop with buckets of flowers and ribbon",
+        "quilting room with a large frame and patches",
+        "embroidery corner with hoops and threads",
+        "stained glass workshop with colored glass sheets",
+        "soap making kitchen with molds and oils",
+        "paper craft room with origami and cutting mats",
+        "costume making workshop with mannequins and fabric",
+        "mosaic studio with tile pieces in trays",
+        "wood carving bench with chisels and shavings",
+        "cake decorating studio with piping bags and sugar flowers",
+        "terrarium making table with glass jars and moss",
+        "tie-dye station in a backyard with buckets of dye"
+      ],
+      "worlds": [
+        "everyday"
+      ]
+    }
+  ]
+}

@@ -1,118 +1,689 @@
 {
   "about": "Held-out cases for the places retrieval evaluation (python -m tests.eval.places --cases tests/eval/cases/places_heldout.json): never used to tune any setting, so they show how the engine does on requests it was not fitted to. Same format and group names as places.json.",
   "kinds": {
-    "home": ["bedroom", "living room", "hallway and stairs", "kitchen", "bathroom", "closet and dressing room", "laundry",
-             "basement", "home office", "dorm room", "backyard"],
-    "work": ["restaurant kitchen", "workshop and garage", "warehouse and factory", "office", "lab and server room", "farm",
-             "hospital", "school"],
-    "public indoors": ["public restroom", "lobby and elevator", "library", "museum", "cinema", "church", "shopping",
-                       "cafe and diner", "hotel room"],
-    "sport and wellness": ["locker room", "gym", "swimming pool", "spa", "bowling and arcade", "sports ground", "skate park"],
-    "nightlife and shows": ["bar and club", "party", "stage", "circus", "music room", "art and photo studio"],
-    "transport": ["car and bus", "train", "airplane", "boat", "parking and gas station"],
-    "town outdoors": ["city street", "rooftop and balcony", "park"],
-    "nature": ["cabin and tent", "beach", "forest", "snow", "mountain and meadow", "lake", "river", "desert"]
+    "home": [
+      "bedroom",
+      "living room",
+      "hallway and stairs",
+      "kitchen",
+      "bathroom",
+      "closet and dressing room",
+      "laundry",
+      "basement",
+      "home office",
+      "dorm room",
+      "backyard"
+    ],
+    "work": [
+      "restaurant kitchen",
+      "workshop and garage",
+      "warehouse and factory",
+      "office",
+      "lab and server room",
+      "farm",
+      "hospital",
+      "school"
+    ],
+    "public indoors": [
+      "cafe and diner",
+      "church",
+      "cinema",
+      "hotel room",
+      "library",
+      "lobby and elevator",
+      "museum",
+      "public restroom",
+      "shopping",
+      "zoo and aquarium"
+    ],
+    "sport and wellness": [
+      "locker room",
+      "gym",
+      "swimming pool",
+      "spa",
+      "bowling and arcade",
+      "sports ground",
+      "skate park"
+    ],
+    "nightlife and shows": [
+      "bar and club",
+      "party",
+      "stage",
+      "circus",
+      "music room",
+      "art and photo studio"
+    ],
+    "transport": [
+      "car and bus",
+      "train",
+      "airplane",
+      "boat",
+      "parking and gas station"
+    ],
+    "town outdoors": [
+      "city street",
+      "rooftop and balcony",
+      "park"
+    ],
+    "nature": [
+      "beach",
+      "cabin and tent",
+      "desert",
+      "forest",
+      "lake",
+      "mountain and meadow",
+      "river",
+      "snow",
+      "underwater"
+    ],
+    "fantasy and history": [
+      "castle",
+      "dungeon",
+      "enchanted nature",
+      "medieval village",
+      "ruins and temples",
+      "sailing ship",
+      "tavern and inn",
+      "wizard and magic"
+    ],
+    "sci-fi": [
+      "alien worlds",
+      "futuristic city",
+      "space station",
+      "spaceship"
+    ],
+    "backdrop": [
+      "plain backdrop"
+    ],
+    "fun and creative": [
+      "amusement park",
+      "colorful spaces",
+      "craft studio",
+      "playroom"
+    ]
   },
   "free": [
-    {"request": "a chef tasting a sauce", "world": "everyday",
-     "acceptable": ["kitchen", "restaurant kitchen", "backyard", "party", "cafe and diner", "cabin and tent"],
-     "forbidden": ["gym", "library", "bathroom", "public restroom", "locker room", "cinema", "snow", "swimming pool"]},
-    {"request": "a couple building a sandcastle", "world": "everyday",
-     "acceptable": ["beach", "lake", "river", "backyard", "park"],
-     "forbidden": ["office", "kitchen", "bedroom", "library", "gym", "warehouse and factory", "cinema", "snow", "hospital"]},
-    {"request": "a nurse taking a break", "world": "everyday",
-     "acceptable": ["hospital", "cafe and diner", "rooftop and balcony", "park", "lobby and elevator", "locker room",
-                    "city street", "car and bus", "kitchen", "living room", "parking and gas station"],
-     "forbidden": ["beach", "circus", "bar and club", "skate park", "swimming pool", "desert", "snow", "stage"]},
-    {"request": "a man fishing at dawn", "world": "everyday",
-     "acceptable": ["lake", "river", "boat", "beach", "mountain and meadow", "snow"],
-     "forbidden": ["office", "kitchen", "bedroom", "gym", "library", "cinema", "bar and club", "hospital", "shopping"]},
-    {"request": "a woman doing yoga", "world": "everyday",
-     "acceptable": ["spa", "gym", "beach", "park", "living room", "bedroom", "rooftop and balcony", "mountain and meadow",
-                    "backyard", "forest", "lake"],
-     "forbidden": ["bar and club", "warehouse and factory", "public restroom", "parking and gas station",
-                   "restaurant kitchen", "car and bus", "hospital", "laundry"]},
-    {"request": "a band rehearsing", "world": "everyday",
-     "acceptable": ["music room", "stage", "basement", "workshop and garage", "warehouse and factory", "party",
-                    "bar and club", "school", "living room"],
-     "forbidden": ["bathroom", "hospital", "library", "swimming pool", "public restroom", "airplane", "spa"]},
-    {"request": "a detective searching for clues", "world": "everyday",
-     "acceptable": ["office", "city street", "warehouse and factory", "basement", "hallway and stairs",
-                    "parking and gas station", "library", "hotel room", "lobby and elevator", "bar and club", "train",
-                    "forest", "living room", "bedroom", "museum"],
-     "forbidden": ["swimming pool", "beach", "circus", "spa", "skate park", "bowling and arcade"]},
-    {"request": "a student cramming for exams", "world": "everyday",
-     "acceptable": ["library", "dorm room", "bedroom", "cafe and diner", "school", "home office", "train", "living room",
-                    "kitchen"],
-     "forbidden": ["bar and club", "gym", "beach", "swimming pool", "circus", "warehouse and factory", "spa",
-                   "skate park"]},
-    {"request": "a farmer feeding chickens", "world": "everyday",
-     "acceptable": ["farm", "backyard"],
-     "forbidden": ["office", "bar and club", "library", "hospital", "cinema", "airplane", "gym", "swimming pool",
-                   "bedroom"]},
-    {"request": "a couple having a picnic", "world": "everyday",
-     "acceptable": ["park", "beach", "backyard", "lake", "river", "mountain and meadow", "forest", "rooftop and balcony"],
-     "forbidden": ["office", "bathroom", "warehouse and factory", "gym", "hospital", "public restroom",
-                   "parking and gas station", "laundry", "cinema"]},
-    {"request": "a man skiing down", "world": "everyday",
-     "acceptable": ["snow", "mountain and meadow"],
-     "forbidden": ["beach", "desert", "kitchen", "office", "gym", "swimming pool", "city street", "bedroom"]},
-    {"request": "a wizard casting a spell", "world": "fantasy",
-     "acceptable": ["forest", "church", "library", "mountain and meadow", "cabin and tent", "snow", "desert", "lake",
-                    "river", "farm", "beach"],
-     "forbidden": []},
-    {"request": "two adults kissing passionately", "world": "everyday", "path": "nsfw_character",
-     "acceptable": ["bedroom", "hotel room", "living room", "beach", "rooftop and balcony", "car and bus", "bar and club",
-                    "party", "city street", "park", "spa", "kitchen", "bathroom", "lake"],
-     "forbidden": ["school", "church", "hospital", "library", "office", "lab and server room", "warehouse and factory",
-                   "circus", "public restroom"]}
+    {
+      "request": "a chef tasting a sauce",
+      "world": "everyday",
+      "acceptable": [
+        "kitchen",
+        "restaurant kitchen",
+        "backyard",
+        "party",
+        "cafe and diner",
+        "cabin and tent"
+      ],
+      "forbidden": [
+        "gym",
+        "library",
+        "bathroom",
+        "public restroom",
+        "locker room",
+        "cinema",
+        "snow",
+        "swimming pool"
+      ]
+    },
+    {
+      "request": "a couple building a sandcastle",
+      "world": "everyday",
+      "acceptable": [
+        "beach",
+        "lake",
+        "river",
+        "backyard",
+        "park"
+      ],
+      "forbidden": [
+        "office",
+        "kitchen",
+        "bedroom",
+        "library",
+        "gym",
+        "warehouse and factory",
+        "cinema",
+        "snow",
+        "hospital"
+      ]
+    },
+    {
+      "request": "a nurse taking a break",
+      "world": "everyday",
+      "acceptable": [
+        "hospital",
+        "cafe and diner",
+        "rooftop and balcony",
+        "park",
+        "lobby and elevator",
+        "locker room",
+        "city street",
+        "car and bus",
+        "kitchen",
+        "living room",
+        "parking and gas station"
+      ],
+      "forbidden": [
+        "beach",
+        "circus",
+        "bar and club",
+        "skate park",
+        "swimming pool",
+        "desert",
+        "snow",
+        "stage"
+      ]
+    },
+    {
+      "request": "a man fishing at dawn",
+      "world": "everyday",
+      "acceptable": [
+        "lake",
+        "river",
+        "boat",
+        "beach",
+        "mountain and meadow",
+        "snow"
+      ],
+      "forbidden": [
+        "office",
+        "kitchen",
+        "bedroom",
+        "gym",
+        "library",
+        "cinema",
+        "bar and club",
+        "hospital",
+        "shopping"
+      ]
+    },
+    {
+      "request": "a woman doing yoga",
+      "world": "everyday",
+      "acceptable": [
+        "spa",
+        "gym",
+        "beach",
+        "park",
+        "living room",
+        "bedroom",
+        "rooftop and balcony",
+        "mountain and meadow",
+        "backyard",
+        "forest",
+        "lake"
+      ],
+      "forbidden": [
+        "bar and club",
+        "warehouse and factory",
+        "public restroom",
+        "parking and gas station",
+        "restaurant kitchen",
+        "car and bus",
+        "hospital",
+        "laundry"
+      ]
+    },
+    {
+      "request": "a band rehearsing",
+      "world": "everyday",
+      "acceptable": [
+        "music room",
+        "stage",
+        "basement",
+        "workshop and garage",
+        "warehouse and factory",
+        "party",
+        "bar and club",
+        "school",
+        "living room"
+      ],
+      "forbidden": [
+        "bathroom",
+        "hospital",
+        "library",
+        "swimming pool",
+        "public restroom",
+        "airplane",
+        "spa"
+      ]
+    },
+    {
+      "request": "a detective searching for clues",
+      "world": "everyday",
+      "acceptable": [
+        "office",
+        "city street",
+        "warehouse and factory",
+        "basement",
+        "hallway and stairs",
+        "parking and gas station",
+        "library",
+        "hotel room",
+        "lobby and elevator",
+        "bar and club",
+        "train",
+        "forest",
+        "living room",
+        "bedroom",
+        "museum"
+      ],
+      "forbidden": [
+        "swimming pool",
+        "beach",
+        "circus",
+        "spa",
+        "skate park",
+        "bowling and arcade"
+      ]
+    },
+    {
+      "request": "a student cramming for exams",
+      "world": "everyday",
+      "acceptable": [
+        "library",
+        "dorm room",
+        "bedroom",
+        "cafe and diner",
+        "school",
+        "home office",
+        "train",
+        "living room",
+        "kitchen"
+      ],
+      "forbidden": [
+        "bar and club",
+        "gym",
+        "beach",
+        "swimming pool",
+        "circus",
+        "warehouse and factory",
+        "spa",
+        "skate park"
+      ]
+    },
+    {
+      "request": "a farmer feeding chickens",
+      "world": "everyday",
+      "acceptable": [
+        "backyard",
+        "farm",
+        "zoo and aquarium"
+      ],
+      "forbidden": [
+        "office",
+        "bar and club",
+        "library",
+        "hospital",
+        "cinema",
+        "airplane",
+        "gym",
+        "swimming pool",
+        "bedroom"
+      ]
+    },
+    {
+      "request": "a couple having a picnic",
+      "world": "everyday",
+      "acceptable": [
+        "park",
+        "beach",
+        "backyard",
+        "lake",
+        "river",
+        "mountain and meadow",
+        "forest",
+        "rooftop and balcony"
+      ],
+      "forbidden": [
+        "office",
+        "bathroom",
+        "warehouse and factory",
+        "gym",
+        "hospital",
+        "public restroom",
+        "parking and gas station",
+        "laundry",
+        "cinema"
+      ]
+    },
+    {
+      "request": "a man skiing down",
+      "world": "everyday",
+      "acceptable": [
+        "snow",
+        "mountain and meadow"
+      ],
+      "forbidden": [
+        "beach",
+        "desert",
+        "kitchen",
+        "office",
+        "gym",
+        "swimming pool",
+        "city street",
+        "bedroom"
+      ]
+    },
+    {
+      "request": "a wizard casting a spell",
+      "world": "fantasy",
+      "acceptable": [
+        "beach",
+        "cabin and tent",
+        "castle",
+        "church",
+        "desert",
+        "enchanted nature",
+        "farm",
+        "forest",
+        "lake",
+        "library",
+        "medieval village",
+        "mountain and meadow",
+        "river",
+        "ruins and temples",
+        "snow",
+        "tavern and inn",
+        "wizard and magic"
+      ],
+      "forbidden": []
+    },
+    {
+      "request": "two adults kissing passionately",
+      "world": "everyday",
+      "path": "nsfw_character",
+      "acceptable": [
+        "bedroom",
+        "hotel room",
+        "living room",
+        "beach",
+        "rooftop and balcony",
+        "car and bus",
+        "bar and club",
+        "party",
+        "city street",
+        "park",
+        "spa",
+        "kitchen",
+        "bathroom",
+        "lake"
+      ],
+      "forbidden": [
+        "school",
+        "church",
+        "hospital",
+        "library",
+        "office",
+        "lab and server room",
+        "warehouse and factory",
+        "circus",
+        "public restroom"
+      ]
+    }
   ],
   "named": [
-    {"words": "in a bistro", "acceptable": ["cafe and diner"]},
-    {"words": "at the picture house", "acceptable": ["cinema"]},
-    {"words": "in a lecture theatre", "acceptable": ["school"]},
-    {"words": "on a ferry", "acceptable": ["boat"]},
-    {"words": "in a sports hall", "acceptable": ["gym", "sports ground", "school"]},
-    {"words": "at a pharmacy", "acceptable": ["shopping", "hospital"]},
-    {"words": "at a car wash", "acceptable": ["parking and gas station", "workshop and garage"]},
-    {"words": "in a ballroom", "acceptable": ["party"]},
-    {"words": "on a tennis court", "acceptable": ["sports ground"]},
-    {"words": "at a bakery", "acceptable": ["shopping", "cafe and diner", "restaurant kitchen"]},
-    {"words": "in a greenhouse", "acceptable": ["farm", "backyard"]},
-    {"words": "at the fire station", "acceptable": [], "forbidden": ["parking and gas station", "warehouse and factory"]},
-    {"words": "in a submarine", "acceptable": [], "forbidden": ["swimming pool", "lake"]},
-    {"words": "in a prison cell", "acceptable": [], "forbidden": ["bedroom", "hotel room", "dorm room"]}
+    {
+      "words": "in a bistro",
+      "acceptable": [
+        "cafe and diner"
+      ]
+    },
+    {
+      "words": "at the picture house",
+      "acceptable": [
+        "cinema"
+      ]
+    },
+    {
+      "words": "in a lecture theatre",
+      "acceptable": [
+        "school"
+      ]
+    },
+    {
+      "words": "on a ferry",
+      "acceptable": [
+        "boat"
+      ]
+    },
+    {
+      "words": "in a sports hall",
+      "acceptable": [
+        "gym",
+        "sports ground",
+        "school"
+      ]
+    },
+    {
+      "words": "at a pharmacy",
+      "acceptable": [
+        "shopping",
+        "hospital"
+      ]
+    },
+    {
+      "words": "at a car wash",
+      "acceptable": [
+        "parking and gas station",
+        "workshop and garage"
+      ]
+    },
+    {
+      "words": "in a ballroom",
+      "acceptable": [
+        "party"
+      ]
+    },
+    {
+      "words": "on a tennis court",
+      "acceptable": [
+        "sports ground"
+      ]
+    },
+    {
+      "words": "at a bakery",
+      "acceptable": [
+        "shopping",
+        "cafe and diner",
+        "restaurant kitchen"
+      ]
+    },
+    {
+      "words": "in a greenhouse",
+      "acceptable": [
+        "farm",
+        "backyard"
+      ]
+    },
+    {
+      "words": "at the fire station",
+      "acceptable": [
+        "locker room"
+      ],
+      "forbidden": [
+        "parking and gas station",
+        "warehouse and factory"
+      ]
+    },
+    {
+      "words": "in a submarine",
+      "acceptable": [],
+      "forbidden": [
+        "swimming pool",
+        "lake"
+      ]
+    },
+    {
+      "words": "in a prison cell",
+      "acceptable": [],
+      "forbidden": [
+        "bedroom",
+        "hotel room",
+        "dorm room"
+      ]
+    }
   ],
   "validation": [
-    {"place": "train station platform with a canopy and a departure board", "space": "a platform under a canopy, the departure board above her", "pass": true},
-    {"place": "train station platform with a canopy and a departure board", "space": "an airport lounge with tall windows", "pass": false},
-    {"place": "laundromat with rows of washing machines and plastic chairs", "space": "a coin laundry with a row of washing machines", "pass": true},
-    {"place": "hospital room with a single bed, a monitor and a curtain on a rail", "space": "a ward bed beside a heart monitor", "pass": true},
-    {"place": "hospital room with a single bed, a monitor and a curtain on a rail", "space": "a hotel room with a king bed", "pass": false},
-    {"place": "sauna with wooden benches and a stove of hot stones", "space": "a hot room with steaming stones on a stove", "pass": true},
-    {"place": "sauna with wooden benches and a stove of hot stones", "space": "a cold snowy clearing", "pass": false},
-    {"place": "museum gallery with paintings on white walls and a bench in the middle", "space": "an exhibition hall full of paintings", "pass": true},
-    {"place": "museum gallery with paintings on white walls and a bench in the middle", "space": "a classroom with a whiteboard", "pass": false},
-    {"place": "skate park with concrete ramps and graffiti", "space": "concrete ramps covered in graffiti", "pass": true}
+    {
+      "place": "train station platform with a canopy and a departure board",
+      "space": "a platform under a canopy, the departure board above her",
+      "pass": true
+    },
+    {
+      "place": "train station platform with a canopy and a departure board",
+      "space": "an airport lounge with tall windows",
+      "pass": false
+    },
+    {
+      "place": "laundromat with rows of washing machines and plastic chairs",
+      "space": "a coin laundry with a row of washing machines",
+      "pass": true
+    },
+    {
+      "place": "hospital room with a single bed, a monitor and a curtain on a rail",
+      "space": "a ward bed beside a heart monitor",
+      "pass": true
+    },
+    {
+      "place": "hospital room with a single bed, a monitor and a curtain on a rail",
+      "space": "a hotel room with a king bed",
+      "pass": false
+    },
+    {
+      "place": "sauna with wooden benches and a stove of hot stones",
+      "space": "a hot room with steaming stones on a stove",
+      "pass": true
+    },
+    {
+      "place": "sauna with wooden benches and a stove of hot stones",
+      "space": "a cold snowy clearing",
+      "pass": false
+    },
+    {
+      "place": "museum gallery with paintings on white walls and a bench in the middle",
+      "space": "an exhibition hall full of paintings",
+      "pass": true
+    },
+    {
+      "place": "museum gallery with paintings on white walls and a bench in the middle",
+      "space": "a classroom with a whiteboard",
+      "pass": false
+    },
+    {
+      "place": "skate park with concrete ramps and graffiti",
+      "space": "concrete ramps covered in graffiti",
+      "pass": true
+    }
   ],
   "poses": [
-    {"pose": "A seated on a boulder, comparing a compass in one hand with a map resting across their knees.",
-     "fits": ["mountain and meadow", "forest", "desert", "river", "lake"],
-     "clashes": ["office", "bathroom", "kitchen", "cinema", "bar and club", "gym"]},
-    {"pose": "A reaching up to a shelf with one arm, feet flat on the ground and the other hand resting against the shelf's side for balance.",
-     "fits": ["kitchen", "library", "shopping", "warehouse and factory", "home office", "laundry"],
-     "clashes": ["beach", "lake", "forest", "snow", "desert", "swimming pool"]},
-    {"pose": "A and B seated across a game board, A moving a piece while B watches with hands resting beside the board.",
-     "fits": ["living room", "cafe and diner", "park", "library", "dorm room"],
-     "clashes": ["swimming pool", "gym", "public restroom", "skate park", "sports ground"]},
-    {"pose": "A kneeling beside a stream, dipping a sample vial into the water with one hand.",
-     "fits": ["river", "forest", "mountain and meadow", "lake"],
-     "clashes": ["office", "kitchen", "bedroom", "bar and club", "cinema", "gym"]},
-    {"pose": "A group spreading a large cloth over a table, each holding a separate section along its edge.",
-     "fits": ["kitchen", "party", "backyard", "cafe and diner", "restaurant kitchen", "living room"],
-     "clashes": ["swimming pool", "gym", "locker room", "skate park", "public restroom", "snow"]},
-    {"pose": "A holding a ladder steady at its base while B stands on a low rung, keeping one hand on the rail.",
-     "fits": ["workshop and garage", "warehouse and factory", "backyard", "library", "shopping"],
-     "clashes": ["beach", "lake", "swimming pool", "cinema", "airplane", "car and bus"]}
+    {
+      "pose": "A seated on a boulder, comparing a compass in one hand with a map resting across their knees.",
+      "fits": [
+        "mountain and meadow",
+        "forest",
+        "desert",
+        "river",
+        "lake"
+      ],
+      "clashes": [
+        "office",
+        "bathroom",
+        "kitchen",
+        "cinema",
+        "bar and club",
+        "gym"
+      ]
+    },
+    {
+      "pose": "A reaching up to a shelf with one arm, feet flat on the ground and the other hand resting against the shelf's side for balance.",
+      "fits": [
+        "kitchen",
+        "library",
+        "shopping",
+        "warehouse and factory",
+        "home office",
+        "laundry"
+      ],
+      "clashes": [
+        "beach",
+        "lake",
+        "forest",
+        "snow",
+        "desert",
+        "swimming pool"
+      ]
+    },
+    {
+      "pose": "A and B seated across a game board, A moving a piece while B watches with hands resting beside the board.",
+      "fits": [
+        "living room",
+        "cafe and diner",
+        "park",
+        "library",
+        "dorm room"
+      ],
+      "clashes": [
+        "swimming pool",
+        "gym",
+        "public restroom",
+        "skate park",
+        "sports ground"
+      ]
+    },
+    {
+      "pose": "A kneeling beside a stream, dipping a sample vial into the water with one hand.",
+      "fits": [
+        "river",
+        "forest",
+        "mountain and meadow",
+        "lake"
+      ],
+      "clashes": [
+        "office",
+        "kitchen",
+        "bedroom",
+        "bar and club",
+        "cinema",
+        "gym"
+      ]
+    },
+    {
+      "pose": "A group spreading a large cloth over a table, each holding a separate section along its edge.",
+      "fits": [
+        "kitchen",
+        "party",
+        "backyard",
+        "cafe and diner",
+        "restaurant kitchen",
+        "living room"
+      ],
+      "clashes": [
+        "swimming pool",
+        "gym",
+        "locker room",
+        "skate park",
+        "public restroom",
+        "snow"
+      ]
+    },
+    {
+      "pose": "A holding a ladder steady at its base while B stands on a low rung, keeping one hand on the rail.",
+      "fits": [
+        "workshop and garage",
+        "warehouse and factory",
+        "backyard",
+        "library",
+        "shopping"
+      ],
+      "clashes": [
+        "beach",
+        "lake",
+        "swimming pool",
+        "cinema",
+        "airplane",
+        "car and bus"
+      ]
+    }
   ]
 }

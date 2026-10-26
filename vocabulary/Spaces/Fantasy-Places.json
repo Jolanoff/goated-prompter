@@ -1,0 +1,343 @@
+{
+  "name": "Fantasy Places",
+  "category": "Spaces",
+  "always": true,
+  "description": "Castles, taverns, magic and enchanted places, villages, ruins, dungeons and sailing ships for historical and fantasy requests; each group's places fit every one of its words.",
+  "groups": [
+    {
+      "group": "castle",
+      "words": [
+        "castle",
+        "castle hall",
+        "throne room",
+        "palace",
+        "fortress",
+        "citadel",
+        "royal court"
+      ],
+      "entries": [
+        "throne room with a high-backed throne and banners",
+        "castle great hall with long tables and a roaring hearth",
+        "castle courtyard with a well and stone walls",
+        "castle battlements with crenellations and a view over the land",
+        "castle bedchamber with a canopy bed and tapestries",
+        "castle armory with racks of swords and shields",
+        "castle kitchen with a spit over the fire and copper pots",
+        "castle library tower with dusty tomes and a round window",
+        "castle chapel with candles and a stone altar",
+        "castle gatehouse with a portcullis and torches",
+        "castle spiral stair with narrow windows",
+        "castle banquet hall with a feast and candelabras",
+        "royal garden with hedges and a marble fountain",
+        "palace ballroom with golden columns and mirrors",
+        "fortress wall walk with arrow slits",
+        "castle tower top with a flag in the wind",
+        "ice palace hall with frozen pillars",
+        "elven palace with white arches and vines",
+        "dwarven hall carved into a mountain with stone pillars",
+        "castle stables with horses and polished tack",
+        "castle moat with a lowered drawbridge",
+        "royal treasury with chests of gold",
+        "council chamber with a round table and maps",
+        "castle solar with a window seat and embroidery frames",
+        "siege camp outside castle walls with tents and banners"
+      ],
+      "worlds": [
+        "historical",
+        "fantasy"
+      ]
+    },
+    {
+      "group": "tavern and inn",
+      "words": [
+        "tavern",
+        "inn",
+        "alehouse",
+        "medieval tavern",
+        "innkeeper",
+        "roadside inn",
+        "hostelry"
+      ],
+      "entries": [
+        "medieval tavern with wooden tables and a crackling hearth",
+        "crowded tavern with bards playing and tankards raised",
+        "inn bedroom with a straw mattress and a candle",
+        "roadside inn courtyard with a stable and a water trough",
+        "tavern cellar with barrels of ale",
+        "mead hall with long benches and carved pillars",
+        "pirate tavern by the docks with lanterns and nets",
+        "tavern kitchen with a cauldron and hanging hams",
+        "inn common room with a notice board and travelers",
+        "snowed-in mountain inn with fur rugs and a fire",
+        "tavern back room with a card table and candles",
+        "tavern balcony over a village street",
+        "quiet inn at night with a single lamp on the bar",
+        "tavern stage with a minstrel and a lute",
+        "crossroads inn with a hanging sign and a muddy road",
+        "inn stable loft with hay and saddles",
+        "harbor tavern with sea charts on the walls",
+        "spit-roast tavern with a roasting pig over the fire",
+        "riverside inn with a terrace over the water",
+        "hunting tavern with antlers and fur cloaks on hooks"
+      ],
+      "worlds": [
+        "historical",
+        "fantasy"
+      ]
+    },
+    {
+      "group": "wizard and magic",
+      "words": [
+        "wizard",
+        "witch",
+        "magic",
+        "magical",
+        "spell",
+        "sorcerer",
+        "sorceress",
+        "alchemy",
+        "alchemist",
+        "potion",
+        "arcane",
+        "mage",
+        "spellbook"
+      ],
+      "entries": [
+        "wizard tower study with floating candles and star charts",
+        "alchemist laboratory with bubbling flasks and copper stills",
+        "potion shop with shelves of glowing bottles",
+        "witch's cottage with herbs drying and a cauldron",
+        "arcane library with floating books and spiral shelves",
+        "crystal ball chamber with velvet drapes and a round table",
+        "summoning chamber with glowing runes on the floor",
+        "magic academy classroom with spell diagrams on the walls",
+        "enchanted observatory with a brass telescope and an orbiting planet model",
+        "mage's garden with glowing plants and a stone bench",
+        "spellbook archive with chained tomes",
+        "wand shop with narrow boxes stacked to the ceiling",
+        "magic duel arena with shimmering barriers",
+        "sorcerer's throne room with floating crystals",
+        "portal room with a swirling gateway",
+        "enchanted kitchen with self-stirring pots",
+        "magical greenhouse with singing flowers",
+        "rune carving workshop with glowing stones",
+        "fortune teller's tent with tarot cards and incense",
+        "dragon egg hatchery with warm glowing stones",
+        "witches' clearing with a bonfire under the moon",
+        "magician's mirror maze with enchanted reflections",
+        "floating staircase hall in a mage tower",
+        "apothecary with jars of dried ingredients",
+        "magic school great hall with banners and floating lights"
+      ],
+      "worlds": [
+        "fantasy"
+      ]
+    },
+    {
+      "group": "enchanted nature",
+      "words": [
+        "enchanted forest",
+        "fairy",
+        "fairies",
+        "fae",
+        "glowing forest",
+        "mystical",
+        "magical forest",
+        "elven",
+        "fairy tale",
+        "otherworldly",
+        "enchanted"
+      ],
+      "entries": [
+        "glowing mushroom forest with blue light",
+        "fairy glade with tiny lights among flowers",
+        "floating islands with waterfalls into the sky",
+        "crystal cave with giant glowing crystals",
+        "elven forest city with bridges between trees",
+        "giant tree hollow with a spiral staircase inside",
+        "moonlit fairy ring of white stones",
+        "enchanted lake with glowing lily pads",
+        "waterfall grotto with sparkling mist and moss",
+        "ancient world tree with roots over a river",
+        "bioluminescent swamp with fireflies",
+        "dragon's lair cave with piles of gold",
+        "rainbow meadow with mist and wildflowers",
+        "cloud kingdom with soft white towers",
+        "frozen fairy forest with ice blossoms",
+        "spirit forest in autumn with floating lanterns",
+        "giant flower field with oversized blossoms",
+        "mermaid lagoon with pearl-colored rocks",
+        "sky bridge of vines between cliffs",
+        "enchanted garden with moving topiary",
+        "fae market under the trees with glowing stalls",
+        "crystal waterfall with rainbow light",
+        "willow grove with hanging lights",
+        "stone circle at twilight with glowing runes",
+        "starlit meadow with drifting sparkles"
+      ],
+      "worlds": [
+        "fantasy"
+      ]
+    },
+    {
+      "group": "medieval village",
+      "words": [
+        "village",
+        "medieval village",
+        "market square",
+        "town square",
+        "peasant",
+        "cottage",
+        "marketplace",
+        "hamlet"
+      ],
+      "entries": [
+        "medieval market square with stalls and a well",
+        "blacksmith forge with an anvil and glowing coals",
+        "thatched cottage with a herb garden",
+        "village bakery with a stone oven",
+        "watermill with a turning wheel and sacks of flour",
+        "village street with timber-framed houses",
+        "village green with a maypole",
+        "cobbler's shop with boots on shelves",
+        "weaver's cottage with a loom",
+        "village well with wooden buckets and a stone rim",
+        "old market with carts of vegetables",
+        "town gate with watchtowers",
+        "village square at night with torches",
+        "potter's workshop with clay jars drying",
+        "stone bridge into a village",
+        "fishing village with nets drying on poles",
+        "herbalist's hut with drying herbs",
+        "candle maker's shop with dipping racks",
+        "hillside hamlet with smoke from chimneys",
+        "village festival with banners and a bonfire",
+        "tannery yard with hides on racks",
+        "wheelwright's yard with cartwheels"
+      ],
+      "worlds": [
+        "historical",
+        "fantasy"
+      ]
+    },
+    {
+      "group": "ruins and temples",
+      "words": [
+        "ruins",
+        "ancient",
+        "temple",
+        "ruined",
+        "ancient city",
+        "shrine",
+        "monument",
+        "lost city"
+      ],
+      "entries": [
+        "overgrown temple ruins with vines on stone columns",
+        "pyramid chamber with hieroglyphs",
+        "colosseum arena with crumbling arches",
+        "stone circle on a hill at dawn",
+        "catacombs with stone niches and candles",
+        "sunken temple with water at the steps",
+        "greek temple with white columns on a hill",
+        "jungle temple with a stepped pyramid",
+        "ruined abbey with empty windows and grass",
+        "desert tomb entrance with carved pillars",
+        "roman bath ruins with mosaic floors",
+        "mountain shrine with prayer flags",
+        "amphitheater ruins with weeds",
+        "lost city in the clouds with terraces",
+        "temple courtyard with a reflecting pool",
+        "underground tomb with sarcophagi",
+        "ancient observatory ruins",
+        "crumbling fortress ruins by the sea",
+        "forgotten library ruins with fallen shelves",
+        "statue garden ruins with weathered statues",
+        "cliff temple carved into rock",
+        "ancient aqueduct over a valley"
+      ],
+      "worlds": [
+        "historical",
+        "fantasy"
+      ]
+    },
+    {
+      "group": "dungeon",
+      "words": [
+        "dungeon",
+        "prison",
+        "cell",
+        "jail",
+        "prison cell",
+        "gaol"
+      ],
+      "entries": [
+        "stone dungeon corridor with torches and iron doors",
+        "prison cell with straw on the floor and a barred window",
+        "dungeon guard room with keys on hooks and a table",
+        "underground cellblock with rows of iron bars",
+        "oubliette pit with a grate above",
+        "dungeon stairway spiraling into darkness",
+        "flooded dungeon with water on the floor",
+        "castle jail with iron rings in the walls",
+        "dungeon crypt with coffins and cobwebs",
+        "treasure vault behind a dungeon gate",
+        "prison yard with high walls",
+        "tower prison cell with a small window",
+        "dungeon storeroom with sacks and barrels",
+        "underground river dungeon with a wooden bridge",
+        "dungeon cell at night with a single candle",
+        "cave jail with wooden bars",
+        "stone dungeon cell with a heavy wooden door",
+        "dungeon passage with dripping water and moss",
+        "sewer tunnels with arches and murky water",
+        "gaol courtyard with stocks"
+      ],
+      "worlds": [
+        "historical",
+        "fantasy"
+      ]
+    },
+    {
+      "group": "sailing ship",
+      "words": [
+        "sailing ship",
+        "pirate ship",
+        "galleon",
+        "ship deck",
+        "pirate",
+        "pirates",
+        "tall ship",
+        "captain's cabin",
+        "crow's nest",
+        "aboard a ship"
+      ],
+      "entries": [
+        "pirate ship deck with cannons and rigging",
+        "captain's cabin with maps and a lantern",
+        "galleon hold with barrels and hammocks",
+        "crow's nest high above the sea",
+        "ship's wheel on a stormy deck",
+        "tall ship at sunset with full sails",
+        "pirate cove with a ship at anchor",
+        "longship on a fjord",
+        "ship's mess deck with long benches and lanterns",
+        "gun deck with open gun ports",
+        "ship's bow with a carved figurehead over the waves",
+        "harbor quay with tall ships and crates",
+        "shipwreck on a reef at low tide",
+        "foggy deck with lanterns and coiled ropes",
+        "merchant ship deck with crates of spices",
+        "ship's rigging with rope ladders and sails",
+        "treasure island beach with a buried chest",
+        "smuggler's cave with a rowboat and lanterns",
+        "frigate deck with brass and polished wood",
+        "river barge with a sail on a calm river"
+      ],
+      "worlds": [
+        "historical",
+        "fantasy"
+      ]
+    }
+  ]
+}

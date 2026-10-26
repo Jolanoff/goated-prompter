@@ -78,27 +78,34 @@ class Bundled(unittest.TestCase):
         self.assertEqual(names["Actions & Poses/Solo-Activities"], "Solo Activities")
 
     def test_always_on_catalogs_are_distinct_and_safe(self):
-        # A built-in catalog every run deals from: groups of places with the words a request uses for them, each place
-        # in one group, no two places alike (a catalog that grows must not fill with near copies), and nothing adult
-        # (vocabulary/SKILL.md).
+        # The built-in catalogs every run deals from: groups of 20 to 50 places with the words a request uses for them,
+        # each place in one group and named once, no two places alike (a catalog that grows must not fill with near
+        # copies), every group's worlds named (a backdrop fits every world) and nothing adult (vocabulary/SKILL.md).
         from goated_prompter.features.dataset.v2.safety import adult_text
         from goated_prompter.features.vocabulary.retrieval import entry_name as head
         from goated_prompter.options.dataset import WORLDS
         words = lambda text: set(re.findall(r"[a-z0-9]+", text.casefold())) - {"a", "an", "the", "and", "with", "of", "on", "in"}
         always = catalog.always_on(load_catalog(user_root=False), "Spaces")
-        self.assertEqual([pack["id"] for pack in always], ["Spaces/Everyday-Places"])
-        entries, groups = always[0]["entries"], always[0]["groups"]
-        self.assertEqual(len(entries), 108)
+        self.assertEqual([pack["id"] for pack in always], ["Spaces/Backdrops", "Spaces/Everyday-Places",
+                                                           "Spaces/Fantasy-Places", "Spaces/Fun-and-Creative-Places",
+                                                           "Spaces/Outer-Space"])
+        groups = [group for pack in always for group in pack["groups"]]
+        entries = [entry for pack in always for entry in pack["entries"]]
+        self.assertGreater(len(entries), 1500)
         self.assertEqual(sorted(place for group in groups for place in group["entries"]), sorted(entries))
-        self.assertTrue(any(group.get("adult_default") for group in groups))
-        self.assertFalse([group["name"] for group in groups if not group.get("worlds")], "every group names its worlds")
-        self.assertTrue(set(WORLDS) >= {world for group in groups for world in group["worlds"]})
+        self.assertFalse([group["name"] for group in groups if not 20 <= len(group["entries"]) <= 50], "20 to 50 a group")
+        self.assertEqual(len({group["name"] for group in groups}), len(groups), "every group named once")
+        self.assertEqual({group["name"] for group in groups if group.get("adult_default")}, {"bedroom", "hotel room"})
+        self.assertEqual([group["name"] for group in groups if not group.get("worlds")], ["plain backdrop"],
+                         "every group names its worlds but the backdrops, which fit every one")
+        self.assertTrue(set(WORLDS) >= {world for group in groups for world in group.get("worlds") or ()})
         self.assertFalse([word for group in groups for word in group["words"] if adult_text(word)])
         names = [head(entry).casefold() for entry in entries]
         self.assertEqual(len(set(names)), len(names), "every place has its own name")
-        for first, second in itertools.combinations(entries, 2):
-            one, two = words(first), words(second)
-            self.assertLess(len(one & two) / len(one | two), .6, f"near copies: {first} / {second}")
+        sets = [words(entry) for entry in entries]
+        near = [(entries[a], entries[b]) for a, b in itertools.combinations(range(len(entries)), 2)
+                if len(sets[a] & sets[b]) / len(sets[a] | sets[b]) >= .6]
+        self.assertEqual(near, [], "near copies")
         self.assertFalse([entry for entry in entries if adult_text(entry)])
 
 

@@ -2,7 +2,7 @@
   "name": "Everyday Places",
   "category": "Spaces",
   "always": true,
-  "description": "Places every run deals from without being selected: one per image, so each image is set somewhere else. Each group holds places that fit every one of its words.",
+  "description": "Everyday places every run deals from without being selected: homes, work, public places, transport and nature. Each group holds places that fit every one of its words.",
   "groups": [
     {
       "group": "bedroom",
@@ -23,16 +23,39 @@
         "asleep",
         "waking up",
         "napping",
-        "reading",
-        "attic",
-        "loft",
-        "master bedroom"
+        "reading"
       ],
       "entries": [
         "small bedroom with a single bed under the window and posters on the wall",
         "attic bedroom with a slanted wooden ceiling and a round window",
         "master bedroom with a wide upholstered headboard and heavy curtains",
-        "minimalist bedroom with white walls and a low platform bed"
+        "minimalist bedroom with white walls and a low platform bed",
+        "cozy bedroom with fairy lights over the headboard and a knitted throw",
+        "loft bedroom with exposed brick and a mattress under a skylight",
+        "guest bedroom with twin beds and floral wallpaper",
+        "teenage bedroom with a gaming desk and band posters",
+        "penthouse bedroom with floor-to-ceiling windows and a city view",
+        "farmhouse bedroom with a wrought iron bed and a patchwork quilt",
+        "japanese-style bedroom with a futon on tatami mats and paper screens",
+        "boho bedroom with macrame on the wall and hanging plants",
+        "moody bedroom with charcoal walls and velvet bedding",
+        "beach house bedroom with white shutters and linen curtains in the breeze",
+        "basement bedroom with a small high window and a string of lights",
+        "log cabin bedroom with timber walls and a plaid blanket",
+        "vintage bedroom with a brass bed and rose wallpaper",
+        "scandinavian bedroom with pale wood floors and a sheepskin rug",
+        "messy bedroom with clothes piled on a chair and an unmade bed",
+        "canopy bedroom with a four-poster bed and sheer drapes",
+        "city apartment bedroom with a radiator under the window and a clothes rail",
+        "industrial bedroom with concrete walls and an iron bed frame",
+        "sunlit bedroom with yellow walls and a window seat",
+        "art deco bedroom with a curved headboard and gold lamps",
+        "nautical bedroom with navy stripes and a porthole mirror",
+        "student bedroom with a desk under a raised bed",
+        "chalet bedroom with a wooden balcony door and a fur throw",
+        "hostel bunk room with metal bunk beds and lockers",
+        "moonlit bedroom with silver light on the sheets and a bedside lamp",
+        "plant-filled bedroom with potted ferns and a rattan chair"
       ],
       "worlds": [
         "everyday"
@@ -59,7 +82,30 @@
       ],
       "entries": [
         "living room with a worn sofa facing a television and a rug on the floor",
-        "studio apartment with the bed, kitchen and sofa in one room"
+        "studio apartment with the bed, kitchen and sofa in one room",
+        "cozy living room with a fireplace and bookshelves",
+        "modern living room with a sectional sofa and a glass coffee table",
+        "retro living room with wood paneling and a shag rug",
+        "loft living room with high ceilings and steel beams",
+        "small apartment living room with a futon and a window onto the street",
+        "family room with a big couch and a game console under the television",
+        "grandparents' living room with lace doilies and a cuckoo clock",
+        "minimalist living room with white walls and a single armchair",
+        "sunroom with wicker furniture and windows on three sides",
+        "den with leather armchairs and a reading lamp",
+        "open-plan lounge with a kitchen island behind a long sofa",
+        "victorian parlor with a velvet settee and a grand mirror",
+        "home theater room with recliner seats and a projector screen",
+        "beach house living room with driftwood decor and a sea view",
+        "bohemian living room with floor cushions and patterned rugs",
+        "mid-century living room with a teak sideboard and a globe lamp",
+        "cluttered living room with toys on the floor and laundry on the couch",
+        "penthouse lounge with panoramic windows and a white leather sofa",
+        "cabin living room with a wood stove and plaid armchairs",
+        "dark living room lit only by a television glow",
+        "studio loft with a brick wall and a bed behind a bookcase",
+        "rec room with a pool table and a bar counter",
+        "conservatory with potted palms and a tiled floor"
       ],
       "worlds": [
         "everyday"
@@ -82,7 +128,24 @@
       "entries": [
         "hallway with framed photos along the wall and a runner rug",
         "staircase in a house with a wooden banister and carpeted steps",
-        "office building stairwell with concrete steps and a metal handrail"
+        "office building stairwell with concrete steps and a metal handrail",
+        "long apartment corridor with numbered doors and flickering lights",
+        "grand entrance hall with a sweeping staircase and a chandelier",
+        "narrow farmhouse hallway with coat hooks and muddy boots",
+        "spiral staircase with an iron railing and a round window",
+        "school corridor with lockers and a noticeboard",
+        "hotel corridor with patterned carpet and identical doors",
+        "back stairwell with peeling paint and a fire extinguisher",
+        "wooden attic stairs with a hatch at the top",
+        "marble staircase with brass handrails and a red runner",
+        "hospital corridor with a gurney against the wall and bright ceiling lights",
+        "apartment building entryway with mailboxes and a tiled floor",
+        "outdoor stone stairs between houses with potted plants",
+        "office corridor with glass walls and carpet tiles",
+        "dim cellar steps with stone walls and a bare bulb",
+        "mansion landing with portraits on the walls and a balustrade",
+        "subway station stairs with tiled walls and a handrail",
+        "victorian hallway with a checkerboard floor and a coat stand"
       ],
       "worlds": [
         "everyday"
@@ -107,7 +170,25 @@
       ],
       "entries": [
         "open-plan kitchen with a marble island and pendant lights above it",
-        "narrow galley kitchen with tiled walls and a window over the sink"
+        "narrow galley kitchen with tiled walls and a window over the sink",
+        "rustic farmhouse kitchen with a big wooden table and copper pots",
+        "studio kitchenette with a two-burner stove and a tiny fridge",
+        "retro kitchen with checkered tiles and a chrome toaster",
+        "modern white kitchen with handleless cabinets and a breakfast bar",
+        "cottage kitchen with an old range stove and herbs on the windowsill",
+        "industrial loft kitchen with stainless steel counters and open shelving",
+        "messy kitchen with dishes piled in the sink and flour on the counter",
+        "outdoor kitchen with a built-in grill and a stone counter",
+        "mediterranean kitchen with blue tiles and hanging garlic braids",
+        "dark kitchen with black cabinets and warm pendant lamps",
+        "apartment kitchen with a window over the fire escape and a small table",
+        "country kitchen with a farmhouse sink and gingham curtains",
+        "pastel kitchen with mint cabinets and a vintage fridge",
+        "kitchen at night lit by the open fridge",
+        "cabin kitchen with a cast iron stove and log walls",
+        "family kitchen with drawings on the fridge and a long counter",
+        "tiny city kitchen with a hanging pot rack and a narrow counter",
+        "breakfast nook with bar stools and morning sun"
       ],
       "worlds": [
         "everyday"
@@ -124,7 +205,26 @@
         "plating"
       ],
       "entries": [
-        "restaurant kitchen with steel counters and pans hanging over the stoves"
+        "restaurant kitchen with steel counters and pans hanging over the stoves",
+        "busy line kitchen with flaming pans and order tickets on a rail",
+        "sushi counter with a knife station and fish on ice",
+        "pizzeria kitchen with a wood-fired oven and dough on marble",
+        "bakery kitchen with deck ovens and racks of bread",
+        "banquet kitchen with long steel tables and stacks of plates",
+        "food truck interior with a griddle and a serving window",
+        "school cafeteria kitchen with large pots and serving trays",
+        "noodle shop kitchen with steaming pots and hanging ladles",
+        "fine dining kitchen with chefs plating under heat lamps",
+        "pastry kitchen with a marble slab and piping bags",
+        "diner kitchen with a flat-top grill and a pass-through window",
+        "ship's galley with secured pots and a small stove",
+        "catering kitchen with stacked trays and rolling racks",
+        "cooking school kitchen with rows of stations and mirrors over the counters",
+        "ramen stall kitchen with a narrow counter and steam",
+        "cooking show set with bright lights and a camera crew",
+        "street food stall with a wok over open flames",
+        "walk-in cold room with shelves of produce and frosty air",
+        "vegan cafe kitchen with jars of grains and a juicer"
       ],
       "worlds": [
         "everyday"
@@ -149,7 +249,24 @@
       "entries": [
         "home bathroom with a bathtub and white tiles",
         "walk-in shower room with glass walls and dark slate tiles",
-        "hotel bathroom with a double sink and a large mirror"
+        "hotel bathroom with a double sink and a large mirror",
+        "marble bathroom with a freestanding tub and gold taps",
+        "small apartment bathroom with a shower curtain and a pedestal sink",
+        "retro bathroom with pink tiles and a clawfoot tub",
+        "spa-like bathroom with a rain shower and teak floor mats",
+        "rustic bathroom with stone walls and a copper basin",
+        "steamy bathroom with a fogged mirror and a filled bathtub",
+        "modern bathroom with a floating vanity and a backlit mirror",
+        "tiny bathroom with a skylight and green tiles",
+        "victorian bathroom with black and white floor tiles and a roll-top tub",
+        "candlelit bathroom with a sunken tub and a stone ledge",
+        "japanese bathroom with a deep wooden soaking tub and a stool",
+        "industrial bathroom with concrete walls and exposed pipes",
+        "family bathroom with rubber ducks on the tub edge and a step stool",
+        "beach house bathroom with a shell mirror and a door to an outdoor shower",
+        "garden-view bathroom with a large window and hanging plants",
+        "attic bathroom with a sloped ceiling and a skylight over the tub",
+        "luxury bathroom with double vanities and a walk-in rain shower"
       ],
       "worlds": [
         "everyday"
@@ -167,7 +284,26 @@
         "urinal"
       ],
       "entries": [
-        "public restroom with a row of stalls and sinks under a long mirror"
+        "public restroom with a row of stalls and sinks under a long mirror",
+        "airport restroom with long mirrors and automatic taps",
+        "gas station restroom with graffiti on the walls and a flickering light",
+        "stadium restroom with a long row of sinks and concrete floors",
+        "hotel restroom with marble walls and folded hand towels",
+        "nightclub restroom with neon lights and stickers on the mirror",
+        "train station toilet with metal stalls and tiled walls",
+        "park restroom with concrete walls and a skylight",
+        "office restroom with grey partitions and a hand dryer",
+        "shopping mall restroom with a baby changing station and bright lights",
+        "restaurant restroom with dark wood and a vessel sink",
+        "festival portable toilets in a row of blue cabins",
+        "highway rest stop restroom with steel sinks and vending machines",
+        "school restroom with small sinks and a long mirror",
+        "cinema restroom with red tiles and a queue",
+        "museum restroom with art prints and a wide sink",
+        "subway restroom with dim lights and a single stall",
+        "beach restroom with a sandy floor and outdoor showers",
+        "old public toilet with chipped tiles and a pull-chain flush",
+        "hospital restroom with grab rails and an emergency cord"
       ],
       "worlds": [
         "everyday"
@@ -187,7 +323,25 @@
       ],
       "entries": [
         "gym locker room with metal lockers and a wooden bench",
-        "communal shower room with tiled walls and a row of shower heads"
+        "communal shower room with tiled walls and a row of shower heads",
+        "football locker room with team jerseys in open lockers",
+        "swimming pool changing room with tiled benches and wet floors",
+        "hockey locker room with skates and pads on the benches",
+        "high school locker room with metal lockers and a chalkboard of plays",
+        "luxury gym changing room with wooden lockers and towel stacks",
+        "baseball clubhouse with lockers and a trophy shelf",
+        "fire station locker room with gear racks and boots",
+        "boxing gym locker area with gloves hanging and a worn bench",
+        "basketball locker room with a team logo on the floor",
+        "stadium team shower with tiled stalls and steam",
+        "old locker room with rusted lockers and a cracked mirror",
+        "ski lodge changing room with boot heaters and benches",
+        "rugby locker room with muddy boots and an ice bath",
+        "corporate gym locker room with digital locks and a vanity",
+        "beach changing cabins with wooden doors and sand on the floor",
+        "military locker room with footlockers and uniforms",
+        "soccer dressing room with a tactics board and towels",
+        "dojo changing room with sliding doors and tatami"
       ],
       "worlds": [
         "everyday"
@@ -210,7 +364,26 @@
         "weight room"
       ],
       "entries": [
-        "gym with weight racks, benches and mirrors along one wall"
+        "gym with weight racks, benches and mirrors along one wall",
+        "boxing gym with a ring and heavy bags in a row",
+        "crossfit box with kettlebells and climbing ropes",
+        "luxury fitness club with treadmills facing a city view",
+        "old-school weightlifting gym with chalk dust and iron plates",
+        "yoga studio with wooden floors and rolled mats",
+        "climbing gym with colorful holds and crash mats",
+        "spin class studio with neon lights and rows of bikes",
+        "garage gym with a squat rack and a rubber floor",
+        "hotel gym with two treadmills and a mirror wall",
+        "martial arts dojo with tatami mats and a wall scroll",
+        "outdoor fitness park with pull-up bars and parallel bars",
+        "pilates studio with reformer machines and large windows",
+        "school gymnasium with a basketball court and folding bleachers",
+        "bodybuilding gym with dumbbell racks and posing mirrors",
+        "rehab gym with parallel bars and therapy balls",
+        "dance studio with a barre and wall mirrors",
+        "military training gym with ropes and tire stacks",
+        "rooftop gym with glass walls and a sunrise view",
+        "gymnastics hall with balance beams and foam pits"
       ],
       "worlds": [
         "everyday"
@@ -229,7 +402,25 @@
       ],
       "entries": [
         "indoor swimming pool with lane ropes and tiled edges",
-        "backyard swimming pool with loungers and a tiled edge"
+        "backyard swimming pool with loungers and a tiled edge",
+        "olympic swimming pool with starting blocks and a scoreboard",
+        "infinity pool overlooking the ocean with sun loungers",
+        "hotel rooftop pool with cabanas and a skyline",
+        "public outdoor pool with a high diving board and crowds",
+        "indoor lap pool with a glass roof and palms",
+        "kidney-shaped backyard pool with a diving board and inflatables",
+        "natural rock pool with clear water and a small waterfall",
+        "abandoned empty pool with graffiti and dry leaves",
+        "resort pool with a swim-up bar and palm trees",
+        "night pool with underwater lights and a glowing surface",
+        "thermal pool with steam and stone edges",
+        "splash pool with water jets and bright tiles",
+        "lido with art deco changing cabins and striped umbrellas",
+        "villa pool with a stone terrace and cypress trees",
+        "community pool with plastic chairs and a lifeguard tower",
+        "indoor wave pool with a slide and tropical murals",
+        "diving pool with a ten-meter platform and deep blue water",
+        "plunge pool on a small patio with tiles and plants"
       ],
       "worlds": [
         "everyday"
@@ -239,18 +430,30 @@
       "group": "spa",
       "words": [
         "spa",
-        "sauna",
-        "steam room",
-        "massage",
-        "hot tub",
-        "jacuzzi",
         "spa day",
         "wellness"
       ],
       "entries": [
         "sauna with wooden benches and a stove of hot stones",
         "spa treatment room with a massage table and dim candles",
-        "outdoor hot tub on a wooden deck with steam rising"
+        "outdoor hot tub on a wooden deck with steam rising",
+        "turkish hammam with marble slabs and a domed ceiling",
+        "steam room with tiled benches and thick mist",
+        "spa lounge with robes and cucumber water",
+        "japanese onsen with an outdoor stone bath and steam",
+        "couples massage room with two tables and bamboo walls",
+        "infrared sauna with dark wood and red light",
+        "mountain hot spring with steaming pools among rocks",
+        "relaxation room with loungers and dim lights",
+        "salt cave room with pink salt walls and lounge chairs",
+        "mud bath spa with clay tubs and towels",
+        "hotel spa pool with candles and mosaic tiles",
+        "lakeside sauna with a wooden bench and a window to the water",
+        "nail salon with pedicure chairs and polish racks",
+        "facial treatment room with a reclining chair and soft lamps",
+        "flotation tank room with dark water and blue light",
+        "spa cabana with white curtains and a massage bed",
+        "barrel sauna in the snow with a glowing window"
       ],
       "worlds": [
         "everyday"
@@ -275,7 +478,24 @@
       "entries": [
         "walk-in closet with racks of clothes and a full-length mirror",
         "clothing store fitting room with a curtain and a tall mirror",
-        "theater dressing room with a mirror framed in bulbs and costumes on a rack"
+        "theater dressing room with a mirror framed in bulbs and costumes on a rack",
+        "boutique dressing room with a velvet curtain and a gilded mirror",
+        "bedroom closet with sliding doors and shelves of folded sweaters",
+        "makeup vanity corner with a lighted mirror and brushes in jars",
+        "costume wardrobe room with racks of costumes and hat boxes",
+        "luxury dressing room with an island of drawers and shoe shelves",
+        "department store fitting room with a bench and a three-way mirror",
+        "backstage dressing area with a clothing rail and a full-length mirror",
+        "wardrobe nook with a curtain and a few hangers",
+        "bridal dressing suite with a long mirror and a gown on a stand",
+        "vintage shop fitting booth with a patterned curtain and a stool",
+        "theater wig room with wigs on stands and a mirror wall",
+        "walk-in wardrobe with white shelves and a round ottoman",
+        "dance studio changing area with cubbies and a long mirror",
+        "fashion show backstage with garment racks and bright bulbs",
+        "closet under the stairs with coats and a single bulb",
+        "tailor's fitting room with a dressmaker's mannequin and a pedestal",
+        "hotel dressing area with a robe on a hook and a lit mirror"
       ],
       "worlds": [
         "everyday"
@@ -295,7 +515,25 @@
       ],
       "entries": [
         "laundry room with a stacked washer and dryer and a folding table",
-        "laundromat with rows of washing machines and plastic chairs"
+        "laundromat with rows of washing machines and plastic chairs",
+        "basement laundry room with a concrete floor and a utility sink",
+        "all-night laundromat with buzzing lights and empty chairs",
+        "bright laundry room with white cabinets and a folding counter",
+        "apartment laundry closet with a stacked washer behind folding doors",
+        "retro laundromat with orange chairs and coin machines",
+        "hotel laundry room with industrial washers and carts of towels",
+        "farmhouse laundry room with a deep sink and a drying rack",
+        "backyard laundry line with sheets blowing in the wind",
+        "shared building laundry room with notices on the wall and a sorting table",
+        "corner laundromat with a vending machine and a wall of dryers",
+        "small utility room with a boiler and a laundry basket",
+        "dorm laundry room with a row of machines and a lint-covered floor",
+        "tiled laundry room with patterned floor tiles and a hanging rail",
+        "launderette with a neon sign in the window and plastic baskets",
+        "garden-side laundry room with a window and baskets of folded towels",
+        "industrial laundry with large steam presses and rolling bins",
+        "laundry nook with a washer under the counter and a shelf of detergent",
+        "checkered laundromat with a black and white floor and a bench"
       ],
       "worlds": [
         "everyday"
@@ -309,7 +547,26 @@
         "underground room"
       ],
       "entries": [
-        "basement with exposed pipes, a concrete floor and a single hanging bulb"
+        "basement with exposed pipes, a concrete floor and a single hanging bulb",
+        "finished basement with carpet and a sectional sofa",
+        "unfinished basement with bare studs and storage boxes",
+        "wine cellar with racks of bottles and a vaulted brick ceiling",
+        "root cellar with shelves of jars and an earthen floor",
+        "boiler room with pipes and a rumbling furnace",
+        "basement workshop with a pegboard of tools and a workbench",
+        "flooded basement with puddles and floating boxes",
+        "basement storage room with metal shelving and furniture under sheets",
+        "stone cellar with arched walls and a wooden door",
+        "basement home gym with rubber mats and a punching bag",
+        "basement music den with foam on the walls and an amplifier",
+        "storm shelter with bunks and canned food on shelves",
+        "creepy basement with a swinging bulb and cobwebs",
+        "basement bar with a neon sign and a dartboard",
+        "underground bunker with concrete walls and a steel hatch",
+        "basement apartment with a half window at street level and a narrow bed",
+        "cellar pantry with hanging herbs and wooden barrels",
+        "dusty basement with old trunks and a broken rocking chair",
+        "basement game room with a ping-pong table and an arcade cabinet"
       ],
       "worlds": [
         "everyday"
@@ -333,7 +590,24 @@
       "entries": [
         "home garage with a workbench, hanging tools and an oil-stained floor",
         "woodworking workshop with sawdust on the floor and clamps on the wall",
-        "car repair garage with a raised car on a lift and tool chests"
+        "car repair garage with a raised car on a lift and tool chests",
+        "bike repair shop with bicycles on stands and tools on a pegboard",
+        "motorcycle garage with a bike on a lift and oil cans",
+        "welding workshop with sparks and metal sheets",
+        "cluttered garage with boxes, a car and holiday decorations",
+        "electronics repair bench with circuit boards and a soldering iron",
+        "furniture restoration workshop with chairs stripped of paint",
+        "luthier's workshop with guitar bodies and hanging tools",
+        "auto body shop with a car in a paint booth",
+        "tool shed with garden tools and a workbench",
+        "clean modern garage with an epoxy floor and a sports car",
+        "watch repair desk with a magnifying lamp and tiny tools",
+        "boatyard workshop with a hull on supports",
+        "tire shop with stacks of tires and an air compressor",
+        "old barn workshop with a lathe and wood shavings",
+        "vintage car garage with a classic car under a sheet",
+        "locksmith workshop with key machines and blanks on hooks",
+        "shoe repair stall with lasts and leather scraps"
       ],
       "worlds": [
         "everyday"
@@ -353,7 +627,25 @@
       ],
       "entries": [
         "warehouse with tall metal shelving and pallets of boxes",
-        "factory floor with conveyor belts and yellow safety lines"
+        "factory floor with conveyor belts and yellow safety lines",
+        "abandoned warehouse with broken windows and pigeons",
+        "distribution center with conveyor belts and parcel chutes",
+        "steel mill with a molten metal glow and heavy chains",
+        "textile factory with rows of sewing machines",
+        "car assembly line with robot arms and sparks",
+        "brewery floor with steel tanks and pipes",
+        "shipping container yard with stacked containers and cranes",
+        "cold storage warehouse with frosted racks",
+        "printing plant with huge rolls of paper and presses",
+        "loading dock with trucks backed up and roller doors",
+        "old brick factory with tall windows and iron columns",
+        "furniture warehouse with wrapped sofas on shelves",
+        "candy factory floor with mixing vats and conveyor belts",
+        "recycling plant with bales of cardboard and sorting belts",
+        "bottling plant with rows of bottles on a conveyor",
+        "lumber yard with stacked planks and forklifts",
+        "electronics factory clean room with workers in white suits",
+        "stockroom behind a shop with boxes and a ladder"
       ],
       "worlds": [
         "everyday"
@@ -378,7 +670,24 @@
       "entries": [
         "open-plan office with rows of desks and computer monitors",
         "glass-walled meeting room with a long table and a screen on the wall",
-        "private office with a large wooden desk and a leather chair"
+        "private office with a large wooden desk and a leather chair",
+        "corner executive office with panoramic windows and a large desk",
+        "cubicle farm with grey partitions and fluorescent lights",
+        "startup office with beanbags and a ping-pong table",
+        "law office with wood paneling and shelves of legal books",
+        "newsroom with rows of desks and screens of news",
+        "call center with headsets and long desks",
+        "coworking space with shared tables and plants",
+        "detective's office with a desk lamp and window blinds",
+        "boardroom with a long table and leather chairs",
+        "accountant's office with filing cabinets and a calculator",
+        "architect's office with scale models and drafting tables",
+        "government office with a counter and a queue number display",
+        "office break room with a coffee machine and a vending machine",
+        "trading floor with screens of charts and phones",
+        "open office at night with empty desks and city lights",
+        "reception area with a logo wall and a waiting sofa",
+        "agency office with mood boards and big monitors"
       ],
       "worlds": [
         "everyday"
@@ -396,7 +705,26 @@
         "laptop"
       ],
       "entries": [
-        "home office with a desk under shelves of books and a desk lamp"
+        "home office with a desk under shelves of books and a desk lamp",
+        "attic study with a writing desk under the skylight and stacks of books",
+        "modern home office with a standing desk and two monitors",
+        "cozy study with a leather armchair and a wall of books",
+        "kitchen table workspace with a laptop and coffee cups",
+        "bedroom desk corner with a laptop and a desk lamp",
+        "victorian study with a mahogany desk and a globe",
+        "garden office shed with large windows and a small heater",
+        "minimal home office with a white desk and a single plant",
+        "cluttered home office with papers everywhere and sticky notes on the wall",
+        "student desk nook with textbooks and highlighters",
+        "writer's den with a typewriter and crumpled pages",
+        "video call corner with a ring light and a bookshelf backdrop",
+        "window desk with a view of the city at night and a mug of tea",
+        "loft workspace with a drafting table and blueprints",
+        "library desk with a green banker's lamp and a leather chair",
+        "converted closet office with a tiny desk and shelves overhead",
+        "basement office with fluorescent light and a corkboard",
+        "sunny home office with yellow walls and a cat on the desk",
+        "gaming desk setup with colored lights and a curved monitor"
       ],
       "worlds": [
         "everyday"
@@ -413,7 +741,26 @@
         "roommate"
       ],
       "entries": [
-        "college dorm room with two narrow beds and desks against the walls"
+        "college dorm room with two narrow beds and desks against the walls",
+        "shared dorm room with bunk beds and two desks under the window",
+        "single dorm room with a twin bed and a mini fridge",
+        "decorated dorm room with tapestries and string lights",
+        "boarding school dormitory with rows of iron beds and trunks",
+        "messy dorm room with pizza boxes and clothes on the floor",
+        "dorm common room with worn couches and a shared television",
+        "dorm room at night with desk lamps and a sleeping roommate",
+        "minimal dorm room with grey bedding and a cork board",
+        "international dorm room with flags on the wall and a hot plate",
+        "dorm kitchen with a shared fridge full of labelled food",
+        "dorm study room with long tables and whiteboards",
+        "hostel dormitory with lockers and curtains around the bunks",
+        "university residence room with a sink in the corner and a narrow wardrobe",
+        "lofted dorm room with a bed over a sofa",
+        "movie-night dorm room with posters and a projector",
+        "art student dorm with canvases against the bed and paint stains",
+        "dorm balcony with two folding chairs and a view of campus",
+        "triple dorm room with three beds and stacked storage bins",
+        "barracks with neat cots and footlockers"
       ],
       "worlds": [
         "everyday"
@@ -436,7 +783,25 @@
       ],
       "entries": [
         "hotel room with a king bed, a window over the city and a desk",
-        "roadside motel room with a patterned bedspread and a wall air conditioner"
+        "roadside motel room with a patterned bedspread and a wall air conditioner",
+        "luxury hotel suite with a sitting area and a view of the sea",
+        "honeymoon suite with rose petals on the bed and champagne",
+        "budget hotel room with a small window and a kettle",
+        "capsule hotel pod with a mattress and a reading light",
+        "boutique hotel room with bold wallpaper and a velvet chair",
+        "resort bungalow with a thatched roof and an ocean breeze",
+        "overwater villa with a glass floor panel and a deck",
+        "ski resort hotel room with a fireplace and a snowy view",
+        "business hotel room with a desk and city lights",
+        "old-fashioned hotel room with a brass bed and floral curtains",
+        "high-floor hotel room with tall windows at night",
+        "beach motel room with a wicker headboard and sand on the floor",
+        "desert motel room with a neon sign outside the window",
+        "presidential suite with a grand piano and chandeliers",
+        "room service morning with a tray on the bed and open curtains",
+        "riad room with carved arches and lanterns",
+        "mountain inn room with wooden beams and a quilt",
+        "airport hotel room with blackout curtains and a view of runways"
       ],
       "worlds": [
         "everyday"
@@ -454,7 +819,25 @@
       ],
       "entries": [
         "hotel lobby with marble floors and a reception desk",
-        "elevator with brushed steel walls and a mirror"
+        "elevator with brushed steel walls and a mirror",
+        "grand hotel lobby with a chandelier and a marble staircase",
+        "corporate lobby with a security desk and turnstiles",
+        "glass elevator with a view over an atrium",
+        "old cage elevator with brass gates",
+        "apartment lobby with mailboxes and a doorman desk",
+        "hospital lobby with a waiting area and an information desk",
+        "boutique hotel reception with a vintage counter and keys on hooks",
+        "service elevator with padded walls and a dolly",
+        "airport hotel lobby with suitcases and a check-in line",
+        "modern lobby with a living green wall and a reception pod",
+        "motel front office with a bell on the counter and brochures",
+        "mirrored elevator with gold trim",
+        "theater lobby with red carpet and a ticket booth",
+        "museum entrance hall with a ticket desk and a large skeleton",
+        "condo lobby with art pieces and leather seating",
+        "bank lobby with teller windows and marble floors",
+        "skyscraper elevator lobby with a row of steel doors",
+        "resort reception with an open-air pavilion and palms"
       ],
       "worlds": [
         "everyday"
@@ -474,7 +857,25 @@
       ],
       "entries": [
         "cabin interior with log walls, a stone fireplace and a quilt-covered bed",
-        "camping tent interior with sleeping bags and a lantern hanging from the roof"
+        "camping tent interior with sleeping bags and a lantern hanging from the roof",
+        "log cabin porch with a rocking chair and a mountain view",
+        "hunting lodge with antlers and a stone hearth",
+        "canvas tent with a cot and a lantern",
+        "treehouse cabin among branches",
+        "snowed-in cabin with frosted windows and a fire",
+        "yurt with colorful rugs and a stove",
+        "lakeside cabin with big windows and a canoe outside",
+        "campfire site with logs around the fire",
+        "teepee with a fire pit",
+        "mountain hut with bunks and boots by the door",
+        "shepherd's hut with a small stove and blankets",
+        "fishing cabin on stilts over water",
+        "a-frame cabin with a loft and big windows",
+        "desert camp with tents and a fire",
+        "hammock camp between trees",
+        "woodcutter's cottage with an axe by the door",
+        "tent at night glowing from a lantern",
+        "cliffside camp with a tent and a view"
       ],
       "worlds": [
         "everyday",
@@ -497,7 +898,25 @@
       ],
       "entries": [
         "photo studio with a paper backdrop and softbox lights on stands",
-        "painter's studio with canvases leaning on the walls and a paint-splattered floor"
+        "painter's studio with canvases leaning on the walls and a paint-splattered floor",
+        "fashion photo studio with a white cyclorama and strobe lights",
+        "portrait studio with a grey backdrop and a large softbox",
+        "sculptor's studio with clay figures and a turntable",
+        "printmaking studio with an etching press and inked rollers",
+        "illustrator's studio with a drawing tablet and sketches pinned up",
+        "attic artist studio with skylights and canvases",
+        "street artist's garage with spray cans and stencils",
+        "watercolor studio with brushes in jars and a north window",
+        "product photo studio with a light tent and a tabletop setup",
+        "darkroom with a red safelight and trays of developer",
+        "mural workshop with scaffolding and paint buckets",
+        "loft photo studio with brick walls and natural light",
+        "film photography studio with old cameras on shelves",
+        "art school studio with easels in a circle and a model platform",
+        "abstract painter's studio with splattered walls and huge canvases",
+        "rooftop photo shoot set with reflectors and a city backdrop",
+        "vintage portrait studio with a velvet couch and soft drapes",
+        "makeup and photo set with a lit mirror and a clothing rack"
       ],
       "worlds": [
         "everyday"
@@ -522,7 +941,25 @@
       ],
       "entries": [
         "music practice room with a piano and foam panels on the walls",
-        "recording studio booth with a microphone and a glass window to the mixing desk"
+        "recording studio booth with a microphone and a glass window to the mixing desk",
+        "grand piano salon with tall windows and parquet floors",
+        "garage band space with amps and a drum kit",
+        "recording studio control room with a mixing desk and monitors",
+        "jazz rehearsal room with a double bass and music stands",
+        "bedroom music corner with a keyboard and headphones",
+        "orchestra rehearsal hall with chairs in a semicircle",
+        "music classroom with xylophones and a piano",
+        "guitar lesson room with guitars on wall hooks",
+        "vocal booth with foam walls and a pop filter",
+        "podcast studio with two microphones and soundproof panels",
+        "choir loft with an organ and wooden pews",
+        "dj studio with turntables and a mixer",
+        "music school practice cubicle with an upright piano",
+        "home studio with a laptop and a midi keyboard",
+        "violin teacher's room with stacks of sheet music",
+        "vintage radio studio with an old microphone and an on-air sign",
+        "karaoke room with a big screen and neon lights",
+        "drum practice room with a full kit and padded walls"
       ],
       "worlds": [
         "everyday"
@@ -542,7 +979,25 @@
       ],
       "entries": [
         "science lab with benches, sinks and glassware on the shelves",
-        "server room with blinking racks of machines and cold blue light"
+        "server room with blinking racks of machines and cold blue light",
+        "chemistry lab with fume hoods and glass beakers",
+        "biology lab with microscopes and petri dishes",
+        "physics lab with lasers on an optical table",
+        "data center aisle with blinking server racks and cold air",
+        "robotics lab with robot arms and wires",
+        "school science lab with bunsen burners and stools",
+        "forensic lab with evidence bags and a microscope",
+        "semiconductor clean room with technicians in suits and wafers",
+        "botany lab with seedlings under grow lights",
+        "mad scientist laboratory with bubbling flasks and tesla coils",
+        "medical research lab with centrifuges and sample freezers",
+        "computer lab with rows of monitors and students",
+        "mission control room with screens and consoles",
+        "underground research facility with steel corridors and lab windows",
+        "geology lab with rock samples and a stone saw",
+        "hacker den with many screens and green code",
+        "vr research lab with headsets and motion trackers",
+        "university lab bench with pipettes and notebooks"
       ],
       "worlds": [
         "everyday"
@@ -565,7 +1020,25 @@
       ],
       "entries": [
         "barn with hay bales, wooden stalls and light through the plank walls",
-        "farm field with rows of crops and a tractor in the distance"
+        "farm field with rows of crops and a tractor in the distance",
+        "chicken coop with hens and straw",
+        "wheat field at harvest with golden stalks",
+        "pig pen with mud and a wooden fence",
+        "apple orchard with trees and ladders",
+        "vineyard rows with ripe grapes",
+        "hayloft with bales and light through the boards",
+        "sheep pasture with stone walls",
+        "farmhouse porch with rocking chairs",
+        "dairy barn with cows in stalls",
+        "horse stable with saddles on the rails",
+        "pumpkin patch with tangled vines",
+        "farmyard with a well and geese",
+        "rice terraces with water reflections",
+        "sunflower field under a blue sky",
+        "goat pen with a wooden shelter",
+        "windmill on a farm hill",
+        "lavender field with purple rows",
+        "beehive meadow with wooden hives"
       ],
       "worlds": [
         "everyday",
@@ -591,7 +1064,24 @@
       "entries": [
         "school classroom with rows of desks and a whiteboard",
         "university lecture hall with tiered seats and a projector screen",
-        "college campus lawn with brick buildings and students on the grass"
+        "college campus lawn with brick buildings and students on the grass",
+        "elementary classroom with tiny chairs and colorful posters",
+        "high school classroom with rows of desks and a chalkboard",
+        "art classroom with paint-stained tables and easels",
+        "university seminar room with a round table and a projector",
+        "old schoolhouse with wooden desks and a bell",
+        "school cafeteria with long tables and trays",
+        "college quad with old stone buildings and students walking",
+        "language classroom with a world map and headphones",
+        "kindergarten room with play mats and cubbies",
+        "lecture theater with steep seating and a long chalkboard",
+        "university courtyard with a fountain and benches",
+        "outdoor classroom with log benches under trees",
+        "school auditorium with a stage and folding seats",
+        "graduation hall with caps, gowns and a podium",
+        "detention room with a clock and empty desks",
+        "tutoring room with a small table and a whiteboard",
+        "boarding school study hall with long tables and lamps"
       ],
       "worlds": [
         "everyday"
@@ -608,12 +1098,29 @@
         "reading"
       ],
       "entries": [
-        "public library reading room with long tables and tall bookshelves"
+        "public library reading room with long tables and tall bookshelves",
+        "old library with rolling ladders and leather-bound books",
+        "grand library hall with a domed ceiling and long reading tables",
+        "university library stacks with narrow aisles between shelves",
+        "modern library with glass walls and beanbags",
+        "children's library corner with cushions and picture books",
+        "library study carrels with desk lamps and silence",
+        "archive room with boxes of documents and rolling shelves",
+        "small town library with a wooden counter and a card catalog",
+        "rare books room with glass cases and dim lights",
+        "library reading nook by a window with an armchair",
+        "library computer area with rows of screens",
+        "mobile library bus with shelves of books inside",
+        "law library with heavy volumes and green lamps",
+        "library roof terrace with books and plants",
+        "library atrium with balconies of books on several levels",
+        "secondhand bookstore with stacks of books on the floor",
+        "library basement archive with microfilm readers",
+        "quiet library with sunbeams across the tables",
+        "librarian's desk with returned books and a stamp"
       ],
       "worlds": [
-        "everyday",
-        "historical",
-        "fantasy"
+        "everyday"
       ]
     },
     {
@@ -631,7 +1138,25 @@
       ],
       "entries": [
         "hospital room with a single bed, a monitor and a curtain on a rail",
-        "doctor's examination room with a padded table and a sink"
+        "doctor's examination room with a padded table and a sink",
+        "emergency room with curtained bays and monitors",
+        "operating room with surgical lights and green drapes",
+        "hospital ward with several beds and privacy curtains",
+        "nurses' station with charts and computer screens",
+        "dentist's office with a reclining chair and a bright lamp",
+        "pediatric ward with colorful murals and small beds",
+        "intensive care unit with machines beside a bed",
+        "hospital waiting room with plastic chairs and a television",
+        "vet clinic exam room with a steel table and a scale",
+        "physical therapy room with exercise balls and mats",
+        "ambulance interior with a stretcher and equipment",
+        "maternity room with a crib beside the bed",
+        "x-ray room with a large scanner and lead aprons",
+        "pharmacy counter with shelves of medicine",
+        "field hospital tent with cots and supplies",
+        "hospital rooftop break area with benches and a view",
+        "hospital staff break room with a coffee maker and lockers",
+        "clinic reception with a check-in desk and plants"
       ],
       "worlds": [
         "everyday"
@@ -646,7 +1171,26 @@
         "exhibition"
       ],
       "entries": [
-        "museum gallery with paintings on white walls and a bench in the middle"
+        "museum gallery with paintings on white walls and a bench in the middle",
+        "natural history museum hall with a dinosaur skeleton",
+        "modern art gallery with white walls and a single sculpture",
+        "egyptian museum room with sarcophagi in glass cases",
+        "science museum with interactive exhibits and a planetarium dome",
+        "aviation museum with old planes hanging from the ceiling",
+        "sculpture garden with marble statues on lawns",
+        "photography exhibition with framed prints and spotlights",
+        "museum of curiosities with cabinets of oddities",
+        "art gallery opening with guests and wine glasses",
+        "renaissance painting hall with gilded frames and red walls",
+        "installation room with neon light art",
+        "wax museum with lifelike figures",
+        "maritime museum with ship models and anchors",
+        "museum storage with crates and tagged artifacts",
+        "village museum with old tools and photographs",
+        "fashion exhibition with mannequins in gowns",
+        "immersive digital art room with projections on every wall",
+        "gem and mineral hall with glowing crystals in cases",
+        "greek antiquities gallery with columns and pottery"
       ],
       "worlds": [
         "everyday"
@@ -661,7 +1205,26 @@
         "watching a movie"
       ],
       "entries": [
-        "movie theater with rows of red seats facing a lit screen"
+        "movie theater with rows of red seats facing a lit screen",
+        "old movie palace with red velvet seats and a gilded ceiling",
+        "drive-in theater with cars facing a big screen at dusk",
+        "imax theater with a giant curved screen",
+        "art house cinema with a small screen and a bar",
+        "outdoor cinema in a park with deckchairs",
+        "projection booth with an old film projector",
+        "empty cinema with rows of seats in the dark",
+        "luxury cinema with recliners and blankets",
+        "cinema lobby with a popcorn stand and movie posters",
+        "film festival screening with a stage and a red carpet",
+        "private screening room with leather armchairs",
+        "cinema entrance with a neon marquee and a ticket booth",
+        "student film club room with a projector and folding chairs",
+        "multiplex corridor with screen numbers and carpet",
+        "cinema balcony seats with a view down to the screen",
+        "silent film theater with an organ beside the screen",
+        "motion seat cinema with moving chairs and mist",
+        "abandoned cinema with torn seats and dust in the light",
+        "beach cinema with beanbags on the sand"
       ],
       "worlds": [
         "everyday"
@@ -680,7 +1243,26 @@
         "nun"
       ],
       "entries": [
-        "church interior with wooden pews and stained glass windows"
+        "church interior with wooden pews and stained glass windows",
+        "gothic cathedral nave with tall arches and stained glass",
+        "village chapel with whitewashed walls and wooden benches",
+        "abbey cloister with arched walkways and a garden",
+        "church crypt with candles and stone tombs",
+        "bell tower with ropes and a great bronze bell",
+        "candlelit altar with flowers and a cross",
+        "wooden mountain chapel with a small altar",
+        "monastery refectory with long tables and plain walls",
+        "baroque church with golden decorations and frescoes",
+        "church choir with carved stalls and an organ",
+        "ruined church with open sky and ivy",
+        "wedding chapel with white flowers along the aisle",
+        "orthodox church with icons and domes",
+        "prayer room with cushions and soft light",
+        "church courtyard with a well and old trees",
+        "seaside chapel on a cliff with a small bell",
+        "temple hall with incense and lanterns",
+        "mosque prayer hall with carpets and arches",
+        "pilgrim chapel with a stone floor and votive candles"
       ],
       "worlds": [
         "everyday",
@@ -704,7 +1286,25 @@
       ],
       "entries": [
         "supermarket aisle with packed shelves and a shopping cart",
-        "shopping mall corridor with shop windows and a glass roof"
+        "shopping mall corridor with shop windows and a glass roof",
+        "farmers market with fruit stalls and canvas awnings",
+        "convenience store with snack racks and a wall of fridges",
+        "luxury boutique with marble floors and handbags on display",
+        "thrift store with racks of vintage clothes",
+        "electronics store with walls of televisions",
+        "flower shop with buckets of blooms and a counter",
+        "night market with food stalls and string lights",
+        "toy store with shelves of plush toys and games",
+        "perfume hall with glass counters and testers",
+        "hardware store aisle with tools and paint cans",
+        "bakery shop with pastries in a glass case",
+        "covered bazaar with lanterns and carpets",
+        "warehouse store with tall shelves and pallets",
+        "record store with crates of vinyl",
+        "shoe store with a wall of sneakers",
+        "jewelry store with glass cases and soft lights",
+        "outlet mall walkway with shop signs and palms",
+        "grocery checkout with conveyor belts and candy racks"
       ],
       "worlds": [
         "everyday"
@@ -730,7 +1330,25 @@
       ],
       "entries": [
         "coffee shop with a counter, wooden tables and large windows",
-        "diner with red booths and a long counter with stools"
+        "diner with red booths and a long counter with stools",
+        "sidewalk cafe with small round tables and wicker chairs",
+        "bookstore cafe with mismatched armchairs",
+        "espresso bar with a marble counter and a chrome machine",
+        "fine dining restaurant with white tablecloths and candles",
+        "pizzeria with checkered tablecloths and a brick oven",
+        "ramen shop with a wooden counter and stools",
+        "food court with plastic tables and neon signs",
+        "tea house with low tables and paper lanterns",
+        "brunch spot with plants and pastel walls",
+        "truck stop diner with chrome stools and a pie case",
+        "garden restaurant with tables under fig trees",
+        "cat cafe with cats on cushions and coffee cups",
+        "steakhouse with leather booths and dim lights",
+        "sushi restaurant with a conveyor belt",
+        "beach shack cafe with a sand floor and surfboards",
+        "railway dining car with white tablecloths",
+        "bistro with a chalkboard menu and wine bottles",
+        "ice cream parlor with pastel stools and a cone counter"
       ],
       "worlds": [
         "everyday"
@@ -754,7 +1372,25 @@
       ],
       "entries": [
         "dim cocktail bar with backlit bottles and leather stools",
-        "nightclub dance floor with colored lights and a DJ booth"
+        "nightclub dance floor with colored lights and a DJ booth",
+        "irish pub with dark wood and pints on the bar",
+        "rooftop bar with fire pits and a skyline",
+        "speakeasy with velvet booths and a hidden door",
+        "dive bar with neon beer signs and a pool table",
+        "jazz club with a small stage and candlelit tables",
+        "techno club with lasers and a packed dance floor",
+        "tiki bar with bamboo and tropical drinks",
+        "wine bar with barrels and soft lighting",
+        "beach bar with string lights and a sand floor",
+        "sports bar with big screens and cheering fans",
+        "hotel lounge bar with a piano and leather chairs",
+        "underground club with concrete walls and strobe lights",
+        "cocktail lounge with a velvet curtain and gold accents",
+        "pub beer garden with picnic tables and hanging lights",
+        "club booth with a glowing table and bottles on ice",
+        "brewery taproom with long tables and tap handles",
+        "retro disco with a lit floor and a mirror ball",
+        "bar at closing time with chairs stacked on tables"
       ],
       "worlds": [
         "everyday"
@@ -771,7 +1407,25 @@
       ],
       "entries": [
         "bowling alley with glossy lanes and colorful balls on a rack",
-        "arcade with rows of glowing game cabinets"
+        "arcade with rows of glowing game cabinets",
+        "retro arcade with pinball machines and neon carpet",
+        "cosmic bowling lanes with black lights and glowing pins",
+        "family fun center with claw machines and prize tickets",
+        "vr arcade with headsets and play zones",
+        "japanese game center with rhythm games and photo booths",
+        "board game cafe with shelves of games and big tables",
+        "pool hall with green felt tables and hanging lamps",
+        "boardwalk arcade with skee-ball and a prize counter",
+        "laser tag arena with neon mazes",
+        "esports arena with gaming stations and a stage",
+        "indoor mini golf with glowing obstacles",
+        "candlepin bowling alley with wooden lanes and old scoreboards",
+        "air hockey corner with a table and bright lights",
+        "casino floor with slot machines and lights",
+        "game night table with cards and snacks",
+        "indoor go-kart track with tire walls and lights",
+        "escape room with puzzles and locked chests",
+        "fifties bowling alley with pastel seats and a jukebox"
       ],
       "worlds": [
         "everyday"
@@ -793,7 +1447,25 @@
       ],
       "entries": [
         "car interior with leather seats and the dashboard lit at night",
-        "city bus interior with handrails and rows of seats"
+        "city bus interior with handrails and rows of seats",
+        "convertible on a coastal road with the top down",
+        "taxi back seat with city lights through the window",
+        "school bus interior with green vinyl seats",
+        "tour bus with reclining seats and a panoramic window",
+        "vintage car interior with a chrome dashboard and bench seats",
+        "pickup truck cab with a dog in the passenger seat",
+        "limousine interior with leather seats and mood lights",
+        "camper van interior with a bed and a small kitchen",
+        "night bus with dim lights and sleeping passengers",
+        "double-decker bus upper deck with a front window view",
+        "rainy windshield view with wipers going",
+        "race car cockpit with a steering wheel and a helmet",
+        "rideshare car with a phone mount and a driver",
+        "bus stop shelter with a timetable and a bench",
+        "road trip car with snacks on the dashboard and a map",
+        "jeep on a dirt road with dust behind",
+        "electric car interior with a big touchscreen",
+        "minibus interior with crowded seats and luggage"
       ],
       "worlds": [
         "everyday"
@@ -815,7 +1487,24 @@
       "entries": [
         "subway car with plastic seats and grab poles",
         "train sleeper compartment with fold-down bunks and a small window",
-        "train station platform with a canopy and a departure board"
+        "train station platform with a canopy and a departure board",
+        "steam train carriage with wooden panels and brass lamps",
+        "bullet train interior with sleek seats and a sky-blue carpet",
+        "grand railway station hall with a giant clock and crowds",
+        "subway platform at night with a train arriving",
+        "tram interior with wooden seats and hanging straps",
+        "mountain railway carriage with a panoramic window",
+        "underground metro station with tiled arches",
+        "rural train station with a single platform and a bench",
+        "freight yard with tracks and containers",
+        "cable car cabin above a valley",
+        "monorail with a view over the city",
+        "rush hour subway car packed with commuters",
+        "train corridor with compartment doors and windows",
+        "elevated train platform with city lights below",
+        "old railway station with iron arches and steam",
+        "luxury sleeper compartment with velvet and wood",
+        "station ticket hall with machines and turnstiles"
       ],
       "worlds": [
         "everyday"
@@ -834,7 +1523,26 @@
         "travel"
       ],
       "entries": [
-        "airplane cabin with rows of seats and overhead bins"
+        "airplane cabin with rows of seats and overhead bins",
+        "first class cabin with lie-flat seats and privacy screens",
+        "cockpit with instrument panels and a view of clouds",
+        "private jet interior with leather sofas",
+        "airport departure gate with seats and a plane outside the window",
+        "airport terminal with check-in desks and crowds",
+        "propeller plane cabin with a few seats",
+        "airplane aisle with a drinks trolley",
+        "airport lounge with armchairs and runway views",
+        "cargo plane hold with pallets and nets",
+        "airplane window seat with a view over the wing",
+        "baggage claim with a carousel and suitcases",
+        "aircraft hangar with a jet under repair",
+        "seaplane cabin over a lagoon",
+        "airport security line with trays and scanners",
+        "economy cabin at night with dimmed lights",
+        "helicopter interior with headsets and open doors",
+        "hot air balloon basket above fields",
+        "runway at sunset with a plane taking off",
+        "small airstrip with a light aircraft and a windsock"
       ],
       "worlds": [
         "everyday"
@@ -851,11 +1559,29 @@
         "sea"
       ],
       "entries": [
-        "sailboat cabin with wooden paneling and a narrow bunk"
+        "sailboat cabin with wooden paneling and a narrow bunk",
+        "yacht deck with white cushions and open sea",
+        "fishing boat with nets and buoys on deck",
+        "ferry deck with benches and a sea breeze",
+        "canal boat with a narrow cabin and plants on the roof",
+        "rowboat on calm water with wooden oars",
+        "cruise ship deck with pools and loungers",
+        "speedboat cutting through waves",
+        "houseboat living area with a view of the water",
+        "gondola in a canal with striped poles",
+        "sailboat deck with ropes and a tall mast",
+        "ship's bridge with a wheel and radar screens",
+        "kayak on a turquoise bay with cliffs",
+        "trawler wheelhouse with charts and a radio",
+        "paddle steamer with a big red wheel",
+        "catamaran net deck over clear water",
+        "yacht salon with sofas and wood panels",
+        "lifeboat drifting at sea",
+        "ferry car deck with parked cars and metal walls",
+        "harbor tour boat with open benches and a railing"
       ],
       "worlds": [
-        "everyday",
-        "historical"
+        "everyday"
       ]
     },
     {
@@ -878,7 +1604,25 @@
       ],
       "entries": [
         "narrow city alley with brick walls, fire escapes and dumpsters",
-        "busy city street with shop fronts and traffic lights"
+        "busy city street with shop fronts and traffic lights",
+        "rainy street at night with neon reflections on the pavement",
+        "cobblestone old town street with cafes and flower boxes",
+        "big city intersection with giant billboards",
+        "quiet suburban street with trees and parked cars",
+        "chinatown street with red lanterns and shop signs",
+        "foggy street with old lamps",
+        "graffiti alley with colorful murals",
+        "market alley with stalls and hanging lights",
+        "downtown crosswalk with crowds and taxis",
+        "brownstone street with stoops and trees",
+        "harbor street with fishing boats and seagulls",
+        "snowy city street with holiday lights",
+        "hilly street with a cable car and colorful houses",
+        "empty street at dawn with closed shops",
+        "back alley behind restaurants with crates and steam",
+        "shopping street with banners and pedestrians",
+        "underpass with concrete pillars and posters",
+        "bridge sidewalk with a city view and lamp posts"
       ],
       "worlds": [
         "everyday"
@@ -896,7 +1640,25 @@
       ],
       "entries": [
         "parking garage with concrete pillars and painted bay lines",
-        "gas station at night with bright canopy lights and fuel pumps"
+        "gas station at night with bright canopy lights and fuel pumps",
+        "empty parking lot at night with a single streetlight",
+        "rooftop parking deck with a city view",
+        "supermarket car park with shopping carts",
+        "underground garage with painted lines and pillars",
+        "desert gas station with a single pump and dust",
+        "retro gas station with vintage pumps and a sign",
+        "electric charging station with sleek chargers",
+        "truck stop with big rigs and bright lights",
+        "drive-through car wash with brushes and foam",
+        "motel parking lot with a neon sign",
+        "stadium parking lot with tailgating cars",
+        "valet parking entrance with a red carpet",
+        "rainy parking lot with puddles and reflections",
+        "highway rest area with picnic tables and trucks",
+        "fuel station forecourt with ice chests and lights",
+        "airport long-stay parking with shuttle stops",
+        "parking garage ramp with spiraling lanes",
+        "abandoned gas station with broken signs and weeds"
       ],
       "worlds": [
         "everyday"
@@ -919,7 +1681,25 @@
       ],
       "entries": [
         "rooftop of an apartment building with water tanks and a city skyline",
-        "balcony with a metal railing, potted plants and a view over rooftops"
+        "balcony with a metal railing, potted plants and a view over rooftops",
+        "rooftop terrace with lounge chairs and a skyline at sunset",
+        "apartment balcony with a bistro table and potted herbs",
+        "rooftop garden with planters and wooden decking",
+        "tiled roof of an old house with chimneys and pigeons",
+        "high-rise balcony with a glass railing and a view over skyscrapers",
+        "rooftop helipad with painted markings and a wind sock",
+        "mediterranean terrace with white walls and bougainvillea",
+        "fire escape landing with iron stairs and laundry lines",
+        "rooftop pool deck with sun loungers and a skyline",
+        "small balcony at night with fairy lights and a city glow",
+        "flat concrete rooftop with air vents and satellite dishes",
+        "hotel balcony overlooking the sea with white railings",
+        "snowy rooftop with chimney smoke and frozen antennas",
+        "rooftop cinema with deck chairs and a big screen",
+        "penthouse terrace with a hot tub and city lights",
+        "rainy balcony with wet tiles and a folded umbrella",
+        "rooftop greenhouse with glass walls and tomato vines",
+        "narrow apartment balcony with laundry drying and a view of rooftops"
       ],
       "worlds": [
         "everyday"
@@ -944,7 +1724,25 @@
       ],
       "entries": [
         "city park with a gravel path, benches and old trees",
-        "playground with swings, a slide and rubber matting"
+        "playground with swings, a slide and rubber matting",
+        "central park lawn with picnic blankets and a skyline",
+        "botanical garden with greenhouses and paths",
+        "park pond with ducks and a wooden bridge",
+        "autumn park with golden leaves and benches",
+        "cherry blossom park with pink trees",
+        "dog park with fences and agility ramps",
+        "park fountain plaza with benches and pigeons",
+        "riverside jogging trail with trees",
+        "rose garden with arches",
+        "park gazebo with white columns",
+        "snowy park with a sledding hill",
+        "night park with lamp posts and empty benches",
+        "community garden with plots and sheds",
+        "sandpit playground with a climbing frame",
+        "picnic area with grills and tables",
+        "maple park with stone lanterns",
+        "riverside promenade with railings",
+        "park bench under a big oak tree"
       ],
       "worlds": [
         "everyday"
@@ -964,7 +1762,26 @@
         "mowing"
       ],
       "entries": [
-        "backyard with a wooden fence, a lawn and a barbecue grill"
+        "backyard with a wooden fence, a lawn and a barbecue grill",
+        "vegetable garden with raised beds and a watering can",
+        "suburban backyard with a trampoline and a swing set",
+        "cottage garden with rose bushes and a white picket fence",
+        "backyard patio with string lights and outdoor sofas",
+        "zen garden with raked gravel and a stone lantern",
+        "overgrown backyard with tall weeds and a rusty bicycle",
+        "backyard fire pit with log seats under a starry sky",
+        "city courtyard garden with potted plants and brick walls",
+        "english garden with a hedge maze and a stone bench",
+        "greenhouse garden with seed trays and glass panes",
+        "desert backyard with cacti and a gravel path",
+        "backyard deck with a hammock and a cooler",
+        "flower garden in full bloom with a wooden arbor",
+        "garden shed with tools hanging outside and a lawnmower",
+        "rainy backyard with puddles on the patio and wet garden chairs",
+        "front yard with a mailbox and a neatly mowed lawn",
+        "japanese garden with a koi pond and a red bridge",
+        "herb garden with terracotta pots and a wooden bench",
+        "autumn backyard with piles of raked leaves and a rake against a tree"
       ],
       "worlds": [
         "everyday"
@@ -985,7 +1802,25 @@
       ],
       "entries": [
         "outdoor basketball court with a chain-link fence",
-        "sports stadium with stands of seats around a green field"
+        "sports stadium with stands of seats around a green field",
+        "soccer field with goals and white lines",
+        "tennis court with a net and a green surface",
+        "baseball diamond with a dugout and bleachers",
+        "running track with lanes and hurdles",
+        "golf course green with a flag",
+        "american football field with goalposts and stadium lights",
+        "beach volleyball court on sand",
+        "ice hockey rink with boards and ice",
+        "cricket pitch with wickets and a white pavilion",
+        "indoor basketball arena with a polished floor",
+        "rugby pitch on a misty morning",
+        "boxing arena with a lit ring and crowds",
+        "archery range with targets and hay bales",
+        "equestrian arena with jumps and sand",
+        "badminton hall with nets and a wooden floor",
+        "velodrome with a banked track",
+        "village soccer pitch with a muddy goal",
+        "padel court with glass walls"
       ],
       "worlds": [
         "everyday"
@@ -1002,7 +1837,26 @@
         "bmx"
       ],
       "entries": [
-        "skate park with concrete ramps and graffiti"
+        "skate park with concrete ramps and graffiti",
+        "concrete bowl skate park with graffiti walls",
+        "indoor skate park with wooden ramps",
+        "beachside skate park with palm trees",
+        "skate plaza with rails and stairs",
+        "dirt bmx track with jumps",
+        "roller rink with disco lights",
+        "half pipe at sunset",
+        "outdoor ice rink with string lights",
+        "skate park under a highway bridge",
+        "neighborhood skate spot with a ledge",
+        "vert ramp with a big quarter pipe",
+        "night skate park under floodlights",
+        "backyard mini ramp with stickers",
+        "pump track with rolling bumps",
+        "rainy skate park with puddles",
+        "empty pool skate spot",
+        "mural skate park with colorful walls and benches",
+        "frozen pond with skaters and a bonfire",
+        "rooftop skate park with a city view"
       ],
       "worlds": [
         "everyday"
@@ -1023,7 +1877,26 @@
         "sand"
       ],
       "entries": [
-        "sandy beach with waves rolling in and dunes behind"
+        "sandy beach with waves rolling in and dunes behind",
+        "tropical beach with palm trees and turquoise water",
+        "rocky beach with tide pools",
+        "black sand beach with crashing waves",
+        "beach at sunset with silhouettes of palms",
+        "pebble beach with white cliffs",
+        "secluded cove with a small boat",
+        "windy beach with dunes and grass",
+        "seashell beach with tide lines at dawn",
+        "lagoon beach with shallow water",
+        "stormy beach with dark clouds",
+        "beach cave with sunlight through the opening",
+        "sandbar at low tide",
+        "beach bonfire at night",
+        "driftwood beach with logs",
+        "white sand beach with clear shallow water",
+        "foggy beach with a lighthouse in the distance",
+        "coral beach with colorful shells",
+        "frozen beach with ice on the shore",
+        "sea arch beach with tall cliffs"
       ],
       "worlds": [
         "everyday",
@@ -1042,7 +1915,26 @@
         "nature"
       ],
       "entries": [
-        "forest path between tall pine trees with ferns on the ground"
+        "forest path between tall pine trees with ferns on the ground",
+        "misty forest with mossy trunks",
+        "autumn forest with red and gold leaves",
+        "bamboo forest with tall green stalks",
+        "redwood forest with giant trees",
+        "rainforest with vines and a canopy",
+        "birch forest with white trunks",
+        "forest stream with ferns and rocks",
+        "dark forest at night with moonlight",
+        "forest clearing with sunbeams",
+        "old oak forest with twisted branches",
+        "pine forest in the snow",
+        "jungle with hanging vines and a waterfall",
+        "spring forest path with blossoms",
+        "mangrove forest with tangled roots in water",
+        "forest floor with mushrooms and fallen logs",
+        "foggy woodland with a fallen tree bridge",
+        "eucalyptus forest with peeling bark",
+        "forest edge at sunset with a meadow",
+        "pine forest at dawn with low fog"
       ],
       "worlds": [
         "everyday",
@@ -1060,7 +1952,26 @@
         "skiing"
       ],
       "entries": [
-        "snowy forest clearing with snow-laden branches"
+        "snowy forest clearing with snow-laden branches",
+        "snowy mountain slope with ski tracks",
+        "frozen lake with cracks in the ice",
+        "ice cave with blue walls",
+        "igloo on a snowy plain",
+        "arctic tundra with snow and low light",
+        "snowfield under northern lights",
+        "snowy pine valley with a cabin",
+        "glacier edge with deep crevasses",
+        "blizzard on an open plain",
+        "snow-covered bridge in a forest",
+        "frozen waterfall with icicles",
+        "snowy hill with sled tracks",
+        "icy shoreline with floating ice",
+        "snowy meadow with deer tracks",
+        "winter orchard with snow on branches",
+        "frost-covered field at sunrise",
+        "mountain pass in deep snow",
+        "snow shelter dug into a drift",
+        "frozen river with a snowy bank"
       ],
       "worlds": [
         "everyday",
@@ -1086,7 +1997,24 @@
       "entries": [
         "mountain trail with rocks and a view over a valley",
         "meadow with tall grass and wildflowers under an open sky",
-        "waterfall pool with mossy rocks and spray in the air"
+        "waterfall pool with mossy rocks and spray in the air",
+        "alpine meadow with wildflowers and peaks",
+        "rocky summit above the clouds",
+        "green valley with a stream",
+        "canyon with red rock walls",
+        "rolling hills with sheep",
+        "mountain lake with reflections",
+        "cliff edge with a sea view",
+        "high plateau with grass and wind",
+        "volcanic crater with steam vents",
+        "mountain cave entrance",
+        "terraced hillside with flowers",
+        "foggy highlands with heather",
+        "gorge with a rope bridge",
+        "mountain ridge trail at sunrise",
+        "poppy field with a single tree",
+        "grassy hilltop at sunset",
+        "boulder field with lichen"
       ],
       "worlds": [
         "everyday",
@@ -1106,7 +2034,26 @@
         "rowing"
       ],
       "entries": [
-        "lakeside wooden dock with still water and reeds"
+        "lakeside wooden dock with still water and reeds",
+        "misty lake at dawn with a rowboat",
+        "alpine lake with clear water and pines",
+        "pebbly lake shore with reeds",
+        "lake at sunset with a wooden swing",
+        "lily pond with flowers and frogs",
+        "lake beach with sand and swimmers",
+        "lakeside campsite with a canoe",
+        "lake island with a single tree",
+        "boathouse on a lake",
+        "autumn lake with colorful trees",
+        "moonlit lake with silver reflections",
+        "stone jetty on a quiet lake",
+        "swamp lake with cypress trees",
+        "crater lake with steep walls",
+        "lake fishing spot with a folding stool",
+        "lakeside meadow with a picnic blanket",
+        "lake with lotus flowers",
+        "lake cove with a waterfall",
+        "turquoise glacial lake with rocky banks"
       ],
       "worlds": [
         "everyday",
@@ -1126,7 +2073,25 @@
       ],
       "entries": [
         "riverbank with smooth stones and overhanging trees",
-        "bridge over a river with iron railings and lamp posts"
+        "bridge over a river with iron railings and lamp posts",
+        "rushing river with rapids and boulders",
+        "slow river with willows and reeds",
+        "stone bridge over a stream",
+        "riverside path with benches",
+        "river delta with sandbars",
+        "canal with old houses",
+        "mountain stream with stepping stones",
+        "river bend with a sandy beach",
+        "river gorge with steep cliffs",
+        "covered wooden bridge over a creek",
+        "river at night with floating lanterns",
+        "jungle river with muddy banks",
+        "riverside mill with a waterwheel",
+        "creek in a meadow with wildflowers",
+        "rope bridge over a river",
+        "river rapids with a raft",
+        "riverbank picnic under trees",
+        "river ford with shallow water and stones"
       ],
       "worlds": [
         "everyday",
@@ -1143,7 +2108,26 @@
         "cactus"
       ],
       "entries": [
-        "desert with sand dunes and a clear sky"
+        "desert with sand dunes and a clear sky",
+        "red sand dunes at sunset",
+        "rocky desert canyon with layered cliffs",
+        "desert oasis with palms and water",
+        "salt flat with cracked white ground",
+        "cactus desert with tall saguaros",
+        "desert at night with stars",
+        "badlands with eroded hills",
+        "desert ruins half buried in sand",
+        "sandstorm on the dunes",
+        "mesa top with a wide view",
+        "slot canyon with light beams",
+        "dry riverbed with cracked mud",
+        "camel caravan route across the dunes",
+        "white gypsum dunes",
+        "desert rock arch at dusk",
+        "joshua tree desert",
+        "desert valley with scrub and heat haze",
+        "sand sea under a full moon",
+        "rocky desert outcrop with lizards"
       ],
       "worlds": [
         "everyday",
@@ -1172,7 +2156,24 @@
       "entries": [
         "theater stage with red velvet curtains and footlights",
         "comedy club stage with a brick wall and a single microphone stand",
-        "outdoor concert stage with lighting rigs and speaker stacks"
+        "outdoor concert stage with lighting rigs and speaker stacks",
+        "opera house stage with velvet curtains and a gilded proscenium",
+        "open mic stage in a cafe with a stool and a microphone",
+        "rock arena stage with pyrotechnics and huge screens",
+        "school play stage with painted scenery",
+        "street performance spot with a hat for coins and a crowd",
+        "ballet stage with a soft spotlight and a backdrop of stars",
+        "festival main stage with crowds and light towers",
+        "cabaret stage with a red curtain and small tables",
+        "magic show stage with a trick cabinet and smoke",
+        "talent show stage with a judges' table",
+        "rehearsal stage with tape marks and a ladder",
+        "outdoor amphitheater with stone seats",
+        "park bandstand with a round roof and string lights",
+        "fashion runway with flashing cameras and a long catwalk",
+        "talk show stage with a desk and a studio audience",
+        "puppet theater stage with tiny curtains",
+        "church hall stage with folding chairs and a piano"
       ],
       "worlds": [
         "everyday"
@@ -1196,7 +2197,24 @@
       "entries": [
         "birthday party living room with balloons and streamers",
         "backyard garden party with string lights and a long table",
-        "banquet hall with round tables and a dance floor"
+        "banquet hall with round tables and a dance floor",
+        "wedding reception hall with string lights and round tables",
+        "house party kitchen crowded with guests and cups",
+        "pool party with inflatables and a dj table",
+        "new year's eve party with confetti and a countdown clock",
+        "costume party with masks and decorations",
+        "office party with balloons and a cake on a desk",
+        "surprise party room with a banner and hidden guests",
+        "rooftop party with fairy lights and drinks",
+        "masquerade ball in a ballroom with chandeliers",
+        "graduation party in a backyard with a tent",
+        "kids' birthday party with a bouncy castle",
+        "beach bonfire party with music and torches",
+        "christmas party with a decorated tree and gifts",
+        "halloween party with pumpkins and cobwebs",
+        "garden tea party with fine china",
+        "block party street with tables and music",
+        "anniversary dinner party with candles and a long table"
       ],
       "worlds": [
         "everyday"
@@ -1219,11 +2237,112 @@
       ],
       "entries": [
         "circus big top with a sawdust ring and striped canvas walls",
-        "circus backstage with costume trunks and a trapeze rig"
+        "circus backstage with costume trunks and a trapeze rig",
+        "circus ring with a trapeze high above",
+        "carnival sideshow tent with painted banners",
+        "traveling circus camp with painted wagons",
+        "circus training tent with trampolines and mats",
+        "clown dressing room with makeup and big shoes",
+        "tightrope rig high above a circus crowd",
+        "circus ticket booth with a striped awning and lights",
+        "night circus with glowing tents and lanterns",
+        "acrobat practice hall with aerial silks",
+        "circus parade street with drums and banners",
+        "circus ring at intermission with empty seats and sawdust",
+        "juggling act stage with spotlights and colorful pins",
+        "fire breather's corner with torches and a dark tent",
+        "circus wagon interior with costumes and trunks",
+        "human cannonball arena with a big painted cannon",
+        "ringmaster's platform with a top hat and a red curtain",
+        "equestrian circus ring with horses and feathered plumes",
+        "flying trapeze school with nets and platforms"
       ],
       "worlds": [
         "everyday",
         "historical"
+      ]
+    },
+    {
+      "group": "underwater",
+      "words": [
+        "underwater",
+        "under water",
+        "under the sea",
+        "ocean floor",
+        "seabed",
+        "scuba",
+        "snorkeling",
+        "snorkelling",
+        "deep sea",
+        "swimming underwater"
+      ],
+      "entries": [
+        "coral reef with bright fish and sea fans",
+        "kelp forest with sunbeams through the water",
+        "sunken shipwreck with fish around the hull",
+        "underwater cave with blue light from the entrance",
+        "deep sea floor with glowing creatures",
+        "sea turtle reef with soft corals",
+        "shallow sandy lagoon floor with rippled light",
+        "underwater rock arch with schools of fish",
+        "seagrass meadow with drifting fronds",
+        "reef wall drop-off into deep blue",
+        "sunken statues on the sea floor",
+        "dive under sea ice with pale blue light",
+        "blue hole with steep sides",
+        "shipwreck interior with beams of light",
+        "jellyfish bloom in open water",
+        "cenote with light rays through clear water",
+        "manta ray cleaning station on the reef",
+        "sandy seabed with starfish",
+        "underwater surface view with bubbles and sun",
+        "volcanic vent on the deep ocean floor",
+        "tropical reef at dusk with sleepy fish",
+        "rocky kelp shallows with sea urchins"
+      ],
+      "worlds": [
+        "everyday",
+        "fantasy"
+      ]
+    },
+    {
+      "group": "zoo and aquarium",
+      "words": [
+        "zoo",
+        "aquarium",
+        "animal park",
+        "safari park",
+        "petting zoo",
+        "wildlife park",
+        "enclosure",
+        "visiting the zoo"
+      ],
+      "entries": [
+        "aquarium tunnel with sharks overhead",
+        "giant aquarium tank wall with schools of fish",
+        "elephant enclosure with a dusty yard and a pool",
+        "penguin habitat with rocks and icy water",
+        "petting zoo with goats and a wooden fence",
+        "safari park road with giraffes beside the car",
+        "reptile house with glass terrariums",
+        "tropical aviary with birds and a waterfall",
+        "butterfly house with flowers and warm air",
+        "monkey island with ropes and trees",
+        "zoo entrance gate with animal statues",
+        "jellyfish aquarium room with glowing tanks",
+        "seal pool with a viewing area and rocks",
+        "big cat viewing window with a grassy enclosure",
+        "nocturnal animal house with dim red light",
+        "aquarium touch pool with starfish",
+        "giraffe feeding platform at head height",
+        "bear enclosure with boulders and a stream",
+        "flamingo lagoon with pink birds",
+        "insect house with display cases",
+        "zoo pathway with signs and benches",
+        "aquarium shark tank viewing room with a huge window"
+      ],
+      "worlds": [
+        "everyday"
       ]
     }
   ]

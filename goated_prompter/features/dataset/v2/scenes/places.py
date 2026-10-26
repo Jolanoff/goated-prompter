@@ -7,7 +7,8 @@ vocabulary selection orders, deals and pairs them (vocabulary/selection.py). Thi
 searched, in which groups:
   named   the request's place words without the setting ("his room in space": "his room", setting "in space") among
           the groups of the request's world, or of every world when a setting carries the world (the room in space is a
-          room), widened by the ideas' groups that are close in meaning to the one the words name (retrieval.related:
+          room). Words that point to some of a group's places (a white background, a rainy street) stay that
+          specific; a place named broadly is widened by the ideas' groups that are close in meaning to it (retrieval.related:
           an idea that leaves the named place, a bedroom for a bathroom fixture, adds nothing; without embeddings
           nothing is added). The user's words are authoritative: when no group answers them, the setting's group is used, then the
           ideas, which for a named place are only that place or its kinds (so words that were never a place, a time of
@@ -27,7 +28,6 @@ from ....vocabulary.selection import diverse_order
 from ..consistency import kept_words, levels
 
 SPACES = "Spaces"
-IDEA_AGREE = .6  # an idea is a loose suggestion: a word match on it needs less agreement than the user's words
 
 
 def _facts(brief):
@@ -64,7 +64,11 @@ def place_plan(brief, groups, embeddings=None):
     if words:
         setting = facts["setting"]
         found = match(in_world(groups, None if setting else facts["world"]), _without(words, setting), embeddings)
-        if found:  # the ideas widen a named place only with groups close to the one it names (its kinds)
+        if found:
+            sizes = {group["name"]: len(group["entries"]) for group in groups}
+            if any(len(group["entries"]) < sizes.get(group["name"], 0) for group in found):
+                return found, setting  # words that point to some of a group's places stay that specific
+            # Named broadly ("his room"): the ideas widen it, only with groups close to the one it names (its kinds).
             ideas = _from_ideas(brief, groups, facts, embeddings, adult_first=False)
             return _merged(found + related(ideas, found, groups, embeddings)), setting
         found = match(in_world(groups, facts["world"]), setting, embeddings) if setting else []
@@ -84,7 +88,7 @@ def _from_ideas(brief, groups, facts, embeddings, adult_first):
     if embeddings is not None:
         embeddings.prepare(facts["ideas"])  # every idea embedded in one call
     first = [group for group in pool if group["adult"]] if adult_first else []
-    found = _merged(first + [group for idea in facts["ideas"] for group in match(pool, idea, embeddings, IDEA_AGREE)])
+    found = _merged(first + [group for idea in facts["ideas"] for group in match(pool, idea, embeddings)])
     scores = [2.0 if group in first else 1.0 for group in found]  # the adult default leads; then the most varied order
     return diverse_order(found, scores, group_vectors(found, embeddings))
 

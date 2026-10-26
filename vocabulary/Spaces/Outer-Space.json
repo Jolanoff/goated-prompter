@@ -1,0 +1,183 @@
+{
+  "name": "Outer Space",
+  "category": "Spaces",
+  "always": true,
+  "description": "Spaceships, space stations, alien worlds and futuristic cities for sci-fi requests.",
+  "groups": [
+    {
+      "group": "spaceship",
+      "words": [
+        "spaceship",
+        "spacecraft",
+        "starship",
+        "space ship",
+        "rocket",
+        "space shuttle",
+        "starship bridge",
+        "aboard a spaceship"
+      ],
+      "entries": [
+        "starship bridge with a wide viewscreen and consoles",
+        "spaceship cockpit with glowing controls and stars ahead",
+        "crew quarters with bunks and porthole windows",
+        "cargo bay with crates and a loading ramp",
+        "engine room with a glowing reactor core",
+        "airlock with a pressure door and spacesuits",
+        "medical bay with a scanning bed",
+        "spaceship mess hall with metal tables",
+        "hydroponics bay with plants under purple light",
+        "spaceship corridor with lit panels and pipes",
+        "escape pod interior with two seats",
+        "starship captain's quarters with a star map",
+        "cryosleep chamber with frosted pods",
+        "weapons deck with turret controls",
+        "observation lounge with a giant window onto a nebula",
+        "shuttle cabin with flight seats",
+        "spaceship hangar with docked fighters",
+        "alien ship interior with organic walls",
+        "rocket launch pad with steam and a gantry",
+        "derelict spaceship with flickering lights",
+        "spaceship gym with treadmills and straps",
+        "spaceship lab with sample containers",
+        "holodeck with a grid on the walls",
+        "fighter cockpit with a glass canopy",
+        "spaceship galley with food packets and a heater",
+        "engineering catwalk over a reactor",
+        "red alert bridge with flashing lights",
+        "freighter cockpit with worn seats"
+      ],
+      "worlds": [
+        "sci-fi"
+      ]
+    },
+    {
+      "group": "space station",
+      "words": [
+        "space station",
+        "orbital station",
+        "space habitat",
+        "zero gravity",
+        "weightless",
+        "in orbit",
+        "in space"
+      ],
+      "entries": [
+        "orbital station module with handrails and floating equipment",
+        "cupola window with the earth below",
+        "docking ring with a ship approaching",
+        "zero gravity corridor with floating cables",
+        "station garden with plants in pods",
+        "command center with holographic displays",
+        "station sleeping pod with a sleeping bag strapped to the wall",
+        "moon base habitat with a domed window",
+        "lunar airlock with dusty boots",
+        "space hotel lounge with a view of the earth",
+        "research module with experiments strapped down",
+        "spacewalk outside the station with tethers",
+        "station gym with resistance machines",
+        "ring station promenade with shops and a curved floor",
+        "asteroid mining station with drills and ore carts",
+        "station medical module with a strapped stretcher",
+        "space elevator platform above the clouds",
+        "orbital shipyard with ship frames",
+        "station control room at night with dim screens",
+        "solar panel array walkway in harsh sunlight",
+        "colony dome with red ground outside",
+        "abandoned space station with drifting debris"
+      ],
+      "worlds": [
+        "sci-fi"
+      ]
+    },
+    {
+      "group": "alien worlds",
+      "words": [
+        "alien world",
+        "alien planet",
+        "planet surface",
+        "exoplanet",
+        "another planet",
+        "outer space"
+      ],
+      "entries": [
+        "moon surface with grey dust and the earth in the sky",
+        "mars desert with red dunes and a pale sky",
+        "ice planet with frozen spires",
+        "alien jungle with giant glowing plants",
+        "crater rim with a starry sky",
+        "asteroid surface with jagged rocks",
+        "lava planet with rivers of fire",
+        "gas giant rising over a small moon",
+        "crystal desert planet with shard formations",
+        "alien ocean shore with two suns",
+        "alien canyon with floating rocks",
+        "methane lake under an orange sky",
+        "alien forest with purple trees",
+        "meteor field in deep space",
+        "nebula view from a rocky outcrop",
+        "alien city ruins under a ringed planet",
+        "frozen moon with geysers",
+        "desert planet with twin moons",
+        "mushroom planet with giant fungi",
+        "alien cave with bioluminescent walls",
+        "rocky moon with a lander",
+        "dust storm on a red planet",
+        "floating rock islands on an alien world",
+        "binary sunset over alien hills",
+        "ringed planet seen from its surface",
+        "black sand alien beach with glowing waves",
+        "deep space void with distant galaxies",
+        "comet surface with jets of gas"
+      ],
+      "worlds": [
+        "sci-fi"
+      ]
+    },
+    {
+      "group": "futuristic city",
+      "words": [
+        "futuristic city",
+        "cyberpunk",
+        "neon city",
+        "future city",
+        "sci-fi city",
+        "megacity",
+        "hologram",
+        "holographic",
+        "high-tech",
+        "flying cars",
+        "futuristic"
+      ],
+      "entries": [
+        "cyberpunk street with neon signs and rain",
+        "skyscraper sky bridge with flying cars",
+        "holographic plaza with floating ads",
+        "futuristic apartment with a city view and smart walls",
+        "neon night market with robot vendors",
+        "underground hacker market with cables and screens",
+        "utopian city with white towers and gardens",
+        "maglev station with sleek trains",
+        "rooftop landing pad with hovering cars",
+        "cyberpunk alley with steam and holograms",
+        "android repair shop with spare parts on shelves",
+        "futuristic nightclub with laser floors",
+        "megacity skyline at night with endless lights",
+        "vertical farm tower with layered greens",
+        "neon noodle bar under a highway",
+        "smart home living room with a holographic fireplace",
+        "corporate tower lobby with security drones",
+        "floating city above the clouds",
+        "rain-soaked rooftop with antennas and neon glow",
+        "futuristic subway car with digital windows",
+        "virtual reality lounge with pods",
+        "robot factory with assembly arms",
+        "cyber cafe with glowing booths",
+        "desert solar city with mirrored domes",
+        "underwater dome city with glass tunnels"
+      ],
+      "worlds": [
+        "sci-fi"
+      ]
+    }
+  ]
+}

@@ -66,6 +66,14 @@ class NamedPlace(unittest.TestCase):
             self.assertEqual(names(places.place_plan(ideas, GROUPS)[0]), ["bedroom", "living room"])
         self.assertEqual(names(places.place_plan(ideas, GROUPS)[0]), ["bedroom"], "without embeddings nothing is added")
 
+    def test_a_specific_named_place_is_not_widened(self):
+        # A live "white background" got its white backdrops, then cinemas and wooden walls from the ideas.
+        specific = brief("themed", "in the attic bedroom", ideas=["a sunny bedroom", "a cosy sofa corner"])
+        with patch.object(places, "related", lambda candidates, anchors, *_: candidates):
+            found, _ = places.place_plan(specific, GROUPS)
+        self.assertEqual([(row["name"], row["entries"]) for row in found],
+                         [("bedroom", ["attic bedroom with a round window"])])
+
     def test_place_words_that_name_no_place_fall_back_to_the_ideas(self):
         # Live briefs kept a time of day as the place: no place was dealt at all.
         found, _ = places.place_plan(brief("themed", "at dawn", ideas=["a city park", "a narrow street"],
@@ -171,7 +179,7 @@ class PlaceCheck(unittest.TestCase):
         rows = retrieval.groups_of(load_catalog(user_root=False), places.SPACES, {"packs": []})
         found, _ = places.place_plan(brief("themed", "in his room", request="young person reading a book in his room"),
                                      rows)
-        self.assertTrue(found and all("bedroom" in entry for row in found for entry in row["entries"]), found)
+        self.assertEqual([row["name"] for row in found], ["bedroom"])
 
 
 class DealtPlaces(Harness):
