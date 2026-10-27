@@ -63,7 +63,7 @@ from ....backends.factory import create_backend
 from ....backends.recovery import GenerationRecovery
 from ....contracts import PromptInstruction, effective_model_family
 from ....director_profiles import resolve_director_config
-from ....options.dataset import CONSISTENCY_LEVELS, CONSISTENCY_PARTS, FACINGS, FRAMINGS, WORLDS
+from ....options.dataset import CONSISTENCY_LEVELS, CONSISTENCY_PARTS, FACINGS, FRAMINGS, KINDS, WORLDS
 from ...vocabulary.retrieval import base_word, content_words
 from .aspect import aspect_shape
 from .consistency import asks_same, resolve
@@ -80,7 +80,6 @@ VERSIONS = (9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20)  # 9 to 19: saved run
 PATHS = ("sfw_character", "nsfw_character", "non_character")
 GENDERS = ("male", "female", "custom", "")  # briefs before version 20, where "custom" meant not a human
 CAST_GENDERS = ("male", "female", "")  # a character's stated sex from version 20, any kind may have one
-KINDS = ("human", "animal", "creature", "robot", "object")  # what a character is, apart from its sex
 PRONOUNS = ("he", "she", "it", "")
 MAX_CHARACTERS, MAX_COUNT, MAX_TEXT, MAX_ITEMS, MAX_IDEAS = 20, 20, 1200, 20, 8
 BRIEF_FIELDS = ("path", "summary", "characters", "fixed", "randomized", "must", "avoid")

@@ -121,7 +121,8 @@ class Bundled(unittest.TestCase):
         # no two looks share their eyes and skin.
         from goated_prompter.features.dataset.v2.safety import adult_text
         from goated_prompter.features.vocabulary.retrieval import entry_name as head
-        always = catalog.always_on(load_catalog(user_root=False), "Subjects")
+        always = [pack for pack in catalog.always_on(load_catalog(user_root=False), "Subjects")
+                  if not any("kinds" in group for group in pack["groups"])]  # people's looks; Non-Human below
         self.assertEqual([pack["id"] for pack in always], ["Subjects/Female", "Subjects/Male"])
         self.assertEqual([[group["name"] for group in pack["groups"]] for pack in always], [["female"], ["male"]])
         entries = [entry for pack in always for entry in pack["entries"]]
@@ -132,6 +133,23 @@ class Bundled(unittest.TestCase):
         self.assertEqual(len(set(pairs)), len(pairs), "every look has its own eyes and skin")
         words = [word for pack in always for group in pack["groups"] for word in group["words"]]
         self.assertFalse([text for text in [*words, *entries] if adult_text(text)])
+
+    def test_the_built_in_non_human_looks_are_grouped_by_anatomy_in_four_parts(self):
+        # Looks dealt to characters that are not humans: each group fits kinds of character, never a human, and every
+        # entry is a covering, its texture or markings, eyes or lights and a build, so a part the request asks for is
+        # kept and the others are dealt anew; a covering names one colour ("a black cat" never turns black and white).
+        from goated_prompter.features.dataset.v2.safety import adult_text
+        from goated_prompter.features.vocabulary.retrieval import entry_parts
+        pack = next(pack for pack in catalog.always_on(load_catalog(user_root=False), "Subjects")
+                    if pack["id"] == "Subjects/Non-Human")
+        self.assertTrue(all(group.get("kinds") and "human" not in group["kinds"] for group in pack["groups"]))
+        for group in pack["groups"]:
+            shapes = {tuple(facet for facet, _ in entry_parts(entry)) for entry in group["entries"]}
+            self.assertEqual(len(shapes), 1, group["name"])
+            self.assertEqual(len(next(iter(shapes))), 4, group["name"])
+            self.assertGreaterEqual(len(group["entries"]), 20)
+        words = [word for group in pack["groups"] for word in group["words"]]
+        self.assertFalse([text for text in [*words, *pack["entries"]] if adult_text(text)])
 
 
 class Library(unittest.TestCase):

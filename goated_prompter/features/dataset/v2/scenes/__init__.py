@@ -153,10 +153,10 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
         # The looks of the people who vary, from the built-in looks; the user's own Subjects packs stay suggestions.
         own_subjects = any(group["category"] == SUBJECTS for group in groups)
         looks = [] if guided or own_subjects else look_groups(catalog)
-        if looks and (dealt_looks := deal_looks(brief, looks, total, rng)):
+        if looks and (dealt_looks := deal_looks(brief, looks, total, rng, embeddings)):
             plan["looks"], plan["look_words"] = dealt_looks, look_words(looks, brief, dealt_looks)
         # What the request says each person looks like holds in every image, looks or not.
-        plan["details"] = requested_details(brief, looks)
+        plan["details"] = requested_details(brief, looks, embeddings)
         # The camera of every image, from the built-in cameras, for its pose, the image shape and what must show; the
         # user's own Camera & Composition packs stay suggestions. Dealt last, so every other deal is seeded as before.
         own_cameras = any(group["category"] == CAMERA for group in groups)

@@ -7,7 +7,10 @@ SUBJECTS = """one entry per character label, each field a short value of its own
   hair (colour, length, texture and hairstyle), eyes (eye colour and distinctive shape when relevant),
   and expression (visible facial expression described through
   the eyes, eyebrows and mouth). A known
-  character has only expression.
+  character has only expression. A character that is not a human has its own fields instead: covering (what its body
+  is covered with or made of, with its colours and pattern: fur, feathers, scales, plating, a surface), build (size and
+  body shape), features (the distinctive parts it actually has: eyes, ears, horns, a beak, wings, a tail, lights), and
+  expression (what its face or posture shows). Describe only the anatomy it has: never a human trait it lacks.
 """
 ACTIONS = """the act in one sentence, naming every person by their character label. With no characters: how the subject
   is placed."""
@@ -47,7 +50,9 @@ For each image listed under IMAGES, in order, write one complete scene:
 - Every image is a new scene: apart from what consistency holds, give each one a different place, arrangement, camera
   and props, and never reuse a place, arrangement, camera or look listed in already_used. Give the people new looks
   (skin, build, hair, eyes) in every image unless fixed keeps the same people or a locked subject names them; then
-  keep their looks identical.
+  keep their looks identical. The same holds for every other character, within what it is: a new covering, build and
+  features in every image (another colour, pattern, coat, finish or size its kind can have), never one an image of
+  this set already has, while what the request says of it stays.
 - A character with "known": true is an established character: the image model already knows their face, hair, eyes,
   skin and body from their name, so write only their expression.
 - {show}
@@ -196,9 +201,11 @@ their skin, hair and eyes start from it, keeping its skin tone, hair colour, hai
 field, described as you otherwise would (how the hair falls, its texture). The request's own words come first: an age
 it gives replaces a hair colour that does not fit that age. A person gets nothing that neither the request nor the
 look gives, such as a scar, a wound or a tattoo. A look never gives a build: unless the request gives one, choose each
-person's build anew for every image, as different from image to image as their looks. A character with no look (an
-animal, a creature) gets a new look of its own in every image (another breed, colour, coat or build), unless the
-request describes it or fixed keeps it the same."""
+person's build anew for every image, as different from image to image as their looks. A character that is not a human
+may get a look too: its covering, features and build start from it (the colour, the coat, markings, texture or finish,
+the eyes or lights, the build), described as that very animal, creature or robot has them. A character with no look (an
+animal, a creature, a robot) gets a new look of its own in every image within what it is (another colour, pattern,
+coat, finish or build), unless the request describes it or fixed keeps it the same."""
 
 
 # Whenever images are dealt a built-in camera (scenes/camera.py): no check asks a scene again for it.

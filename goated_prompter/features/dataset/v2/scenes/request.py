@@ -10,12 +10,14 @@ from .....options.styles import OFF_STYLE, without_color
 from .....prompting.base import SHOW_DONT_TELL
 from .....prompting.creativity import creativity_adapter, creativity_temperature
 from ..aspect import brief_aspect, shape_rule
+from ..understanding import is_human
 from ..assignments import dataset_assignments
 from ..consistency import kept_words, levels, parts_at
 from ..triggers import brief_triggers, owner, run_style
 
 from .entries import entry_cap
-from .settings import ADULT_SUBJECT_FIELDS, FACES, FIELDS, KNOWN_SUBJECT_FIELDS, MAX_FIELD, SHOWS, SUBJECT_FIELDS
+from .settings import (ADULT_SUBJECT_FIELDS, FACES, FIELDS, KNOWN_SUBJECT_FIELDS, MAX_FIELD, NONHUMAN_SUBJECT_FIELDS,
+                       SHOWS, SUBJECT_FIELDS)
 from .texts import (ARRANGEMENT_RULE, ASPECT_RULE, CAMERA_RULE, COMPOSE_SYSTEM, CONSISTENCY_RULE, DEALT_FRAME_RULE,
                     DETAILS_RULE, ENTRY_RULE, FRAME_RULE, GUIDED_RULE, LABELS_RULE, LOOK_RULE, NO_COLOR_RULE,
                     NO_PEOPLE_RULE, NSFW_RULE, PLACE_RULE, SFW_RULE, VOCABULARY_RULES)
@@ -64,11 +66,14 @@ def consistency_items(brief):
 
 
 def subject_fields(brief, label):
-    """The subject fields one person's scene needs: a known character only its expression; in an adult dataset
+    """The subject fields one character's scene needs: a known character only its expression; a character that is not
+    a human the fields of its own anatomy (NONHUMAN_SUBJECT_FIELDS), a human the human ones; in an adult dataset
     everyone else also their genitals."""
     if label in known_labels(brief):
         return KNOWN_SUBJECT_FIELDS
-    return SUBJECT_FIELDS + (ADULT_SUBJECT_FIELDS if brief["path"] == "nsfw_character" else ())
+    person = next((item for item in brief["characters"] if item["label"] == label), {})
+    own = SUBJECT_FIELDS if not person or is_human(person) else NONHUMAN_SUBJECT_FIELDS
+    return own + (ADULT_SUBJECT_FIELDS if brief["path"] == "nsfw_character" else ())
 
 
 def guided_assignments(brief):

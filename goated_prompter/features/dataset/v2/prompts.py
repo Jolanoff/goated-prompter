@@ -144,6 +144,9 @@ def anchors(scene, brief):
         eyes = plain(look.get("eyes"))
         eyes = eyes if not eyes or re.search(r"\beyes\b", eyes) else f"{eyes} eyes"
         details = [part for part in (f"{tone} skin" if tone else "", hair, eyes) if part]
+        # A character that is not a human is named by its own covering and parts ("the wolf with grey fur").
+        details = details or [part for part in (plain(str(look.get("covering") or "").split(",")[0]),
+                                                plain(str(look.get("features") or "").split(",")[0])) if part]
         if details:
             people[person["label"]] = (noun, details)
     # Everyone gets the same amount of look: the least that tells them all apart, so no anchor is part of another.

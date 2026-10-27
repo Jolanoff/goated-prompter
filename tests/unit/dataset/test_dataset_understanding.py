@@ -102,8 +102,11 @@ class Understanding(unittest.TestCase):
         self.assertEqual(understanding.stated_gender(cat[0]), "male")
         self.assertEqual(prompts.count_tags(cat), ["1other", "solo"], "a male animal is no boy")
         brief = {"characters": cat, "consistency": {}, "kept_words": {}}
-        self.assertEqual(looks.deal_looks(brief, looks.look_groups(load_catalog(user_root=False)), 2, random.Random(1)), {},
-                         "an animal never gets a human look, whatever its sex")
+        groups = looks.look_groups(load_catalog(user_root=False))
+        human = {entry for row in groups if not row["kinds"] for entry in row["entries"]}
+        dealt = looks.deal_looks(brief, groups, 2, random.Random(1))
+        self.assertTrue(dealt and not {image["cat"] for image in dealt.values()} & human,
+                        "an animal never gets a human look, whatever its sex")
         robot = self.cast("a robot waving, she smiles", ("robot", "robot", "female", "she", "she", "robot"))
         self.assertEqual([(row["kind"], row["gender"], row["pronoun"]) for row in robot], [("robot", "female", "she")])
         dragon = self.cast("a dragon guarding its treasure", ("dragon", "creature", "", "", "it", "dragon"))

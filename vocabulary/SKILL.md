@@ -75,12 +75,14 @@ finds the group and the entries it points to), and a word must not mean somethin
 Each entry belongs to one group. `"worlds"` lists the worlds a group's entries fit (`everyday`, `historical`,
 `fantasy`, `sci-fi`; every world when it gives none): a request in another world never gets them unless it names
 them. `"shapes"` lists the image shapes a group's entries fit (`tall`, `square`, `wide`; every shape when it gives
-none): a run with that aspect ratio never gets the others. `"adult_default": true` marks a group for adult requests that name no place. Words find a group exactly; a
+none): a run with that aspect ratio never gets the others. `"kinds"` lists the kinds of character a group of looks
+fits (`animal`, `creature`, `robot`, `object`; a group without kinds is people's looks). `"adult_default": true` marks a group for adult requests that name no place. Words find a group exactly; a
 small embedding model also finds it by meaning, so a group's name and words should say plainly what its entries are.
 
 A built-in pack with `"always": true` is used in every run, selected or not, after the user's selected packs of its
 category (the `Spaces` places deal a place to every image, `Subjects/Female` and `Subjects/Male` a look to every
-person whose looks vary, `Camera & Composition/Camera` a camera to every image). Always-on packs stay safe for work and keep entries
+person whose looks vary, `Subjects/Non-Human` to every other character whose looks vary, `Camera &
+Composition/Camera` a camera to every image). Always-on packs stay safe for work and keep entries
 distinct: two entries never share most of their words. Do not add an always-on pack unless asked.
 
 ## Categories
@@ -161,6 +163,13 @@ supported? Older entries written with "one person" and "the other person" keep w
   them is only hair (or a shaved head), then eyes and skin tone: build and marks come from the request. Write a look
   as its parts joined by "with" and "and", each ending in what it describes ("shaggy ginger hair with wide green eyes
   and fair skin"): a request fixes the parts it names and every other part varies.
+- `Subjects/Non-Human` deals looks to the characters that are not humans (animals, creatures, robots) and whose looks
+  vary, never to a known, named or locked one. Its groups share an anatomy and appearance (fur, natural feathers,
+  bright feathers, scales, plating, smooth skin), never a species combination; a group's `kinds` say which characters
+  it fits and its words are the animals and beings a request names for it ("wolf", "parrot", "robot"). An entry is
+  four parts, each naming one thing: covering colour, its texture or markings, eyes or lights, build ("black fur
+  with a short sleek coat and amber eyes and a lean build"). A colour part names one colour, so "a black cat" keeps
+  black fur while the coat, eyes and build vary; a mix ("black and white") would let it change.
 - `Camera & Composition/Camera` deals a camera to every image while no Camera & Composition pack is selected. An
   entry is a whole camera, "<shot> with <angle> and <view>", whose parts go together. The shot is one of the sizes
   `scenes/camera.py` defines for any subject (`extreme wide shot`, `wide shot`, `full shot`, `medium long shot`,

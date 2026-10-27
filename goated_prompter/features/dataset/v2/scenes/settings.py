@@ -24,6 +24,11 @@ AT_LEAST_HIPS = SHOWS[:3]
 
 
 SUBJECT_FIELDS = ("skin", "build", "hair", "eyes", "expression")
+# A character that is not a human (understanding.is_human: an animal, a creature, a robot, an object that acts as a
+# character) is described by what its own anatomy has, never by human fields: what covers it or what it is made of,
+# its size and shape, the distinctive parts it actually has, and what its face or posture shows. Live animals came
+# back with "skin: n/a" and their fur filed as hair.
+NONHUMAN_SUBJECT_FIELDS = ("covering", "build", "features", "expression")
 
 
 # Adult datasets also describe each person's genitals, so the final prompt has them as data for every person whose

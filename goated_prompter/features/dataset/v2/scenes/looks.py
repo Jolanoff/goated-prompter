@@ -21,7 +21,8 @@ it ("a tall woman" ranks a blonde look first). With the user's own Subjects pack
 before and no built-in look is dealt. No model call: code finds and deals the looks.
 """
 
-from ....vocabulary.retrieval import content_words, exact_search, groups_of, requested_parts, telling_words, word_stem
+from ....vocabulary.retrieval import (content_words, exact_search, groups_of, match, requested_parts, telling_words,
+                                      word_stem)
 from ....vocabulary.selection import deal_composed
 from ..consistency import kept_words
 from ..understanding import is_human, stated_gender
@@ -29,6 +30,7 @@ from .request import varied_labels
 
 SUBJECTS = "Subjects"
 FIELDS = ("skin", "hair", "eyes")
+NONHUMAN_FIELDS = ("covering", "features", "build")  # where a look that is not a human's shows (settings)
 
 
 def look_groups(catalog):
@@ -36,32 +38,50 @@ def look_groups(catalog):
     return groups_of(catalog, SUBJECTS, {"packs": []})
 
 
-def _looks_for(groups, person):
-    return exact_search(groups, stated_gender(person)) or groups
+def _looks_for(groups, person, embeddings=None):
+    """The groups a character's looks come from. A human's are the groups made for humans (no kinds), found by their
+    stated sex, looks of either when it is unstated. Any other character's are the groups made for its kind whose
+    words its own words say ("a black cat": fur), else the one meaning picks out (retrieval.match), else the only one
+    of its kind; none when no group fits it, and then nothing is dealt. A brief before kinds deals none to it."""
+    if is_human(person):
+        human = [group for group in groups if not group.get("kinds") or "human" in group["kinds"]]
+        return exact_search(human, stated_gender(person)) or human
+    pool = [group for group in groups if person.get("kind") in (group.get("kinds") or ())]
+    text = f'{person["label"]}, {person.get("custom", "")}'
+    named = {group["name"] for group in match(pool, text, embeddings)} if pool and embeddings else set()
+    return exact_search(pool, text) or [group for group in pool if group["name"] in named] or (
+        pool if len(pool) == 1 else [])
 
 
 def _own_words(brief, person):
-    """A person's words about how they look: their label and appearance; a brief before version 17 has no appearance,
-    so the subject's words count for its only person."""
+    """A character's words about how it looks: its label, its description when it is not a human ("black cat") and its
+    appearance; a brief before version 17 has no appearance, so the subject's words count for its only person."""
     if "appearance" in person:
-        return f'{person["label"]}, {person["appearance"]}'
+        return ", ".join(filter(None, (person["label"], person.get("custom", ""), person["appearance"])))
     alone = len(brief["characters"]) == 1
     return f'{person["label"]}, {kept_words(brief).get("subject", "") if alone else ""}'
 
 
-def _looked(brief, groups):
-    """The people dealt a look: every human whose looks vary, when there are looks."""
-    return [person for person in brief["characters"]
-            if groups and person["label"] in varied_labels(brief) and is_human(person)]
+def _pools(brief, groups, embeddings=None):
+    """{label: the groups its looks come from} for every character whose looks vary and that some group fits."""
+    varied = varied_labels(brief) if groups else ()
+    return {person["label"]: pool for person in brief["characters"]
+            if person["label"] in varied and (pool := _looks_for(groups, person, embeddings))}
 
 
-def _wanted(brief, groups):
+def _looked(brief, groups, embeddings=None):
+    """The characters dealt a look: every one whose looks vary and that a group of looks fits."""
+    pools = _pools(brief, groups, embeddings)
+    return [person for person in brief["characters"] if person["label"] in pools]
+
+
+def _wanted(brief, groups, embeddings=None):
     """{label: (their looks, the parts their words fix, their details no part holds)} for every character; a detail that
     only repeats their label ("dancer") is not one."""
-    looked = {person["label"] for person in _looked(brief, groups)}
+    pools = _pools(brief, groups, embeddings)
     wanted = {}
     for person in brief["characters"]:
-        pool = _looks_for(groups, person) if person["label"] in looked else []
+        pool = pools.get(person["label"], [])
         fixed, rest = requested_parts(pool, _own_words(brief, person))
         label = {word_stem(word) for word in content_words(person["label"])}
         wanted[person["label"]] = (pool, fixed, [detail for detail in rest
@@ -69,11 +89,12 @@ def _wanted(brief, groups):
     return wanted
 
 
-def deal_looks(brief, groups, total, rng):
-    """{slot: {label: look}} for every human whose looks vary; {} when none is dealt (see the module docstring)."""
-    wanted = _wanted(brief, groups)
+def deal_looks(brief, groups, total, rng, embeddings=None):
+    """{slot: {label: look}} for every character whose looks vary and that a group of looks fits; {} when none is dealt
+    (see the module docstring)."""
+    wanted = _wanted(brief, groups, embeddings)
     pools = {}
-    for person in _looked(brief, groups):
+    for person in _looked(brief, groups, embeddings):
         pool, fixed, _ = wanted[person["label"]]
         key = (tuple(map(id, pool)), tuple((facet, tuple(parts)) for facet, parts in sorted(fixed.items())))
         pools.setdefault(key, (pool, fixed, []))[2].append(person["label"])
@@ -89,9 +110,9 @@ def deal_looks(brief, groups, total, rng):
     return dealt
 
 
-def requested_details(brief, groups):
+def requested_details(brief, groups, embeddings=None):
     """{label: the request's own details about that person that no dealt look holds}, for everyone who has any."""
-    return {label: details for label, (_, _, details) in _wanted(brief, groups).items() if details}
+    return {label: details for label, (_, _, details) in _wanted(brief, groups, embeddings).items() if details}
 
 
 def with_details(scene, details):
@@ -118,11 +139,13 @@ def look_words(groups, brief, dealt):
 
 
 def look_problems(scene, label, look, words=None):
-    """Why a scene does not give a person their dealt look, as reasons to ask again ([] when it does): their skin, hair
-    and eyes say at least one of the look's words (look_words)."""
+    """Why a scene does not give a character its dealt look, as reasons to ask again ([] when it does): the fields its
+    look shows in (a person's skin, hair and eyes; any other character's covering, features and build) say at least
+    one of the look's words (look_words)."""
     person = (scene.get("subjects") or {}).get(label) or {}
+    fields = NONHUMAN_FIELDS if "covering" in person else FIELDS
     own = ((words or {}).get(look) or frozenset(content_words(look))) - set(FIELDS)  # every look names the fields
-    said = set(content_words(" ".join(str(person.get(field, "")) for field in FIELDS)))
+    said = set(content_words(" ".join(str(person.get(field, "")) for field in fields)))
     if not person or own & said:
         return []
-    return [f'{label} does not have their dealt look: give {label} {look} (skin, hair and eyes)']
+    return [f'{label} does not have their dealt look: give {label} {look} ({", ".join(fields[:-1])} and {fields[-1]})']

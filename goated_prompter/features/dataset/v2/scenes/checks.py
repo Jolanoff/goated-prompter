@@ -97,14 +97,26 @@ def without_entry_copy(scene, labels):
 def scene_errors(scene, labels, avoid, extra=(), known=frozenset(), subject_fields=SUBJECT_FIELDS):
     """Why one composed scene is unusable as an answer; [] when its shape is right. extra: further text fields the
     answer must have (the Actions & Poses "entry"); known: labels of known characters (expression only), whose cast
-    also needs frame; subject_fields: what everyone else's subjects need (request.subject_fields)."""
+    also needs frame; subject_fields: what everyone else's subjects need (request.subject_fields), the same for
+    everyone or {label: fields} when characters of different kinds have their own."""
     framed = bool(known)
     if isinstance(scene, dict) and not framed:
         scene = {key: value for key, value in scene.items() if key != "frame"}  # a frame nobody asked for is dropped
     return _shape_errors(scene, labels, avoid, extra, known, subject_fields, framed)
 
 
+def _field_sets(labels, known, own):
+    """{fields: the labels that need them} for everyone but the known characters."""
+    sets = {}
+    for label in labels:
+        if label not in known:
+            sets.setdefault(tuple(own(label)), []).append(label)
+    return sets or {tuple(own(None)): []}
+
+
 def _shape_errors(scene, labels, avoid, extra, known, subject_fields, framed):
+    own = (lambda label: subject_fields.get(label, SUBJECT_FIELDS)) if isinstance(subject_fields, dict) else (
+        lambda label: subject_fields)
     scene = retire_fields(scene)
     # Extras may be empty ("" when there is nothing to add): the final prompt still dresses and lights the image.
     plain = [key for key in SECTIONS if key not in ("subjects", "position", "extras")]
@@ -114,9 +126,11 @@ def _shape_errors(scene, labels, avoid, extra, known, subject_fields, framed):
             or not (_filled(scene["position"], labels) if labels else scene["position"] in ({}, None))
             or (framed and not _framed(scene["frame"], labels))
             or not isinstance(scene["subjects"], dict) or set(scene["subjects"]) != set(labels)
-            or not all(_filled(person, KNOWN_SUBJECT_FIELDS if label in known else subject_fields)
+            or not all(_filled(person, KNOWN_SUBJECT_FIELDS if label in known else own(label))
                        for label, person in scene["subjects"].items())):
-        fields = f"subjects each with {', '.join(subject_fields)}"
+        sets = _field_sets(labels, known, own)
+        fields = "subjects each with " + "; ".join(
+            f"{', '.join(fields)}" + (f" ({', '.join(group)})" if len(sets) > 1 else "") for fields, group in sets.items())
         if known:
             fields += f" (known characters {', '.join(sorted(known))} only with {', '.join(KNOWN_SUBJECT_FIELDS)})"
         if framed:
@@ -206,6 +220,9 @@ def _summary(scene):
     # Field by field, so a writer that copies an earlier look never puts its hair into the skin field.
     looks = {label: {"skin": person["skin"], "hair": person["hair"]} for label, person in scene["subjects"].items()
              if "skin" in person and "hair" in person}
+    # A character that is not a human is listed by what covers it and its own parts, so later images vary it too.
+    looks.update({label: {"covering": person["covering"], "features": person.get("features", "")}
+                  for label, person in scene["subjects"].items() if "covering" in person})
     return {"space": scene["space"][:120], "camera": scene["camera"][:80], "actions": scene["actions"][:120],
             "extras": scene["extras"][:120], "looks": looks}
 

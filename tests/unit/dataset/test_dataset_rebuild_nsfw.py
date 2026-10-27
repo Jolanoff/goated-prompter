@@ -76,7 +76,7 @@ class AdultDatasetTests(unittest.TestCase):
             ([{"label": "Alex", "gender": "male", "custom": "", "pronoun": "he", "count": 1}], ["Alex"]),
             ([{"label": "Mara", "gender": "female", "custom": "", "pronoun": "she", "count": 1},
               {"label": "Rowan", "gender": "male", "custom": "", "pronoun": "he", "count": 1}], ["Mara", "Rowan"]),
-            ([{"label": "Kai", "gender": "custom", "custom": "nonbinary adult human", "pronoun": "it", "count": 1},
+            ([{"label": "Kai", "kind": "human", "gender": "", "custom": "", "pronoun": "", "count": 1},
               {"label": "performer", "gender": "female", "custom": "", "pronoun": "she", "count": 2}],
              ["Kai", "performer 1", "performer 2"]),
         ]

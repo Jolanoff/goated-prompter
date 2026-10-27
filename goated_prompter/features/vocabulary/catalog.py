@@ -19,7 +19,8 @@ that needs more people than a run's cast is never offered to it). All are option
 count. Instead of "entries" a pack may hold "groups": [{"group": "kitchen", "words": ["cooking", "kitchen"],
 "entries": [...]}, ...]: entries under a name and the words a request uses for them, which a search counts
 (features/vocabulary/retrieval.py); "worlds" lists the worlds its entries fit (options.dataset.WORLDS; every world when
-it gives none), "shapes" the image shapes they fit (options.dataset.SHAPES; every shape when it gives none),
+it gives none), "shapes" the image shapes they fit (options.dataset.SHAPES; every shape when it gives none), "kinds"
+the kinds of character a group of looks fits (options.dataset.KINDS; a group without kinds is a human's),
 "people" how many people its entries need (over the pack's; one pack can hold solo, couple and group entries), and "adult_default": true marks a group preferred for adult requests that name no place. Every entry
 is in one group only, and the pack's entries are all its groups' entries. An entry may also name another pack or category in square brackets, a slot ("holding [Kitchen-and-Dining]",
 "[Furniture: armchair]"): a run uses it only when that pack or category is selected, and the scene writer takes a
@@ -42,7 +43,7 @@ import re
 
 from ...config import PROJECT_ROOT
 from ...json_store import atomic_json
-from ...options.dataset import SHAPES, WORLDS
+from ...options.dataset import KINDS, SHAPES, WORLDS
 
 ROOT = PROJECT_ROOT / "vocabulary"
 USER_ROOT = PROJECT_ROOT / "data" / "vocabulary"
@@ -60,7 +61,7 @@ OPTIONAL_PACK_KEYS = {"description", "people", "always"}
 ENTRY_KEYS = {"text"}
 OPTIONAL_ENTRY_KEYS = {"people"}
 GROUP_KEYS = {"group", "words", "entries"}
-OPTIONAL_GROUP_KEYS = {"adult_default", "worlds", "shapes", "people"}
+OPTIONAL_GROUP_KEYS = {"adult_default", "worlds", "shapes", "kinds", "people"}
 MAX_WORDS = 100
 
 
@@ -191,7 +192,7 @@ def _groups(values, every):
         where = f"groups[{number}]"
         if not isinstance(group, dict) or not GROUP_KEYS <= set(group) or set(group) - GROUP_KEYS - OPTIONAL_GROUP_KEYS:
             raise ValueError(f'{where} needs exactly "group", "words" and "entries", and optionally "worlds", '
-                             '"shapes", "people" and "adult_default"')
+                             '"shapes", "kinds", "people" and "adult_default"')
         if "adult_default" in group and type(group["adult_default"]) is not bool:
             raise ValueError(f"{where}.adult_default must be true or false")
         if "worlds" in group and (not isinstance(group["worlds"], list) or not group["worlds"]
@@ -200,6 +201,9 @@ def _groups(values, every):
         if "shapes" in group and (not isinstance(group["shapes"], list) or not group["shapes"]
                                   or any(shape not in SHAPES for shape in group["shapes"])):
             raise ValueError(f"{where}.shapes must list shapes from: {', '.join(SHAPES)}")
+        if "kinds" in group and (not isinstance(group["kinds"], list) or not group["kinds"]
+                                 or any(kind not in KINDS for kind in group["kinds"])):
+            raise ValueError(f"{where}.kinds must list kinds from: {', '.join(KINDS)}")
         name = _text(group["group"], f"{where}.group")
         if name.casefold() in names:
             raise ValueError(f'{where}: the group "{name}" is listed twice')
@@ -215,6 +219,7 @@ def _groups(values, every):
         groups.append({"name": name, "words": _words_of(group["words"], f"{where}.words"), "entries": own,
                        **({"worlds": list(dict.fromkeys(group["worlds"]))} if "worlds" in group else {}),
                        **({"shapes": list(dict.fromkeys(group["shapes"]))} if "shapes" in group else {}),
+                       **({"kinds": list(dict.fromkeys(group["kinds"]))} if "kinds" in group else {}),
                        **({"people": count} if count is not None else {}),
                        **({"adult_default": True} if group.get("adult_default") else {})})
     if len(entries) > MAX_ENTRIES:
@@ -327,6 +332,7 @@ def import_pack(filename, text, root=None, user_root=None):
                             "entries": [own(entry, group.get("people", every)) for entry in group["entries"]],
                             **({"worlds": group["worlds"]} if "worlds" in group else {}),
                             **({"shapes": group["shapes"]} if "shapes" in group else {}),
+                            **({"kinds": group["kinds"]} if "kinds" in group else {}),
                             **({"people": group["people"]} if "people" in group else {}),
                             **({"adult_default": True} if group.get("adult_default") else {})} for group in groups]}
                if groups else {"entries": [own(entry) for entry in entries]})

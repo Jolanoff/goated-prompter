@@ -23,7 +23,7 @@ class DatasetRebuildAdmissionTests(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(self.temp.cleanup)
         self.value = {"path": "character", "summary": "Two adults reading", "fixed": "Two readers",
                       "randomized": "Light and framing", "must": [], "avoid": [], "characters": [
-                          {"label": "reader", "gender": "custom", "custom": "adult human", "pronoun": "it", "count": 2}]}
+                          {"label": "reader", "kind": "human", "gender": "", "custom": "", "pronoun": "", "count": 2}]}
         self.data = {**default_dataset_draft(), "subject": "Two adults reading", "amount": 1, "seed": 73,
                      "seed_mode": "fixed", "trigger": "reader"}
         self.backend = MockBackend()
@@ -94,7 +94,7 @@ class DatasetRebuildAdmissionTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('Trigger 1 ("clo21", character) must belong to exactly one character', job["error"])
         self.value["characters"] = [{"label": "Mara", "gender": "female", "custom": "", "pronoun": "she", "count": 1,
                                      "triggers": [1]},
-                                    {"label": "reader", "gender": "custom", "custom": "adult human", "pronoun": "it", "count": 1}]
+                                    {"label": "reader", "kind": "human", "gender": "", "custom": "", "pronoun": "", "count": 1}]
         payload = await self.analyze()
         self.assertEqual(payload["brief"]["input"]["triggers"], [clo, style])
         self.assertEqual([person["known"] for person in payload["brief"]["characters"]], [True, False])

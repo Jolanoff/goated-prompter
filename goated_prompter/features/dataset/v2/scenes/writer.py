@@ -34,7 +34,7 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
     """Compose one batch, asking again for the images still missing: ({number: scene}, {number: failure}).
     plan: {"vocabulary": section, "entries": {key: entry} or None, "cap", "used": {entry: images}, "dealt": {slot: entry}}."""
     labels, avoid = _labels(brief), brief["_avoid"]
-    people_fields = subject_fields(brief, None)  # everyone who is not a known character
+    people_fields = {label: subject_fields(brief, label) for label in labels}  # each character's own fields
     entries, cap, used = plan["entries"], plan["cap"], plan["used"]
     extra = ("entry",) if entries else ()
     scenes, reasons, tries = {}, {number: [] for number in numbers}, {number: 0 for number in numbers}

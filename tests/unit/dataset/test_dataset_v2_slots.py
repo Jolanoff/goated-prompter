@@ -41,7 +41,7 @@ class SlotIdentityTests(unittest.TestCase):
             data.update(source_mode="guided", inputs="\n".join(guided))
         value = {"path": "character", "summary": "Alex reads", "fixed": "Alex stays the same", "randomized": "Location",
                  "must": [], "avoid": [],
-                 "characters": [{"label": "Alex", "gender": "custom", "custom": "adult human reader", "pronoun": "it", "count": 1}]}
+                 "characters": [{"label": "Alex", "kind": "human", "gender": "", "custom": "", "pronoun": "", "count": 1}]}
         self.brief = understanding.apply_rules(value, data)
 
     @staticmethod

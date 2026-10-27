@@ -111,6 +111,90 @@ class Details(unittest.TestCase):
         self.assertIs(looks.with_details(shown, {}), shown)
 
 
+class NonHumanLooks(unittest.TestCase):
+    """A character that is not a human is described by its own anatomy, its looks are tracked across images like a
+    person's, and nothing is dealt to it while no catalog has looks for it."""
+
+    def brief(self, *cast, path="sfw_character"):
+        return {"path": path, "characters": [dict(person) for person in cast], "consistency": {}, "kept_words": {}}
+
+    WOLF = {"label": "wolf", "kind": "animal", "gender": "male", "custom": "wolf", "pronoun": "he", "known": False,
+            "triggers": [], "appearance": ""}
+    WOMAN = {"label": "woman", "kind": "human", "gender": "female", "custom": "", "pronoun": "she", "known": False,
+             "triggers": [], "appearance": ""}
+
+    def test_a_character_that_is_not_a_human_has_the_fields_of_its_own_anatomy(self):
+        # Live animals came back with "skin: n/a" and their fur filed as hair.
+        from goated_prompter.features.dataset.v2.scenes import request, settings
+        brief = self.brief(self.WOLF, self.WOMAN)
+        self.assertEqual(request.subject_fields(brief, "wolf"), settings.NONHUMAN_SUBJECT_FIELDS)
+        self.assertEqual(request.subject_fields(brief, "woman"), settings.SUBJECT_FIELDS, "people keep theirs")
+        self.assertFalse({"skin", "hair"} & set(settings.NONHUMAN_SUBJECT_FIELDS))
+        older = self.brief({"label": "elf", "gender": "custom", "custom": "elf", "pronoun": "it"})
+        self.assertEqual(request.subject_fields(older, "elf"), settings.NONHUMAN_SUBJECT_FIELDS)
+
+    def test_each_character_is_checked_against_its_own_fields(self):
+        from goated_prompter.features.dataset.v2.scenes import checks, settings
+        scene = {"subjects": {"woman": {field: "x" for field in settings.SUBJECT_FIELDS},
+                              "wolf": {field: "x" for field in settings.NONHUMAN_SUBJECT_FIELDS}},
+                 "actions": "the woman walks beside the wolf", "position": {"woman": "left", "wolf": "right"},
+                 "extras": "", "space": "a field", "camera": "wide"}
+        fields = {"woman": settings.SUBJECT_FIELDS, "wolf": settings.NONHUMAN_SUBJECT_FIELDS}
+        self.assertEqual(checks.scene_errors(scene, ["woman", "wolf"], [], subject_fields=fields), [])
+        human_wolf = {**scene, "subjects": {**scene["subjects"], "wolf": {field: "x" for field in settings.SUBJECT_FIELDS}}}
+        self.assertIn("covering, build, features, expression (wolf)",
+                      checks.scene_errors(human_wolf, ["woman", "wolf"], [], subject_fields=fields)[0])
+
+    def test_a_look_that_is_not_a_human_is_tracked_across_images_and_names_its_character(self):
+        # A live set gave the same wolf the same coat in every image: earlier images listed only skin and hair.
+        from goated_prompter.features.dataset.v2 import prompts
+        from goated_prompter.features.dataset.v2.scenes import checks
+        scene = {"subjects": {"wolf 1": {"covering": "grey and white fur, thick", "build": "lean", "features": "amber eyes",
+                                         "expression": "alert"},
+                              "wolf 2": {"covering": "black fur", "build": "heavy", "features": "yellow eyes",
+                                         "expression": "calm"}},
+                 "space": "snow", "camera": "wide", "actions": "two wolves run", "extras": ""}
+        self.assertEqual(checks._summary(scene)["looks"]["wolf 1"], {"covering": "grey and white fur, thick",
+                                                                      "features": "amber eyes"})
+        pack = self.brief({**self.WOLF, "label": "wolf 1"}, {**self.WOLF, "label": "wolf 2"})
+        self.assertEqual(prompts.anchors(scene, pack), {"wolf 1": "the wolf with grey and white fur",
+                                                        "wolf 2": "the wolf with black fur"})
+
+    def deal(self, *cast, total=6):
+        return looks.deal_looks(self.brief(*cast), looks.look_groups(load_catalog(user_root=False)), total,
+                                random.Random(1))
+
+    def test_its_look_comes_from_the_looks_of_its_own_anatomy_and_varies(self):
+        rows = {row["name"]: row for row in looks.look_groups(load_catalog(user_root=False))}
+        wolf = [image["wolf"] for image in self.deal(self.WOLF).values()]
+        self.assertTrue(set(wolf) <= set(rows["fur"]["entries"]) and len(set(wolf)) == 6, "fur, never feathers")
+        robot = {**self.WOLF, "label": "robot", "kind": "robot", "custom": "robot", "gender": ""}
+        self.assertTrue({image["robot"] for image in self.deal(robot).values()} <= set(rows["plating"]["entries"]))
+        parrot = {**self.WOLF, "label": "parrot", "custom": "parrot", "gender": ""}
+        self.assertTrue({image["parrot"] for image in self.deal(parrot).values()} <= set(rows["bright feathers"]["entries"]))
+
+    def test_what_the_request_says_of_it_stays_and_every_other_part_varies(self):
+        # A live set gave "a black cat" one identical look in every image: the request fixed the colour, nothing more.
+        from goated_prompter.features.vocabulary.retrieval import entry_parts
+        cat = {**self.WOLF, "label": "black cat", "custom": "black cat", "gender": ""}
+        parts = [dict(entry_parts(image["black cat"])) for image in self.deal(cat).values()]
+        self.assertEqual({part["fur"] for part in parts}, {"black fur"})
+        for facet in ("coat", "ey", "build"):
+            self.assertGreater(len({part[facet] for part in parts}), 1, facet)
+
+    def test_known_named_locked_object_and_older_characters_get_no_look(self):
+        pikachu = {**self.WOLF, "label": "Pikachu", "kind": "creature", "custom": "Pikachu", "known": True}
+        rex = {**self.WOLF, "label": "Rex", "custom": "dog"}
+        teapot = {**self.WOLF, "label": "teapot", "kind": "object", "custom": "talking teapot"}
+        older = {key: value for key, value in self.WOLF.items() if key != "kind"} | {"gender": "custom"}
+        for character in (pikachu, rex, teapot, older):
+            with self.subTest(character=character["label"]):
+                self.assertEqual(self.deal(character), {})
+        locked = {**self.brief(self.WOLF), "consistency": {"subject": "locked"}, "kept_words": {"subject": "a wolf"}}
+        self.assertEqual(looks.deal_looks(locked, looks.look_groups(load_catalog(user_root=False)), 3, random.Random(1)),
+                         {}, "the same wolf in every image")
+
+
 class LookCheck(unittest.TestCase):
     LOOK = "wavy blonde hair with blue eyes and pale skin"
 
@@ -135,7 +219,7 @@ class LookCheck(unittest.TestCase):
                          "the request's own words replace the parts of the look they name")
 
     def test_the_built_in_looks_are_one_female_and_one_male_group(self):
-        rows = looks.look_groups(load_catalog(user_root=False))
+        rows = [row for row in looks.look_groups(load_catalog(user_root=False)) if not row["kinds"]]
         self.assertEqual([row["name"] for row in rows], ["female", "male"])
         dealt = looks.deal_looks(brief(("woman", "female"), ("man", "male")), rows, 3, random.Random(2))
         self.assertTrue({image["woman"] for image in dealt.values()} <= set(rows[0]["entries"]), "nothing asked: whole looks")
@@ -176,7 +260,7 @@ class DealtLooks(Harness):
         self.assertIn("LOOKS\nAn image in IMAGES may give people a look", first.system_message)
         system = " ".join(first.system_message.split())
         self.assertIn("A person gets nothing that neither the request nor the look gives", system)
-        self.assertIn("A character with no look (an animal, a creature) gets a new look of its own in every image", system)
+        self.assertIn("A character with no look (an animal, a creature, a robot) gets a new look of its own in every image", system)
         self.assertIn("an age it gives replaces a hair colour that does not fit that age", system)
         self.assertIn("A look never gives a build: unless the request gives one, choose each person's build anew for "
                       "every image", " ".join(first.system_message.split()))

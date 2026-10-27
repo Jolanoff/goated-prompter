@@ -112,10 +112,15 @@ that person or in its extras) to the extras in the request's own words (`with_de
 a writer asked again three times still left a beard out). A person gets nothing the request and their look do not
 give (no scars, wounds or tattoos of the writer's own).
 
-Looks (`v2/scenes/looks.py`): every human whose looks vary (`varied_labels`: not known, triggered, named or held by a
-locked subject; only a human, `is_human`, whatever any other kind's sex) is dealt a look in every image from the built-in looks (`look_groups`: the
-always-on Subjects groups, `female` in `Subjects/Female` and `male` in `Subjects/Male`), with no model call
-(`deal_looks`). A look is a hair style and colour, eyes and skin tone: a base that keeps the set's people apart. A
+Looks (`v2/scenes/looks.py`): every character whose looks vary (`varied_labels`: not known, triggered, named or held
+by a locked subject) is dealt a look in every image from the built-in looks (`look_groups`: the always-on Subjects
+groups), with no model call (`deal_looks`). A human's come from the groups made for people, `female` in
+`Subjects/Female` and `male` in `Subjects/Male`; any other character's from the `Subjects/Non-Human` groups of its kind
+(the group key `kinds`) whose words its label and description say ("a black cat": fur), else the one meaning picks
+out, else the only one of its kind; none fits, none is dealt (a talking teapot). A non-human look is a covering colour,
+its texture or markings, eyes or lights and a build; the request fixes the parts it names ("black") and the others are
+dealt anew, and the writer describes it in the non-human fields (`covering`, `build`, `features`, `expression`), never
+in human ones. A look is a hair style and colour, eyes and skin tone: a base that keeps the set's people apart. A
 person's stated sex finds their group by the group's words (`exact_search`); a person of unstated sex gets looks of
 either. Their label and appearance fix only the parts of a look they name (`requested_parts`: "redhead", "brunette",
 "freckles", "blue-eyed") and every other part varies (`deal_composed`): a ginger man with green eyes gets ginger hair

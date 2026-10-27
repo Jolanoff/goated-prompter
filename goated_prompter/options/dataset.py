@@ -42,6 +42,9 @@ SHAPES = ("tall", "square", "wide")
 # in (the tightest that keeps everything the request needs in view, the widest at which what matters most still
 # reads clearly) and which way the subjects face (FACINGS); dataset/v2/scenes/camera.py deals cameras inside it.
 FRAMINGS = ("surroundings", "whole", "partial", "close")
+# What a character is, apart from its sex (Understanding names it); a vocabulary group of looks may list the kinds it
+# fits ("kinds"), and a character is dealt looks only from groups of its own kind (dataset/v2/scenes/looks.py).
+KINDS = ("human", "animal", "creature", "robot", "object")
 # Which way the subjects face: toward the viewer (posing, presenting, on display), toward each other or an act between
 # them, all one way across the scene, or as the image likes.
 FACINGS = ("viewer", "each other", "one way", "free")
