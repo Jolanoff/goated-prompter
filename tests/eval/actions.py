@@ -7,11 +7,15 @@ model fitting call it had then). Per request and in total:
   cast fit          share of the images whose pose is made for the cast's number of people
   ruled out         share of the images whose pose says what the request rules out
   distinct          share of the images with a pose no earlier image has; kinds: distinct kinds of pose (groups)
-  object precision  share of the images whose object suits the request (cases that judge it)
+  object precision  share of the images whose object suits the request (cases that expect one)
+  given when none   share of the images given an object when the pose uses none (cases with objects [])
+  given when some   share of the images given an object when the pose uses one
   object fit        mean closeness in meaning of each image's object to its pose and place
   ms                retrieval and selection time per request (the embedding index built beforehand)
 
-  python -m tests.eval.actions --embedding-model <gguf> [--llama-server <exe>] [--images 10] [--seed 7]
+  python -m tests.eval.actions --embedding-model <gguf> [--cases tests/eval/cases/actions_heldout.json]
+      [--llama-server <exe>] [--images 10] [--seed 7]
+The held-out cases (actions_heldout.json) were labelled before any run and never set a threshold.
 """
 
 import argparse
@@ -77,10 +81,12 @@ def measure(case, dealt, things, partners, poses, objects, embeddings):
                             for e in images) / len(images)) if images and ruled else 0.0
     row["distinct"] = len(set(images)) / len(images) if images else None
     row["kinds"] = len({kind[e] for e in images}) if images else None
-    if "objects" in case:
+    if case.get("objects"):
         row["object_precision"] = (sum(thing_kind[t] in case["objects"] for t in things.values()) / len(things)
                                    if things else None)
     row["objects_given"] = len(things) / len(images or dealt or things or [0]) if images else len(things) / 10
+    if "objects" in case:
+        row["given_when_some" if case["objects"] else "given_when_none"] = row["objects_given"]
     fits = [retrieval.fit_scores(partners[n], [things[n]], embeddings)[0] for n in things if partners.get(n)]
     row["object_fit"] = sum(fits) / len(fits) if fits else None
     return row
@@ -90,6 +96,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--embedding-model", required=True)
     parser.add_argument("--llama-server", default="C:/Tools/llama.cpp/llama-server.exe")
+    parser.add_argument("--cases", default=str(CASES))
     parser.add_argument("--images", type=int, default=10)
     parser.add_argument("--seed", type=int, default=7)
     args = parser.parse_args()
@@ -100,7 +107,7 @@ def main():
     selected = selected_vocabulary(catalog, selection)
     poses = offered_groups(catalog, "Actions & Poses", selection, selected)
     objects = offered_groups(catalog, "Objects & Props", selection, selected)
-    cases = json.loads(CASES.read_text(encoding="utf-8"))["cases"]
+    cases = json.loads(Path(args.cases).read_text(encoding="utf-8"))["cases"]
     OUT.mkdir(parents=True, exist_ok=True)
     embeddings = vectors_module.embeddings_for(
         {"local_llama_cpp": {"llama_server": args.llama_server, "embedding_model_path": args.embedding_model}},
@@ -122,7 +129,7 @@ def main():
             show = lambda row, key: "-" if row.get(key) is None else f"{row[key]:.2f}"
             print(f'{case["request"][:38]:38} '
                   + " ".join(f"{key[:6]} {show(old, key)}>{show(new, key)}" for key in
-                             ("action_precision", "cast_fit", "distinct", "kinds", "object_precision", "objects_given", "object_fit"))
+                             ("action_precision", "cast_fit", "kinds", "object_precision", "given_when_none", "given_when_some"))
                   + f' ms {new["ms"]}', flush=True)
     finally:
         embeddings.close()
@@ -132,10 +139,11 @@ def main():
         summary[side] = {key: round(sum(r[key] for r in rows if r.get(key) is not None)
                                     / max(1, sum(r.get(key) is not None for r in rows)), 3)
                          for key in ("action_precision", "cast_fit", "ruled_out", "distinct", "kinds",
-                                     "object_precision", "objects_given", "object_fit")}
+                                     "object_precision", "objects_given", "given_when_none", "given_when_some",
+                                     "object_fit")}
     summary["new"]["ms"] = round(sum(r["ms"] for r in report["new"]) / len(report["new"]), 1)
     print(json.dumps(summary, indent=1))
-    (OUT / "report.json").write_text(json.dumps({**report, "summary": summary}, indent=1), encoding="utf-8")
+    (OUT / f"report-{Path(args.cases).stem}.json").write_text(json.dumps({**report, "summary": summary}, indent=1), encoding="utf-8")
 
 
 if __name__ == "__main__":
