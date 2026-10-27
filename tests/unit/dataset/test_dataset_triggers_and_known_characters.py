@@ -174,7 +174,7 @@ class TriggerCast(unittest.TestCase):
     def test_an_exact_character_trigger_makes_its_person_known_and_a_meaning_one_does_not(self):
         brief = brief_for()
         self.assertEqual([(person["known"], person["triggers"]) for person in brief["characters"]], [(True, [1]), (True, [2])])
-        self.assertEqual(brief["version"], 18)
+        self.assertEqual(brief["version"], 19)
         self.assertEqual(understanding.validate_brief(brief), brief)
         meaning = brief_for(triggers=[trigger("red-haired elf girl", "character", expand="on")], cast=mara(1))
         self.assertEqual([person["known"] for person in meaning["characters"]], [False])

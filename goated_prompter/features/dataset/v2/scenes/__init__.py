@@ -20,7 +20,10 @@ and builds a logical pose for the request.
 
 Places (places.py): unless the request keeps the place without words for it, every image is dealt one place from the
 selected Spaces packs or, after them, the always-on built-in places; the scene is built there (PLACE_RULE) and a scene
-built elsewhere is asked again. Each image's place is paired with its dealt pose.
+built elsewhere is asked again. Each image's place is paired with its dealt pose. A request that places its subjects
+relative to anchors (in front of a castle, under a table, on a bench in a park) is dealt surroundings that keep every
+relation, never the inside of an anchor they are outside of, and every image carries the whole arrangement in the
+request's words for the writer to keep (ARRANGEMENT_RULE).
 
 Objects & Props (props.py): every image is suggested one object from the selected Objects & Props packs, the ones the
 request names first, else one from the groups that suit its own dealt pose and place (none when nothing does). Every image's pose, place, object and people (looks.py) are dealt together, so they make one scene.
@@ -79,7 +82,7 @@ from .request import _system, compose_instruction, compose_message, deals_frames
 from .settings import ACTIONS_CATEGORY, BATCH, EARLIER, KNOWN_SUBJECT_FIELDS, ROUNDS, SECTIONS, SUBJECT_FIELDS, VOCABULARY_SAMPLE
 from .camera import CAMERA, camera_frames, camera_groups, deal_cameras
 from .looks import SUBJECTS, deal_looks, look_groups, look_words, requested_details
-from .places import SPACES, place_plan
+from .places import SPACES, arrangement, place_plan
 from .props import OBJECTS, deal_props
 from .slots import only_fillable
 from .texts import COMPOSE_SYSTEM, ENTRY_RULE, GUIDED_RULE, NO_PEOPLE_RULE, NSFW_RULE, SFW_RULE, VOCABULARY_RULES
@@ -122,11 +125,13 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
         if places:  # Spaces is dealt as places, never offered as suggestions or a list to pick from
             groups = [group for group in groups if group["category"] != SPACES]
         locked = locked_categories(brief)
+        # The request's spatial relations go with every image, places dealt or not (the user's scene ideas keep theirs).
+        plan_arrangement = [] if guided else arrangement(brief)
         dealt = deal_actions(poses, total, rng, levels(brief)["action"] == "locked") if poses else {}
         objects = [] if OBJECTS in locked else offered_groups(catalog, OBJECTS, selection, groups)
         plan = {"entries": {_entry_key(entry): entry for entry in action_entries} or None,
                 "cap": total if levels(brief)["action"] == "locked" else entry_cap(action_entries, total), "used": {},
-                "dealt": dealt,
+                "dealt": dealt, "arrangement": plan_arrangement,
                 "hands": deal_hands([group for group in groups if group["category"] not in locked], total, rng,
                                     words=requested_words(brief), owned={OBJECTS} if objects else frozenset()),
                 "props": [entry for group in groups if group["category"] != ACTIONS_CATEGORY

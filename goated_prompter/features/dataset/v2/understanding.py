@@ -70,11 +70,12 @@ from .consistency import asks_same, resolve
 from .safety import ADULTS_ONLY, NO_ANIMALS, adult_content_request, adults_only_error, minor_reference
 from .triggers import all_text, brief_triggers, data_triggers, personal_numbers
 
-VERSION = 18
-VERSIONS = (9, 10, 11, 12, 13, 14, 15, 16, 17, 18)  # 9 to 17: saved runs (10 with a structured intent no longer read,
-                                                    # before 12 no "known", before 13 one trigger string, before 14 no
-                                                    # kept, before 15 no consistency, before 16 no places, before 17 no
-                                                    # appearance, before 18 no framing)
+VERSION = 19
+VERSIONS = (9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19)  # 9 to 18: saved runs (10 with a structured intent no longer
+                                                        # read, before 12 no "known", before 13 one trigger string,
+                                                        # before 14 no kept, before 15 no consistency, before 16 no
+                                                        # places, before 17 no appearance, before 18 no framing, before
+                                                        # 19 no relations in places)
 PATHS = ("sfw_character", "nsfw_character", "non_character")
 GENDERS = ("male", "female", "custom", "")
 PRONOUNS = ("he", "she", "it", "")
@@ -90,6 +91,8 @@ KEPT_PARTS = CONSISTENCY_PARTS
 KEPT_ORDER = ("subject", "action", "place", "objects", "clothing", "expression", "camera", "light", "mood")
 LEVEL_FIELDS = ("locked", "varied")
 PLACE_FIELDS = ("setting", "world", "ideas")
+RELATION_FIELDS = ("subject", "relation", "anchor", "within")  # one spatial relation of the request (places.relations)
+MAX_RELATIONS = 12
 FRAMING_FIELDS = ("tightest", "widest", "facing")
 MODEL_FIELDS = (*MODEL_BRIEF_FIELDS, "kept", *LEVEL_FIELDS, "places", "framing")
 IRREGULAR_PLURALS = {"men": "man", "women": "woman", "people": "person", "children": "child", "feet": "foot",
@@ -162,13 +165,28 @@ locked: only the parts in kept the request says must look identical in every ima
 varied: the parts in kept the request asks to differ between the images (different rooms, various outfits), as a
   list of part names; [] when none.
 places: where the images can happen:
+  relations: every spatial relation the request gives, one entry per relation and nested ones too ("a woman on a bench
+    in front of a fountain in a park": the woman on the bench, the bench in front of the fountain, the woman in the
+    park); [] when it gives none. Each copies the request's own words exactly:
+    subject: who or what is placed;
+    relation: the words saying where ("in front of", "behind", "beside", "under", "on", "inside", "between", "on the
+      left of");
+    anchor: what it is placed relative to: a building, a room, a piece of furniture, a natural feature, an object or a
+      person;
+    within: true when the anchor holds the subject, so the image happens in or on it (in a park, on a beach, inside a
+      castle, on a bench); false when the subject is before, behind, beside, under, above, around or between anchors
+      (in front of a castle, under a table, beside a lake).
   setting: the words of the request or rules that put the place inside a larger surrounding (in space, at the zoo),
-    copied exactly as the user wrote them; "" when none. Never the place itself.
+    copied exactly as the user wrote them; "" when none. Never the place itself, and never an anchor the subjects are
+    only placed next to (a relation's anchor whose within is false).
   world: "everyday", "historical", "fantasy" or "sci-fi": the world of the surroundings the images happen in;
     "everyday" unless the request puts them in a historical, fantasy or sci-fi setting (a character from a story of
     another world in an ordinary place is still "everyday").
-  ideas: always 6 to 8 different places where the request can plausibly happen in its world, a few plain words each.
-    When kept names a place, every idea is that place or a kind of it, never another place. Otherwise the obvious
+  ideas: always 6 to 8 different places where the request can plausibly happen in its world with every relation
+    kept, a few plain words each. An anchor the subjects are outside of (within false) is never an idea, nor any place
+    inside it or part of it: the ideas are places from which it is seen in that relation (in front of a castle: a
+    meadow before its walls, a road up to its gate). Otherwise, when kept names a place or a relation's anchor holds
+    the subjects, every idea is that place or a kind of it, never another place. Otherwise the obvious
     ones and less expected ones that still fit, spread over the kinds of place where it fits (at home, work and study,
     public places, travel, outdoors and nature, events and gatherings, performances and shows), at most two of one
     kind.
@@ -237,7 +255,11 @@ def _schema():
                  "properties": {part: text for part in KEPT_ORDER}},
         **{field: {"type": "array", "maxItems": len(KEPT_PARTS), "items": {"type": "string", "enum": list(KEPT_PARTS)}}
            for field in LEVEL_FIELDS},
-        "places": {"type": "object", "additionalProperties": False, "required": list(PLACE_FIELDS), "properties": {
+        "places": {"type": "object", "additionalProperties": False, "required": ["relations", *PLACE_FIELDS],
+                   "properties": {
+            "relations": {"type": "array", "maxItems": MAX_RELATIONS, "items": {
+                "type": "object", "additionalProperties": False, "required": list(RELATION_FIELDS), "properties": {
+                    "subject": text, "relation": text, "anchor": text, "within": {"type": "boolean"}}}},
             "setting": text, "world": {"type": "string", "enum": list(WORLDS)},
             "ideas": {"type": "array", "maxItems": MAX_IDEAS, "items": text}}},
         "framing": {"type": "object", "additionalProperties": False, "required": list(FRAMING_FIELDS), "properties": {
@@ -328,7 +350,8 @@ def recover(value):
     places = value.get("places") if isinstance(value.get("places"), dict) else {}
     value["places"] = {"setting": _optional_text(places.get("setting")) or "",
                        "world": places.get("world") if places.get("world") in WORLDS else WORLDS[0],
-                       "ideas": (_phrases(places.get("ideas")) or [])[:MAX_IDEAS]}
+                       "ideas": (_phrases(places.get("ideas")) or [])[:MAX_IDEAS],
+                       "relations": _relations(places.get("relations"))}
     # framing is optional as well: a missing or unknown step is "", which leaves the camera open on that side.
     value["framing"] = framing_facts(value.get("framing"))
     for key in ("summary", "fixed", "randomized"):
@@ -338,6 +361,19 @@ def recover(value):
         if key in value and (items := _phrases(value[key])) is not None:
             value[key] = items
     return value
+
+
+def _relations(value):
+    """The answer's spatial relations: each {subject, relation, anchor, within} with its texts trimmed; one without a
+    relation or an anchor, or broken, is left out (relations are optional)."""
+    rows = []
+    for item in value if isinstance(value, list) else []:
+        if not isinstance(item, dict):
+            continue
+        texts = {key: _optional_text(item.get(key)) or "" for key in ("subject", "relation", "anchor")}
+        if texts["relation"] and texts["anchor"] and content_words(texts["anchor"]):
+            rows.append({**texts, "within": item.get("within") is True})
+    return rows[:MAX_RELATIONS]
 
 
 def model_errors(value, nsfw, data=None):
@@ -507,12 +543,20 @@ def kept_parts(quotes, data):
 def place_facts(places, place, data):
     """The brief's places: the setting only when its words are really in what the user wrote and it is more than the
     place itself (a setting that holds all of the place words is no setting; place: the user's words for it, "" when
-    none), and the ideas as given."""
+    none) or an anchor the subjects are outside of (that is never where the image happens), the ideas as given, and
+    the relations whose relation and anchor words are really in what the user wrote (a subject not found there is
+    "")."""
     flat = lambda text: " ".join(str(text).casefold().split())
-    setting = places["setting"] if places["setting"] and kept_parts({"place": places["setting"]}, data) else ""
+    said = lambda text: bool(text) and bool(kept_parts({"place": text}, data))
+    relations = [{**item, "subject": item["subject"] if said(item["subject"]) else ""}
+                 for item in places.get("relations") or () if said(item["relation"]) and said(item["anchor"])]
+    setting = places["setting"] if places["setting"] and said(places["setting"]) else ""
     if setting and place and flat(place) in flat(setting):
         setting = ""
-    return {"setting": setting, "world": places["world"], "ideas": list(places["ideas"])}
+    if setting and any(not item["within"] and (flat(item["anchor"]) in flat(setting) or flat(setting) in flat(item["anchor"]))
+                       for item in relations):
+        setting = ""
+    return {"setting": setting, "world": places["world"], "ideas": list(places["ideas"]), "relations": relations}
 
 
 def apply_rules(value, data):
@@ -567,11 +611,17 @@ def validate_brief(brief):
             for part, text in brief["kept_words"].items())):
         raise ValueError("kept_words must give the user's words for parts of the image.")
     places = brief.get("places")
-    if "places" in brief and (not isinstance(places, dict) or set(places) != set(PLACE_FIELDS)
+    place_fields = (*PLACE_FIELDS, "relations") if brief["version"] >= 19 else PLACE_FIELDS
+    if "places" in brief and (not isinstance(places, dict) or set(places) != set(place_fields)
                               or not isinstance(places["setting"], str) or places["world"] not in WORLDS
                               or not isinstance(places["ideas"], list) or len(places["ideas"]) > MAX_IDEAS
                               or any(not isinstance(idea, str) or not idea.strip() for idea in places["ideas"])):
         raise ValueError(f"places must give a setting, a world ({', '.join(WORLDS)}) and at most {MAX_IDEAS} ideas.")
+    if "relations" in (places or {}) and (not isinstance(places["relations"], list) or any(
+            not isinstance(item, dict) or set(item) != set(RELATION_FIELDS) or type(item["within"]) is not bool
+            or any(not isinstance(item[key], str) for key in ("subject", "relation", "anchor"))
+            or not item["relation"].strip() or not item["anchor"].strip() for item in places["relations"])):
+        raise ValueError("places.relations must list {subject, relation, anchor, within (true/false)}.")
     framing = brief.get("framing")
     if "framing" in brief and (not isinstance(framing, dict) or set(framing) != set(FRAMING_FIELDS)
                                or framing["tightest"] not in ("", *FRAMINGS) or framing["widest"] not in ("", *FRAMINGS)

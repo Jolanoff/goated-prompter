@@ -99,7 +99,7 @@ class Understanding(unittest.TestCase):
 
     def test_understanding_never_chooses_vocabulary(self):
         result, calls = self.understand([TWO_MEN], subject="2 adult men in an explicit scene", nsfw=True)
-        self.assertEqual(result["version"], 18)
+        self.assertEqual(result["version"], 19)
         self.assertNotIn("intent", result)
         self.assertEqual(set(calls[0].json_schema["properties"]), set(understanding.MODEL_FIELDS))
         for word in ("pack", "vocabulary"):
@@ -140,6 +140,27 @@ class Understanding(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "invalid answer twice"):
             self.understand([broken, broken])
 
+    def test_the_requests_spatial_relations_are_kept_in_its_own_words(self):
+        # A live set put a dragon "in front of a castle" inside the castle: the castle was filed as the setting and
+        # the relation was lost. Relations are kept apart from the place, nested ones too.
+        relation = lambda subject, words, anchor, within: {"subject": subject, "relation": words, "anchor": anchor,
+                                                           "within": within}
+        answer = {**json.loads(MAGICAL_SECOND), "kept": {"place": "in front of a castle"},
+                  "places": {"setting": "a castle", "world": "fantasy", "ideas": ["a meadow before its walls"],
+                             "relations": [relation("a dragon", "in front of", "a castle", False),
+                                           relation("a dragon", "inside", "a cave", True),
+                                           relation("the dragon", "on", "a hill", True)]}}
+        result, calls = self.understand([json.dumps(answer)], subject="a dragon in front of a castle")
+        self.assertEqual(result["places"]["relations"], [relation("a dragon", "in front of", "a castle", False)],
+                         "only relations whose words the user wrote")
+        self.assertEqual(result["places"]["setting"], "", "an anchor the subject is outside of is never the setting")
+        system = " ".join(calls[0].system_message.split())
+        self.assertIn("relations: every spatial relation the request gives", system)
+        self.assertIn("An anchor the subjects are outside of (within false) is never an idea", system)
+        understanding.validate_brief(result)
+        with self.assertRaisesRegex(ValueError, "places.relations must list"):
+            understanding.validate_brief({**result, "places": {**result["places"], "relations": [{"anchor": "x"}]}})
+
     def test_the_framing_range_and_facing_are_kept_and_optional(self):
         # How near and how far every image's camera may frame the request, and which way its subjects face
         # (options.dataset.FRAMINGS, FACINGS); the cameras stay inside it (scenes/camera.py).
@@ -170,7 +191,8 @@ class Understanding(unittest.TestCase):
         named = {**json.loads(MAGICAL_SECOND), "kept": {"place": "in his room in space"},
                  "places": {"setting": "in space", "world": "sci-fi", "ideas": ["a hangar"]}}
         result, _ = self.understand([json.dumps(named)], subject="a reader asleep in his room in space")
-        self.assertEqual(result["places"], {"setting": "in space", "world": "sci-fi", "ideas": ["a hangar"]},
+        self.assertEqual(result["places"], {"setting": "in space", "world": "sci-fi", "ideas": ["a hangar"],
+                                            "relations": []},
                          "ideas are kept for a named place too: they are its fallback")
         # Live briefs kept a time of day and an act as the place and filed acts as clothing or expression, so no place
         # was dealt; and called a story character's ordinary surroundings another world.
@@ -179,7 +201,8 @@ class Understanding(unittest.TestCase):
                      "an act", "light: the lighting and the time of day", "clothing: what anyone wears: garments and "
                      "accessories only", "every act and what it leaves on the body stays here",
                      "the world of the surroundings the images happen in", "always 6 to 8 different places",
-                     "When kept names a place, every idea is that place or a kind of it, never another place"):
+                     "when kept names a place or a relation's anchor holds the subjects, every idea is that place "
+                     "or a kind of it, never another place"):
             self.assertIn(rule, prompt)
         # A live brief gave the whole place as its setting: that is no setting.
         same = {**named, "kept": {"place": "in his room"}, "places": {**named["places"], "setting": "in his room"}}
@@ -188,10 +211,12 @@ class Understanding(unittest.TestCase):
         loose = {**json.loads(MAGICAL_SECOND), "places": {"setting": "on the moon", "world": "everyday",
                                                           "ideas": ["a city street", " ", "a kitchen"]}}
         result, _ = self.understand([json.dumps(loose)], subject="a reader telling jokes")
-        self.assertEqual(result["places"], {"setting": "", "world": "everyday", "ideas": ["a city street", "a kitchen"]},
+        self.assertEqual(result["places"], {"setting": "", "world": "everyday", "ideas": ["a city street", "a kitchen"],
+                                            "relations": []},
                          "a setting the user never wrote is dropped")
         result, _ = self.understand([MAGICAL_SECOND], subject="a reader telling jokes")
-        self.assertEqual(result["places"], {"setting": "", "world": "everyday", "ideas": []}, "places is optional")
+        self.assertEqual(result["places"], {"setting": "", "world": "everyday", "ideas": [], "relations": []},
+                         "places is optional")
         self.assertIn("6 to 8 different places", " ".join(understanding.SYSTEM.split()))
         # A live request without a place got six homely ideas and lost every public, event and performance place.
         self.assertIn("the obvious ones and less expected ones that still fit",

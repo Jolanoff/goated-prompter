@@ -237,3 +237,17 @@ what it stands in, belongs to the setting. What the
 request puts in the place still stands in it (a thing it names, a surface someone is on); furniture an Actions & Poses
 entry needs becomes furniture this place has that holds the pose the same way."""
 
+
+# Whenever the request places its subjects relative to anchors (scenes/places.py arrangement): a live set put a dragon
+# "in front of a castle" inside the castle's own rooms.
+ARRANGEMENT_RULE = """ARRANGEMENT
+Every image in IMAGES carries the request's arrangement ("arrangement": each subject where the request puts it
+relative to its anchor, in the request's own words). Keep every relation exactly as written and all of them together,
+nested ones too, in every image: an anchor that holds a subject is where that subject is (on the bench, in the park);
+an anchor a subject is outside of stands in the image, whole enough to recognize, on the side the relation names (a
+subject in front of a castle stands outside it with the castle behind; under a table, the table above). A dealt place
+is the surroundings everyone is in: it never replaces an anchor, never moves a subject into an anchor it is outside
+of, and every anchor that is not in it is added to it. space and position say where each anchor is. The
+arrangement fixes only where things are relative to each other: how each subject and anchor looks, its pose and
+everything else still change from image to image as the other rules say."""
+

@@ -53,6 +53,7 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
                    **({"frame": plan["frames"][number]} if plan.get("frames") else {}),
                    **({"place": plan["places"][number]} if plan.get("places") else {}),
                    **({"setting": plan["setting"]} if plan.get("places") and plan.get("setting") else {}),
+                   **({"arrangement": plan["arrangement"]} if plan.get("arrangement") else {}),
                    **({"looks": plan["looks"][number]} if (plan.get("looks") or {}).get(number) else {}),
                    **({"camera": plan["cameras"][number]} if (plan.get("cameras") or {}).get(number) else {}),
                    **({"details": plan["details"]} if plan.get("details") else {}),

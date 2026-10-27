@@ -85,6 +85,25 @@ and the writer chooses as before. `python -m tests.eval.places` measures this on
 (`tests/eval/cases/places.json`, and `places_heldout.json`, never used to tune a setting), with Understanding's ideas
 captured once by `python -m tests.eval.capture_ideas`.
 
+Spatial relations (`places.py`, brief version 19): Understanding lists every spatial relation the request gives, nested
+ones too, each subject, relation and anchor in the request's own words and whether the anchor holds the subject
+(`places.relations`; "a woman on a bench in front of a fountain in a park": on the bench and in the park hold her, the
+fountain does not). Code keeps a relation only when its words are in the request. With relations, Places keeps the
+anchors apart from the environment it deals (`_related_plan`): the groups an anchor the subjects are outside of names
+whole (`_anchor_groups`: "a castle" is the castle, "the kitchen table" only a thing of the kitchen) are left out of
+every search, and its own words, like every relation's words, are taken out of every text searched (`_without_anchors`).
+The place is the anchors that hold the subjects and are held by none themselves ("under an oak tree in a meadow": the
+meadow), else the request's own place words left after that, else the setting, the user's selected Spaces packs or
+the ideas, which for an anchor they are outside of are places it is seen from. A place that holds them is never
+widened by others ("in a park" is no backyard); with nothing compatible, nothing is dealt, so a relation is never given
+up for variety. Every image carries the whole arrangement in the request's words (`arrangement`) and the writer gets
+`ARRANGEMENT_RULE`: every relation kept together, an anchor the subjects are outside of standing in the image on the
+side the relation names, a dealt place never replacing an anchor. Limit: an anchor whose own catalog group is the
+places beside it (a river's banks) is left out with that group, so the environment is a neighbouring one with the
+anchor added. `python -m tests.eval.place_relations` measures relations kept, relevance, variety and time on
+`tests/eval/cases/place_relations.json` and `place_relations_heldout.json` against the same briefs without relations,
+with Understanding captured once (`--capture`).
+
 Requested details (`v2/scenes/looks.py`): every character's `appearance` (Understanding: the request's own words about
 how that person looks: an age, hair, eyes, skin, a beard, tattoos, a piercing) holds in every image, whatever the
 vocabulary, known characters and guided scenes included. What no dealt look holds goes with every image as that
@@ -150,15 +169,17 @@ its type (character, style, outfit, object, other), whether code places its exac
 meaning (`on`) or both, and whether it goes first. Only the user knows what a token stands for, so nothing guesses it. A draft or brief from before the list reads its one trigger as an exact "other"
 trigger.
 
-Understanding (brief version 18) records everyone who appears (`characters`: each person, animal, creature, robot or
+Understanding (brief version 19) records everyone who appears (`characters`: each person, animal, creature, robot or
 named character, even when the request is mostly about what they do or where they are; none for an object, product,
 place or style on its own), and code derives the path from that list and the NSFW switch, so the model never judges
 whether "characters are the point" (it listed no one for a man reading in a cafe, a chef or a cat; `python -m
 tests.eval.understanding_cast` runs requests of every kind of cast). It also records the participant count, stated
 attributes, the central activity, what stays fixed and what varies, each character's `appearance` (the request's own words about how that
 person looks, kept only where the user wrote them), plus `places`: the user's words for what surrounds the place
-(`setting`), the `world` of the surroundings and always 6 to 8 `ideas` of where it can happen (for a named place, only
-that place or its kinds), and the `framing` every image's camera stays in: `tightest` and `widest` steps
+(`setting`, never an anchor the subjects are only placed next to), the `world` of the surroundings, always 6 to 8
+`ideas` of where it can happen with every relation kept (for a named place, only that place or its kinds; for an
+anchor the subjects are outside of, places it is seen from) and its spatial `relations` (Spatial relations, above),
+and the `framing` every image's camera stays in: `tightest` and `widest` steps
 (`options.dataset.FRAMINGS`: surroundings, whole, partial, close; the nearest that keeps everything the request needs
 in view, the farthest at which what matters most still reads clearly in the image shape, which Understanding is given)
 and `facing` (`FACINGS`: viewer, each other, one way, free); each "" when unknown, which leaves that side open. Each kept part has its own words: a time of day is light, the weather is mood, and every

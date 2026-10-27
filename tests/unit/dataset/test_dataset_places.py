@@ -28,10 +28,12 @@ GROUPS = [group("bedroom", ["his room", "bed", "sleeping"], ["small bedroom with
 
 
 def brief(level="free", words=None, setting="", world="everyday", ideas=(), request="a person in a scene",
-          path="sfw_character"):
+          path="sfw_character", relations=()):
     return {"input": {"request": request, "seed": 1}, "path": path, "consistency": {"place": level},
             "kept_words": {"place": words} if words else {},
-            "places": {"setting": setting, "world": world, "ideas": list(ideas)}}
+            "places": {"setting": setting, "world": world, "ideas": list(ideas),
+                       "relations": [{"subject": subject, "relation": words, "anchor": anchor, "within": within}
+                                     for subject, words, anchor, within in relations]}}
 
 
 def names(found):
@@ -156,6 +158,50 @@ class NoPlaceNamed(unittest.TestCase):
         self.assertEqual(names(found), ["my bedroom", "my roof"])
 
 
+RELATED = GROUPS + [group("castle", ["castle hall", "throne room"], ["castle great hall with long tables",
+                                                                     "castle courtyard with a well"], ("fantasy",)),
+                     group("mountain and meadow", ["meadow", "cliff"], ["meadow below a hill"], ("everyday", "fantasy"))]
+
+
+class SpatialRelations(unittest.TestCase):
+    def plan(self, *relations, ideas=(), world="everyday", setting="", level="themed", words=None):
+        return places.place_plan(brief(level, words, setting, world, ideas, relations=relations), RELATED)
+
+    def test_an_anchor_the_subject_is_outside_of_is_never_the_place(self):
+        # A live set put a dragon "in front of a castle" into the castle's own halls.
+        found, setting = self.plan(("a dragon", "in front of", "a castle", False), world="fantasy", words="a castle",
+                                   ideas=["a castle courtyard", "a meadow before the castle walls", "woods by a castle"])
+        self.assertEqual(names(found), ["mountain and meadow", "forest"])
+        self.assertEqual(setting, "")
+        self.assertEqual(self.plan(("a dragon", "in front of", "a castle", False), world="fantasy",
+                                   ideas=["a castle courtyard"])[0], [], "nothing compatible: nothing is dealt")
+
+    def test_an_anchor_that_holds_the_subjects_is_where_the_image_happens(self):
+        found, _ = self.plan(("two kids", "inside", "a castle", True), world="fantasy", ideas=["a forest"])
+        self.assertEqual(names(found), ["castle"])
+        nested, _ = self.plan(("a woman", "on", "a bench", True), ("a bench", "in front of", "a fountain", False),
+                              ("a woman", "in", "a park", True), ideas=["a kitchen"])
+        self.assertEqual(names(nested), ["park"], "a held anchor no catalog has (the bench) adds nothing")
+
+    def test_an_anchor_that_only_names_a_thing_of_a_place_leaves_that_place_in(self):
+        found, _ = self.plan(("a cat", "under", "the kitchen table", False), ideas=["a kitchen", "a farmhouse kitchen"])
+        self.assertEqual(names(found), ["kitchen"])
+        # A live set narrowed "the kitchen table" to the one kitchen whose entry names a table: every image the same.
+        held, _ = self.plan(("a cat", "under", "the kitchen table", True), ideas=["a kitchen"])
+        self.assertEqual([len(row["entries"]) for row in held], [2], "a thing of a place keeps all its places")
+
+    def test_the_users_own_places_never_hold_an_anchor_they_are_outside_of(self):
+        rows = [{**row, "selected": row["name"] in ("castle", "forest")} for row in RELATED]
+        found, _ = places.place_plan(brief(world="fantasy", relations=[("a dragon", "in front of", "a castle", False)]),
+                                     rows)
+        self.assertEqual(names(found), ["forest"])
+
+    def test_every_image_keeps_the_whole_arrangement_in_the_requests_words(self):
+        arranged = brief(relations=[("a woman", "on", "a bench", True), ("", "in front of", "a fountain", False)])
+        self.assertEqual(places.arrangement(arranged), ["a woman on a bench", "in front of a fountain"])
+        self.assertEqual(places.arrangement(brief()), [])
+
+
 class PlaceCheck(unittest.TestCase):
     def test_a_scene_must_be_built_in_its_dealt_place(self):
         place = "attic bedroom with a round window"
@@ -234,6 +280,17 @@ class DealtPlaces(Harness):
         images = composer_user(first.user_message)["images"]
         self.assertTrue(all(image["setting"] == "in space" and "bedroom" in image["place"] for image in images), images)
         self.assertIn('also names a setting ("setting")', " ".join(first.system_message.split()))
+
+    def test_every_image_carries_the_arrangement_the_writer_keeps(self):
+        self.brief["input"]["amount"] = 2
+        self.brief["places"] = {**self.brief["places"], "relations": [
+            {"subject": "man 1", "relation": "behind", "anchor": "man 2", "within": False}]}
+        self.write()
+        first = self.composer()[0]
+        self.assertTrue(all(image["arrangement"] == ["man 1 behind man 2"]
+                            for image in composer_user(first.user_message)["images"]))
+        self.assertIn("ARRANGEMENT\nEvery image in IMAGES carries the request's arrangement", first.system_message)
+        self.assertIn("never moves a subject into an anchor it is outside of", " ".join(first.system_message.split()))
 
     def test_no_place_found_leaves_the_place_to_the_writer(self):
         self.brief["input"]["amount"] = 1
