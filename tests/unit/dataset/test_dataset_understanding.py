@@ -186,7 +186,7 @@ class Understanding(unittest.TestCase):
 
     def test_understanding_never_chooses_vocabulary(self):
         result, calls = self.understand([TWO_MEN], subject="2 adult men in an explicit scene", nsfw=True)
-        self.assertEqual(result["version"], 20)
+        self.assertEqual(result["version"], 21)
         self.assertNotIn("intent", result)
         self.assertEqual(set(calls[0].json_schema["properties"]), set(understanding.MODEL_FIELDS))
         for word in ("pack", "vocabulary"):
@@ -248,6 +248,38 @@ class Understanding(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "places.relations must list"):
             understanding.validate_brief({**result, "places": {**result["places"], "relations": [{"anchor": "x"}]}})
 
+    def test_the_requests_acts_keep_who_does_them_and_to_whom(self):
+        # A live brief kept only the purpose of an act and lost who did it to whom, so a shared-act entry
+        # replaced it. Every separate act is kept with its own characters, in the user's words.
+        cast = [{"label": "nurse", "gender": "", "custom": "", "pronoun": "", "count": 1},
+                {"label": "patient", "gender": "", "custom": "", "pronoun": "", "count": 1},
+                {"label": "dog", "kind": "animal", "gender": "", "custom": "dog", "pronoun": "it", "count": 1}]
+        answer = {**json.loads(MAGICAL_SECOND), "path": "character", "characters": cast,
+                  "kept": {"action": "guiding a patient along a corridor while a dog sleeps"},
+                  "acts": [{"who": ["nurse"], "act": "guiding a patient along a corridor", "to": ["patients", "nurse"]},
+                           {"who": ["dog"], "act": "sleeps", "to": []},
+                           {"who": ["nurse"], "act": "singing", "to": []},
+                           {"who": ["the ward"], "act": "guiding", "to": ["a chair"]},
+                           {"who": ["nurse"], "act": " ", "to": []}]}
+        request = "a nurse guiding a patient along a corridor while a dog sleeps"
+        result, calls = self.understand([json.dumps(answer)], subject=request)
+        self.assertEqual(result["acts"], [{"who": ["nurse"], "act": "guiding a patient along a corridor", "to": ["patient"]},
+                                          {"who": ["dog"], "act": "sleeps", "to": []},
+                                          {"who": [], "act": "guiding", "to": []}],
+                         "only acts the user wrote, the brief's own labels, no one acting on themselves")
+        pair = {**answer, "characters": [{**cast[0], "count": 2}, cast[1]],
+                "acts": [{"who": ["nurses"], "act": "guiding a patient along a corridor", "to": ["patient"]}]}
+        self.assertEqual(self.understand([json.dumps(pair)], subject=request)[0]["acts"][0]["who"], ["nurse 1", "nurse 2"],
+                         "a label for several characters names each of them")
+        self.assertEqual(result["kept_words"]["action"], "guiding a patient along a corridor while a dog sleeps")
+        system = " ".join(calls[0].system_message.split())
+        self.assertIn("acts: every separate act the request gives its characters", system)
+        self.assertIn("the whole interaction, every character's act with who it is done to", system)
+        understanding.validate_brief(result)
+        with self.assertRaisesRegex(ValueError, "acts must list"):
+            understanding.validate_brief({**result, "acts": [{"act": "guiding"}]})
+        self.assertEqual(self.understand([MAGICAL_SECOND])[0]["acts"], [], "missing: no acts")
+
     def test_the_framing_range_and_facing_are_kept_and_optional(self):
         # How near and how far every image's camera may frame the request, and which way its subjects face
         # (options.dataset.FRAMINGS, FACINGS); the cameras stay inside it (scenes/camera.py).
@@ -269,7 +301,7 @@ class Understanding(unittest.TestCase):
 
     def test_a_saved_version_10_brief_with_intent_stays_readable(self):
         result, _ = self.understand([MAGICAL_SECOND])
-        saved = {**{key: value for key, value in result.items() if key not in ("kept", "consistency", "kept_words", "places", "framing")},
+        saved = {**{key: value for key, value in result.items() if key not in ("kept", "consistency", "kept_words", "acts", "places", "framing")},
                  "version": 10, "intent": {"elements": [], "relations": []}}
         self.assertEqual(understanding.validate_brief(saved), saved)
 

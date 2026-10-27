@@ -120,7 +120,13 @@ B and C lifting A between them, A's arms around their shoulders
 
 1. **Letters for people.** A is the person the act centres on; B and C are placed relative to A. Never "his", a
    gender, "partner" or "the other one": every body part names its owner's letter ("B's hand on A's waist"). The
-   scene writer replaces the letters with the scene's characters.
+   scene writer replaces the letters with the scene's characters. An entry that opens with everyone ("A and B ...,
+   each ...") is a shared act; one that then names a letter alone ("..., B holding ...") or "the others" gives that
+   person their own part. A request in which one character acts on another only gets entries of the second kind.
+   A detail after a shared act ("A and B walking side by side, A turning their head toward B") gives no one their own
+   part. Entries place people; a group that also places animals or other beings lists them in `"kinds"`, as the
+   Subjects groups do. Name the gear an act needs ("each holding a paddle"): a request that names its gear only gets
+   entries that say it.
 2. **One entry per different act or arrangement, never per wording.** Two entries with the same act and the bodies
    placed the same way are one entry. A different arrangement is a different support, facing or reach (on all fours,
    lying on the back, bent over, standing, held up).

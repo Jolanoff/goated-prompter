@@ -31,6 +31,9 @@ Brief (validated by validate_brief before it can be confirmed):
               request (a mentioned part it asks to differ is free, to be identical locked, else at least themed), then
               the dataset type's defaults
   kept_words  {part: the user's words} for every part the request mentions, checked against what the user wrote
+  acts        [{who, act, to}]: every separate act of the request (v2/scenes/actions.py): who does it and who it is
+              done to or for in another part than theirs (labels of characters), act in the user's words, checked
+              like kept_words; [] when the request names none
   places      {setting, world, ideas} for the places dealt to the images (v2/scenes/places.py): setting is the user's
               words for what surrounds the place ("in space"), checked like kept_words, "" when none; world is the
               world of the surroundings (options.dataset.WORLDS); ideas are places the request can happen in (kinds of
@@ -53,7 +56,7 @@ Brief (validated by validate_brief before it can be confirmed):
   Version 17 briefs have exactly these fields. Saved runs keep their version 9 to 16 briefs (10 also has an
   "intent" interpretation, kept as stored and no longer read; before 12 characters have no "known", before 13 no
   "triggers", before 14 no "kept", before 15 no "consistency" or "kept_words": kept parts read as themed; before 16
-  no "places", before 17 no character "appearance").
+  no "places", before 17 no character "appearance", before 21 no "acts").
 """
 
 import json
@@ -70,13 +73,14 @@ from .consistency import asks_same, resolve
 from .safety import ADULTS_ONLY, NO_ANIMALS, adult_content_request, adults_only_error, minor_reference
 from .triggers import all_text, brief_triggers, data_triggers, personal_numbers
 
-VERSION = 20
-VERSIONS = (9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20)  # 9 to 19: saved runs (10 with a structured intent no
+VERSION = 21
+VERSIONS = (9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21)  # 9 to 20: saved runs (10 with a structured intent no
                                                             # longer read, before 12 no "known", before 13 one trigger
                                                             # string, before 14 no kept, before 15 no consistency,
                                                             # before 16 no places, before 17 no appearance, before 18 no
                                                             # framing, before 19 no relations in places, before 20 no
-                                                            # kind: "custom" gender meant not a human)
+                                                            # kind: "custom" gender meant not a human, before 21 no
+                                                            # acts)
 PATHS = ("sfw_character", "nsfw_character", "non_character")
 GENDERS = ("male", "female", "custom", "")  # briefs before version 20, where "custom" meant not a human
 CAST_GENDERS = ("male", "female", "")  # a character's stated sex from version 20, any kind may have one
@@ -95,8 +99,10 @@ LEVEL_FIELDS = ("locked", "varied")
 PLACE_FIELDS = ("setting", "world", "ideas")
 RELATION_FIELDS = ("subject", "relation", "anchor", "within")  # one spatial relation of the request (places.relations)
 MAX_RELATIONS = 12
+ACT_FIELDS = ("who", "act", "to")  # one act of the request: who does it, the words for it, who it is done to (acts)
+MAX_ACTS = 8
 FRAMING_FIELDS = ("tightest", "widest", "facing")
-MODEL_FIELDS = (*MODEL_BRIEF_FIELDS, "kept", *LEVEL_FIELDS, "places", "framing")
+MODEL_FIELDS = (*MODEL_BRIEF_FIELDS, "kept", *LEVEL_FIELDS, "acts", "places", "framing")
 IRREGULAR_PLURALS = {"men": "man", "women": "woman", "people": "person", "children": "child", "feet": "foot",
                      "teeth": "tooth", "mice": "mouse", "geese": "goose", "ladies": "lady"}
 LEGACY_CHARACTER_FIELDS = ("label", "gender", "custom", "pronoun")  # briefs before version 12
@@ -173,8 +179,10 @@ kept: for each part of the image below, the words of the request or rules that m
   for two parts); "" when nothing mentions that part. Every image follows
   the words of a mentioned part, and every part not mentioned is chosen anew for each image. The parts:
   subject: who appears and how they look (a name, a person's features, a body attribute).
-  action: what anyone does, including a pose or a position; every act and what it leaves on the body stays here,
-    never under clothing, expression, objects or place.
+  action: what anyone does, including a pose or a position: the whole interaction, every character's act with who
+    it is done to and what it is for, from its first word to its last even when that repeats who takes part, never
+    only a piece of it; every act and what it leaves on the body stays here, never under clothing, expression,
+    objects or place.
   place: where the images happen, or what someone is on or in; never a time of day, the weather or an act.
   objects: things used, held, worn as gear or placed in the image.
   clothing: what anyone wears: garments and accessories only.
@@ -188,6 +196,15 @@ locked: only the parts in kept the request says must look identical in every ima
   known character, an object someone uses): every image follows its words anyway.
 varied: the parts in kept the request asks to differ between the images (different rooms, various outfits), as a
   list of part names; [] when none.
+acts: every separate act the request gives its characters, in the user's order; [] when it names none. Several
+  characters doing one act together is one act; what an act is for or done with stays with it; another character's
+  own act is another entry ("a mother reading to her son while the cat sleeps": the mother reading to her son, the
+  cat sleeping).
+  who: the labels of the characters who do it, as in characters.
+  act: the request's words for what is done, copied exactly, without who does it and without where.
+  to: the labels of the characters it is done to or for, who take another part in it than who (the one fed, guided,
+    comforted or examined); [] when everyone in it takes the same part (they play, dance or work together) or it is
+    done only to things.
 places: where the images can happen:
   relations: every spatial relation the request gives, one entry per relation and nested ones too ("a woman on a bench
     in front of a fountain in a park": the woman on the bench, the bench in front of the fountain, the woman in the
@@ -281,6 +298,10 @@ def _schema():
                  "properties": {part: text for part in KEPT_ORDER}},
         **{field: {"type": "array", "maxItems": len(KEPT_PARTS), "items": {"type": "string", "enum": list(KEPT_PARTS)}}
            for field in LEVEL_FIELDS},
+        "acts": {"type": "array", "maxItems": MAX_ACTS, "items": {
+            "type": "object", "additionalProperties": False, "required": list(ACT_FIELDS), "properties": {
+                "who": {"type": "array", "maxItems": MAX_CHARACTERS, "items": text}, "act": text,
+                "to": {"type": "array", "maxItems": MAX_CHARACTERS, "items": text}}}},
         "places": {"type": "object", "additionalProperties": False, "required": ["relations", *PLACE_FIELDS],
                    "properties": {
             "relations": {"type": "array", "maxItems": MAX_RELATIONS, "items": {
@@ -378,6 +399,7 @@ def recover(value):
                        "world": places.get("world") if places.get("world") in WORLDS else WORLDS[0],
                        "ideas": (_phrases(places.get("ideas")) or [])[:MAX_IDEAS],
                        "relations": _relations(places.get("relations"))}
+    value["acts"] = _acts(value.get("acts"))  # optional too: a missing or broken act is left out
     # framing is optional as well: a missing or unknown step is "", which leaves the camera open on that side.
     value["framing"] = framing_facts(value.get("framing"))
     for key in ("summary", "fixed", "randomized"):
@@ -402,11 +424,20 @@ def _relations(value):
     return rows[:MAX_RELATIONS]
 
 
+def _acts(value):
+    """The answer's acts: each {who, act, to} with its texts trimmed; one without words for the act, or broken, is left
+    out (acts are optional)."""
+    labels = lambda items: [text for item in (items if isinstance(items, list) else []) if (text := _optional_text(item))]
+    return [{"who": labels(item.get("who")), "act": act, "to": labels(item.get("to"))}
+            for item in (value if isinstance(value, list) else []) if isinstance(item, dict)
+            and (act := _optional_text(item.get("act"))) and content_words(act)][:MAX_ACTS]
+
+
 def model_errors(value, nsfw, data=None):
     """Contract breaks of the brief fields the model must correct itself; the retry lists them (a stray "intent" key
     from an older prompt is ignored). Optional texts (recover) are never errors:
     fixed and randomized may be empty, and an empty summary falls back to the request."""
-    if set(value) - {"intent", "path", "kept", *LEVEL_FIELDS, "places", "framing"} != set(MODEL_BRIEF_FIELDS):
+    if set(value) - {"intent", "path", "kept", *LEVEL_FIELDS, "acts", "places", "framing"} != set(MODEL_BRIEF_FIELDS):
         return [f"Use exactly the keys {', '.join(MODEL_FIELDS)}."]
     errors = []
     for key in ("summary", "fixed", "randomized"):
@@ -691,6 +722,25 @@ def place_facts(places, place, data):
     return {"setting": setting, "world": places["world"], "ideas": list(places["ideas"]), "relations": relations}
 
 
+def act_facts(acts, items, characters, data):
+    """The brief's acts: those whose words are really in what the user wrote (kept_parts), each naming the brief's own
+    characters: an answer label (any case, a plural read as one: "guards" names "guard") stands for the characters its
+    answer entry became (expand_characters: "guard 1", "guard 2"); a label that names no character is dropped, and no
+    one in to is also in who."""
+    key = lambda label: _singular(" ".join(str(label).casefold().split()))
+    names, start = {}, 0
+    for item in items:
+        names.setdefault(key(item.get("label", "")), []).extend(person["label"] for person in characters[start:start + item["count"]])
+        start += item["count"]
+    cast = lambda labels: list(dict.fromkeys(name for label in labels for name in names.get(key(label), ())))
+    rows = []
+    for item in acts:
+        if kept_parts({"action": item["act"]}, data):
+            who = cast(item["who"])
+            rows.append({"who": who, "act": item["act"], "to": [label for label in cast(item["to"]) if label not in who]})
+    return rows
+
+
 def apply_rules(value, data):
     nsfw = data.get("nsfw") is True
     characters = expand_characters(value["characters"], data_triggers(data), data)
@@ -705,6 +755,7 @@ def apply_rules(value, data):
             "fixed": value["fixed"].strip(), "randomized": value["randomized"].strip(),
             "kept": [part for part in KEPT_PARTS if consistency[part] != "free"],
             "consistency": consistency, "kept_words": {part: value["kept"][part] for part in mentioned},
+            "acts": act_facts(value.get("acts") or (), value["characters"], characters, data),
             "places": place_facts(value.get("places") or recover({})["places"],
                                   value["kept"]["place"] if "place" in mentioned else "", data),
             "framing": framing_facts(value.get("framing")),
@@ -729,6 +780,8 @@ def validate_brief(brief):
         expected = (*expected, "places")
     if brief["version"] >= 18:
         expected = (*expected, "framing")
+    if brief["version"] >= 21:
+        expected = (*expected, "acts")
     if set(brief) != set(expected):
         raise ValueError(f"The brief needs exactly: {', '.join(expected)}.")
     if not isinstance(brief["summary"], str) or not brief["summary"].strip():
@@ -754,6 +807,12 @@ def validate_brief(brief):
             or any(not isinstance(item[key], str) for key in ("subject", "relation", "anchor"))
             or not item["relation"].strip() or not item["anchor"].strip() for item in places["relations"])):
         raise ValueError("places.relations must list {subject, relation, anchor, within (true/false)}.")
+    if "acts" in brief and (not isinstance(brief["acts"], list) or any(
+            not isinstance(item, dict) or set(item) != set(ACT_FIELDS) or not isinstance(item["act"], str)
+            or not item["act"].strip() or any(not isinstance(item[key], list) or any(not isinstance(label, str)
+                                                                                    for label in item[key])
+                                              for key in ("who", "to")) for item in brief["acts"])):
+        raise ValueError("acts must list {who (labels), act (the user's words), to (labels)}.")
     framing = brief.get("framing")
     if "framing" in brief and (not isinstance(framing, dict) or set(framing) != set(FRAMING_FIELDS)
                                or framing["tightest"] not in ("", *FRAMINGS) or framing["widest"] not in ("", *FRAMINGS)

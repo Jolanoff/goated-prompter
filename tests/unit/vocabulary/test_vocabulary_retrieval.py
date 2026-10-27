@@ -162,6 +162,18 @@ class Meaning(unittest.TestCase):
         self.assertAlmostEqual(sum(scores), 0.0, places=5, msg="compared with the other groups: z-scores")
         self.assertIsNone(retrieval.meaning_scores(self.pool, "a sleeping chamber", None), "no embeddings, no meaning")
 
+    def test_with_entry_words_meaning_alone_finds_nothing(self):
+        # An act is not shown by an entry that is only near it in meaning: a live set dealt unrelated pair tasks to a
+        # request whose act no entry said, because their group stood out by meaning.
+        pool = [group(name) for name in ("bedroom", "kitchen", "beach", "garage", "garden", "office")]
+        vectors = {retrieval.group_text(row): [float(number == index) for number in range(6)]
+                   for index, row in enumerate(pool)}
+        embeddings = self.embeddings(Embedder({**vectors, "a sleeping chamber": [.95, .05, 0, 0, 0, 0]}))
+        self.assertEqual([row["name"] for row in retrieval.match(pool, "a sleeping chamber", embeddings)], ["bedroom"],
+                         "a group that stands out by meaning is found")
+        self.assertEqual(retrieval.match(pool, "a sleeping chamber", embeddings, entry_words=True), [],
+                         "with entry words, words decide")
+
     def test_texts_are_embedded_once_and_again_only_when_they_change(self):
         embedder = Embedder(self.vectors)
         embeddings = self.embeddings(embedder)

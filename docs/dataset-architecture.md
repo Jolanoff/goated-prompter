@@ -199,7 +199,10 @@ and the `framing` every image's camera stays in: `tightest` and `widest` steps
 (`options.dataset.FRAMINGS`: surroundings, whole, partial, close; the nearest that keeps everything the request needs
 in view, the farthest at which what matters most still reads clearly in the image shape, which Understanding is given)
 and `facing` (`FACINGS`: viewer, each other, one way, free); each "" when unknown, which leaves that side open. Each kept part has its own words: a time of day is light, the weather is mood, and every
-act stays under action. The model fills the parts in `KEPT_ORDER` (who and what happens first), and code
+act stays under action, as the whole interaction (every character's act with who it is done to and what for, never
+only a piece of it). The brief's `acts` (version 21) give each separate act with `who` does it, the user's words for
+the `act`, and `to` whom it is done or for when they take another part than the doer (the brief's own character
+labels; acts whose words the user did not write are dropped, `act_facts`). The model fills the parts in `KEPT_ORDER` (who and what happens first), and code
 drops words quoted for clothing or expression that are only the subject's or the action's, and any other part that
 repeats them exactly (`_own_words`). It never reads
 vocabulary. It links every character and outfit trigger (by
@@ -232,11 +235,18 @@ plus the shared vocabulary usage rules. A pack with a description (its author's 
 entries are written) is listed under that note so it stays with its own entries. A note guides the choice of entries and never overrides the request or the settings. Each category sends a seeded sample of at most `VOCABULARY_SAMPLE` (40)
 entries per batch, so a large pack never drowns the request. The request and the approved requirements always win. With an Actions & Poses
 pack selected, the shared vocabulary engine keeps only the entries that fit the request and the cast, with no model
-call (`v2/scenes/actions.py` `action_plan`): the entries made for the cast's number of people (`retrieval.for_cast`: a
-pair gets entries for two, a group entries for a group, an entry for fewer people only when the packs have none for
-the cast), without those that say what the request rules out (`retrieval.without_said`), and, when the request keeps
+call (`v2/scenes/actions.py` `action_plan`): the entries made for the number of characters they can place
+(`retrieval.for_cast`: a pair gets entries for two, a group entries for a group, an entry for fewer people only when
+the packs have none for the cast; a group without `kinds` places only humans, so an animal is never counted as a
+person, and an act with a character no group can place gets none of them), without those that say what the request rules out (`retrieval.without_said`), and, when the request keeps
 an action, only those that show it (`retrieval.match` with `entry_words`: a group's trigger words, then the entries
-that say the action's own words in any form, then meaning). Only those are offered and dealt, spread over the packs'
+that say the action's own words in any form; closeness in meaning alone never finds one). The request's act comes
+before the vocabulary: a request with several separate acts (`acts`) gets no entry, since one entry is one interaction
+and would drop the others, and an act done to or for another character keeps only the entries that give someone
+their own part (`distinct_roles`: it opens with one person acting, or after everyone it names one of them alone or
+"the others"), never one in which everyone does the group's own act together, whatever detail one of them adds. The
+things the act is done with (kept objects the action words also say) must be said by the entry or its group's words;
+an entry with other gear or none is never dealt for it. Only those are offered and dealt, spread over the packs'
 groups (`deal_actions`), and with none the writer gets no Actions & Poses vocabulary and builds the act from the
 request. An entry is a whole interaction with its people as letters, kept as written. Objects & Props
 (`v2/scenes/props.py`): an object the request names is suggested to every image as in every other category
