@@ -21,6 +21,50 @@ _COLLARED = (r"collared(?! (?:shirts?|blouses?|dress(?:es)?|jackets?|coats?|over
 _LEASH = (r"(?<!dog on a )(?<!dog's )(?<!puppy on a )(?<!dog on )leash(?:ed)?"
           r"(?! (?:on|for|to) (?:a |the |his |her |their )?(?:dog|puppy|pet)s?\b)")
 
+# A pet's leash: in a text that names a pet, a leash someone holds, carries or attaches to the pet ("holds a leather
+# leash", "leash, dog", "clips the leash to its collar") is everyday. A leash put on anyone else stays a kink word,
+# whatever animal the text names: someone on, led by or wearing a leash ("keeps her on a leash", "a man led by a
+# leash"), "leashed" before anything but a pet, a leash attached to or around someone else's neck or collar.
+_PET = r"(?:dogs?|pupp(?:y|ies)|pups?|pets?|animals?)"
+_LEASH_WORD = re.compile(r"\bleash(?:ed|es)?\b")
+# Who is on or led by it: the clause before "on" or "by" ("her dog on a short leash", "keeps her on a leash").
+_ON_LEASH = re.compile(r"\b(?:on|by) (?:a |an |the )?(?:[\w-]+ ){0,2}$")
+# After the pet, a word that brings in someone or something else ("a dog and a woman on a leash", "keeps her on").
+_SOMEONE_ELSE = re.compile(r"\b(?:a|an|the|her|him|his|them|their|me|you|us)\b")
+_WEARS = re.compile(r"\b(?:wear(?:s|ing)?|wore|worn)\b(?: [\w,']+){0,4} $")  # "she wears a collar and "
+# What it is put on: "around ...", or "to"/"on" after a word for attaching it ("clipped to its collar").
+_LEASH_TO = re.compile(r"^((?: [\w']+){0,4}?) (around|onto|on|to) (?:the |a |an )?([\w']+)((?: [\w']+){0,2})(.{0,40})")
+_ATTACH = re.compile(r"\b(?:attach|clip|tie|tied|fasten|hook|connect|chain|link|loop)\w*")
+
+
+def _pet_bound(text, match):
+    """Whether one leash in a text that names a pet is that pet's: it is put on nothing and no one else (see _PET)."""
+    before, after = text[max(0, match.start() - 60):match.start()], text[match.end():match.end() + 80]
+    pets = lambda words: any(re.fullmatch(_PET + r"|its", re.sub(r"'s$", "", word)) for word in words)
+    if match.group() == "leashed":
+        return pets(re.findall(r"[\w']+", after)[:3])
+    if _WEARS.search(before):
+        return False
+    if held := _ON_LEASH.search(before):  # on or led by it: the pet, named last in its clause ("its neck extended by")
+        words = re.findall(r"[\w']+", re.split(r"[,.;:!?]", before[:held.start()])[-1])
+        last = max((number for number, word in enumerate(words) if pets([word])), default=None)
+        if last is None or _SOMEONE_ELSE.search(" ".join(words[last + 1:])):
+            return False
+    put = _LEASH_TO.match(after)
+    if put and (put.group(2) == "around" or _ATTACH.search(before[-25:] + put.group(1))):
+        owner, near, rest = put.group(3), put.group(4).split(), put.group(5)
+        return pets([owner, *near]) or bool(
+            re.match(r" ?of (?:a |an |the |her |his |their )?(?:\w+ ){0,3}" + _PET + r"\b", put.group(4) + rest))
+    return True
+
+
+def _without_pet_leashes(text):
+    """The text with a pet's leash (_pet_bound) read as "lead", so only a leash put on someone else counts."""
+    if not re.search(r"\b" + _PET + r"\b", text):
+        return text
+    return _LEASH_WORD.sub(lambda match: "lead" if _pet_bound(text, match) else match.group(), text)
+
+
 # Genitals in everyday words; with their anatomical names, what makes an image explicit (explicit_text).
 _GENITALS = r"cocks?|dicks?|pussy|pussies|genitals?"
 _EXPLICIT_PARTS = re.compile(r"\b(?:penis(?:es)?|testicles|anus|vagina|vulva|clitoris|" + _GENITALS + r")\b")
@@ -86,7 +130,7 @@ def sexual_request(data, *, include_director=True):
 def sexual_text(text):
     """Whether a text names a sexual act in the words the request detection knows (a scene written in everyday
     words, which has no anatomical name for the act)."""
-    return bool(_SEXUAL_ACTION.search(str(text or "").casefold()))
+    return bool(_SEXUAL_ACTION.search(_without_pet_leashes(str(text or "").casefold())))
 
 
 def explicit_text(text):
@@ -98,7 +142,7 @@ def explicit_text(text):
 def adult_text(text):
     """Whether a text shows adult content of any kind (nudity, anatomy, suggestive styling) in the words the request
     detection knows: an image it describes is never safe."""
-    text = str(text or "").casefold()
+    text = _without_pet_leashes(str(text or "").casefold())
     return bool(_SEXUAL.search(text) or _SUGGESTIVE.search(text))
 
 
@@ -143,6 +187,7 @@ _GROUNDED_FEET = re.compile(r"^\s+(?:(?:are|stay|rest)\s+)?(?:planted|flat|firml
 
 def _mentions(text, pattern, *, ignore_conditional=False):
     asked, forbidden = False, False
+    text = _without_pet_leashes(text)
     for sentence in re.split(r"[.!?;\n]", text):
         for match in pattern.finditer(sentence):
             if match.group() == "feet" and _GROUNDED_FEET.search(sentence[match.end():]):

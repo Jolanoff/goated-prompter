@@ -11,7 +11,7 @@ from goated_prompter.backends.mock import MockBackend
 from goated_prompter.contracts import GoatedPrompterRequest
 from goated_prompter.features.dataset.v2 import prompts, scenes, understanding
 from goated_prompter.features.dataset.v2.draft import default_dataset_draft, validate_dataset_draft
-from goated_prompter.features.dataset.v2.safety import adults_only_error, minor_reference
+from goated_prompter.features.dataset.v2.safety import adult_text, adults_only_error, minor_reference, sexual_text
 from goated_prompter.workflow_output import ideogram_json
 from tests.helpers import enter_context
 from tests.support.backends import ScriptedBackend
@@ -368,6 +368,28 @@ class EverydayWords(unittest.TestCase):
             with self.subTest(subject=subject):
                 self.assertIsNotNone(self.check(subject))
         self.assertIsNotNone(self.check("A leashed woman in bdsm gear", trigger_type="Animal"))
+
+    def test_a_pets_leash_is_everyday_and_a_leash_on_anyone_else_is_not(self):
+        # A live safe set walking a dog was flagged for "holds a leather leash": only "dog on a leash" was known.
+        for text in ("A woman holding a leash, her dog trotting ahead", "1girl, walking, holding leash, dog, silver fur",
+                     "She holds a leather leash in her left hand. The dog walks ahead of her",
+                     "A man carrying a leash to the park with his puppy", "She clips the leash to the dog's collar",
+                     "Her hand grips a leash that connects to the collar of a large white dog",
+                     "A boy leads a dog by a thin leash", "A leashed dog sniffing the grass",
+                     "The dog walks on, its head up and neck extended by the leash",
+                     "He hands the leash to his friend while the dog waits"):
+            with self.subTest(text=text):
+                self.assertFalse(adult_text(text))
+                self.assertIsNone(self.check(text))
+        for text in ("A woman on a leash", "A woman on a leash, her dog beside her",
+                     "A man keeps her on a leash while walking his dog", "A leashed woman walking a dog",
+                     "A girl wearing a collar and leash next to a dog", "A leash around his neck, a dog watching",
+                     "Holding a leash attached to her collar, a dog nearby", "A man led by a leash past a dog",
+                     "A dog and a woman on a leash", "A leash clipped to the woman's collar while a dog sleeps",
+                     "1girl, collar, leash", "A leash"):
+            with self.subTest(text=text):
+                self.assertTrue(adult_text(text), "a leash on a person, whatever animal is near")
+                self.assertTrue(sexual_text(text))
 
 
 class RolesShownNotTold(unittest.TestCase):
