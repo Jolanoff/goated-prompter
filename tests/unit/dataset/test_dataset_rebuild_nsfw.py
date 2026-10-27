@@ -88,8 +88,8 @@ class AdultDatasetTests(unittest.TestCase):
                 self.assertEqual(brief["path"], "nsfw_character")
                 self.assertEqual(brief["people"], len(labels))
                 self.assertEqual([person["label"] for person in brief["characters"]], labels)
-                self.assertEqual([person["gender"] for person in brief["characters"]],
-                                 [person["gender"] for person in cast for _ in range(person["count"])])
+                # The request ("consenting adults") states no one's sex: no name or role invents one.
+                self.assertEqual([person["gender"] for person in brief["characters"]], [""] * len(labels))
                 self.assertEqual(brief["input"]["request"], data["subject"])
                 result = self.write(brief)
                 scene = result["scenes"][0]

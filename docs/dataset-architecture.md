@@ -113,10 +113,10 @@ a writer asked again three times still left a beard out). A person gets nothing 
 give (no scars, wounds or tattoos of the writer's own).
 
 Looks (`v2/scenes/looks.py`): every human whose looks vary (`varied_labels`: not known, triggered, named or held by a
-locked subject; not a custom character) is dealt a look in every image from the built-in looks (`look_groups`: the
+locked subject; only a human, `is_human`, whatever any other kind's sex) is dealt a look in every image from the built-in looks (`look_groups`: the
 always-on Subjects groups, `female` in `Subjects/Female` and `male` in `Subjects/Male`), with no model call
 (`deal_looks`). A look is a hair style and colour, eyes and skin tone: a base that keeps the set's people apart. A
-person's gender finds their group by the group's words (`exact_search`); a person of unspecified gender gets looks of
+person's stated sex finds their group by the group's words (`exact_search`); a person of unstated sex gets looks of
 either. Their label and appearance fix only the parts of a look they name (`requested_parts`: "redhead", "brunette",
 "freckles", "blue-eyed") and every other part varies (`deal_composed`): a ginger man with green eyes gets ginger hair
 and green eyes in every image with different hairstyles, eye shapes and skin, where whole looks gave him one look
@@ -169,11 +169,22 @@ its type (character, style, outfit, object, other), whether code places its exac
 meaning (`on`) or both, and whether it goes first. Only the user knows what a token stands for, so nothing guesses it. A draft or brief from before the list reads its one trigger as an exact "other"
 trigger.
 
-Understanding (brief version 19) records everyone who appears (`characters`: each person, animal, creature, robot or
+Understanding (brief version 20) records everyone who appears (`characters`: each person, animal, creature, robot or
 named character, even when the request is mostly about what they do or where they are; none for an object, product,
-place or style on its own), and code derives the path from that list and the NSFW switch, so the model never judges
-whether "characters are the point" (it listed no one for a man reading in a cafe, a chef or a cat; `python -m
-tests.eval.understanding_cast` runs requests of every kind of cast). It also records the participant count, stated
+place or style on its own, and objects on display are no characters), and code derives the path from that list and
+the NSFW switch, so the model never judges whether "characters are the point" (it listed no one for a man reading in a
+cafe, a chef or a cat; `python -m tests.eval.understanding_cast` runs requests of every kind of cast). Each character
+has a `kind` (human, animal, creature, robot, or an object that acts as a character) apart from its `gender` (male,
+female or "" for unstated; any kind may have one: a male cat is an animal), and non-humans keep their description in
+`custom`. A sex is kept only with evidence that belongs to that character (`stated`): request words that name it or
+describe it ("a woman", "her father", "a woman doctor", "a male cat"; never through another character's possessive),
+a pronoun when it is the only character, or a gendered possessive right before the one other character's word ("a
+knight and his horse"); else, for a known character, the sex its published work gives it (`known_gender`), the
+request's own words first ("a female Kirito"); else "". The words that state a sex are defined once
+(`GENDER_NOUNS`, `GENDER_PRONOUNS`). A human of unstated sex never keeps a label that states one ("person 1"), and
+pronouns follow the sex ("it" kept for a non-human that is called so). `is_human` and `stated_gender` are the one test
+every owner reads (Looks, count tags, how people are named); briefs before version 20 read gender "custom" as not
+human. `python -m tests.eval.cast_classification` measures this on labelled requests with Understanding run live. It also records the participant count, stated
 attributes, the central activity, what stays fixed and what varies, each character's `appearance` (the request's own words about how that
 person looks, kept only where the user wrote them), plus `places`: the user's words for what surrounds the place
 (`setting`, never an anchor the subjects are only placed next to), the `world` of the surroundings, always 6 to 8

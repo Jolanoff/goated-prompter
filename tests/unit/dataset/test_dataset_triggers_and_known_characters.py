@@ -73,11 +73,12 @@ class TriggerPlacement(unittest.TestCase):
     def test_a_role_noun_or_numbered_person_gets_the_trigger_at_its_mention(self):
         woman = [{"label": "woman", "gender": "female", "custom": "", "pronoun": "she", "count": 1, "triggers": [1]},
                  {"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 1}]
-        brief = brief_for("Krea 2", triggers=[trigger("clo21", "character")], cast=woman)
+        brief = brief_for("Krea 2", triggers=[trigger("clo21", "character")], cast=woman,
+                          subject="a man holds a woman close")
         self.assertEqual(prompts.place_triggers("A man holds the woman close.", brief), "A man holds the clo21 woman close.")
         men = [{"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 1, "triggers": [1]},
                {"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 1}]
-        brief = brief_for("Krea 2", triggers=[trigger("clo21", "character")], cast=men)
+        brief = brief_for("Krea 2", triggers=[trigger("clo21", "character")], cast=men, subject="two men kneel")
         self.assertEqual(brief["characters"][0]["label"], "man 1")
         self.assertEqual(prompts.place_triggers("The first man kneels behind the second man.", brief),
                          "The clo21 first man kneels behind the second man.")
@@ -174,7 +175,7 @@ class TriggerCast(unittest.TestCase):
     def test_an_exact_character_trigger_makes_its_person_known_and_a_meaning_one_does_not(self):
         brief = brief_for()
         self.assertEqual([(person["known"], person["triggers"]) for person in brief["characters"]], [(True, [1]), (True, [2])])
-        self.assertEqual(brief["version"], 19)
+        self.assertEqual(brief["version"], 20)
         self.assertEqual(understanding.validate_brief(brief), brief)
         meaning = brief_for(triggers=[trigger("red-haired elf girl", "character", expand="on")], cast=mara(1))
         self.assertEqual([person["known"] for person in meaning["characters"]], [False])
@@ -214,7 +215,7 @@ class KnownCharacters(unittest.TestCase):
         brief = {key: value for key, value in brief_for().items() if key not in ("kept", "consistency", "kept_words", "places", "framing")}
         brief["version"] = 11
         for person in brief["characters"]:
-            del person["known"], person["triggers"], person["appearance"]
+            del person["known"], person["triggers"], person["appearance"], person["kind"]
         brief["input"] = {key: value for key, value in brief["input"].items() if key != "triggers"}
         brief["input"].update(trigger="ohwx", trigger_at_start=True)
         self.assertEqual(understanding.validate_brief(brief), brief)
@@ -246,7 +247,7 @@ class KnownCharacterScenes(unittest.TestCase):
         self.request = GoatedPrompterRequest(idea="dataset", planning_mode="Direct", director_preset="general_director")
         self.brief = brief_for(cast=[PAIR[0], {"label": "woman", "gender": "female", "custom": "", "pronoun": "she", "count": 1}],
                                triggers=[trigger(NARUTO, "character"), trigger("mystyle", "style")],
-                               style="Realistic")
+                               style="Realistic", subject="Naruto talks with a woman")
 
     @staticmethod
     def scene(number=1):

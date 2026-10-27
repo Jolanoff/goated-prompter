@@ -2,15 +2,18 @@
 answers only; nothing here is live-model evidence."""
 
 import json
+import random
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
 
 from goated_prompter.backends.mock import MockBackend
 from goated_prompter.contracts import GoatedPrompterRequest
-from goated_prompter.features.dataset.v2 import understanding
+from goated_prompter.features.dataset.v2 import prompts, understanding
+from goated_prompter.features.dataset.v2.scenes import looks
 from goated_prompter.features.dataset.v2.draft import default_dataset_draft
 from goated_prompter.prompt_library import copied_reference
+from goated_prompter.features.vocabulary.catalog import load_catalog
 
 # Two answers a model gave for "magical world" (an earlier debug trace): a punctuation-only fixed and blank randomized,
 # then an empty fixed, each with a stray "intent" key from the retired interpretation. Both must be usable as they are.
@@ -84,6 +87,87 @@ class Understanding(unittest.TestCase):
                                                 "place": "together"}})
         self.assertEqual(value["kept"], {"subject": "a family of four", "action": "having dinner together"})
 
+    def cast(self, subject, *people, nsfw=False):
+        """The brief's characters for scripted characters (label, kind, gender, gender_words, pronoun, custom)."""
+        rows = [{"label": label, "kind": kind, "gender": gender, "gender_words": words, "pronoun": pronoun,
+                 "custom": custom, "count": 1} for label, kind, gender, words, pronoun, custom in people]
+        answer = {**json.loads(MAGICAL_FIRST), "path": "character", "characters": rows}
+        return self.understand([json.dumps(answer)], subject=subject, nsfw=nsfw)[0]["characters"]
+
+    def test_the_kind_is_apart_from_the_sex(self):
+        # A live brief made "a male cat" a human man, so it got a man's looks and a 1boy tag.
+        cat = self.cast("a male cat stretching in the sun", ("cat", "animal", "male", "a male cat", "he", "cat"))
+        self.assertEqual([(row["kind"], row["gender"], row["pronoun"]) for row in cat], [("animal", "male", "he")])
+        self.assertFalse(understanding.is_human(cat[0]))
+        self.assertEqual(understanding.stated_gender(cat[0]), "male")
+        self.assertEqual(prompts.count_tags(cat), ["1other", "solo"], "a male animal is no boy")
+        brief = {"characters": cat, "consistency": {}, "kept_words": {}}
+        self.assertEqual(looks.deal_looks(brief, looks.look_groups(load_catalog(user_root=False)), 2, random.Random(1)), {},
+                         "an animal never gets a human look, whatever its sex")
+        robot = self.cast("a robot waving, she smiles", ("robot", "robot", "female", "she", "she", "robot"))
+        self.assertEqual([(row["kind"], row["gender"], row["pronoun"]) for row in robot], [("robot", "female", "she")])
+        dragon = self.cast("a dragon guarding its treasure", ("dragon", "creature", "", "", "it", "dragon"))
+        self.assertEqual([(row["kind"], row["pronoun"], row["custom"]) for row in dragon], [("creature", "it", "dragon")])
+
+    def test_a_sex_needs_evidence_that_belongs_to_its_character(self):
+        # "her" in "a woman walking her dog" is the woman's; a live answer quoted "2 people" as a man's and a woman's.
+        walk = self.cast("a woman walking her dog", ("woman", "human", "female", "a woman", "she", ""),
+                         ("dog", "animal", "female", "her dog", "she", "dog"))
+        self.assertEqual([(row["label"], row["gender"], row["pronoun"]) for row in walk],
+                         [("woman", "female", "she"), ("dog", "", "")])
+        couple = self.cast("2 people kissing", ("man", "human", "male", "2 people", "he", ""),
+                           ("woman", "human", "female", "", "she", ""))
+        self.assertEqual([(row["label"], row["gender"], row["pronoun"]) for row in couple],
+                         [("person 1", "", ""), ("person 2", "", "")], "no sex invented, and no label that states one")
+        family = self.cast("a girl hiding behind her father", ("girl", "human", "female", "a girl", "she", ""),
+                           ("father", "human", "male", "her father", "he", ""))
+        self.assertEqual([row["gender"] for row in family], ["female", "male"])
+        doctor = self.cast("a woman doctor and a chef", ("doctor", "human", "female", "a woman", "she", ""),
+                           ("chef", "human", "male", "a chef", "he", ""))
+        self.assertEqual([row["gender"] for row in doctor], ["female", ""], "a word before the character describes it")
+        owned = self.cast("the man's dog barks", ("dog", "animal", "male", "the man's", "he", "dog"))
+        self.assertEqual(owned[0]["gender"], "", "a possessive is another character's")
+
+    def test_a_known_character_keeps_its_established_sex_and_the_request_comes_first(self):
+        # A live answer marked Kirito as known but left his sex out: gender says only what the request states.
+        known = lambda label, gender, words, known_gender, kind="human": {
+            "label": label, "kind": kind, "gender": gender, "gender_words": words, "pronoun": "", "custom": "",
+            "count": 1, "known": True, "known_gender": known_gender}
+        answer = lambda *rows: json.dumps({**json.loads(MAGICAL_FIRST), "path": "character", "characters": list(rows)})
+        result = lambda subject, *rows: [(row["label"], row["gender"], row["pronoun"]) for row in
+                                         self.understand([answer(*rows)], subject=subject)[0]["characters"]]
+        self.assertEqual(result("Kirito sword fighting", known("Kirito", "", "", "male")), [("Kirito", "male", "he")])
+        self.assertEqual(result("Mikasa training with Levi", known("Mikasa", "", "", "female"),
+                                known("Levi", "", "", "male")), [("Mikasa", "female", "she"), ("Levi", "male", "he")])
+        self.assertEqual(result("a female Kirito sword fighting", known("Kirito", "female", "a female Kirito", "male")),
+                         [("Kirito", "female", "she")], "the request's own words come first")
+        self.assertEqual(result("Kirby floating", known("Kirby", "", "", "", kind="creature")), [("Kirby", "", "")])
+        unknown = {**known("Alex", "male", "", "male"), "known": False}
+        self.assertEqual(result("Alex cooking dinner", unknown), [("Alex", "", "")], "a name alone states no sex")
+
+    def test_a_possessive_belongs_to_the_one_other_character(self):
+        knight = self.cast("a knight and his horse", ("knight", "human", "male", "his", "he", ""),
+                           ("horse", "animal", "male", "his horse", "he", "horse"))
+        self.assertEqual([(row["label"], row["gender"]) for row in knight], [("knight", "male"), ("horse", "")])
+        # A live answer filed "his horse" under the horse and left the knight's sex out: the request still says it.
+        left_out = self.cast("a knight and his horse", ("knight", "human", "", "a knight", "he", ""),
+                             ("horse", "animal", "", "his horse", "it", "horse"))
+        self.assertEqual([(row["label"], row["gender"], row["pronoun"]) for row in left_out],
+                         [("knight", "male", "he"), ("horse", "", "it")])
+        owner = self.cast("a dog and her owner", ("dog", "animal", "", "", "it", "dog"), ("owner", "human", "", "", "", ""))
+        self.assertEqual([row["gender"] for row in owner], ["female", ""])
+        crowd = self.cast("a knight, a squire and his horse", ("knight", "human", "male", "his", "he", ""),
+                          ("squire", "human", "male", "his", "he", ""), ("horse", "animal", "", "", "it", "horse"))
+        self.assertEqual([row["gender"] for row in crowd], ["", "", ""], "with two possible owners, nobody gets it")
+
+    def test_older_briefs_read_custom_as_not_human_and_animals_stay_out_of_adult_sets(self):
+        self.assertFalse(understanding.is_human({"label": "elf", "gender": "custom", "custom": "elf"}))
+        self.assertTrue(understanding.is_human({"label": "chef", "gender": ""}))
+        self.assertEqual(understanding.stated_gender({"gender": "custom"}), "")
+        with self.assertRaisesRegex(ValueError, "animal"):
+            self.cast("a fox with an adult woman", ("fox", "animal", "", "", "it", "red fox"),
+                      ("woman", "human", "female", "an adult woman", "she", ""), nsfw=True)
+
     def test_a_man_or_a_woman_only_when_the_request_says_so(self):
         # A live answer made "a chef" male, so the chef got only a man's looks.
         person = lambda label, gender, words, **extra: {"label": label, "gender": gender, "custom": "",
@@ -99,7 +183,7 @@ class Understanding(unittest.TestCase):
 
     def test_understanding_never_chooses_vocabulary(self):
         result, calls = self.understand([TWO_MEN], subject="2 adult men in an explicit scene", nsfw=True)
-        self.assertEqual(result["version"], 19)
+        self.assertEqual(result["version"], 20)
         self.assertNotIn("intent", result)
         self.assertEqual(set(calls[0].json_schema["properties"]), set(understanding.MODEL_FIELDS))
         for word in ("pack", "vocabulary"):

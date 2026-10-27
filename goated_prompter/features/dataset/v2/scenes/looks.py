@@ -10,8 +10,9 @@ Looks: every human whose looks vary from image to image (request.varied_labels) 
 style and colour, eyes and skin tone from the built-in looks (the always-on Subjects packs,
 vocabulary/Subjects/Female.json and Male.json, one group each), so the people of a set differ. The writer keeps the
 look's skin tone, hair colour, hairstyle and eye colour and describes the person as before; build follows the request
-or is chosen anew (LOOK_RULE). A person's gender finds their group by the group's words ("female", "male"); a person
-of unspecified gender gets looks of either, and a custom character (anything not a human man or woman) none: its own
+or is chosen anew (LOOK_RULE). A person's stated sex finds their group by the group's words ("female", "male"); a
+person whose sex the request does not state gets looks of either, never a sex of its own, and a character that is not
+a human (understanding.is_human: an animal, a creature, a robot, an object, whatever its sex) none: its own
 description is its look. A look is made of parts (retrieval.entry_parts): what the person's words ask of a part fixes
 that part in every image ("ginger": the hair, "green eyes": the eyes) and every other part varies with the dealt look
 (retrieval.requested_parts, selection.deal_composed); a live set that kept whole looks gave a ginger man with green
@@ -23,6 +24,7 @@ before and no built-in look is dealt. No model call: code finds and deals the lo
 from ....vocabulary.retrieval import content_words, exact_search, groups_of, requested_parts, telling_words, word_stem
 from ....vocabulary.selection import deal_composed
 from ..consistency import kept_words
+from ..understanding import is_human, stated_gender
 from .request import varied_labels
 
 SUBJECTS = "Subjects"
@@ -35,8 +37,7 @@ def look_groups(catalog):
 
 
 def _looks_for(groups, person):
-    gender = person.get("gender") if person.get("gender") in ("female", "male") else ""
-    return exact_search(groups, gender) or groups
+    return exact_search(groups, stated_gender(person)) or groups
 
 
 def _own_words(brief, person):
@@ -51,7 +52,7 @@ def _own_words(brief, person):
 def _looked(brief, groups):
     """The people dealt a look: every human whose looks vary, when there are looks."""
     return [person for person in brief["characters"]
-            if groups and person["label"] in varied_labels(brief) and person.get("gender") != "custom"]
+            if groups and person["label"] in varied_labels(brief) and is_human(person)]
 
 
 def _wanted(brief, groups):

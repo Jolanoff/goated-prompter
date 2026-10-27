@@ -64,20 +64,23 @@ from ....backends.recovery import GenerationRecovery
 from ....contracts import PromptInstruction, effective_model_family
 from ....director_profiles import resolve_director_config
 from ....options.dataset import CONSISTENCY_LEVELS, CONSISTENCY_PARTS, FACINGS, FRAMINGS, WORLDS
-from ...vocabulary.retrieval import content_words
+from ...vocabulary.retrieval import base_word, content_words
 from .aspect import aspect_shape
 from .consistency import asks_same, resolve
 from .safety import ADULTS_ONLY, NO_ANIMALS, adult_content_request, adults_only_error, minor_reference
 from .triggers import all_text, brief_triggers, data_triggers, personal_numbers
 
-VERSION = 19
-VERSIONS = (9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19)  # 9 to 18: saved runs (10 with a structured intent no longer
-                                                        # read, before 12 no "known", before 13 one trigger string,
-                                                        # before 14 no kept, before 15 no consistency, before 16 no
-                                                        # places, before 17 no appearance, before 18 no framing, before
-                                                        # 19 no relations in places)
+VERSION = 20
+VERSIONS = (9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20)  # 9 to 19: saved runs (10 with a structured intent no
+                                                            # longer read, before 12 no "known", before 13 one trigger
+                                                            # string, before 14 no kept, before 15 no consistency,
+                                                            # before 16 no places, before 17 no appearance, before 18 no
+                                                            # framing, before 19 no relations in places, before 20 no
+                                                            # kind: "custom" gender meant not a human)
 PATHS = ("sfw_character", "nsfw_character", "non_character")
-GENDERS = ("male", "female", "custom", "")
+GENDERS = ("male", "female", "custom", "")  # briefs before version 20, where "custom" meant not a human
+CAST_GENDERS = ("male", "female", "")  # a character's stated sex from version 20, any kind may have one
+KINDS = ("human", "animal", "creature", "robot", "object")  # what a character is, apart from its sex
 PRONOUNS = ("he", "she", "it", "")
 MAX_CHARACTERS, MAX_COUNT, MAX_TEXT, MAX_ITEMS, MAX_IDEAS = 20, 20, 1200, 20, 8
 BRIEF_FIELDS = ("path", "summary", "characters", "fixed", "randomized", "must", "avoid")
@@ -96,13 +99,26 @@ MAX_RELATIONS = 12
 FRAMING_FIELDS = ("tightest", "widest", "facing")
 MODEL_FIELDS = (*MODEL_BRIEF_FIELDS, "kept", *LEVEL_FIELDS, "places", "framing")
 IRREGULAR_PLURALS = {"men": "man", "women": "woman", "people": "person", "children": "child", "feet": "foot",
-                     "teeth": "tooth", "mice": "mouse", "geese": "goose"}
+                     "teeth": "tooth", "mice": "mouse", "geese": "goose", "ladies": "lady"}
 LEGACY_CHARACTER_FIELDS = ("label", "gender", "custom", "pronoun")  # briefs before version 12
 KNOWN_CHARACTER_FIELDS = (*LEGACY_CHARACTER_FIELDS, "known")  # version 12
 TRIGGER_CHARACTER_FIELDS = (*KNOWN_CHARACTER_FIELDS, "triggers")  # versions 13 to 16
-CHARACTER_FIELDS = (*TRIGGER_CHARACTER_FIELDS, "appearance")
+CHARACTER_FIELDS = (*TRIGGER_CHARACTER_FIELDS, "appearance")  # versions 17 to 19
+KIND_CHARACTER_FIELDS = (*CHARACTER_FIELDS, "kind")  # version 20
 MODEL_CHARACTER_FIELDS = (*LEGACY_CHARACTER_FIELDS, "count")  # "known", "triggers" and "appearance" are optional
-OPTIONAL_MODEL_FIELDS = frozenset({"known", "triggers", "appearance", "gender_words"})
+OPTIONAL_MODEL_FIELDS = frozenset({"known", "known_gender", "triggers", "appearance", "gender_words", "kind"})
+# The words that state a character's sex, singular (plural endings read alike), defined once: the evidence for a
+# stated gender (stated), neutral labels and the scene pronouns (prompts.scene_gender) all read them. A word missing
+# here leaves the sex unstated, never invented.
+GENDER_NOUNS = {
+    "male": frozenset("""male man boy guy gentleman father dad son brother husband boyfriend groom bridegroom king prince
+        lord sir mister mr uncle nephew grandfather grandpa grandson monk widower stepfather emperor duke nobleman
+        businessman policeman fireman""".split()),
+    "female": frozenset("""female woman girl lady gal mother mom mum daughter sister wife girlfriend bride queen princess
+        duchess empress madam mrs ms aunt niece grandmother grandma granddaughter nun priestess waitress actress heroine
+        goddess widow stepmother noblewoman businesswoman policewoman""".split())}
+GENDER_PRONOUNS = {"male": frozenset({"he", "him", "his", "himself"}),
+                   "female": frozenset({"she", "her", "hers", "herself"})}
 
 _ANIMALS = re.compile(r"\b(?:animals?|dogs?|puppy|puppies|cats?|kittens?|horses?|ponies|pony|pigs?|cows?|goats?|sheep|wolf|wolves)\b")
 
@@ -115,23 +131,32 @@ Return one JSON object with exactly these keys:
 summary: one sentence saying what every image shows.
 characters: everyone who appears in the images, in the user's order: each person, animal, creature, robot or named
   character the request names, even when the request is mostly about what they do, what they hold or where they are.
-  [] only when no one appears (an object, a product, a place, a style, a logo or text on its own). One entry per
-  person, or one entry with count for several identical unnamed people (for an unnumbered group, your best guess of
-  the count).
+  [] only when no one appears (an object, a product, a place, a style, a logo or text on its own: objects on display
+  are no characters, however many). One entry per character, or one entry with count for several identical unnamed
+  ones (for an unnumbered group, your best guess of the count).
   label: the character's name when the user names one, otherwise a short singular lowercase role noun.
-  gender_words: the request's own words that say this person is a man or a woman ("a woman", "his", "she"), copied
-    exactly; "" when it does not say. A role, job or group alone does not say it ("a chef", "a nurse", "friends").
-  gender: "male", "female", or "custom" for anything not a human man or woman; "" for a person whose gender_words
-    are "".
-  custom: for custom, a short description of what the character is; otherwise "".
-  pronoun: "he", "she" or "it": how the character is referred to.
-  Use "" for an unspecified gender or pronoun, not a guessed value or "custom" for an unspecified human.
-    Do not infer gender from a name, role or group, unless the name is an established character whose
-    gender is part of that character. Keep requested character kinds and attributes.
+  kind: what the character is: "human" (a person), "animal", "creature" (a dragon, an elf, a monster, any fantasy
+    being), "robot" (a robot, an android, a machine with a will) or "object" (a thing that acts as a character: it
+    talks, has a face or a personality).
+  gender_words: the request's own words that state this character's sex: a word that names it ("a woman", "her
+    father", "a male cat") or a pronoun that refers to it ("she"), copied exactly; "" when the request does not say it
+    of this character. A role, job, group, kind or another character's words do not say it ("a chef", "friends", "a
+    couple"; in "a woman walking her dog", "her" is the woman's, never the dog's; in "a knight and his horse", "his" is
+    the knight's).
+  gender: "male" or "female" when gender_words state it, or for an established character whose sex is part of that
+    character; "" otherwise. Any kind may have one: "a male cat" is an animal with gender "male".
+  custom: for any kind but human, what the character is, in the request's words ("tabby cat", "dragon"); "" for a
+    human.
+  pronoun: "he", "she" or "it": how the request refers to the character; "" for a human whose sex it does not state.
+  Never guess a sex: do not infer it from a name, role, kind or group, unless the name is an established character
+    whose sex is part of that character. Keep requested character kinds and attributes.
     Never turn an unspecified attribute into a requested fact in characters, summary, fixed or must.
   count: how many identical people this entry stands for (1 for one person).
   known: true only when the label names an established character from a published work (anime, manga,
     game, comic, film, series or book) that image models can draw from the name alone; false otherwise.
+  known_gender: for a known character, the sex its published work gives it, "male" or "female"; "" when the work
+    gives it none, you are not sure, or the character is not known. Whatever the request itself says of its sex still
+    goes in gender_words and gender, and comes first.
   appearance: the request's words about how this character looks (an age, hair, eyes, skin, a beard, tattoos, a
     piercing, a body attribute), copied exactly as the user wrote them; "" when the request says nothing about it.
   triggers: the numbers of the user's character and outfit triggers that belong to this character ([] when
@@ -240,11 +265,13 @@ def copied_settings(data):
 
 def _schema():
     text = {"type": "string", "maxLength": MAX_TEXT}
-    character = {"type": "object", "additionalProperties": False, "required": list(MODEL_CHARACTER_FIELDS), "properties": {
-        "label": text, "gender_words": text, "gender": {"type": "string", "enum": list(GENDERS)}, "custom": text,
+    character = {"type": "object", "additionalProperties": False,
+                 "required": ["label", "kind", "gender_words", *MODEL_CHARACTER_FIELDS[1:]], "properties": {
+        "label": text, "kind": {"type": "string", "enum": list(KINDS)}, "gender_words": text,
+        "gender": {"type": "string", "enum": list(CAST_GENDERS)}, "custom": text,
         "pronoun": {"type": "string", "enum": list(PRONOUNS)},
         "count": {"type": "integer", "minimum": 1, "maximum": MAX_COUNT}, "known": {"type": "boolean"},
-        "appearance": text,
+        "known_gender": {"type": "string", "enum": list(CAST_GENDERS)}, "appearance": text,
         "triggers": {"type": "array", "maxItems": MAX_ITEMS, "items": {"type": "integer", "minimum": 1}}}}
     phrases = {"type": "array", "maxItems": MAX_ITEMS, "items": text}
     return {"type": "object", "additionalProperties": False, "required": list(MODEL_FIELDS), "properties": {
@@ -463,28 +490,134 @@ def _appearance(text, data):
     return ", ".join(piece for piece in pieces if piece and " ".join(piece.casefold().split()) in said)
 
 
-def _said_gender(item, triggers, data):
-    """The gender a person keeps: a man or a woman only when the request's words say so (gender_words found in what the
-    user wrote) or the person is a known character; an answer without gender_words keeps its gender. A live answer
-    made "a chef" male, so every chef got a man's looks."""
-    if (item["gender"] not in ("male", "female") or "gender_words" not in item or data is None
-            or known_character(item, triggers) or _appearance(item.get("gender_words"), data)):
-        return item["gender"]
+def is_human(person):
+    """Whether a character is a human: its kind (version 20), else a gender that is not "custom" (older briefs). The one
+    test every owner uses (human looks, count tags, how a person is named)."""
+    return person["kind"] == "human" if "kind" in person else person.get("gender") != "custom"
+
+
+def stated_gender(person):
+    """A character's stated sex, "male" or "female", or "" when the request does not state it (older briefs' "custom"
+    too)."""
+    return person.get("gender") if person.get("gender") in ("male", "female") else ""
+
+
+def _forms(word):
+    """A word's singular forms ("men": man, "ladies": lady, "princesses": princess)."""
+    word = word.casefold()
+    return {word, IRREGULAR_PLURALS.get(word, word), base_word(word), word[:-2] if word.endswith("es") else word}
+
+
+def _gendered(words):
+    """The sexes the words name with a noun or an adjective ("woman", "male"), pronouns aside."""
+    return {sex for word in words for sex, nouns in GENDER_NOUNS.items() if _forms(word) & nouns}
+
+
+def _tokens(text):
+    """A text's words in order, a possessive "'s" kept on its word ("the man's dog")."""
+    return re.findall(r"[a-z0-9]+(?:['’]s\b)?", str(text or "").casefold())
+
+
+def _bare(token):
+    return _forms(re.sub(r"['’]s$", "", token))
+
+
+def _evidence(quote, own, sex, cast, data, others=()):
+    """Whether a quote is evidence of a character's sex, as whole words of the request (plural forms alike): a noun or
+    adjective of that sex that is the character's own word or describes it, in the quote or right before the
+    character's word ("a woman", "her father", "two men", "a woman doctor", "a male cat"; never through a possessive:
+    "the man's dog" says nothing of the dog), or else a pronoun of that sex that can only be this character's: the
+    cast is this one character ("she"), or the pronoun is a possessive right before the word of the one other
+    character ("a knight and his horse": "his" is the knight's, the horse is what he owns). others: the words of each
+    other character."""
+    said, words = _tokens(_user_text(data)), _tokens(quote)
+    every = GENDER_NOUNS["male"] | GENDER_NOUNS["female"]
+    for start in range(len(said) - len(words) + 1) if words else ():
+        span = said[start:start + len(words)]
+        if not all(_bare(token) & _bare(word) for token, word in zip(span, words)):
+            continue
+        if any(_bare(token) & GENDER_NOUNS[sex] for token in span):
+            follows = start + len(words) < len(said) and not re.search(r"['’]s$", span[-1])
+            if any(_bare(token) & own for token in [*span, *([said[start + len(words)]] if follows else [])]):
+                return True
+        elif not any(_bare(token) & every for token in span):
+            pronouns = [index for index, token in enumerate(span) if token in GENDER_PRONOUNS[sex]]
+            if pronouns and cast == 1:
+                return True
+            owned = lambda index: start + index + 1 < len(said) and _bare(said[start + index + 1]) & others[0]
+            if pronouns and cast == 2 and len(others) == 1 and any(owned(index) for index in pronouns):
+                return True
+    return False
+
+
+def _possessor(own, others, cast, data):
+    """The sex a gendered possessive gives a character when it can only be that character's: the cast is it and one
+    other, and the pronoun stands right before the other's word ("a knight and his horse": "his" is the knight's);
+    "" otherwise, or when the request uses possessives of both sexes that way."""
+    if cast != 2 or len(others) != 1:
+        return ""
+    said = _tokens(_user_text(data))
+    found = {sex for index, token in enumerate(said[:-1]) for sex, pronouns in GENDER_PRONOUNS.items()
+             if token in pronouns and _bare(said[index + 1]) & others[0] and not _bare(said[index + 1]) & own}
+    return found.pop() if len(found) == 1 else ""
+
+
+def _own(item):
+    """The words a character is named by: its label's and its description's, in their singular forms."""
+    return {form for word in content_words(f'{item["label"]} {item.get("custom", "")}') for form in _forms(word)}
+
+
+def stated(item, cast, triggers, data, others=()):
+    """The sex a character keeps (gender "male" or "female"), in this order: what the request states of it, with
+    evidence that belongs to it (its gender_words, or else its own label: _evidence; words about another character
+    never count, "her" in "a woman walking her dog" is the woman's); else, for a known character, the sex its
+    published work gives it (known_gender; an answer from before that field keeps its gender); else "". A gendered
+    possessive that can only be this character's is the request's word for it even when the answer left it out
+    (_possessor)."""
+    sex = item["gender"] if item["gender"] in ("male", "female") else ""
+    if data is None:
+        return sex
+    if sex and any(_evidence(quote, _own(item), sex, cast, data, others)
+                   for quote in (str(item.get("gender_words") or ""), item["label"])):
+        return sex  # the request's own words come first: "a female Kirito" is female
+    if owner := _possessor(_own(item), others, cast, data):
+        return owner
+    if known_character(item, triggers):
+        return item["known_gender"] if "known_gender" in item and item["known_gender"] in ("male", "female") else (
+            "" if "known_gender" in item else sex)
     return ""
 
 
+def _kind(item):
+    """A character's kind; an answer without one (older prompts) is a human unless its gender was "custom"."""
+    return item.get("kind") if item.get("kind") in KINDS else "creature" if item.get("gender") == "custom" else "human"
+
+
+def _neutral(label):
+    """A human's label without a sex the request never stated: a label that names one ("man", "woman") is "person"."""
+    return "person" if _gendered(content_words(label)) else label
+
+
 def expand_characters(items, triggers=(), data=None):
-    """One entry per person: an entry with count N becomes N numbered people, each with the entry's appearance, and a
-    man or a woman only when the request says so (_said_gender)."""
-    characters, totals, numbers = [], {}, {}
+    """One entry per character: an entry with count N becomes N numbered ones, each with the entry's appearance; its
+    kind apart from its sex, a sex only with evidence that belongs to it (stated), a human of unstated sex with a
+    label that states none, and its pronoun from its sex (a non-human of unstated sex keeps "it" when the answer
+    used it)."""
+    cast = sum(item["count"] for item in items)
+    shaped = []
     for item in items:
-        totals[_singular(item["label"].strip())] = totals.get(_singular(item["label"].strip()), 0) + item["count"]
-    for item in items:
-        gender = _said_gender(item, triggers, data)
-        item = {**item, "gender": gender, "pronoun": item["pronoun"] if gender == item["gender"] else ""}
-        custom = item["custom"].strip() if item["gender"] == "custom" else ""
-        pronoun = {"male": "he", "female": "she"}.get(item["gender"], item["pronoun"])
+        others = [_own(other) for other in items if other is not item]
+        kind, sex = _kind(item), stated(item, cast, triggers, data, others)
+        known = known_character(item, triggers)
         label = item["label"].strip()
+        label = _neutral(label) if kind == "human" and not sex and not known else label
+        pronoun = {"male": "he", "female": "she"}.get(sex) or ("it" if kind != "human" and item["pronoun"] == "it" else "")
+        custom = "" if kind == "human" else (item["custom"].strip() or label)
+        shaped.append((item, kind, sex, known, label, pronoun, custom))
+    totals, numbers, characters = {}, {}, []
+    for item, *_, label, _, _ in shaped:
+        totals[_singular(label)] = totals.get(_singular(label), 0) + item["count"]
+    for item, kind, sex, known, label, pronoun, custom in shaped:
         label = _singular(label) if item["count"] > 1 or totals[_singular(label)] > 1 else label
         for _ in range(item["count"]):
             if totals[_singular(label)] > 1:
@@ -493,8 +626,8 @@ def expand_characters(items, triggers=(), data=None):
             else:
                 name = label
             linked = sorted(set(item.get("triggers") or ())) if item["count"] == 1 else []
-            characters.append({"label": name, "gender": item["gender"], "custom": custom, "pronoun": pronoun,
-                               "known": known_character(item, triggers), "triggers": linked,
+            characters.append({"label": name, "kind": kind, "gender": sex, "custom": custom, "pronoun": pronoun,
+                               "known": known, "triggers": linked,
                                "appearance": _appearance(item.get("appearance"), data)})
     return characters
 
@@ -635,11 +768,16 @@ def validate_brief(brief):
         if not isinstance(brief[key], list) or any(not isinstance(item, str) or not item.strip() for item in brief[key]):
             raise ValueError(f"{key} must be a list of phrases.")
     people = brief["characters"]
-    fields = (CHARACTER_FIELDS if brief["version"] >= 17 else TRIGGER_CHARACTER_FIELDS if brief["version"] >= 13
+    fields = (KIND_CHARACTER_FIELDS if brief["version"] >= 20 else CHARACTER_FIELDS if brief["version"] >= 17
+              else TRIGGER_CHARACTER_FIELDS if brief["version"] >= 13
               else KNOWN_CHARACTER_FIELDS if brief["version"] == 12 else LEGACY_CHARACTER_FIELDS)
+    # From version 20 the kind says what a character is and gender only its sex; before, "custom" meant not a human.
+    sexes, described = ((CAST_GENDERS, lambda item: item["kind"] != "human") if brief["version"] >= 20
+                        else (GENDERS, lambda item: item["gender"] == "custom"))
     if not isinstance(people, list) or len(people) > MAX_CHARACTERS or any(
             not isinstance(item, dict) or set(item) != set(fields) or not str(item["label"]).strip()
-            or item["gender"] not in GENDERS or (item["gender"] == "custom") != bool(str(item["custom"]).strip())
+            or ("kind" in fields and item["kind"] not in KINDS)
+            or item["gender"] not in sexes or described(item) != bool(str(item["custom"]).strip())
             or item["pronoun"] not in PRONOUNS or ("known" in fields and type(item["known"]) is not bool)
             or ("triggers" in fields and (not isinstance(item["triggers"], list)
                                           or any(type(number) is not int for number in item["triggers"])))
@@ -688,7 +826,8 @@ def validate_content(brief, data=None):
         if word := minor_reference(text):
             raise ValueError(f'{ADULTS_ONLY} ("{word}")')
         if data.get("trigger_type") == "Animal" or any(
-                _ANIMALS.search(f'{item["label"]} {item["custom"]}'.casefold()) for item in brief["characters"]):
+                item.get("kind") == "animal" or _ANIMALS.search(f'{item["label"]} {item["custom"]}'.casefold())
+                for item in brief["characters"]):
             raise ValueError(NO_ANIMALS)
 
 

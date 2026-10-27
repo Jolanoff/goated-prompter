@@ -1,0 +1,31 @@
+{
+ "about": "Requests for tests/eval/cast_classification.py, labelled before any run: the cast Understanding should give, one row per individual (a count expands), as kind (human, animal, creature, robot, object: an object only when it acts as a character) and gender (male, female or \"\" when the request does not state it for that character). known: the established character's name. objects on display are no characters. Added later, still labelled before any run: known characters of either sex, together, non-human, overridden by the request, and an unknown name.",
+ "cases": [
+  {"request": "2 people kissing", "cast": [["human", ""], ["human", ""]]},
+  {"request": "a chef tasting a sauce", "cast": [["human", ""]]},
+  {"request": "two friends having coffee", "cast": [["human", ""], ["human", ""]]},
+  {"request": "a couple dancing in the rain", "cast": [["human", ""], ["human", ""]]},
+  {"request": "a woman reading a book", "cast": [["human", "female"]]},
+  {"request": "two men arm wrestling", "cast": [["human", "male"], ["human", "male"]]},
+  {"request": "a girl hiding behind her father", "cast": [["human", "female"], ["human", "male"]]},
+  {"request": "a bride walking down the aisle", "cast": [["human", "female"]]},
+  {"request": "a cat sleeping on a sofa", "cast": [["animal", ""]]},
+  {"request": "a male cat stretching in the sun", "cast": [["animal", "male"]]},
+  {"request": "a female wolf howling at the moon", "cast": [["animal", "female"]]},
+  {"request": "a dragon guarding its treasure", "cast": [["creature", ""]]},
+  {"request": "a robot making breakfast", "cast": [["robot", ""]]},
+  {"request": "a talking teapot telling a story", "cast": [["object", ""]]},
+  {"request": "image of 10 different objects", "cast": []},
+  {"request": "a woman walking her dog", "cast": [["human", "female"], ["animal", ""]]},
+  {"request": "a knight and his horse", "cast": [["human", "male"], ["animal", ""]]},
+  {"request": "three friends and a robot playing cards", "cast": [["human", ""], ["human", ""], ["human", ""], ["robot", ""]]},
+  {"request": "Kirito sword fighting", "cast": [["human", "male"]], "known": ["kirito"]},
+  {"request": "Pikachu napping in a field", "cast": [["creature", ""]], "known": ["pikachu"]},
+  {"request": "a robot waving, she smiles at the camera", "cast": [["robot", "female"]]},
+  {"request": "Hatsune Miku singing on stage", "cast": [["human", "female"]], "known": ["hatsune miku"]},
+  {"request": "Mikasa training with Levi", "cast": [["human", "female"], ["human", "male"]], "known": ["mikasa", "levi"]},
+  {"request": "Kirby floating in the sky", "cast": [["creature", ""]], "known": ["kirby"]},
+  {"request": "a female Kirito sword fighting", "cast": [["human", "female"]], "known": ["kirito"]},
+  {"request": "Alex cooking dinner", "cast": [["human", ""]]}
+ ]
+}

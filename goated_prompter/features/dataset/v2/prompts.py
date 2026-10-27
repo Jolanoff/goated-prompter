@@ -32,6 +32,7 @@ from ....workflow_output import ideogram_json
 from .aspect import brief_aspect, shape_rule
 from .safety import adult_text, explicit_text
 from .triggers import brief_triggers, owner, placed, run_style, trigger_text
+from .understanding import GENDER_PRONOUNS, is_human, stated_gender
 
 SHAPE_RULE = ("IMAGE SHAPE: the image is {ratio}, a {shape} frame. Describe the framing for it: the people and the action "
               "spread over {along}. Keep the scene's arrangement and camera, and never write the ratio itself.")
@@ -134,7 +135,7 @@ def anchors(scene, brief):
         look = (scene.get("subjects") or {}).get(person["label"]) or {}
         if person["label"] not in varied or not (found or shown):
             continue
-        noun = _NOUN.get(person.get("gender")) if shown else None
+        noun = _NOUN.get(stated_gender(person)) if shown and is_human(person) else None
         noun = noun or (found[1] if found else person["label"])
         hair = plain(look.get("hair"))
         hair = hair if not hair or re.search(r"\bhair\b", hair) else f"{hair} hair"
@@ -322,17 +323,17 @@ SHOT_TAGS = ("full body", "cowboy shot", "upper body", "portrait", "close-up")
 def scene_gender(scene, label):
     """The gender a scene gives a person the cast leaves open (a couple of unnamed genders): "male" or "female" when that
     person's own position calls them only he or only she (positions name everyone else by label), else None."""
-    text = str(((scene or {}).get("position") or {}).get(label) or "")
-    he = re.search(r"\b(?:he|his|him|himself)\b", text, re.IGNORECASE)
-    she = re.search(r"\b(?:she|her|hers|herself)\b", text, re.IGNORECASE)
+    said = set(re.findall(r"[a-z]+", str(((scene or {}).get("position") or {}).get(label) or "").casefold()))
+    he, she = said & GENDER_PRONOUNS["male"], said & GENDER_PRONOUNS["female"]
     return "male" if he and not she else "female" if she and not he else None
 
 
 def count_tags(characters):
-    """The cast as Anima count tags: men are boys, women are girls, anyone else other; solo for one person."""
+    """The cast as Anima count tags: men are boys, women are girls, anyone else other (a character that is not a human
+    whatever its sex, a person of unstated sex); solo for one character."""
     counts = {}
     for person in characters:
-        kind = {"male": "boy", "female": "girl"}.get(person.get("gender"), "other")
+        kind = {"male": "boy", "female": "girl"}.get(stated_gender(person), "other") if is_human(person) else "other"
         counts[kind] = counts.get(kind, 0) + int(person.get("count") or 1)
     tags = [f"{number}{kind}{'s' if number > 1 else ''}" for kind in ("boy", "girl", "other")
             if (number := counts.get(kind))]
@@ -401,7 +402,8 @@ def anima_tag_line(prompt, brief, scene=None):
     kept = {tag.casefold() for tag in tags}
     tags = [tag for tag in tags if "un" + tag.casefold() not in kept
             and not (tag.casefold().startswith("un") and tag.casefold()[2:] in kept)]
-    people = count_tags([{**person, "gender": person.get("gender") or scene_gender(scene, person["label"])}
+    people = count_tags([{**person, "gender": stated_gender(person)
+                          or (scene_gender(scene, person["label"]) if is_human(person) else "")}
                          for person in brief["characters"]]) if brief["characters"] else []
     nsfw = (brief.get("input") or {}).get("nsfw")
     if nsfw is False:
