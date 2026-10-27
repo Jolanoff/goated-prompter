@@ -64,6 +64,7 @@ from ....backends.recovery import GenerationRecovery
 from ....contracts import PromptInstruction, effective_model_family
 from ....director_profiles import resolve_director_config
 from ....options.dataset import CONSISTENCY_LEVELS, CONSISTENCY_PARTS, WORLDS
+from ...vocabulary.retrieval import content_words
 from .consistency import asks_same, resolve
 from .safety import ADULTS_ONLY, NO_ANIMALS, adult_content_request, adults_only_error, minor_reference
 from .triggers import all_text, brief_triggers, data_triggers, personal_numbers
@@ -95,7 +96,7 @@ KNOWN_CHARACTER_FIELDS = (*LEGACY_CHARACTER_FIELDS, "known")  # version 12
 TRIGGER_CHARACTER_FIELDS = (*KNOWN_CHARACTER_FIELDS, "triggers")  # versions 13 to 16
 CHARACTER_FIELDS = (*TRIGGER_CHARACTER_FIELDS, "appearance")
 MODEL_CHARACTER_FIELDS = (*LEGACY_CHARACTER_FIELDS, "count")  # "known", "triggers" and "appearance" are optional
-OPTIONAL_MODEL_FIELDS = frozenset({"known", "triggers", "appearance"})
+OPTIONAL_MODEL_FIELDS = frozenset({"known", "triggers", "appearance", "gender_words"})
 
 _ANIMALS = re.compile(r"\b(?:animals?|dogs?|puppy|puppies|cats?|kittens?|horses?|ponies|pony|pigs?|cows?|goats?|sheep|wolf|wolves)\b")
 
@@ -112,7 +113,10 @@ characters: everyone who appears in the images, in the user's order: each person
   person, or one entry with count for several identical unnamed people (for an unnumbered group, your best guess of
   the count).
   label: the character's name when the user names one, otherwise a short singular lowercase role noun.
-  gender: "male", "female", or "custom" for anything not a human man or woman.
+  gender_words: the request's own words that say this person is a man or a woman ("a woman", "his", "she"), copied
+    exactly; "" when it does not say. A role, job or group alone does not say it ("a chef", "a nurse", "friends").
+  gender: "male", "female", or "custom" for anything not a human man or woman; "" for a person whose gender_words
+    are "".
   custom: for custom, a short description of what the character is; otherwise "".
   pronoun: "he", "she" or "it": how the character is referred to.
   Use "" for an unspecified gender or pronoun, not a guessed value or "custom" for an unspecified human.
@@ -201,7 +205,7 @@ def copied_settings(data):
 def _schema():
     text = {"type": "string", "maxLength": MAX_TEXT}
     character = {"type": "object", "additionalProperties": False, "required": list(MODEL_CHARACTER_FIELDS), "properties": {
-        "label": text, "gender": {"type": "string", "enum": list(GENDERS)}, "custom": text,
+        "label": text, "gender_words": text, "gender": {"type": "string", "enum": list(GENDERS)}, "custom": text,
         "pronoun": {"type": "string", "enum": list(PRONOUNS)},
         "count": {"type": "integer", "minimum": 1, "maximum": MAX_COUNT}, "known": {"type": "boolean"},
         "appearance": text,
@@ -291,7 +295,9 @@ def recover(value):
     value = dict(value)
     # kept is optional: {part: the user's words that mention it}; only the known parts with text count.
     said = value.get("kept") if isinstance(value.get("kept"), dict) else {}
-    value["kept"] = _own_words({part: text for part in KEPT_PARTS if (text := _optional_text(said.get(part)))})
+    # A quote without a content word says nothing about its part: a live answer kept "together" as the place.
+    value["kept"] = _own_words({part: text for part in KEPT_PARTS
+                                if (text := _optional_text(said.get(part))) and content_words(text)})
     for field in LEVEL_FIELDS:  # optional too: the parts named, known ones only
         named = value.get(field) if isinstance(value.get(field), list) else []
         value[field] = [part for part in KEPT_PARTS if part in named]
@@ -396,12 +402,25 @@ def _appearance(text, data):
     return ", ".join(piece for piece in pieces if piece and " ".join(piece.casefold().split()) in said)
 
 
+def _said_gender(item, triggers, data):
+    """The gender a person keeps: a man or a woman only when the request's words say so (gender_words found in what the
+    user wrote) or the person is a known character; an answer without gender_words keeps its gender. A live answer
+    made "a chef" male, so every chef got a man's looks."""
+    if (item["gender"] not in ("male", "female") or "gender_words" not in item or data is None
+            or known_character(item, triggers) or _appearance(item.get("gender_words"), data)):
+        return item["gender"]
+    return ""
+
+
 def expand_characters(items, triggers=(), data=None):
-    """One entry per person: an entry with count N becomes N numbered people, each with the entry's appearance."""
+    """One entry per person: an entry with count N becomes N numbered people, each with the entry's appearance, and a
+    man or a woman only when the request says so (_said_gender)."""
     characters, totals, numbers = [], {}, {}
     for item in items:
         totals[_singular(item["label"].strip())] = totals.get(_singular(item["label"].strip()), 0) + item["count"]
     for item in items:
+        gender = _said_gender(item, triggers, data)
+        item = {**item, "gender": gender, "pronoun": item["pronoun"] if gender == item["gender"] else ""}
         custom = item["custom"].strip() if item["gender"] == "custom" else ""
         pronoun = {"male": "he", "female": "she"}.get(item["gender"], item["pronoun"])
         label = item["label"].strip()

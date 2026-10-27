@@ -176,7 +176,8 @@ class DealtLooks(Harness):
         self.assertIn("LOOKS\nAn image in IMAGES may give people a look", first.system_message)
         system = " ".join(first.system_message.split())
         self.assertIn("A person gets nothing that neither the request nor the look gives", system)
-        self.assertIn("A character with no look (an animal, a creature) still changes from image to image", system)
+        self.assertIn("A character with no look (an animal, a creature) gets a new look of its own in every image", system)
+        self.assertIn("an age it gives replaces a hair colour that does not fit that age", system)
         self.assertIn("A look never gives a build: unless the request gives one, choose each person's build anew for "
                       "every image", " ".join(first.system_message.split()))
         self.assertIn("does not have their dealt look", second.system_message, "the dealt look is binding")

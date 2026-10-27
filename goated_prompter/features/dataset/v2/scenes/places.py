@@ -23,7 +23,7 @@ locked place is one for every image. The places are then paired with the dealt A
 (selection.pair with retrieval.fit_scores). No model call: code finds, deals and pairs.
 """
 
-from ....vocabulary.retrieval import content_words, entry_name, group_vectors, in_world, match, related
+from ....vocabulary.retrieval import content_words, entry_name, exact_search, group_vectors, in_world, match, related
 from ....vocabulary.selection import diverse_order
 from ..consistency import kept_words, levels
 
@@ -63,7 +63,14 @@ def place_plan(brief, groups, embeddings=None):
         return [], ""  # a kept place without its words (a brief from before version 15): the writer keeps it
     if words:
         setting = facts["setting"]
-        found = match(in_world(groups, None if setting else facts["world"]), _without(words, setting), embeddings)
+        pool, named = in_world(groups, None if setting else facts["world"]), _without(words, setting)
+        found = match(pool, named, embeddings)
+        if found and not exact_search(pool, named):
+            # Found by meaning alone, so Understanding's ideas decide when they name other places: "on a marble table"
+            # meant a kitchen by meaning, while the ideas of a perfume bottle on it were a vanity, a dressing room, a shop.
+            ideas = _from_ideas(brief, groups, facts, embeddings, adult_first=False)
+            if ideas and not {group["name"] for group in found} & {group["name"] for group in ideas}:
+                return ideas, setting
         if found:
             sizes = {group["name"]: len(group["entries"]) for group in groups}
             if any(len(group["entries"]) < sizes.get(group["name"], 0) for group in found):

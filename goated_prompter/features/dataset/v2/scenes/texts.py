@@ -16,9 +16,10 @@ POSITION = """one entry per character label, as ONE PHYSICAL MOMENT 2 says. In a
   is {{}}.
   """
 EXTRAS = """only visible details: first what each person wears (garment, colour, material; nothing over a body part the
-  act uses) or that they are bare, then
-  the light source and where it falls, then the props, marks and signs that make the request's abstract words visible
-  (saying whose each one is); a selected Clothing, Lighting or Mood & Tone entry is shown as visible things. Never
+  act uses) or that they are bare, an animal or creature only what the request gives it, then
+  the light source and where it falls, then the props and signs that make the request's abstract words visible
+  (saying whose each one is); a mark on someone's body (a tattoo, a scar, a wound, blood) only when the request asks
+  for it; a selected Clothing, Lighting or Mood & Tone entry is shown as visible things. Never
   what another field already says (the act, a pose, a hand, the place or what is in it) and no mood or feeling words."""
 SPACE = """the image's dealt place when IMAGES gives one (PLACES), else the place the request keeps, or one specific place a
   viewer would recognise: what each person stands, sits or
@@ -188,14 +189,16 @@ act."""
 # Only when looks are dealt (scenes/looks.py): a base that keeps the set's people apart, not the whole person.
 # A live set given "build comes from the request" kept one build for every image of a request that named none; one
 # told "no marks the look and the request do not give" dropped the request's own tattoos from most images and kept
-# its dog, which had no look, the same in every image.
+# its dog, which had no look, the same in every image, also once told it "still changes as the rules above say".
 LOOK_RULE = """LOOKS
 An image in IMAGES may give people a look ("looks": a look for a character label), so the people of the set differ:
 their skin, hair and eyes start from it, keeping its skin tone, hair colour, hairstyle and eye colour, each in its
-field, described as you otherwise would (how the hair falls, its texture). A person gets nothing that neither the
-request nor the look gives, such as a scar, a wound or a tattoo. A look never gives a build: unless the request gives
-one, choose each person's build anew for every image, as different from image to image as their looks. A character
-with no look (an animal, a creature) still changes from image to image as the rules above say."""
+field, described as you otherwise would (how the hair falls, its texture). The request's own words come first: an age
+it gives replaces a hair colour that does not fit that age. A person gets nothing that neither the request nor the
+look gives, such as a scar, a wound or a tattoo. A look never gives a build: unless the request gives one, choose each
+person's build anew for every image, as different from image to image as their looks. A character with no look (an
+animal, a creature) gets a new look of its own in every image (another breed, colour, coat or build), unless the
+request describes it or fixed keeps it the same."""
 
 
 # Whenever the request says how someone looks (scenes/looks.py requested_details), with or without looks: requested

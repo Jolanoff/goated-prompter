@@ -78,6 +78,25 @@ class Understanding(unittest.TestCase):
         result, _ = self.understand([json.dumps({**answer, "characters": [man]})], subject="a man in a cafe", nsfw=True)
         self.assertEqual(result["path"], "nsfw_character")
 
+    def test_a_quote_without_a_content_word_keeps_no_part(self):
+        # A live answer kept "together" as the place of a family having dinner together.
+        value = understanding.recover({"kept": {"subject": "a family of four", "action": "having dinner together",
+                                                "place": "together"}})
+        self.assertEqual(value["kept"], {"subject": "a family of four", "action": "having dinner together"})
+
+    def test_a_man_or_a_woman_only_when_the_request_says_so(self):
+        # A live answer made "a chef" male, so the chef got only a man's looks.
+        person = lambda label, gender, words, **extra: {"label": label, "gender": gender, "custom": "",
+                                                        "pronoun": "he" if gender == "male" else "she", "count": 1,
+                                                        "gender_words": words, **extra}
+        answer = {**json.loads(MAGICAL_FIRST), "path": "character", "characters": [
+            person("chef", "male", ""), person("doctor", "female", "a woman"),
+            person("nurse", "male", "a man"), person("Naruto", "male", "", known=True)]}
+        result, _ = self.understand([json.dumps(answer)], subject="a chef and a woman doctor with Naruto")
+        self.assertEqual([(person["label"], person["gender"], person["pronoun"]) for person in result["characters"]],
+                         [("chef", "", ""), ("doctor", "female", "she"), ("nurse", "", ""), ("Naruto", "male", "he")],
+                         "a quote the user never wrote says nothing; a known character keeps the gender of his story")
+
     def test_understanding_never_chooses_vocabulary(self):
         result, calls = self.understand([TWO_MEN], subject="2 adult men in an explicit scene", nsfw=True)
         self.assertEqual(result["version"], 17)

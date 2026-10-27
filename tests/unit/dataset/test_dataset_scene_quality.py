@@ -82,6 +82,10 @@ class SceneVariety(Harness):
         self.assertIn("first what each person wears (garment, colour, material; nothing over a body part the act uses) "
                       "or that they are bare", system)
         self.assertIn("Never what another field already says (the act, a pose, a hand, the place or what is in it)", system)
+        # Local models added wounds and blood as "marks" for a request's abstract words, and dressed animals.
+        self.assertIn("a mark on someone's body (a tattoo, a scar, a wound, blood) only when the request asks for it",
+                      system)
+        self.assertIn("an animal or creature only what the request gives it", system)
         self.assertIn("(another part of the place when the place is themed; the same spot and background in every image when it is locked)", system)
 
     def test_each_person_has_an_expression_field_for_expression_vocabulary(self):

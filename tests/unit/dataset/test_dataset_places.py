@@ -110,6 +110,15 @@ class NamedPlace(unittest.TestCase):
             found, _ = places.place_plan(brief("themed", "in the car"), pool, embeddings)
         self.assertEqual(names(found), ["car and bus"], "words the match explains need nothing more")
 
+    def test_a_place_found_by_meaning_alone_gives_way_to_ideas_that_name_other_places(self):
+        # "on a marble table" meant a kitchen by meaning; the ideas of a perfume bottle on it named other places.
+        with patch.object(places, "match", side_effect=lambda pool, text, *_: (
+                [pool[2]] if text == "on a marble table" else [group for group in pool if group["name"] in text])):
+            found, _ = places.place_plan(brief("themed", "on a marble table", ideas=["a city park bench"]), GROUPS)
+        self.assertEqual(names(found), ["park"], "the ideas decide")
+        found, _ = places.place_plan(brief("themed", "in the kitchen", ideas=["a city park"]), GROUPS)
+        self.assertEqual(names(found), ["kitchen"], "a place found by its words stays")
+
     def test_the_users_selected_places_come_first(self):
         mine = group("my bedroom", ["his room"], ["my own bedroom with red walls"], selected=True)
         found, _ = places.place_plan(brief("themed", "in his room"), [mine, *GROUPS])
