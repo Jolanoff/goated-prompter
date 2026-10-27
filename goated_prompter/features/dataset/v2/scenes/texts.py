@@ -19,7 +19,8 @@ POSITION = """one entry per character label, as ONE PHYSICAL MOMENT 2 says. In a
   is {{}}.
   """
 EXTRAS = """only visible details: first what each person wears (garment, colour, material; nothing over a body part the
-  act uses) or that they are bare, an animal or creature only what the request gives it, then
+  act uses) or that they are bare; a character that wears no clothes by nature (an animal, most creatures) gets no
+  clothing words at all, neither a garment nor bare, only what the request gives it, then
   the light source and where it falls, then the props and signs that make the request's abstract words visible
   (saying whose each one is); a mark on someone's body (a tattoo, a scar, a wound, blood) only when the request asks
   for it; a selected Clothing, Lighting or Mood & Tone entry is shown as visible things. Never

@@ -13,8 +13,11 @@ from ....presets import get_director_preset
 from .triggers import all_text, data_triggers
 
 
-# A collared garment and a leash for an animal are everyday words, not kink.
-_COLLARED = r"collared(?! (?:shirts?|blouses?|dress(?:es)?|jackets?|coats?|tops?|polos?|sweaters?|uniforms?))"
+# A collared garment and a leash for an animal are everyday words, not kink: "collared" right before a garment
+# ("a collared shirt", "a high-collared tunic" in a live safe prompt) is that garment's collar; before anything else
+# ("a collared slave", "leather-collared") it stays a kink word.
+_COLLARED = (r"collared(?! (?:shirts?|blouses?|dress(?:es)?|jackets?|coats?|overcoats?|tops?|polos?|sweaters?|"
+             r"uniforms?|tunics?|robes?|gowns?|cloaks?|capes?|vests?|cardigans?|hoodies?|kimonos?|tailcoats?))")
 _LEASH = (r"(?<!dog on a )(?<!dog's )(?<!puppy on a )(?<!dog on )leash(?:ed)?"
           r"(?! (?:on|for|to) (?:a |the |his |her |their )?(?:dog|puppy|pet)s?\b)")
 

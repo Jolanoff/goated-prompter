@@ -85,7 +85,9 @@ class SceneVariety(Harness):
         # Local models added wounds and blood as "marks" for a request's abstract words, and dressed animals.
         self.assertIn("a mark on someone's body (a tattoo, a scar, a wound, blood) only when the request asks for it",
                       system)
-        self.assertIn("an animal or creature only what the request gives it", system)
+        # A live set tagged Pikachu "bare": a character that wears no clothes by nature gets no clothing words.
+        self.assertIn("a character that wears no clothes by nature (an animal, most creatures) gets no clothing words "
+                      "at all, neither a garment nor bare, only what the request gives it", system)
         self.assertIn("(another part of the place when the place is themed; the same spot and background in every image when it is locked)", system)
 
     def test_each_person_has_an_expression_field_for_expression_vocabulary(self):
