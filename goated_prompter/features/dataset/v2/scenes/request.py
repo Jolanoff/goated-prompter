@@ -16,9 +16,9 @@ from ..triggers import brief_triggers, owner, run_style
 
 from .entries import entry_cap
 from .settings import ADULT_SUBJECT_FIELDS, FACES, FIELDS, KNOWN_SUBJECT_FIELDS, MAX_FIELD, SHOWS, SUBJECT_FIELDS
-from .texts import (ASPECT_RULE, COMPOSE_SYSTEM, CONSISTENCY_RULE, DEALT_FRAME_RULE, DETAILS_RULE, ENTRY_RULE, FRAME_RULE,
-                    GUIDED_RULE, LABELS_RULE, LOOK_RULE, NO_COLOR_RULE, NO_PEOPLE_RULE, NSFW_RULE, PLACE_RULE, SFW_RULE,
-                    VOCABULARY_RULES)
+from .texts import (ASPECT_RULE, CAMERA_RULE, COMPOSE_SYSTEM, CONSISTENCY_RULE, DEALT_FRAME_RULE, DETAILS_RULE,
+                    ENTRY_RULE, FRAME_RULE, GUIDED_RULE, LABELS_RULE, LOOK_RULE, NO_COLOR_RULE, NO_PEOPLE_RULE,
+                    NSFW_RULE, PLACE_RULE, SFW_RULE, VOCABULARY_RULES)
 
 # Where an earlier image's summary (checks._summary) holds each part: a locked part's first version is copied from it,
 # and already_used never lists a locked part as something to avoid.
@@ -97,7 +97,8 @@ def director_emphasis(brief):
             f"and emphasizes, never what happens, how the act is worded or where everyone is:\n{preset.instructions}")
 
 
-def _system(brief, errors, vocabulary="", entry_cap=None, places=False, looks=False, details=False):
+def _system(brief, errors, vocabulary="", entry_cap=None, places=False, looks=False, details=False, cameras=False,
+            frames=False):
     content = NSFW_RULE if brief["path"] == "nsfw_character" else SFW_RULE
     if not brief["characters"]:
         content += "\n" + NO_PEOPLE_RULE
@@ -112,6 +113,8 @@ def _system(brief, errors, vocabulary="", entry_cap=None, places=False, looks=Fa
         system += "\n\n" + PLACE_RULE
     if looks:
         system += "\n\n" + LOOK_RULE
+    if cameras:
+        system += "\n\n" + CAMERA_RULE
     if details:
         system += "\n\n" + DETAILS_RULE
     if emphasis := director_emphasis(brief):
@@ -121,7 +124,7 @@ def _system(brief, errors, vocabulary="", entry_cap=None, places=False, looks=Fa
         system += "\n\n" + CONSISTENCY_RULE
     if known := known_labels(brief):
         system += "\n\n" + FRAME_RULE.format(known=", ".join(sorted(known)))
-        if deals_frames(brief):
+        if frames:
             system += " " + DEALT_FRAME_RULE
     if rule := shape_rule(brief_aspect(brief), ASPECT_RULE):
         system += "\n\n" + rule
@@ -204,7 +207,9 @@ def compose_instruction(brief, images, earlier=(), errors=(), vocabulary="", ent
     return PromptInstruction(system_message=_system(brief, errors, vocabulary, entry_cap,
                                                     any("place" in image for image in images),
                                                     any("looks" in image for image in images),
-                                                    any("details" in image for image in images)),
+                                                    any("details" in image for image in images),
+                                                    any("camera" in image for image in images),
+                                                    any("frame" in image for image in images)),
                              user_message=compose_message(brief, images, earlier, vocabulary, entries_used),
                              model_family=brief["_family"], diagnostic_stage="dataset_v2:scenes",
                              max_tokens=per_image * count, hard_max_tokens=per_image * count,

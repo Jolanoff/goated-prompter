@@ -1,0 +1,28 @@
+{
+ "about": "Held-out requests for tests/eval/camera.py (--cases), labelled before any run and never used to set a threshold (camera.SUIT_Z) or to write the built-in cameras. Same fields as camera.json.",
+ "cases": [
+  {"request": "a woman lounging on a bed with her cat", "action": "lounging on a bed", "aspect": "2:3", "lies": true,
+   "expect": ["lying seen from above"]},
+  {"request": "a man sunbathing on the beach", "action": "sunbathing", "aspect": "16:9", "lies": true,
+   "expect": ["lying along the frame", "lying seen from above"]},
+  {"request": "a student studying at a desk", "action": "studying at a desk", "aspect": "4:5",
+   "expect": ["sitting", "any pose"]},
+  {"request": "a runner jogging in the park", "action": "jogging", "aspect": "9:16", "expect": ["standing", "any pose"]},
+  {"request": "a couple slow dancing", "action": "slow dancing", "subject": "a couple", "cast": 2, "aspect": "4:5",
+   "expect": ["facing each other", "standing"]},
+  {"request": "two people shaking hands", "action": "shaking hands", "cast": 2, "aspect": "1:1",
+   "expect": ["facing each other"]},
+  {"request": "a band performing on stage", "action": "performing on stage", "subject": "a band", "cast": 4,
+   "aspect": "16:9", "expect": ["lined up across the frame", "gathered in depth", "standing"]},
+  {"request": "a family having a picnic", "action": "having a picnic", "subject": "a family", "cast": 4,
+   "aspect": "3:4", "expect": ["sitting", "gathered in depth"]},
+  {"request": "a woman in a cafe, close-up", "action": "drinking coffee", "camera": "close-up", "level": "themed",
+   "parts": {"shot": "close"}, "expect": ["any pose", "sitting"]},
+  {"request": "a man crouching to tie his shoe, feet visible", "action": "crouching to tie his shoe",
+   "camera": "feet visible", "level": "themed", "needs": "full body", "expect": ["sitting"]},
+  {"request": "a woman reclining by the pool, high angle", "action": "reclining by the pool", "camera": "high angle",
+   "level": "themed", "parts": {"angl": "high"}, "aspect": "9:16", "lies": true, "expect": ["lying seen from above"]},
+  {"request": "a known detective reading a letter", "action": "reading a letter", "known": true,
+   "expect": ["any pose", "standing", "sitting"]}
+ ]
+}

@@ -25,6 +25,10 @@ built elsewhere is asked again. Each image's place is paired with its dealt pose
 Objects & Props (props.py): every image is suggested one object from the selected Objects & Props packs, the ones the
 request names first, else one from the groups that suit its own dealt pose and place (none when nothing does). Every image's pose, place, object and people (looks.py) are dealt together, so they make one scene.
 
+Cameras (camera.py): every image is dealt one whole camera (shot, angle and view) that suits its dealt pose, the image
+shape and what the request asks to show, keeping the request's own camera words; a known character's frame is the
+dealt shot's. The user's own Camera & Composition packs stay suggestions instead.
+
 Optional pack features: entries that need more people than the cast (a pack's "people") are removed before anything
 else (fit_cast), and so are entries with a slot ("holding [Kitchen-and-Dining]") that names a pack or category the run
 did not select (only_fillable). A slot that is kept stays as written: the writer sees the pack it names among the
@@ -73,6 +77,7 @@ from .actions import action_plan, deal_actions
 from .entries import _entry_key, deal_frames, _only, _shuffled, cast_size, deal_hands, entry_cap, fit_cast, offered_groups, requested_entries, requested_words, required_frame
 from .request import _system, compose_instruction, compose_message, deals_frames, known_labels, slot_inputs, subject_fields, trigger_notes, varied_labels
 from .settings import ACTIONS_CATEGORY, BATCH, EARLIER, KNOWN_SUBJECT_FIELDS, ROUNDS, SECTIONS, SUBJECT_FIELDS, VOCABULARY_SAMPLE
+from .camera import CAMERA, camera_frames, camera_groups, deal_cameras
 from .looks import SUBJECTS, deal_looks, look_groups, look_words, requested_details
 from .places import SPACES, place_plan
 from .props import OBJECTS, deal_props
@@ -147,6 +152,14 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
             plan["looks"], plan["look_words"] = dealt_looks, look_words(looks, brief, dealt_looks)
         # What the request says each person looks like holds in every image, looks or not.
         plan["details"] = requested_details(brief, looks)
+        # The camera of every image, from the built-in cameras, for its pose, the image shape and what must show; the
+        # user's own Camera & Composition packs stay suggestions. Dealt last, so every other deal is seeded as before.
+        own_cameras = any(group["category"] == CAMERA for group in groups)
+        cameras = [] if guided or own_cameras else camera_groups(catalog)
+        if cameras and (dealt_cameras := deal_cameras(brief, cameras, total, rng, dealt)):
+            plan["cameras"] = dealt_cameras
+            if brief["_known"] and (frames := camera_frames(dealt_cameras)):
+                plan["frames"] = frames  # the known characters' frame is the dealt shot's
         for start in range(0, total, BATCH):
             numbers = list(range(start + 1, min(total, start + BATCH) + 1))
             earlier = [_summary(scenes[number]) for number in sorted(scenes)][-EARLIER:]

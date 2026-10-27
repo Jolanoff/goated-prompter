@@ -180,9 +180,11 @@ class SceneVariety(Harness):
 
     def test_a_request_that_keeps_the_camera_is_dealt_no_frames(self):
         # A live request asked for the feet; the frames dealt to a third of the images stopped at the hips, and the
-        # writer followed the deal over the request.
+        # writer followed the deal over the request. A camera the request keeps in words no camera part holds decides
+        # the camera and the framing on its own (scenes/camera.py; test_dataset_camera.py covers the dealt ones).
         self.brief["characters"][0]["known"] = True
         self.brief["consistency"] = {**self.brief["consistency"], "action": "themed", "camera": "themed"}
+        self.brief["kept_words"] = {**(self.brief.get("kept_words") or {}), "camera": "from behind"}
         known = {**self.scene("bedroom"), "frame": {"man 1": {"shows": "full body", "face": "visible"},
                                                      "man 2": {"shows": "full body", "face": "visible"}},
                  "subjects": {**self.scene("x")["subjects"], "man 1": {"expression": "a smile"}}}

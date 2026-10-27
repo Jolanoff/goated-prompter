@@ -1,0 +1,232 @@
+{
+  "name": "Camera",
+  "category": "Camera & Composition",
+  "always": true,
+  "description": "Cameras dealt to every image: a shot size, a camera height and the side it sees the subjects from in each entry, grouped by the body positions they show clearly; shapes lists the image shapes a group fits.",
+  "groups": [
+    {
+      "group": "any pose",
+      "words": [
+        "any pose"
+      ],
+      "entries": [
+        "extreme wide shot with slightly low angle and front view",
+        "wide shot with high angle and side view",
+        "close-up shot with low angle and three-quarter view",
+        "full shot with slightly high angle and front view",
+        "medium long shot with slightly low angle and side view",
+        "medium shot with eye-level angle and front view",
+        "extreme wide shot with slightly high angle and three-quarter view",
+        "full shot with high angle and side view",
+        "wide shot with low angle and front view",
+        "medium long shot with high angle and three-quarter view",
+        "close-up shot with eye-level angle and side view",
+        "medium shot with slightly low angle and three-quarter view"
+      ]
+    },
+    {
+      "group": "standing",
+      "words": [
+        "standing",
+        "stands",
+        "walking",
+        "walks",
+        "strolling",
+        "running",
+        "posing",
+        "leaning",
+        "dancing",
+        "upright"
+      ],
+      "entries": [
+        "extreme wide shot with low angle and three-quarter view",
+        "wide shot with slightly low angle and front view",
+        "full shot with ground-level angle and side view",
+        "medium long shot with eye-level angle and front view",
+        "medium shot with slightly high angle and side view",
+        "close-up shot with high angle and three-quarter view",
+        "extreme wide shot with low angle and front view",
+        "wide shot with slightly low angle and side view",
+        "full shot with eye-level angle and three-quarter view",
+        "medium long shot with slightly high angle and front view",
+        "close-up shot with high angle and side view",
+        "wide shot with ground-level angle and three-quarter view"
+      ]
+    },
+    {
+      "group": "sitting",
+      "words": [
+        "sitting",
+        "sits",
+        "seated",
+        "kneeling",
+        "kneels",
+        "crouching",
+        "squatting",
+        "perched",
+        "cross-legged"
+      ],
+      "entries": [
+        "extreme wide shot with eye-level angle and three-quarter view",
+        "wide shot with high angle and front view",
+        "full shot with low angle and side view",
+        "medium long shot with slightly high angle and side view",
+        "medium shot with slightly low angle and front view",
+        "close-up shot with slightly high angle and three-quarter view",
+        "extreme wide shot with high angle and front view",
+        "wide shot with low angle and side view",
+        "medium long shot with slightly low angle and three-quarter view",
+        "full shot with eye-level angle and front view",
+        "medium shot with eye-level angle and side view",
+        "close-up shot with slightly low angle and three-quarter view"
+      ]
+    },
+    {
+      "group": "lying along the frame",
+      "words": [
+        "lying",
+        "lies",
+        "laying",
+        "reclining",
+        "sleeping",
+        "asleep",
+        "napping",
+        "lounging",
+        "sprawled",
+        "sunbathing",
+        "on all fours",
+        "crawling"
+      ],
+      "shapes": [
+        "square",
+        "wide"
+      ],
+      "entries": [
+        "extreme wide shot with ground-level angle and side view",
+        "wide shot with low angle and three-quarter view",
+        "full shot with eye-level angle and side view",
+        "medium long shot with slightly high angle and three-quarter view",
+        "medium shot with low angle and side view",
+        "extreme wide shot with ground-level angle and three-quarter view",
+        "wide shot with eye-level angle and side view",
+        "full shot with slightly high angle and three-quarter view",
+        "medium long shot with low angle and side view",
+        "medium shot with eye-level angle and three-quarter view"
+      ]
+    },
+    {
+      "group": "lying seen from above",
+      "words": [
+        "lying",
+        "lies",
+        "laying",
+        "reclining",
+        "sleeping",
+        "asleep",
+        "napping",
+        "lounging",
+        "sprawled",
+        "sunbathing",
+        "on all fours",
+        "crawling"
+      ],
+      "entries": [
+        "extreme wide shot with overhead angle and top-down view",
+        "wide shot with high angle and end-on view",
+        "full shot with slightly high angle and end-on view",
+        "medium long shot with overhead angle and top-down view",
+        "medium shot with eye-level angle and end-on view",
+        "extreme wide shot with ground-level angle and end-on view",
+        "close-up shot with overhead angle and top-down view",
+        "wide shot with slightly high angle and end-on view",
+        "full shot with overhead angle and top-down view",
+        "medium long shot with high angle and end-on view",
+        "extreme wide shot with eye-level angle and end-on view",
+        "medium shot with overhead angle and top-down view"
+      ]
+    },
+    {
+      "group": "facing each other",
+      "words": [
+        "facing",
+        "face to face",
+        "hugging",
+        "hug",
+        "embracing",
+        "embrace",
+        "kissing",
+        "kiss",
+        "talking",
+        "conversation",
+        "holding hands",
+        "shaking hands",
+        "greeting",
+        "cuddling",
+        "arguing"
+      ],
+      "entries": [
+        "extreme wide shot with eye-level angle and side view",
+        "wide shot with slightly low angle and three-quarter view",
+        "full shot with slightly high angle and side view",
+        "medium long shot with low angle and three-quarter view",
+        "medium shot with high angle and side view",
+        "close-up shot with eye-level angle and three-quarter view",
+        "extreme wide shot with slightly low angle and side view",
+        "full shot with high angle and three-quarter view",
+        "wide shot with slightly high angle and side view",
+        "medium shot with low angle and three-quarter view",
+        "medium long shot with eye-level angle and side view"
+      ]
+    },
+    {
+      "group": "lined up across the frame",
+      "words": [
+        "lined up",
+        "group",
+        "team",
+        "crew",
+        "band",
+        "crowd"
+      ],
+      "shapes": [
+        "square",
+        "wide"
+      ],
+      "entries": [
+        "extreme wide shot with eye-level angle and front view",
+        "wide shot with slightly high angle and three-quarter view",
+        "full shot with slightly low angle and three-quarter view",
+        "medium long shot with low angle and front view",
+        "medium shot with high angle and three-quarter view",
+        "extreme wide shot with slightly high angle and front view",
+        "wide shot with eye-level angle and front view",
+        "full shot with low angle and three-quarter view",
+        "medium long shot with slightly low angle and front view",
+        "wide shot with high angle and three-quarter view"
+      ]
+    },
+    {
+      "group": "gathered in depth",
+      "words": [
+        "lined up",
+        "group",
+        "team",
+        "crew",
+        "band",
+        "crowd"
+      ],
+      "entries": [
+        "extreme wide shot with high angle and three-quarter view",
+        "wide shot with slightly high angle and front view",
+        "full shot with slightly low angle and side view",
+        "medium long shot with eye-level angle and three-quarter view",
+        "medium shot with high angle and front view",
+        "extreme wide shot with slightly high angle and side view",
+        "wide shot with eye-level angle and three-quarter view",
+        "full shot with slightly low angle and front view",
+        "medium long shot with high angle and side view",
+        "medium shot with slightly high angle and three-quarter view"
+      ]
+    }
+  ]
+}

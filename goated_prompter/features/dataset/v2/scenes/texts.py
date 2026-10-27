@@ -201,6 +201,25 @@ animal, a creature) gets a new look of its own in every image (another breed, co
 request describes it or fixed keeps it the same."""
 
 
+# Whenever images are dealt a built-in camera (scenes/camera.py): no check asks a scene again for it.
+CAMERA_RULE = """CAMERAS
+Every image in IMAGES names its camera ("camera"): a shot size, a camera height and the side the camera sees the
+subjects from, chosen to keep what the request needs in view and to suit the image's pose and shape. The scene's camera
+is that camera, written as the camera field asks, with its shot size, height and side kept. The shot alone decides
+how much of each subject shows: an extreme wide or wide shot shows the subjects whole within their surroundings, a
+full shot every subject whole (a person head to feet), a medium long shot a person head to knees, a medium shot head
+to hips, and a close-up a face or one detail. A shot frames every person from the head and only says how far down
+they show: each person in the image keeps their head and upper body in view, so everyone stays recognizable, whatever
+the act and however their bodies lie; when one body runs another way (lying, bent over, kneeling behind), choose the
+arrangement and where the camera stands so every head is in the frame, never a person cut to their torso or one body
+part. Only a close-up the request itself asks for may show a detail without them. The height only says where the
+camera is and the side only where it looks from, never where the frame cuts a body. Inside that shot, keep everyone and everything the request names in
+view, with what they do and touch and where they are relative to each other and to the things it names: arrange the
+subjects, their facing and the spacing between them for it, and fill the frame; never change the act or crop out
+what the request needs to fit the camera. The request's own camera words come first: where they ask for something
+else, follow them and keep the rest of the dealt camera."""
+
+
 # Whenever the request says how someone looks (scenes/looks.py requested_details), with or without looks: requested
 # details no field holds (a beard, tattoos, an age) were lost in most live images.
 DETAILS_RULE = """DETAILS

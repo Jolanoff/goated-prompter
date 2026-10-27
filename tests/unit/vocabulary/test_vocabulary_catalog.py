@@ -314,12 +314,14 @@ class Library(unittest.TestCase):
         data = {"name": "Places", "category": "Spaces", "always": True,
                 "groups": [{"group": "bedroom", "words": ["His Room", "my room", "his room"], "adult_default": True,
                             "worlds": ["everyday", "fantasy", "everyday"], "entries": ["bedroom with a window", "attic bedroom"]},
-                           {"group": "garden", "words": ["gardening"], "entries": ["a garden"]}]}
+                           {"group": "garden", "words": ["gardening"], "shapes": ["wide", "square", "wide"],
+                            "entries": ["a garden"]}]}
         name, category, entries, description, people, groups, always = catalog._checked(data)
         self.assertEqual(entries, ["bedroom with a window", "attic bedroom", "a garden"], "the pack's entries are its groups'")
         self.assertEqual(groups, [{"name": "bedroom", "words": ["his room", "my room"], "adult_default": True,
                                    "worlds": ["everyday", "fantasy"], "entries": ["bedroom with a window", "attic bedroom"]},
-                                  {"name": "garden", "words": ["gardening"], "entries": ["a garden"]}])
+                                  {"name": "garden", "words": ["gardening"], "shapes": ["wide", "square"],
+                                   "entries": ["a garden"]}])
         self.assertTrue(always)
         saved = import_pack("places.json", json.dumps({**data, "always": False}), self.root)
         self.assertEqual((saved["entries"], saved["groups"]), (entries, groups), "an import keeps its groups")
@@ -341,7 +343,8 @@ class Library(unittest.TestCase):
                        {"groups": [group(words=[])]}, {"groups": [group(words=["x"] * 101)]},
                        {"groups": [group(), group(group="h", entries=["A"])]}, {"groups": [group(), group()]},
                        {"groups": [group(adult_default="yes")]}, {"groups": [group(more=1)]},
-                       {"groups": [group(worlds=[])]}, {"groups": [group(worlds=["the moon"])]}):
+                       {"groups": [group(worlds=[])]}, {"groups": [group(worlds=["the moon"])]},
+                       {"groups": [group(shapes=[])]}, {"groups": [group(shapes=["round"])]}):
             with self.subTest(broken=broken), self.assertRaises(ValueError):
                 catalog._checked({"name": "Places", "category": "Spaces", **({"entries": ["a"]} if "groups" not in broken
                                                                              else {}), **broken})

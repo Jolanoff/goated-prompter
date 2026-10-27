@@ -99,7 +99,7 @@ class Understanding(unittest.TestCase):
 
     def test_understanding_never_chooses_vocabulary(self):
         result, calls = self.understand([TWO_MEN], subject="2 adult men in an explicit scene", nsfw=True)
-        self.assertEqual(result["version"], 17)
+        self.assertEqual(result["version"], 18)
         self.assertNotIn("intent", result)
         self.assertEqual(set(calls[0].json_schema["properties"]), set(understanding.MODEL_FIELDS))
         for word in ("pack", "vocabulary"):
@@ -140,9 +140,28 @@ class Understanding(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "invalid answer twice"):
             self.understand([broken, broken])
 
+    def test_the_framing_range_and_facing_are_kept_and_optional(self):
+        # How near and how far every image's camera may frame the request, and which way its subjects face
+        # (options.dataset.FRAMINGS, FACINGS); the cameras stay inside it (scenes/camera.py).
+        answer = lambda framing: json.dumps({**json.loads(MAGICAL_SECOND), "framing": framing})
+        result, calls = self.understand([answer({"tightest": "whole", "widest": "surroundings", "facing": "viewer"})],
+                                        aspect="3:2")
+        self.assertEqual(result["framing"], {"tightest": "whole", "widest": "surroundings", "facing": "viewer"})
+        system = " ".join(calls[0].system_message.split())
+        self.assertIn("widest: the farthest step at which what matters most", system)
+        self.assertIn("facing: which way the subjects face", system)
+        self.assertEqual(json.loads(calls[0].user_message)["image_shape"], "wide (3:2)", "the shape the range is for")
+        self.assertEqual(self.understand([answer({"tightest": "partial", "widest": "close", "facing": "sideways"})])[0]
+                         ["framing"], {"tightest": "partial", "widest": "partial", "facing": ""},
+                         "never nearer than tightest; an unknown facing is open")
+        self.assertEqual(self.understand([MAGICAL_SECOND])[0]["framing"], {"tightest": "", "widest": "", "facing": ""},
+                         "missing: every camera stays open")
+        with self.assertRaisesRegex(ValueError, "framing must give tightest and widest"):
+            understanding.validate_brief({**result, "framing": "whole"})
+
     def test_a_saved_version_10_brief_with_intent_stays_readable(self):
         result, _ = self.understand([MAGICAL_SECOND])
-        saved = {**{key: value for key, value in result.items() if key not in ("kept", "consistency", "kept_words", "places")},
+        saved = {**{key: value for key, value in result.items() if key not in ("kept", "consistency", "kept_words", "places", "framing")},
                  "version": 10, "intent": {"elements": [], "relations": []}}
         self.assertEqual(understanding.validate_brief(saved), saved)
 

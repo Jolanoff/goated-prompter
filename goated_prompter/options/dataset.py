@@ -34,6 +34,17 @@ DATASET_SOURCES = ("random", "guided")
 # The world a request belongs to (Understanding names it); a vocabulary group may list the worlds its entries fit
 # ("worlds"), and a run deals only from groups that fit the request's world.
 WORLDS = ("everyday", "historical", "fantasy", "sci-fi")
+# The shapes an aspect ratio makes (dataset/v2/aspect.py); a vocabulary group may list the shapes its entries fit
+# ("shapes"), and a run with a set aspect ratio deals only from groups that fit its shape.
+SHAPES = ("tall", "square", "wide")
+# How far a camera frames the subjects, widest first: with the surroundings and arrangement around them, every subject
+# whole, each subject's main part, or a face or one detail. Understanding names the range every image's camera stays
+# in (the tightest that keeps everything the request needs in view, the widest at which what matters most still
+# reads clearly) and which way the subjects face (FACINGS); dataset/v2/scenes/camera.py deals cameras inside it.
+FRAMINGS = ("surroundings", "whole", "partial", "close")
+# Which way the subjects face: toward the viewer (posing, presenting, on display), toward each other or an act between
+# them, all one way across the scene, or as the image likes.
+FACINGS = ("viewer", "each other", "one way", "free")
 # The shape every image of a dataset is made in (ComfyUI sets it; Auto leaves the scenes free to choose).
 ASPECT_RATIO_NAMES = ("Auto", "1:1", "4:5", "3:4", "2:3", "9:16", "5:4", "4:3", "3:2", "16:9")
 # Like ComfyUI's control: a new seed each run, the same seed, or the last seed plus one.

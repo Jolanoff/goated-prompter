@@ -1,0 +1,30 @@
+{
+ "about": "Tuning requests for tests/eval/camera.py: action and subject are the request's kept words, pose a dealt Actions & Poses entry when there is one; expect lists the camera groups that show the request well (any pose counts only where it is listed); lies marks a body lying level; parts what the request's camera words fix ({facet: a word the part must say}); needs the frame the request asks to show.",
+ "cases": [
+  {"request": "a woman sleeping in a hammock", "action": "sleeping in a hammock", "aspect": "9:16", "lies": true,
+   "expect": ["lying seen from above"]},
+  {"request": "a man lying on the grass", "action": "lying on the grass", "aspect": "16:9", "lies": true,
+   "expect": ["lying along the frame", "lying seen from above"]},
+  {"request": "a woman sitting at a cafe table", "action": "sitting at a table", "aspect": "4:5",
+   "expect": ["sitting", "any pose"]},
+  {"request": "a man walking his dog", "action": "walking his dog", "aspect": "2:3", "expect": ["standing", "any pose"]},
+  {"request": "two friends hugging", "action": "hugging", "subject": "two friends", "cast": 2, "aspect": "1:1",
+   "expect": ["facing each other"]},
+  {"request": "a couple talking over coffee", "action": "talking over coffee", "subject": "a couple", "cast": 2,
+   "expect": ["facing each other", "sitting"]},
+  {"request": "four friends posing for a photo", "action": "posing for a photo", "subject": "four friends", "cast": 4,
+   "aspect": "16:9", "expect": ["lined up across the frame", "gathered in depth", "standing"]},
+  {"request": "a team of builders building a wall", "action": "building a wall", "subject": "a team of builders",
+   "cast": 3, "aspect": "9:16", "expect": ["gathered in depth"]},
+  {"request": "a woman cooking, low angle", "action": "cooking", "camera": "low angle", "level": "themed",
+   "parts": {"angl": "low"}, "expect": ["any pose", "standing"]},
+  {"request": "a woman doing yoga, feet visible", "action": "doing yoga", "camera": "feet visible", "level": "themed",
+   "needs": "full body", "expect": ["any pose", "standing", "sitting"]},
+  {"request": "a knight standing guard, side view", "action": "standing guard", "camera": "side view",
+   "level": "themed", "parts": {"view": "side"}, "expect": ["standing"]},
+  {"request": "a known character dancing", "action": "dancing", "known": true, "expect": ["standing"]},
+  {"request": "a man napping on a sofa, top-down view", "action": "napping on a sofa", "camera": "top-down view",
+   "level": "themed", "parts": {"view": "top-down"}, "aspect": "3:4", "lies": true, "expect": ["lying seen from above"]},
+  {"request": "a woman kneeling in a garden", "action": "kneeling while planting flowers", "expect": ["sitting"]}
+ ]
+}

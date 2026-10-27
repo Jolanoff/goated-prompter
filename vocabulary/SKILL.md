@@ -74,12 +74,13 @@ garage; a word that names only some of a group's entries, like "attic" among bed
 finds the group and the entries it points to), and a word must not mean something else in a request ("film" grain, depth of "field", hair in "waves").
 Each entry belongs to one group. `"worlds"` lists the worlds a group's entries fit (`everyday`, `historical`,
 `fantasy`, `sci-fi`; every world when it gives none): a request in another world never gets them unless it names
-them. `"adult_default": true` marks a group for adult requests that name no place. Words find a group exactly; a
+them. `"shapes"` lists the image shapes a group's entries fit (`tall`, `square`, `wide`; every shape when it gives
+none): a run with that aspect ratio never gets the others. `"adult_default": true` marks a group for adult requests that name no place. Words find a group exactly; a
 small embedding model also finds it by meaning, so a group's name and words should say plainly what its entries are.
 
 A built-in pack with `"always": true` is used in every run, selected or not, after the user's selected packs of its
 category (the `Spaces` places deal a place to every image, `Subjects/Female` and `Subjects/Male` a look to every
-person whose looks vary). Always-on packs stay safe for work and keep entries
+person whose looks vary, `Camera & Composition/Camera` a camera to every image). Always-on packs stay safe for work and keep entries
 distinct: two entries never share most of their words. Do not add an always-on pack unless asked.
 
 ## Categories
@@ -160,6 +161,15 @@ supported? Older entries written with "one person" and "the other person" keep w
   them is only hair (or a shaved head), then eyes and skin tone: build and marks come from the request. Write a look
   as its parts joined by "with" and "and", each ending in what it describes ("shaggy ginger hair with wide green eyes
   and fair skin"): a request fixes the parts it names and every other part varies.
+- `Camera & Composition/Camera` deals a camera to every image while no Camera & Composition pack is selected. An
+  entry is a whole camera, "<shot> with <angle> and <view>", whose parts go together. The shot is one of the sizes
+  `scenes/camera.py` defines for any subject (`extreme wide shot`, `wide shot`, `full shot`, `medium long shot`,
+  `medium shot`, `close-up shot`), never named after a body: a live set of objects got a "head-and-shoulders shot".
+  An angle is the camera's height ("low", "eye-level") and a view the side it looks from, never a body part either: a
+  live writer read "waist-level" and "chest-level" as where the frame cuts the body. A group's words are the body positions its cameras show clearly ("lying", "sitting") or a word that
+  always means several people ("team", "crowd"), never one any number can say ("friends"); a group whose only word is
+  its name fits any pose. A group word never repeats a word of the cameras ("side by side" would stop "side view" from
+  being asked for). Every group has enough cameras, several of them full body, that ten images rarely repeat one.
 - Keep adult content out of `vocabulary/`; it belongs in the user's own imported packs.
 - Every person is an adult.
 

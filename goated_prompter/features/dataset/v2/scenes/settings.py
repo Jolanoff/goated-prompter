@@ -15,9 +15,9 @@ SECTIONS = ("subjects", "actions", "position", "extras", "space", "camera")
 # A cast with known characters (exact-text character triggers) also has "frame": how much of each person the camera
 # shows ("shows", widest first) and whether their face is visible ("face"), data the writer fills for every person so a
 # known character never drops out of the image while the action stays (checks.framing_problems). Each image is dealt
-# the frame its known characters get (entries.deal_frames), so the set spreads over full body, head to knees and head
-# to hips instead of the tight crops a writer picks on its own, unless the request keeps the camera
-# (request.deals_frames).
+# the frame its known characters get, its dealt camera's shot (camera.camera_frames) or else entries.deal_frames, so
+# the set spreads over full body, head to knees and head to hips instead of the tight crops a writer picks on its own,
+# unless the request keeps the camera in its own words (request.deals_frames).
 SHOWS = ("full body", "head to knees", "head to hips", "head and shoulders")
 FACES = ("visible", "hidden")
 AT_LEAST_HIPS = SHOWS[:3]

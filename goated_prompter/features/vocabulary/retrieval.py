@@ -1,13 +1,14 @@
 """Vocabulary retrieval: which entries of a category a text names. Shared by every category: Spaces
-(dataset/v2/scenes/places.py), Actions & Poses (actions.py), Objects & Props (props.py) and the looks (looks.py).
+(dataset/v2/scenes/places.py), Actions & Poses (actions.py), Objects & Props (props.py), the looks (looks.py) and the
+cameras (camera.py).
 Retrieval finds entries; it does not decide what a request allows (Understanding does) or choose a set (selection.py
 does).
 
 Index (groups_of): the groups of the run's selected packs of the category, then of its always-on packs. A grouped
 pack gives its groups (catalog.py); a plain pack's entries are each a group named by the entry. An entry in two packs
 is listed once, where it comes first.
-Constraints: in_world (the request's world), for_cast (the entries made for the cast's number of people) and
-without_said (no entry that says what the request rules out).
+Constraints: in_world (the request's world), in_shape (the image shape), for_cast (the entries made for the cast's
+number of people) and without_said (no entry that says what the request rules out).
 Exact words (exact_hits): a group's words said whole in the text, in order, a plural ending and a possessive "'s"
 aside. A word said inside a longer word that another group says does not count ("water" inside "water aquarium").
 Entry words (said_entries): the entries that say the text's own distinctive words in any form, for packs of plain
@@ -81,9 +82,9 @@ def _spans(said, phrase):
 
 
 def groups_of(catalog, category, selection):
-    """[{"name", "words", "entries", "worlds", "people", "adult", "selected"}]: the selected packs' groups, then the
-    always-on ones'. A group's words include its name; worlds is None when the group fits every world; people is
-    {entry: how many people it needs} for the entries that say so."""
+    """[{"name", "words", "entries", "worlds", "shapes", "people", "adult", "selected"}]: the selected packs' groups,
+    then the always-on ones'. A group's words include its name; worlds and shapes are None when the group fits every
+    world or image shape; people is {entry: how many people it needs} for the entries that say so."""
     chosen = set(selection.get("packs") or ())
     packs = [pack for pack in catalog["packs"] if pack["category"] == category and pack["id"] in chosen]
     packs += [pack for pack in always_on(catalog, category) if pack["id"] not in chosen]
@@ -98,6 +99,7 @@ def groups_of(catalog, category, selection):
                 rows.append({"name": group["name"],
                              "words": list(dict.fromkeys([group["name"].casefold(), *group["words"]])),
                              "entries": own, "worlds": tuple(group["worlds"]) if group.get("worlds") else None,
+                             "shapes": tuple(group["shapes"]) if group.get("shapes") else None,
                              "people": {entry: count for entry, count in (pack.get("people") or {}).items()
                                         if entry in own},
                              "adult": bool(group.get("adult_default")), "selected": pack["id"] in chosen})
@@ -107,6 +109,11 @@ def groups_of(catalog, category, selection):
 def in_world(groups, world):
     """The groups that fit a world (every group when world is None; a group without worlds fits every world)."""
     return [group for group in groups if not world or group["worlds"] is None or world in group["worlds"]]
+
+
+def in_shape(groups, shape):
+    """The groups that fit an image shape (every group when shape is None; a group without shapes fits every shape)."""
+    return [group for group in groups if not shape or group.get("shapes") is None or shape in group["shapes"]]
 
 
 def for_cast(groups, size):

@@ -25,12 +25,13 @@ exactly `{"name", "category", "entries": [texts]}`; its id is `<folder>/<file>`.
 Each file is read on its own: one that cannot be read is reported with its reason and the others still load.
 `GET /api/vocabulary/catalog` returns categories, packs and problems. Adding a category is one entry in each Core file
 plus its folder. Packs carry no compatibility data. Instead of `entries` a pack may hold `groups`:
-`[{"group", "words": [up to MAX_WORDS], "entries", "worlds"?, "adult_default"?}]` (worlds from
-`options.dataset.WORLDS`, every world when none), each entry in one group only; the pack's entries are all its groups' entries. A built-in pack may be `"always": true`: it is
+`[{"group", "words": [up to MAX_WORDS], "entries", "worlds"?, "shapes"?, "adult_default"?}]` (worlds from
+`options.dataset.WORLDS`, every world when none; shapes from `options.dataset.SHAPES`, every image shape when none), each entry in one group only; the pack's entries are all its groups' entries. A built-in pack may be `"always": true`: it is
 loaded for every run, selected or not (`always_on`). The always-on packs are the places of `vocabulary/Spaces/`
 (Everyday-Places, Fantasy-Places, Outer-Space, Backdrops, Fun-and-Creative-Places: groups of 20 to 50, each group's
-places fitting every one of its words) and the looks of `vocabulary/Subjects/` (Female and Male, one group each,
-named `female` and `male`).
+places fitting every one of its words), the looks of `vocabulary/Subjects/` (Female and Male, one group each,
+named `female` and `male`) and the cameras of `vocabulary/Camera & Composition/Camera.json` (groups by the body
+positions they show clearly).
 
 Vocabulary engine (`features/vocabulary/`), shared by every category, Spaces first; each part has one job.
 Understanding (the brief) says what a request asks for and allows; retrieval finds the entries a text names; selection
@@ -108,6 +109,36 @@ character with no look (an animal) still varies. A scene whose person's skin, ha
 telling words or the request's own words is asked again (`look_problems`, `look_words`). With the user's own Subjects
 packs selected, or guided scenes, no look is dealt and the writer chooses as before.
 
+Cameras (`v2/scenes/camera.py`): every image is dealt one whole camera from the built-in cameras (`camera_groups`: the
+always-on Camera & Composition pack), with no model call of its own (`deal_cameras`). A camera is "<shot> with <angle>
+and <view>" ("medium long shot with eye-level angle and three-quarter view"), written so its parts go together; its
+group names the body positions it shows clearly and may list the image shapes it fits (`shapes`). Shot sizes are named
+for any subject, people, animals, creatures, objects or places (`SHOT_SIZES`: extreme wide and wide shots keep the
+surroundings, a full shot every subject whole, medium long and medium shots their main part, a close-up a face or one
+detail; for a person they show full body, head to knees, head to hips and head and shoulders). Per image: only groups
+that fit the aspect ratio's shape (`in_shape`; a lying body is never seen from the side at full length in a tall
+image); only cameras inside the brief's `framing` (Understanding, `framed`): shots no nearer than `tightest`
+(everyone and everything the request names, what they do and touch and where they are relative to each other stay in
+view) and no farther than `widest` (what matters most, the act, interaction, arrangement or detail, still large enough
+to read at this image shape for as many and as big subjects as there are), and views that see the subjects from the
+side they face (`facing`, `VIEW_FACINGS`: a row posing for the viewer is never seen along the row); every shot also
+shows every body part the request asks to show (`required_frame`) and, with a known character, at least head to hips.
+When no camera fits, the widest bound opens first, then the facing; then the groups whose words the image's dealt pose (or the request's action) says (`exact_search`), else those
+the request's words about the people say ("a team"), else the groups for any pose (not by meaning, like looks: the
+groups are too much alike for it). A close-up stays when faces or one detail carry the request; a wide shot is dealt
+when its arrangement needs the surroundings and a distant one never shrinks the act; nothing depends on the cast's
+size. The request's camera words fix the
+parts they name (`requested_parts`: "low angle", "side view", "close-up"), before the framing and facing, and every other part
+varies; whole cameras that already hold the fixed parts come first (the suiting groups', else the any-pose ones', else
+any group's), and only when none does is a part put into the dealt ones (`deal_composed`). A kept camera whose words
+fix no part and name no body part ("from behind") is the request's own: none is dealt. Images that lead to the same
+groups share one deal over those groups split by how much of a subject the shot shows (`deal_spread`), so a set
+spreads over cameras and from far to close; a locked camera is one camera for every image. Each image in IMAGES
+carries its `camera`, the writer gets `CAMERA_RULE` (keep the shot, height and side; what each shot size shows; keep
+everyone and everything the request needs in view; the request's own camera words first) and no check asks a scene
+again for it. A known character's dealt frame is the dealt shot's (`camera_frames`). With the user's own Camera &
+Composition packs selected, or guided scenes, no camera is dealt and the packs stay suggestions as before.
+
 Selection: the Dataset tab's Vocabulary Library selects packs by hand (search, category filter, preview,
 Apply/Cancel); the selected ids are the draft's `vocabulary_packs`, saved with the other Dataset settings. They are
 not part of the review signature, so changing them needs no new Understanding. Confirm checks them against the
@@ -119,7 +150,7 @@ its type (character, style, outfit, object, other), whether code places its exac
 meaning (`on`) or both, and whether it goes first. Only the user knows what a token stands for, so nothing guesses it. A draft or brief from before the list reads its one trigger as an exact "other"
 trigger.
 
-Understanding (brief version 17) records everyone who appears (`characters`: each person, animal, creature, robot or
+Understanding (brief version 18) records everyone who appears (`characters`: each person, animal, creature, robot or
 named character, even when the request is mostly about what they do or where they are; none for an object, product,
 place or style on its own), and code derives the path from that list and the NSFW switch, so the model never judges
 whether "characters are the point" (it listed no one for a man reading in a cafe, a chef or a cat; `python -m
@@ -127,7 +158,10 @@ tests.eval.understanding_cast` runs requests of every kind of cast). It also rec
 attributes, the central activity, what stays fixed and what varies, each character's `appearance` (the request's own words about how that
 person looks, kept only where the user wrote them), plus `places`: the user's words for what surrounds the place
 (`setting`), the `world` of the surroundings and always 6 to 8 `ideas` of where it can happen (for a named place, only
-that place or its kinds). Each kept part has its own words: a time of day is light, the weather is mood, and every
+that place or its kinds), and the `framing` every image's camera stays in: `tightest` and `widest` steps
+(`options.dataset.FRAMINGS`: surroundings, whole, partial, close; the nearest that keeps everything the request needs
+in view, the farthest at which what matters most still reads clearly in the image shape, which Understanding is given)
+and `facing` (`FACINGS`: viewer, each other, one way, free); each "" when unknown, which leaves that side open. Each kept part has its own words: a time of day is light, the weather is mood, and every
 act stays under action. The model fills the parts in `KEPT_ORDER` (who and what happens first), and code
 drops words quoted for clothing or expression that are only the subject's or the action's, and any other part that
 repeats them exactly (`_own_words`). It never reads
@@ -183,9 +217,9 @@ general), every image gets one of those entries and one other; suggestions are o
 and never adds a subject or object only to use one. Only `always` packs are used without a selection (Places and Looks, above): character looks come from the request,
 the approved requirements and the dealt looks, with vocabulary guidance only from manually selected Subjects packs. A known character has
 only an expression in its scene; its look comes from its name, never from the writer or vocabulary. With known
-characters each scene also has a frame per person; each image is dealt the frame its known characters get
-(`deal_frames`), unless the request keeps the camera (the framing, the shot or which body parts must show), which then
-decides how much of everyone the image shows.
+characters each scene also has a frame per person; each image is dealt the frame its known characters get: its
+dealt camera's shot (`camera_frames`), else `deal_frames` when the camera is free; a camera the request keeps in its
+own words decides how much of everyone the image shows.
 A scene holds only the people and their arrangement: subjects, actions, position, space, camera and extras. Each
 position line places its person in the frame relative to the others and names the owner of every body part by
 label, and says which body parts the camera can see; the final prompt describes a body part only when it is visible
@@ -259,7 +293,7 @@ happens, never what it is: an entry showing a different act does not fit.
 | Guided input assignment | `v2/assignments.py` |
 | Vocabulary categories, pack discovery and the vocabulary prompt section | `features/vocabulary/catalog.py` |
 | Optional pack features (people count, slots) | `features/vocabulary/catalog.py`, `v2/scenes/entries.py` `fit_cast`, `features/vocabulary/retrieval.py` `for_cast`, `v2/scenes/slots.py` |
-| Scene composition | `v2/scenes/` (`texts.py` instructions, `request.py` what the writer is asked, `entries.py` vocabulary offered and suggestions dealt, `actions.py` Actions & Poses, `props.py` Objects & Props, `places.py`, `looks.py`, `checks.py` scene checks, `writer.py` batch and retries, `settings.py` limits; `write_scenes` in `__init__.py`) |
+| Scene composition | `v2/scenes/` (`texts.py` instructions, `request.py` what the writer is asked, `entries.py` vocabulary offered and suggestions dealt, `actions.py` Actions & Poses, `props.py` Objects & Props, `places.py`, `looks.py`, `camera.py`, `checks.py` scene checks, `writer.py` batch and retries, `settings.py` limits; `write_scenes` in `__init__.py`) |
 | Final prompts through the Builder | `v2/prompts.py` |
 
 ## Seeds

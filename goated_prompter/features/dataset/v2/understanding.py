@@ -63,16 +63,18 @@ from ....backends.factory import create_backend
 from ....backends.recovery import GenerationRecovery
 from ....contracts import PromptInstruction, effective_model_family
 from ....director_profiles import resolve_director_config
-from ....options.dataset import CONSISTENCY_LEVELS, CONSISTENCY_PARTS, WORLDS
+from ....options.dataset import CONSISTENCY_LEVELS, CONSISTENCY_PARTS, FACINGS, FRAMINGS, WORLDS
 from ...vocabulary.retrieval import content_words
+from .aspect import aspect_shape
 from .consistency import asks_same, resolve
 from .safety import ADULTS_ONLY, NO_ANIMALS, adult_content_request, adults_only_error, minor_reference
 from .triggers import all_text, brief_triggers, data_triggers, personal_numbers
 
-VERSION = 17
-VERSIONS = (9, 10, 11, 12, 13, 14, 15, 16, 17)  # 9 to 16: saved runs (10 with a structured intent no longer read,
-                                                # before 12 no "known", before 13 one trigger string, before 14 no kept,
-                                                # before 15 no consistency, before 16 no places, before 17 no appearance)
+VERSION = 18
+VERSIONS = (9, 10, 11, 12, 13, 14, 15, 16, 17, 18)  # 9 to 17: saved runs (10 with a structured intent no longer read,
+                                                    # before 12 no "known", before 13 one trigger string, before 14 no
+                                                    # kept, before 15 no consistency, before 16 no places, before 17 no
+                                                    # appearance, before 18 no framing)
 PATHS = ("sfw_character", "nsfw_character", "non_character")
 GENDERS = ("male", "female", "custom", "")
 PRONOUNS = ("he", "she", "it", "")
@@ -88,7 +90,8 @@ KEPT_PARTS = CONSISTENCY_PARTS
 KEPT_ORDER = ("subject", "action", "place", "objects", "clothing", "expression", "camera", "light", "mood")
 LEVEL_FIELDS = ("locked", "varied")
 PLACE_FIELDS = ("setting", "world", "ideas")
-MODEL_FIELDS = (*MODEL_BRIEF_FIELDS, "kept", *LEVEL_FIELDS, "places")
+FRAMING_FIELDS = ("tightest", "widest", "facing")
+MODEL_FIELDS = (*MODEL_BRIEF_FIELDS, "kept", *LEVEL_FIELDS, "places", "framing")
 IRREGULAR_PLURALS = {"men": "man", "women": "woman", "people": "person", "children": "child", "feet": "foot",
                      "teeth": "tooth", "mice": "mouse", "geese": "goose"}
 LEGACY_CHARACTER_FIELDS = ("label", "gender", "custom", "pronoun")  # briefs before version 12
@@ -169,6 +172,21 @@ places: where the images can happen:
     ones and less expected ones that still fit, spread over the kinds of place where it fits (at home, work and study,
     public places, travel, outdoors and nature, events and gatherings, performances and shows), at most two of one
     kind.
+framing: how the camera frames every image so the request reads clearly, in these steps from far to near:
+  "surroundings": the subjects small within the place or things around them, in their arrangement;
+  "whole": every subject entirely (a person or animal from head to feet or tail, every object of a set);
+  "partial": each subject's main part from the head, with what they do and touch;
+  "close": a face or one detail fills the image.
+  tightest: the nearest step that still keeps in view everything the request needs: everyone and everything it
+    names, each person recognizable, what they do and touch, where they are relative to each other and to the things
+    it names, and the body parts it asks for.
+  widest: the farthest step at which what matters most (the act, the interaction, the arrangement or the detail the
+    request is about) is still large and clear enough to read in the image shape given, for as many subjects as
+    there are and as big as they are. Never nearer than tightest; the same step when only one fits.
+  facing: which way the subjects face, so the camera sees them from that side: "viewer" when they pose or present
+    toward the viewer (a portrait, a group photo, things on display); "each other" when they turn toward each other
+    or to an act between them; "one way" when they all face the same way across the scene (moving, racing, watching
+    something in it); "free" when the request does not decide it.
 must: what the user requires beyond what summary says (an exact count, something in every image), as short phrases
   keeping the user's meaning. Only what the request or rules actually say; never repeat summary. Usually few; [] when
   none.
@@ -221,7 +239,10 @@ def _schema():
            for field in LEVEL_FIELDS},
         "places": {"type": "object", "additionalProperties": False, "required": list(PLACE_FIELDS), "properties": {
             "setting": text, "world": {"type": "string", "enum": list(WORLDS)},
-            "ideas": {"type": "array", "maxItems": MAX_IDEAS, "items": text}}}}}
+            "ideas": {"type": "array", "maxItems": MAX_IDEAS, "items": text}}},
+        "framing": {"type": "object", "additionalProperties": False, "required": list(FRAMING_FIELDS), "properties": {
+            "tightest": {"type": "string", "enum": list(FRAMINGS)}, "widest": {"type": "string", "enum": list(FRAMINGS)},
+            "facing": {"type": "string", "enum": list(FACINGS)}}}}}
 
 
 def instruction(data, family="qwen", errors=()):
@@ -232,6 +253,8 @@ def instruction(data, family="qwen", errors=()):
     if errors:
         system += "\n\nYour previous answer broke these rules. Return the complete corrected JSON:\n- " + "\n- ".join(errors)
     user = {"request": data["subject"].strip(), "rules": _rules(data)}
+    if shape := aspect_shape(data.get("aspect", "Auto")):
+        user["image_shape"] = f'{shape[0]} ({data["aspect"]})'
     if triggers := data_triggers(data):
         user["triggers"] = [{"number": number, "text": trigger["text"], "type": trigger["kind"]}
                             for number, trigger in enumerate(triggers, 1)]
@@ -306,6 +329,8 @@ def recover(value):
     value["places"] = {"setting": _optional_text(places.get("setting")) or "",
                        "world": places.get("world") if places.get("world") in WORLDS else WORLDS[0],
                        "ideas": (_phrases(places.get("ideas")) or [])[:MAX_IDEAS]}
+    # framing is optional as well: a missing or unknown step is "", which leaves the camera open on that side.
+    value["framing"] = framing_facts(value.get("framing"))
     for key in ("summary", "fixed", "randomized"):
         if key in value and (text := _optional_text(value[key])) is not None:
             value[key] = text
@@ -319,7 +344,7 @@ def model_errors(value, nsfw, data=None):
     """Contract breaks of the brief fields the model must correct itself; the retry lists them (a stray "intent" key
     from an older prompt is ignored). Optional texts (recover) are never errors:
     fixed and randomized may be empty, and an empty summary falls back to the request."""
-    if set(value) - {"intent", "path", "kept", *LEVEL_FIELDS, "places"} != set(MODEL_BRIEF_FIELDS):
+    if set(value) - {"intent", "path", "kept", *LEVEL_FIELDS, "places", "framing"} != set(MODEL_BRIEF_FIELDS):
         return [f"Use exactly the keys {', '.join(MODEL_FIELDS)}."]
     errors = []
     for key in ("summary", "fixed", "randomized"):
@@ -458,6 +483,17 @@ def _beyond_triggers(items, data):
     return [item.strip() for item in items if " ".join(item.casefold().split()) not in said]
 
 
+def framing_facts(value):
+    """The brief's framing: tightest and widest steps (FRAMINGS) and facing (FACINGS), each "" when missing or unknown;
+    a widest step nearer than the tightest one is the tightest one (nothing the request needs leaves the frame)."""
+    value = value if isinstance(value, dict) else {}
+    tightest = value.get("tightest") if value.get("tightest") in FRAMINGS else ""
+    widest = value.get("widest") if value.get("widest") in FRAMINGS else ""
+    if tightest and widest and FRAMINGS.index(widest) > FRAMINGS.index(tightest):
+        widest = tightest
+    return {"tightest": tightest, "widest": widest, "facing": value.get("facing") if value.get("facing") in FACINGS else ""}
+
+
 def kept_parts(quotes, data):
     """The parts of the image the user mentions, in KEPT_PARTS order: a part counts only when the words the model
     quoted for it are really in what the user wrote (request, rules, guided inputs), so a part nobody mentioned is
@@ -495,6 +531,7 @@ def apply_rules(value, data):
             "consistency": consistency, "kept_words": {part: value["kept"][part] for part in mentioned},
             "places": place_facts(value.get("places") or recover({})["places"],
                                   value["kept"]["place"] if "place" in mentioned else "", data),
+            "framing": framing_facts(value.get("framing")),
             "must": _beyond_triggers(value["must"], data), "avoid": _beyond_triggers(value["avoid"], data),
             "input": copied_input(data), "settings": copied_settings(data)}
     validate_content(brief, data)
@@ -514,6 +551,8 @@ def validate_brief(brief):
         expected = (*expected, "consistency", "kept_words")
     if brief["version"] >= 16:
         expected = (*expected, "places")
+    if brief["version"] >= 18:
+        expected = (*expected, "framing")
     if set(brief) != set(expected):
         raise ValueError(f"The brief needs exactly: {', '.join(expected)}.")
     if not isinstance(brief["summary"], str) or not brief["summary"].strip():
@@ -533,6 +572,12 @@ def validate_brief(brief):
                               or not isinstance(places["ideas"], list) or len(places["ideas"]) > MAX_IDEAS
                               or any(not isinstance(idea, str) or not idea.strip() for idea in places["ideas"])):
         raise ValueError(f"places must give a setting, a world ({', '.join(WORLDS)}) and at most {MAX_IDEAS} ideas.")
+    framing = brief.get("framing")
+    if "framing" in brief and (not isinstance(framing, dict) or set(framing) != set(FRAMING_FIELDS)
+                               or framing["tightest"] not in ("", *FRAMINGS) or framing["widest"] not in ("", *FRAMINGS)
+                               or framing["facing"] not in ("", *FACINGS)):
+        raise ValueError(f'framing must give tightest and widest ({", ".join(FRAMINGS)}) and facing '
+                         f'({", ".join(FACINGS)}), each "" when unknown.')
     for key in ("fixed", "randomized"):  # optional: "" when the request fixes or varies nothing in particular
         if not isinstance(brief[key], str):
             raise ValueError(f"{key} must be text.")
