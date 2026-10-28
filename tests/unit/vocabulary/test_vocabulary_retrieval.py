@@ -60,6 +60,23 @@ class Constraints(unittest.TestCase):
         self.assertEqual([row["name"] for row in retrieval.match(rows, "shaking hands", entry_words=True)],
                          ["greetings"], "an entry that says the words comes first")
 
+    def test_a_group_word_of_several_words_is_said_in_any_order_with_words_between(self):
+        # An act that put a word between the words of its group's trigger never said it, so another group's single
+        # word won.
+        rows = [{"name": "sword drills", "words": ["sword", "drawing a sword"], "entries": ["A drawing a blade"],
+                 "worlds": None, "adult": False, "selected": True},
+                {"name": "sketching", "words": ["drawing", "sketching"], "entries": ["A with a sketchbook"],
+                 "worlds": None, "adult": False, "selected": True},
+                {"name": "grooming", "words": ["brushing hair"], "entries": ["A brushing B's hair"],
+                 "worlds": None, "adult": False, "selected": True}]
+        names = lambda text: [row["name"] for row in retrieval.match(rows, text, entry_words=True)]
+        self.assertEqual(names("drawing his sword"), ["sword drills"], "the group whose word covers more of the act")
+        self.assertEqual(names("brushing her friend's hair"), ["grooming"])
+        self.assertEqual(names("hair brushing"), ["grooming"], "any order")
+        self.assertEqual(names("drawing"), ["sketching"])
+        self.assertEqual([row["name"] for row in retrieval.match(rows, "brushing her friend's hair")], [],
+                         "without entry words a group word is still said whole and in order")
+
 
 class Embedder:
     """Scripted vectors by text (unknown texts point nowhere in particular); counts the texts it embeds."""
@@ -185,6 +202,35 @@ class Meaning(unittest.TestCase):
                          "a group that stands out by meaning is found")
         self.assertEqual(retrieval.match(pool, "a sleeping chamber", embeddings, entry_words=True), [],
                          "with entry words, words decide")
+
+    def six(self, *rows, text, near):
+        """Six groups (rows first, then filler), one-hot meanings, and the text's meaning at the group named near."""
+        names = [row["name"] for row in rows]
+        pool = [*rows, *(group(name, entries=[f"A at the {name}"]) for name in
+                         ("kitchen", "beach", "garage", "garden", "office", "harbor") if name not in names)][:6]
+        vectors = {retrieval.group_text(row): [float(number == index) for number in range(6)]
+                   for index, row in enumerate(pool)}
+        vectors[text] = [.95 if row["name"] == near else .05 for row in pool]
+        return pool, self.embeddings(Embedder(vectors))
+
+    def test_with_entry_words_a_group_found_alone_stays_whatever_the_other_words_mean(self):
+        # A live act lost its group because its other words lowered the group's meaning score against the other
+        # offered groups, and the same act kept it when fewer packs were selected.
+        rows = (group("stretching", entries=["A bending forward"]), group("office", entries=["A on a mat by a desk"]))
+        pool, embeddings = self.six(*rows, text="stretching on a mat", near="office")
+        self.assertEqual([row["name"] for row in retrieval.match(pool, "stretching on a mat", embeddings,
+                                                                 entry_words=True)], ["stretching"])
+        self.assertEqual([row["name"] for row in retrieval.match(pool, "stretching on a mat", embeddings)], ["office"],
+                         "without entry words meaning still judges a partial word match")
+
+    def test_with_entry_words_meaning_settles_groups_that_compete_for_different_words(self):
+        rows = (group("fixing", entries=["A at a workbench"]), group("bike", entries=["A riding along a path"]))
+        pool, embeddings = self.six(*rows, text="fixing his old bike", near="fixing")
+        self.assertEqual([row["name"] for row in retrieval.match(pool, "fixing his old bike", embeddings,
+                                                                 entry_words=True)], ["fixing"])
+        both = [group("fixing", entries=["A at a workbench"]), group("bike", entries=["A riding along a path"])]
+        self.assertEqual([row["name"] for row in retrieval.match(both, "fixing his bike", entry_words=True)],
+                         ["fixing", "bike"], "groups that explain every word between them all stay")
 
     def test_texts_are_embedded_once_and_again_only_when_they_change(self):
         embedder = Embedder(self.vectors)

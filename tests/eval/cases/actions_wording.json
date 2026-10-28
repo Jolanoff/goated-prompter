@@ -1,0 +1,21 @@
+{
+ "about": "Labelled requests for tests/eval/actions.py whose action words split or reorder a group's trigger phrase, add words no trigger says, or say words of competing groups; run with every built-in Actions & Poses and Objects & Props pack selected. Same fields as actions.json. Labelled before any run; no setting was tuned on them.",
+ "cases": [
+  {"request": "a woman brushing her friend's hair", "cast": 2, "action": "brushing her friend's hair", "actions": ["hair and grooming"]},
+  {"request": "a man reading an old map on the trail", "cast": 1, "action": "reading an old map", "place": "on the trail", "actions": ["navigating"]},
+  {"request": "a couple dancing slowly together", "cast": 2, "action": "dancing slowly together", "actions": ["dancing"]},
+  {"request": "a witch casting a quick spell", "cast": 1, "action": "casting a quick spell", "actions": ["magic"]},
+  {"request": "a man setting up his camp by the lake", "cast": 1, "action": "setting up his camp", "place": "by the lake", "actions": ["camping"]},
+  {"request": "two friends giving each other a gift", "cast": 2, "action": "giving each other a gift", "actions": ["gifts", "giving and sharing"]},
+  {"request": "a hiker stopping to look at the view", "cast": 1, "action": "looking at the view", "actions": ["observing"]},
+  {"request": "a woman stretching on a yoga mat", "cast": 1, "action": "stretching on a yoga mat", "actions": ["exercise and stretching"]},
+  {"request": "a chef frying vegetables in a pan", "cast": 1, "action": "frying vegetables in a pan", "actions": ["cooking"]},
+  {"request": "a boy kicking a ball around the yard", "cast": 1, "action": "kicking a ball", "place": "the yard", "actions": []},
+  {"request": "a woman sweeping the kitchen floor", "cast": 1, "action": "sweeping the kitchen floor", "actions": ["cleaning and tidying"]},
+  {"request": "two people walking hand in hand", "cast": 2, "action": "walking hand in hand", "actions": ["walking together"]},
+  {"request": "a knight drawing his sword", "cast": 1, "action": "drawing his sword", "actions": ["sword drills"]},
+  {"request": "a gardener watering the plants", "cast": 1, "action": "watering the plants", "actions": ["gardening"]},
+  {"request": "a man fixing his bike in the garage", "cast": 1, "action": "fixing his bike", "place": "in the garage", "actions": ["repairs and crafts"]},
+  {"request": "a couple playing chess at night", "cast": 2, "action": "playing chess", "actions": ["board games"]}
+ ]
+}

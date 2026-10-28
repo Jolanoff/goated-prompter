@@ -15,7 +15,9 @@ Entry words (said_entries): the entries that say the text's own distinctive word
 entries that have no group words ("one riding the other" finds the entries that say riding). With entry words, words
 decide: a group whose words the text says in any form ("reads" says reading: said_groups), or an entry that says
 them, and closeness in meaning alone finds nothing (an act is not shown by an entry that is only near it in
-meaning).
+meaning). A group word of several words is then said in any form and order (covering_search: "brushing her friend's
+hair" says "brushing hair"), one of a single word still whole, and meaning only settles groups that compete for different words
+of the text.
 Scoring (relevance): each group's closeness in meaning to the text (embeddings.py), compared with the other groups,
 plus its share of the text's content words.
 match: the groups a text names, or none. Exact words decide when they explain every content word of the text; a
@@ -199,6 +201,27 @@ def exact_search(groups, text):
     return [group for number, group in enumerate(groups) if top and hits.get(number) == top]
 
 
+def _covered(phrase, said, sequence):
+    """The text's word stems a group word covers: a word of several content words said in any form and order, other
+    words between them allowed ("brushing her friend's hair" says "brushing hair"); a word of one said whole, as exact_hits reads
+    it ("handing over" is not "hands"); empty when the text does not say it."""
+    stems = {word_stem(word) for word in content_words(phrase)}
+    if len(stems) > 1:
+        return frozenset(stems) if stems <= said else frozenset()
+    return frozenset(stems) if stems and _spans(sequence, word_sequence(phrase)) else frozenset()
+
+
+def covering_search(groups, text):
+    """([group], [the text's words each covers]): the groups whose words the text says (_covered), those whose said
+    words cover the most of the text's content words ("drawing his sword" names "drawing a sword" over the "sword" of
+    another group); ([], []) when it says none."""
+    said, sequence = {word_stem(word) for word in content_words(text)}, word_sequence(text)
+    covers = [frozenset().union(*(_covered(phrase, said, sequence) for phrase in group["words"])) for group in groups]
+    top = max(map(len, covers), default=0)
+    found = [(group, cover) for group, cover in zip(groups, covers) if top and len(cover) == top]
+    return [group for group, _ in found], [cover for _, cover in found]
+
+
 NARROW_Z = 1.5  # an entry this many deviations closer in meaning than the group's other entries is the one meant
 
 
@@ -361,12 +384,24 @@ def _standout(groups, text, embeddings):
 def match(groups, text, embeddings=None, entry_words=False):
     """The groups the text names (see the module docstring), the user's selected packs' groups first, each with only
     the entries the text points to (narrowed); [] when no group clearly answers it. With entry_words, the entries that
-    say the text's words (said_entries, any share) take the place of meaning: meaning alone finds nothing."""
+    say the text's words (said_entries, any share) take the place of meaning: meaning alone finds nothing. With
+    entry_words, the groups are found by their words in any form and order (covering_search), and meaning judges them
+    only when they compete: the found groups cover different words of the text and leave some unexplained ("fixing
+    his old bike" says one group's "fixing" and another's "bike"). A group found alone stays, however many other
+    groups are offered."""
     if not groups or not str(text or "").strip():
         return []
-    hits = exact_search([group for group in groups if group["selected"]], text) or exact_search(groups, text)
-    explained = {word for group in hits for phrase in group["words"] for word in content_words(phrase)}
-    if hits and not set(content_words(text)) <= explained:
+    selected = [group for group in groups if group["selected"]]
+    if entry_words:
+        hits, covers = covering_search(selected, text)
+        if not hits:
+            hits, covers = covering_search(groups, text)
+        unexplained = len(set(covers)) > 1 and not {word_stem(word) for word in content_words(text)} <= set().union(*covers)
+    else:
+        hits = exact_search(selected, text) or exact_search(groups, text)
+        explained = {word for group in hits for phrase in group["words"] for word in content_words(phrase)}
+        unexplained = not set(content_words(text)) <= explained
+    if hits and unexplained:
         # Judged by meaning alone: the hit already is the words' evidence. A wrong word match ("sports hall" said the
         # corridor's "hall") is rated low by meaning, a right one with a detail ("a cozy bedroom") high, even when a
         # group the detail fits is rated higher. Without embeddings the words are all the evidence there is.
