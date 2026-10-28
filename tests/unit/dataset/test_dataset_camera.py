@@ -123,6 +123,15 @@ class KeepsWhatTheRequestNeeds(unittest.TestCase):
         self.assertNotIn("head and shoulders", {camera.shot_frame(entry) for entry in deal(things, total=10).values()},
                          "the things the request uses stay in view")
 
+    def test_one_camera_suits_every_act_of_an_image(self):
+        lying, sitting = "A lying on a blanket", "A sitting on a bench"
+        alone = {group["name"] for group in camera.suiting(GROUPS, lying)}
+        both = {group["name"] for group in camera.suiting(GROUPS, [lying, sitting])}
+        self.assertTrue(alone and alone != both, "one act: its own groups")
+        self.assertTrue(all(len(group["words"]) <= 1 for group in GROUPS if group["name"] in both),
+                        "acts with no group in common: the cameras for any pose")
+        self.assertEqual({group["name"] for group in camera.suiting(GROUPS, [lying, lying])}, alone)
+
     def test_the_view_sees_the_subjects_from_the_side_they_face(self):
         # A live team photo was seen from the side, along the row of people posing for it.
         photo = deal(brief(action="standing in a row", subject="a team", aspect="3:2", framing=("whole", "", "viewer")),

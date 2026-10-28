@@ -48,6 +48,18 @@ class Constraints(unittest.TestCase):
         self.assertEqual(retrieval.match(rows, "a slow dance"), [], "without entry words a plain pack has no group words")
         self.assertEqual(retrieval.match(rows, "juggling", entry_words=True), [], "an act no entry shows finds none")
 
+    def test_a_group_word_said_in_another_form_finds_its_group_after_the_entries(self):
+        # A request's own act ("reads") came back as no entry: its group says "reading" and its entries never do.
+        rows = [{"name": "reading", "words": ["reading", "book"], "entries": ["A seated with a novel open on the lap"],
+                 "worlds": None, "adult": False, "selected": True},
+                {"name": "giving", "words": ["handing over"], "entries": ["A holding a cup out to B"],
+                 "worlds": None, "adult": False, "selected": True},
+                {"name": "greetings", "words": ["greeting"], "entries": ["A and B clasping each other's hand"],
+                 "worlds": None, "adult": False, "selected": True}]
+        self.assertEqual([row["name"] for row in retrieval.match(rows, "reads", entry_words=True)], ["reading"])
+        self.assertEqual([row["name"] for row in retrieval.match(rows, "shaking hands", entry_words=True)],
+                         ["greetings"], "an entry that says the words comes first")
+
 
 class Embedder:
     """Scripted vectors by text (unknown texts point nowhere in particular); counts the texts it embeds."""

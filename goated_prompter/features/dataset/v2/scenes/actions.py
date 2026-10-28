@@ -12,8 +12,14 @@ none does, none is dealt and the writer builds the scene from the request, which
 entry. When the request leaves the action open, every fitting entry may be dealt.
 
 The request's act comes before the vocabulary. Understanding gives each separate act with who does it and who it is
-done to or for (the brief's acts). An entry is one interaction of the cast, so a request with several separate acts
-(one reads while another paints) gets none: an entry would keep one act and drop the others.
+done to or for (the brief's acts). An entry is one interaction of its people. A request with one act is planned as a
+whole (action_plan). A request with several separate acts whose people do not overlap (one reads while another
+paints) is planned act by act (act_plans): each act on its own people and words, by every rule below, so each image
+is dealt one assignment per act (deal_assignments: the act, who does it, to whom, and its entry or none), every act
+kept in order whether or not an entry fits it. Acts that share a person get no entry at all: one person's body cannot
+be placed by two entries. Entries that suit opposite places (a beach and an office) cannot share one image: the one
+its image's place suits less is dropped there, never its act (suited_to_place); the writer builds an act without an
+entry from the request.
 Who an entry can place: a group made for people (one without "kinds") holds only humans, so its entries are made for
 the cast's number of humans and an act with any other character in it (a person and an animal) gets none of them; a
 group with kinds also holds characters of those kinds (understanding.is_human, the brief's kinds). When an act is done
@@ -33,7 +39,7 @@ A live run judged the fit with a separate model call; the request's own action w
 
 import re
 
-from ....vocabulary.retrieval import content_words, for_cast, match, without_said, word_stem
+from ....vocabulary.retrieval import content_words, fit_scores, for_cast, match, without_said, word_stem, zscores
 from ....vocabulary.selection import deal_spread
 from ..consistency import kept_words
 from ..understanding import is_human
@@ -125,3 +131,82 @@ def deal_actions(groups, total, rng, locked=False):
     order = list(groups)
     rng.shuffle(order)
     return deal_spread(order, total, rng, locked)
+
+
+def separate_acts(brief):
+    """The brief's acts when there are several and no person takes part in two of them (who and to together), each
+    with someone in it; None otherwise (one act, no acts, or acts that share a person)."""
+    acts = brief.get("acts") or []
+    if len(acts) < 2:
+        return None
+    people = [set(act["who"]) | set(act["to"]) for act in acts]
+    if not all(people) or sum(map(len, people)) != len(set().union(*people)):
+        return None
+    return acts
+
+
+def act_plans(brief, groups, embeddings=None):
+    """[(act, groups)] for separate acts (separate_acts): each act planned on its own (action_plan) with only its own
+    people and its own words as the kept action, so every rule holds per act; groups is [] when no entry fits it.
+    None when the acts are not separate."""
+    acts = separate_acts(brief)
+    if acts is None:
+        return None
+    plans = []
+    for act in acts:
+        people = set(act["who"]) | set(act["to"])
+        own = {**brief, "characters": [person for person in brief["characters"] if person["label"] in people],
+               "kept_words": {**kept_words(brief), "action": act["act"]}, "acts": [act]}
+        plans.append((act, action_plan(own, groups, embeddings)))
+    return plans
+
+
+def deal_assignments(plans, total, rng, locked=False):
+    """{slot: [assignment]}: every image's acts in order, each {"act", "who", "to", "entry"}: the act with its own
+    people and roles and the entry dealt to it from its own deck (deal_actions), or None when none fits it."""
+    decks = [deal_actions(groups, total, rng, locked) if groups else {} for _, groups in plans]
+    return {number: [{"act": act["act"], "who": list(act["who"]), "to": list(act["to"]), "entry": deck.get(number)}
+                     for (act, _), deck in zip(plans, decks)] for number in range(1, total + 1)}
+
+
+# Two entries cannot share a place when they rank the pool's places this oppositely (an outdoor and an indoor act: -0.6 to
+# -1.0 with the built-in places, while acts that share a room or a path stayed above -0.1), judged over at least
+# PLACE_POOL places (fewer ranked by chance).
+PLACE_AGREE, PLACE_POOL = -0.5, 4
+
+
+def _agree(left, right):
+    """How alike two entries rank the same places: the correlation of their fits over the pool (-1 to 1)."""
+    places = list(left)
+    a, b = [left[place] for place in places], [right[place] for place in places]
+    mean_a, mean_b = sum(a) / len(a), sum(b) / len(b)
+    top = sum((x - mean_a) * (y - mean_b) for x, y in zip(a, b))
+    low = (sum((x - mean_a) ** 2 for x in a) * sum((y - mean_b) ** 2 for y in b)) ** 0.5
+    return top / low if low > 1e-12 else 1.0
+
+
+def suited_to_place(assigned, places, pool, embeddings=None):
+    """The assignments with the entries that cannot share their image's place dropped (their acts kept). Two entries
+    of one image cannot share a place when they rank the pool's places in opposite order (_agree below PLACE_AGREE:
+    one suits the places the other does not, a beach and an office); of such a pair, the one its image's dealt place suits less
+    than its average place is dropped, never both. Entries that rank places alike share any of them, however noisy
+    the scores of a pool of alike places. Unchanged without embeddings, places, or a pool of fewer than PLACE_POOL
+    places."""
+    if embeddings is None or not places or len(pool) < PLACE_POOL:
+        return assigned
+    fits = {}
+    fit = lambda entry: fits.setdefault(entry, dict(zip(pool, zscores(fit_scores(entry, pool, embeddings)))))
+    kept = {}
+    for number, items in assigned.items():
+        place, entries = places.get(number), [item["entry"] for item in items if item["entry"]]
+        dropped = set()
+        if place in pool:
+            for index, left in enumerate(entries):
+                for right in entries[index + 1:]:
+                    if left in dropped or right in dropped or _agree(fit(left), fit(right)) >= PLACE_AGREE:
+                        continue
+                    worse = min((left, right), key=lambda entry: fit(entry)[place])
+                    if fit(worse)[place] < 0:
+                        dropped.add(worse)
+        kept[number] = [{**item, "entry": None} if item["entry"] in dropped else item for item in items]
+    return kept

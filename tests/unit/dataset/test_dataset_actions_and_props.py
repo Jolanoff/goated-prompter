@@ -112,6 +112,50 @@ class Actions(unittest.TestCase):
         self.assertEqual(entries(actions.action_plan(brief(1, "leading", acts=[act("leading", to=("goat",))], others=goat),
                                                      held)), ["A leading B by a rope."], "a group made for that kind")
 
+    def test_acts_are_separate_only_when_no_person_takes_part_in_two(self):
+        two = [act("reading"), act("painting", ("person 2",))]
+        self.assertEqual(actions.separate_acts(brief(2, acts=two)), two)
+        self.assertIsNone(actions.separate_acts(brief(2, acts=[act("reading")])), "one act is planned whole")
+        shared = [act("reading", to=("person 2",)), act("painting", ("person 2",))]
+        self.assertIsNone(actions.separate_acts(brief(2, acts=shared)), "a person in two acts")
+        self.assertIsNone(actions.separate_acts(brief(2, acts=[act("reading", ()), act("painting", ("person 2",))])),
+                          "an act with nobody in it")
+
+    def test_each_separate_act_is_planned_and_dealt_with_its_own_people(self):
+        rows = groups(*self.POSES)
+        plans = actions.act_plans(brief(3, "playing a board game while the third is writing a letter",
+                                        acts=[act("playing a board game", ("person 1", "person 2")),
+                                              act("writing a letter", ("person 3",)), act("whistling", ("person 4",))],
+                                        others=[("person 4", "human")]), rows)
+        names = [[group["name"] for group in found] for _, found in plans]
+        self.assertEqual(names, [["board games"], ["writing"], []], "each act its own entries; none fits whistling")
+        dealt = actions.deal_assignments(plans, 3, random.Random(1))
+        self.assertEqual([item["act"] for item in dealt[1]], ["playing a board game", "writing a letter", "whistling"])
+        self.assertTrue(dealt[1][0]["entry"] and dealt[1][1]["entry"] and dealt[1][2]["entry"] is None)
+        self.assertEqual(dealt[2][0]["who"], ["person 1", "person 2"])
+
+    def test_an_entry_its_place_does_not_suit_is_dropped_but_its_act_stays(self):
+        assigned = {1: [{"act": "writing", "who": ["a"], "to": [], "entry": "A writing at a desk"},
+                        {"act": "rowing", "who": ["b"], "to": [], "entry": "A rowing on a lake"}]}
+        pool = ["a study with a desk", "a library", "a reading room", "an office", "a lake shore"]
+        meaning = {"A writing at a desk": [1.0, 0.0], "A rowing on a lake": [0.0, 1.0],
+                   **{place: [1.0, 0.0] for place in pool[:4]}, "a lake shore": [0.0, 1.0]}
+        from tests.unit.vocabulary.test_vocabulary_retrieval import Embedder as Scripted
+        import tempfile
+        from pathlib import Path
+        from goated_prompter.features.vocabulary import embeddings as vectors
+        with tempfile.TemporaryDirectory() as folder:
+            scripted = vectors.Embeddings(Scripted(meaning), Path(folder) / "c.json", progress=lambda _: None)
+            kept = actions.suited_to_place(assigned, {1: "a study with a desk"}, pool, scripted)
+        self.assertEqual([(item["act"], item["entry"]) for item in kept[1]],
+                         [("writing", "A writing at a desk"), ("rowing", None)])
+        self.assertEqual(actions.suited_to_place(assigned, {1: "a study with a desk"}, pool, None), assigned)
+        quiet = {1: [{**assigned[1][0]}, {"act": "sorting", "who": ["b"], "to": [], "entry": "A writing at a desk"}]}
+        with tempfile.TemporaryDirectory() as folder:
+            scripted = vectors.Embeddings(Scripted(meaning), Path(folder) / "c.json", progress=lambda _: None)
+            self.assertEqual(actions.suited_to_place(quiet, {1: "a library"}, pool, scripted), quiet,
+                             "entries a place suits together share it")
+
     def test_several_separate_acts_deal_no_entry(self):
         # One entry is one interaction of the cast: it would keep one act and drop the others.
         rows = groups(*self.POSES)

@@ -79,7 +79,7 @@ from ..understanding import validate_brief
 
 from ..consistency import kept_words, levels, locked_categories
 from .checks import _summary, avoid_patterns, retire_fields, scene_errors
-from .actions import action_plan, deal_actions
+from .actions import act_plans, action_plan, deal_actions, deal_assignments, suited_to_place
 from .entries import _entry_key, deal_frames, _only, _shuffled, cast_size, deal_hands, entry_cap, fit_cast, kept_things, offered_groups, requested_entries, requested_words, required_frame
 from .request import _system, compose_instruction, compose_message, deals_frames, known_labels, slot_inputs, subject_fields, trigger_notes, varied_labels
 from .settings import ACTIONS_CATEGORY, BATCH, EARLIER, KNOWN_SUBJECT_FIELDS, ROUNDS, SECTIONS, SUBJECT_FIELDS, VOCABULARY_SAMPLE
@@ -90,6 +90,13 @@ from .props import OBJECTS, deal_props
 from .slots import only_fillable
 from .texts import COMPOSE_SYSTEM, ENTRY_RULE, GUIDED_RULE, NO_PEOPLE_RULE, NSFW_RULE, SFW_RULE, VOCABULARY_RULES
 from .writer import _compose
+
+
+def _entries_text(assigned):
+    """{slot: the entries of an image's acts as one text} for what reads the dealt pose as words (pairing a place,
+    suiting an object); images without any entry are left out."""
+    return {number: text for number, items in assigned.items()
+            if (text := "; ".join(item["entry"] for item in items if item["entry"]))}
 
 
 def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=print, on_slot=lambda *_: None,
@@ -118,8 +125,12 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
     # Vocabulary search by meaning: a small separate embedding model, started only when a search needs it.
     embeddings = None if guided else embeddings_for(effective, progress)
     with closing(embeddings) if embeddings else nullcontext(), create_backend(effective).generation_session() as session:
-        # The act and arrangement of every image, from the selected Actions & Poses packs (no model call).
-        poses = action_plan(brief, offered_groups(catalog, ACTIONS_CATEGORY, selection, groups), embeddings)
+        # The act and arrangement of every image, from the selected Actions & Poses packs (no model call): one plan for
+        # one act, or one plan per act for separate acts (act_plans), each act kept with its own people and roles.
+        offered = offered_groups(catalog, ACTIONS_CATEGORY, selection, groups)
+        plans = act_plans(brief, offered, embeddings)
+        poses = action_plan(brief, offered, embeddings) if plans is None else [
+            group for _, found in plans for group in found]
         action_entries = [entry for group in poses for entry in group["entries"]]
         groups = _only(groups, ACTIONS_CATEGORY, action_entries)
         # The place of every image comes from the place catalogs, not the writer (scene ideas bring their own).
@@ -130,11 +141,14 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
         locked = locked_categories(brief)
         # The request's spatial relations go with every image, places dealt or not (the user's scene ideas keep theirs).
         plan_arrangement = [] if guided else arrangement(brief)
-        dealt = deal_actions(poses, total, rng, levels(brief)["action"] == "locked") if poses else {}
+        locked_act = levels(brief)["action"] == "locked"
+        assigned = deal_assignments(plans, total, rng, locked_act) if plans and poses else None
+        dealt = (_entries_text(assigned) if assigned is not None
+                 else deal_actions(poses, total, rng, locked_act) if poses else {})
         objects = [] if OBJECTS in locked else offered_groups(catalog, OBJECTS, selection, groups)
         plan = {"entries": {_entry_key(entry): entry for entry in action_entries} or None,
                 "cap": total if levels(brief)["action"] == "locked" else entry_cap(action_entries, total), "used": {},
-                "dealt": dealt, "arrangement": plan_arrangement,
+                "dealt": {} if assigned is not None else dealt, "arrangement": plan_arrangement,
                 "hands": deal_hands([group for group in groups if group["category"] not in locked], total, rng,
                                     words=requested_words(brief), owned={OBJECTS} if objects else frozenset(),
                                     own_words={OBJECTS: kept_things(brief)}),
@@ -146,7 +160,13 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
             plan["places"] = deal_spread(places, total, rng, locked=levels(brief)["place"] == "locked")
             if dealt and levels(brief)["place"] != "locked":  # each dealt pose gets the dealt place that suits it best
                 plan["places"] = pair(plan["places"], dealt, lambda pose, entries: fit_scores(pose, entries, embeddings))
+            if assigned is not None:  # an entry its image's place does not suit is dropped there, never its act
+                assigned = suited_to_place(assigned, plan["places"], [entry for group in places for entry in
+                                                                      group["entries"]], embeddings)
+                dealt = _entries_text(assigned)
             plan["setting"], plan["place_words"] = setting, telling_words(spaces)
+        if assigned is not None:
+            plan["composed"] = assigned
         # The things the request keeps are needed in every image; the other suggestions stay optional.
         plan["needed"] = {number: {OBJECTS: hand.pop(OBJECTS)} for number, hand in plan["hands"].items()
                           if OBJECTS in hand}
@@ -169,7 +189,9 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
         # user's own Camera & Composition packs stay suggestions. Dealt last, so every other deal is seeded as before.
         own_cameras = any(group["category"] == CAMERA for group in groups)
         cameras = [] if guided or own_cameras else camera_groups(catalog)
-        if cameras and (dealt_cameras := deal_cameras(brief, cameras, total, rng, dealt)):
+        posed = ({number: [item["entry"] or item["act"] for item in items] for number, items in assigned.items()}
+                 if assigned is not None else dealt)  # every act of a composed image: one camera for all of them
+        if cameras and (dealt_cameras := deal_cameras(brief, cameras, total, rng, posed)):
             plan["cameras"] = dealt_cameras
             if brief["_known"] and (frames := camera_frames(dealt_cameras)):
                 plan["frames"] = frames  # the known characters' frame is the dealt shot's

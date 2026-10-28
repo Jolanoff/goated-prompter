@@ -200,6 +200,21 @@ act."""
 # A live set given "build comes from the request" kept one build for every image of a request that named none; one
 # told "no marks the look and the request do not give" dropped the request's own tattoos from most images and kept
 # its dog, which had no look, the same in every image, also once told it "still changes as the rules above say".
+COMPOSED_RULE = """SEPARATE ACTS
+Every image in IMAGES lists the request's separate acts ("acts"), in order, each with who does it ("who"), to or for
+whom ("to", who take another part than who) and the Actions & Poses entry built for it ("entry", or null). Every act
+happens in every image, at the same time, in one place and seen by one camera, and no person takes part in another
+act. The actions are the acts' own words ("act") joined with "while", each with its own people, never an entry's words.
+An act with an entry is that entry's arrangement, written into its people's positions as the entry says it, for its
+own people only: its letters (A, B, C) become this act's people, the one who does it in the entry's
+leading part and those in "to" in the part done to or for them, with their own pronouns and bodies; adapt only what
+conflicts with the request, its people or the place. An act whose entry is null is built from the request and its
+own people. Place every act's group so they share the space without crossing each other and all stay in view, each
+group whole enough to read its act. Copy every entry you used word for word into the scene's "entry", in the order of
+the acts, separated by " | " (an act built without its entry adds nothing; at most {cap} images may use one entry,
+already_used.entries counts them)."""
+
+
 LOOK_RULE = """LOOKS
 An image in IMAGES may give people a look ("looks": a look for a character label), so the people of the set differ:
 their skin, hair and eyes start from it, keeping its skin tone, hair colour, hairstyle and eye colour, each in its

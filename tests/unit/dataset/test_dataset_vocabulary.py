@@ -56,9 +56,79 @@ class SceneVocabulary(unittest.TestCase):
             "actions": f"{' and '.join(labels)}: {user['request']}", "space": f"clearing {row['image']}", "lighting": "moonlight",
             "mood": "calm", "camera": "wide shot", "extras": f"extras{row['image']}",
             "frame": {label: {"shows": "full body", "face": "visible"} for label in labels},
-            **({"entry": self.entries.pop(0) if self.entries else row["entry"] if self.copy_dealt
+            **({"entry": self.entries.pop(0) if self.entries else self.copied(row) if self.copy_dealt
                   else self.dance} if wants_entry else {})}
             for row in user["images"]]})
+
+    @staticmethod
+    def copied(row):
+        """The entry a faithful writer copies: the image's own, or every entry of its separate acts."""
+        return row["entry"] if "entry" in row else " | ".join(item["entry"] for item in row["acts"] if item["entry"])
+
+    def acting(self, subject, cast, acts, amount=2):
+        """A brief whose request has separate acts ({who, act, to} with the answer's labels), kept in its words."""
+        data = {**default_dataset_draft(), "subject": subject, "amount": amount, "seed": 7, "seed_mode": "fixed"}
+        value = {"path": "character", "summary": subject, "fixed": "", "randomized": "", "must": [], "avoid": [],
+                 "characters": cast, "kept": {"action": subject}, "acts": acts}
+        return understanding.apply_rules(understanding.recover(value), data)
+
+    def test_separate_acts_are_each_dealt_their_own_entry_with_their_own_people(self):
+        cast = [{"label": "woman", "gender": "female", "custom": "", "pronoun": "she", "count": 1},
+                {"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 1}]
+        acts = [{"who": ["woman"], "act": "planting seedlings", "to": []},
+                {"who": ["man"], "act": "writing a letter", "to": []}]
+        self.copy_dealt = True
+        result = self.write(self.acting("woman planting seedlings while a man is writing a letter", cast, acts),
+                            ["Actions & Poses/Solo-Activities"])
+        call = self.composer()[0]
+        images = composer_user(call.user_message)["images"]
+        self.assertTrue(all("entry" not in image for image in images), "no single entry for separate acts")
+        for image in images:
+            planting, writing = image["acts"]
+            self.assertEqual((planting["who"], planting["act"], writing["who"], writing["act"]),
+                             (["woman"], "planting seedlings", ["man"], "writing a letter"), "each act its own people")
+            self.assertIn("seedling", planting["entry"].casefold())
+            self.assertIn("writing", writing["entry"].casefold())
+        self.assertIn("SEPARATE ACTS", call.system_message)
+        self.assertTrue(result["complete"])
+        self.assertEqual(result["scenes"][0]["entry"], self.copied(images[0]), "both entries, in the acts' order")
+
+    def test_an_act_no_entry_fits_is_kept_for_the_writer(self):
+        cast = [{"label": "woman", "gender": "female", "custom": "", "pronoun": "she", "count": 1},
+                {"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 1}]
+        acts = [{"who": ["woman"], "act": "planting seedlings", "to": []},
+                {"who": ["man"], "act": "whistling a tune", "to": []}]
+        self.copy_dealt = True
+        self.write(self.acting("woman planting seedlings while a man is whistling a tune", cast, acts),
+                   ["Actions & Poses/Solo-Activities"])
+        for image in composer_user(self.composer()[0].user_message)["images"]:
+            self.assertEqual([item["act"] for item in image["acts"]], ["planting seedlings", "whistling a tune"])
+            self.assertIsNone(image["acts"][1]["entry"], "every act stays, the one without an entry too")
+
+    def test_acts_sharing_a_person_get_no_entry(self):
+        cast = [{"label": "woman", "gender": "female", "custom": "", "pronoun": "she", "count": 1},
+                {"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 1}]
+        acts = [{"who": ["woman"], "act": "planting seedlings", "to": ["man"]},
+                {"who": ["man"], "act": "writing a letter", "to": []}]
+        self.write(self.acting("woman planting seedlings for a man while a man is writing a letter", cast, acts),
+                   ["Actions & Poses/Solo-Activities"])
+        call = self.composer()[0]
+        self.assertTrue(all("acts" not in image and "entry" not in image
+                            for image in composer_user(call.user_message)["images"]))
+        self.assertNotIn("SEPARATE ACTS", call.system_message)
+
+    def test_words_in_the_entry_field_that_are_no_dealt_entry_are_dropped_not_asked_again(self):
+        # A live writer added a placeholder for an act without an entry, and all three images were asked again.
+        cast = [{"label": "woman", "gender": "female", "custom": "", "pronoun": "she", "count": 1},
+                {"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 1}]
+        acts = [{"who": ["woman"], "act": "planting seedlings", "to": []},
+                {"who": ["man"], "act": "writing a letter", "to": []}]
+        self.copy_dealt = True
+        self.entries = ["a made-up pose | null"]
+        result = self.write(self.acting("woman planting seedlings while a man is writing a letter", cast, acts, amount=1),
+                            ["Actions & Poses/Solo-Activities"])
+        self.assertEqual(len(self.composer()), 1, "no image asked again")
+        self.assertEqual(result["scenes"][0]["entry"], "", "only dealt entries are counted as used")
 
     def write(self, brief, packs=(), catalog=None):
         return scenes.write_scenes({"backend": "mock"}, self.request, brief, progress=lambda _: None,

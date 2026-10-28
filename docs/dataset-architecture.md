@@ -251,9 +251,17 @@ call (`v2/scenes/actions.py` `action_plan`): the entries made for the number of 
 the packs have none for the cast; a group without `kinds` places only humans, so an animal is never counted as a
 person, and an act with a character no group can place gets none of them), without those that say what the request rules out (`retrieval.without_said`), and, when the request keeps
 an action, only those that show it (`retrieval.match` with `entry_words`: a group's trigger words, then the entries
-that say the action's own words in any form; closeness in meaning alone never finds one). The request's act comes
-before the vocabulary: a request with several separate acts (`acts`) gets no entry, since one entry is one interaction
-and would drop the others, and an act done to or for another character keeps only the entries that give someone
+that say the action's own words in any form, then a group whose words it says in any form, `said_groups`: "reads"
+is reading; closeness in meaning alone never finds one). The request's act comes before the vocabulary. Several acts
+whose people do not overlap are planned act by act (`act_plans`: each on its own people and words, by every rule
+here), and each image gets one assignment per act, in order (`deal_assignments`: the act, who does it, to whom, and
+its entry or none), sent to the writer as the image's `acts` under `COMPOSED_RULE` (every act in one place and one
+camera, each entry only for its own people, the entries copied into `entry` separated by " | " and checked one by
+one); every act stays, an act no entry fits is built from the request, and two entries that rank the dealt places in
+opposite order (`suited_to_place`, `PLACE_AGREE` over at least `PLACE_POOL` places: a beach and an office) lose the
+one its image's place suits less, never its act. The camera then suits every act at once (a group all of them say,
+else the cameras for any pose). Acts that share a person still get no entry, since one entry would place that body
+twice; and an act done to or for another character keeps only the entries that give someone
 their own part (`distinct_roles`: it opens with one person acting, or after everyone it names one of them alone or
 "the others"), never one in which everyone does the group's own act together, whatever detail one of them adds. The
 things the act is done with (kept objects the action words also say) must be said by the entry or its group's words;

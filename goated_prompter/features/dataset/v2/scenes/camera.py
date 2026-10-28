@@ -126,8 +126,13 @@ def _general(groups):
 def suiting(groups, act, people=""):
     """The groups for the body positions the image shows: those whose words its act says, else those whose words the
     words about its people say ("a team": a group), else the groups for any pose, else all of them. The act comes
-    first: "two friends hugging" are hugging, not a group lined up."""
+    first: "two friends hugging" are hugging, not a group lined up. Several acts at once (a list, one per act): only
+    the groups that suit every one of them, else the groups for any pose, so one camera shows them all."""
     specific = [group for group in groups if len(group["words"]) > 1]
+    if isinstance(act, (list, tuple)):
+        found = [{group["name"] for group in exact_search(specific, text)} for text in act if text]
+        shared = set.intersection(*found) if found and all(found) else set()
+        return [group for group in specific if group["name"] in shared] or _general(groups) or groups
     return exact_search(specific, act) or exact_search(specific, people) or _general(groups) or groups
 
 

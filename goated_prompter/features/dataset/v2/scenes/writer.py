@@ -51,6 +51,7 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
                     if round_ > 1 else "") + "...")
         images = [{"image": number, **({"input": inputs[number]} if inputs[number] else {}),
                    **({"entry": plan["dealt"][number]} if plan.get("dealt") else {}),
+                   **({"acts": plan["composed"][number]} if plan.get("composed") else {}),
                    **({"frame": plan["frames"][number]} if plan.get("frames") else {}),
                    **({"place": plan["places"][number]} if plan.get("places") else {}),
                    **({"setting": plan["setting"]} if plan.get("places") and plan.get("setting") else {}),
@@ -79,7 +80,11 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
             tries[number] += max(1, recovery.attempts - before)
             problems = ([error] if error else ["an answer was missing"] if scene is None
                         else scene_errors(scene, labels, avoid, extra, brief["_known"], people_fields))
-            entry = entries.get(_entry_key(scene["entry"])) if entries and not problems else None
+            composed = bool(plan.get("composed"))
+            pieces = [piece for piece in str(scene["entry"]).split("|") if piece.strip()] if entries and not problems \
+                else []
+            used_entries = [entries.get(_entry_key(piece)) for piece in pieces] if composed else []
+            entry = entries.get(_entry_key(scene["entry"])) if entries and not problems and not composed else None
             # Only a scene that would ruin the image is asked again; repeating an earlier image, its place, camera,
             # entry or frame never is (a live run asked seven images again for the place and camera the request keeps;
             # asking copies again cost a third more time, still came back as copies and lost part of the act). Variety
@@ -90,7 +95,7 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
                 elif missing := unnamed_people(scene, labels):
                     problems = [f"its actions do not name {', '.join(missing)}: name every person by their character "
                                 "label and never leave a placeholder person from an entry"]
-                elif entries and entry is None:
+                elif entries and not composed and entry is None:
                     problems = ['its "entry" must be copied word for word from the Actions & Poses vocabulary']
                 elif plan.get("places") and (elsewhere := place_problems(scene, plan["places"][number],
                                                                          plan.get("place_words"))):
@@ -116,7 +121,11 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
                 finished["frame"] = scene["frame"]
             if not labels:
                 finished["position"] = {}
-            if entries:
+            if entries and composed:  # the dealt entries its acts used; anything else in the field is no entry
+                finished["entry"] = " | ".join(filter(None, used_entries))
+                for found in filter(None, used_entries):
+                    used[found] = used.get(found, 0) + 1
+            elif entries:
                 finished["entry"] = entry or " ".join(scene["entry"].split())
                 used[finished["entry"]] = used.get(finished["entry"], 0) + 1
             scenes[number] = finished

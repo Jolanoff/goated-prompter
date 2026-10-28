@@ -13,8 +13,9 @@ Exact words (exact_hits): a group's words said whole in the text, in order, a pl
 aside. A word said inside a longer word that another group says does not count ("water" inside "water aquarium").
 Entry words (said_entries): the entries that say the text's own distinctive words in any form, for packs of plain
 entries that have no group words ("one riding the other" finds the entries that say riding). With entry words, words
-decide: a group or entry must say the text's words, and closeness in meaning alone finds nothing (an act is not shown
-by an entry that is only near it in meaning).
+decide: a group whose words the text says in any form ("reads" says reading: said_groups), or an entry that says
+them, and closeness in meaning alone finds nothing (an act is not shown by an entry that is only near it in
+meaning).
 Scoring (relevance): each group's closeness in meaning to the text (embeddings.py), compared with the other groups,
 plus its share of the text's content words.
 match: the groups a text names, or none. Exact words decide when they explain every content word of the text; a
@@ -180,6 +181,15 @@ def exact_hits(groups, text):
         if not any(other[0] <= start and end <= other[1] and other[1] - other[0] > end - start for other in matches):
             counted.setdefault(number, set()).add(word)
     return {number: len(words) for number, words in counted.items()}
+
+
+def said_groups(groups, text):
+    """The groups one of whose words the text says in any form (word_stem: "reads" says "reading", "cleans the house"
+    says "cleaning"), every content word of it; [] when none."""
+    said = {word_stem(word) for word in content_words(text)}
+    return [group for group in groups
+            if any((stems := {word_stem(word) for word in content_words(phrase)}) and stems <= said
+                   for phrase in group["words"])]
 
 
 def exact_search(groups, text):
@@ -364,7 +374,8 @@ def match(groups, text, embeddings=None, entry_words=False):
         if meaning is not None:
             scores = dict(zip(map(id, groups), zscores(meaning)))
             hits = [group for group in hits if scores[id(group)] >= MATCH_AGREE]
-    found = hits or (said_entries(groups, text, share=1) if entry_words else _standout(groups, text, embeddings))
+    found = hits or ((said_entries(groups, text, share=1) or said_groups(groups, text)) if entry_words
+                     else _standout(groups, text, embeddings))
     return narrowed(found, text, embeddings) if found else []
 
 
