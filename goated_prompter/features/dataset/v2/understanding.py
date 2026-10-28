@@ -200,9 +200,11 @@ varied: the parts in kept the request asks to differ between the images (differe
 acts: every separate act the request gives its characters, in the user's order; [] when it names none. Several
   characters doing one act together is one act; what an act is for or done with stays with it; another character's
   own act is another entry ("a mother reading to her son while the cat sleeps": the mother reading to her son, the
-  cat sleeping).
+  cat sleeping). One character doing two activities at the same time that could each be done on its own is two acts
+  with the same who; the steps or movements of one activity or interaction stay one act.
   who: the labels of the characters who do it, as in characters.
-  act: the request's words for what is done, copied exactly, without who does it and without where.
+  act: the request's words for one activity, copied exactly, without who does it and without where; the words that
+    join two activities ("while", "and") never go inside one act, while the movements of one activity stay together.
   to: the labels of the characters it is done to or for, who take another part in it than who (the one fed, guided,
     comforted or examined); [] when everyone in it takes the same part (they play, dance or work together) or it is
     done only to things.

@@ -274,6 +274,8 @@ class Understanding(unittest.TestCase):
         self.assertEqual(result["kept_words"]["action"], "guiding a patient along a corridor while a dog sleeps")
         system = " ".join(calls[0].system_message.split())
         self.assertIn("acts: every separate act the request gives its characters", system)
+        self.assertIn("the words that join two activities", system, "one activity per act, joined ones split")
+        self.assertIn("the steps or movements of one activity or interaction stay one act", system)
         self.assertIn("the whole interaction, every character's act with who it is done to", system)
         understanding.validate_brief(result)
         with self.assertRaisesRegex(ValueError, "acts must list"):
