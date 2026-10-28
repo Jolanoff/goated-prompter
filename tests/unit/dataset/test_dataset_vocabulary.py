@@ -34,11 +34,13 @@ class SceneVocabulary(unittest.TestCase):
         enter_context(self, patch("goated_prompter.features.builder.service.create_backend", return_value=self.backend))
         self.request = GoatedPrompterRequest(idea="dataset", planning_mode="Direct", director_preset="general_director")
 
-    def brief(self, subject, cast, *, nsfw=False, amount=2):
+    def brief(self, subject, cast, *, nsfw=False, amount=2, things=""):
         data = {**default_dataset_draft(), "subject": subject, "amount": amount, "nsfw": nsfw, "seed": 7, "seed_mode": "fixed"}
         value = {"path": "character" if cast else "non_character", "summary": subject, "fixed": "", "randomized": "",
                  "must": [], "avoid": [], "characters": cast}
-        return understanding.apply_rules(value, data)
+        if things:  # the things Understanding keeps (its kept objects), quoted from the request
+            value["kept"] = {"objects": things}
+        return understanding.apply_rules(understanding.recover(value), data)
 
     def generate(self, instruction):
         self.calls.append(instruction)
@@ -143,7 +145,7 @@ class SceneVocabulary(unittest.TestCase):
         self.assertTrue(all(len(hand[category]) == 1 for hand in hands for category in hand), "one suggestion per category")
         self.assertIn("use at most one per category", system)
 
-    def lights(self, request):
+    def lights(self, request, things=""):
         catalog = load_catalog(user_root=False)
         catalog["packs"].append({"id": "Objects/Test-Lights", "name": "Light Sources", "category": "Objects & Props",
                                  "description": "", "source": "builtin",
@@ -152,17 +154,36 @@ class SceneVocabulary(unittest.TestCase):
                                              "flashlight beam"]})
         self.calls.clear()
         knight = [{"label": "knight", "gender": "male", "custom": "", "pronoun": "he", "count": 1}]
-        self.write(self.brief(request, knight, amount=4), ["Objects/Test-Lights"], catalog=catalog)
-        return [image["suggested"]["Objects & Props"] for image in composer_user(self.composer()[0].user_message)["images"]]
+        self.write(self.brief(request, knight, amount=4, things=things), ["Objects/Test-Lights"], catalog=catalog)
+        images = composer_user(self.composer()[0].user_message)["images"]
+        return [image.get("needed", image.get("suggested", {})).get("Objects & Props") for image in images]
 
     def test_a_request_naming_one_thing_gets_that_entry_in_every_image_and_nothing_else(self):
         # A live run gave every image three unrelated entries of a pack and almost never the entry about the one object
         # the request names.
-        self.assertEqual(self.lights("A knight holding a red lantern"), [["lantern: a lantern swinging from a hook"]] * 4,
+        self.assertEqual(self.lights("A knight holding a red lantern", "a red lantern"),
+                         [["lantern: a lantern swinging from a hook"]] * 4,
                          "the entry named in full wins over one that only shares the word")
 
+    def test_only_the_things_the_request_keeps_name_an_entry(self):
+        # A live set read words of the act as asking for objects that share them: a word of the act is no thing. Only
+        # Understanding's kept objects name an entry; the rest are optional suggestions.
+        hands = self.lights("A knight holding a lamp and practicing his torch juggling")
+        self.assertNotIn("needed", composer_user(self.composer()[0].user_message)["images"][0])
+        self.assertNotEqual(hands, [["torch"]] * 4, "no kept thing: no word of the act names an entry")
+        self.assertEqual(self.lights("A knight practicing his torch juggling", "his torch"), [["torch"]] * 4)
+        # Understanding's kept objects are the words that mention things, and can name an activity ("practicing
+        # juggling" kept "juggling"): only an entry whose whole name they say is needed, so an activity names none and
+        # nothing is ever added to a scene for it.
+        self.lights("A knight practicing juggling at night", "juggling")
+        self.assertNotIn("needed", composer_user(self.composer()[0].user_message)["images"][0])
+        from goated_prompter.features.dataset.v2.scenes.entries import named_in
+        # A live set kept a thing described by its material and then needed other things of that material.
+        self.assertEqual(named_in(["paper lantern", "paper fan", "flying kite", "kite"], {"small", "paper", "kite"}),
+                         ["kite"], "the whole name, never one shared word")
+
     def test_a_request_asking_for_the_kind_in_general_gets_its_named_entry_and_one_other(self):
-        hands = self.lights("A knight carrying light sources, among them a lantern")
+        hands = self.lights("A knight carrying light sources, among them a lantern", "light sources; a lantern")
         self.assertTrue(all(len(hand) == 2 and "lantern" in hand[0] and "lantern" not in hand[1] for hand in hands), hands)
 
     def test_a_word_of_a_packs_name_that_is_not_its_kind_never_asks_for_the_whole_pack(self):

@@ -152,7 +152,9 @@ def _framed(frame, labels):
 # The narrowest frame that holds a body part, widest first. A known character's frame decides the final prompt's
 # framing, so it must hold every part its own camera shows: a live set framed a character head to knees in every
 # image while each camera showed the feet, and the image model followed the frame.
-FRAME_PARTS = (("full body", re.compile(r"\b(?:feet|foot|toes|ankles?|soles|heels)\b", re.IGNORECASE)),
+# A body part, or what is worn on it and shows only with it (shoes on the feet), names the frame that holds it.
+FRAME_PARTS = (("full body", re.compile(r"\b(?:feet|foot|toes|ankles?|soles|heels|shoes?|shoelaces?|boots?|socks?|"
+                                        r"sandals?|sneakers?|slippers?)\b", re.IGNORECASE)),
                ("head to knees", re.compile(r"\b(?:knees?|thighs?|legs?)\b", re.IGNORECASE)))
 _NOT_SHOWN = re.compile(r"\b(?:not|no|without|hidden|cropped|cut off|outside|out of (?:the )?frame)\b", re.IGNORECASE)
 

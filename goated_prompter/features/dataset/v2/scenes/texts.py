@@ -97,8 +97,12 @@ The user selected these vocabulary packs: they must visibly shape the images, an
   are chosen freely.
 - Entries of every other category are possibilities: adapt them to the scene, vary within their themes across the
   images, and choose from any pack of a category.
-- An image may list "suggested" entries per category: use at most one per category, and only one the image can show
-  with its pose (a hand, mouth or body part the pose uses cannot also hold or wear it). Consider the suggested one
+- An image may list "needed" entries per category: the things the request itself names, in the vocabulary's words.
+  Show each one in that image as the request uses it (held, used, worn or placed as it says).
+- An image may list "suggested" entries per category: they are optional: use at most one per category, and only one
+  the image can show with its pose: a hand, mouth or body part the act or a needed thing uses cannot also hold or wear
+  it, and the pose never changes to make room for it; when the act's hands are busy, an object only stands in the
+  space. Consider the suggested one
   first, take another only when it does not fit, and none at all when the category does not fit the image. Never add
   a subject or object only to use an entry. A used entry agrees with the positions, the space and the camera: take
   the thing it names and drop any pose, furniture or moment of its own that this image's positions and space do not

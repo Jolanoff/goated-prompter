@@ -4,7 +4,9 @@ that must be built where it was dealt. Scripted models only; no model call choos
 
 import json
 import random
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from goated_prompter.features.dataset.v2.scenes import places
@@ -127,6 +129,54 @@ class NamedPlace(unittest.TestCase):
         self.assertEqual(names(found), ["my bedroom"])
         found, _ = places.place_plan(brief("themed", "in the kitchen"), [mine, *GROUPS])
         self.assertEqual(names(found), ["kitchen"], "the user's packs have none: the built-in ones")
+
+
+class RequiredPlace(unittest.TestCase):
+    """A place the request needs is never traded for variety."""
+
+    def test_a_named_place_keeps_only_the_places_that_are_it(self):
+        # A live set named one kind of place and was dealt another the ideas widened to.
+        found = [group("building", ["building"], ["glass office building", "old library with tall shelves"]),
+                 group("cafe", ["cafe"], ["corner cafe with a counter"]),
+                 group("archive", ["library", "archive"], ["reading room with lamps"])]
+        self.assertEqual([(row["name"], row["entries"]) for row in places.the_place_named(found, "a library")],
+                         [("building", ["old library with tall shelves"]), ("archive", ["reading room with lamps"])],
+                         "the place or its group says the noun")
+        self.assertEqual(places._noun("the beach at sunset"), "beach", "the noun of its first phrase")
+        self.assertEqual(places.the_place_named(found, "a house of worship"), found,
+                         "no found place says it: the words name it differently, the search stands")
+
+    def test_an_idea_that_places_the_act_outside_a_thing_never_finds_its_rooms(self):
+        # A live set named a place whose group held both the rooms of a building and the outside of it, and dealt one of
+        # the rooms, while every idea put the act outside the building.
+        self.assertEqual(places._reading("near a lighthouse"), ("near a", ["a lighthouse"]))
+        self.assertEqual(places._reading("along a sandy beach"), ("along a sandy beach", []), "along a beach is on it")
+        rows = [group("lighthouse", ["lighthouse", "on the cape"], ["lamp room at the top", "keeper's kitchen"]),
+                group("coast", ["coast", "cliff"], ["cliff path above the sea"])]
+        found, _ = places.place_plan(brief("themed", "on the cape", ideas=["near a lighthouse", "beside a lighthouse"]),
+                                     rows)
+        self.assertEqual(found, [], "every idea is outside the building: none of its rooms, nothing else named")
+        found, _ = places.place_plan(brief("themed", "on the cape", ideas=["near a lighthouse", "in a lighthouse"]), rows)
+        self.assertEqual(names(found), ["lighthouse"], "an idea inside it keeps the named place")
+
+    def test_dealt_places_keep_only_entries_that_suit_the_ideas_and_the_act(self):
+        rows = [group("yard", ["yard"], ["training yard with posts", "stable yard with straw", "inn yard with carts",
+                                         "smithy yard with an anvil"]),
+                group("shops", ["shop"], ["tailor's shop with bolts of cloth", "candle shop with racks"])]
+        entries = [entry for row in rows for entry in row["entries"]]
+        vectors = {entry: [1.0, 0.0] for entry in entries[:4]}
+        vectors.update({entries[4]: [0.0, 1.0], entries[5]: [0.9, 0.44], "an open yard": [1.0, 0.0]})
+        folder = enter_context(self, tempfile.TemporaryDirectory())
+        meaning = vectors_module.Embeddings(Embedder(vectors), Path(folder) / "cache.json", progress=lambda _: None)
+        kept = places.fitting(rows, brief(ideas=["an open yard"]), meaning)
+        self.assertEqual([entry for row in kept for entry in row["entries"]], [*entries[:4], entries[5]],
+                         "the entry far from every idea is left out")
+        self.assertEqual(places.fitting(rows, brief(ideas=["an open yard"]), None), rows, "without meaning: unchanged")
+        self.assertEqual(places.fitting(rows[1:], brief(ideas=["an open yard"]), meaning), rows[1:],
+                         "too few places to judge: unchanged")
+        acting = {**brief(), "kept_words": {"action": "an open yard"}}
+        self.assertEqual([entry for row in places.fitting(rows, acting, meaning) for entry in row["entries"]],
+                         [*entries[:4], entries[5]], "the act leaves out a place much farther from it than the rest")
 
 
 class NoPlaceNamed(unittest.TestCase):

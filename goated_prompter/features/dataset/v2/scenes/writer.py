@@ -10,6 +10,7 @@ from .checks import (_summary, framed_to_camera, framing_problems, retire_fields
 from .entries import _entry_key
 from .looks import look_problems, with_details
 from .places import place_problems
+from .props import with_needed
 from .request import _labels, compose_instruction, subject_fields
 from .settings import ROUNDS, SECTIONS
 
@@ -57,6 +58,7 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
                    **({"looks": plan["looks"][number]} if (plan.get("looks") or {}).get(number) else {}),
                    **({"camera": plan["cameras"][number]} if (plan.get("cameras") or {}).get(number) else {}),
                    **({"details": plan["details"]} if plan.get("details") else {}),
+                   **({"needed": plan["needed"][number]} if (plan.get("needed") or {}).get(number) else {}),
                    **({"suggested": plan["hands"][number]} if (plan.get("hands") or {}).get(number) else {})}
                   for number in todo]
         errors = sorted({f"image {number}: {reason}" for number in todo for reason in reasons[number]})
@@ -102,10 +104,13 @@ def _compose(session, brief, numbers, plan, inputs, earlier, checkpoint, progres
                 progress(rejected_note(number, problems[0], scene))
                 continue
             scene = framed_to_camera(without_entry_copy(scene, labels))
-            suggested = [entry for hand in ((plan.get("hands") or {}).get(number) or {}).values() for entry in hand]
+            suggested = [entry for name in ("hands", "needed")
+                         for hand in ((plan.get(name) or {}).get(number) or {}).values() for entry in hand]
             scene = without_copied_props(scene, plan.get("props") or (), suggested,
                                          [item["extras"] for item in earlier] + [item["extras"] for item in scenes.values()])
             scene = with_details(scene, plan.get("details"))  # after the copied props: they are in every image
+            scene = with_needed(scene, [entry for hand in ((plan.get("needed") or {}).get(number) or {}).values()
+                                        for entry in hand])
             finished = {"slot": number, **{key: scene[key] for key in SECTIONS}}
             if brief["_known"]:
                 finished["frame"] = scene["frame"]

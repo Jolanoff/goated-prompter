@@ -33,17 +33,43 @@ searched, in which groups:
           Understanding's ideas name among the groups of the request's world (and, for an adult request, the
           adult_default groups first). An idea no group answers adds nothing; with no idea answered nothing is dealt.
           Retrieval never adds a place on its own: what a request allows is Understanding's judgement.
+A place the request needs is never traded for variety. A named place stays in every dealt place: when the search
+finds places that say the place's own noun (the last word of its first phrase: "a library", "the beach at sunset"),
+only those places, or the places of groups whose words say it, are dealt (the_place_named): a reading room, not a
+cafe the ideas widened to. An idea or a name finds a whole group ("old town", "in space"), so the dealt
+places then keep only the entries that suit what the request does there (fitting): close to one of Understanding's
+ideas, which say where the act can happen (IDEA_Z; for a named place, its kinds), and not far from the act itself
+(ACT_Z: the kept action's words). A shop interior when every idea is an open yard, or a gym for a rooftop repair, is
+left out; the places that only differ in look stay, so the set still varies.
+An idea can place the act outside a thing, as a relation does ("near a space station", "above the earth": OUTSIDE):
+that thing's own places (its groups, _anchor_groups) are never what the idea finds, since it happens outside them, and
+a group the request's place words found is left out when an idea puts the act outside it and no idea inside it
+(outside_of_ideas): words that find a building's rooms, while every idea places the act outside the building, deal
+none of its rooms; with nothing left, nothing is, and the writer follows the request's words.
 The groups go in a varied order (selection.diverse_order) and the set is dealt across them (selection.deal_spread); a
 locked place is one for every image. The places are then paired with the dealt Actions & Poses entries
 (selection.pair with retrieval.fit_scores). No model call: code finds, deals and pairs.
 """
 
-from ....vocabulary.retrieval import (content_words, entry_name, exact_search, group_vectors, in_world, match, related,
-                                      word_sequence, word_stem)
+import re
+
+from ....vocabulary.embeddings import dot
+from ....vocabulary.retrieval import (FUNCTION_WORDS, content_words, entry_name, exact_search, group_vectors, in_world,
+                                      match, related, word_sequence, word_stem, zscores)
 from ....vocabulary.selection import diverse_order
 from ..consistency import kept_words, levels
 
 SPACES = "Spaces"
+# An entry this many deviations farther from every idea than the pool's entries are is no place for the request, nor
+# one this far from its act; only a pool large enough for that is judged (FIT_POOL). With the built-in places these left
+# out shop interiors for an act the ideas put in a yard and indoor rooms for an act outside, and no place of a forest
+# for an act any forest suits.
+IDEA_Z, ACT_Z, FIT_POOL = -1.0, -1.5, 5
+# The words that place what follows them outside the subjects ("near a station", "beside a lake"), as a relation whose
+# within is false does; "along a beach" or "in a park" are on or in it.
+OUTSIDE = frozenset("near beside behind above below under beneath over around outside before by across beyond opposite "
+                    "between against".split())
+_PREPOSITIONS = FUNCTION_WORDS - frozenset("a an the his her their its my your our this that these those".split())
 
 
 def _facts(brief):
@@ -141,38 +167,127 @@ def _related_plan(brief, groups, facts, embeddings):
     return _from_ideas(brief, away, ideas, embeddings, adult_first=brief.get("path") == "nsfw_character"), setting
 
 
+def _outside_anchors(text):
+    """The things a text places the act outside of: the words after each OUTSIDE word up to the next preposition
+    ("near a space station": "a space station"; "a meadow before its walls": "its walls")."""
+    words, anchors, current = word_sequence(text), [], None
+    for word in words:
+        if word in OUTSIDE:
+            current = []
+            anchors.append(current)
+        elif current is not None and word in _PREPOSITIONS:
+            current = None
+        elif current is not None:
+            current.append(word)
+    return [" ".join(anchor) for anchor in anchors if content_words(" ".join(anchor))]
+
+
+def _reading(idea):
+    """(what an idea itself names, the things it places the act outside of): the idea without those things' words, and
+    the things ("near a space station": "near", ["a space station"])."""
+    anchors = _outside_anchors(idea)
+    return _without_anchors(idea, anchors), anchors
+
+
+def outside_of_ideas(pool, ideas, embeddings=None):
+    """The names of the groups an idea places the act outside of (the groups that are such a thing, _anchor_groups)
+    and that no idea finds itself."""
+    outside, inside = set(), set()
+    for idea in ideas:
+        own, anchors = _reading(idea)
+        outside |= {group["name"] for anchor in anchors for group in _anchor_groups(pool, anchor)}
+        if content_words(own):
+            inside |= {group["name"] for group in match(pool, own, embeddings)}
+    return outside - inside
+
+
+def _noun(words):
+    """A place's own noun: the last content word of its first phrase ("the beach at sunset": beach), stemmed; "" when
+    it has none."""
+    phrases = [phrase for phrase in re.split(r"\b(?:" + "|".join(sorted(FUNCTION_WORDS - {"a", "an", "the"})) + r")\b",
+                                             str(words or "").casefold()) if content_words(phrase)]
+    return word_stem(content_words(phrases[0])[-1]) if phrases else ""
+
+
+def the_place_named(found, words):
+    """The found groups with only the places that are the named place: its noun (_noun) said by the place or by its
+    group's own words, in any form. Unchanged when no found place says it: the words name the place differently ("a
+    house of worship" found a church by meaning)."""
+    noun = _noun(words)
+    says = lambda *texts: noun in {word_stem(word) for text in texts for word in content_words(text)}
+    kept = [{**group, "entries": [entry for entry in group["entries"] if says(entry, group["name"], *group["words"])]}
+            for group in found] if noun else []
+    return [group for group in kept if group["entries"]] or found
+
+
+def _near(found, texts, embeddings, cut):
+    """The groups with only the entries whose closeness to the nearest of texts, compared over the pool, is at least
+    cut. Unchanged without embeddings or texts, or with fewer than FIT_POOL entries."""
+    entries = [entry for group in found for entry in group["entries"]]
+    queries = [vector for text in texts if text and (vector := embeddings.query(text)) is not None] if embeddings else []
+    vectors = embeddings.documents(entries) if queries and len(entries) >= FIT_POOL else None
+    if vectors is None:
+        return found
+    near = {entry for entry, score in zip(entries, zscores(max(dot(query, vector) for query in queries)
+                                                          for vector in vectors)) if score >= cut}
+    kept = [{**group, "entries": [entry for entry in group["entries"] if entry in near]} for group in found]
+    return [group for group in kept if group["entries"]]
+
+
+def fitting(found, brief, embeddings=None):
+    """The dealt places that suit what the request does there: close to one of its ideas (IDEA_Z) and not far from its
+    kept action (ACT_Z)."""
+    return _near(_near(found, _facts(brief)["ideas"], embeddings, IDEA_Z), [kept_words(brief).get("action", "")],
+                 embeddings, ACT_Z)
+
+
 def place_plan(brief, groups, embeddings=None):
-    """(groups to deal from in order, setting): the places this run deals, by the rules above; ([], "") for none."""
+    """(groups to deal from in order, setting): the places this run deals, by the rules above, only those that suit what
+    the request does there (fitting); ([], "") for none."""
+    found, setting = _place_plan(brief, groups, embeddings)
+    return fitting(found, brief, embeddings), setting
+
+
+def _place_plan(brief, groups, embeddings):
     level, words, facts = levels(brief)["place"], kept_words(brief).get("place"), _facts(brief)
     if facts["relations"]:
         return _related_plan(brief, groups, facts, embeddings)
     if level != "free" and not words:
         return [], ""  # a kept place without its words (a brief from before version 15): the writer keeps it
     if words:
-        setting = facts["setting"]
-        pool, named = in_world(groups, None if setting else facts["world"]), _without(words, setting)
-        found = match(pool, named, embeddings)
-        if found and not exact_search(pool, named):
-            # Found by meaning alone, so Understanding's ideas decide when they name other places: "on a marble table"
-            # meant a kitchen by meaning, while the ideas of a perfume bottle on it were a vanity, a dressing room, a shop.
-            ideas = _from_ideas(brief, groups, facts, embeddings, adult_first=False)
-            if ideas and not {group["name"] for group in found} & {group["name"] for group in ideas}:
-                return ideas, setting
-        if found:
-            sizes = {group["name"]: len(group["entries"]) for group in groups}
-            if any(len(group["entries"]) < sizes.get(group["name"], 0) for group in found):
-                return found, setting  # words that point to some of a group's places stay that specific
-            # Named broadly ("his room"): the ideas widen it, only with groups close to the one it names (its kinds).
-            ideas = _from_ideas(brief, groups, facts, embeddings, adult_first=False)
-            return _merged(found + related(ideas, found, groups, embeddings)), setting
-        found = match(in_world(groups, facts["world"]), setting, embeddings) if setting else []
-        # The words name no catalog place (or were never a place: a time of day kept as one): the ideas, which for a
-        # named place are that place or its kinds, so a place missing from the catalog still deals nothing.
-        return found or _from_ideas(brief, groups, facts, embeddings, adult_first=False), ""
+        found, setting = _named_plan(brief, groups, facts, words, embeddings)
+        away = outside_of_ideas(in_world(groups, None if setting else facts["world"]), facts["ideas"], embeddings)
+        named = [group for group in the_place_named(found, _without(words, facts["setting"]))
+                 if group["name"] not in away]
+        return named, setting
     selected = [group for group in groups if group["selected"]]
     if selected:
         return selected, ""  # the user's own places come first
     return _from_ideas(brief, groups, facts, embeddings, adult_first=brief.get("path") == "nsfw_character"), ""
+
+
+def _named_plan(brief, groups, facts, words, embeddings):
+    """(groups, setting) for a request that names its place (the "named" rule above), before the_place_named."""
+    setting = facts["setting"]
+    pool, named = in_world(groups, None if setting else facts["world"]), _without(words, setting)
+    found = match(pool, named, embeddings)
+    if found and not exact_search(pool, named):
+        # Found by meaning alone, so Understanding's ideas decide when they name other places: "on a marble table"
+        # meant a kitchen by meaning, while the ideas of a perfume bottle on it were a vanity, a dressing room, a shop.
+        ideas = _from_ideas(brief, groups, facts, embeddings, adult_first=False)
+        if ideas and not {group["name"] for group in found} & {group["name"] for group in ideas}:
+            return ideas, setting
+    if found:
+        sizes = {group["name"]: len(group["entries"]) for group in groups}
+        if any(len(group["entries"]) < sizes.get(group["name"], 0) for group in found):
+            return found, setting  # words that point to some of a group's places stay that specific
+        # Named broadly ("his room"): the ideas widen it, only with groups close to the one it names (its kinds).
+        ideas = _from_ideas(brief, groups, facts, embeddings, adult_first=False)
+        return _merged(found + related(ideas, found, groups, embeddings)), setting
+    found = match(in_world(groups, facts["world"]), setting, embeddings) if setting else []
+    # The words name no catalog place (or were never a place: a time of day kept as one): the ideas, which for a
+    # named place are that place or its kinds, so a place missing from the catalog still deals nothing.
+    return found or _from_ideas(brief, groups, facts, embeddings, adult_first=False), ""
 
 
 def _from_ideas(brief, groups, facts, embeddings, adult_first):
@@ -182,8 +297,14 @@ def _from_ideas(brief, groups, facts, embeddings, adult_first):
     if embeddings is not None:
         embeddings.prepare(facts["ideas"])  # every idea embedded in one call
     first = [group for group in pool if group["adult"]] if adult_first else []
-    found = _merged(first + [group for idea in facts["ideas"] for group in match(pool, idea, embeddings)])
-    scores = [2.0 if group in first else 1.0 for group in found]  # the adult default leads; then the most varied order
+    found = []
+    for idea in facts["ideas"]:  # an idea never finds a thing it places the act outside of
+        own, anchors = _reading(idea)
+        apart = {group["name"] for anchor in anchors for group in _anchor_groups(pool, anchor)}
+        found += match([group for group in pool if group["name"] not in apart], own, embeddings) if content_words(own) else []
+    found = _merged(first + found)
+    # The adult default leads; then the most varied order.
+    scores = [2.0 if any(group["name"] == lead["name"] for lead in first) else 1.0 for group in found]
     return diverse_order(found, scores, group_vectors(found, embeddings))
 
 

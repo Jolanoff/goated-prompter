@@ -25,8 +25,11 @@ relative to anchors (in front of a castle, under a table, on a bench in a park) 
 relation, never the inside of an anchor they are outside of, and every image carries the whole arrangement in the
 request's words for the writer to keep (ARRANGEMENT_RULE).
 
-Objects & Props (props.py): every image is suggested one object from the selected Objects & Props packs, the ones the
-request names first, else one from the groups that suit its own dealt pose and place (none when nothing does). Every image's pose, place, object and people (looks.py) are dealt together, so they make one scene.
+Objects & Props (props.py): the things the request keeps (Understanding's kept objects, never any other word of the
+request) are needed in every image, in the vocabulary's words ("needed"); otherwise every image is suggested one
+optional object from the groups that suit its own dealt pose (or the request's act) and place (none when nothing
+does). A needed thing is shown as the request uses it; an optional one only on a body part or support the act leaves
+free, or in the space. Every image's pose, place, object and people (looks.py) are dealt together, so they make one scene.
 
 Cameras (camera.py): every image is dealt one whole camera (shot, angle and view) that suits its dealt pose, the image
 shape and what the request asks to show, keeping the request's own camera words; a known character's frame is the
@@ -74,10 +77,10 @@ from ....vocabulary.retrieval import fit_scores, groups_of, telling_words
 from ....vocabulary.selection import deal_spread, pair
 from ..understanding import validate_brief
 
-from ..consistency import levels, locked_categories
+from ..consistency import kept_words, levels, locked_categories
 from .checks import _summary, avoid_patterns, retire_fields, scene_errors
 from .actions import action_plan, deal_actions
-from .entries import _entry_key, deal_frames, _only, _shuffled, cast_size, deal_hands, entry_cap, fit_cast, offered_groups, requested_entries, requested_words, required_frame
+from .entries import _entry_key, deal_frames, _only, _shuffled, cast_size, deal_hands, entry_cap, fit_cast, kept_things, offered_groups, requested_entries, requested_words, required_frame
 from .request import _system, compose_instruction, compose_message, deals_frames, known_labels, slot_inputs, subject_fields, trigger_notes, varied_labels
 from .settings import ACTIONS_CATEGORY, BATCH, EARLIER, KNOWN_SUBJECT_FIELDS, ROUNDS, SECTIONS, SUBJECT_FIELDS, VOCABULARY_SAMPLE
 from .camera import CAMERA, camera_frames, camera_groups, deal_cameras
@@ -133,7 +136,8 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
                 "cap": total if levels(brief)["action"] == "locked" else entry_cap(action_entries, total), "used": {},
                 "dealt": dealt, "arrangement": plan_arrangement,
                 "hands": deal_hands([group for group in groups if group["category"] not in locked], total, rng,
-                                    words=requested_words(brief), owned={OBJECTS} if objects else frozenset()),
+                                    words=requested_words(brief), owned={OBJECTS} if objects else frozenset(),
+                                    own_words={OBJECTS: kept_things(brief)}),
                 "props": [entry for group in groups if group["category"] != ACTIONS_CATEGORY
                           for pack in group["packs"] for entry in pack["entries"]]}
         if deals_frames(brief):  # dealt last, so runs without dealt frames deal exactly as before
@@ -143,8 +147,12 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
             if dealt and levels(brief)["place"] != "locked":  # each dealt pose gets the dealt place that suits it best
                 plan["places"] = pair(plan["places"], dealt, lambda pose, entries: fit_scores(pose, entries, embeddings))
             plan["setting"], plan["place_words"] = setting, telling_words(spaces)
-        if objects and not any(OBJECTS in hand for hand in plan["hands"].values()):  # the request names none
-            scene_of = {number: " ".join(filter(None, (dealt.get(number), (plan.get("places") or {}).get(number))))
+        # The things the request keeps are needed in every image; the other suggestions stay optional.
+        plan["needed"] = {number: {OBJECTS: hand.pop(OBJECTS)} for number, hand in plan["hands"].items()
+                          if OBJECTS in hand}
+        if objects and not plan["needed"]:  # the request keeps none: an optional object that suits each image
+            act = kept_words(brief).get("action", "")
+            scene_of = {number: " ".join(filter(None, (dealt.get(number), act, (plan.get("places") or {}).get(number))))
                         for number in range(1, total + 1)}
             partners = {number: text for number, text in scene_of.items() if text}
             props = deal_props(objects, total, rng, partners, embeddings)

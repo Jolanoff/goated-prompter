@@ -184,7 +184,8 @@ kept: for each part of the image below, the words of the request or rules that m
     only a piece of it; every act and what it leaves on the body stays here, never under clothing, expression,
     objects or place.
   place: where the images happen, or what someone is on or in; never a time of day, the weather or an act.
-  objects: things used, held, worn as gear or placed in the image.
+  objects: things used, held, worn as gear or placed in the image, also when the action names them (each thing in
+    the request's words, joined with ";").
   clothing: what anyone wears: garments and accessories only.
   expression: what a face shows.
   camera: the viewpoint, the framing, the kind of shot, or which body parts the image must show.

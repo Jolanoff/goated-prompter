@@ -176,6 +176,28 @@ class Props(unittest.TestCase):
                          ("board and card games", "swords and blades", "board and card games"))
         self.assertNotEqual(dealt[1], dealt[3], "the same pose gets different objects")
 
+    def test_an_optional_object_never_adds_a_second_of_what_the_image_has(self):
+        # A live set offered a second seat to someone already seated, and another tool of the same kind to a worker.
+        seats = {"name": "seating", "words": ["seat"], "entries": ["weathered park bench", "padded stool", "deck chair"]}
+        lamps = {"name": "lamps", "words": ["light"], "entries": ["desk lamp", "lantern"]}
+        kept = props.the_same_things([seats, lamps], "A seated on a bench beside a window")
+        self.assertEqual([row["entries"] for row in kept], [["weathered park bench"], ["desk lamp", "lantern"]],
+                         "the bench they sit on, described more closely; a group it names nothing of is unchanged")
+
+    def test_a_needed_thing_the_scene_leaves_out_is_added_to_its_extras(self):
+        scene = {"actions": "the woman reads", "position": {}, "space": "a den", "camera": "medium shot",
+                 "extras": "a grey cardigan"}
+        self.assertEqual(props.with_needed(scene, ["porcelain teacup", "hardcover book"])["extras"],
+                         "a grey cardigan; porcelain teacup; hardcover book")
+        held = {**scene, "actions": "the woman reads a book, a teacup in her other hand"}
+        self.assertEqual(props.with_needed(held, ["porcelain teacup", "hardcover book"]), held, "already shown")
+
+    def test_a_group_deals_only_its_objects_close_to_the_image(self):
+        group = {"name": "brushes", "words": [], "entries": ["A flat brush", "A fan brush", "A spray gun"]}
+        self.assertEqual(props.closest([group], "a painter at an easel", None), [group], "without meaning: unchanged")
+        kept = props.closest([group], "a painter holding a brush", self.meaning)
+        self.assertTrue(kept[0]["entries"] and len(kept[0]["entries"]) <= 3)
+
     def test_an_image_nothing_suits_gets_no_object(self):
         # A slow dance and a hug were suggested a spear and a buckler when every image got an object.
         rows = groups(*self.OBJECTS, category="Objects & Props")

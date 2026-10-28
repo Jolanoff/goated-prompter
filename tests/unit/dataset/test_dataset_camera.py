@@ -108,6 +108,21 @@ class KeepsWhatTheRequestNeeds(unittest.TestCase):
         self.assertEqual({dict(entry_parts(entry))["shot"] for entry in feet.values()}, {"full shot"},
                          "the feet need a whole body, and nothing farther than the range")
 
+    def test_what_must_stay_in_view_narrows_the_range(self):
+        # A live request for visible footwear got no camera at all: footwear was no body part, so its words fixed nothing.
+        shoes = deal(brief(action="lacing her boots", camera_words="her boots clearly visible", level="themed",
+                           framing=("partial", "whole")))
+        self.assertEqual({dict(entry_parts(entry))["shot"] for entry in shoes.values()}, {"full shot"},
+                         "what is worn on the feet shows only with them")
+        anchored = {**brief(action="reading", framing=("partial", "partial")),
+                    "places": {"relations": [{"subject": "a cat", "relation": "under", "anchor": "a table",
+                                              "within": False}]}}
+        self.assertEqual(self.framings(deal(anchored, total=8)), {"whole"},
+                         "an anchor the subjects are outside of stands whole in the image")
+        things = {**brief(action="sewing", framing=("close",)), "kept_words": {"action": "sewing", "objects": "a quilt"}}
+        self.assertNotIn("head and shoulders", {camera.shot_frame(entry) for entry in deal(things, total=10).values()},
+                         "the things the request uses stay in view")
+
     def test_the_view_sees_the_subjects_from_the_side_they_face(self):
         # A live team photo was seen from the side, along the row of people posing for it.
         photo = deal(brief(action="standing in a row", subject="a team", aspect="3:2", framing=("whole", "", "viewer")),

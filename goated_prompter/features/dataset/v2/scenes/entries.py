@@ -4,7 +4,7 @@ and dealing suggestions and frames."""
 import math
 import re
 
-from ....vocabulary.retrieval import groups_of, said_entries
+from ....vocabulary.retrieval import content_words, groups_of, said_entries, word_stem
 
 from .checks import _words, named_frame
 from .settings import ACTIONS_CATEGORY, AT_LEAST_HIPS, ENTRY_CAP, HAND
@@ -88,7 +88,15 @@ def named_entries(entries, words):
     return named or entries
 
 
-def deal_hands(groups, total, rng, size=HAND, words=frozenset(), owned=frozenset()):
+def named_in(entries, words):
+    """The entries whose whole name (the text before ": ", else the entry) the words say, every content word in any
+    form."""
+    said = {word_stem(word) for word in words}
+    name = lambda entry: {word_stem(word) for word in content_words(entry.split(": ", 1)[0])}
+    return [entry for entry in entries if name(entry) and name(entry) <= said]
+
+
+def deal_hands(groups, total, rng, size=HAND, words=frozenset(), owned=frozenset(), own_words=None):
     """{slot: {category: [entries]}}: suggested entries (size, one by default) of every selected category except Actions & Poses (dealt
     on its own) for every image, from a seeded shuffle, without repeats until every entry has been dealt, so the whole
     vocabulary spreads over the set instead of the same few favourites. Suggestions are optional: the writer uses the
@@ -105,23 +113,29 @@ def deal_hands(groups, total, rng, size=HAND, words=frozenset(), owned=frozenset
     category: a live request about "public" places with a pack called Public Risk got the one prop entry that also
     said "public" in every image.
     owned: categories whose owner deals them when the request names none of their entries (Objects & Props:
-    props.py), so they are dealt here only for what the request names."""
-    hands = {number: {} for number in range(1, total + 1)}
+    props.py), so they are dealt here only for what the request names.
+    own_words: {category: words} for a category whose entries the request names only in those words (Objects & Props:
+    the things Understanding kept, never any word of the request: a word of the act names no object), and only the
+    entries whose whole name those words say (named_in: "a red lantern" names the lantern; "a small paper kite" names
+    no paper lantern and "a bowl of soup" no mixing bowl)."""
+    hands, asked = {number: {} for number in range(1, total + 1)}, words
     themes = {group["category"]: {word for pack in group["packs"] for word in _words(pack.get("name", ""))}
               for group in groups}
     for group in groups:
         if group["category"] == ACTIONS_CATEGORY:
             continue
+        words = (own_words or {}).get(group["category"], asked)
         entries = list(dict.fromkeys(entry for pack in group["packs"] for entry in pack["entries"]))
         others = set().union(*(theme for category, theme in themes.items() if category != group["category"]))
         # A pack's whole name said in the request ("light sources") names its kind, never one of its entries.
         named = set().union(*(name for pack in group["packs"] if (name := _words(pack.get("name", ""))) <= words))
-        if related := requested_entries(entries, words - others - named):
+        loose = requested_entries(entries, words - others - named)
+        if related := (named_in(entries, words) if group["category"] in (own_words or {}) else loose):
             kinds = (re.findall(r"[a-z0-9]+", name.casefold())[-1:] for name in
                      [group["category"], *(pack.get("name", "") for pack in group["packs"])])
             general = words & {word for kind in kinds for word in kind}
             if general:
-                others = [entry for entry in entries if entry not in related]
+                others = [entry for entry in entries if entry not in related and entry not in loose]
             else:
                 related, others = named_entries(related, words), []
             decks = [[], []]
@@ -161,6 +175,14 @@ def deal_frames(total, rng, needed=None):
             rng.shuffle(deck)
         dealt[number] = deck.pop()
     return dealt
+
+
+def kept_things(brief):
+    """The words of the things the request keeps (Understanding's kept objects), without counts: the only words that
+    name an Objects & Props entry for every image."""
+    text = (brief.get("kept_words") or {}).get("objects", "")
+    return frozenset(word for word in _words(text if isinstance(text, str) else "") if word not in COUNT_WORDS
+                     and not word.isdigit())
 
 
 def required_frame(brief):

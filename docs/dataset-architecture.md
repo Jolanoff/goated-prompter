@@ -76,7 +76,15 @@ with its place. No place named: the
 user's selected Spaces packs when there are any; else the groups Understanding's ideas name (6 to 8 places, obvious and
 less expected, over the kinds of place the request fits), each idea matched among the groups of the request's world,
 with the `adult_default` groups first for an adult request. Retrieval adds no place on its own: what a request allows
-is Understanding's judgement; an idea no group answers adds nothing. The groups go in `diverse_order`, the set is
+is Understanding's judgement; an idea no group answers adds nothing. A place the request needs is never traded for
+variety: when the search for a named place finds places that say its own noun ("a library"), only those are dealt
+(`the_place_named`: a reading room, never a cafe the ideas widened to), and every pool keeps only the places that
+suit what the request does there (`fitting`): close to one of Understanding's ideas (`IDEA_Z`) and not far from the
+kept action (`ACT_Z`), judged only on pools of `FIT_POOL` places or more, so a whole group an idea or a name finds
+("old town", "in space") loses only its entries far from the act. An idea can place the act outside a thing, as a
+relation does ("near a station", `OUTSIDE`): it never finds that thing's own places, and a group the request's place
+words found is left out when an idea puts the act outside it and none inside it (`outside_of_ideas`); with nothing
+left, nothing is dealt and the writer follows the words. The groups go in `diverse_order`, the set is
 dealt across them (a locked place is one for every image), and the dealt places are paired with the dealt Actions &
 Poses entries (`pair` with `fit_scores`). Each image in IMAGES carries its `place` (and `setting`), the writer gets
 `PLACE_RULE`, Spaces suggestions are dropped, and a scene whose space has none of its place's telling words is asked
@@ -146,7 +154,10 @@ image); only cameras inside the brief's `framing` (Understanding, `framed`): sho
 view) and no farther than `widest` (what matters most, the act, interaction, arrangement or detail, still large enough
 to read at this image shape for as many and as big subjects as there are), and views that see the subjects from the
 side they face (`facing`, `VIEW_FACINGS`: a row posing for the viewer is never seen along the row); every shot also
-shows every body part the request asks to show (`required_frame`) and, with a known character, at least head to hips.
+shows every body part the request asks to show (`required_frame`; what is worn on a body part, shoes on the feet,
+names it too) and, with a known character or things the request keeps (its kept objects), at least head to hips;
+an anchor the subjects are outside of (a relation whose `within` is false) keeps every shot no nearer than "whole"
+(`camera_limits`: these narrow Understanding's range, never widen it).
 When no camera fits, the widest bound opens first, then the facing; then the groups whose words the image's dealt pose (or the request's action) says (`exact_search`), else those
 the request's words about the people say ("a team"), else the groups for any pose (not by meaning, like looks: the
 groups are too much alike for it). A close-up stays when faces or one detail carry the request; a wide shot is dealt
@@ -249,10 +260,17 @@ things the act is done with (kept objects the action words also say) must be sai
 an entry with other gear or none is never dealt for it. Only those are offered and dealt, spread over the packs'
 groups (`deal_actions`), and with none the writer gets no Actions & Poses vocabulary and builds the act from the
 request. An entry is a whole interaction with its people as letters, kept as written. Objects & Props
-(`v2/scenes/props.py`): an object the request names is suggested to every image as in every other category
-(`deal_hands`, below); otherwise every image is suggested one object from the groups that clearly suit its own dealt
-pose and place (`suiting`, `SUIT_Z`: a group judged by its name and words, which say what its objects are for), none
-when nothing does, so no action and object pair is ever listed and every image's pose, place, object and people make
+(`v2/scenes/props.py`): the things the request keeps (Understanding's kept objects, quoted even when the action
+names them too; a quote that names no catalog object, such as an activity, needs nothing) are needed in every image: their entries go to each image as `needed`, shown as the request
+uses them, and code adds one a scene leaves out to its extras (`with_needed`: only those catalog entries, never the kept words
+themselves). No other word of the request names an
+object (a game the act names is no game board: `deal_hands` with `own_words`). Otherwise every image is suggested one
+optional object from the groups that clearly suit its own dealt pose, the request's act and its place (`suiting`,
+`SUIT_Z`: a group judged by its name and words, which say what its objects are for); a group whose object the image
+already names offers only that object, described more closely (`the_same_things`: the painter's brush, the bench
+someone sits on, never a second brush or another seat beside them), and a group deals only its objects at least as close to the
+image as its average (`closest`). An optional object goes only on a body part or support the act leaves free, or in
+the space (`VOCABULARY_RULES`); none when nothing suits, so no action and object pair is ever listed and every image's pose, place, object and people make
 one scene. Every scene names the entry it is built on (`entry`); code checks the entry is one of the fitting ones and that no
 entry is used by more than two images (`ENTRY_CAP`, raised to the images-per-entry when fewer entries fit than images
 are requested), and asks again otherwise. Every other selected category deals each image `HAND` (1) suggested

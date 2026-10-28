@@ -20,6 +20,10 @@ or medium shot their main part, a close-up a face or one detail). Every image ge
   and a distant one never shrinks the act; nothing depends on the cast's size or one kind of request. When no camera
   fits, the widest bound opens first, then the facing. The frame dealt to known characters is the dealt shot's
   (shot_frame).
+- What must stay in view, from the brief itself: an anchor the subjects are outside of (a relation whose within is
+  false: under a table, in front of a castle) stands whole enough to recognize, so no shot is nearer than "whole"; the
+  things the request keeps (its kept objects, used or held) stay in view, so no shot shows a person less than head to
+  hips (camera_limits). These narrow Understanding's range, never widen it.
 - The body positions of the image: the groups whose words its dealt pose (or the request's action) says
   (retrieval.exact_search), else those the request's words about the people say ("a team"), else the groups for any
   pose. Cameras are not searched by meaning, like looks: the groups are too much alike for it ("cooking" ranked the
@@ -135,11 +139,18 @@ def camera_limits(brief):
     found = aspect_shape(brief_aspect(brief))
     needed = required_frame(brief)
     frames = SHOWS.index(needed) if needed in SHOWS else len(SHOWS) - 1
-    if known_labels(brief):
+    if known_labels(brief) or kept_words(brief).get("objects"):  # a known face, or the things the request uses
         frames = min(frames, len(AT_LEAST_HIPS) - 1)
     framing = brief.get("framing") if isinstance(brief.get("framing"), dict) else {}
-    return ((found[0] if found else None),
-            {key: framing.get(key) or "" for key in ("tightest", "widest", "facing")}, frames)
+    limits = {key: framing.get(key) or "" for key in ("tightest", "widest", "facing")}
+    if any(not item.get("within") for item in (brief.get("places") or {}).get("relations") or ()):
+        # An anchor the subjects are outside of stands in the image whole enough to recognize: never nearer than whole.
+        whole = FRAMINGS.index("whole")
+        if not limits["tightest"] or FRAMINGS.index(limits["tightest"]) > whole:
+            limits["tightest"] = "whole"
+        if limits["widest"] and FRAMINGS.index(limits["widest"]) > whole:
+            limits["widest"] = "whole"
+    return (found[0] if found else None), limits, frames
 
 
 def framed(groups, framing, frames, fixed):

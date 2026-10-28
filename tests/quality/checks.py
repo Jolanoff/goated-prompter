@@ -31,6 +31,10 @@ CHECKS = (
     ("locked_drift", "share of scenes that leave out the user's words for a part the dataset locks", "guard", False),
     ("sfw_leaks", "safe sets: share of prompts the app's own adult-content filter flags", "guard", False),
     ("cast_ok", "share of scenes that keep every person of the cast", "guard", True),
+    ("things_kept", "share of prompts that show every thing the request keeps (its kept objects, by their own noun)",
+     "guard", True),
+    ("anchors_kept", "share of prompts that show every anchor of the request's spatial relations (by its own noun)",
+     "guard", True),
     ("actions_named", "share of scenes whose actions name every person (no copied placeholder people)", "guard", True),
     ("avoid_hits", "phrases the user ruled out that appear anyway", "guard", False),
     ("count_tags_ok", "Anima: share of tag lines whose people-count tags match the cast", "guard", True),
@@ -151,6 +155,17 @@ def _format_ok(prompt, target, normalize):
     except (ValueError, TypeError, KeyError):
         return False
     return isinstance(result, str) and _same_text(result, prompt)
+
+
+def _named_share(prompts, things):
+    """Share of the prompts that say every thing's own noun (its last content word, in any form); None without
+    things or prompts."""
+    from goated_prompter.features.vocabulary.retrieval import content_words, word_stem
+    nouns = {word_stem(words[-1]) for thing in things if (words := content_words(thing))}
+    if not nouns or not prompts:
+        return None
+    said = lambda prompt: {word_stem(word) for word in content_words(prompt)}
+    return round(sum(nouns <= said(prompt) for prompt in prompts) / len(prompts), 3)
 
 
 def _adult_text(prompt):
@@ -612,6 +627,10 @@ def _case_checks(row, normalize=None):
         "known_changed": _scene_share(scenes, lambda scene: any(
             str(((scene.get("subjects") or {}).get(label) or {}).get(field) or "").strip()
             for label in known for field in ("skin", "hair", "build", "eyes", "detail"))) if known else None,
+        "things_kept": _named_share(prompts, re.split(r"[;,]|\band\b", kept_words(brief).get("objects") or ""))
+        if brief else None,
+        "anchors_kept": _named_share(prompts, [item.get("anchor", "") for item in
+                                               (brief.get("places") or {}).get("relations") or ()]) if brief else None,
         "sfw_leaks": round(sum(_adult_text(prompt) for prompt in prompts) / len(prompts), 3)
         if prompts and brief and not adult else None,
         "cast_ok": round(sum(set(scene.get("subjects") or {}) == labels for scene in scenes) / len(scenes), 3)
