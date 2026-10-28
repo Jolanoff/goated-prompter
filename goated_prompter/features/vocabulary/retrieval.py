@@ -85,10 +85,11 @@ def _spans(said, phrase):
 
 
 def groups_of(catalog, category, selection):
-    """[{"name", "words", "entries", "worlds", "shapes", "kinds", "people", "adult", "selected"}]: the selected packs'
-    groups, then the always-on ones'. A group's words include its name; worlds and shapes are None when the group fits
-    every world or image shape, kinds when it is a human's; people is {entry: how many people it needs} for the
-    entries that say so."""
+    """[{"name", "words", "entries", "worlds", "shapes", "kinds", "people", "poses", "actions", "adult", "selected"}]:
+    the selected packs' groups, then the always-on ones'. A group's words include its name; worlds and shapes are None
+    when the group fits every world or image shape, kinds when it is a human's; people is {entry: how many people it
+    needs} for the entries that say so; poses the base poses every one of its entries can be done in (None: unknown);
+    actions is True for a group of actions (A/B/C people of any kind) rather than entries."""
     chosen = set(selection.get("packs") or ())
     packs = [pack for pack in catalog["packs"] if pack["category"] == category and pack["id"] in chosen]
     packs += [pack for pack in always_on(catalog, category) if pack["id"] not in chosen]
@@ -105,6 +106,8 @@ def groups_of(catalog, category, selection):
                              "entries": own, "worlds": tuple(group["worlds"]) if group.get("worlds") else None,
                              "shapes": tuple(group["shapes"]) if group.get("shapes") else None,
                              "kinds": tuple(group["kinds"]) if group.get("kinds") else None,
+                             "poses": tuple(group["poses"]) if group.get("poses") else None,
+                             "actions": bool(group.get("actions")),
                              "people": {entry: count for entry, count in (pack.get("people") or {}).items()
                                         if entry in own},
                              "adult": bool(group.get("adult_default")), "selected": pack["id"] in chosen})

@@ -1,0 +1,29 @@
+{
+ "about": "Tuning cases for tests/eval/act_composition.py with the test vocabulary tests/eval/fixtures/act_composition_pack.json. cast: [label, kind]; acts: {who, act, to} as Understanding gives them; expect: per act, the group its kept entry comes from, or null when no entry should be kept for it. Labelled before any run.",
+ "cases": [
+  {"request": "a woman reading a book while sipping tea", "cast": [["woman", "human"]],
+   "acts": [{"who": ["woman"], "act": "reading a book", "to": []}, {"who": ["woman"], "act": "sipping tea", "to": []}],
+   "expect": ["reading", "drinking"]},
+  {"request": "a man walking while talking on the phone", "cast": [["man", "human"]],
+   "acts": [{"who": ["man"], "act": "walking", "to": []}, {"who": ["man"], "act": "talking on the phone", "to": []}],
+   "expect": ["walking", "phone call"]},
+  {"request": "a woman resting in bed while talking on the phone", "cast": [["woman", "human"]],
+   "acts": [{"who": ["woman"], "act": "resting in bed", "to": []}, {"who": ["woman"], "act": "talking on the phone", "to": []}],
+   "expect": [null, null]},
+  {"request": "a chef cooking while humming", "cast": [["chef", "human"]],
+   "acts": [{"who": ["chef"], "act": "cooking", "to": []}, {"who": ["chef"], "act": "humming", "to": []}],
+   "expect": ["cooking", "humming"]},
+  {"request": "a woman reading while a man cooks", "cast": [["woman", "human"], ["man", "human"]],
+   "acts": [{"who": ["woman"], "act": "reading", "to": []}, {"who": ["man"], "act": "cooks", "to": []}],
+   "expect": ["reading", "cooking"]},
+  {"request": "a woman walking her dog while talking on the phone", "cast": [["woman", "human"], ["dog", "animal"]],
+   "acts": [{"who": ["woman"], "act": "walking her dog", "to": ["dog"]}, {"who": ["woman"], "act": "talking on the phone", "to": []}],
+   "expect": ["walking beside", "phone call"]},
+  {"request": "a woman reading while waving", "cast": [["woman", "human"]],
+   "acts": [{"who": ["woman"], "act": "reading", "to": []}, {"who": ["woman"], "act": "waving", "to": []}],
+   "expect": [null, null]},
+  {"request": "a woman sipping coffee while a man paints", "cast": [["woman", "human"], ["man", "human"]],
+   "acts": [{"who": ["woman"], "act": "sipping coffee", "to": []}, {"who": ["man"], "act": "paints", "to": []}],
+   "expect": ["drinking", "painting"]}
+ ]
+}

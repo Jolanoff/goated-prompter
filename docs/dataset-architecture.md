@@ -253,15 +253,20 @@ person, and an act with a character no group can place gets none of them), witho
 an action, only those that show it (`retrieval.match` with `entry_words`: a group's trigger words, then the entries
 that say the action's own words in any form, then a group whose words it says in any form, `said_groups`: "reads"
 is reading; closeness in meaning alone never finds one). The request's act comes before the vocabulary. Several acts
-whose people do not overlap are planned act by act (`act_plans`: each on its own people and words, by every rule
-here), and each image gets one assignment per act, in order (`deal_assignments`: the act, who does it, to whom, and
-its entry or none), sent to the writer as the image's `acts` under `COMPOSED_RULE` (every act in one place and one
-camera, each entry only for its own people, the entries copied into `entry` separated by " | " and checked one by
-one); every act stays, an act no entry fits is built from the request, and two entries that rank the dealt places in
+are planned act by act (`act_plans`: each on its own people and words, by every rule here), and each image gets one
+assignment per act, in order (`deal_assignments`: the act, who does it, to whom, and its entry or none; `posed`: the
+entry's letters bound to the act's own people, who does it first, the same in every image, and each person's pose),
+sent to the writer as the image's `acts` under `COMPOSED_RULE` (every act required, in one place and one camera, each
+entry an example for its own people, the entries copied into `entry` separated by " | ", words that are no dealt entry
+dropped); every act stays, an act no entry fits is built from the request, and two entries that rank the dealt places in
 opposite order (`suited_to_place`, `PLACE_AGREE` over at least `PLACE_POOL` places: a beach and an office) lose the
 one its image's place suits less, never its act. The camera then suits every act at once (a group all of them say,
-else the cameras for any pose). Acts that share a person still get no entry, since one entry would place that body
-twice; and an act done to or for another character keeps only the entries that give someone
+else the cameras for any pose). A person in several acts keeps one body: their acts' entries stay only when every
+one of those acts has an entry from a group of `actions` that names its `poses`, and one pose is in all of them (the
+image's pose for that person is dealt from those); otherwise those entries are dropped, never their acts, and no act is
+favoured. A group of `entries` never names poses, so it takes no part in that. A group of `actions` places people of any
+kind (an animal, a creature), each with its own body; a group of `entries` keeps placing only humans. And an act done
+to or for another character keeps only the entries that give someone
 their own part (`distinct_roles`: it opens with one person acting, or after everyone it names one of them alone or
 "the others"), never one in which everyone does the group's own act together, whatever detail one of them adds. The
 things the act is done with (kept objects the action words also say) must be said by the entry or its group's words;

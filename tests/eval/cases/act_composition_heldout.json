@@ -1,0 +1,29 @@
+{
+ "about": "Held-out cases for tests/eval/act_composition.py, labelled before any run and run once, never used to tune anything. Same format as act_composition.json. The reading-while-resting case is ambiguous on purpose: the poses agree (lying) while the two actions pull the eyes apart; its label follows the pose rule, and its live scene is read by eye.",
+ "cases": [
+  {"request": "a man painting while humming", "cast": [["man", "human"]],
+   "acts": [{"who": ["man"], "act": "painting", "to": []}, {"who": ["man"], "act": "humming", "to": []}],
+   "expect": ["painting", "humming"]},
+  {"request": "a girl resting while reading a book", "cast": [["girl", "human"]],
+   "acts": [{"who": ["girl"], "act": "resting", "to": []}, {"who": ["girl"], "act": "reading a book", "to": []}],
+   "expect": ["resting", "reading"]},
+  {"request": "a man cooking while walking", "cast": [["man", "human"]],
+   "acts": [{"who": ["man"], "act": "cooking", "to": []}, {"who": ["man"], "act": "walking", "to": []}],
+   "expect": [null, null]},
+  {"request": "two friends, one drinking tea while the other reads", "cast": [["friend 1", "human"], ["friend 2", "human"]],
+   "acts": [{"who": ["friend 1"], "act": "drinking tea", "to": []}, {"who": ["friend 2"], "act": "reads", "to": []}],
+   "expect": ["drinking", "reading"]},
+  {"request": "a boy walking his dog while singing", "cast": [["boy", "human"], ["dog", "animal"]],
+   "acts": [{"who": ["boy"], "act": "walking his dog", "to": ["dog"]}, {"who": ["boy"], "act": "singing", "to": []}],
+   "expect": ["walking beside", "humming"]},
+  {"request": "a woman sipping coffee while lying in bed", "cast": [["woman", "human"]],
+   "acts": [{"who": ["woman"], "act": "sipping coffee", "to": []}, {"who": ["woman"], "act": "lying in bed", "to": []}],
+   "expect": [null, null]},
+  {"request": "a teacher guiding a student while talking on the phone", "cast": [["teacher", "human"], ["student", "human"]],
+   "acts": [{"who": ["teacher"], "act": "guiding a student", "to": ["student"]}, {"who": ["teacher"], "act": "talking on the phone", "to": []}],
+   "expect": ["guiding", "phone call"]},
+  {"request": "a man waving while drinking tea", "cast": [["man", "human"]],
+   "acts": [{"who": ["man"], "act": "waving", "to": []}, {"who": ["man"], "act": "drinking tea", "to": []}],
+   "expect": [null, null]}
+ ]
+}

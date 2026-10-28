@@ -79,7 +79,7 @@ from ..understanding import validate_brief
 
 from ..consistency import kept_words, levels, locked_categories
 from .checks import _summary, avoid_patterns, retire_fields, scene_errors
-from .actions import act_plans, action_plan, deal_actions, deal_assignments, suited_to_place
+from .actions import act_plans, action_plan, deal_actions, deal_assignments, posed as pose_assignments, suited_to_place
 from .entries import _entry_key, deal_frames, _only, _shuffled, cast_size, deal_hands, entry_cap, fit_cast, kept_things, offered_groups, requested_entries, requested_words, required_frame
 from .request import _system, compose_instruction, compose_message, deals_frames, known_labels, slot_inputs, subject_fields, trigger_notes, varied_labels
 from .settings import ACTIONS_CATEGORY, BATCH, EARLIER, KNOWN_SUBJECT_FIELDS, ROUNDS, SECTIONS, SUBJECT_FIELDS, VOCABULARY_SAMPLE
@@ -142,7 +142,8 @@ def write_scenes(config, request, brief, *, checkpoint=lambda: None, progress=pr
         # The request's spatial relations go with every image, places dealt or not (the user's scene ideas keep theirs).
         plan_arrangement = [] if guided else arrangement(brief)
         locked_act = levels(brief)["action"] == "locked"
-        assigned = deal_assignments(plans, total, rng, locked_act) if plans and poses else None
+        assigned = (pose_assignments(deal_assignments(plans, total, rng, locked_act), plans, rng)
+                    if plans and poses else None)
         dealt = (_entries_text(assigned) if assigned is not None
                  else deal_actions(poses, total, rng, locked_act) if poses else {})
         objects = [] if OBJECTS in locked else offered_groups(catalog, OBJECTS, selection, groups)

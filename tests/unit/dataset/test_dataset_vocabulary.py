@@ -89,7 +89,7 @@ class SceneVocabulary(unittest.TestCase):
                              (["woman"], "planting seedlings", ["man"], "writing a letter"), "each act its own people")
             self.assertIn("seedling", planting["entry"].casefold())
             self.assertIn("writing", writing["entry"].casefold())
-        self.assertIn("SEPARATE ACTS", call.system_message)
+        self.assertIn("SEVERAL ACTS", call.system_message)
         self.assertTrue(result["complete"])
         self.assertEqual(result["scenes"][0]["entry"], self.copied(images[0]), "both entries, in the acts' order")
 
@@ -105,6 +105,31 @@ class SceneVocabulary(unittest.TestCase):
             self.assertEqual([item["act"] for item in image["acts"]], ["planting seedlings", "whistling a tune"])
             self.assertIsNone(image["acts"][1]["entry"], "every act stays, the one without an entry too")
 
+    def test_one_person_doing_two_acts_gets_both_entries_in_a_shared_pose(self):
+        catalog = load_catalog(user_root=False)
+        catalog["packs"].append({"id": "Actions & Poses/Test-Acts", "name": "Test Acts", "category": "Actions & Poses",
+                                 "description": "", "source": "builtin", "people": {}, "entries": [
+                                     "A planting a seedling in a pot", "A humming with eyes half closed"],
+                                 "groups": [{"name": "planting", "words": ["planting"], "poses": ["kneeling", "seated"],
+                                             "actions": True, "entries": ["A planting a seedling in a pot"]},
+                                            {"name": "humming", "words": ["humming"],
+                                             "poses": ["seated", "standing", "kneeling"], "actions": True,
+                                             "entries": ["A humming with eyes half closed"]}]})
+        cast = [{"label": "woman", "gender": "female", "custom": "", "pronoun": "she", "count": 1}]
+        acts = [{"who": ["woman"], "act": "planting seedlings", "to": []}, {"who": ["woman"], "act": "humming", "to": []}]
+        self.copy_dealt = True
+        self.write(self.acting("woman planting seedlings while humming", cast, acts), ["Actions & Poses/Test-Acts"],
+                   catalog=catalog)
+        call = self.composer()[0]
+        for image in composer_user(call.user_message)["images"]:
+            planting, humming = image["acts"]
+            self.assertEqual((planting["entry"], humming["entry"]),
+                             ("A planting a seedling in a pot", "A humming with eyes half closed"))
+            self.assertEqual((planting["roles"], humming["roles"]), ({"A": "woman"}, {"A": "woman"}))
+            self.assertIn(planting["poses"]["woman"], ("kneeling", "seated"))
+            self.assertEqual(planting["poses"], humming["poses"], "one body, one pose")
+        self.assertIn("SEVERAL ACTS", call.system_message)
+
     def test_acts_sharing_a_person_get_no_entry(self):
         cast = [{"label": "woman", "gender": "female", "custom": "", "pronoun": "she", "count": 1},
                 {"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 1}]
@@ -115,7 +140,7 @@ class SceneVocabulary(unittest.TestCase):
         call = self.composer()[0]
         self.assertTrue(all("acts" not in image and "entry" not in image
                             for image in composer_user(call.user_message)["images"]))
-        self.assertNotIn("SEPARATE ACTS", call.system_message)
+        self.assertNotIn("SEVERAL ACTS", call.system_message)
 
     def test_words_in_the_entry_field_that_are_no_dealt_entry_are_dropped_not_asked_again(self):
         # A live writer added a placeholder for an act without an entry, and all three images were asked again.
