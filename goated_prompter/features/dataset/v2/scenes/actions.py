@@ -17,11 +17,9 @@ whole (action_plan). A request with several separate acts whose people do not ov
 paints) is planned act by act (act_plans): each act on its own people and words, by every rule below, so each image
 is dealt one assignment per act (deal_assignments: the act, who does it, to whom, and its entry or none), every act
 kept in order whether or not an entry fits it. Each assignment binds its entry's letters to its own people, the ones
-who do the act first and then those it is done to, the same in every image (roles). A person in several acts keeps
-one body: their acts' entries stay only when every one of their groups names its poses and some pose is in all of
-them, with an entry for every one of their acts (posed: the image's pose for that person is dealt from those);
-otherwise those entries are dropped, never their acts, and the writer builds the person's acts from the request. A group of entries never says its poses, so a person
-in several acts gets none of its entries. Entries that suit opposite places (a beach and an office) cannot share one image: the one
+who do the act first and then those it is done to, the same in every image (roles). A person in several acts gets no
+entry for any of them, since one person's body cannot be placed by two entries: the writer builds those acts from the
+request, never losing one. Entries that suit opposite places (a beach and an office) cannot share one image: the one
 its image's place suits less is dropped there, never its act (suited_to_place); the writer builds an act without an
 entry from the request.
 Who an entry can place: a group made for people (one without "kinds") holds only humans, so its entries are made for
@@ -81,25 +79,26 @@ def distinct_roles(entry, group_words=()):
 
 
 def _holds(group, person):
-    """Whether a group's entries can place a character: a human always, another kind when the group lists it, anyone
-    in a group of actions (people of any kind, each with its own body)."""
-    return is_human(person) or person.get("kind") in (group.get("kinds") or ()) or bool(group.get("actions"))
+    """Whether a group's entries can place a character: a human always, another kind when the group lists it."""
+    return is_human(person) or person.get("kind") in (group.get("kinds") or ())
 
 
 def _act_cast(brief, groups):
-    """The pool with each group's entries made for the characters it can place (retrieval.for_cast, groups that hold
-    the same kinds counted together); without the groups that cannot place someone the request's act involves."""
+    """The pool with each group's entries made for the characters it can place (retrieval.for_cast: groups that place
+    the same number of characters are counted together, so an entry for fewer is kept only when none of them has one
+    for that many); without the groups that cannot place someone the request's act involves."""
     people = brief["characters"]
     involved = {label for act in brief.get("acts") or () for label in (*act["who"], *act["to"])}
-    pool = []
-    kinds_of = lambda group: (tuple(group.get("kinds") or ()), bool(group.get("actions")))
+    sized = {}
+    kinds_of = lambda group: tuple(group.get("kinds") or ())
     for kinds in dict.fromkeys(map(kinds_of, groups)):
         alike = [group for group in groups if kinds_of(group) == kinds]
         if all(_holds(alike[0], person) for person in people if person["label"] in involved):
             size = sum(person.get("count") if type(person.get("count")) is int else 1
                        for person in people if _holds(alike[0], person))
-            pool += for_cast(alike, size) if size else []
-    return pool
+            if size:
+                sized.setdefault(size, []).extend(alike)
+    return [group for size, alike in sized.items() for group in for_cast(alike, size)]
 
 
 def _with_things(groups, brief):
@@ -150,9 +149,9 @@ def _people(act):
 
 def act_plans(brief, groups, embeddings=None):
     """[(act, groups)] for several acts (several_acts): each act planned on its own (action_plan) with only its own
-    people and its own words as the kept action, so every rule holds per act; groups is [] when no entry fits it. An
-    act whose person also takes part in another act keeps only the groups that name their poses (posed needs them).
-    None for one act or none."""
+    people and its own words as the kept action, so every rule holds per act; groups is [] when no entry fits it, and
+    for an act whose person also takes part in another act (the writer builds it from the request). None for one act
+    or none."""
     acts = several_acts(brief)
     if acts is None:
         return None
@@ -163,8 +162,7 @@ def act_plans(brief, groups, embeddings=None):
         people = set(_people(act))
         own = {**brief, "characters": [person for person in brief["characters"] if person["label"] in people],
                "kept_words": {**kept_words(brief), "action": act["act"]}, "acts": [act]}
-        found = action_plan(own, groups, embeddings)
-        plans.append((act, [group for group in found if group.get("poses")] if people & shared else found))
+        plans.append((act, [] if people & shared else action_plan(own, groups, embeddings)))
     return plans
 
 
@@ -181,37 +179,10 @@ def roles(entry, act):
     return {**bound, **({"others": rest} if rest else {})}
 
 
-def posed(assigned, plans, rng):
-    """The assignments with each entry's roles, and every person's pose for the image from their entries' groups. A
-    person in several acts keeps their acts' entries only when every one of those acts has an entry whose group names
-    its poses and one pose is in all of them (an act without one, or of unknown poses, is unknown, never compatible);
-    otherwise those entries are dropped (their acts stay, for the writer to build from the request), never one act
-    favoured over another. A person in one act gets a pose of that act's group when it names
-    them."""
-    poses_of = {entry: group.get("poses") for _, found in plans for group in found for entry in group["entries"]}
-    result = {}
-    for number, items in assigned.items():
-        acts_of = {}
-        for index, item in enumerate(items):
-            for label in _people(item):
-                acts_of.setdefault(label, []).append(index)
-        dropped, pose = set(), {}
-        for label, indexes in acts_of.items():
-            dealt = [index for index in indexes if items[index]["entry"]]
-            known = [poses_of.get(items[index]["entry"]) if items[index]["entry"] else None for index in indexes]
-            if not dealt:
-                continue
-            if len(indexes) > 1 and (not all(known) or not set.intersection(*map(set, known))):
-                dropped.update(dealt)  # an act of unknown pose, or no pose they all share: one body, no entries
-            elif all(known):
-                common = sorted(set.intersection(*map(set, known)))
-                pose[label] = common[rng.randrange(len(common))] if len(common) > 1 else common[0]
-        result[number] = []
-        for index, item in enumerate(items):
-            entry = None if index in dropped else item["entry"]
-            result[number].append({**item, "entry": entry, "roles": roles(entry, item) if entry else {},
-                                   "poses": {label: pose[label] for label in _people(item) if label in pose}})
-    return result
+def with_roles(assigned):
+    """The assignments with each entry's letters bound to its act's own people (roles); {} for an act without one."""
+    return {number: [{**item, "roles": roles(item["entry"], item) if item["entry"] else {}} for item in items]
+            for number, items in assigned.items()}
 
 
 def deal_assignments(plans, total, rng, locked=False):

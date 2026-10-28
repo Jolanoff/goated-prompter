@@ -203,15 +203,15 @@ act."""
 COMPOSED_RULE = """SEVERAL ACTS
 Every image in IMAGES lists the request's acts ("acts"), in order, each with who does it ("who"), to or for whom
 ("to", who take another part than who), the Actions & Poses entry dealt for it ("entry", or null), which character
-each of the entry's letters is ("roles": A, B, C, and "others" for the rest of a group) and the pose of its people
-("poses": standing, seated, kneeling, lying, crouching or moving, when one is given). Every act is required: it
+each of the entry's letters is ("roles": A, B, C, and "others" for the rest of a group). Every act is required: it
 happens in every image, all at the same time, in one place and seen by one camera, and none is ever left out or
-changed. The actions are the acts' own words ("act") joined with "while", each with its own people, never an
-entry's words. An entry is an example of its act's arrangement: write it into its people's positions with its
-letters replaced as roles says, every letter always the same character, and adapt what does not fit the request,
-the other acts, the place or the character's own body (an animal or a creature does the act with the body it has).
-A person in several acts does all of them at once, in the one pose poses gives, with one body: arrange their hands,
-gaze and stance so every act happens, and when an entry cannot fit, leave the entry out, never its act. An act whose
+changed. The actions say every act in its own words ("act"), joined with "while", each after the character labels
+of who does it, never an entry's words; a person in several acts is named by their label once, before the first of
+their acts, and the acts that follow are theirs until another label is named. An entry is an example of its act's
+arrangement: write it into its people's positions with its letters replaced as roles says, every letter always the
+same character, and adapt what does not fit the request, the other acts, the place or the character's own body (an
+animal or a creature does the act with the body it has). A person in several acts does all of them at once, with
+one body: arrange their hands, gaze and stance so every act happens. An act whose
 entry is null is built from the request and its own people. Place every act's group so they share the space without
 crossing each other and all stay in view, each group whole enough to read its act. Copy every entry you used word for
 word into the scene's "entry", in the order of the acts, separated by " | " (an act built without its entry adds

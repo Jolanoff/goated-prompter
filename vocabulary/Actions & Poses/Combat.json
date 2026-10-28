@@ -43,8 +43,20 @@
         "bowman"
       ],
       "entries": [
-        "A kneeling beside a target to retrieve an arrow, bow resting on the ground within reach.",
         "Archery draw: A standing side-on with feet apart, bow arm extended toward the target and the other hand drawing the string to the cheek, arrow aligned with the bow."
+      ]
+    },
+    {
+      "group": "retrieving arrows",
+      "words": [
+        "archery",
+        "archer",
+        "retrieving arrows",
+        "collecting arrows",
+        "pulling an arrow"
+      ],
+      "entries": [
+        "A kneeling beside a target to retrieve an arrow, bow resting on the ground within reach."
       ]
     },
     {

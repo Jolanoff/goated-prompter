@@ -3,11 +3,11 @@
  "cases": [
   {"request": "a woman reading while a man plays guitar", "cast": [["woman", "human"], ["man", "human"]],
    "acts": [{"who": ["woman"], "act": "reading", "to": []}, {"who": ["man"], "act": "plays guitar", "to": []}],
-   "expect": [["reading"], ["music"]], "ideas": ["a cozy living room", "a porch", "a small apartment", "a cafe corner"]},
+   "expect": [["reading"], ["playing music"]], "ideas": ["a cozy living room", "a porch", "a small apartment", "a cafe corner"]},
   {"request": "a couple slow dancing while a friend plays guitar",
    "cast": [["man", "human"], ["woman", "human"], ["friend", "human"]],
    "acts": [{"who": ["man", "woman"], "act": "slow dancing", "to": []}, {"who": ["friend"], "act": "plays guitar", "to": []}],
-   "expect": [["dancing"], ["music"]], "ideas": ["a living room", "a backyard party", "a small bar", "a garden at night"]},
+   "expect": [["dancing"], ["playing music"]], "ideas": ["a living room", "a backyard party", "a small bar", "a garden at night"]},
   {"request": "two friends playing a board game while a third reads a book",
    "cast": [["friend 1", "human"], ["friend 2", "human"], ["friend 3", "human"]],
    "acts": [{"who": ["friend 1", "friend 2"], "act": "playing a board game", "to": []},

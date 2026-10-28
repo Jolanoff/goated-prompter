@@ -90,6 +90,7 @@ class SceneVocabulary(unittest.TestCase):
             self.assertIn("seedling", planting["entry"].casefold())
             self.assertIn("writing", writing["entry"].casefold())
         self.assertIn("SEVERAL ACTS", call.system_message)
+        self.assertIn("named by their label once", call.system_message, "every act stays with its person")
         self.assertTrue(result["complete"])
         self.assertEqual(result["scenes"][0]["entry"], self.copied(images[0]), "both entries, in the acts' order")
 
@@ -105,30 +106,25 @@ class SceneVocabulary(unittest.TestCase):
             self.assertEqual([item["act"] for item in image["acts"]], ["planting seedlings", "whistling a tune"])
             self.assertIsNone(image["acts"][1]["entry"], "every act stays, the one without an entry too")
 
-    def test_one_person_doing_two_acts_gets_both_entries_in_a_shared_pose(self):
+    def test_only_the_entries_an_image_was_dealt_reach_the_writer(self):
         catalog = load_catalog(user_root=False)
+        planting, humming = ["A planting a seedling in a pot", "A kneeling to plant a row of bulbs"], [
+            "A humming with eyes half closed", "A humming while leaning on a fence"]
         catalog["packs"].append({"id": "Actions & Poses/Test-Acts", "name": "Test Acts", "category": "Actions & Poses",
-                                 "description": "", "source": "builtin", "people": {}, "entries": [
-                                     "A planting a seedling in a pot", "A humming with eyes half closed"],
-                                 "groups": [{"name": "planting", "words": ["planting"], "poses": ["kneeling", "seated"],
-                                             "actions": True, "entries": ["A planting a seedling in a pot"]},
-                                            {"name": "humming", "words": ["humming"],
-                                             "poses": ["seated", "standing", "kneeling"], "actions": True,
-                                             "entries": ["A humming with eyes half closed"]}]})
-        cast = [{"label": "woman", "gender": "female", "custom": "", "pronoun": "she", "count": 1}]
-        acts = [{"who": ["woman"], "act": "planting seedlings", "to": []}, {"who": ["woman"], "act": "humming", "to": []}]
+                                 "description": "", "source": "builtin", "people": {}, "entries": planting + humming,
+                                 "groups": [{"name": "planting", "words": ["planting"], "entries": planting},
+                                            {"name": "humming", "words": ["humming"], "entries": humming}]})
+        cast = [{"label": "woman", "gender": "female", "custom": "", "pronoun": "she", "count": 1},
+                {"label": "man", "gender": "male", "custom": "", "pronoun": "he", "count": 1}]
+        acts = [{"who": ["woman"], "act": "planting seedlings", "to": []}, {"who": ["man"], "act": "humming", "to": []}]
         self.copy_dealt = True
-        self.write(self.acting("woman planting seedlings while humming", cast, acts), ["Actions & Poses/Test-Acts"],
-                   catalog=catalog)
-        call = self.composer()[0]
-        for image in composer_user(call.user_message)["images"]:
-            planting, humming = image["acts"]
-            self.assertEqual((planting["entry"], humming["entry"]),
-                             ("A planting a seedling in a pot", "A humming with eyes half closed"))
-            self.assertEqual((planting["roles"], humming["roles"]), ({"A": "woman"}, {"A": "woman"}))
-            self.assertIn(planting["poses"]["woman"], ("kneeling", "seated"))
-            self.assertEqual(planting["poses"], humming["poses"], "one body, one pose")
-        self.assertIn("SEVERAL ACTS", call.system_message)
+        self.write(self.acting("woman planting seedlings while a man is humming", cast, acts, amount=1),
+                   ["Actions & Poses/Test-Acts"], catalog=catalog)
+        user = composer_user(self.composer()[0].user_message)
+        dealt = {item["entry"] for image in user["images"] for item in image["acts"]}
+        self.assertEqual(len(dealt), 2, "one entry for each act")
+        for entry in planting + humming:
+            (self.assertIn if entry in dealt else self.assertNotIn)(entry, user.get("vocabulary", ""))
 
     def test_acts_sharing_a_person_get_no_entry(self):
         cast = [{"label": "woman", "gender": "female", "custom": "", "pronoun": "she", "count": 1},

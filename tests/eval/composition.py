@@ -10,7 +10,7 @@ Per request and in total:
                 gives someone their own part when the act is done to another character
   clashes       images where one person is in two entries (must be 0)
   dropped       share of the images whose entries no single place suits together and lose one (cases marked clash)
-  fallback      share of the requests whose acts share a person that keep no entry (groups without poses)
+  fallback      share of the requests whose acts share a person that keep no entry for that person's acts
   distinct      share of an act's images with an entry no earlier image of that act has
   ms            planning, dealing and place check time per request (the embedding index built beforehand)
 
@@ -47,7 +47,7 @@ def run(case, poses, spaces, total, seed, embeddings):
     plans = actions.act_plans(request, poses, embeddings)
     if plans is None or not any(found for _, found in plans):
         return plans, None, {}
-    assigned = actions.posed(actions.deal_assignments(plans, total, rng), plans, rng)
+    assigned = actions.with_roles(actions.deal_assignments(plans, total, rng))
     found, _ = place_plan(request, spaces, embeddings)
     places = deal_spread(found, total, rng) if found else {}
     text = {number: "; ".join(item["entry"] for item in items if item["entry"]) for number, items in assigned.items()}
@@ -65,7 +65,7 @@ def measure(case, plans, dealt, poses):
     words = {entry: [group["name"], *group["words"]] for group in poses for entry in group["entries"]}
     humans = {label for label, kind in case["cast"] if kind == "human"}
     row = {"overlap": bool(case.get("overlap"))}
-    if case.get("overlap"):  # the acts share a person: no entry kept (built-in groups never say their poses)
+    if case.get("overlap"):  # the acts share a person: no entry kept for their acts
         row["fallback"] = 1.0 if dealt is None or not any(item["entry"] for items in dealt[1].values() for item in items)             else 0.0
         return row
     if dealt is None:

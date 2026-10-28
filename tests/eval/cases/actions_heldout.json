@@ -6,7 +6,7 @@
   {"request": "a man painting at an easel in his studio", "cast": 1, "action": "painting", "place": "in his studio",
    "actions": ["painting"], "objects": ["art and sewing", "tables and desks", "storage and display"]},
   {"request": "a musician playing guitar on his couch", "cast": 1, "action": "playing guitar", "place": "on his couch",
-   "actions": ["music"], "objects": ["devices and recording", "seating"]},
+   "actions": ["playing music"], "objects": ["devices and recording", "seating"]},
   {"request": "a gardener planting seedlings", "cast": 1, "action": "planting seedlings",
    "actions": ["gardening"], "objects": ["hand tools", "garden structures"]},
   {"request": "an archer practicing archery", "cast": 1, "action": "practicing archery",

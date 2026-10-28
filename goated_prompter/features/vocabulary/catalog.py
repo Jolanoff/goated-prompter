@@ -43,7 +43,7 @@ import re
 
 from ...config import PROJECT_ROOT
 from ...json_store import atomic_json
-from ...options.dataset import KINDS, POSES, SHAPES, WORLDS
+from ...options.dataset import KINDS, SHAPES, WORLDS
 
 ROOT = PROJECT_ROOT / "vocabulary"
 USER_ROOT = PROJECT_ROOT / "data" / "vocabulary"
@@ -60,9 +60,8 @@ CONTENT_KEYS = ("entries", "groups")
 OPTIONAL_PACK_KEYS = {"description", "people", "always"}
 ENTRY_KEYS = {"text"}
 OPTIONAL_ENTRY_KEYS = {"people"}
-GROUP_KEYS = {"group", "words"}
-GROUP_LISTS = ("entries", "actions")  # a group lists its entries, or its actions (A/B/C people of any kind)
-OPTIONAL_GROUP_KEYS = {"adult_default", "worlds", "shapes", "kinds", "people", "poses"}
+GROUP_KEYS = {"group", "words", "entries"}
+OPTIONAL_GROUP_KEYS = {"adult_default", "worlds", "shapes", "kinds", "people"}
 MAX_WORDS = 100
 
 
@@ -191,14 +190,9 @@ def _groups(values, every):
     entries, people, groups, names, seen = [], {}, [], set(), set()
     for number, group in enumerate(values, 1):
         where = f"groups[{number}]"
-        lists = [key for key in GROUP_LISTS if key in (group if isinstance(group, dict) else {})]
-        if (not isinstance(group, dict) or not GROUP_KEYS <= set(group) or len(lists) != 1
-                or set(group) - GROUP_KEYS - OPTIONAL_GROUP_KEYS - set(lists)):
-            raise ValueError(f'{where} needs exactly "group", "words" and either "entries" or "actions", and optionally '
-                             '"worlds", "shapes", "kinds", "people", "poses" and "adult_default"')
-        if "poses" in group and (not isinstance(group["poses"], list) or not group["poses"]
-                                 or any(pose not in POSES for pose in group["poses"])):
-            raise ValueError(f"{where}.poses must list poses from: {', '.join(POSES)}")
+        if not isinstance(group, dict) or not GROUP_KEYS <= set(group) or set(group) - GROUP_KEYS - OPTIONAL_GROUP_KEYS:
+            raise ValueError(f'{where} needs exactly "group", "words" and "entries", and optionally "worlds", '
+                             '"shapes", "kinds", "people" and "adult_default"')
         if "adult_default" in group and type(group["adult_default"]) is not bool:
             raise ValueError(f"{where}.adult_default must be true or false")
         if "worlds" in group and (not isinstance(group["worlds"], list) or not group["worlds"]
@@ -215,7 +209,7 @@ def _groups(values, every):
             raise ValueError(f'{where}: the group "{name}" is listed twice')
         names.add(name.casefold())
         count = _people(group["people"], f"{where}.people") if "people" in group else None
-        own, needs = _entries(group[lists[0]], f"{where}.{lists[0]}", every if count is None else count)
+        own, needs = _entries(group["entries"], f"{where}.entries", every if count is None else count)
         taken = next((entry for entry in own if entry.casefold() in seen), None)
         if taken:
             raise ValueError(f'{where}: "{taken}" is already in another group; every entry belongs to one group')
@@ -227,8 +221,6 @@ def _groups(values, every):
                        **({"shapes": list(dict.fromkeys(group["shapes"]))} if "shapes" in group else {}),
                        **({"kinds": list(dict.fromkeys(group["kinds"]))} if "kinds" in group else {}),
                        **({"people": count} if count is not None else {}),
-                       **({"poses": list(dict.fromkeys(group["poses"]))} if "poses" in group else {}),
-                       **({"actions": True} if lists[0] == "actions" else {}),
                        **({"adult_default": True} if group.get("adult_default") else {})})
     if len(entries) > MAX_ENTRIES:
         raise ValueError(f"a pack holds at most {MAX_ENTRIES} entries")
@@ -337,9 +329,7 @@ def import_pack(filename, text, root=None, user_root=None):
     every = data.get("people")  # saved as written: the pack's count, and an entry's own count when it differs
     own = lambda entry, base=every: {"text": entry, "people": people[entry]} if people.get(entry, base) != base else entry
     content = ({"groups": [{"group": group["name"], "words": group["words"],
-                            ("actions" if group.get("actions") else "entries"):
-                                [own(entry, group.get("people", every)) for entry in group["entries"]],
-                            **({"poses": group["poses"]} if "poses" in group else {}),
+                            "entries": [own(entry, group.get("people", every)) for entry in group["entries"]],
                             **({"worlds": group["worlds"]} if "worlds" in group else {}),
                             **({"shapes": group["shapes"]} if "shapes" in group else {}),
                             **({"kinds": group["kinds"]} if "kinds" in group else {}),

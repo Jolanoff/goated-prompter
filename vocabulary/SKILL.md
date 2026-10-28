@@ -49,12 +49,6 @@ entry to a cast that is too small (a solo request never gets an entry that needs
 - A run offers Actions & Poses entries made for exactly the cast's number of people (a pair gets entries for two, a
   group entries for a group), and an entry for fewer people only when the selected packs have none for the cast.
 - An entry with no count is offered to every cast.
-- An Actions & Poses group may list `"actions"` instead of `"entries"`: the same texts with A, B and C for whoever
-  takes part, people of any kind (an animal or a creature does the action with the body it has). It may also list
-  `"poses"`, the base poses every one of its actions can be done in (`standing`, `seated`, `kneeling`, `lying`,
-  `crouching`, `moving`); an action that needs another pose belongs in another group. When one person does several
-  requested acts, their groups' actions are combined only in a pose all of those groups list; a group without `"poses"`
-  never is.
 
 ### Optional: slots that link two packs
 

@@ -248,24 +248,22 @@ entries per batch, so a large pack never drowns the request. The request and the
 pack selected, the shared vocabulary engine keeps only the entries that fit the request and the cast, with no model
 call (`v2/scenes/actions.py` `action_plan`): the entries made for the number of characters they can place
 (`retrieval.for_cast`: a pair gets entries for two, a group entries for a group, an entry for fewer people only when
-the packs have none for the cast; a group without `kinds` places only humans, so an animal is never counted as a
+the packs have none for the cast, judged over every group that places that many characters; a group without `kinds` places only humans, so an animal is never counted as a
 person, and an act with a character no group can place gets none of them), without those that say what the request rules out (`retrieval.without_said`), and, when the request keeps
 an action, only those that show it (`retrieval.match` with `entry_words`: a group's trigger words, then the entries
 that say the action's own words in any form, then a group whose words it says in any form, `said_groups`: "reads"
 is reading; closeness in meaning alone never finds one). The request's act comes before the vocabulary. Several acts
 are planned act by act (`act_plans`: each on its own people and words, by every rule here), and each image gets one
-assignment per act, in order (`deal_assignments`: the act, who does it, to whom, and its entry or none; `posed`: the
-entry's letters bound to the act's own people, who does it first, the same in every image, and each person's pose),
+assignment per act, in order (`deal_assignments`: the act, who does it, to whom, and its entry or none; `with_roles`: the
+entry's letters bound to the act's own people, who does it first, the same in every image),
 sent to the writer as the image's `acts` under `COMPOSED_RULE` (every act required, in one place and one camera, each
 entry an example for its own people, the entries copied into `entry` separated by " | ", words that are no dealt entry
 dropped); every act stays, an act no entry fits is built from the request, and two entries that rank the dealt places in
 opposite order (`suited_to_place`, `PLACE_AGREE` over at least `PLACE_POOL` places: a beach and an office) lose the
 one its image's place suits less, never its act. The camera then suits every act at once (a group all of them say,
-else the cameras for any pose). A person in several acts keeps one body: their acts' entries stay only when every
-one of those acts has an entry from a group of `actions` that names its `poses`, and one pose is in all of them (the
-image's pose for that person is dealt from those); otherwise those entries are dropped, never their acts, and no act is
-favoured. A group of `entries` never names poses, so it takes no part in that. A group of `actions` places people of any
-kind (an animal, a creature), each with its own body; a group of `entries` keeps placing only humans. And an act done
+else the cameras for any pose). A person in several acts gets no entry for any of them, since one body cannot be
+placed by two entries: the writer builds those acts from the request, never losing one. The writer's Actions & Poses
+vocabulary lists only the entries some image was dealt. And an act done
 to or for another character keeps only the entries that give someone
 their own part (`distinct_roles`: it opens with one person acting, or after everyone it names one of them alone or
 "the others"), never one in which everyone does the group's own act together, whatever detail one of them adds. The

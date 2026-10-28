@@ -344,24 +344,6 @@ class Library(unittest.TestCase):
         saved = import_pack("places.json", json.dumps({**data, "always": False}), self.root)
         self.assertEqual((saved["entries"], saved["groups"]), (entries, groups), "an import keeps its groups")
 
-    def test_a_group_may_list_actions_with_the_poses_they_can_be_done_in(self):
-        data = {"name": "Acts", "category": "Actions & Poses",
-                "groups": [{"group": "handling a lantern", "people": 1, "words": ["lantern"],
-                            "poses": ["standing", "moving"], "actions": ["A raising a lantern", "A lowering a lantern"]},
-                           {"group": "waving", "words": ["waving"], "entries": ["A waving"]}]}
-        _, _, entries, _, people, groups, _ = catalog._checked(data)
-        self.assertEqual(entries, ["A raising a lantern", "A lowering a lantern", "A waving"])
-        self.assertEqual((groups[0]["poses"], groups[0].get("actions"), "poses" in groups[1], groups[1].get("actions")),
-                         (["standing", "moving"], True, False, None), "actions say their poses; entries keep their way")
-        saved = import_pack("acts.json", json.dumps(data), self.root)
-        self.assertEqual([(group.get("actions"), group.get("poses")) for group in saved["groups"]],
-                         [(True, ["standing", "moving"]), (None, None)], "an import keeps actions and poses as written")
-        group = lambda **change: {"group": "g", "words": ["w"], "actions": ["A waving"], **change}
-        for broken in ({"groups": [group(poses=["floating"])]}, {"groups": [group(poses=[])]},
-                       {"groups": [{"group": "g", "words": ["w"], "actions": ["A"], "entries": ["B"]}]}):
-            with self.subTest(broken=broken), self.assertRaises(ValueError):
-                catalog._checked({"name": "Acts", "category": "Actions & Poses", **broken})
-
     def test_a_group_may_give_how_many_people_its_entries_need(self):
         data = {"name": "Poses", "category": "Actions & Poses", "people": 1,
                 "groups": [{"group": "stretching", "words": ["stretching"], "entries": ["A stretching"]},

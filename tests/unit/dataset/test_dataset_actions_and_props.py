@@ -121,8 +121,11 @@ class Actions(unittest.TestCase):
         self.assertIsNone(actions.several_acts(brief(2, acts=[act("reading", ()), act("painting", ("person 2",))])),
                           "an act with nobody in it")
         plans = actions.act_plans(brief(2, acts=shared), groups(*self.POSES))
-        self.assertTrue(all(found == [] for _, found in plans),
-                        "groups of entries never say their poses: a person in two acts gets none of them")
+        self.assertTrue(all(found == [] for _, found in plans), "a person in two acts gets no entry for either")
+        mixed = [act("reading"), act("painting", ("person 1",)), act("painting", ("person 2",))]
+        found = [groups_ for _, groups_ in actions.act_plans(brief(2, acts=mixed), groups(*self.POSES))]
+        self.assertEqual((found[0], found[1]), ([], []), "the shared person's acts")
+        self.assertTrue(found[2], "another person's own act keeps its entries")
 
     def test_letters_are_bound_to_the_acts_own_people_the_same_way_every_time(self):
         directed = act("guiding", ("person 1",), to=("person 2",))
@@ -133,35 +136,21 @@ class Actions(unittest.TestCase):
         self.assertEqual(actions.roles("A group planting a bed, A kneeling while the others carry pots", group),
                          {"A": "person 1", "others": ["person 2", "person 3"]})
 
-    def test_one_body_keeps_its_acts_entries_only_in_a_pose_they_share(self):
-        walking = {"name": "walking", "poses": ("standing", "moving"), "entries": ["A walking with a lantern raised"]}
-        talking = {"name": "talking", "poses": ("standing", "seated", "moving"), "entries": ["A talking into a phone"]}
-        lying = {"name": "resting", "poses": ("lying",), "entries": ["A lying back with eyes closed"]}
-        unknown = {"name": "waving", "poses": None, "entries": ["A waving"]}
-        two = [act("walking"), act("talking")]
-        item = lambda words, entry: {"act": words, "who": ["person 1"], "to": [], "entry": entry}
-        plans = [(two[0], [walking, lying]), (two[1], [talking, unknown])]
-        rng = random.Random(1)
-        kept = actions.posed({1: [item("walking", walking["entries"][0]), item("talking", talking["entries"][0])]},
-                             plans, rng)[1]
-        self.assertTrue(all(row["entry"] for row in kept))
-        self.assertIn(kept[0]["poses"]["person 1"], ("standing", "moving"), "a pose both groups name")
-        self.assertEqual(kept[0]["roles"], {"A": "person 1"})
-        clash = actions.posed({1: [item("resting", lying["entries"][0]), item("talking", talking["entries"][0])]},
-                              plans, rng)[1]
-        self.assertEqual([(row["act"], row["entry"]) for row in clash], [("resting", None), ("talking", None)],
-                         "no shared pose: both suggestions go, both acts stay, neither favoured")
-        blind = actions.posed({1: [item("walking", walking["entries"][0]), item("waving", "A waving")]}, plans, rng)[1]
-        self.assertEqual([row["entry"] for row in blind], [None, None], "an unknown pose shares nothing")
+    def test_each_assignment_binds_its_entrys_letters_and_one_without_an_entry_binds_none(self):
+        item = lambda words, who, entry: {"act": words, "who": [who], "to": [], "entry": entry}
+        bound = actions.with_roles({1: [item("reading", "person 1", "A seated with a book"),
+                                        item("painting", "person 2", None)]})[1]
+        self.assertEqual([row["roles"] for row in bound], [{"A": "person 1"}, {}])
 
-    def test_a_group_of_actions_places_any_character(self):
-        cast = brief(1, "walking with the goat", acts=[act("walking with the goat", to=("goat",))],
-                     others=[("goat", "animal")])
-        walks = [{"name": "walking", "words": ["walking"], "selected": True, "actions": True, "poses": ("moving",),
-                  "people": {"A walking beside B": 2}, "entries": ["A walking beside B"]}]
-        self.assertEqual(entries(actions.action_plan(cast, walks)), ["A walking beside B"], "people of any kind")
-        self.assertEqual(actions.action_plan(cast, [{**walks[0], "actions": False}]), [],
-                         "a group of entries keeps placing only humans")
+    def test_groups_placing_as_many_characters_share_one_cast_size(self):
+        people = lambda group: {entry: count for entry, count in group["people"].items()}
+        plain = {"name": "lifting", "words": ["lifting"], "selected": True, "people": {"A, B and C lifting a beam": 3},
+                 "entries": ["A, B and C lifting a beam"]}
+        kinds = {"name": "carrying", "words": ["carrying"], "kinds": ["animal"], "selected": True,
+                 "people": {"A and B carrying a crate": 2}, "entries": ["A and B carrying a crate"]}
+        found = actions.action_plan(brief(3), [plain, kinds])
+        self.assertEqual({count for group in found for count in people(group).values()}, {3},
+                         "an entry for fewer only when no group has one for the whole cast")
 
     def test_each_separate_act_is_planned_and_dealt_with_its_own_people(self):
         rows = groups(*self.POSES)
