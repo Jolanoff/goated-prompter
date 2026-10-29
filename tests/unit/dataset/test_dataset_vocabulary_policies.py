@@ -84,10 +84,44 @@ class Engine(unittest.TestCase):
         self.assertEqual(outcome["Effects & Atmosphere"], "none")
 
     def test_selected_packs_of_other_categories_are_suggested_to_every_image(self):
-        result, _, outcome = plan(["Lighting/Natural", "Mood & Tone/Calm-and-Wonder"])
-        self.assertEqual(outcome["Lighting"], "suggested")
+        result, _, outcome = plan(["Mood & Tone/Calm-and-Wonder"])
         self.assertEqual(outcome["Mood & Tone"], "suggested")
-        self.assertTrue(all({"Lighting", "Mood & Tone"} <= set(hand) for hand in result["hands"].values()))
+        self.assertTrue(all("Mood & Tone" in hand for hand in result["hands"].values()))
+
+    def test_a_selected_lighting_pack_gives_every_image_one_lighting_setup(self):
+        packs = ["Lighting/Natural", "Lighting/Dramatic"]
+        result, groups, outcome = plan(packs)
+        self.assertEqual(outcome["Lighting"], "dealt")
+        dealt = [result["needed"][number]["Lighting"] for number in range(1, 5)]
+        self.assertTrue(all(len(entries) == 1 and entries[0] in self.pool(*packs) for entries in dealt), dealt)
+        self.assertGreater(len({entries[0] for entries in dealt}), 1, "varied across images")
+        self.assertFalse([hand for hand in result["hands"].values() if "Lighting" in hand], "dealt, not suggested")
+        self.assertFalse([group for group in groups if group["category"] == "Lighting"], "not a list to pick from")
+        fixed, _, _ = plan(packs, consistency={"light": "locked"})
+        self.assertEqual(len({tuple(fixed["needed"][number]["Lighting"]) for number in range(1, 5)}), 1)
+        said, _, _ = plan(packs, kept={"light": "candlelight"})
+        self.assertFalse([needed for needed in said["needed"].values() if "Lighting" in needed],
+                         "the request's light comes first: nothing is dealt over it")
+
+    def test_a_selected_expressions_pack_gives_each_person_their_own_expression(self):
+        packs = ["Expressions/Happy-Expressions", "Expressions/Subtle-and-Curious"]
+        result, _, outcome = plan(packs, characters=self.PAIR, request="a man and a woman walking in a park")
+        self.assertEqual(outcome["Expressions"], "dealt")
+        faces = {label: self.dealt_to(result, "Expressions", label) for label in ("man", "woman")}
+        self.assertTrue(all(len(faces[label][number]) == 1 for label in faces for number in range(1, 5)), faces)
+        self.assertTrue(all(faces["man"][number] != faces["woman"][number] for number in range(1, 5)))
+        self.assertTrue({entry for items in faces.values() for entries in items.values() for entry in entries}
+                        <= self.pool(*packs))
+        asked, _, _ = plan(packs, characters=self.PAIR, request="a man walking beside a smiling woman",
+                           kept={"expression": "smiling"})
+        self.assertFalse(any(self.dealt_to(asked, "Expressions", "woman").values()),
+                         "the request's expression comes first: no entry names it, so its words stay and nothing is "
+                         "dealt over them")
+        self.assertTrue(all(self.dealt_to(asked, "Expressions", "man").values()), "the man still gets one")
+        cast = [{"label": "woman", "gender": "female", "custom": "", "pronoun": "she", "count": 1},
+                {"label": "cat", "gender": "custom", "custom": "a cat", "pronoun": "it", "count": 1, "kind": "animal"}]
+        pet, _, _ = plan(packs, characters=cast, request="a woman with her cat")
+        self.assertFalse([entries for entries in self.dealt_to(pet, "Expressions", "cat").values() if entries])
 
     def test_a_thing_the_request_names_is_needed_in_every_image_and_nothing_else_is_added(self):
         acts = [{"who": ["woman"], "act": "typing on a laptop", "to": []}]
@@ -106,10 +140,13 @@ class Engine(unittest.TestCase):
             {"label": "woman", "gender": "female", "custom": "", "pronoun": "she", "count": 1}]
 
     @staticmethod
-    def worn_by(result, label):
-        """{slot: what label wears} from the needed Clothing entries."""
-        return {number: [item.split(": ", 1)[1] for item in needed.get("Clothing", []) if item.startswith(label + ": ")]
+    def dealt_to(result, category, label):
+        """{slot: label's entries} from a category's needed "label: entry" entries."""
+        return {number: [item.split(": ", 1)[1] for item in needed.get(category, []) if item.startswith(label + ": ")]
                 for number, needed in result["needed"].items()}
+
+    def worn_by(self, result, label):
+        return self.dealt_to(result, "Clothing", label)
 
     TWO = ["Clothing/Cyberpunk-Clothing", "Clothing/Outdoor-Gear"]
 
@@ -197,20 +234,25 @@ class Engine(unittest.TestCase):
                          {("chess board",)}, "an act's thing in the selected packs comes first too")
 
     def test_the_people_of_one_image_never_wear_the_same_entry(self):
-        from goated_prompter.features.dataset.v2.scenes.clothing import deal_outfits
+        from goated_prompter.features.dataset.v2.scenes.entries import deal_per_person
         pools = {"a": ["shirt", "coat"], "b": ["shirt", "coat", "cape"], "c": ["shirt", "coat", "cape"]}
-        dealt = deal_outfits(pools, 8, random.Random(5))
+        dealt = deal_per_person(pools, 8, random.Random(5))
         self.assertTrue(all(len(set(row.values())) == 3 for row in dealt.values()), dealt)
         self.assertEqual(len({row[label] for row in dealt.values() for label in "bc"}), 3, "the whole pool is worn")
         self.assertGreater(len({row["b"] for row in dealt.values()}), 1, "varied across images")
-        fixed = deal_outfits(pools, 4, random.Random(5), fixed=True)
+        fixed = deal_per_person(pools, 4, random.Random(5), fixed=True)
         self.assertEqual(len({tuple(sorted(row.items())) for row in fixed.values()}), 1)
 
-    def test_clothing_belongs_to_whom_the_request_names_before_it(self):
-        from goated_prompter.features.dataset.v2.scenes.clothing import worn
+    def test_the_requests_words_belong_to_whom_they_describe(self):
+        from goated_prompter.features.dataset.v2.scenes.entries import said_of
         person = lambda label: {"label": label}
-        given = lambda request, clothing, *labels: worn({"input": {"request": request}, "kept_words": {"clothing": clothing},
-                                                        "characters": [person(label) for label in labels]})
+        given = lambda request, words, *labels, part="clothing": said_of(
+            {"input": {"request": request}, "kept_words": {part: words},
+             "characters": [person(label) for label in labels]}, part)
+        self.assertEqual(given("a smiling woman beside a man", "smiling", "man", "woman", part="expression"),
+                         {"woman": ["smiling"]}, "the person named right after the words")
+        self.assertEqual(given("a man in a black suit beside a woman in a red dress", "a black suit; a red dress",
+                               "man", "woman"), {"man": ["a black suit"], "woman": ["a red dress"]})
         self.assertEqual(given("two friends in matching hoodies at a cafe", "matching hoodies", "friend 1", "friend 2"),
                          {"friend 1": ["matching hoodies"], "friend 2": ["matching hoodies"]}, "both friends")
         self.assertEqual(given("a woman wearing her boyfriend's hoodie", "her boyfriend's hoodie", "woman", "boyfriend"),

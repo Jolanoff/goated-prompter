@@ -124,6 +124,13 @@ NEEDED_RULES = """NEEDED THINGS
 WORN_RULE = """- A needed Clothing entry that starts with a character label ("label: garment") is what that person wears in
   that image, and only that person: they wear it, with whatever the request says of their clothing, and the rest of
   their clothing is yours to complete around it."""
+# Sent after the needed rules when a needed Expressions entry belongs to one person (policies._per_person).
+FACE_RULE = """- A needed Expressions entry that starts with a character label ("label: expression") is that person's
+  expression in that image, and only that person's: write it in their expression field, shown so it fits what they are
+  doing; everyone else's expression is yours to choose."""
+# Sent after the needed rules when an image needs an entry of the user's selected Lighting packs (policies._per_image).
+LIGHT_RULE = """- A needed Lighting entry is that image's one lighting setup: show its source, direction and color as it
+  describes them, and add no second light that contradicts it."""
 
 # Sent after the needed rules when an image needs an object from the user's selected Objects & Props packs that the
 # request does not name (scenes/policies.py).

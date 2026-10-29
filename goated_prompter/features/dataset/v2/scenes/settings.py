@@ -51,6 +51,7 @@ EARLIER = 25  # every earlier image of a run (25 is the largest amount)
 
 
 ACTIONS_CATEGORY = "Actions & Poses"
+EXPRESSIONS, LIGHTING, MOOD, EFFECTS = "Expressions", "Lighting", "Mood & Tone", "Effects & Atmosphere"
 
 
 ENTRY_CAP = 2

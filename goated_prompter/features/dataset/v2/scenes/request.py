@@ -18,12 +18,15 @@ from ..triggers import brief_triggers, owner, run_style
 from .clothing import CLOTHING
 from .props import OBJECTS
 from .entries import entry_cap
-from .settings import (ADULT_SUBJECT_FIELDS, FACES, FIELDS, KNOWN_SUBJECT_FIELDS, MAX_FIELD, NONHUMAN_SUBJECT_FIELDS,
-                       SHOWS, SUBJECT_FIELDS)
+from .settings import (ADULT_SUBJECT_FIELDS, EXPRESSIONS, FACES, FIELDS, KNOWN_SUBJECT_FIELDS, LIGHTING, MAX_FIELD,
+                       NONHUMAN_SUBJECT_FIELDS, SHOWS, SUBJECT_FIELDS)
 from .texts import (ARRANGEMENT_RULE, ASPECT_RULE, CAMERA_RULE, COMPOSE_SYSTEM, CONSISTENCY_RULE, DEALT_FRAME_RULE,
-                    COMPOSED_RULE, DETAILS_RULE, ENTRY_RULE, FRAME_RULE, GUIDED_RULE, LABELS_RULE, LOOK_RULE, NO_COLOR_RULE,
-                    NEEDED_RULES, NO_PEOPLE_RULE, NSFW_RULE, PLACE_RULE, PLACED_RULE, SFW_RULE, VOCABULARY_RULES,
-                    WORN_RULE)
+                    COMPOSED_RULE, DETAILS_RULE, ENTRY_RULE, FACE_RULE, FRAME_RULE, GUIDED_RULE, LABELS_RULE, LIGHT_RULE,
+                    LOOK_RULE, NO_COLOR_RULE, NEEDED_RULES, NO_PEOPLE_RULE, NSFW_RULE, PLACE_RULE, PLACED_RULE, SFW_RULE,
+                    VOCABULARY_RULES, WORN_RULE)
+
+# How the writer uses what a category's selected packs deal (policies._per_person, _per_image), in this order.
+DEALT_RULES = {CLOTHING: WORN_RULE, EXPRESSIONS: FACE_RULE, LIGHTING: LIGHT_RULE}
 
 # Where an earlier image's summary (checks._summary) holds each part: a locked part's first version is copied from it,
 # and already_used never lists a locked part as something to avoid.
@@ -106,7 +109,7 @@ def director_emphasis(brief):
 
 
 def _system(brief, errors, vocabulary="", entry_cap=None, places=False, looks=False, details=False, cameras=False,
-            frames=False, arranged=False, composed=False, needed=False, worn=False, placed=False):
+            frames=False, arranged=False, composed=False, needed=False, dealt=(), placed=False):
     content = NSFW_RULE if brief["path"] == "nsfw_character" else SFW_RULE
     if not brief["characters"]:
         content += "\n" + NO_PEOPLE_RULE
@@ -117,8 +120,9 @@ def _system(brief, errors, vocabulary="", entry_cap=None, places=False, looks=Fa
         system += "\n\n" + VOCABULARY_RULES
     elif needed:  # things the built-in packs name, without a selected pack
         system += "\n\n" + NEEDED_RULES
-    if worn:  # a garment worn by one person
-        system += "\n" + WORN_RULE
+    for category, rule in DEALT_RULES.items():  # what the user's selected packs deal per person or per image
+        if category in dealt:
+            system += "\n" + rule
     if placed:  # an object from the user's selected packs
         system += "\n" + PLACED_RULE
     if entry_cap:
@@ -231,7 +235,7 @@ def compose_instruction(brief, images, earlier=(), errors=(), vocabulary="", ent
                                                     any("arrangement" in image for image in images),
                                                     any("acts" in image for image in images),
                                                     any("needed" in image for image in images),
-                                                    any(CLOTHING in image.get("needed", {}) for image in images),
+                                                    {category for image in images for category in image.get("needed", {})},
                                                     placed and any(OBJECTS in image.get("needed", {}) for image in images)),
                              user_message=compose_message(brief, images, earlier, vocabulary, entries_used),
                              model_family=brief["_family"], diagnostic_stage="dataset_v2:scenes",

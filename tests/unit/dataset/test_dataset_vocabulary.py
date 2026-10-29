@@ -194,7 +194,10 @@ class SceneVocabulary(unittest.TestCase):
         result = self.write(self.brief("A seductive adult character posing with a prop", cast, nsfw=True), packs)
         user = composer_user(self.composer()[0].user_message)
         self.assertEqual([line for line in user["vocabulary"].split("\n") if line in {"Actions & Poses", "Expressions", "Clothing", "Objects & Props"}],
-                         ["Actions & Poses", "Expressions", "Clothing"], "registry order; the objects are dealt instead")
+                         ["Actions & Poses", "Clothing"], "registry order; the objects and expressions are dealt instead")
+        happy = next(pack["entries"] for pack in self.catalog["packs"] if pack["id"] == "Expressions/Happy-Expressions")
+        self.assertTrue(all(image["needed"]["Expressions"][0].split(": ", 1)[1] in happy for image in user["images"]),
+                        "a selected Expressions pack gives each person one of its expressions in every image")
         furniture = next(pack["entries"] for pack in self.catalog["packs"] if pack["id"] == "Objects/Furniture")
         self.assertTrue(all(image["needed"]["Objects & Props"][0] in furniture for image in user["images"]),
                         "a selected Objects pack puts one of its objects in every image")
@@ -212,7 +215,7 @@ class SceneVocabulary(unittest.TestCase):
 
     def test_every_batch_gets_the_same_vocabulary_and_the_writer_is_called_once_per_batch(self):
         brief = self.brief("A knight", [{"label": "knight", "gender": "male", "custom": "", "pronoun": "he", "count": 1}], amount=13)
-        self.write(brief, ["Lighting/Dramatic"])
+        self.write(brief, ["Mood & Tone/Romantic"])
         calls = self.composer()
         self.assertEqual(len(calls), 2)
         # The same entries in every batch (each batch gets its own seeded order).
@@ -220,22 +223,25 @@ class SceneVocabulary(unittest.TestCase):
         self.assertEqual({call.diagnostic_stage for call in self.calls}, {"dataset_v2:scenes"}, "no extra LLM call")
 
     def test_every_image_gets_its_own_optional_suggestions_so_the_whole_pack_spreads(self):
-        packs = ["Lighting/Dramatic", "Objects/Furniture"]
+        packs = ["Mood & Tone/Romantic", "Objects/Furniture", "Lighting/Dramatic"]
         amount = max(len(pack["entries"]) for pack in self.catalog["packs"] if pack["id"] in packs)
         brief = self.brief("A knight", [{"label": "knight", "gender": "male", "custom": "", "pronoun": "he", "count": 1}], amount=amount)
         self.write(brief, packs)
         images = [image for call in self.composer() for image in composer_user(call.user_message)["images"]]
         hands = [image["suggested"] for image in images]
-        self.assertEqual({tuple(sorted(hand)) for hand in hands}, {("Lighting",)})
-        # A selected Objects pack is the user's instruction: one of its objects is needed in every image, dealt through
-        # the whole pack.
+        self.assertEqual({tuple(sorted(hand)) for hand in hands}, {("Mood & Tone",)})
+        # A selected Objects or Lighting pack is the user's instruction: one of its entries is needed in every image,
+        # dealt through the whole pack.
         objects = [image["needed"]["Objects & Props"] for image in images]
-        for category, dealt in (("Lighting", [entry for hand in hands for entry in hand["Lighting"]]),
-                                ("Objects & Props", [entry for needed in objects for entry in needed])):
-            pack = {"Lighting": "Lighting/Dramatic", "Objects & Props": "Objects/Furniture"}[category]
+        lights = [image["needed"]["Lighting"] for image in images]
+        for category, dealt in (("Mood & Tone", [entry for hand in hands for entry in hand["Mood & Tone"]]),
+                                ("Objects & Props", [entry for needed in objects for entry in needed]),
+                                ("Lighting", [entry for needed in lights for entry in needed])):
+            pack = {"Mood & Tone": "Mood & Tone/Romantic", "Objects & Props": "Objects/Furniture",
+                    "Lighting": "Lighting/Dramatic"}[category]
             self.assertEqual(set(dealt), set(next(p for p in load_catalog()["packs"] if p["id"] == pack)["entries"]),
                              "every entry is dealt")
-        self.assertTrue(all(len(needed) == 1 for needed in objects), "one object per image")
+        self.assertTrue(all(len(needed) == 1 for needed in objects + lights), "one object and one light per image")
         system = " ".join(self.composer()[0].system_message.split())
         self.assertIn('none at all when the category does not fit the image', system)
         # Live scenes fixed restraints to furniture the place lacked and wrote a mark on a body part against a wall.
@@ -376,7 +382,7 @@ class SceneVocabulary(unittest.TestCase):
         self.write(self.brief("A couple", self.PAIR, amount=2),
                    ["Actions & Poses/Test-Poses", "Objects/Test-Props", "Lighting/Test-Light"], catalog=catalog)
         lights = {entry for image in composer_user(self.composer()[0].user_message)["images"]
-                  for entry in image["suggested"]["Lighting"]}
+                  for entry in image["needed"]["Lighting"]}
         self.assertEqual(lights, {"candlelight falling on [Test Props]", "light from [Actions & Poses]"})
 
     def test_entries_are_made_for_the_casts_number_of_people(self):
@@ -440,12 +446,12 @@ class SceneVocabulary(unittest.TestCase):
     def test_pack_descriptions_reach_the_scene_writer(self):
         catalog = load_catalog(user_root=False)
         for pack in catalog["packs"]:
-            if pack["id"] in ("Actions & Poses/Solo-Activities", "Lighting/Dramatic"):
+            if pack["id"] in ("Actions & Poses/Solo-Activities", "Mood & Tone/Romantic"):
                 pack["description"] = f"note for {pack['name']}"
         brief = self.brief("A knight", [{"label": "knight", "gender": "male", "custom": "", "pronoun": "he", "count": 1}], amount=2)
-        self.write(brief, ["Actions & Poses/Solo-Activities", "Lighting/Dramatic"], catalog=catalog)
+        self.write(brief, ["Actions & Poses/Solo-Activities", "Mood & Tone/Romantic"], catalog=catalog)
         vocabulary = composer_user(self.composer()[0].user_message)["vocabulary"]
-        self.assertIn('Pack "Dramatic" (its author\'s note: note for Dramatic):', vocabulary)
+        self.assertIn('Pack "Romantic" (its author\'s note: note for Romantic):', vocabulary)
         self.assertIn('Pack "Solo Activities" (its author\'s note: note for Solo Activities):', vocabulary)
         self.assertIn("its author's note", self.composer()[0].system_message)
 
@@ -570,14 +576,15 @@ class SceneVocabulary(unittest.TestCase):
         self.write(brief, ["Actions & Poses/Romance", "Lighting/Dramatic"])
         images = composer_user(self.composer()[0].user_message)["images"]
         self.assertEqual(len({image["entry"] for image in images}), 1, "one pose for the whole set")
-        self.assertTrue(all("Lighting" not in image.get("suggested", {}) for image in images), "the light is locked")
+        self.assertTrue(all("Lighting" not in image.get("suggested", {}) for image in images), "never a suggestion")
+        self.assertEqual(len({tuple(image["needed"]["Lighting"]) for image in images}), 1, "the light is locked")
         self.assertIn("used by fewer than 4 images", self.composer()[0].system_message, "nobody is told to move off it")
         self.calls.clear()
         brief["consistency"] = {**brief["consistency"], "action": "themed", "light": "free"}
         self.write(brief, ["Actions & Poses/Romance", "Lighting/Dramatic"])
         images = composer_user(self.composer()[0].user_message)["images"]
         self.assertGreater(len({image["entry"] for image in images}), 1)
-        self.assertTrue(all("Lighting" in image["suggested"] for image in images))
+        self.assertGreater(len({tuple(image["needed"]["Lighting"]) for image in images}), 1)
 
     def test_an_entry_used_by_more_images_than_the_cap_is_kept_and_later_batches_see_the_count(self):
         # Reusing an entry is repetition, which the vocabulary's deal handles: the scene is kept, never asked again.
@@ -625,11 +632,11 @@ class SceneVocabulary(unittest.TestCase):
                 {"label": "woman", "gender": "female", "custom": "", "pronoun": "she", "count": 1}]
         brief = self.brief("A couple juggling", pair, amount=2)
         brief["kept_words"] = {"action": "juggling"}
-        result = self.write(brief, ["Actions & Poses/Romance", "Lighting/Dramatic"])
+        result = self.write(brief, ["Actions & Poses/Romance", "Mood & Tone/Romantic"])
         call = self.composer()[0]
         vocabulary = composer_user(call.user_message)["vocabulary"]
         self.assertNotIn("Actions & Poses", vocabulary, "the request's act is never replaced by an unrelated entry")
-        self.assertIn("Lighting", vocabulary)
+        self.assertIn("Mood & Tone", vocabulary)
         self.assertNotIn("ACTIONS & POSES ENTRY", call.system_message)
         self.assertTrue(result["complete"])
 

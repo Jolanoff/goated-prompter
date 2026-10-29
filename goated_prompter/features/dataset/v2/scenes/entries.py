@@ -4,8 +4,10 @@ and dealing suggestions and frames."""
 import math
 import re
 
-from ....vocabulary.retrieval import content_words, groups_of, said_entries, word_stem
+from ....vocabulary.retrieval import base_word, content_words, groups_of, said_entries, word_stem
+from ....vocabulary.selection import deal_spread
 
+from ..consistency import kept_words
 from .checks import _words, named_frame
 from .settings import ACTIONS_CATEGORY, AT_LEAST_HIPS, ENTRY_CAP, HAND
 
@@ -125,6 +127,70 @@ def named_things(groups, kept="", acts=(), place=""):
                 seen.add(entry)
                 found.setdefault(name(entry), []).append(entry)
     return list(found.values())
+
+
+def said_of(brief, part):
+    """{label: [phrases]}: the request's words for one part (Understanding's kept words, phrases joined with ";"),
+    each with the character it belongs to. A phrase belongs to the character the request names right after it ("a
+    smiling woman"), else the one it names last before it ("a man in a black suit beside a woman in a red dress": the
+    suit is the man's, the dress the woman's). Characters of one name ("friend 1", "friend 2") are told apart by order:
+    the name said once more ("a friend in a suit with a friend in a jacket") is the next of them, and the name said in
+    the plural ("two friends in hoodies") is all of them. A phrase belongs to the only character when there is one, and
+    to nobody when the request does not show whose it is."""
+    request = " ".join(str(brief["input"]["request"]).casefold().split())
+    people = [person["label"] for person in brief["characters"]]
+    names = {label: {word for word in content_words(label) if not word.isdigit()} for label in people}
+    named = lambda word: [label for label in people if base_word(word) in names[label]]
+    words = lambda text: re.findall(r"[a-z0-9]+", re.sub(r"['’]s\b", "", text))
+    found = {}
+    for phrase in PHRASES.split(str(kept_words(brief).get(part, "") or "")):
+        phrase = " ".join(phrase.split())
+        if not content_words(phrase):
+            continue
+        start = request.find(phrase.casefold())
+        said = words(request[:start]) if start >= 0 else []
+        after = words(request[start + len(phrase):])[:1] if start >= 0 else []
+        index = len(said) if after and named(after[0]) else next(
+            (index for index in range(len(said) - 1, -1, -1) if named(said[index])), None)
+        said += after
+        owners = set()
+        if index is not None:
+            word, labels = said[index], named(said[index])
+            plural = word != base_word(word)
+            times = sum(base_word(other) == base_word(word) for other in said[:index + 1])
+            owners = set(labels) if plural or len(labels) == 1 else set(labels[times - 1:times])
+        owners = owners or ({people[0]} if len(people) == 1 else set())
+        for label in people:
+            if label in owners:
+                found.setdefault(label, []).append(phrase)
+    return found
+
+
+def deal_per_person(pools, total, rng, fixed=False):
+    """{slot: {label: entry}}: one entry per person per image ({label: pool}). The people who share a pool share one
+    seeded deal without repeats until it is spent; image by image, each person takes the next entry of their deal
+    that nobody in that image has yet, so the people of one image never get the same entry while their pools have
+    enough. fixed: each person's first entry in every image."""
+    shared = {}
+    for label, pool in pools.items():
+        if pool:
+            shared.setdefault(tuple(pool), []).append(label)
+    rows = 1 if fixed else total
+    decks = {}
+    for pool, labels in shared.items():
+        cards = deal_spread([{"name": "people", "entries": list(pool)}], rows * len(labels), rng)
+        decks[pool] = [cards[index] for index in sorted(cards)]
+    dealt = {}
+    for number in range(1, rows + 1):
+        row = {}
+        for label, pool in pools.items():
+            if deck := decks.get(tuple(pool)):
+                index = next((index for index, entry in enumerate(deck) if entry not in row.values()), None)
+                # The deal's last cards may all be taken in this image already: then another of the pool's entries.
+                row[label] = deck.pop(index) if index is not None else next(
+                    (entry for entry in pool if entry not in row.values()), deck.pop(0))
+        dealt[number] = row
+    return {number: dict(dealt[1 if fixed else number]) for number in range(1, total + 1) if dealt.get(1 if fixed else number)}
 
 
 def deal_named(things, total):

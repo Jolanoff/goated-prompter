@@ -27,16 +27,15 @@ from ....vocabulary.selection import deal_spread, pair
 from ..consistency import kept_words, levels, locked_categories
 from .actions import act_plans, action_plan, deal_actions, deal_assignments, suited_to_place, with_roles
 from .camera import CAMERA, camera_frames, deal_cameras
-from .clothing import CLOTHING, deal_outfits, dressed, for_sex, worn
-from .entries import (_only, deal_frames, deal_hands, deal_named, entry_cap, kept_things, named_things, offered,
-                      required_frame, requested_words, _entry_key)
+from ..understanding import is_human
+from .clothing import CLOTHING, dressed, for_sex
+from .entries import (_only, deal_frames, deal_hands, deal_named, deal_per_person, entry_cap, kept_things, named_things,
+                      offered, required_frame, requested_words, said_of, _entry_key)
 from .looks import SUBJECTS, deal_looks, look_words, requested_details
 from .places import SPACES, arrangement, place_plan
 from .props import OBJECTS
 from .request import deals_frames
-from .settings import ACTIONS_CATEGORY
-
-EXPRESSIONS, LIGHTING, MOOD, EFFECTS = ("Expressions", "Lighting", "Mood & Tone", "Effects & Atmosphere")
+from .settings import ACTIONS_CATEGORY, EFFECTS, EXPRESSIONS, LIGHTING, MOOD
 
 
 @dataclass(frozen=True)
@@ -182,43 +181,84 @@ def _deal_cameras(run, cameras):
     return True
 
 
-# Clothing (clothing.py): with a selected Clothing pack, the request's garments on their wearers, and one entry of all
-# the selected packs' entries per image for everyone else who can be dressed, needed as "label: entry". No pack, an
-# adult set or scene ideas: nothing is dealt and a selected pack stays a suggestion, as before.
-def _find_clothing(run, rows):
-    if not rows or run["guided"] or run["brief"]["path"] == "nsfw_character":
+# Selected packs are the user's instruction to use them: a category dealt per person (Clothing, Expressions) or per
+# image (Lighting) needs its entries in every image. The selected packs are first dealt as suggestions as they always
+# were (so every random call stays where it was) and then dropped from them (dealt_here).
+def _per_person(category, eligible, packs_for=None, adults=True):
+    """(find, deal) for a category dealt to each person: the request's own words for its part go to the person they
+    belong to (entries.said_of), as the selected entries that name them whole, else the words, and that person is
+    dealt nothing else; everyone else eligible gets one entry of the selected packs per image (packs_for(packs, person)
+    narrows them), never the same as another person of that image, one throughout when the part is locked.
+    adults=False: in an adult set the packs stay suggestions and nothing is dealt."""
+    def find(run, rows):
+        if not rows or run["guided"] or (not adults and run["brief"]["path"] == "nsfw_character"):
+            return []
+        run["dealt_here"].add(category)
+        found, brief = offered(rows, category, run["groups"]), run["brief"]
+        asked = said_of(brief, POLICY[category].understanding_fields[0])
+        run["asked"][category] = {label: things for label, phrases in asked.items()
+                                  if (things := named_things(found, "; ".join(phrases)))}
+        # Each person's pool: the selected packs for them, entries the run offers only, each entry once.
+        offered_entries = {entry for group in found for entry in group["entries"]}
+        packs = [pack for pack in run["catalog"]["packs"]
+                 if pack["category"] == category and pack["id"] in run["selection"]["packs"]]
+        choose = packs_for or (lambda packs, person: packs)
+        run["pools"][category] = {
+            person["label"]: list(dict.fromkeys(entry for pack in choose(packs, person) for entry in pack["entries"]
+                                                if entry in offered_entries))
+            for person in brief["characters"] if person["label"] not in asked and eligible(person)}
         return []
-    run["dealt_here"].add(CLOTHING)  # its selected packs are dealt here, never also suggested
-    found, brief = offered(rows, CLOTHING, run["groups"]), run["brief"]
-    asked = worn(brief)
-    run["worn"] = {label: things for label, phrases in asked.items()
-                   if (things := named_things(found, "; ".join(phrases)))}
-    # Each person's pool: the selected packs for their sex, entries the run offers only, each entry once.
-    offered_entries = {entry for group in found for entry in group["entries"]}
-    packs = [pack for pack in run["catalog"]["packs"]
-             if pack["category"] == CLOTHING and pack["id"] in run["selection"]["packs"]]
-    run["pools"] = {person["label"]: list(dict.fromkeys(entry for pack in for_sex(packs, person)
-                                                        for entry in pack["entries"] if entry in offered_entries))
-                    for person in brief["characters"] if person["label"] not in asked and dressed(person)}
-    return []  # nothing for the suggestions to hold back: they deal as they always have, then drop Clothing
+
+    def deal(run, _):
+        if category not in run["dealt_here"]:
+            return False
+        given = {number: {} for number in range(1, run["total"] + 1)}
+        for label, things in run["asked"][category].items():
+            for number, entries in deal_named(things, run["total"]).items():
+                given[number][label] = entries
+        dealt = deal_per_person(run["pools"][category], run["total"], run["rng"], locked(category, run))
+        for number, entries in dealt.items():
+            for label, entry in entries.items():
+                given[number][label] = [entry]
+        order = [person["label"] for person in run["brief"]["characters"]]
+        for number, by_person in given.items():
+            if by_person:
+                run["plan"]["needed"].setdefault(number, {})[category] = [
+                    f"{label}: {entry}" for label in order for entry in by_person.get(label, ())]
+        return any(given.values())
+
+    return find, deal
 
 
-def _deal_clothing(run, _):
-    if CLOTHING not in run["dealt_here"]:
-        return False
-    wear = {number: {} for number in range(1, run["total"] + 1)}
-    for label, things in run["worn"].items():
-        for number, entries in deal_named(things, run["total"]).items():
-            wear[number][label] = entries
-    for number, outfits in deal_outfits(run["pools"], run["total"], run["rng"], locked(CLOTHING, run)).items():
-        for label, entry in outfits.items():
-            wear[number][label] = [entry]
-    order = [person["label"] for person in run["brief"]["characters"]]
-    for number, by_person in wear.items():
-        if by_person:
-            run["plan"]["needed"].setdefault(number, {})[CLOTHING] = [
-                f"{label}: {entry}" for label in order for entry in by_person.get(label, ())]
-    return any(wear.values())
+def _per_image(category):
+    """(find, deal) for a category dealt one entry of its selected packs to every image, in a seeded spread without
+    repeats until all have been dealt, one throughout when its part is locked. The request's own words for the part
+    come first: nothing is dealt over them."""
+    def find(run, rows):
+        if not rows or run["guided"]:
+            return []
+        run["dealt_here"].add(category)
+        said = str(kept_words(run["brief"]).get(POLICY[category].understanding_fields[0], "") or "").strip()
+        run["scene"][category] = [] if said else offered(rows, category, run["groups"])
+        return []
+
+    def deal(run, _):
+        if not (groups := run["scene"].get(category)):
+            return False
+        dealt = deal_spread(groups, run["total"], run["rng"], locked(category, run))
+        for number, entry in dealt.items():
+            run["plan"]["needed"].setdefault(number, {})[category] = [entry]
+        return bool(dealt)
+
+    return find, deal
+
+
+# Clothing (clothing.py): needed as "label: entry", from the packs for each person's sex; an adult set keeps its rule.
+_find_clothing, _deal_clothing = _per_person(CLOTHING, dressed, for_sex, adults=False)
+# Expressions: each person their own face; a known character's too, never a creature's.
+_find_expressions, _deal_expressions = _per_person(EXPRESSIONS, is_human)
+# Lighting: one lighting setup for the whole image.
+_find_lighting, _deal_lighting = _per_image(LIGHTING)
 
 
 def _without_own(category):
@@ -253,8 +293,10 @@ POLICIES = (
                      understanding_fields=("camera",), fallback="writer", deal=_deal_cameras),
     VocabularyPolicy(CLOTHING, required_when=_people, understanding_fields=("clothing",), selected_packs="dealt",
                      assignment="per_subject", fallback="writer", find=_find_clothing, deal=_deal_clothing),
-    VocabularyPolicy(EXPRESSIONS, required_when=_people, understanding_fields=("expression",), fallback="writer"),
-    VocabularyPolicy(LIGHTING, required_when=lambda run: True, understanding_fields=("light",), fallback="writer"),
+    VocabularyPolicy(EXPRESSIONS, required_when=_people, understanding_fields=("expression",), selected_packs="dealt",
+                     assignment="per_subject", fallback="writer", find=_find_expressions, deal=_deal_expressions),
+    VocabularyPolicy(LIGHTING, required_when=lambda run: True, understanding_fields=("light",), selected_packs="dealt",
+                     fallback="writer", find=_find_lighting, deal=_deal_lighting),
     VocabularyPolicy(MOOD, understanding_fields=("mood",)),
     VocabularyPolicy(EFFECTS, understanding_fields=("mood",)),
 )
@@ -308,7 +350,8 @@ def plan_vocabulary(brief, catalog, selection, groups, embeddings, rng, guided):
     scene needs it, else "none"."""
     run = {"brief": brief, "catalog": catalog, "selection": selection, "groups": groups, "embeddings": embeddings,
            "rng": rng, "guided": guided, "total": brief["input"]["amount"], "levels": levels(brief),
-           "plans": None, "assigned": None, "dealt": {}, "spaces": [], "setting": "", "named": [], "worn": {}, "pools": {}, "dealt_here": set(),
+           "plans": None, "assigned": None, "dealt": {}, "spaces": [], "setting": "", "named": [], "asked": {},
+           "pools": {}, "scene": {}, "dealt_here": set(),
            # The request's spatial relations go with every image, places dealt or not (scene ideas keep their own).
            "plan": {"arrangement": [] if guided else arrangement(brief)}}
     applies = {policy.category: policy.applies_when(run) for policy in POLICIES}
