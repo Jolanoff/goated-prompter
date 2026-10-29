@@ -27,7 +27,7 @@ from ....vocabulary.selection import deal_spread, pair
 from ..consistency import kept_words, levels, locked_categories
 from .actions import act_plans, action_plan, deal_actions, deal_assignments, suited_to_place, with_roles
 from .camera import CAMERA, camera_frames, deal_cameras
-from .clothing import CLOTHING, deal_outfits, dressed, worn
+from .clothing import CLOTHING, deal_outfits, dressed, for_sex, worn
 from .entries import (_only, deal_frames, deal_hands, deal_named, entry_cap, kept_things, named_things, offered,
                       required_frame, requested_words, _entry_key)
 from .looks import SUBJECTS, deal_looks, look_words, requested_details
@@ -193,9 +193,13 @@ def _find_clothing(run, rows):
     asked = worn(brief)
     run["worn"] = {label: things for label, phrases in asked.items()
                    if (things := named_things(found, "; ".join(phrases)))}
-    pool = list(dict.fromkeys(entry for group in found for entry in group["entries"]))
-    run["pools"] = {person["label"]: pool for person in brief["characters"]
-                    if person["label"] not in asked and dressed(person)}
+    # Each person's pool: the selected packs for their sex, entries the run offers only, each entry once.
+    offered_entries = {entry for group in found for entry in group["entries"]}
+    packs = [pack for pack in run["catalog"]["packs"]
+             if pack["category"] == CLOTHING and pack["id"] in run["selection"]["packs"]]
+    run["pools"] = {person["label"]: list(dict.fromkeys(entry for pack in for_sex(packs, person)
+                                                        for entry in pack["entries"] if entry in offered_entries))
+                    for person in brief["characters"] if person["label"] not in asked and dressed(person)}
     return []  # nothing for the suggestions to hold back: they deal as they always have, then drop Clothing
 
 

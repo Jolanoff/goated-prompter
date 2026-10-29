@@ -1,0 +1,37 @@
+{
+  "name": "Modern Fashion (Female)",
+  "category": "Clothing",
+  "description": "For female characters only: never give these garments to a male character. Contemporary casual, formal and practical clothing. Entries are garment choices, not prescribed appearances, professions or poses.",
+  "groups": [
+    {
+      "group": "female",
+      "words": [
+        "female",
+        "woman",
+        "women"
+      ],
+      "entries": [
+        "plain T-shirt with straight-leg jeans",
+        "linen button-down shirt with rolled cuffs",
+        "midi dress with a gathered waist",
+        "double-breasted wool overcoat",
+        "striped sweater with corduroy trousers",
+        "pleated skirt with an opaque blouse",
+        "canvas sneakers with contrasting laces",
+        "quilted vest over a flannel shirt",
+        "wide-brimmed sun hat with a woven band",
+        "structured blazer over a crew-neck top",
+        "lightweight jumpsuit with a tied belt",
+        "oversized hoodie",
+        "denim jacket",
+        "coveralls with reinforced knees",
+        "lightweight raincoat with a hood",
+        "knitted cardigan over a plain shirt",
+        "tracksuit with a zip-front top",
+        "wrap dress with a tie waist",
+        "high-waisted wide-leg trousers with a tucked blouse",
+        "knee-length shirt dress with a belt"
+      ]
+    }
+  ]
+}

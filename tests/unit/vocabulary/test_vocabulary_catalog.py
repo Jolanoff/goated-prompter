@@ -52,7 +52,7 @@ class Bundled(unittest.TestCase):
 
     def test_every_starter_pack_has_a_description_and_20_to_40_entries_in_its_folder(self):
         loaded = load_catalog()
-        self.assertEqual(len([pack for pack in loaded["packs"] if not pack.get("always")]), 63)
+        self.assertEqual(len([pack for pack in loaded["packs"] if not pack.get("always")]), 66)
         folders = {row["folder"]: row["id"] for row in loaded["categories"]}
         self.assertEqual({pack["source"] for pack in loaded["packs"]}, {"built-in"})
         for path in sorted(catalog.ROOT.glob("*/*.json")):
@@ -374,7 +374,7 @@ class Selection(unittest.TestCase):
         self.catalog = load_catalog()
 
     def test_only_selected_categories_reach_the_prompt_with_their_core_instruction(self):
-        selection = validate_selection(self.catalog, ["Spaces/Fantasy", "Clothing/Fantasy-Outfits", "Effects & Atmosphere/Magic-Effects"])
+        selection = validate_selection(self.catalog, ["Spaces/Fantasy", "Clothing/Fantasy-Outfits-Female", "Effects & Atmosphere/Magic-Effects"])
         text = vocabulary_prompt(selected_vocabulary(self.catalog, selection))
         self.assertTrue(text.startswith("SELECTED VOCABULARY:\n\nSpaces\nCore instruction:\nSpaces provides vocabulary"))
         for heading in ("Spaces\nCore instruction:", "Clothing\nCore instruction:", "Effects & Atmosphere\nCore instruction:"):

@@ -64,7 +64,7 @@ class Registry(unittest.TestCase):
                 found = policies.retrieve(policy, run)
                 self.assertEqual(bool(found), policy.always_available and policy.auto_when(run),
                                  "no other category retrieves built-in entries")
-        two = {**run, "selection": {"packs": ["Clothing/Modern-Fashion", "Clothing/Outdoor-Gear"]}}
+        two = {**run, "selection": {"packs": ["Clothing/Cyberpunk-Clothing", "Clothing/Outdoor-Gear"]}}
         self.assertEqual(len([entry for row in policies.retrieve(policies.POLICY["Clothing"], two)
                               for entry in row["entries"]]), 40, "every selected Clothing pack, nothing else")
         selected = {**run, "selection": {"packs": ["Objects/Furniture"]}}
@@ -111,7 +111,7 @@ class Engine(unittest.TestCase):
         return {number: [item.split(": ", 1)[1] for item in needed.get("Clothing", []) if item.startswith(label + ": ")]
                 for number, needed in result["needed"].items()}
 
-    TWO = ["Clothing/Modern-Fashion", "Clothing/Outdoor-Gear"]
+    TWO = ["Clothing/Cyberpunk-Clothing", "Clothing/Outdoor-Gear"]
 
     def pool(self, *packs):
         return {entry for pack in CATALOG["packs"] if pack["id"] in packs for entry in pack["entries"]}
@@ -136,12 +136,12 @@ class Engine(unittest.TestCase):
 
     def test_the_requests_garments_stay_and_a_locked_part_keeps_each_persons_entry(self):
         request = "a man in a tailored suit dancing with a woman"
-        result, _, _ = plan(["Clothing/Modern-Fashion"], characters=self.PAIR, request=request,
+        result, _, _ = plan(["Clothing/Modern-Fashion-Male"], characters=self.PAIR, request=request,
                             kept={"clothing": "a tailored suit"})
         self.assertEqual(self.worn_by(result, "man"), {number: ["tailored suit"] for number in range(1, 5)},
                          "the request's garment on its wearer in every image, nothing dealt over it")
         self.assertNotIn("tailored suit", {entry for entries in self.worn_by(result, "woman").values() for entry in entries})
-        armor, _, _ = plan(["Clothing/Modern-Fashion"], characters=self.PAIR, request="a man in armor dancing with a woman",
+        armor, _, _ = plan(["Clothing/Modern-Fashion-Male"], characters=self.PAIR, request="a man in armor dancing with a woman",
                            kept={"clothing": "armor"})
         self.assertEqual(self.worn_by(armor, "man"), {number: [] for number in range(1, 5)},
                          "no entry names it: the request's words stay and nothing is dealt over them")
@@ -149,8 +149,24 @@ class Engine(unittest.TestCase):
         fixed, _, _ = plan(self.TWO, characters=twins, request="two women talking", consistency={"clothing": "locked"})
         self.assertEqual(len({entry for entries in self.worn_by(fixed, "woman 1").values() for entry in entries}), 1)
 
+    def test_a_pack_made_for_one_sex_dresses_only_the_people_of_that_sex(self):
+        packs = ["Clothing/Modern-Fashion-Female", "Clothing/Modern-Fashion-Male"]
+        result, _, _ = plan(packs, characters=self.PAIR, request="a man and a woman walking in a park")
+        female, male = self.pool(packs[0]), self.pool(packs[1])
+        worn = {label: {entry for entries in self.worn_by(result, label).values() for entry in entries}
+                for label in ("man", "woman")}
+        self.assertTrue(worn["woman"] <= female and worn["man"] <= male, worn)
+        friends = [{"label": "friend", "gender": "", "custom": "", "pronoun": "", "count": 2}]
+        unknown, _, _ = plan(packs, characters=friends, request="two friends walking in a park")
+        self.assertTrue({entry for entries in self.worn_by(unknown, "friend 1").values() for entry in entries}
+                        <= female | male, "an unstated sex draws from every selected pack")
+        for pack in CATALOG["packs"]:
+            if pack["id"] in packs:
+                sex = "female" if pack["id"].endswith("-Female") else "male"
+                self.assertTrue(pack["description"].startswith(f"For {sex} characters only"), "the writer reads it")
+
     def test_adult_sets_keep_their_clothing_rule(self):
-        suggested, _, _ = plan(["Clothing/Modern-Fashion"], characters=self.PAIR, nsfw=True, request="a man with a woman")
+        suggested, _, _ = plan(["Clothing/Modern-Fashion-Female"], characters=self.PAIR, nsfw=True, request="a man with a woman")
         self.assertEqual(suggested["needed"], {}, "nothing dealt: whoever takes part is bare unless the request dresses them")
         self.assertTrue(all("Clothing" in hand for hand in suggested["hands"].values()), "selected packs as before")
 

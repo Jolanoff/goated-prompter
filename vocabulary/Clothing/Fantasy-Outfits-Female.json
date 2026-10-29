@@ -1,0 +1,38 @@
+{
+  "name": "Fantasy Outfits (Female)",
+  "category": "Clothing",
+  "description": "For female characters only: never give these garments to a male character. Fantasy travel, ceremonial and protective clothing. Garments are alternatives suited to different roles, without assigning a new activity.",
+  "groups": [
+    {
+      "group": "female",
+      "words": [
+        "female",
+        "woman",
+        "women"
+      ],
+      "entries": [
+        "bark-textured shoulder mantle with leaf-shaped clasps",
+        "long brocade coat lined with patterned silk",
+        "fur-lined boots with wrapped leather uppers",
+        "lamellar cuirass tied over a padded jacket",
+        "layered desert robes with a broad head wrap",
+        "feather-trimmed ceremonial cape",
+        "studded leather jerkin over woven sleeves",
+        "patchwork traveling coat with many repaired seams",
+        "wide sash threaded with small metal charms",
+        "crystal-beaded veil over a high-collared gown",
+        "sleeveless wool overdress with side lacing",
+        "elven armor",
+        "flowing spellcaster robe",
+        "ranger cloak",
+        "layered traveling tunic with a split hem",
+        "quilted gambeson with side fastenings",
+        "ceremonial mantle over a plain long robe",
+        "scale vest over a flexible woven undershirt",
+        "weatherproof hooded cape with arm openings",
+        "flowing silk gown with embroidered sleeves",
+        "laced bodice over a long layered skirt"
+      ]
+    }
+  ]
+}

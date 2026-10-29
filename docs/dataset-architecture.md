@@ -290,7 +290,10 @@ named in the plural, the only character when there is one; nobody when the reque
 selected entries that name it whole, else the request's words; everyone else who can be dressed (a human whose look is
 not a known character's or a trigger's) gets one entry of all the selected packs per image, never the same as another
 person of that image (`deal_outfits`), one throughout when clothing is locked, as `needed` "label: entry" with
-`WORN_RULE`; an entry is one garment and the writer completes the rest. The selected Clothing packs are dealt as
+`WORN_RULE`; an entry is one garment and the writer completes the rest. A pack made for one sex (its group named
+"female" or "male", like the built-in `*-Female` and `*-Male` Clothing packs, whose descriptions say who they are
+for) dresses only the people of that sex, everyone else the other selected packs (`for_sex`); a person whose sex is
+unstated draws from all of them. The selected Clothing packs are dealt as
 suggestions first, so every random call stays where it was, and then dropped from them. Without a Clothing pack, or in
 an adult set (whose selected packs stay suggestions), nothing is dealt. Every scene names the entry it is built on (`entry`); code checks the entry is one of the fitting ones and that no
 entry is used by more than two images (`ENTRY_CAP`, raised to the images-per-entry when fewer entries fit than images

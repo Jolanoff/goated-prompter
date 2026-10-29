@@ -4,6 +4,9 @@ All the selected packs' entries are one pool. Every person who can be dressed (d
 known character's or a trigger's) wears one of them in every image, dealt in a seeded order without repeats until
 the pool is spent, never the same entry as another person of that image (deal_outfits); a locked clothing part keeps
 each person's first one. An entry is one garment, not a whole outfit: the writer completes the rest of the clothing.
+Packs made for one sex (a group named "female" or "male", like the built-in *-Female and *-Male packs) dress only the
+people of that sex, and everyone else from the other selected packs (for_sex): the pack says who it is for, so no
+garment is judged by its meaning.
 
 The request comes first (worn). Understanding keeps the request's clothing words as one text ("kept_words.clothing",
 phrases joined with ";"), not per person. A phrase belongs to the character the request names last before it ("a man
@@ -24,7 +27,7 @@ import re
 from ....vocabulary.retrieval import base_word, content_words
 from ....vocabulary.selection import deal_spread
 from ..consistency import kept_words
-from ..understanding import is_human
+from ..understanding import is_human, stated_gender
 from .entries import PHRASES
 
 CLOTHING = "Clothing"
@@ -55,6 +58,16 @@ def worn(brief):
             if label in owners:
                 found.setdefault(label, []).append(phrase)
     return found
+
+
+def for_sex(packs, person):
+    """The selected Clothing packs a person is dressed from: all but the ones made for the other sex (a pack whose
+    group is named or worded "female" or "male": vocabulary/Clothing/*-Female.json and *-Male.json); all of them when
+    the person's sex is unstated, or when only the other sex's packs are selected."""
+    other = {"female": "male", "male": "female"}.get(stated_gender(person))
+    says = lambda pack, word: any(word == group["name"].casefold() or word in group["words"]
+                                  for group in pack.get("groups") or ())
+    return [pack for pack in packs if not (other and says(pack, other))] or list(packs)
 
 
 def dressed(person):

@@ -1,0 +1,37 @@
+{
+  "name": "Medieval Clothing (Male)",
+  "category": "Clothing",
+  "description": "For male characters only: never give these garments to a female character. Medieval-inspired everyday, riding and protective garments. Entries specify clothing construction rather than fixing the subject's occupation or status.",
+  "groups": [
+    {
+      "group": "male",
+      "words": [
+        "male",
+        "man",
+        "men"
+      ],
+      "entries": [
+        "linen coif tied beneath the chin",
+        "hood with a long trailing liripipe",
+        "fitted doublet with cloth-covered buttons",
+        "particolored hose fastened at the waist",
+        "embroidered velvet houppelande with wide sleeves",
+        "simple leather turnshoes with ankle ties",
+        "fur-lined hooded winter mantle",
+        "short wool tabard with contrasting side panels",
+        "soft felt cap with a folded brim",
+        "linen tunic",
+        "chainmail hauberk",
+        "woolen cote with a belted waist",
+        "padded arming jacket with tied closures",
+        "leather work apron over rolled sleeves",
+        "split riding cloak fastened at one shoulder",
+        "long surcoat worn over a plain tunic",
+        "short belted tunic over wool hose",
+        "fur-trimmed robe over a fitted doublet",
+        "padded jack with a high collar",
+        "wool chaperon hat with a draped tail"
+      ]
+    }
+  ]
+}

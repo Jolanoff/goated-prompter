@@ -190,7 +190,7 @@ class SceneVocabulary(unittest.TestCase):
     def test_example_c_packs_of_an_adult_run_are_optional_material_beside_the_request(self):
         cast = [{"label": "model", "gender": "female", "custom": "", "pronoun": "she", "count": 1}]
         packs = ["Actions & Poses/Solo-Activities", "Expressions/Happy-Expressions",
-                 "Clothing/Modern-Fashion", "Objects/Furniture"]
+                 "Clothing/Modern-Fashion-Female", "Objects/Furniture"]
         result = self.write(self.brief("A seductive adult character posing with a prop", cast, nsfw=True), packs)
         user = composer_user(self.composer()[0].user_message)
         self.assertEqual([line for line in user["vocabulary"].split("\n") if line in {"Actions & Poses", "Expressions", "Clothing", "Objects & Props"}],

@@ -85,6 +85,11 @@ person whose looks vary, `Subjects/Non-Human` to every other character whose loo
 Composition/Camera` a camera to every image). Always-on packs stay safe for work and keep entries
 distinct: two entries never share most of their words. Do not add an always-on pack unless asked.
 
+A Clothing pack made for one sex holds one group named `"female"` or `"male"` (with the words a person's stated sex
+uses, such as "woman" or "man"), and its description starts with who it is for ("For female characters only: …"),
+so a run dresses only the people of that sex from it and the scene writer reads which garments are whose. Garments
+anyone wears go in both packs of a pair (`Clothing/Modern-Fashion-Female` and `-Male`).
+
 ## Categories
 
 `vocabulary/core/` holds exactly three files:

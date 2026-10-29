@@ -1,0 +1,37 @@
+{
+  "name": "Fantasy Outfits (Male)",
+  "category": "Clothing",
+  "description": "For male characters only: never give these garments to a female character. Fantasy travel, ceremonial and protective clothing. Garments are alternatives suited to different roles, without assigning a new activity.",
+  "groups": [
+    {
+      "group": "male",
+      "words": [
+        "male",
+        "man",
+        "men"
+      ],
+      "entries": [
+        "embroidered waistcoat over a loose linen shirt",
+        "bark-textured shoulder mantle with leaf-shaped clasps",
+        "long brocade coat lined with patterned silk",
+        "fur-lined boots with wrapped leather uppers",
+        "lamellar cuirass tied over a padded jacket",
+        "layered desert robes with a broad head wrap",
+        "feather-trimmed ceremonial cape",
+        "studded leather jerkin over woven sleeves",
+        "patchwork traveling coat with many repaired seams",
+        "wide sash threaded with small metal charms",
+        "elven armor",
+        "flowing spellcaster robe",
+        "ranger cloak",
+        "layered traveling tunic with a split hem",
+        "quilted gambeson with side fastenings",
+        "ceremonial mantle over a plain long robe",
+        "scale vest over a flexible woven undershirt",
+        "weatherproof hooded cape with arm openings",
+        "belted tunic over fitted breeches",
+        "embroidered doublet with a short shoulder cape"
+      ]
+    }
+  ]
+}
